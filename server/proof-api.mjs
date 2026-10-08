@@ -59772,7 +59772,8 @@ function isBrowserActivityItem(item) {
     /\.x?html?\b/u.test(searchText);
   const hasHtmlBody =
     tags.some((tag) => String(tag).toLowerCase() === "html body") ||
-    isBrowserHtmlMessageBody(item.detail ?? "");
+    isBrowserHtmlMessageBody(item.detail ?? "") ||
+    isBrowserHtmlMessageBody(item.memo ?? "");
 
   if (item.kind === "file") {
     return hasHtmlAttachment;

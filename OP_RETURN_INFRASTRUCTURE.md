@@ -18,6 +18,14 @@ recovery history. Human grant management is separate from the local controller's
 autonomous-signing gate, which remains closed pending verified isolation and a
 real UniSat bridge. See [deployment](deploy/permission/README.md).
 
+The accompanying Browser/Mail projection repair recognizes HTML in a canonical
+message `memo` alongside existing detail/tag detection. A confirmed HTML message
+with a subject must retain its existing Browser proof-flow contribution even
+when the indexed row has no presentation detail or HTML tag. Keep AMO
+reconciliation strict: the normal supervised worker republishes derived
+summaries from unchanged canonical records; no ledger rewrite, carry exception
+or economic migration is part of this repair.
+
 ## Code v1 production surface and discovery gate
 
 Code v1 is available at `code.proofofwork.me` and

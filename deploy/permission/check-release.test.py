@@ -80,6 +80,23 @@ class RolloutTests(unittest.TestCase):
             invoke.assert_not_called()
 
 class LocalPlanTests(unittest.TestCase):
+    def test_helper_preservation_is_explicit_and_requires_exact_committed_bytes(self):
+        ns=R.controller(); candidate=b'// exact existing Permission helper\nexport {};\n'
+        current={'sha256':R.sha(candidate),'base64':base64.b64encode(candidate).decode()}
+        for name in sorted(ns.NEW):
+            with self.subTest(helper=name):
+                self.assertIsNone(R.helper_baseline(name,None,candidate,False))
+                with self.assertRaisesRegex(ValueError,'already exists'):
+                    R.helper_baseline(name,current,candidate,False)
+                self.assertEqual(R.helper_baseline(name,current,candidate,True),current['sha256'])
+                with self.assertRaisesRegex(ValueError,'Missing existing'):
+                    R.helper_baseline(name,None,candidate,True)
+                with self.assertRaisesRegex(ValueError,'differs from committed candidate'):
+                    R.helper_baseline(name,current,b'// upgraded helper\nexport {};\n',True)
+                changed=copy.deepcopy(current); changed['sha256']='f'*64
+                with self.assertRaisesRegex(ValueError,'Captured source hash differs'):
+                    R.helper_baseline(name,changed,candidate,True)
+
     def test_pages_capture_is_not_reusable_for_permission_plan(self):
         with tempfile.TemporaryDirectory(dir='/tmp') as name:
             root=Path(name);capture=root/'capture.json'
@@ -198,5 +215,94 @@ class LocalPlanTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(),b'original')
             alias=Path(name)/'alias';alias.symlink_to(path)
             with self.assertRaises(ValueError):R.private_output(alias)
+
+class RepeatDeploymentTests(unittest.TestCase):
+    def setUp(self):
+        # Reuse the actual scoped-controller filesystem fixture. No production
+        # services or SSH are involved; helper preservation uses its real fence.
+        fixture_module=module('check-scoped-node.test')
+        self.fixture=fixture_module.ControllerTests(); self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups); self.C=fixture_module.module
+        self.root=self.fixture.root; self.backup=self.fixture.backup
+        self.manifest=copy.deepcopy(self.fixture.manifest)
+        for index,row in enumerate(self.manifest['sources']):
+            if row['path'] not in self.C.NEW: continue
+            raw=base64.b64decode(row['base64']); file=self.root/row['path']
+            file.write_bytes(raw); file.chmod(0o640)
+            row['before']=row['after']
+            (self.backup/f'before-{index}.mjs').write_bytes(raw)
+            self.manifest['dependencies'][row['path']]=row['before']
+
+    def plan_fixture(self, preserve=True, missing=None, changed=None):
+        repo=ROOT.parents[1]; commit='a'*40; base_commit='b'*40
+        sources={name:{'sha256':R.sha(file.read_bytes()),'base64':base64.b64encode(file.read_bytes()).decode()}
+            for file in self.root.rglob('*') if file.is_file() for name in [str(file.relative_to(self.root))]}
+        candidates={row['path']:base64.b64decode(row['base64']) for row in self.manifest['sources']}
+        # Existing reader/API still pass through git merge-file with the prior
+        # source base, rather than treating a repair as a helper replacement.
+        candidates['server/proof-api.mjs'] += b'// approved classification repair\n'
+        if missing is not None: del sources[missing]
+        if changed is not None:
+            raw=b'// changed live helper\nexport {};\n'
+            sources[changed]={'sha256':R.sha(raw),'base64':base64.b64encode(raw).decode()}
+        snapshot={'format':'proof-of-work-permission-runtime-capture-v1','root':str(self.C.ROOT),
+            'controllerSha256':R.sha((ROOT/'scoped-node.py').read_bytes()),'sources':sources,
+            'baselineHead':self.manifest['baselineHead'],'nodeSha256':self.manifest['nodeSha256'],
+            'nodePath':'/opt/node-fixture/bin/node','gateway':self.manifest['gateway'],
+            'protectedServices':self.manifest['protectedServices'],
+            'searchFiles':self.manifest['searchHold']['bindings']['files']}
+        capture=self.root.parent/'capture.json'; capture.write_text(json.dumps(snapshot))
+        output=self.root.parent/'plan'
+        args=types.SimpleNamespace(repository=repo,commit=commit,base_commit=base_commit,
+            output=output,capture=capture,release_id='a'*12+'-20261008T010000Z',
+            preserve_existing_helpers=preserve)
+        def git(repository,*argv):
+            if argv==('rev-parse','HEAD'): return commit.encode()
+            if argv[0] in ('status','merge-base'): return b''
+            if argv[0]=='show':
+                revision,name=argv[1].split(':',1)
+                if name in self.C.ALLOWED:
+                    return candidates[name] if revision==commit else base64.b64decode(sources[name]['base64'])
+                return (repo/name).read_bytes()
+            raise AssertionError('Unexpected Git operation: '+repr(argv))
+        return args,git
+
+    def test_repeat_plan_pins_all_four_helpers_before_equals_after_and_normal_merge(self):
+        args,git=self.plan_fixture()
+        with patch.object(R,'git',side_effect=git),contextlib.redirect_stdout(io.StringIO()): R.plan(args)
+        plan=json.loads((args.output/'plan.json').read_bytes()); manifest=plan['runtimeManifestTemplate']
+        for row in manifest['sources']:
+            if row['path'] in self.C.NEW:
+                self.assertEqual(row['before'],row['after'])
+                self.assertEqual(manifest['dependencies'][row['path']],row['before'])
+            else:
+                self.assertTrue((args.output/'merge'/row['path']).is_file())
+        self.C.fence(args.output/'captured-runtime',manifest,self.C.validate_manifest(manifest))
+
+    def test_repeat_plan_refuses_missing_or_changed_helper_before_output(self):
+        for name in sorted(self.C.NEW):
+            for change,reason in [('missing','Missing existing'),('changed','differs from committed candidate')]:
+                with self.subTest(helper=name,change=change):
+                    args,git=self.plan_fixture(**{change:name})
+                    with patch.object(R,'git',side_effect=git):
+                        with self.assertRaisesRegex(ValueError,reason): R.plan(args)
+                    self.assertFalse(args.output.exists())
+
+    def test_default_first_install_refuses_present_helpers_before_output(self):
+        args,git=self.plan_fixture(preserve=False)
+        with patch.object(R,'git',side_effect=git):
+            with self.assertRaisesRegex(ValueError,'already exists'): R.plan(args)
+        self.assertFalse(args.output.exists())
+
+    def test_repeat_install_and_rollback_keep_helpers_exact_and_restore_existing_sources(self):
+        candidates=self.C.validate_manifest(self.manifest)
+        self.C.fence(self.root,self.manifest,candidates)
+        helpers={name:(self.root/name).read_bytes() for name in self.C.NEW}
+        self.C.install(self.root,self.backup,self.manifest['sources'],self.fixture.metadata,True,'repeat')
+        self.C.install(self.root,self.backup,self.manifest['sources'],self.fixture.metadata,False,'repeat')
+        for row in self.manifest['sources']:
+            self.assertEqual(self.C.sha((self.root/row['path']).read_bytes()),row['before'])
+            self.assertEqual((self.root/row['path']).stat().st_mode & 0o777,0o640)
+        self.assertEqual(helpers,{name:(self.root/name).read_bytes() for name in self.C.NEW})
 
 if __name__ == '__main__':unittest.main()

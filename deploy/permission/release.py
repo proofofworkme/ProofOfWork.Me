@@ -87,13 +87,24 @@ def selected_merge(name, merged, conflict, active, base, candidate, reviewed):
         raise ValueError('Reviewed merge source identity differs: '+name)
     return row['mergedBytes'], {key:value for key,value in row.items() if key != 'mergedBytes'}
 
+def helper_baseline(name, current, candidate, preserve_existing):
+    """Repeat deployments preserve exact committed helpers; never upgrade them."""
+    if not preserve_existing:
+        if current is not None: raise ValueError('New Permission helper already exists: '+name)
+        return None
+    if current is None: raise ValueError('Missing existing Permission helper: '+name)
+    raw = base64.b64decode(current['base64'], validate=True)
+    if sha(raw) != current['sha256']: raise ValueError('Captured source hash differs: '+name)
+    if raw != candidate: raise ValueError('Existing Permission helper differs from committed candidate: '+name)
+    return current['sha256']
+
 def plan(args):
     private_output(args.output); repo = args.repository.resolve(strict=True); ns = controller()
     if not re.fullmatch('[0-9a-f]{40}', args.commit) or git(repo, 'rev-parse', 'HEAD').decode().strip() != args.commit:
         raise ValueError('Require exact committed candidate checkout')
     if git(repo, 'status', '--porcelain', '--untracked-files=all'):
         raise ValueError('Candidate checkout must be clean before release planning')
-    if not re.fullmatch('[0-9a-f]{40}', args.base_commit): raise ValueError('Require full pre-Permission source commit')
+    if not re.fullmatch('[0-9a-f]{40}', args.base_commit): raise ValueError('Require full previous source commit')
     git(repo, 'merge-base', '--is-ancestor', args.base_commit, args.commit)
     reviewed = reviewed_merges(getattr(args, 'reviewed_merges', None), ns)
     release = args.release_id or args.commit[:12]+'-'+datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
@@ -107,6 +118,11 @@ def plan(args):
     for path in (ROOT/'release.py', ROOT/'capture-node.py', ROOT/'scoped-node.py', ROOT/'rollout-node.py', holder):
         if path.read_bytes() != git(repo, 'show', args.commit+':'+str(path.relative_to(repo))):
             raise ValueError('Tool differs from committed candidate: '+path.name)
+    preserve_existing = getattr(args, 'preserve_existing_helpers', False)
+    if type(preserve_existing) is not bool: raise ValueError('Invalid preserve-existing-helpers mode')
+    helper_candidates = {name:git(repo, 'show', args.commit+':'+name) for name in sorted(ns.NEW)}
+    helper_before = {name:helper_baseline(name, snapshot['sources'].get(name), candidate, preserve_existing)
+        for name, candidate in helper_candidates.items()}
     args.output.mkdir(mode=0o700)
     active_root = args.output/'captured-runtime'; active_root.mkdir(mode=0o700)
     for name, row in snapshot['sources'].items():
@@ -115,11 +131,10 @@ def plan(args):
         target = active_root/name; target.parent.mkdir(parents=True, exist_ok=True, mode=0o700); save(target,raw)
     candidates, rows, reviews = {}, [], []
     for name in sorted(ns.ALLOWED):
-        candidate = git(repo, 'show', args.commit+':'+name)
+        candidate = helper_candidates[name] if name in ns.NEW else git(repo, 'show', args.commit+':'+name)
         current = snapshot['sources'].get(name)
         if name in ns.NEW:
-            if current is not None: raise ValueError('New Permission helper already exists: '+name)
-            merged = candidate; before = None; conflict = False; resolution = None
+            merged = candidate; before = helper_before[name]; conflict = False; resolution = None
         else:
             if current is None: raise ValueError('Missing active source: '+name)
             before = current['sha256']; base = git(repo, 'show', args.base_commit+':'+name)
@@ -194,7 +209,10 @@ def main():
     p = sub.add_parser('capture'); p.add_argument('output', type=Path); p.set_defaults(fn=capture)
     p = sub.add_parser('plan'); p.add_argument('repository', type=Path); p.add_argument('commit');
     p.add_argument('base_commit'); p.add_argument('capture', type=Path); p.add_argument('output', type=Path)
-    p.add_argument('--release-id'); p.add_argument('--reviewed-merges', type=Path); p.set_defaults(fn=plan)
+    p.add_argument('--release-id'); p.add_argument('--reviewed-merges', type=Path)
+    p.add_argument('--preserve-existing-helpers', action='store_true',
+        help='Require all four Permission helpers to exist and match committed candidate bytes exactly; no helper upgrade')
+    p.set_defaults(fn=plan)
     p = sub.add_parser('overlay'); p.add_argument('plan',type=Path); p.add_argument('receipt',type=Path); p.set_defaults(fn=overlay,phase='overlay')
     args = parser.parse_args(); os.umask(0o077); args.fn(args)
 

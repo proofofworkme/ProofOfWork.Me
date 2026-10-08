@@ -687,3 +687,8 @@ UniSat/keyring bridge as enforced automation. Preserve pending commitments and
 uncertain signatures across grant changes and restarts. Duration and named-agent
 binding are outside Permission v1. The release synchronization gate now also
 verifies public Permission provenance.
+
+Use canonical message bodies for accounting classification. A subject-only
+detail or missing display tag must not hide confirmed HTML from Browser flow.
+Repair the read projection while preserving strict reconciliation and every
+canonical record.

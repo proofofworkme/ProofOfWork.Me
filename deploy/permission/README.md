@@ -53,8 +53,22 @@ committed controller and Search-holder bytes, merges the two existing files
 with the captured live files using a three-way merge from the pinned repository
 base, checks every resulting module's syntax, and rehearses the complete old
 and candidate import-closure fence. All captured sources are pinned, including
-inactive helpers. Each of the four new files must be absent from capture and
-remain absent at rollout.
+inactive helpers. By default, each of the four new files must be absent from
+capture and remain absent at rollout.
+
+For a later narrowly approved repair, a fresh capture and plan may use
+`--preserve-existing-helpers` with the previous released repository commit as
+the three-way merge base. All four Permission helpers must already exist and
+match the exact committed candidate bytes. Their captured `before` and
+candidate `after` hashes are equal and are checked again at rollout. A missing
+or changed helper refuses before the plan directory is created; this option
+does not authorize helper upgrades or reviewed overrides. Without this flag,
+first installation still requires all four helpers to be absent. The two
+existing API/reader files retain their normal three-way merge and full runtime
+dependency fences. The existing controller already supports hash-pinned
+present helpers and retains their bytes and metadata through verified rollback.
+Use the prior Permission source commit as the base for the HTML classification
+repair; preserve accepted node overlays and the four current helper files.
 
 A conflict refuses with its source inputs and conflicted output preserved.
 After independently reviewing active, base, repository candidate and resolved
@@ -155,7 +169,8 @@ python3 -I -B deploy/permission/check-release.test.py
 ```
 
 These use temporary files and mocked services/SSH. They verify the six writes,
-four creation-only helpers, actual Permission import pins, complete source
+four creation-only helpers or explicitly preserved byte-identical helpers,
+actual Permission import pins, complete source
 fences, source drift/path refusals, retained metadata, partial-install rollback,
 socket/worker/API ordering, accepted worker coupling and verified restoration,
 Search restoration/deferred recovery, explicit conflict review, cross-product
