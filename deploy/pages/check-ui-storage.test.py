@@ -1060,6 +1060,62 @@ class RetirementTests(unittest.TestCase):
                     with self.assertRaises(ValueError): self.writer.decode_request(e.encoded(changed), 'a' * 64, source_sha)
 
 
+class LoadedUnitTests(unittest.TestCase):
+    def setUp(self):
+        self.writer = load('pages_ui_storage_writer', 'ui-storage.py')
+
+    def test_root_escaped_and_opaque_unit_names_are_positional_after_separator(self):
+        units = ['-.mount', '-.slice', r'dev-disk-by\x2duuid-accepted.device',
+                 r'var-lib-accepted\x2droot.mount', '--property=UnsafeOverride']
+        units += [f'fixture-{index}.service' for index in range(252)]
+        batches = []; expected = set()
+        def systemctl(args, **kwargs):
+            self.assertEqual(args[0], '/usr/bin/systemctl')
+            self.assertTrue(kwargs['check'])
+            if args[1] == 'list-units':
+                self.assertEqual(args[2:], ['--all', '--plain', '--no-legend', '--no-pager'])
+                return subprocess.CompletedProcess(args, 0, ''.join(f'{unit} loaded active running Fixture\n' for unit in units).encode(), b'')
+            self.assertEqual(args[:4], ['/usr/bin/systemctl', 'show', '--property=Id,FragmentPath,DropInPaths', '--'])
+            batch = args[4:]; batches.append(batch)
+            self.assertLessEqual(len(batch), 128)
+            rows = []
+            for unit in batch:
+                # Devices and some generated root units have no fragment.
+                fragment = '/run/systemd/transient/' + unit if unit.startswith('fixture-') else ''
+                dropin = '/etc/systemd/system/accepted.service.d/override.conf'
+                if fragment: expected.add(fragment)
+                expected.add(dropin)
+                rows.extend(['Id=' + unit, 'FragmentPath=' + fragment, 'DropInPaths=' + dropin, ''])
+            return subprocess.CompletedProcess(args, 0, '\n'.join(rows).encode(), b'')
+        with patch.object(self.writer.subprocess, 'run', side_effect=systemctl):
+            observed = self.writer.loaded_unit_paths()
+        self.assertEqual([unit for batch in batches for unit in batch], units)
+        self.assertEqual([len(batch) for batch in batches], [128, 128, 1])
+        self.assertEqual(observed, sorted(expected))
+
+    def test_loaded_unit_inventory_count_and_raw_byte_bounds_remain_enforced(self):
+        for mutation in ('count', 'bytes'):
+            with self.subTest(mutation=mutation):
+                output = (''.join(f'fixture-{index}.service loaded active running Fixture\n' for index in range(8193)).encode()
+                          if mutation == 'count' else b'x' * (2 * 1024 * 1024 + 1))
+                calls = []
+                def systemctl(args, **kwargs):
+                    calls.append(args)
+                    self.assertEqual(args[1], 'list-units')
+                    return subprocess.CompletedProcess(args, 0, output, b'')
+                with patch.object(self.writer.subprocess, 'run', side_effect=systemctl):
+                    with self.assertRaises(ValueError): self.writer.loaded_unit_paths()
+                self.assertEqual(len(calls), 1)
+
+    def test_loaded_unit_property_output_byte_bound_remains_enforced(self):
+        def systemctl(args, **kwargs):
+            output = b'-.mount loaded active mounted Root\n' if args[1] == 'list-units' else b'x' * (2 * 1024 * 1024 + 1)
+            if args[1] == 'show': self.assertEqual(args[-2:], ['--', '-.mount'])
+            return subprocess.CompletedProcess(args, 0, output, b'')
+        with patch.object(self.writer.subprocess, 'run', side_effect=systemctl):
+            with self.assertRaises(ValueError): self.writer.loaded_unit_paths()
+
+
 class LockObservationTests(unittest.TestCase):
     def setUp(self):
         self.writer = load('pages_ui_storage_writer', 'ui-storage.py')

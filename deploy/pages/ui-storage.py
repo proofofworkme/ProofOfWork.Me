@@ -148,10 +148,10 @@ def loaded_unit_paths():
     r=subprocess.run(['/usr/bin/systemctl','list-units','--all','--plain','--no-legend','--no-pager'],env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30,check=True)
     E.require(len(r.stdout)<=2*1024**2,'Loaded unit inventory exceeds bound')
     units=[line.split()[0] for line in r.stdout.decode().splitlines() if line.split()]
-    E.require(len(units)<=8192 and all(not u.startswith('-') for u in units),'Loaded unit count/name bound exceeded')
+    E.require(len(units)<=8192,'Loaded unit count bound exceeded')
     result=set()
     for start in range(0,len(units),128):
-        r=subprocess.run(['/usr/bin/systemctl','show','--property=Id,FragmentPath,DropInPaths',*units[start:start+128]],env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30,check=True)
+        r=subprocess.run(['/usr/bin/systemctl','show','--property=Id,FragmentPath,DropInPaths','--',*units[start:start+128]],env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30,check=True)
         E.require(len(r.stdout)<=2*1024**2,'Loaded unit path inventory exceeds bound')
         for line in r.stdout.decode().splitlines():
             if line.startswith('FragmentPath=') or line.startswith('DropInPaths='):

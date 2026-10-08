@@ -137,7 +137,11 @@ bytes and timer states. Bounded process scans cover cwd/root/exe, open/deleted
 FDs, maps and command lines, plus every readable process mount namespace's source
 root and mount target. Configured operator/unit/cron roots and all loaded native
 or transient systemd FragmentPath/DropInPaths are checked. Exact `/dev/null`
-mask targets are qualified as their root-owned character device; secret files,
+mask targets are qualified as their root-owned character device. Loaded unit
+names remain opaque whitespace-separated inventory tokens, including the root
+units `-.mount`/`-.slice` and escaped device/mount names; `systemctl show` receives
+an explicit `--` before all unit arguments while retaining inventory byte/count
+bounds. Secret files,
 unreadable sources and exceeded bounds refuse instead of weakening the fence.
 
 Capacity admission charges 32 MiB/128 inodes for durable operation evidence and
