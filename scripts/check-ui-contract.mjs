@@ -521,7 +521,7 @@ const { APP_LINKS, APP_MENU_GROUPS } = await import(
   `data:text/javascript;base64,${Buffer.from(appLinksRuntimeSource).toString("base64")}`
 );
 const expectedAppMenus = [
-  ["UTILITY", ["COMPUTER", "DESKTOP", "BROWSER", "CODE", "JOBS"]],
+  ["UTILITY", ["COMPUTER", "DESKTOP", "BROWSER", "PAGES", "CODE", "JOBS"]],
   ["ID&SOC", ["ID", "DNS", "BOOST", "PUBLISH"]],
   ["FINANCE", ["WALLET", "AMO", "CREDIT", "WORK", "INFINITY", "INCEPTION"]],
   ["INSIGHTS", ["LOG", "GROWTH", "SEARCH"]],
@@ -1881,6 +1881,14 @@ expect(
 expect(
   "Browser iframes do not grant clipboard write to rendered pages",
   !/allow="clipboard-write"/.test(app),
+);
+expect(
+  "standalone and Computer Browser share verified DNS page-link loading",
+  /fetchBrowserTargetPage\(txid, targetNetwork, controller\.signal\)/.test(browserAppBlock) &&
+    /fetchBrowserTargetPage\(txid, network, controller\.signal\)/.test(browserWorkspaceBlock) &&
+    /params\.set\(isName \? "name" : "txid", normalizedTxid\)/.test(app) &&
+    /page\.dnsLink\.name/.test(browserAppBlock) && /page\.dnsLink\.name/.test(browserWorkspaceBlock) &&
+    /if \(!page\.confirmed\) throw new Error/.test(app),
 );
 expect(
   "confirmed and pending Browser pages share one static iframe renderer",

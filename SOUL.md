@@ -344,6 +344,21 @@ Future agents must preserve these unless the user explicitly asks for a migratio
   changes, direct transfers, and trading stay in AMO's DNS tab.
 - `desktop.proofofwork.me` is the public read-only file desktop.
 - `browser.proofofwork.me` is the standalone public HTML renderer.
+- Pages is locally prepared for `pages.proofofwork.me` and Computer's Pages
+  workspace. It is the HTML page/app authoring surface over existing confirmed
+  identity, Files, Browser, and Mail tools. Static preview remains the default;
+  explicit inline-script execution stays in an opaque sandbox with no network,
+  wallet provider, or parent signing lane. Publishing stages existing Mail
+  review and local wallet signing without replacing an unsent Mail draft.
+  HTML publication adds no new carrier or duplicate Growth/WORK value. Pages
+  also prepares owner-reviewed root `.pow` page links through the additive
+  `pwdns1:page1` candidate. Confirmed ownership epochs govern set/clear and reset
+  on every transfer or purchase; payment resolution stays independent. Browser
+  follows only confirmed, covered links to independently verified static HTML.
+  The approved page-link opening is 970426, with independently complete raw
+  discovery required for writes and routing. Local UI and fixtures never establish
+  real-chain authority. The release must verify the hostname and all 21 managed
+  surfaces under the contract documented in `PAGES.md`.
 - `boost.proofofwork.me` is the public Proof-ranked social feed over confirmed `pwb1:` records; original posts reuse Mail/Files, and paid actions and asset trades use the Boost protocol. The feed leads with people and posts; proof evidence and exact signal lanes remain inspectable through disclosures. Compact display quantities never become ranking, payment, or signing authority.
 - `publish.proofofwork.me` is text-only blogging over that same social record. Give writers a dedicated page, the remaining OP_RETURN script budget, private drafts, exact review and local signing. Mail Compose opens the shared writer while preserving its separate Mail draft; article self-sends appear in Inbox and Sent with verified full text. Boost and Publish share selected confirmed PowIDs, public profiles, likes, replies, reboosts and follows; preserve one transaction ID and count shared payments once. [PUBLISH.md](PUBLISH.md) specifies the article and identity bridge.
 - `code.proofofwork.me` is the public Code v1 source
@@ -371,6 +386,10 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - DNS mutation price: `546` proofs for resolver updates, direct transfers, AMO listings, seals, delistings, and buyer-funded AMO transfers.
 - Current DNS event: `pwdns1:r1:<name-base64url>:<owner-address>:<resolver-address>`
 - DNS names are displayed with `.pow`, but users type the bare prefix and the app implies the suffix.
+- Root DNS page links are a separately gated V1 candidate. Set/clear requires
+  an owner self-payment of at least 546 proofs and binds the current confirmed
+  ownership event. Resolver recipients never control links, pending records
+  never route, and incomplete coverage never becomes false empty state.
 - Current mail prefix: `pwm1:`
 - Mailbox projections must preserve subject/body separation: `pwm1:s` supplies the subject, `pwm1:m` supplies the body, and `mail_items.body_text` plus UI memo rendering must not use Log display detail as a substitute for decoded message content.
 - Current credit prefix: `pwt1:`
@@ -654,3 +673,7 @@ fees separate. A `pwb1:tip` identifies the target and amount; its same-transacti
 Mail carrier owns canonical economics once. Tip observations never activate a
 separate Boost accounting version. Persist signed transaction evidence before
 broadcast and preserve unknown-outcome retry protection.
+
+- 2026-10-08: A product release is one source state across production, GitHub `main`, the primary local `main` checkout and the local preview. Every release must finish the sync, rebuild/restart the local app, and verify exact commit provenance on all four before it is called complete. Preserve concurrent local work in recoverable custody, integrate current `main`, and keep accepted node overlays through their guarded source/hash provenance; do not leave the user on an older audit branch or stale build after deploying a new product.
+
+The final release synchronization check is `npm run check:release-sync`. It verifies actual GitHub `main`, clean primary local `main`, production manifest commit/tree, and clean source provenance from the local preview plus public Pages and Computer. An unavailable or failed check leaves the release incomplete; fix the mismatch before announcing.

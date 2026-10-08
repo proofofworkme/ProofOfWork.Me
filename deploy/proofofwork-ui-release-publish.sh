@@ -345,6 +345,12 @@ if ((${#surfaces[@]} != 20)); then
   echo "UI publisher surface set must contain exactly 20 entries." >&2
   exit 70
 fi
+v3_surfaces=("${surfaces[@]}")
+pages_surfaces=("${surfaces[@]}" pages)
+if ((${#pages_surfaces[@]} != 21)); then
+  echo "UI V4 publisher surface set must contain exactly 21 entries." >&2
+  exit 70
+fi
 pre_jobs_surfaces=()
 for surface in "${surfaces[@]}"; do
   [[ "${surface}" == "jobs" ]] || pre_jobs_surfaces+=("${surface}")
@@ -427,10 +433,18 @@ for surface in "${surfaces[@]}"; do
   surface_seen["${surface}"]=1
 done
 unset surface_seen surface
+if [[ -e "${stage_root}/proofofwork-pages" || -L "${stage_root}/proofofwork-pages" ]]; then
+  surfaces=("${pages_surfaces[@]}")
+elif [[ -e "${www_root}/proofofwork-pages" || -L "${www_root}/proofofwork-pages" ]]; then
+  echo "A V3 candidate cannot replace a live V4 Pages release; use verified rollback." >&2
+  exit 1
+fi
 
 verify_prior_asset_compatibility() {
   local -a prior_surfaces=("${surfaces[@]}")
-  if [[ ! -e "${www_root}/proofofwork-boost" && ! -L "${www_root}/proofofwork-boost" ]]; then
+  if [[ -e "${www_root}/proofofwork-pages" || -L "${www_root}/proofofwork-pages" ]]; then
+    prior_surfaces=("${pages_surfaces[@]}")
+  elif [[ ! -e "${www_root}/proofofwork-boost" && ! -L "${www_root}/proofofwork-boost" ]]; then
     prior_surfaces=("${pre_boost_surfaces[@]}")
   elif [[ ! -e "${www_root}/proofofwork-dns" && ! -L "${www_root}/proofofwork-dns" ]]; then
     prior_surfaces=("${legacy_surfaces[@]}")
@@ -442,8 +456,10 @@ verify_prior_asset_compatibility() {
     prior_surfaces=("${pre_code_surfaces[@]}")
   elif [[ ! -e "${www_root}/proofofwork-jobs" && ! -L "${www_root}/proofofwork-jobs" ]]; then
     prior_surfaces=("${pre_jobs_surfaces[@]}")
+  else
+    prior_surfaces=("${v3_surfaces[@]}")
   fi
-  # Bound the twenty-root compatibility scan to 120 seconds so it cannot
+  # Bound the managed-root compatibility scan to 120 seconds so it cannot
   # hold the deployment lock indefinitely. The manifest-driven checks below
   # remain authoritative; timeout is a safe failure that leaves production
   # untouched. Keep the five-second kill grace and independent asset limits.

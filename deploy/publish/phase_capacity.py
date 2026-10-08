@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Conservative 20-surface candidate/archive budgets; no filesystem mutations.
+"""Conservative V3/V4 candidate/archive budgets; no filesystem mutations.
 
 The release plan pins this helper source and its installed stager authority.
 Historical phase helpers remain unchanged.
@@ -18,6 +18,7 @@ import stat
 import types
 
 SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split()
+PAGES_SURFACES = [*SURFACES, 'pages']
 EXPECTED_STAGER_SHA256 = None
 
 
@@ -30,7 +31,9 @@ def tree_budget(root, *, owner=0, managed=False):
     base = root.lstat()
     if not stat.S_ISDIR(base.st_mode) or root.resolve() != root:
         raise ValueError('Capacity root is not canonical')
-    names = [('proofofwork-' if managed else '') + name for name in SURFACES]
+    pages = root / ('proofofwork-pages' if managed else 'pages')
+    surfaces = PAGES_SURFACES if os.path.lexists(pages) else SURFACES
+    names = [('proofofwork-' if managed else '') + name for name in surfaces]
     if not managed and sorted(p.name for p in root.iterdir()) != sorted(names):
         raise ValueError('Incoming surface set differs from the complete managed set')
     block = os.statvfs(root).f_frsize
@@ -175,7 +178,7 @@ def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent
     stager.reject_nested_mounts(incoming_root, mountinfo)
     stager.validate_exact_surfaces_root(incoming_root, owner,
                                        stager.MAXIMUM_PAYLOAD_ENTRIES, stager.MAXIMUM_PAYLOAD_BYTES)
-    order = stager.SURFACES
+    order = stager.payload_surface_names(incoming_root) if hasattr(stager, 'payload_surface_names') else stager.SURFACES
     live_surfaces = stager.live_surface_names(live_root)
     snapshot, seen_inodes, incoming = {}, set(), {}
     # Private staging parent and publication directory-entry overhead. Root and

@@ -29,8 +29,10 @@
     "build:bond-hard-price-declaration": "node scripts/build-bond-hard-price-declaration.mjs",
     "prepare:bond-hard-price-declaration": "node scripts/prepare-bond-hard-price-declaration.mjs",
     "check:work-amo-v8": "node scripts/check-work-amo-v8.mjs && node scripts/check-work-amo-v8-gates.mjs",
+    "check:wallet-read-snapshot-pg": "node scripts/check-wallet-read-snapshot-postgres.test.mjs",
     "check:wallet-utxo-refresh": "node --test scripts/check-wallet-utxo-refresh.mjs",
     "check:dns-subdomains": "node scripts/check-dns-subdomains.mjs && node --test scripts/check-dns-subdomain-raw.test.mjs server/dns-subdomain-discovery.test.mjs",
+    "check:dns-pages": "node --test scripts/check-dns-page-links.test.mjs scripts/check-dns-page-links-raw.test.mjs server/dns-page-link-discovery.test.mjs src/features/pages/dnsPageLinkClient.test.mjs",
     "check:audit19-accounting": "node server/canonical-credit-aggregates.test.mjs && node server/work-wallet-capacity.test.mjs && node scripts/check-h19-work-capacity-admission.mjs && node scripts/check-h19-work-capacity-client.mjs",
     "check:work-amo-v8-peak": "node --expose-gc scripts/check-work-amo-v8-peak.mjs",
     "check:work-amo-v8-peak:full": "node --expose-gc scripts/check-work-amo-v8-peak.mjs --full",
@@ -47,7 +49,7 @@
     "check:ui:browser": "playwright test --config playwright.ui.config.mjs",
     "check:hardening": "node scripts/check-hardening-contract.mjs && python3 -B scripts/check-backup-capacity.py",
     "check:node-ops": "node scripts/check-node-ops-contract.mjs && python3 -B scripts/check-storage-trend.py && python3 -B scripts/check-api-observation-health.py",
-    "check:ui-ops": "node scripts/check-ui-ops-contract.mjs && python3 -B scripts/check-ui-verified-retention.py",
+    "check:ui-ops": "node scripts/check-ui-ops-contract.mjs && python3 -B scripts/check-ui-verified-retention.py && python3 -B scripts/check-ui-pages-release.py",
     "check:ui-capacity": "python3 -B scripts/check-ui-capacity.py && python3 -B scripts/check-ui-capacity-boundaries.py",
     "check:api-truth": "node scripts/check-api-truth-contract.mjs && node scripts/check-audit28-regressions.mjs && node --test server/canonical-seal-time.test.mjs scripts/check-summary-route-latency.test.mjs",
     "check:canonical-order": "node scripts/check-canonical-order.mjs",
@@ -134,7 +136,9 @@
     "check:audit28-followups": "node --test scripts/check-marketplace-read-budget.test.mjs scripts/check-summary-route-latency.test.mjs && python3 -B scripts/check-audit28-persistent-retention.py && python3 -B scripts/check-audit28-restore-watchdog.py && python3 -B scripts/check-audit28-logical-backup-pins.py",
     "check:audit29-remediation": "node --test server/registry-pending-times.test.mjs scripts/check-audit29-ui-regressions.test.mjs && npm run check:audit19-accounting && python3 -B scripts/check-backup-supervision.py && python3 -B scripts/check-approved-retirements.py",
     "check:audit29-release": "node --test deploy/audit29/verify-candidate.test.mjs && python3 -I -B deploy/audit29/check-release.test.py && python3 -I -B deploy/audit29/check-private-verify.test.py && python3 -I -B scripts/check-audit29-ops-install.py && python3 -B scripts/check-audit29-cleanup.py && python3 -B scripts/check-postgres-query-health.py",
-    "check:audit30-first-batch": "npm run check:fee-rate-precision && python3 -I -B scripts/check-approved-retirements.py && python3 -I -B scripts/check-audit28-persistent-retention.py && python3 -I -B scripts/check-retention-service-namespace.py && python3 -I -B deploy/audit30/check-install-retention.test.py && python3 -I -B deploy/audit30/check-ui-storage.test.py && python3 -I -B deploy/audit30/ui-release/check-ui-release.test.py"
+    "check:audit30-first-batch": "npm run check:fee-rate-precision && python3 -I -B scripts/check-approved-retirements.py && python3 -I -B scripts/check-audit28-persistent-retention.py && python3 -I -B scripts/check-retention-service-namespace.py && python3 -I -B deploy/audit30/check-install-retention.test.py && python3 -I -B deploy/audit30/check-ui-storage.test.py && python3 -I -B deploy/audit30/ui-release/check-ui-release.test.py",
+    "check:pages:deploy": "python3 -I -B deploy/pages/check-scoped-node.test.py && python3 -I -B deploy/pages/check-release.test.py",
+    "check:release-sync": "node scripts/check-release-sync.mjs"
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",

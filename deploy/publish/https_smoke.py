@@ -33,6 +33,7 @@ HOSTS = {
     'jobs':'jobs.proofofwork.me',
     'work':'work.proofofwork.me',
 }
+PAGES_HOSTS = {**HOSTS, 'pages': 'pages.proofofwork.me'}
 MAX_FILE_BYTES = 64*1024**2
 MAX_ARCHIVE_BYTES = 2*1024**3
 MAX_ENTRIES = 10000
@@ -130,7 +131,11 @@ def check(args,receipt):
         key,value = line.split('=',1)
         if key in fields: raise ValueError('Duplicate active manifest key')
         fields[key] = value
-    expected = {'format':'proofofwork-ui-release-v3','release_id':args.release_id,
+    release_format = fields.get('format')
+    if release_format not in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4'):
+        raise ValueError('Unsupported manifest format')
+    hosts = PAGES_HOSTS if release_format == 'proofofwork-ui-release-v4' else HOSTS
+    expected = {'format':release_format,'release_id':args.release_id,
                 'commit':args.commit,'source_tree':args.tree,'archive_name':archive_path.name,
                 'archive_sha256':args.archive_sha256}
     if any(fields.get(k)!=v for k,v in expected.items()): raise ValueError('Manifest identity differs')
@@ -140,7 +145,7 @@ def check(args,receipt):
     if sidecar != [args.archive_sha256,archive_path.name]: raise ValueError('Archive checksum sidecar differs')
     receipt.update({'manifestSha256':hashlib.sha256(raw).hexdigest(),'archiveBytes':before.st_size,
                     'sidecarAndProvenanceVerified':True})
-    indices = {}; seen = set(); surface_set = set(); files = []
+    indices = {}; seen = set(); surface_set = set(); files = []; source_provenance = set()
     total_declared = 0
     with tarfile.open(archive_path,'r:gz') as archive:
         members = archive.getmembers()
@@ -159,7 +164,7 @@ def check(args,receipt):
                 if not member.isdir(): raise ValueError('Archive surfaces root is not a directory')
                 continue
             surface = parts[1]
-            if surface not in set(HOSTS)|{'nft'}: raise ValueError('Unexpected archive surface: '+surface)
+            if surface not in set(hosts)|{'nft'}: raise ValueError('Unexpected archive surface: '+surface)
             surface_set.add(surface)
             if not member.isdir() and not member.isfile(): raise ValueError('Archive contains a link/special member')
             if member.isdir(): continue
@@ -167,8 +172,22 @@ def check(args,receipt):
             total_declared += member.size
             if total_declared>MAX_ARCHIVE_BYTES: raise ValueError('Uncompressed archive byte bound exceeded')
             if surface=='nft': continue
+            if release_format == 'proofofwork-ui-release-v4' and parts[2:] == ('source-provenance.json',):
+                if member.size > 65536: raise ValueError('Source provenance exceeds 64 KiB')
+                with archive.extractfile(member) as source: provenance_raw = source.read(member.size + 1)
+                if len(provenance_raw) != member.size: raise ValueError('Source provenance size differs')
+                provenance = json.loads(provenance_raw)
+                if (type(provenance) is not dict or provenance.get('format') != 'proof-of-work-ui-source-v1' or
+                        provenance.get('commit') != args.commit or provenance.get('tree') != args.tree or
+                        provenance.get('trackedDirty') is not False):
+                    raise ValueError('Source provenance differs from exact clean release source: ' + surface)
+                source_provenance.add(surface)
             files.append((member,surface,'/'.join(parts[2:])))
-        if surface_set != set(HOSTS)|{'nft'}: raise ValueError('Archive surface set differs from all 19 managed roots')
+        if surface_set != set(hosts)|{'nft'}: raise ValueError('Archive surface set differs from the complete managed roots')
+        if release_format == 'proofofwork-ui-release-v4':
+            if source_provenance != set(hosts): raise ValueError('V4 source provenance is missing for one or more public surfaces')
+            receipt['sourceProvenanceVerified'] = True
+            receipt['sourceProvenanceSurfaces'] = len(source_provenance)
         receipt['archiveFilesSkippedNft'] = sum(1 for m in members if m.isfile() and PurePosixPath(m.name).parts[1]=='nft')
         receipt['expectedPublicFiles'] = len(files)
         # Extract on one thread, then keep only a bounded batch of <=8 expected
@@ -182,7 +201,7 @@ def check(args,receipt):
                     if relative=='index.html':
                         if surface in indices: raise ValueError('Duplicate surface index')
                         indices[surface] = data
-                    url = 'https://'+HOSTS[surface]+'/'+urllib.parse.quote(relative,safe='/')
+                    url = 'https://'+hosts[surface]+'/'+urllib.parse.quote(relative,safe='/')
                     batch[pool.submit(compare_https,url,data,args.timeout)] = url
                 errors = []
                 for future in as_completed(batch):
@@ -192,9 +211,9 @@ def check(args,receipt):
                     except Exception as error: errors.append(error)
                 if errors: raise errors[0]
     if identity(archive_path.lstat()) != identity(before): raise ValueError('Archive changed during smoke')
-    if set(indices)!=set(HOSTS): raise ValueError('One or more public surface indices are missing')
+    if set(indices)!=set(hosts): raise ValueError('One or more public surface indices are missing')
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        batch = {pool.submit(compare_https,'https://'+host+'/',indices[surface],args.timeout):surface for surface,host in HOSTS.items()}
+        batch = {pool.submit(compare_https,'https://'+host+'/',indices[surface],args.timeout):surface for surface,host in hosts.items()}
         errors = []
         for future in as_completed(batch):
             try:
@@ -203,7 +222,7 @@ def check(args,receipt):
         if errors: raise errors[0]
     receipt['verifiedResponseBytes'] += compare_https('https://proofofwork.me/',indices['landing'],args.timeout,apex=True)
     receipt['apexRedirectVerified'] = True
-    receipt['publicSurfaces'] = len(HOSTS)
+    receipt['publicSurfaces'] = len(hosts)
     # Recheck adjacent local identity after network reads, without new authority.
     if raw != bounded_local(active_path,65536) or raw != bounded_local(Path(str(archive_path)+'.provenance'),65536):
         raise ValueError('Adjacent release evidence changed during smoke')

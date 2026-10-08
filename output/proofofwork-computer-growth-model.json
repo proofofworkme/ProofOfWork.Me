@@ -275,6 +275,16 @@
       "source": "MAIL_ORGANIZATION.md Browser rules"
     },
     {
+      "product": "pages",
+      "name": "Pages",
+      "role": "shared",
+      "owner": "Browser authoring",
+      "modeledLane": "browserSats",
+      "activity": "HTML page/app authoring, local previews, and publication through existing Mail/Files",
+      "assumption": "Uses the existing HTML-publication usage, value, elasticity, and blockspace assumptions once. Drafts, previews, imports, and repeat views add no chain value or writes.",
+      "source": "PAGES.md; existing HTML publication basket"
+    },
+    {
       "product": "boost",
       "name": "Boost",
       "role": "economic",

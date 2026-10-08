@@ -34,7 +34,7 @@ const VIEWPORT_WIDTHS = [
 ];
 const MOBILE_VIEWPORT_WIDTHS = VIEWPORT_WIDTHS.filter((width) => width <= 620);
 const PUBLIC_APP_MENUS = [
-  { label: "UTILITY", products: ["COMPUTER", "DESKTOP", "BROWSER", "CODE"] },
+  { label: "UTILITY", products: ["COMPUTER", "DESKTOP", "BROWSER", "PAGES", "CODE", "JOBS"] },
   { label: "ID&SOC", products: ["ID", "DNS", "BOOST", "PUBLISH"] },
   { label: "FINANCE", products: ["WALLET", "AMO", "CREDIT", "WORK", "INFINITY", "INCEPTION"] },
   { label: "INSIGHTS", products: ["LOG", "GROWTH", "SEARCH"] },
@@ -996,7 +996,7 @@ async function assertMobileDomainNav(page, label) {
     await expect(dialog.getByText(group.label, { exact: true })).toBeVisible();
   }
   const products = dialog.getByRole("menuitem");
-  await expect(products).toHaveCount(17);
+  await expect(products).toHaveCount(19);
   for (const [index, product] of PUBLIC_APP_MENUS.flatMap((group) => group.products).entries()) {
     await expect(products.nth(index)).toContainText(product);
   }
@@ -2357,7 +2357,7 @@ test("shared header and footer menus preserve approved products and keyboard nav
       const trigger = page.locator(".topbar .app-menu-trigger");
       await trigger.click();
       const popup = page.locator(".grouped-domain-popover:visible");
-      await expect(popup.getByRole("menuitem")).toHaveCount(17);
+      await expect(popup.getByRole("menuitem")).toHaveCount(19);
       await assertLocatorWithinViewport(page, popup, `compact applications at ${width}px`);
       await page.keyboard.press("Escape");
       await expect(trigger).toBeFocused();
@@ -2465,7 +2465,7 @@ test("Boost mobile menus stay above fixed navigation and contain their products"
     const applicationSheet = page.getByRole("dialog", { name: "Applications" });
     await expect(applicationSheet).toBeVisible();
     const products = applicationSheet.getByRole("menuitem");
-    await expect(products).toHaveCount(17);
+    await expect(products).toHaveCount(19);
     await products.first().focus();
     await page.keyboard.press("End");
     const search = products.last();

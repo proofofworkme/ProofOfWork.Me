@@ -163,6 +163,15 @@ and broadcast were not exercised during release verification.
 
 Jobs changes also require [JOBS.md](JOBS.md), its exact body schema and authority/replay rules. Jobs uses ordinary Mail/Files payments once and introduces no escrow, registry fee or economic formula.
 
+Pages is the approved HTML page/app authoring product for
+`pages.proofofwork.me` and Computer's Pages workspace. It reuses confirmed
+identity, verified Code HTML, Files, Browser, and reviewed Mail publication.
+See [`PAGES.md`](PAGES.md) for execution isolation, draft storage, publication
+and root `.pow` page links. Mainnet link admission is pinned to opening 970426
+and requires complete independent canonical coverage. Production acceptance
+requires the exact V4/21 release and the mandatory local/GitHub/main/source
+synchronization check.
+
 ### Audit Workflow
 
 Audit standalone public apps before the full Computer shell: Home, IDs, DNS, Desktop,
@@ -397,6 +406,19 @@ discovery, and replay rules.
 - Adds a standalone public Browser app that loads a txid, renders HTML from a message body or verified `text/html` attachment in a sandbox, and exposes a Computer-native HTML template.
 - Keeps wallet signing outside Browser-rendered HTML pages.
 - Exposes Browser as a first-class Computer sidebar workspace, so HTML pages are part of the ProofOfWork Computer and not only a standalone subdomain.
+- Adds the locally prepared Pages authoring surface and Computer workspace for
+  HTML/CSS/JavaScript source, templates, local drafts, import/export, confirmed
+  identity insertion, and verified HTML Files reuse. Static Browser preview is
+  the default; explicit Run app uses an isolated inline-script iframe without
+  network or wallet access. Publication stages into existing Mail review and
+  local wallet signing, preserving any existing unsent Mail draft.
+- Prepares an owner-controlled root `.pow` page-link candidate: Pages reviews
+  set/clear against the current confirmed ownership epoch, and Browser can
+  resolve `alice.pow` to independently verified static HTML from its confirmed
+  linked txid. Payment resolver state stays separate; transfers invalidate
+  prior links, pending actions never route, and complete checkpoint coverage
+  is required. Mainnet admission opens at 970426 only with complete independent
+  canonical page-link coverage.
 - Launches Boost as a 140-character ProofOfWork social protocol from Mail compose and the standalone “What’s happening?” composer. Original posts self-send to the sender address, while likes, replies, and reboosts pay at least 546 proofs to the current Boost owner; each confirmed owner-directed payment is added to the original Boost’s proof signal. Posting, replies, likes, and reboosts expose the shared miner-fee-rate control instead of fixing transactions at the 1 sat/vB default. Follows and unfollows send their existing 546-proof payment to the addressed profile. Reboost and quote interactions render the referenced post, optimistic action state, detail/reply views, and transaction status or failure in the shared status bar. The public Boost app can connect UniSat for paid actions, signed display-ID intent, current-owner transfers, follower/following timelines, and owner listing actions after the original Boost tx confirms. The Boost registry receives its 546-proof mutation fee only for direct transfers and listing-sale mutations; confirmed ownership changes route future engagement revenue to the new owner, while historical registry-paid social actions remain replayable.
 - Recognizes the canonical `Welcome to ProofOfWork.Me.html` transaction by txid only after its body or attachment has been returned and verified from chain-backed API data; the client does not synthesize replacement file contents.
   Public Desktop fetches the canonical welcome transaction independently for every mainnet address lookup, including empty addresses. Its confirmed HTML appears as a shared system reference, separate from the address-owned public file count. Failed verification shows an explicit unavailable notice and Refresh retries; other networks do not inherit the mainnet reference. The original transaction bytes, sender, timestamp, proof value, and Browser link are preserved.
@@ -835,6 +857,13 @@ To preview the public Browser locally:
 http://localhost:5173/?browser=1
 ```
 
+To preview the locally prepared Pages app and Computer workspace:
+
+```text
+http://localhost:5173/?pages=1
+http://localhost:5173/?folder=pages
+```
+
 To preview the public Boost app locally:
 
 ```text
@@ -902,6 +931,7 @@ DNS -> /?dns-launch=1
 Computer -> /
 Desktop -> /?desktop=1
 Browser -> /?browser=1
+Pages -> /?pages=1
 AMO -> /?marketplace=1
 Credit -> /?credit=1
 Wallet -> /?wallet=1
@@ -947,6 +977,15 @@ To build the public Browser app for production:
 ```bash
 VITE_BROWSER_ONLY=1 VITE_POW_API_BASE=https://browser.proofofwork.me npm run build
 ```
+
+To build the Pages candidate for a separately approved production rollout:
+
+```bash
+VITE_PAGES_ONLY=1 VITE_POW_API_BASE=https://pages.proofofwork.me npm run build
+```
+
+The focused build does not provision the hostname or extend the current
+versioned production release-surface contract. See [`PAGES.md`](PAGES.md).
 
 To build the public Boost app for production:
 
@@ -1202,6 +1241,7 @@ Important implementation points:
 - Root landing route switch: `isLandingRoute()` in `src/app/routeRegistry.ts`.
 - Public Desktop route switch: `isDesktopRoute()` in `src/app/routeRegistry.ts`.
 - Public Browser route switch: `isBrowserRoute()` in `src/app/routeRegistry.ts`.
+- Pages route switch: `isPagesRoute()` in `src/app/routeRegistry.ts`.
 - Public Boost route switch: `isBoostRoute()` in `src/app/routeRegistry.ts`.
 - Standalone AMO route switch: `isMarketplaceRoute()` in `src/app/routeRegistry.ts` (retained internal compatibility name).
 - Standalone Credit route switch: `isTokenRoute()` in `src/app/routeRegistry.ts`.
@@ -1218,6 +1258,7 @@ Important implementation points:
 - DNS-only deploy switch: `VITE_DNS_LAUNCH_ONLY=1`.
 - Desktop-only deploy switch: `VITE_DESKTOP_ONLY=1`.
 - Browser-only deploy switch: `VITE_BROWSER_ONLY=1`.
+- Pages-only candidate build switch: `VITE_PAGES_ONLY=1`.
 - Boost-only deploy switch: `VITE_BOOST_ONLY=1`.
 - AMO-only deploy switch: `VITE_MARKETPLACE_ONLY=1` (retained internal compatibility name).
 - Credit-only deploy switch: `VITE_TOKEN_ONLY=1`.
@@ -1231,6 +1272,9 @@ Important implementation points:
 - Local contacts storage: `CONTACTS_KEY`, `loadContacts()`, `saveContacts()`, and `ContactsWorkspace` in `src/App.tsx`.
 - Public Desktop UI: `DesktopApp`, `DesktopWorkspace`, `publicDesktopMail()`, and `fetchAddressMail()` in `src/App.tsx`.
 - Public Browser UI: `BrowserApp`, `fetchBrowserPage()`, `browserPageFromTransaction()`, and `browserTemplateHtml()` in `src/App.tsx`.
+- Pages UI and isolated app preview: `src/features/pages/`, with existing
+  Browser, Files, confirmed-ID, and Mail adapters in `src/App.tsx`. Product
+  boundaries and local release status: `PAGES.md`.
 - Public Boost UI: `BoostRoot` in `src/features/boost/BoostRoot.tsx`.
 - In-app file preview UI: `AttachmentViewer`, `FileInspector`, `attachmentPreviewKind()`, and `attachmentText()` in `src/App.tsx`.
 - ID write format: `buildIdRegistrationPayload()`.
@@ -1312,3 +1356,5 @@ resolves it. Failed status reads preserve evidence. Confirmation, pending and
 dropped status remain distinct; wallet rejection retains the entered amount.
 The article reader has a spaced header and an accessible Back to articles arrow
 on standalone Publish and Computer.
+
+Release completion requires the same released source commit in production UI provenance, GitHub `main`, the primary local `main` checkout and its rebuilt preview. Follow the mandatory synchronization gate in [OP_RETURN_INFRASTRUCTURE.md](OP_RETURN_INFRASTRUCTURE.md#mandatory-release-synchronization) and preserve local work before switching branches.

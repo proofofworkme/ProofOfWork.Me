@@ -289,6 +289,10 @@ passed on their own.
 Behavior:
 
 - Accept a ProofOfWork txid on mainnet, testnet4, or testnet3.
+- Accept a full root `.pow` name on Mainnet through the separately gated page-link
+  candidate, require complete confirmed root/link coverage, and verify the linked
+  HTML transaction independently before static rendering. Pending, missing,
+  cleared, or invalidated links never become active routes.
 - Fetch the transaction through the ProofOfWork API when configured.
 - Render HTML-like message bodies directly from `pwm1:m` chunks.
 - Reconstruct HTML attachments through the same size and SHA-256 checks as Files/Desktop.
@@ -364,6 +368,44 @@ pending receipts and stale parents do not move the head. Local review uses the
 shared funding, fee, signature and unknown-outcome recovery contracts. The
 production release and actual unexercised live transaction boundaries are
 recorded in [audits/2026-10-07-code-v1-production-release.md](audits/2026-10-07-code-v1-production-release.md).
+
+## Pages
+
+Pages is the locally prepared HTML authoring surface at `/?pages=1` and the
+Computer workspace at `/?folder=pages`, intended for `pages.proofofwork.me`.
+It keeps local page/app drafts separate from Mail drafts, supports full HTML
+source and templates, reuses verified HTML Files and the Browser transaction
+reader, and inserts identity markup only after confirmed-ID resolution.
+
+Static Browser preview is the default. Imported and chain-loaded source never
+auto-runs. The explicit Run app action permits inline JavaScript only in an
+opaque, network-blocked iframe with no wallet provider or signing bridge.
+Source, draft, account, and network changes stop execution. Published Browser
+pages retain the existing static sandbox.
+
+Review publication stages HTML into the existing Mail composer on the current
+origin. An unsent Mail draft blocks staging instead of being overwritten.
+Mail owns destinations, proof payments, exact transaction review, local wallet
+signing, and Outbox recovery. Publication uses the existing `pwm1:m` body or
+verified `pwm1:a` file attachment carrier, so confirmed Pages output follows
+the normal Files/Desktop and Browser rules. No new protocol fee or second
+Growth/WORK value contribution is created.
+
+The local Pages candidate includes root DNS page-link set/clear review. It uses
+an existing confirmed HTML txid, not unsaved source; only unchanged confirmed
+imports prefill the field. Mainnet owners review the exact `pwdns1:page1` record,
+current ownership epoch, at least 546 proofs paid back to themselves, and miner
+fee before local signing. Browser resolves only confirmed active links with
+complete checkpoint coverage. Existing root payment resolution stays intact,
+and every accepted transfer or purchase invalidates a prior link. Pending
+broadcasts and restored browser-local receipts remain visibility/task recovery,
+not authority. Mainnet activation is pinned to opening height 970426 and
+requires complete canonical page-link coverage; see [`PROOFOFWORK_DNS.md`](PROOFOFWORK_DNS.md).
+
+Pages source drafts are browser-local and scoped by network/address, including
+a disconnected scope. They are outside the current organization-backup
+allowlist; HTML download/import provides source portability. See
+[`PAGES.md`](PAGES.md) for the complete local product and release boundary.
 
 ## Boost Profile Images
 

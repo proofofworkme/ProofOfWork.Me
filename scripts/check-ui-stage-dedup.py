@@ -218,14 +218,15 @@ class StagerIntegrationTests(unittest.TestCase):
                                     (stage.PRE_SEARCH_SURFACES, "publish"),
                                     (stage.PRE_CODE_SURFACES, "search"),
                                     (stage.PRE_JOBS_SURFACES, "code"),
-                                    (stage.SURFACES, "jobs")]:
+                                    (stage.SURFACES, "jobs"),
+                                    (stage.PAGES_SURFACES, "pages")]:
                 if added:
                     (root / ("proofofwork-" + added)).mkdir()
                 self.assertEqual(stage.live_surface_names(root), expected)
             self.assertEqual([len(value) for value in [stage.PRE_BOOST_SURFACES,
                 stage.LEGACY_SURFACES, stage.PRE_PUBLISH_SURFACES, stage.PRE_SEARCH_SURFACES,
                 stage.PRE_CODE_SURFACES, stage.PRE_JOBS_SURFACES,
-                stage.SURFACES]], [14, 15, 16, 17, 18, 19, 20])
+                stage.SURFACES, stage.PAGES_SURFACES]], [14, 15, 16, 17, 18, 19, 20, 21])
 
     def test_default_independence_opt_in_capacity_compatibility_and_archive_bytes(self):
         self.assertEqual(set(stage.SURFACES), EXPECTED_SURFACES)

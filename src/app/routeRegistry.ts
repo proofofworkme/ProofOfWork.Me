@@ -5,6 +5,7 @@ export type AppSurface =
   | "computer"
   | "desktop"
   | "browser"
+  | "pages"
   | "boost"
   | "publish"
   | "search"
@@ -85,6 +86,14 @@ export function isBrowserRoute() {
   }
 
   return hostname() === "browser.proofofwork.me" || searchFlag("browser");
+}
+
+export function isPagesRoute() {
+  if (import.meta.env.VITE_PAGES_ONLY === "1") {
+    return true;
+  }
+
+  return hostname() === "pages.proofofwork.me" || searchFlag("pages");
 }
 
 export function isBoostRoute() {
@@ -221,6 +230,7 @@ export function detectAppSurface(): AppSurface {
   if (isDnsLaunchRoute()) return "dns-launch";
   if (isDesktopRoute()) return "desktop";
   if (isBrowserRoute()) return "browser";
+  if (isPagesRoute()) return "pages";
   if (isBoostRoute()) return "boost";
   if (isPublishRoute()) return "publish";
   if (isSearchRoute()) return "search";

@@ -5256,6 +5256,53 @@ as `BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT`,
 
 ## Frontend API
 
+Pages is an approved frontend product, documented in [`PAGES.md`](PAGES.md).
+Its standalone hostname is `pages.proofofwork.me`, with local
+`/?pages=1`, Computer `/?folder=pages`, and the focused `VITE_PAGES_ONLY=1`
+build switch. It uses the existing first-party identity, Files, Browser
+transaction, and Mail preparation/broadcast paths; HTML publication needs no
+Pages API, database migration, new content carrier, registry fee, or extra
+network-value lane. Static Browser preview remains the default. Optional local inline
+JavaScript runs only in an opaque, network-blocked sandbox without a wallet or
+parent signing bridge. Imported or chain-loaded source never auto-runs.
+
+Pages publication stages the exact HTML into the current-origin Mail composer,
+preserving an existing unsent Mail draft. Mail retains its exact transaction
+review, confirmed funding and identity preflights, local signing, signed-intent
+checks, and broadcast recovery. Confirmed output remains ordinary `pwm1:m`
+HTML or a verified `pwm1:a` attachment. Preview or local authoring activity does
+not create a chain event, and existing Mail/Files/WORK attribution is not added
+again for Pages.
+
+The additive root DNS page-link candidate uses `pwdns1:page1` owner
+self-messages, separate from root registry/payment and child projections.
+Existing `/api/v1/dns/:name?network=livenet` responses expose active, historical,
+and pending page-link state with independent `pageLinkCoverage` and
+`pageLinkAdmission`. Its discovery lane must cover every carrier, including
+malformed carriers, from the pinned activation through the exact Core-verified
+checkpoint. Root and page-link coverage must match before Browser resolution
+or a local owner signing preflight can proceed; partial discovery cannot claim
+an empty set. A set points to existing confirmed Browser-verifiable HTML and
+a clear removes the route. Root payment addresses and registration/AMO fees
+stay unchanged, and transfer/purchase replay invalidates prior epoch links.
+
+`DNS_PAGE_LINK_ACTIVATION_HEIGHT = 970426` pins the approved mainnet opening.
+The canonical predecessor at 970425 hash is
+`00000000000000000001a22c08622961c9fc0a1b063510bf5fc9141577b77537`.
+Production admission additionally requires complete independent Pages discovery
+and API checkpoint contracts. Verify owner-wallet review boundaries and direct
+Browser name reads; real signing remains a separate local wallet action.
+The 546-proof owner self-payment is not a registry payment or additional
+Growth/WORK value. Local task receipts never establish confirmed authority.
+
+Local route and build support do not attest to a production rollout. The
+approved V4 UI contract extends 20 managed surfaces to 21 with Pages while
+retaining older manifest families as historical rollback evidence. Verify DNS,
+hosting, same-origin `/api/*`, serving security headers, the exact standalone
+bundle, and Computer integration. Preserve every prior product and rollback
+root. [deploy/pages/README.md](deploy/pages/README.md) governs the four-file
+API overlay and preserves accepted live runtime changes.
+
 DNS subdomain self-messages use a dedicated complete discovery lane after the
 protocol's pinned activation height. Registry-address Electrum history still
 proves root state, while contiguous exact-checkpoint raw block transitions
@@ -7012,3 +7059,13 @@ Caddy host activation. Production acceptance completed on 2026-10-08 UTC
 (October 7 in America/Toronto); the [release record](audits/2026-10-07-jobs-v1-release.md)
 binds source `fc396c9a9abd`, the scoped runtime, complete discovery and the
 verified twenty-root UI release. Existing protocol and economic rules remain authoritative.
+
+## Mandatory release synchronization
+
+Every deployed product or upgrade must finish with GitHub `main`, the primary local checkout on `main`, the local app preview, and the production UI representing the same released source commit. This is a release completion gate, authorized by the user on 2026-10-08.
+
+Before integration, fetch `origin` and review changes since the candidate base. Preserve local edits and blocking untracked files in recoverable custody; never silently reset or delete them. Integrate and validate the product against current `main`, commit the exact approved scope with the required hygiene trailers, and push that release to `main`. Build production from that exact clean commit. Fast-forward the primary checkout to the same commit, rebuild its local app, restart the preview, and verify the affected local and public products. Record the remote `main` SHA, primary HEAD/branch, local build provenance and deployed manifest/source SHA together. Recheck remote advancement before completion.
+
+Existing accepted node runtime overlays use guarded source-commit and byte-hash provenance, including reviewed native-storage adaptations. Their old runtime Git HEAD is not a reason to reset the node checkout. Verify the scoped installed candidate hashes and preserved infrastructure instead. Release worktrees are implementation custody; they do not replace syncing the user’s primary checkout. Publish the release announcement only after these checks pass.
+
+The final release synchronization check is `npm run check:release-sync`. It verifies actual GitHub `main`, clean primary local `main`, production manifest commit/tree, and clean source provenance from the local preview plus public Pages and Computer. An unavailable or failed check leaves the release incomplete; fix the mismatch before announcing.

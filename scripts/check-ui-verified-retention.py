@@ -28,9 +28,9 @@ class VerifiedRetention(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def release(self, root, release, surfaces=None):
+    def release(self, root, release, surfaces=None, release_format='proofofwork-ui-release-v3'):
         root.mkdir(mode=0o755)
-        fields = {'format': 'proofofwork-ui-release-v3', 'release_id': release,
+        fields = {'format': release_format, 'release_id': release,
                   'archive_name': 'proofofwork-ui-release-' + release + '.tgz'}
         archive = self.archives / fields['archive_name']
         archive.write_bytes(('archive-' + release).encode())
@@ -85,6 +85,27 @@ class VerifiedRetention(unittest.TestCase):
         (self.www / 'proofofwork-dns/index.html').write_text('corrupt')
         with self.assertRaisesRegex(ValueError, 'fingerprint'):
             retention.rollback_plan(self.www, self.rollbacks, self.archives)
+
+    def test_v4_pages_is_exact_and_v3_rollback_remains_verified(self):
+        root = self.root / 'pages-v4'
+        release = 'eeeeeeeeeeee-20261008T000000Z'
+        self.release(root, release, retention.PAGES_SURFACES, 'proofofwork-ui-release-v4')
+        self.assertEqual(retention.verified_release(root, self.archives)['format'], 'proofofwork-ui-release-v4')
+        self.assertEqual(retention.verified_release(self.latest, self.archives)['format'], 'proofofwork-ui-release-v3')
+        self.assertEqual(retention.passthrough_fingerprint(root), retention.passthrough_fingerprint(self.latest))
+        manifest = root / '.proofofwork-ui-release'
+        original = manifest.read_text()
+        manifest.write_text(original.replace('proofofwork-ui-release-v4', 'proofofwork-ui-release-v3'))
+        with self.assertRaisesRegex(ValueError, 'Incomplete release surface coverage'):
+            retention.verified_release(root, self.archives)
+        manifest.write_text('\n'.join(line for line in original.splitlines() if not line.startswith('surface.pages.')) + '\n')
+        with self.assertRaisesRegex(ValueError, 'Incomplete release surface coverage'):
+            retention.verified_release(root, self.archives)
+
+    def test_v3_undeclared_pages_refuses_verification(self):
+        (self.www / 'proofofwork-pages').mkdir(mode=0o755)
+        with self.assertRaisesRegex(ValueError, 'Undeclared release surface: pages'):
+            retention.verified_release(self.www, self.archives)
 
     def test_corrupt_latest_archive_refuses_plan(self):
         (self.archives / ('proofofwork-ui-release-' + self.previous + '.tgz')).write_bytes(b'corrupt')

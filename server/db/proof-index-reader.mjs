@@ -27946,6 +27946,127 @@ export async function proofIndexCanonicalInceptionMintWitnessesPayload(
 /** Complete raw block witnesses for the additive DNS self-message lane.
  * The caller independently reproduces each descriptor from Core before using
  * any carrier. This reader never filters by event validity or a feed limit. */
+export async function proofIndexDnsPageLinkDiscovery(network, options = {}) {
+  const pool = proofIndexPool();
+  const { activationHeight, expectedHeight, expectedHash, onBlock, verifiedPrefix } = options;
+  const fromHeight = options.fromHeight ?? activationHeight;
+  if (!pool || network !== "livenet" ||
+      !Number.isSafeInteger(activationHeight) || activationHeight < WORK_AMO_V5_ACTIVATION_HEIGHT ||
+      !Number.isSafeInteger(expectedHeight) || expectedHeight < activationHeight ||
+      !/^[0-9a-f]{64}$/u.test(expectedHash ?? "") || typeof onBlock !== "function" ||
+      !Number.isSafeInteger(fromHeight) || fromHeight < activationHeight || fromHeight > expectedHeight + 1 ||
+      (verifiedPrefix && (fromHeight <= activationHeight || verifiedPrefix.height !== fromHeight - 1)) ||
+      (fromHeight > activationHeight && (!verifiedPrefix || verifiedPrefix.height !== fromHeight - 1 ||
+        !/^[0-9a-f]{64}$/u.test(verifiedPrefix.blockHash ?? "") ||
+        !/^[0-9a-f]{64}$/u.test(verifiedPrefix.witnessSha256 ?? "")))) {
+    throw new Error("DNS page-link discovery requires configured exact canonical coverage.");
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    await client.query("SET LOCAL statement_timeout = '30s'");
+    const scan = await latestProofIndexScanMetadata(client, network);
+    const hash = normalizedLowerText(scan?.payload?.indexedThroughBlockHash ??
+      scan?.payload?.blockHash ?? scan?.source_hashes?.blockScan);
+    if (scan?.payload?.complete !== true || scan?.consistency?.ok !== true ||
+        scan?.consistency?.status !== "block-scan-current" ||
+        Number(scan?.indexed_through_block) !== expectedHeight ||
+        Number(scan?.payload?.tipHeight) !== expectedHeight || hash !== expectedHash) {
+      throw new Error("DNS page-link index is not complete at the exact Core checkpoint.");
+    }
+    if (verifiedPrefix) {
+      const anchor = await client.query(`
+        /* dns_page_link_verified_prefix_anchor */
+        SELECT block_hash FROM proof_indexer.blocks
+        WHERE network = $1 AND canonical = true AND height = $2
+        ORDER BY block_hash LIMIT 2
+      `, [network, verifiedPrefix.height]);
+      if (anchor.rows.length !== 1 || anchor.rows[0].block_hash !== verifiedPrefix.blockHash) {
+        throw new Error("DNS page-link verified prefix is no longer canonical in the index.");
+      }
+    }
+    let height = fromHeight;
+    let previousHash = verifiedPrefix?.blockHash ?? "";
+    let witnessSha256 = verifiedPrefix?.witnessSha256 ?? createHash("sha256")
+      .update(JSON.stringify(["dns-page-link-block-witness-chain-v1", network, activationHeight])).digest("hex");
+    while (height <= expectedHeight) {
+      const result = await client.query(`
+        /* dns_page_link_raw_block_coverage */
+        SELECT block.height, block.block_hash, block.previous_block_hash,
+          count(*) OVER (PARTITION BY block.height) AS canonical_height_count,
+          transition.complete, transition.block_atomic, transition.fee_once,
+          transition.invalid_zero, transition.model, transition.protocol_record_count,
+          transition.raw_protocol_candidate_count,
+          jsonb_build_object(
+            'replayRecords', transition.payload->'replayRecords',
+            'replayDescriptorCommitment', transition.payload->'replayDescriptorCommitment',
+            'blockDescriptorCommitment', transition.payload->'blockDescriptorCommitment',
+            'rawProtocolCandidateCount', transition.payload->'rawProtocolCandidateCount'
+          ) AS payload
+        FROM proof_indexer.blocks block
+        LEFT JOIN proof_indexer.work_amo_block_transitions transition
+          ON transition.network = block.network AND transition.block_height = block.height
+          AND transition.block_hash = block.block_hash
+          AND transition.previous_block_hash = block.previous_block_hash
+        WHERE block.network = $1 AND block.canonical = true
+          AND block.height >= $2 AND block.height <= $3
+        ORDER BY block.height, block.block_hash
+        LIMIT 8
+      `, [network, height, expectedHeight]);
+      if (!result.rows.length) throw new Error("DNS page-link raw block coverage has a gap.");
+      for (const row of result.rows) {
+        if (Number(row.height) !== height || Number(row.canonical_height_count) !== 1 ||
+            !/^[0-9a-f]{64}$/u.test(row.block_hash ?? "") ||
+            !/^[0-9a-f]{64}$/u.test(row.previous_block_hash ?? "") ||
+            (previousHash && row.previous_block_hash !== previousHash) ||
+            row.complete !== true || row.block_atomic !== true || row.fee_once !== true ||
+            row.invalid_zero !== true ||
+            ![WORK_AMO_V5_BLOCK_SEQUENCER_MODEL, WORK_AMO_V8_BLOCK_SEQUENCER_MODEL].includes(row.model)) {
+          throw new Error("DNS page-link block witnesses are incomplete or noncontiguous.");
+        }
+        await onBlock(row);
+        witnessSha256 = createHash("sha256").update(JSON.stringify([witnessSha256, height, row.block_hash,
+          row.payload?.blockDescriptorCommitment, row.payload?.replayDescriptorCommitment])).digest("hex");
+        previousHash = row.block_hash;
+        height += 1;
+      }
+    }
+    if (height !== expectedHeight + 1 || previousHash !== expectedHash) {
+      throw new Error("DNS page-link block coverage does not reach the exact checkpoint.");
+    }
+    // Pending discovery is explicitly best effort. It is not a confirmed
+    // coverage claim, and every candidate is checked against Core mempool.
+    const pending = await client.query(`
+      /* dns_page_link_pending_candidates */
+      SELECT DISTINCT carrier.txid
+      FROM proof_indexer.op_returns carrier
+      JOIN proof_indexer.transactions tx ON tx.network = carrier.network AND tx.txid = carrier.txid
+      WHERE carrier.network = $1 AND carrier.protocol = 'pwdns1' AND tx.status = 'pending'
+        AND left(carrier.payload_text, 13) = 'pwdns1:page1:'
+      ORDER BY carrier.txid
+      LIMIT 256
+    `, [network]);
+    await client.query("COMMIT");
+    const finalScan = await latestProofIndexScanMetadata(pool, network);
+    const finalHash = normalizedLowerText(finalScan?.payload?.indexedThroughBlockHash ??
+      finalScan?.payload?.blockHash ?? finalScan?.source_hashes?.blockScan);
+    if (finalScan?.payload?.complete !== true || finalScan?.consistency?.ok !== true ||
+        finalScan?.consistency?.status !== "block-scan-current" ||
+        Number(finalScan?.indexed_through_block) !== expectedHeight || finalHash !== expectedHash) {
+      throw new Error("DNS page-link index checkpoint changed during discovery.");
+    }
+    return { complete: true, activationHeight, indexedThroughBlock: expectedHeight,
+      checkpointHash: expectedHash, blockCount: expectedHeight - activationHeight + 1,
+      witnessSha256, pendingTxids: pending.rows.map(row => row.txid) };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally { client.release(); }
+}
+
+/** Complete raw block witnesses for the additive DNS self-message lane.
+ * The caller independently reproduces each descriptor from Core before using
+ * any carrier. This reader never filters by event validity or a feed limit. */
 export async function proofIndexDnsSubdomainDiscovery(network, options = {}) {
   const pool = proofIndexPool();
   const { activationHeight, expectedHeight, expectedHash, onBlock, verifiedPrefix } = options;
@@ -28063,6 +28184,7 @@ export async function proofIndexDnsSubdomainDiscovery(network, options = {}) {
     throw error;
   } finally { client.release(); }
 }
+
 
 export async function proofIndexCanonicalCheckpointPayload(
   network,

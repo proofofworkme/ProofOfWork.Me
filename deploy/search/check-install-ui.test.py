@@ -36,6 +36,25 @@ def encode(fields):
 
 
 class SearchPromotion(unittest.TestCase):
+    def test_pages_install_requires_v4_all21_and_retention_helper_pins(self):
+        value = plan()
+        value['schema'] = 'proof-of-work-pages-ui-install-v1'
+        value['files'] = {name: {'beforeSha256': 'c'*64, 'afterSha256': 'd'*64} for name in install.PAGES_FILES}
+        install.check_plan(value)
+        fields = published(value)
+        fields['format'] = 'proofofwork-ui-release-v4'
+        fields.update({'surface.pages.file_count': '2', 'surface.pages.sha256': '2'*64})
+        install.check_published(encode(fields), value)
+        incomplete = copy.deepcopy(value)
+        incomplete['files'].pop('deploy/proofofwork-ui-verified-retention.py')
+        with self.assertRaises(ValueError): install.check_plan(incomplete)
+        for key in ('surface.pages.file_count', 'surface.pages.sha256', 'surface.jobs.sha256'):
+            changed = fields.copy(); changed.pop(key)
+            with self.assertRaises(ValueError): install.check_published(encode(changed), value)
+        changed = fields.copy(); changed['format'] = 'proofofwork-ui-release-v3'
+        with self.assertRaises(ValueError): install.check_published(encode(changed), value)
+        with self.assertRaises(ValueError): install.check_published(encode(fields), plan())
+
     def test_exact_scope_and_complete_before_after_pins_are_required(self):
         value = plan(); install.check_plan(value)
         cases = []

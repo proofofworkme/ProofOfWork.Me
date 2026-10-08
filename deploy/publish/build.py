@@ -25,6 +25,21 @@ SURFACES = {
     'infinity': ('infinity', 'VITE_INFINITY_ONLY'), 'inception': ('inception', 'VITE_INCEPTION_ONLY'),
     'activity': ('log', 'VITE_LOG_ONLY'), 'growth': ('growth', 'VITE_GROWTH_ONLY'),
 }
+PAGES_SURFACES = {**SURFACES, 'pages': ('pages', 'VITE_PAGES_ONLY')}
+
+
+def build_focused_surfaces(source, payload, surfaces, environment, log):
+    """TypeScript source is shared; each focused Vite bundle has its own flags."""
+    subprocess.run(['/usr/bin/node', str(source / 'node_modules/typescript/bin/tsc')],
+                   cwd=source, env=environment, stdout=log, stderr=subprocess.STDOUT, check=True)
+    for name, (host, switch) in surfaces.items():
+        build_env = {**environment, 'VITE_POW_API_BASE': 'https://' + host + '.proofofwork.me'}
+        if switch:
+            build_env[switch] = '1'
+        subprocess.run(['/usr/bin/node', str(source / 'node_modules/vite/bin/vite.js'), 'build',
+                        '--outDir', str(payload / 'surfaces' / name), '--emptyOutDir'],
+                       cwd=source, env=build_env, stdout=log, stderr=subprocess.STDOUT, check=True)
+        print(json.dumps({'surface': name, 'status': 'built'}), flush=True)
 
 
 def main():
@@ -33,7 +48,9 @@ def main():
     parser.add_argument('commit')
     parser.add_argument('build_root', type=Path)
     parser.add_argument('--release-id')
+    parser.add_argument('--release-format', choices=['v3', 'v4'], default='v4')
     args = parser.parse_args()
+    surfaces = PAGES_SURFACES if args.release_format == 'v4' else SURFACES
     os.umask(0o077)
     repo = args.repository.resolve(strict=True)
     assert re.fullmatch('[0-9a-f]{40}', args.commit)
@@ -58,11 +75,7 @@ def main():
     with (root / 'build.log').open('xb') as log:
         subprocess.run(['/usr/bin/npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], cwd=source, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
         assert not git('status', '--porcelain', '--untracked-files=all')
-        for name, (host, switch) in SURFACES.items():
-            build_env = {**env, 'VITE_POW_API_BASE': 'https://' + host + '.proofofwork.me'}
-            if switch: build_env[switch] = '1'
-            subprocess.run(['/usr/bin/npm', 'run', 'build', '--', '--outDir', str(payload / 'surfaces' / name), '--emptyOutDir'], cwd=source, env=build_env, stdout=log, stderr=subprocess.STDOUT, check=True)
-            print(json.dumps({'surface': name, 'status': 'built'}), flush=True)
+        build_focused_surfaces(source, payload, surfaces, env, log)
     subprocess.run(['cp', '--archive', str(payload / 'surfaces/computer'), str(payload / 'surfaces/nft')], check=True)
     for path in [payload, *payload.rglob('*')]:
         assert not path.is_symlink()
@@ -81,7 +94,8 @@ def main():
         bundles[kind] = {'path': str(archive), 'bytes': archive.stat().st_size, 'sha256': sha}
     receipt = {'releaseId': release, 'commit': args.commit, 'tree': tree,
                'sourceAllocatedBytes': allocated, 'bundles': bundles,
-               'sourceCheckout': str(source), 'surfaces': [*SURFACES, 'nft']}
+               'sourceCheckout': str(source), 'surfaces': [*surfaces, 'nft'],
+               'releaseFormat': 'proofofwork-ui-release-' + args.release_format}
     with (root / 'build-receipt.json').open('xb') as output:
         output.write((json.dumps(receipt, indent=2) + '\n').encode()); output.flush(); os.fsync(output.fileno())
     print(json.dumps(receipt), flush=True)

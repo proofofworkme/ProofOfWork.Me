@@ -170,7 +170,7 @@ function quietInputs(overrides = {}) {
 test("all products and workspaces have explicit economic or shared ownership", () => {
   assert.deepEqual(GROWTH_PRODUCT_COVERAGE.map((product) => product.product).sort(), [
     "amo", "boost", "browser", "code", "computer", "credit", "desktop", "files", "growth",
-    "home", "ids", "inception", "infinity", "jobs", "log", "mail", "publish", "search", "wallet", "work",
+    "home", "ids", "inception", "infinity", "jobs", "log", "mail", "pages", "publish", "search", "wallet", "work",
   ]);
   for (const entry of GROWTH_PRODUCT_COVERAGE) {
     for (const field of ["name", "role", "owner", "modeledLane", "activity", "assumption", "source"]) {
@@ -184,6 +184,9 @@ test("all products and workspaces have explicit economic or shared ownership", (
   }
   assert.match(GROWTH_PRODUCT_COVERAGE.find((entry) => entry.name === "Computer").activity, /NFT/);
   assert.match(GROWTH_ASSUMPTIONS.find((entry) => entry.product === "Browser authoring").attribution, /exclusively/);
+  const pages = GROWTH_PRODUCT_COVERAGE.find((entry) => entry.product === "pages");
+  assert.equal(pages.modeledLane, "browserSats");
+  assert.equal(pages.role, "shared");
   assert.ok(GROWTH_MODEL_LIMITATIONS.some((line) => /endogenous live WORK revaluation/.test(line)));
 });
 

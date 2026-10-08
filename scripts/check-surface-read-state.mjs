@@ -378,7 +378,8 @@ function browserReadHarness(owner = "BrowserApp") {
     network: "livenet", activeNetwork: "livenet", query: previous.txid,
     loadGenerationRef: { current: 0 }, loadControllerRef: { current: undefined }, AbortController,
     initialLoadRef: { current: false },
-    fetchBrowserPage: (txid, network, signal) => {
+    normalizeBrowserTarget: appFunction("normalizeBrowserTarget"),
+    fetchBrowserTargetPage: (txid, network, signal) => {
       const request = { ...readDeferred(), txid, network, signal };
       requests.push(request); return request.promise;
     },
@@ -392,6 +393,54 @@ function browserReadHarness(owner = "BrowserApp") {
     load: () => appCallback(owner, "loadPage", bindings),
     change: () => appFunction(owner === "BrowserWorkspace" ? "changeBrowserWorkspaceNetwork" : "changeBrowserNetwork", bindings),
   };
+}
+{
+  const normalize = appFunction("normalizeBrowserTarget");
+  assert.equal(normalize(" ALICE.POW "), "alice.pow");
+  for (const invalid of ["alice", "abc.alice.pow", "https://alice.pow", "-alice.pow", "alice.pow/", "a".repeat(64) + ".pow"]) {
+    assert.equal(normalize(invalid), "", invalid);
+  }
+  const location = { search: "?browser=1&name=ALICE.POW", pathname: "/" };
+  const fromLocation = appFunction("txidFromBrowserLocation", { window: { location }, normalizeBrowserTarget: normalize });
+  assert.equal(fromLocation(), "alice.pow");
+  location.search = ""; location.pathname = "/name/alice.pow";
+  assert.equal(fromLocation(), "alice.pow");
+  location.pathname = "/tx/" + "a".repeat(64);
+  assert.equal(fromLocation(), "a".repeat(64));
+  const route = appFunction("browserRoutePath", { normalizeBrowserTarget: normalize, isLocalPreviewHost: () => false });
+  assert.equal(route("alice.pow", "livenet"), "/name/alice.pow");
+  assert.equal(route("a".repeat(64), "testnet4"), "/tx/" + "a".repeat(64) + "?network=testnet4");
+}
+{
+  const { readDnsPageLinkSnapshot } = await import("../src/features/pages/dnsPageLinkClient.mjs");
+  const epoch = { txid: "a".repeat(64), protocolVout: 1, recordOrdinal: 0 };
+  const root = { id: "alice", network: "livenet", confirmed: true, ownerAddress: "owner", receiveAddress: "receiver", ownershipEpoch: epoch, ownershipEpochBlockHeight: 8 };
+  const snapshot = { network: "livenet", id: "alice", name: "alice.pow", routable: true, status: "confirmed",
+    indexedThroughBlock: 11, checkpointHash: epoch.txid, coverage: { complete: true }, record: root, records: [root],
+    pageLink: { name: "alice.pow", network: "livenet", pageTxid: "b".repeat(64), txid: "c".repeat(64), ownerAddress: "owner",
+      epoch, ownershipEpoch: epoch, confirmed: true, active: true, valid: true, status: "active", blockHeight: 10, protocolVout: 1, recordOrdinal: 0 },
+    pageLinkCoverage: { network: "livenet", complete: true, activationHeight: 9, indexedThroughBlock: 11, checkpointHash: epoch.txid,
+      witnessSha256: epoch.txid, pageLinkSha256: epoch.txid, blockCount: 3, model: "dns-page-link-core-raw-block-coverage-v1" },
+    pageLinkAdmission: { network: "livenet", ready: true, activationHeight: 9, indexedThroughBlock: 11,
+      checkpointHash: epoch.txid, minSelfPaymentSats: 546, protocolPrefix: "pwdns1:page1:" },
+    pageLinkEvents: [], pageLinkPendingEvents: [] };
+  for (const stage of ["dns", "page"]) {
+    const dns = readDeferred(), page = readDeferred(), controller = new AbortController(), requests = [];
+    const load = appFunction("fetchBrowserTargetPage", {
+      normalizeBrowserTarget: appFunction("normalizeBrowserTarget"), readDnsPageLinkSnapshot,
+      isValidBitcoinAddress: () => true,
+      fetchProofApiJson: (path, network, options) => { requests.push({ path, network, signal: options.signal }); return dns.promise; },
+      fetchBrowserPage: (txid, network, signal) => { requests.push({ txid, network, signal }); return page.promise; },
+    });
+    const pending = load("alice.pow", "livenet", controller.signal);
+    if (stage === "page") { dns.resolve(snapshot); await new Promise(resolve => setImmediate(resolve)); }
+    controller.abort();
+    if (stage === "dns") dns.resolve(snapshot);
+    else page.resolve({ txid: snapshot.pageLink.pageTxid, confirmed: true });
+    await assert.rejects(pending, { name: "AbortError" });
+    assert.equal(requests.length, stage === "dns" ? 1 : 2);
+    assert.equal(requests.every(request => request.signal === controller.signal), true);
+  }
 }
 for (const outcome of ["success", "failure"]) {
   const h = browserReadHarness();

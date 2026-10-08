@@ -46,6 +46,9 @@ SURFACES = (
     "wallet",
     "work",
 )
+# Keep the accepted V3 vector and all historical families unchanged. Pages is
+# the additional, exact V4 surface; archived V3 roots remain independently valid.
+PAGES_SURFACES = tuple(sorted((*SURFACES, "pages")))
 PRE_JOBS_SURFACES = tuple(surface for surface in SURFACES if surface != "jobs")
 PRE_CODE_SURFACES = tuple(surface for surface in PRE_JOBS_SURFACES if surface != "code")
 PRE_SEARCH_SURFACES = tuple(surface for surface in PRE_CODE_SURFACES if surface != "search")
@@ -202,7 +205,7 @@ class CandidateManagedDeduplicator:
     def open_file(self, relative: str):
         safe_relative(relative, "managed deduplication")
         parts = relative.split("/")
-        if len(parts) < 2 or parts[0] not in {f"proofofwork-{surface}" for surface in SURFACES}:
+        if len(parts) < 2 or parts[0] not in {f"proofofwork-{surface}" for surface in PAGES_SURFACES}:
             fail(f"Managed deduplication path is outside managed surfaces: {relative}")
         root_details = self.root.lstat()
         if (root_details.st_dev, root_details.st_ino) != self.root_identity:
@@ -321,7 +324,7 @@ class CandidateManagedDeduplicator:
                         os.unlink(temporary, dir_fd=target_parent)
 
     def add_surface(self, surface: str) -> None:
-        if surface not in SURFACES:
+        if surface not in PAGES_SURFACES:
             fail(f"Unknown managed deduplication surface: {surface}")
         before = surface_fingerprint(self.root, surface, self.owner)
         relative_root = f"proofofwork-{surface}"
@@ -774,6 +777,8 @@ def payload_surface_fingerprint(
 
 
 def live_surface_names(root: Path) -> tuple[str, ...]:
+    if os.path.lexists(root / "proofofwork-pages"):
+        return PAGES_SURFACES
     boost = root / "proofofwork-boost"
     if not os.path.lexists(boost):
         return PRE_BOOST_SURFACES
@@ -789,6 +794,15 @@ def live_surface_names(root: Path) -> tuple[str, ...]:
     if not os.path.lexists(root / "proofofwork-jobs"):
         return PRE_JOBS_SURFACES
     return SURFACES
+
+
+def payload_surface_names(root: Path) -> tuple[str, ...]:
+    actual = {entry.name for entry in os.scandir(root)}
+    for surfaces in (SURFACES, PAGES_SURFACES):
+        if actual == set(surfaces):
+            return surfaces
+    fail("New-build surfaces root must contain exactly the V3 20 or V4 21 surfaces; "
+         f"received={sorted(actual)}")
 
 
 def managed_fingerprint(
@@ -824,6 +838,7 @@ def bounded_payload_fingerprint(
     expected_owner: int,
     maximum_entries: int,
     maximum_bytes: int,
+    surfaces: tuple[str, ...] = SURFACES,
 ) -> tuple[tuple[tuple[str, tuple[int, int, str]], ...], int, int]:
     budget = new_payload_budget(
         "Incoming managed UI payload",
@@ -840,7 +855,7 @@ def bounded_payload_fingerprint(
                 aggregate_budget=budget,
             ),
         )
-        for surface in SURFACES
+        for surface in surfaces
     )
     return fingerprints, budget["entries"], budget["regular_bytes"]
 
@@ -851,6 +866,7 @@ def bounded_managed_fingerprint(
     maximum_entries: int,
     maximum_bytes: int,
     label: str,
+    surfaces: tuple[str, ...] = SURFACES,
 ) -> tuple[tuple[tuple[str, tuple[int, int, str]], ...], int, int]:
     budget = new_payload_budget(label, maximum_entries, maximum_bytes)
     fingerprints = tuple(
@@ -863,13 +879,13 @@ def bounded_managed_fingerprint(
                 aggregate_budget=budget,
             ),
         )
-        for surface in SURFACES
+        for surface in surfaces
     )
     return fingerprints, budget["entries"], budget["regular_bytes"]
 
 
 def passthrough_fingerprint(root: Path) -> tuple[int, int, str]:
-    excluded = {MANIFEST_NAME, *(f"proofofwork-{surface}" for surface in SURFACES)}
+    excluded = {MANIFEST_NAME, *(f"proofofwork-{surface}" for surface in PAGES_SURFACES)}
     return tree_fingerprint(root, excluded_top_level=excluded)
 
 
@@ -896,19 +912,15 @@ def validate_exact_surfaces_root(
     maximum_entries: int,
     maximum_bytes: int,
 ) -> tuple[tuple[tuple[str, tuple[int, int, str]], ...], int, int]:
-    actual = {entry.name for entry in os.scandir(surfaces_root)}
-    expected = set(SURFACES)
-    if actual != expected:
-        missing = sorted(expected - actual)
-        extra = sorted(actual - expected)
-        fail(f"New-build surfaces root must contain exactly {len(SURFACES)} surfaces; missing={missing} extra={extra}")
+    surfaces = payload_surface_names(surfaces_root)
     fingerprints, entry_count, regular_bytes = bounded_payload_fingerprint(
         surfaces_root,
         expected_owner,
         maximum_entries,
         maximum_bytes,
+        surfaces,
     )
-    for surface in SURFACES:
+    for surface in surfaces:
         validate_surface_index(surfaces_root / surface)
     fingerprint_by_surface = dict(fingerprints)
     if fingerprint_by_surface["computer"] != fingerprint_by_surface["nft"]:
@@ -1337,6 +1349,7 @@ def main() -> int:
         )
     reject_nested_mounts(www_root, mountinfo)
     reject_nested_mounts(surfaces_root, mountinfo)
+    incoming_surfaces = payload_surface_names(surfaces_root)
     validate_exact_surfaces_root(
         surfaces_root,
         expected_owner,
@@ -1356,6 +1369,8 @@ def main() -> int:
             www_details.st_gid,
         )
         live_surfaces = live_surface_names(www_root)
+        if "pages" in live_surfaces and "pages" not in incoming_surfaces:
+            fail("A V3 payload cannot replace a live V4 Pages release; use its verified rollback capability.")
         live_managed_before = managed_fingerprint(
             www_root,
             expected_owner,
@@ -1371,6 +1386,7 @@ def main() -> int:
             expected_owner,
             maximum_payload_entries,
             maximum_payload_bytes,
+            incoming_surfaces,
         )
 
         # Guard before creating private scratch, then refresh immediately before
@@ -1423,7 +1439,7 @@ def main() -> int:
         if arguments.deduplicate_managed_files:
             deduplicator = CandidateManagedDeduplicator(candidate, expected_owner)
 
-        for surface in SURFACES:
+        for surface in incoming_surfaces:
             destination = candidate / f"proofofwork-{surface}"
             if surface in live_surfaces and not path_is_canonical_directory(destination):
                 fail(f"Copied managed UI root is not a canonical directory: {destination}")
@@ -1451,6 +1467,7 @@ def main() -> int:
             maximum_payload_entries,
             maximum_payload_bytes,
             "Copied incoming managed UI payload",
+            incoming_surfaces,
         )
         if candidate_payload_copy != payload_before:
             fail("Staged new-build surface copy differs from the validated payload.")
@@ -1459,6 +1476,7 @@ def main() -> int:
             expected_owner,
             maximum_payload_entries,
             maximum_payload_bytes,
+            incoming_surfaces,
         )
         if current_payload != payload_before:
             fail("New-build UI surfaces changed while they were copied.")
@@ -1490,8 +1508,9 @@ def main() -> int:
             maximum_payload_entries,
             maximum_payload_bytes,
             "Final compatibility-complete managed UI payload",
+            incoming_surfaces,
         )
-        for surface in SURFACES:
+        for surface in incoming_surfaces:
             validate_surface_index(candidate / f"proofofwork-{surface}")
         final_fingerprint_by_surface = dict(final_managed_fingerprint)
         if final_fingerprint_by_surface["computer"] != final_fingerprint_by_surface["nft"]:
@@ -1503,6 +1522,7 @@ def main() -> int:
             expected_owner,
             maximum_payload_entries,
             maximum_payload_bytes,
+            incoming_surfaces,
         )
         if current_payload != payload_before:
             fail("New-build UI surfaces changed while staging.")

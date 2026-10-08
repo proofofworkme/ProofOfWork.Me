@@ -41,6 +41,8 @@ Environment:
   POW_SURFACE_AUDIT_TIMEOUT_MS=20000
 
 --surface runs one named surface (for example --surface=computer).
+Pages is prepared locally and is available through --surface=pages for explicit
+launch verification; it is excluded from the default production plan until launch.
 --resume-file writes completed per-surface results after each surface so an
 interrupted audit can resume without repeating successful surfaces. Receipts
 must match this script, settings and ordered surface plan, and be less than one
@@ -274,6 +276,21 @@ const SURFACES = [
         label: "consistency",
         url: apiUrl("/api/v1/consistency?network=livenet"),
         validate: validateConsistency,
+      },
+    ],
+  },
+];
+
+const PREPARED_SURFACES = [
+  {
+    key: "pages",
+    title: "pages.proofofwork.me",
+    url: "https://pages.proofofwork.me/",
+    probes: [
+      {
+        label: "registry summary",
+        url: apiUrl("/api/v1/registry-summary?network=livenet"),
+        validate: validateRegistrySummary,
       },
     ],
   },
@@ -785,7 +802,9 @@ function validateResumeReceipt(prior, surfacePlan, now) {
 
 const runStartedAt = new Date();
 const selectedSurfaces = SELECTED_SURFACE
-  ? SURFACES.filter((surface) => surface.key === SELECTED_SURFACE)
+  ? [...SURFACES, ...PREPARED_SURFACES].filter(
+      (surface) => surface.key === SELECTED_SURFACE,
+    )
   : SURFACES;
 if (SELECTED_SURFACE && selectedSurfaces.length === 0) {
   throw new Error(`Unknown surface: ${SELECTED_SURFACE}`);

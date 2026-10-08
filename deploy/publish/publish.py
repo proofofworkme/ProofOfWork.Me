@@ -94,6 +94,7 @@ assert code==0 and failed is None,'Publisher refused; evidence and complete root
 manifest=pathlib.Path('/var/www/.proofofwork-ui-release').read_bytes()
 assert manifest==pathlib.Path(archive+'.provenance').read_bytes()
 fields=dict(line.split('=',1) for line in manifest.decode().splitlines())
+assert fields['format'] == plan.get('releaseFormat', 'proofofwork-ui-release-v3')
 assert fields['release_id']==release and fields['commit']==commit and fields['source_tree']==tree
 for p,r in zip(roots,plan['retainedRoots']):
  current=ns['fingerprint'](p);assert current['manifestSha256']==r['manifestSha256'] and current['treeSha256']==r['treeSha256']

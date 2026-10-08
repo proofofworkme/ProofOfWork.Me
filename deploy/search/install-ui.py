@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -I
 """Promote exact Search UI helpers or Caddy config, retaining every prior byte.
 
-Helpers go first. Caddy reload requires the exact twenty-root release to be
+Helpers go first. Caddy reload requires the exact V3 or V4 release to be
 serving and verified. Both phases use the shared deploy lock; timers, holds,
 historical trees and application services remain protected.
 """
@@ -23,6 +23,9 @@ FILES = {
     'deploy/Caddyfile': '/etc/caddy/Caddyfile',
 }
 SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split()
+PAGES_SURFACES = [*SURFACES, 'pages']
+PAGES_FILES = {**FILES,
+    'deploy/proofofwork-ui-verified-retention.py': '/usr/local/sbin/proofofwork-ui-verified-retention'}
 CAPACITY = Path('/usr/local/sbin/proofofwork-ui-capacity')
 RETAINED = Path('/usr/local/sbin/proofofwork-ui-retained-root')
 CADDY = Path('/usr/bin/caddy')
@@ -70,12 +73,13 @@ def directory(path):
 
 
 def check_plan(plan):
-    require(plan['schema'] == 'proof-of-work-search-ui-install-v1', 'Wrong installation schema')
+    require(plan['schema'] in ('proof-of-work-search-ui-install-v1', 'proof-of-work-pages-ui-install-v1'), 'Wrong installation schema')
+    files = PAGES_FILES if plan['schema'] == 'proof-of-work-pages-ui-install-v1' else FILES
     require(re.fullmatch('[0-9a-f]{40}', plan['commit']) and re.fullmatch('[0-9a-f]{40}', plan['tree']),
         'Installation must pin full application commit/tree')
     require(re.fullmatch('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', plan['releaseId']) and
         plan['releaseId'].startswith(plan['commit'][:12]+'-'), 'Wrong release identity')
-    require(set(plan['files']) == set(FILES), 'Installation scope differs from Search allowlist')
+    require(set(plan['files']) == set(files), 'Installation scope differs from product allowlist')
     for row in plan['files'].values():
         require(set(row) == {'beforeSha256', 'afterSha256'} and
             all(HEX64.fullmatch(value) for value in row.values()), 'Missing exact before/after file pins')
@@ -94,12 +98,15 @@ def parse_manifest(raw):
 
 def check_published(raw, plan):
     manifest = parse_manifest(raw)
-    require(manifest.get('format') == 'proofofwork-ui-release-v3' and
+    pages = plan['schema'] == 'proof-of-work-pages-ui-install-v1'
+    surfaces = PAGES_SURFACES if pages else SURFACES
+    release_format = 'proofofwork-ui-release-v4' if pages else 'proofofwork-ui-release-v3'
+    require(manifest.get('format') == release_format and
         manifest.get('release_id') == plan['releaseId'] and manifest.get('commit') == plan['commit'] and
-        manifest.get('source_tree') == plan['tree'], 'Caddy requires the exact published Search release')
+        manifest.get('source_tree') == plan['tree'], 'Caddy requires the exact published product release')
     names = {key.split('.')[1] for key in manifest if key.startswith('surface.')}
-    require(names == set(SURFACES), 'Caddy requires all twenty managed roots')
-    for name in SURFACES:
+    require(names == set(surfaces), 'Caddy requires the complete managed roots')
+    for name in surfaces:
         require(HEX64.fullmatch(manifest.get('surface.'+name+'.sha256', '')) and
             re.fullmatch('[1-9][0-9]*', manifest.get('surface.'+name+'.file_count', '')),
             'Incomplete published surface evidence')
@@ -156,7 +163,11 @@ def main():
     require(HEX64.fullmatch(args.manifest_sha256) and digest(raw) == args.manifest_sha256,
         'Installation manifest hash differs')
     plan = json.loads(raw); check_plan(plan)
-    require(args.source == Path('/var/tmp/proofofwork-deploy/search-tools-'+plan['releaseId']),
+    pages = plan['schema'] == 'proof-of-work-pages-ui-install-v1'
+    product = 'pages' if pages else 'search'
+    files = PAGES_FILES if pages else FILES
+    surfaces = PAGES_SURFACES if pages else SURFACES
+    require(args.source == Path('/var/tmp/proofofwork-deploy/'+product+'-tools-'+plan['releaseId']),
         'Source must use the exact release-bound private tools namespace')
     directory(args.source); directory(args.source/'deploy')
     for path, pin in ((CAPACITY, 'capacitySha256'), (RETAINED, 'retainedSha256')):
@@ -179,46 +190,46 @@ def main():
         roots = sorted(Path('/var/backups/proofofwork-ui/rollback-roots').glob('proofofwork-www-pre-*'))
         require(len(roots) <= 16, 'Retained root count exceeds existing protection bound')
         retained = [namespace['fingerprint'](root) for root in roots]
-        selected = [name for name in FILES if (name == 'deploy/Caddyfile') == (args.phase == 'caddy')]
+        selected = [name for name in files if (name == 'deploy/Caddyfile') == (args.phase == 'caddy')]
         before, after = {}, {}
         for name in selected:
             blob, _ = read_safe(args.source/name)
-            target = Path(FILES[name]); directory(target.parent)
+            target = Path(files[name]); directory(target.parent)
             prior, info = read_safe(target)
             require(digest(blob) == plan['files'][name]['afterSha256'] and
                 digest(prior) == plan['files'][name]['beforeSha256'], 'Reviewed before/after bytes differ')
             before[name] = (prior, stat.S_IMODE(info.st_mode)); after[name] = blob
         if args.phase == 'caddy':
             check_published(read_safe(Path('/var/www/.proofofwork-ui-release'), 65536)[0], plan)
-            for name in FILES:
+            for name in files:
                 if name != 'deploy/Caddyfile':
-                    require(digest(read_safe(Path(FILES[name]))[0]) == plan['files'][name]['afterSha256'],
+                    require(digest(read_safe(Path(files[name]))[0]) == plan['files'][name]['afterSha256'],
                         'Search helper promotion must precede Caddy')
-            for name in SURFACES:
+            for name in surfaces:
                 directory(Path('/var/www/proofofwork-'+name))
                 read_safe(Path('/var/www/proofofwork-'+name+'/index.html'), shared=True)
-            run([FILES['deploy/proofofwork-ui-release-provenance.sh'], 'verify'], descriptor, timeout=600)
+            run([files['deploy/proofofwork-ui-release-provenance.sh'], 'verify'], descriptor, timeout=600)
             require(digest(read_safe(CADDY, 128*1024**2)[0]) == plan['caddyBinarySha256'], 'Caddy binary differs')
             require(run([str(CADDY), 'version'], descriptor).split()[0] == plan['caddyVersion'], 'Caddy version differs')
             run([str(CADDY), 'validate', '--config', str(args.source/'deploy/Caddyfile'), '--adapter', 'caddyfile'], descriptor)
         parent = Path('/var/backups/proofofwork-ui/release-tooling'); directory(parent)
-        output = parent / ('search-'+plan['releaseId']+'-'+args.phase+'-'+args.attempt)
+        output = parent / (product+'-'+plan['releaseId']+'-'+args.phase+'-'+args.attempt)
         require(not os.path.lexists(output), 'Never reuse an installation receipt namespace')
         require(digest(read_safe(CAPACITY)[0]) == plan['capacitySha256'], 'Capacity helper changed')
         run(['/usr/bin/python3', '-I', '-B', str(CAPACITY), 'check', '--path', str(parent),
             '--additional-bytes', str(16*1024**2), '--additional-inodes', '64', '--phase',
-            'search-'+args.phase+'-install'], descriptor)
+            product+'-'+args.phase+'-install'], descriptor)
         output.mkdir(mode=0o700); sync_directory(parent)
         for i, name in enumerate(selected):
             save(output/(str(i)+'.previous'), before[name][0])
         save(output/'intent.json', (json.dumps({'phase': args.phase, 'manifestSha256': args.manifest_sha256,
             'baseline': baseline, 'live': live, 'retained': retained,
-            'previous': [{'source': name, 'destination': FILES[name], 'backup': str(i)+'.previous',
+            'previous': [{'source': name, 'destination': files[name], 'backup': str(i)+'.previous',
                 'sha256': digest(before[name][0]), 'mode': before[name][1]} for i, name in enumerate(selected)]}, indent=2)+'\n').encode())
         installed = []
         try:
             for name in selected:
-                target = Path(FILES[name])
+                target = Path(files[name])
                 require(read_safe(target)[0] == before[name][0], 'Destination changed after preflight')
                 installed.append(name)
                 replace(target, after[name], 0o644 if name == 'deploy/Caddyfile' else 0o755, output.name)
@@ -230,13 +241,13 @@ def main():
                 roots == sorted(Path('/var/backups/proofofwork-ui/rollback-roots').glob('proofofwork-www-pre-*')) and
                 [namespace['fingerprint'](root) for root in roots] == retained, 'Serving or retained roots changed')
             save(output/'completed.json', (json.dumps({'status': 'completed', 'phase': args.phase,
-                'installed': [{'path': FILES[name], 'sha256': digest(after[name])} for name in installed],
+                'installed': [{'path': files[name], 'sha256': digest(after[name])} for name in installed],
                 'retainedRootsUnchanged': True, 'servingRootUnchanged': True, 'timersUnchanged': True}, indent=2)+'\n').encode())
         except Exception as error:
             save(output/'failure.json', (json.dumps({'status': 'failed', 'errorClass': type(error).__name__,
                 'installed': installed})+'\n').encode())
             for name in reversed(installed):
-                target = Path(FILES[name]); current = read_safe(target)[0]
+                target = Path(files[name]); current = read_safe(target)[0]
                 require(current in (before[name][0], after[name]), 'Unknown installed bytes require inspection')
                 if current != before[name][0]:
                     replace(target, before[name][0], before[name][1], output.name+'-rollback')

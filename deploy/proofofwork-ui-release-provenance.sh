@@ -156,6 +156,11 @@ if ((${#surfaces[@]} != 20)); then
   echo "UI provenance surface set must contain exactly 20 entries." >&2
   exit 70
 fi
+pages_surfaces=("${surfaces[@]}" pages)
+if ((${#pages_surfaces[@]} != 21)); then
+  echo "UI V4 provenance surface set must contain exactly 21 entries." >&2
+  exit 70
+fi
 pre_jobs_surfaces=()
 for surface in "${surfaces[@]}"; do
   [[ "${surface}" == "jobs" ]] || pre_jobs_surfaces+=("${surface}")
@@ -238,7 +243,7 @@ for surface in "${surfaces[@]}"; do
   surface_seen["${surface}"]=1
 done
 unset surface_seen surface
-surface_pattern='activity|browser|boost|code|computer|desktop|dns|growth|id|inception|infinity|jobs|landing|marketplace|nft|publish|search|token|wallet|work'
+surface_pattern='activity|browser|boost|code|computer|desktop|dns|growth|id|inception|infinity|jobs|landing|marketplace|nft|pages|publish|search|token|wallet|work'
 
 surface_directory() {
   printf '%s/proofofwork-%s\n' "${ui_root}" "$1"
@@ -910,6 +915,9 @@ verify_archive_payload() {
   local -n expected_counts="${counts_name}"
   local -n expected_digests="${digests_name}"
   local -a archive_surfaces=("${surfaces[@]}")
+  if [[ -n "${expected_counts[pages]:-}" || -n "${expected_digests[pages]:-}" ]]; then
+    archive_surfaces=("${pages_surfaces[@]}")
+  fi
 
   if [[ -z "${expected_counts[jobs]:-}" && -z "${expected_digests[jobs]:-}" ]]; then
     archive_surfaces=("${pre_jobs_surfaces[@]}")
@@ -969,6 +977,11 @@ verify_archive_payload() {
       archive_name="${archive_names[${index}]}"
       archive_type="${verbose_entries[${index}]:0:1}"
       normalized_name="${archive_name%/}"
+      if [[ "${normalized_name}" == surfaces/pages || "${normalized_name}" == surfaces/pages/* ]] &&
+        [[ -z "${expected_counts[pages]:-}" || -z "${expected_digests[pages]:-}" ]]; then
+        echo "Release archive contains unexpected Pages payload without V4 evidence." >&2
+        exit 1
+      fi
       read -r _archive_mode _archive_owner archive_entry_bytes _archive_rest <<<"${verbose_entries[${index}]}"
       if [[ ! "${archive_entry_bytes}" =~ ^[0-9]+$ ]]; then
         echo "Release archive entry size is not parseable: ${archive_name}" >&2
@@ -1088,6 +1101,10 @@ verify_archive_payload() {
 }
 
 record_rollback_evidence() {
+  if [[ -e "$(surface_directory pages)" || -L "$(surface_directory pages)" ]]; then
+    echo "Pages rollback roots require attributed V4 release provenance." >&2
+    return 1
+  fi
   local archive=""
   local archive_real archive_name archive_sha256 archive_provenance recorded_at
   local temporary provenance_temporary surface count digest second_count second_digest
@@ -1233,6 +1250,12 @@ process_release_manifest() {
   local surface count digest second_count second_digest second_archive_sha256
   local original_source_commit original_source_tree
   local original_dependency_entry_count original_dependency_bytes original_dependency_sha256
+  local release_format=proofofwork-ui-release-v3
+  local -a record_surfaces=("${surfaces[@]}")
+  if [[ -e "$(surface_directory pages)" || -L "$(surface_directory pages)" ]]; then
+    record_surfaces=("${pages_surfaces[@]}")
+    release_format=proofofwork-ui-release-v4
+  fi
   declare -A counts=()
   declare -A digests=()
 
@@ -1304,7 +1327,7 @@ process_release_manifest() {
   archive_sha256="$(verified_archive_sha256 "${archive}")"
   archive_provenance="${archive}.provenance"
 
-  for surface in "${surfaces[@]}"; do
+  for surface in "${record_surfaces[@]}"; do
     validate_surface "${surface}"
     count="$(surface_file_count "${surface}")"
     digest="$(surface_tree_sha256 "${surface}")"
@@ -1342,7 +1365,7 @@ process_release_manifest() {
       echo "UI source checkout changed while the candidate was verified." >&2
       exit 1
     fi
-    for surface in "${surfaces[@]}"; do
+    for surface in "${record_surfaces[@]}"; do
       validate_surface "${surface}"
       second_count="$(surface_file_count "${surface}")"
       second_digest="$(surface_tree_sha256 "${surface}")"
@@ -1364,7 +1387,7 @@ process_release_manifest() {
   provenance_temporary="$(mktemp "${archive_root}/.${archive_name}.provenance.tmp.XXXXXX")"
   trap 'rm -f -- "${temporary:-}" "${provenance_temporary:-}"' EXIT
   {
-    printf 'format=proofofwork-ui-release-v3\n'
+    printf 'format=%s\n' "${release_format}"
     printf 'release_id=%s\n' "${release_id}"
     printf 'commit=%s\n' "${attested_source_commit}"
     printf 'source_tree=%s\n' "${attested_source_tree}"
@@ -1377,7 +1400,7 @@ process_release_manifest() {
     printf 'archive_name=%s\n' "${archive_name}"
     printf 'archive_sha256=%s\n' "${archive_sha256}"
     printf 'archive_payload_model=surfaces-v1\n'
-    for surface in "${surfaces[@]}"; do
+    for surface in "${record_surfaces[@]}"; do
       printf 'surface.%s.file_count=%s\n' "${surface}" "${counts[${surface}]}"
       printf 'surface.%s.sha256=%s\n' "${surface}" "${digests[${surface}]}"
     done
@@ -1405,7 +1428,7 @@ process_release_manifest() {
     echo "UI source checkout changed while provenance was recorded." >&2
     exit 1
   fi
-  for surface in "${surfaces[@]}"; do
+  for surface in "${record_surfaces[@]}"; do
     validate_surface "${surface}"
     second_count="$(surface_file_count "${surface}")"
     second_digest="$(surface_tree_sha256 "${surface}")"
@@ -1471,7 +1494,7 @@ verify_manifest() {
       format | release_id | commit | source_tree | source_attestation | source_dependency_model | source_dependency_entry_count | source_dependency_bytes | source_dependency_sha256 | deployed_at | archive_name | archive_sha256 | archive_payload_model) ;;
       *)
         allowed_key=false
-        for surface in "${surfaces[@]}"; do
+        for surface in "${pages_surfaces[@]}"; do
           if [[ "${key}" == "surface.${surface}.file_count" ||
             "${key}" == "surface.${surface}.sha256" ]]; then
             allowed_key=true
@@ -1488,7 +1511,7 @@ verify_manifest() {
     values["${key}"]="${value}"
   done <"${manifest}"
 
-  if [[ "${values[format]:-}" != "proofofwork-ui-release-v3" ]] ||
+  if [[ "${values[format]:-}" != "proofofwork-ui-release-v3" && "${values[format]:-}" != "proofofwork-ui-release-v4" ]] ||
     [[ ! "${values[release_id]:-}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] ||
     [[ ! "${values[commit]:-}" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] ||
     [[ ! "${values[source_tree]:-}" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] ||
@@ -1508,6 +1531,19 @@ verify_manifest() {
     "${values[surface.nft.sha256]:-}" != "${values[surface.computer.sha256]:-}" ]]; then
     echo "Active UI release manifest does not preserve the NFT compatibility alias." >&2
     exit 1
+  fi
+  if [[ "${values[format]}" == proofofwork-ui-release-v4 ]]; then
+    manifest_surfaces=("${pages_surfaces[@]}")
+    for surface in "${manifest_surfaces[@]}"; do
+      if [[ -z "${values[surface.${surface}.file_count]:-}" || -z "${values[surface.${surface}.sha256]:-}" ]]; then
+        echo "V4 UI release manifest is missing surface evidence: ${surface}" >&2
+        return 1
+      fi
+    done
+  elif [[ -n "${seen[surface.pages.file_count]:-}" || -n "${seen[surface.pages.sha256]:-}" ||
+    -e "$(surface_directory pages)" || -L "$(surface_directory pages)" ]]; then
+    echo "V3 UI release manifest cannot contain Pages surface evidence or payload." >&2
+    return 1
   fi
   if [[ -z "${values[surface.jobs.file_count]:-}" && -z "${values[surface.jobs.sha256]:-}" ]]; then
     if [[ -e "$(surface_directory jobs)" || -L "$(surface_directory jobs)" ]]; then
@@ -1592,6 +1628,10 @@ verify_manifest() {
 }
 
 verify_rollback_evidence() {
+  if [[ -e "$(surface_directory pages)" || -L "$(surface_directory pages)" ]]; then
+    echo "Legacy rollback evidence cannot verify a Pages release root." >&2
+    return 1
+  fi
   local line key value surface expected_count expected_digest actual_count actual_digest mode
   local archive archive_provenance actual_archive_sha256 manifest_owner provenance_mode provenance_owner
   local -a evidence_surfaces=("${surfaces[@]}")
@@ -1775,7 +1815,7 @@ verify_rollback_capability() {
     exit 1
   fi
   case "${format_value}" in
-    proofofwork-ui-release-v3)
+    proofofwork-ui-release-v3 | proofofwork-ui-release-v4)
       verify_manifest
       ;;
     proofofwork-ui-rollback-evidence-v1)

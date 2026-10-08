@@ -22,6 +22,7 @@ BASE = Path('/var/tmp/proofofwork-deploy')
 EVIDENCE = Path('/var/backups/proofofwork-ui/transport-evidence')
 ARCHIVES = Path('/var/backups/proofofwork-ui/releases')
 SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split()
+PAGES_SURFACES = [*SURFACES, 'pages']
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C', 'GIT_OPTIONAL_LOCKS': '0'}
 EVIDENCE_RESERVE = 32*1024**2
 TOTAL_LOG_CEILING = 16*1024**2
@@ -312,6 +313,14 @@ os.umask(0o077); resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 plan_path, plan_sha, phase = sys.argv[1:]
 assert phase in ('surfaces-stage', 'surfaces-stage-resume', 'preserved-stage-resume', 'source')
 p = json.loads(bound(plan_path, plan_sha, 65536)); release = p['releaseId']
+release_format = p.get('releaseFormat', 'proofofwork-ui-release-v3')
+assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4')
+if 'managedSurfaces' in p:
+    expected_surfaces = PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
+    assert set(p['managedSurfaces']) == set(expected_surfaces) and len(p['managedSurfaces']) == len(expected_surfaces)
+if release_format == 'proofofwork-ui-release-v4':
+    assert set(p['managedSurfaces']) == set(PAGES_SURFACES) and len(p['managedSurfaces']) == 21
+    SURFACES = PAGES_SURFACES
 assert re.fullmatch('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', release)
 assert release.startswith(p['commit'][:12] + '-')
 assert p['frontendOnly'] is True and p['retentionDeferred'] is True

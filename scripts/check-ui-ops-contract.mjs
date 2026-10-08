@@ -144,7 +144,12 @@ assert.match(storagePruneService, /^TimeoutStartSec=30m$/mu);
 assert.match(storagePruneTimer, /OnCalendar=\*-\*-\* 01:10:00 UTC/u);
 assert.match(storagePruneTimer, /Persistent=true/u);
 
-assert.match(provenance, /format=proofofwork-ui-release-v3/u);
+assert.match(provenance, /release_format=proofofwork-ui-release-v3/u);
+assert.match(provenance, /release_format=proofofwork-ui-release-v4/u);
+assert.match(provenance, /V4 UI release manifest is missing surface evidence/u);
+assert.match(provenance, /V3 UI release manifest cannot contain Pages/u);
+assert.match(publisher, /V4 publisher surface set must contain exactly 21 entries/u);
+assert.match(stager, /PAGES_SURFACES = tuple\(sorted\(\(\*SURFACES, "pages"\)\)\)/u);
 assert.match(provenance, /format=proofofwork-ui-rollback-evidence-v1/u);
 assert.match(provenance, /scope=ui-surfaces-only/u);
 assert.match(provenance, /model=exact-surface-files-bytes-and-modes-v1/u);

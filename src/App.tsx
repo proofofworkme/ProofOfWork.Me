@@ -1,5 +1,8 @@
 import { ActionTransactionReview, type ActionReview } from "./shared/components/ActionTransactionReview";
 import { ActionRecoveryPanel } from "./shared/components/ActionRecoveryPanel";
+import { PagesWorkspace, type PagesPublicationDraft, type PagesDnsLinkRequest } from "./features/pages/PagesWorkspace";
+import { assertDnsPageLinkAction, readDnsPageLinkSnapshot } from "./features/pages/dnsPageLinkClient.mjs";
+import { buildDnsPageLinkPayload, dnsPageLinkNameError, DNS_PAGE_LINK_SELF_PAYMENT_SATS, normalizeDnsPageLinkName } from "./shared/protocol/dnsPages.mjs";
 import { readActionReceipts, saveActionReceipt, type ActionReceipt } from "./shared/wallet/actionRecovery";
 import { FEE_RATE_STEP } from "./shared/feeRate";
 import { TransactionReview, type MailTransactionReview } from "./shared/components/TransactionReview";
@@ -74,6 +77,7 @@ import {
 import * as ecc from "@bitcoinerlab/secp256k1";
 import {
   BROWSER_APP_URL,
+  PAGES_APP_URL,
   COMPUTER_APP_URL,
   DESKTOP_APP_URL,
   DNS_APP_URL,
@@ -87,6 +91,7 @@ import {
   CODE_APP_URL,
   JOBS_APP_URL,
   LOCAL_BROWSER_APP_URL,
+  LOCAL_PAGES_APP_URL,
   LOCAL_BOOST_APP_URL,
   LOCAL_PUBLISH_APP_URL,
   LOCAL_CODE_APP_URL,
@@ -113,6 +118,7 @@ import {
   appHref,
   isActivityRoute,
   isBrowserRoute,
+  isPagesRoute,
   isDesktopRoute,
   isDnsLaunchRoute,
   isGrowthRoute,
@@ -394,6 +400,7 @@ type Folder =
   | "files"
   | "desktop"
   | "browser"
+  | "pages"
   | "boost"
   | "publish"
   | "search"
@@ -422,6 +429,7 @@ const COMPUTER_ROUTE_FOLDERS: Folder[] = [
   "files",
   "desktop",
   "browser",
+  "pages",
   "boost",
   "publish",
   "search",
@@ -449,6 +457,7 @@ const STANDALONE_ROUTE_PARAMS = [
   "search-app",
   "code",
   "jobs",
+  "pages",
   "marketplace",
   "credit",
   "token",
@@ -4237,6 +4246,10 @@ function folderLabel(folder: Folder) {
     return "Browser";
   }
 
+  if (folder === "pages") {
+    return "Pages";
+  }
+
   if (folder === "boost") {
     return "Boost";
   }
@@ -4320,6 +4333,10 @@ function folderSubtitle(folder: Folder) {
 
   if (folder === "browser") {
     return "Verified HTML pages";
+  }
+
+  if (folder === "pages") {
+    return "Create HTML pages and apps";
   }
 
   if (folder === "boost") {
@@ -13987,6 +14004,12 @@ function browserTxUrl(txid: string, network: BitcoinNetwork) {
   return `${BROWSER_APP_URL}/tx/${txid}${network === "livenet" ? "" : `?network=${encodeURIComponent(network)}`}`;
 }
 
+function pagesTxUrl(txid: string, network: BitcoinNetwork) {
+  const params = new URLSearchParams({ txid });
+  if (network !== "livenet") params.set("network", network);
+  return `${appHref(PAGES_APP_URL, LOCAL_PAGES_APP_URL)}${isLocalPreviewHost() ? "&" : "/?"}${params.toString()}`;
+}
+
 function browserMessageBodyAttachment(
   html: string,
   subject?: string,
@@ -21821,6 +21844,7 @@ export default function App() {
   const landingMode = isLandingRoute();
   const desktopRoute = isDesktopRoute();
   const browserRoute = isBrowserRoute();
+  const pagesRoute = isPagesRoute();
   const marketplaceMode = isMarketplaceRoute();
   const tokenMode = isTokenRoute();
   const walletMode = isWalletRoute();
@@ -21846,7 +21870,7 @@ export default function App() {
     activityMode ||
     growthMode;
   const [hasUnisat, setHasUnisat] = useUnisatPresence();
-  const [network, setNetwork] = useState<BitcoinNetwork>("livenet");
+  const [network, setNetwork] = useState<BitcoinNetwork>(() => pagesRoute ? networkFromBrowserLocation() : "livenet");
   const [address, setAddress] = useState("");
   const [recipient, setRecipient] = useState("");
   const [ccRecipient, setCcRecipient] = useState("");
@@ -22133,6 +22157,7 @@ export default function App() {
       !dnsLaunchMode &&
       !desktopRoute &&
       !browserRoute &&
+      !pagesRoute &&
       !marketplaceMode &&
       !tokenMode &&
       !walletMode &&
@@ -22150,6 +22175,8 @@ export default function App() {
         ? "desktop"
         : browserRoute
           ? "browser"
+          : pagesRoute
+            ? "pages"
           : marketplaceMode
             ? "marketplace"
             : tokenMode
@@ -22225,7 +22252,36 @@ export default function App() {
     useState<MailSignalMode>("proofs");
   const [fileFilter, setFileFilter] = useState<FileFilter>("all");
   const [selectedKey, setSelectedKey] = useState("");
-  const [composeOpen, setComposeOpen] = useState(true);
+  const [composeOpen, setComposeOpen] = useState(() => !pagesRoute && computerFolderFromSearch() !== "pages");
+  const [pagesPublicationOpen, setPagesPublicationOpen] = useState(false);
+  const [pagesDnsLinkTask, setPagesDnsLinkTask] = useState<(PagesDnsLinkRequest & { scope: string }) | undefined>();
+  const [pagesDnsLinkRestoreNonce, setPagesDnsLinkRestoreNonce] = useState(0);
+  const pagesDnsLinkInFlightRef = useRef(false);
+  useEffect(() => { setPagesDnsLinkTask(undefined); }, [address, network]);
+  const pagesContextRef = useRef({ address, network });
+  pagesContextRef.current = { address, network };
+  const pagesPublicationScopeRef = useRef("");
+  const pagesMailStateRef = useRef("");
+  useEffect(() => {
+    if (pagesPublicationScopeRef.current && pagesPublicationScopeRef.current !== `${network}:${address}`) {
+      if (!composeOpen && !pagesPublicationOpen) {
+        pagesPublicationScopeRef.current = "";
+        return;
+      }
+      // Keep the old scope through this effect pass so the later autosave
+      // effect cannot copy the previous account's publication into this one.
+      setPagesPublicationOpen(false);
+      setComposeOpen(false);
+      setAttachment(undefined);
+      setRecipient("");
+      setCcRecipient("");
+      setSubject("");
+      setMemo(DEFAULT_MEMO);
+      setMessageWorkAmount("0");
+      setReplyParentTxid(undefined);
+      setSocialMode(false);
+    }
+  }, [address, network, composeOpen, pagesPublicationOpen]);
   const [mailReadScope, setMailReadScope] = useState("");
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [compactComputerNavigation, setCompactComputerNavigation] =
@@ -22233,6 +22289,7 @@ export default function App() {
   const mobileNavigationPanelRef = useRef<HTMLElement>(null);
   const mobileNavigationTriggerRef = useRef<HTMLButtonElement>(null);
   const [replyParentTxid, setReplyParentTxid] = useState<string | undefined>();
+  pagesMailStateRef.current = JSON.stringify([address, network, activeFolder, composeOpen, recipient, ccRecipient, amountSats, messageWorkAmount, feeRate, subject, memo, attachment?.sha256, replyParentTxid, socialMode]);
   const [busy, setBusy] = useState(false);
   const [mailSendBusy, setMailSendBusy] = useState(false);
   const [mailReview, setMailReview] = useState<MailTransactionReview>();
@@ -23589,6 +23646,22 @@ export default function App() {
       ),
     [allMail],
   );
+  const pagesFileChoices = useMemo(() => {
+    if (!address || mailReadScope !== `${network}:${address}`) return [];
+    const choices = new Map<string, { key: string; name: string; html: string }>();
+    for (const message of allFileMessages) {
+      if (message.network !== network || !isBrowserHtmlAttachment(message.attachment)) continue;
+      try {
+        const bytes = base64UrlDecodeBytes(message.attachment.data);
+        if (bytes.byteLength !== message.attachment.size || sha256Hex(bytes) !== message.attachment.sha256) continue;
+        const html = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+        if (sha256Hex(new TextEncoder().encode(html)) !== message.attachment.sha256) continue;
+        const key = desktopFileIdentityKey(message);
+        choices.set(key, { key, name: message.attachment.name, html });
+      } catch { /* Invalid file bytes never become editable verified source. */ }
+    }
+    return [...choices.values()];
+  }, [allFileMessages, address, mailReadScope, network]);
   const desktopFileMessages = useMemo(
     () => desktopMail.filter(hasAttachment),
     [desktopMail],
@@ -26276,6 +26349,7 @@ export default function App() {
       dnsLaunchMode ||
       desktopRoute ||
       browserRoute ||
+      pagesRoute ||
       marketplaceMode ||
       tokenMode ||
       walletMode ||
@@ -26322,6 +26396,7 @@ export default function App() {
   }, [
     activityMode,
     browserRoute,
+    pagesRoute,
     desktopRoute,
     dnsLaunchMode,
     growthMode,
@@ -26357,6 +26432,11 @@ export default function App() {
                 "Search public confirmed ProofOfWork files by address or confirmed ProofOfWork ID.",
               title: "ProofOfWork Desktop",
             }
+          : pagesRoute
+            ? {
+                description: "Create, preview, and publish HTML pages and apps on the ProofOfWork Computer.",
+                title: "ProofOfWork Pages",
+              }
           : browserRoute
             ? {
                 description:
@@ -26369,7 +26449,7 @@ export default function App() {
                 title: "ProofOfWork.Me",
               },
     );
-  }, [browserRoute, desktopRoute, dnsLaunchMode, idLaunchMode]);
+  }, [browserRoute, pagesRoute, desktopRoute, dnsLaunchMode, idLaunchMode]);
 
   useEffect(() => {
     if (!address) {
@@ -26840,6 +26920,8 @@ export default function App() {
     if (!address || !composeOpen) {
       return;
     }
+
+    if (pagesPublicationScopeRef.current && pagesPublicationScopeRef.current !== `${network}:${address}`) return;
 
     const draft: DraftMessage = {
       amountSats,
@@ -28064,6 +28146,7 @@ export default function App() {
       idLaunchMode ||
       desktopRoute ||
       browserRoute ||
+      pagesRoute ||
       marketplaceMode ||
       tokenMode ||
       walletMode ||
@@ -28111,6 +28194,7 @@ export default function App() {
       idLaunchMode ||
       desktopRoute ||
       browserRoute ||
+      pagesRoute ||
       marketplaceMode ||
       tokenMode ||
       walletMode ||
@@ -28238,6 +28322,8 @@ export default function App() {
 
   function composeNew() {
     if (!canLeavePublishWriter()) return;
+    pagesPublicationScopeRef.current = "";
+    setPagesPublicationOpen(false);
     rememberComputerFolder("inbox");
     setSidebarExpanded(false);
     setRecipient("");
@@ -28294,6 +28380,151 @@ export default function App() {
       setSelectedKey("");
     } catch (error) {
       setStatus({ tone: "bad", text: errorMessage(error, "Save your Mail draft before opening Publish.") });
+    }
+  }
+
+  async function preparePagesPublication(draft: PagesPublicationDraft) {
+    const context = { address, network };
+    const expectedMailState = pagesMailStateRef.current;
+    if (!context.address) {
+      throw new Error("Connect UniSat in the header to prepare a page publication. Your page draft stays saved locally.");
+    }
+    const priorDraft = loadDraft(context.address, context.network);
+    const draftStorageKey = draftKey(context.address, context.network);
+    const priorStoredDraft = localStorage.getItem(draftStorageKey);
+    if (priorStoredDraft && !priorDraft) throw new Error("The saved Mail draft could not be read. Preserve or export the local data before preparing another publication.");
+    if (priorDraft && isDraftContentful(priorDraft)) {
+      throw new Error(pagesRoute ? "Your saved publication is preserved. Use Resume saved publication to review or discard it before preparing another page." : "Your unsent Mail draft is preserved. Open Computer → Drafts to send, export, or discard it before preparing this publication.");
+    }
+    if (mailSendBusy || mailReview || mailRecoveryReason) {
+      throw new Error(mailRecoveryReason || "Finish the current Mail review before preparing a page publication.");
+    }
+    if (!draft.html.trim() || byteLength(draft.html) > MAX_DATA_CARRIER_BYTES) {
+      throw new Error("Choose non-empty HTML within the 100,000-byte editor limit. The transaction review also checks the complete protocol size.");
+    }
+    const pageAttachment = draft.mode === "attachment"
+      ? await attachmentFromFile(new File([draft.html], `${draft.title.trim().replace(/[^\p{L}\p{N}._-]/gu, "-").slice(0, 80) || "proof-page"}.html`, { type: "text/html" }))
+      : undefined;
+    if (pagesContextRef.current.address !== context.address || pagesContextRef.current.network !== context.network || pagesMailStateRef.current !== expectedMailState || localStorage.getItem(draftStorageKey) !== priorStoredDraft) {
+      throw new Error("The wallet, network, workspace, or Mail draft changed. Prepare this publication again from Pages.");
+    }
+    pagesPublicationScopeRef.current = `${context.network}:${context.address}`;
+    setRecipient(context.address);
+    setCcRecipient("");
+    setAmountSats(DEFAULT_AMOUNT_SATS);
+    setMessageWorkAmount("0");
+    setFeeRate(DEFAULT_FEE_RATE);
+    setSubject(draft.title.trim().slice(0, 180));
+    setMemo(draft.mode === "body" ? draft.html : "");
+    setAttachment(pageAttachment);
+    setReplyParentTxid(undefined);
+    setSocialMode(false);
+    setSelectedKey("");
+    setSidebarExpanded(false);
+    setPagesPublicationOpen(true);
+    setComposeOpen(true);
+    if (!pagesRoute) {
+      rememberComputerFolder("inbox");
+      setActiveFolder("inbox");
+    }
+    setStatus({ tone: "idle", text: "Page publication prepared. Review destinations, proofs, and miner fee in Mail; Send opens the exact transaction review before local signing." });
+  }
+
+  async function loadPagesSource(txid: string) {
+    const page = await fetchBrowserPage(txid, network);
+    const bytes = base64UrlDecodeBytes(page.attachment.data);
+    const html = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+    if (bytes.byteLength !== page.attachment.size || sha256Hex(bytes) !== page.attachment.sha256 || sha256Hex(new TextEncoder().encode(html)) !== page.attachment.sha256) {
+      throw new Error("The HTML source cannot be imported without changing its verified UTF-8 bytes.");
+    }
+    return { html, title: page.attachment.name.replace(/\.x?html$/iu, ""), txid: page.txid, confirmed: page.confirmed, sender: page.sender, sha256: page.attachment.sha256 };
+  }
+
+  async function resolvePagesIdentity(id: string) {
+    if (!registryAddressForNetwork(network)) throw new Error("Confirmed ProofOfWork IDs are unavailable on this network.");
+    const state = await fetchIdRecordState(network, id);
+    const record = state.record;
+    if (!record?.confirmed || record.network !== network) {
+      throw new Error("This ID has no current confirmed registry record. Pending IDs cannot establish identity.");
+    }
+    return { id: record.id, ownerAddress: record.ownerAddress, receiveAddress: record.receiveAddress };
+  }
+
+  async function linkPagesDns(request: PagesDnsLinkRequest) {
+    if (busy || mailSendBusy || mailReview || actionInFlightRef.current || pagesDnsLinkInFlightRef.current) {
+      throw new Error("Finish the current transaction task before changing a Pages link.");
+    }
+    const name = normalizeDnsPageLinkName(request.name);
+    const target = { name, pageTxid: request.pageTxid === null ? null : request.pageTxid.trim().toLowerCase() };
+    pagesDnsLinkInFlightRef.current = true;
+    setPagesDnsLinkTask(undefined);
+    setBusy(true);
+    const context = captureActionContext();
+    const readCurrent = async () => {
+      const payload = await fetchProofApiJson<unknown>(`/api/v1/dns/${encodeURIComponent(name)}?current=1&fresh=1`, network);
+      return readDnsPageLinkSnapshot(payload, name, { network, validateAddress: value => isValidBitcoinAddress(value, network) });
+    };
+    const linkIdentity = (link: ReturnType<typeof readDnsPageLinkSnapshot>["pageLink"]) =>
+      link ? JSON.stringify([link.txid, link.pageTxid, link.epoch]) : "";
+    try {
+      if (network !== "livenet" || !address || !window.unisat) throw new Error("Connect the confirmed .pow owner wallet on Mainnet first.");
+      if (dnsPageLinkNameError(name)) throw new Error("Enter a valid root .pow name.");
+      assertFeeRatePrecision(feeRate);
+      setStatus({ tone: "idle", text: "Verifying .pow ownership, complete page-link history, and the confirmed HTML target…" });
+      const snapshot = await readCurrent();
+      context.assertCurrent();
+      const owner = assertDnsPageLinkAction(snapshot, target, address);
+      const epoch = owner.ownershipEpoch;
+      const currentLink = linkIdentity(snapshot.pageLink);
+      const page = target.pageTxid ? await fetchBrowserPage(target.pageTxid, network) : undefined;
+      context.assertCurrent();
+      if (page && !page.confirmed) throw new Error("The Pages target is pending. Link a confirmed HTML transaction.");
+      const payload = buildDnsPageLinkPayload(target.pageTxid
+        ? { action: "set", name, epoch, pageTxid: target.pageTxid }
+        : { action: "clear", name, epoch });
+      const expectedRecords = [...buildProtocolPayloads("", `${name}.pow Pages link`), payload];
+      await ensureWalletNetwork(context.wallet!, network, address);
+      context.assertCurrent();
+      const dnsState = await fetchDnsRegistryState(network, true);
+      context.assertCurrent();
+      const prepared = await buildPaymentPsbt({ amountSats: DNS_PAGE_LINK_SELF_PAYMENT_SATS, feeRate,
+        fromAddress: address, toAddress: address, network, requireConfirmedUtxos: true,
+        protocolPayloads: expectedRecords, excludeOutpoints: activeListingAnchorOutpointsForAddress(dnsState.listings, address, { network }) });
+      const revalidate = async () => {
+        const current = await readCurrent();
+        assertDnsPageLinkAction(current, target, address, epoch);
+        if (currentLink !== linkIdentity(current.pageLink)) throw new Error("The current Pages link changed. Prepare and review a new transaction.");
+        if (page && target.pageTxid) {
+          const freshPage = await fetchBrowserPage(target.pageTxid, network);
+          if (!freshPage.confirmed || freshPage.attachment.sha256 !== page.attachment.sha256) {
+            throw new Error("The confirmed Pages target changed. Prepare and review again.");
+          }
+        }
+        const freshDns = await fetchDnsRegistryState(network, true);
+        const intent = psbtUnsignedTransactionIntent(bitcoin.Psbt.fromHex(prepared.psbtHex, { network: bitcoinNetwork(network) }));
+        if (activeListingAnchorOutpointsForAddress(freshDns.listings, address, { network }).some(outpoint => transactionIntentSpendsOutpoint(intent, outpoint))) {
+          throw new Error("Prepared funding is now reserved by a DNS sale ticket. Refresh funds and review again.");
+        }
+        context.assertCurrent();
+      };
+      const txid = await reviewAndSendAction({ prepared,
+        title: target.pageTxid ? "Review .pow page link" : "Review .pow page unlink",
+        fields: [["DNS name", `${name}.pow`], ["Link action", target.pageTxid ? "set" : "clear"],
+          ["Confirmed owner", owner.ownerAddress], ["Ownership period", `${epoch.txid}:${epoch.protocolVout}:${epoch.recordOrdinal}`],
+          ["Pages transaction", target.pageTxid || ""], ["Page source SHA-256", page?.attachment.sha256 || ""],
+          ["Current link transaction", snapshot.pageLink?.txid || ""], ["Address resolver", owner.receiveAddress]],
+        payload, expectedRecords, returnedSelfPayment: true, registry: address,
+        registryProofs: DNS_PAGE_LINK_SELF_PAYMENT_SATS, key: `dns-page-link:${name}`, context, revalidate,
+        marketplace: { payments: [{ address, amountSats: DNS_PAGE_LINK_SELF_PAYMENT_SATS }], labels: ["546-proof self-payment to the confirmed .pow owner"],
+          explanation: "The self-payment stays in your owner wallet; the net wallet cost is the miner fee. This page link belongs to the reviewed ownership period and retires on a confirmed name transfer or purchase. Browser routing changes only after confirmation." },
+      });
+      setStatus(goodBroadcastStatus(`${name}.pow ${target.pageTxid ? "link" : "unlink"} broadcast. Browser routing changes only after confirmation.`, txid, network));
+    } catch (error) {
+      setStatus({ tone: "bad", text: errorMessage(error, "Pages link failed. Task retained.") });
+      throw error;
+    } finally {
+      pagesDnsLinkInFlightRef.current = false;
+      setBusy(false);
     }
   }
 
@@ -36723,10 +36954,11 @@ export default function App() {
     void refreshInfinity(true, true, INFINITY_BOND_UI);
   };
 
-  const actionComputerMode = !idLaunchMode && !dnsLaunchMode && !walletMode && !tokenMode && !workTokenMode && !standaloneBondConfig;
+  const actionComputerMode = !idLaunchMode && !dnsLaunchMode && !pagesRoute && !walletMode && !tokenMode && !workTokenMode && !standaloneBondConfig;
   const computerDnsRecoveryMode = actionComputerMode && !marketplaceMode && !desktopRoute && !browserRoute && !activityMode && !growthMode && !landingMode;
   function canRestoreActionHere(receipt: ActionReceipt) {
     if (receipt.fields.some(([label]) => label === "Listing transaction")) return false;
+    if (receipt.key.startsWith("dns-page-link:")) return pagesRoute || computerDnsRecoveryMode;
     if (receipt.key.startsWith("registerDns:")) return dnsLaunchMode || computerDnsRecoveryMode;
     if (receipt.key.startsWith("dns-subdomain:")) return dnsLaunchMode || actionComputerMode || marketplaceMode;
     if (receipt.key.startsWith("registerId:")) return idLaunchMode || actionComputerMode;
@@ -36749,6 +36981,10 @@ export default function App() {
       setDnsSubdomainRestoreNonce(value => value + 1);
       if (computerDnsRecoveryMode) openFolder("dns");
       else if (actionComputerMode) openFolder("marketplace");
+    } else if (receipt.key.startsWith("dns-page-link:")) {
+      setPagesDnsLinkTask({ name: field("DNS name"), pageTxid: field("Link action") === "clear" ? null : field("Pages transaction"), scope: `${network}:${address}` });
+      setPagesDnsLinkRestoreNonce(value => value + 1);
+      if (!pagesRoute) openFolder("pages");
     } else if (receipt.key.startsWith("id-mutation:")) {
       setManagedIdName(receipt.key.slice("id-mutation:".length));
       if (field("New owner")) { setIdTransferOwnerAddress(field("New owner")); setIdTransferReceiveAddress(field("Mail receiver after transfer")); }
@@ -36770,11 +37006,11 @@ export default function App() {
       receipts={actionReceipts.filter(item => item.address === address && item.network === network)}
       error={actionRecoveryError}
       checking={actionRecoveryBusy}
-      restoringDisabled={actionInFlightRef.current}
+      restoringDisabled={actionInFlightRef.current || pagesDnsLinkInFlightRef.current}
       canRestore={canRestoreActionHere}
       onRestore={restoreActionTask}
       onCheck={() => void refreshActionRecovery()}
-      workspaceHref={item => item.key.startsWith("marketplace:") || item.fields.some(([label]) => label === "Listing transaction") ? appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL) : item.key.startsWith("registerDns:") || item.key.startsWith("dns-subdomain:") ? computerDnsRecoveryMode ? "?folder=dns" : appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
+      workspaceHref={item => item.key.startsWith("dns-page-link:") ? computerDnsRecoveryMode ? "?folder=pages" : appHref(PAGES_APP_URL, LOCAL_PAGES_APP_URL) : item.key.startsWith("marketplace:") || item.fields.some(([label]) => label === "Listing transaction") ? appHref(MARKETPLACE_APP_URL, LOCAL_MARKETPLACE_APP_URL) : item.key.startsWith("registerDns:") || item.key.startsWith("dns-subdomain:") ? computerDnsRecoveryMode ? "?folder=dns" : appHref(DNS_APP_URL, LOCAL_DNS_APP_URL) : appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
     />
     {actionReview ? <ActionTransactionReview review={actionReview} returnFocus={actionReturnFocusRef.current} onCancel={() => finishActionReview(false)} onApprove={() => finishActionReview(true)} /> : null}
   </>;
@@ -37310,6 +37546,27 @@ export default function App() {
     );
   }
 
+  function pagesWorkspace(embedded: boolean) {
+    return (
+      <PagesWorkspace
+        address={address} network={network} embedded={embedded}
+        onPublish={preparePagesPublication} onLoadPage={loadPagesSource} onResolveIdentity={resolvePagesIdentity}
+        onLinkPage={linkPagesDns}
+        dnsBrowserHref={name => `${appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}${isLocalPreviewHost() ? "&" : "/?"}name=${encodeURIComponent(name)}`}
+        dnsLinkFeeControl={<fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} /></fieldset>}
+        dnsLinkRestore={pagesDnsLinkTask?.scope === `${network}:${address}` ? { ...pagesDnsLinkTask, nonce: pagesDnsLinkRestoreNonce } : undefined}
+        fileChoices={pagesFileChoices}
+        onOpenFiles={() => {
+          if (pagesRoute) window.location.assign(`${appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}${isLocalPreviewHost() ? "?" : "/?"}folder=files`);
+          else openFolder("files");
+        }}
+        browserHref={(txid) => browserTxUrl(txid, network)}
+        pageHref={(txid) => pagesTxUrl(txid, network)}
+        renderStaticPreview={(html) => <iframe referrerPolicy="no-referrer" sandbox="" srcDoc={browserStaticDocument(html)} title="Static page preview" />}
+      />
+    );
+  }
+
   if (desktopRoute) {
     return (
       <DesktopApp
@@ -37341,6 +37598,41 @@ export default function App() {
 
   if (browserRoute) {
     return <BrowserApp accountStats={connectedAccountStats} />;
+  }
+
+  if (pagesRoute) {
+    return (
+      <main className="desktop-public-app pages-public-app has-route-status">
+        <AppHeader accountStats={connectedAccountStats} address={address} busy={busy || mailSendBusy} connectWallet={connectWallet} disconnectWallet={disconnectWallet} hasUnisat={hasUnisat} network={network} onNetworkChange={chooseNetwork} subtitle="Create on the ProofOfWork Computer" title="ProofOfWork Pages" />
+        <AppStatusRow persistent secondaryStatus={degradedReadStatus} status={status} />
+        {actionUi}
+        {pagesWorkspace(false)}
+        {savedDraft && !(pagesPublicationOpen && composeOpen) ? <div className="pages-publication-pane"><button className="secondary" onClick={() => { pagesPublicationScopeRef.current = `${network}:${address}`; applyDraft(savedDraft); setPagesPublicationOpen(true); }} type="button">Resume saved publication</button></div> : null}
+        {pagesPublicationOpen && composeOpen ? (
+          <section aria-label="Page publication" className="pages-publication-pane">
+            <div className="browser-card-head">
+              <div><h2>Publish through Mail</h2><p>Choose destinations and fees, then review the exact transaction before signing.</p></div>
+              <button className="secondary" disabled={mailSendBusy || Boolean(mailReview)} onClick={() => { setPagesPublicationOpen(false); setComposeOpen(false); }} type="button">Back to Pages</button>
+            </div>
+            <ComposePane
+              amountSats={amountSats} attachment={attachment} busy={mailSendBusy || pagesDnsLinkInFlightRef.current} contacts={contactsForNetwork}
+              feeRate={feeRate} memo={memo} dataCarrierBytes={composeDataCarrierBytes} network={network} draftMode onDiscardDraft={discardDraft} onPublish={composePublish}
+              ccRecipient={ccRecipient} ccRecipientError={Boolean(ccRecipientResolution.error)} ccRecipientNote={ccRecipientNote}
+              parentTxid={replyParentTxid} recipient={recipient} recipientError={Boolean(recipientResolution.error)} recipientNote={recipientNote}
+              sendState={composeSendState} sendStatus={[mailRecoveryReason, boostComposeReason, mailWorkAdmissionReason].filter(Boolean).join(" ")}
+              sender={address} setAttachment={setAttachment} setAttachmentFile={(file) => void attachFile(file)}
+              setParentTxid={setReplyParentTxid} setAmountSats={setAmountSats} setCcRecipient={setCcRecipient} setFeeRate={setFeeRate}
+              setMemo={setMemo} setRecipient={setRecipient} setSocialMode={setSocialMode} setSubject={setSubject}
+              setWorkAmount={setMessageWorkAmount} socialMode={socialMode} subject={subject} submit={sendOpReturn}
+              workAmount={messageWorkAmount} workAttachmentTotalAtoms={workAttachmentTotalAtoms.toString()}
+              workSpendableAtoms={workAttachmentPreviewSpendability?.spendableBalanceSubatoms} workVisible={workAttachmentVisible}
+            />
+          </section>
+        ) : null}
+        <SocialFooter compact />
+        {mailReview ? <TransactionReview review={mailReview} returnFocus={mailReviewReturnFocusRef.current} onCancel={() => finishMailReview(false)} onApprove={() => finishMailReview(true)} /> : null}
+      </main>
+    );
   }
 
   if (activityMode) {
@@ -37433,6 +37725,7 @@ export default function App() {
     activeFolder === "code" ? "is-code-workspace" : "",
     activeFolder === "jobs" ? "is-jobs-workspace" : "",
     activeFolder === "boost" || activeFolder === "publish" ? "is-boost-workspace" : "",
+    activeFolder === "pages" ? "is-browser-workspace is-pages-workspace" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -37709,6 +38002,9 @@ export default function App() {
               </button>
             </form>
             <span className="folder-group-label">Create &amp; files</span>
+            <button aria-current={activeFolder === "pages"} onClick={() => openFolder("pages")} type="button">
+              <span className="folder-label"><FilePenLine size={17} /><span>Pages</span></span>
+            </button>
             <button
               aria-current={activeFolder === "files"}
               onClick={() => openFolder("files")}
@@ -38476,6 +38772,8 @@ export default function App() {
               setDesktopSelectedKey(desktopFileIdentityKey(message))
             }
           />
+        ) : activeFolder === "pages" ? (
+          pagesWorkspace(true)
         ) : activeFolder === "browser" ? (
           <BrowserWorkspace activeNetwork={network} />
         ) : activeFolder === "boost" ? (
@@ -38975,23 +39273,60 @@ function browserTemplateHtml(title: string, kicker: string, body: string) {
 </html>`;
 }
 
-function txidFromBrowserLocation() {
-  const params = new URLSearchParams(window.location.search);
-  const fromQuery = params.get("txid") ?? params.get("tx");
-  if (fromQuery && /^[0-9a-fA-F]{64}$/u.test(fromQuery.trim())) {
-    return fromQuery.trim().toLowerCase();
-  }
+type BrowserDnsPageLink = {
+  name: string;
+  pageTxid: string;
+  txid: string;
+  ownerAddress: string;
+  blockHeight: number;
+  checkpointHash: string;
+  indexedThroughBlock: number;
+};
 
-  const pathParts = window.location.pathname.split("/").filter(Boolean);
-  const txIndex = pathParts.findIndex((part) => part.toLowerCase() === "tx");
-  const fromPath = txIndex >= 0 ? pathParts[txIndex + 1] : pathParts[0];
-  return fromPath && /^[0-9a-fA-F]{64}$/u.test(fromPath)
-    ? fromPath.toLowerCase()
+type BrowserResolvedPage = BrowserPage & { dnsLink?: BrowserDnsPageLink };
+
+function normalizeBrowserTarget(value: string) {
+  const target = value.trim().toLowerCase();
+  return /^[0-9a-f]{64}$/u.test(target) ||
+    /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.pow$/u.test(target)
+    ? target
     : "";
 }
 
+async function fetchBrowserTargetPage(target: string, network: BitcoinNetwork, signal?: AbortSignal): Promise<BrowserResolvedPage> {
+  const normalized = normalizeBrowserTarget(target);
+  if (!normalized) throw new Error("Enter a valid ProofOfWork txid or root .pow name.");
+  if (!normalized.endsWith(".pow")) return fetchBrowserPage(normalized, network, signal);
+  if (network !== "livenet") throw new Error(".pow Pages links are available on Mainnet only.");
+  const params = new URLSearchParams({ current: "1", fresh: "1" });
+  const payload = await fetchProofApiJson<unknown>(`/api/v1/dns/${encodeURIComponent(normalized.slice(0, -4))}?${params.toString()}`, network, { signal });
+  signal?.throwIfAborted();
+  const snapshot = readDnsPageLinkSnapshot(payload, normalized, { network,
+    validateAddress: value => isValidBitcoinAddress(value, network) });
+  if (!snapshot.pageLink) throw new Error("This .pow name has no confirmed Pages link.");
+  const dnsLink: BrowserDnsPageLink = { name: snapshot.name, pageTxid: snapshot.pageLink.pageTxid,
+    txid: snapshot.pageLink.txid, ownerAddress: snapshot.pageLink.ownerAddress, blockHeight: snapshot.pageLink.blockHeight,
+    indexedThroughBlock: snapshot.indexedThroughBlock, checkpointHash: snapshot.checkpointHash };
+  const page = await fetchBrowserPage(dnsLink.pageTxid, network, signal);
+  signal?.throwIfAborted();
+  if (!page.confirmed) throw new Error("The linked Pages transaction is pending. A .pow name opens confirmed pages only.");
+  return { ...page, dnsLink };
+}
+
+function txidFromBrowserLocation() {
+  const params = new URLSearchParams(window.location.search);
+  const fromQuery = params.get("name") ?? params.get("txid") ?? params.get("tx");
+  if (fromQuery) return normalizeBrowserTarget(fromQuery);
+
+  const pathParts = window.location.pathname.split("/").filter(Boolean);
+  const targetIndex = pathParts.findIndex((part) => ["tx", "name"].includes(part.toLowerCase()));
+  const fromPath = targetIndex >= 0 ? pathParts[targetIndex + 1] : pathParts[0];
+  return fromPath ? normalizeBrowserTarget(fromPath) : "";
+}
+
 function browserRoutePath(txid: string, network: BitcoinNetwork) {
-  const normalizedTxid = txid.trim().toLowerCase();
+  const normalizedTxid = normalizeBrowserTarget(txid);
+  const isName = normalizedTxid.endsWith(".pow");
   const params = new URLSearchParams();
   if (network !== "livenet") {
     params.set("network", network);
@@ -38999,12 +39334,12 @@ function browserRoutePath(txid: string, network: BitcoinNetwork) {
 
   if (isLocalPreviewHost()) {
     params.set("browser", "1");
-    params.set("txid", normalizedTxid);
+    params.set(isName ? "name" : "txid", normalizedTxid);
     return `/?${params.toString()}`;
   }
 
   const query = params.toString();
-  return `/tx/${normalizedTxid}${query ? `?${query}` : ""}`;
+  return `/${isName ? "name" : "tx"}/${normalizedTxid}${query ? `?${query}` : ""}`;
 }
 
 function syncBrowserRoute(txid: string, network: BitcoinNetwork) {
@@ -39400,11 +39735,11 @@ function BrowserApp({
     networkFromBrowserLocation(),
   );
   const [query, setQuery] = useState(() => txidFromBrowserLocation());
-  const [page, setPage] = useState<BrowserPage | undefined>();
+  const [page, setPage] = useState<BrowserResolvedPage | undefined>();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<WorkspaceStatus>({
     tone: "idle",
-    text: "Enter a ProofOfWork txid to load verified HTML.",
+    text: "Enter a ProofOfWork txid or .pow name to load verified HTML.",
   });
   const [templateTitle, setTemplateTitle] = useState("My ProofOfWork Page");
   const [templateKicker, setTemplateKicker] = useState(
@@ -39435,22 +39770,22 @@ function BrowserApp({
       loadControllerRef.current?.abort();
       const controller = new AbortController();
       loadControllerRef.current = controller;
-      const txid = target.trim().toLowerCase();
-      if (!/^[0-9a-f]{64}$/u.test(txid)) {
+      const txid = normalizeBrowserTarget(target);
+      if (!txid) {
         setLoading(false);
         setPage(undefined);
-        setStatus({ tone: "bad", text: "Enter a valid ProofOfWork txid." });
+        setStatus({ tone: "bad", text: "Enter a valid ProofOfWork txid or root .pow name." });
         return;
       }
 
       setLoading(true);
       setStatus({
         tone: "idle",
-        text: "Loading verified page from ProofOfWork...",
+        text: "Resolving verified page from ProofOfWork...",
       });
       try {
-        const loadedPage = await fetchBrowserPage(txid, targetNetwork, controller.signal);
-        if (generation !== loadGenerationRef.current) {
+        const loadedPage = await fetchBrowserTargetPage(txid, targetNetwork, controller.signal);
+        if (generation !== loadGenerationRef.current || controller.signal.aborted) {
           return;
         }
         setPage(loadedPage);
@@ -39461,12 +39796,14 @@ function BrowserApp({
         }
         setStatus({
           tone: loadedPage.confirmed ? "good" : "idle",
-          text: loadedPage.confirmed
+          text: loadedPage.dnsLink
+            ? `Resolved ${loadedPage.dnsLink.name} to a verified confirmed HTML page.`
+            : loadedPage.confirmed
             ? "Verified confirmed HTML page."
             : "Verified pending HTML page. Confirmation is still final truth.",
         });
       } catch (error) {
-        if (generation !== loadGenerationRef.current) {
+        if (generation !== loadGenerationRef.current || controller.signal.aborted) {
           return;
         }
         setPage(undefined);
@@ -39475,7 +39812,7 @@ function BrowserApp({
           text: errorMessage(error, "Could not load Browser page."),
         });
       } finally {
-        if (generation === loadGenerationRef.current) {
+        if (generation === loadGenerationRef.current && !controller.signal.aborted) {
           setLoading(false);
         }
       }
@@ -39532,7 +39869,7 @@ function BrowserApp({
       setLoading(false);
       setStatus({
         tone: "idle",
-        text: "Enter a ProofOfWork txid to load verified HTML.",
+        text: "Enter a ProofOfWork txid or .pow name to load verified HTML.",
       });
     };
 
@@ -39568,7 +39905,7 @@ function BrowserApp({
         <section className="browser-hero" id="browser-render">
           <div>
             <span className="browser-kicker">ProofOfWork-native browser</span>
-            <h2>Paste a txid. Render the page.</h2>
+            <h2>Enter a .pow name or txid.</h2>
             <p>
               HTML pages are ProofOfWork message bodies or file attachments,
               reconstructed from OP_RETURN chunks and rendered inside a static,
@@ -39583,11 +39920,11 @@ function BrowserApp({
             }}
           >
             <label>
-              Transaction ID
+              Transaction ID or .pow name
               <input
                 autoComplete="off"
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="64 character txid"
+                placeholder="alice.pow or 64 character txid"
                 spellCheck={false}
                 value={query}
               />
@@ -39635,7 +39972,14 @@ function BrowserApp({
                 <CheckCircle2 size={24} />
               </div>
               <h3>Verified page</h3>
+              <a className="secondary link-button" href={pagesTxUrl(page.txid, page.network)}>Edit in Pages</a>
               <dl>
+                {page.dnsLink ? <>
+                  <div><dt>.pow name</dt><dd>{page.dnsLink.name}</dd></div>
+                  <div><dt>DNS link TXID</dt><dd>{page.dnsLink.txid}</dd></div>
+                  <div><dt>DNS owner</dt><dd>{shortAddress(page.dnsLink.ownerAddress)}</dd></div>
+                  <div><dt>DNS checkpoint</dt><dd>{page.dnsLink.indexedThroughBlock.toLocaleString()} · {page.dnsLink.checkpointHash}</dd></div>
+                </> : null}
                 <div>
                   <dt>Status</dt>
                   <dd>{page.confirmed ? "Confirmed" : "Pending"}</dd>
@@ -39706,8 +40050,8 @@ function BrowserApp({
             </div>
             <h3>No page loaded</h3>
             <p>
-              Browser accepts confirmed or pending txids with HTML in the
-              message body or a verified HTML attachment.
+              Browser opens confirmed Pages links for .pow names, or confirmed and pending
+              txids with HTML in the message body or a verified HTML attachment.
             </p>
           </section>
         )}
@@ -39719,6 +40063,7 @@ function BrowserApp({
               <h3>Computer-native HTML</h3>
             </div>
             <div className="browser-template-actions">
+              <a className="primary link-button" href={appHref(PAGES_APP_URL, LOCAL_PAGES_APP_URL)}>Create in Pages</a>
               <button
                 className="secondary small"
                 onClick={() => void copyTemplate()}
@@ -39802,11 +40147,11 @@ function BrowserWorkspace({
 }) {
   const [network, setNetwork] = useState<BitcoinNetwork>(activeNetwork);
   const [query, setQuery] = useState("");
-  const [page, setPage] = useState<BrowserPage | undefined>();
+  const [page, setPage] = useState<BrowserResolvedPage | undefined>();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({
     tone: "idle",
-    text: "Ready. Paste a txid to render verified HTML from the ProofOfWork Computer.",
+    text: "Ready. Enter a txid or .pow name to render verified HTML.",
   });
   const [templateTitle, setTemplateTitle] = useState("My ProofOfWork Page");
   const [templateKicker, setTemplateKicker] = useState(
@@ -39851,21 +40196,21 @@ function BrowserWorkspace({
       loadControllerRef.current?.abort();
       const controller = new AbortController();
       loadControllerRef.current = controller;
-      const txid = target.trim().toLowerCase();
-      if (!/^[0-9a-f]{64}$/u.test(txid)) {
+      const txid = normalizeBrowserTarget(target);
+      if (!txid) {
         setLoading(false);
         setPage(undefined);
-        setStatus({ tone: "bad", text: "Enter a valid ProofOfWork txid." });
+        setStatus({ tone: "bad", text: "Enter a valid ProofOfWork txid or root .pow name." });
         return;
       }
 
       setLoading(true);
       setStatus({
         tone: "idle",
-        text: "Loading verified page from ProofOfWork...",
+        text: "Resolving verified page from ProofOfWork...",
       });
       try {
-        const loadedPage = await fetchBrowserPage(txid, network, controller.signal);
+        const loadedPage = await fetchBrowserTargetPage(txid, network, controller.signal);
         if (generation !== loadGenerationRef.current || controller.signal.aborted) {
           return;
         }
@@ -39873,7 +40218,9 @@ function BrowserWorkspace({
         setQuery(txid);
         setStatus({
           tone: loadedPage.confirmed ? "good" : "idle",
-          text: loadedPage.confirmed
+          text: loadedPage.dnsLink
+            ? `Resolved ${loadedPage.dnsLink.name} to a verified confirmed HTML page.`
+            : loadedPage.confirmed
             ? "Verified confirmed HTML page."
             : "Verified pending HTML page. Confirmation is still final truth.",
         });
@@ -39934,7 +40281,7 @@ function BrowserWorkspace({
           <span className="browser-kicker">ProofOfWork-native browser</span>
           <h2>Browser</h2>
           <p>
-            Paste a txid to render HTML from a ProofOfWork message body or the
+            Enter a .pow name or txid to render HTML from a ProofOfWork message body or the
             same verified attachment protocol used by Files and Desktop. Pages
             stay static: scripts, forms, navigation, and external network
             requests are disabled.
@@ -39948,11 +40295,11 @@ function BrowserWorkspace({
           }}
         >
           <label>
-            Transaction ID
+            Transaction ID or .pow name
             <input
               autoComplete="off"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="64 character txid"
+              placeholder="alice.pow or 64 character txid"
               spellCheck={false}
               value={query}
             />
@@ -40001,6 +40348,12 @@ function BrowserWorkspace({
             </div>
             <h3>Verified page</h3>
             <dl>
+              {page.dnsLink ? <>
+                <div><dt>.pow name</dt><dd>{page.dnsLink.name}</dd></div>
+                <div><dt>DNS link TXID</dt><dd>{page.dnsLink.txid}</dd></div>
+                <div><dt>DNS owner</dt><dd>{shortAddress(page.dnsLink.ownerAddress)}</dd></div>
+                <div><dt>DNS checkpoint</dt><dd>{page.dnsLink.indexedThroughBlock.toLocaleString()} · {page.dnsLink.checkpointHash}</dd></div>
+              </> : null}
               <div>
                 <dt>Status</dt>
                 <dd>{page.confirmed ? "Confirmed" : "Pending"}</dd>
@@ -40071,8 +40424,8 @@ function BrowserWorkspace({
           </div>
           <h3>No page loaded</h3>
           <p>
-            Browser accepts confirmed or pending txids with HTML in the message
-            body or a verified HTML attachment.
+            Browser opens confirmed Pages links for .pow names, or confirmed and pending
+            txids with HTML in the message body or a verified HTML attachment.
           </p>
         </section>
       )}
@@ -60255,6 +60608,7 @@ function FileInspector({
             </span>
           </a>
         ) : null}
+        {isBrowserHtmlAttachment(attachment) ? <a className="secondary link-button" href={pagesTxUrl(message.txid, explorerNetwork)} rel="noreferrer" target="_blank">Edit in Pages</a> : null}
         <a
           className="primary link-button"
           download={attachment.name}

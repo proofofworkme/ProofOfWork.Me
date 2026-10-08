@@ -14,6 +14,7 @@ export const DNS_APP_URL = "https://dns.proofofwork.me";
 export const COMPUTER_APP_URL = "https://computer.proofofwork.me";
 export const DESKTOP_APP_URL = "https://desktop.proofofwork.me";
 export const BROWSER_APP_URL = "https://browser.proofofwork.me";
+export const PAGES_APP_URL = "https://pages.proofofwork.me";
 export const BOOST_APP_URL = "https://boost.proofofwork.me";
 export const PUBLISH_APP_URL = "https://publish.proofofwork.me";
 export const SEARCH_APP_URL = "https://search.proofofwork.me";
@@ -34,6 +35,7 @@ export const LOCAL_DNS_APP_URL = "/?dns-launch=1";
 export const LOCAL_COMPUTER_APP_URL = "/";
 export const LOCAL_DESKTOP_APP_URL = "/?desktop=1";
 export const LOCAL_BROWSER_APP_URL = "/?browser=1";
+export const LOCAL_PAGES_APP_URL = "/?pages=1";
 export const LOCAL_BOOST_APP_URL = "/?boost=1";
 export const LOCAL_PUBLISH_APP_URL = "/?publish=1";
 export const LOCAL_SEARCH_APP_URL = "/?search-app=1";
@@ -59,6 +61,7 @@ export const APP_LINKS: AppLink[] = [
   },
   { href: DESKTOP_APP_URL, label: "Desktop", localHref: LOCAL_DESKTOP_APP_URL },
   { href: BROWSER_APP_URL, label: "Browser", localHref: LOCAL_BROWSER_APP_URL },
+  { href: PAGES_APP_URL, label: "Pages", localHref: LOCAL_PAGES_APP_URL },
   { href: BOOST_APP_URL, label: "Boost", localHref: LOCAL_BOOST_APP_URL },
   { href: PUBLISH_APP_URL, label: "Publish", localHref: LOCAL_PUBLISH_APP_URL },
   { href: SEARCH_APP_URL, label: "Search", localHref: LOCAL_SEARCH_APP_URL },
@@ -120,6 +123,7 @@ export const APP_MENU_GROUPS: AppMenuGroup[] = [
       appMenuLink("Computer", "COMPUTER", "Mail, files and workspaces"),
       appMenuLink("Desktop", "DESKTOP", "Public files by address"),
       appMenuLink("Browser", "BROWSER", "Verified pages by transaction"),
+      appMenuLink("Pages", "PAGES", "Create HTML pages and apps"),
       appMenuLink("Code", "CODE", "Public source repositories"),
       appMenuLink("Jobs", "JOBS", "Commission and deliver work"),
     ],

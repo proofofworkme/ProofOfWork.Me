@@ -32,7 +32,8 @@
 
 (common_headers) {
 	import common_access_log
-	header {
+	@parent_document not path /pages-runner.html
+	header @parent_document {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.proofofwork.me wss://*.proofofwork.me; frame-src 'self'; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests"
 		Cross-Origin-Opener-Policy "same-origin-allow-popups"
@@ -41,7 +42,10 @@
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 	}
-	@socialIdentityParents host boost.proofofwork.me publish.proofofwork.me code.proofofwork.me
+	@socialIdentityParents {
+		host boost.proofofwork.me publish.proofofwork.me code.proofofwork.me
+		not path /pages-runner.html
+	}
 	header @socialIdentityParents {
 		defer
 		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.proofofwork.me wss://*.proofofwork.me; frame-src 'self' https://computer.proofofwork.me; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests"
@@ -56,17 +60,33 @@
 		-X-Frame-Options
 		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors https://boost.proofofwork.me https://publish.proofofwork.me https://code.proofofwork.me https://computer.proofofwork.me; form-action 'none'; script-src 'self'; style-src 'self'; img-src 'none'; media-src 'none'; font-src 'self'; connect-src 'self'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; upgrade-insecure-requests"
 	}
+	import pages_runner_headers
 }
 
 (landing_headers) {
 	import common_access_log
-	header {
+	@parent_document not path /pages-runner.html
+	header @parent_document {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.proofofwork.me wss://*.proofofwork.me; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests"
 		Cross-Origin-Opener-Policy "same-origin-allow-popups"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+	}
+	import pages_runner_headers
+}
+
+(pages_runner_headers) {
+	@pages_runner path /pages-runner.html
+	header @pages_runner {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Content-Security-Policy "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'self'; form-action 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data: blob:; connect-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'; sandbox allow-scripts"
+		Cross-Origin-Opener-Policy "same-origin-allow-popups"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "no-referrer"
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 	}
 }
@@ -158,6 +178,15 @@
 	}
 }
 
+(common_pages_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-pages
+		try_files {path} /index.html
+		file_server
+	}
+}
+
 (common_boost_app) {
 	import common_static_policy
 	handle {
@@ -244,6 +273,7 @@ http://domains.proofofwork.me,
 http://computer.proofofwork.me,
 http://desktop.proofofwork.me,
 http://browser.proofofwork.me,
+http://pages.proofofwork.me,
 http://boost.proofofwork.me,
 http://publish.proofofwork.me,
 http://search.proofofwork.me,
@@ -301,6 +331,10 @@ desktop.proofofwork.me {
 
 browser.proofofwork.me {
 	import common_browser_app
+}
+
+pages.proofofwork.me {
+	import common_pages_app
 }
 
 boost.proofofwork.me {

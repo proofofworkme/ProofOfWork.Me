@@ -12,6 +12,7 @@ import {
   Mail,
   MessageSquareQuote,
   Monitor,
+  PanelsTopLeft,
   Play,
   RefreshCw,
   Search,
@@ -50,11 +51,13 @@ import {
   LOCAL_INFINITY_APP_URL,
   LOCAL_LOG_APP_URL,
   LOCAL_MARKETPLACE_APP_URL,
+  LOCAL_PAGES_APP_URL,
   LOCAL_TOKEN_APP_URL,
   LOCAL_WALLET_APP_URL,
   LOCAL_WORK_TOKEN_APP_URL,
   LOG_APP_URL,
   MARKETPLACE_APP_URL,
+  PAGES_APP_URL,
   TOKEN_APP_URL,
   WALLET_APP_URL,
   WORK_TOKEN_APP_URL,
@@ -120,6 +123,14 @@ const LANDING_APP_GROUPS = [
         icon: FileText,
         label: "Browser",
         localHref: LOCAL_BROWSER_APP_URL,
+      },
+      {
+        description:
+          "Create HTML pages and apps, preview locally, and publish through Files and Mail.",
+        href: PAGES_APP_URL,
+        icon: PanelsTopLeft,
+        label: "Pages",
+        localHref: LOCAL_PAGES_APP_URL,
       },
       {
         description:

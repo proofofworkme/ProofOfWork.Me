@@ -105,6 +105,50 @@ class ReleaseRefusals(unittest.TestCase):
                     actual.add('nft')
                 self.assertEqual(actual, expected)
 
+    def test_every_v4_surface_vector_adds_exactly_pages(self):
+        expected = set(self.release.PAGES_SURFACES)
+        self.assertEqual(len(expected), 21)
+        self.assertEqual(expected, set(self.release.SURFACES) | {'pages'})
+        vectors = [('build.py', 'PAGES_SURFACES'), ('remote_transport.py', 'PAGES_SURFACES'),
+                   ('phase_capacity.py', 'PAGES_SURFACES'), ('https_smoke.py', 'PAGES_HOSTS'),
+                   ('../search/install-ui.py', 'PAGES_SURFACES'),
+                   ('../proofofwork-ui-release-stage.py', 'PAGES_SURFACES'),
+                   ('../proofofwork-ui-verified-retention.py', 'PAGES_SURFACES')]
+        for name, variable in vectors:
+            with self.subTest(module=name):
+                tree = ast.parse((ROOT / name).read_bytes())
+                assignments = [node for node in tree.body if isinstance(node, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id in ('SURFACES', 'HOSTS', variable)
+                            for target in node.targets)]
+                namespace = {}
+                exec(compile(ast.Module(body=assignments, type_ignores=[]), name, 'exec'), namespace)
+                actual = set(namespace[variable])
+                if variable == 'PAGES_HOSTS' or name == 'build.py': actual.add('nft')
+                self.assertEqual(actual, expected)
+
+    def test_focused_builder_typechecks_once_and_fences_each_surface_flag(self):
+        builder = safe_module('build.py')
+        environment = {'PATH': '/usr/bin:/bin', 'HOME': str(self.base / 'home'), 'LANG': 'C.UTF-8'}
+        source, payload = self.base / 'source', self.base / 'payload'
+        with patch.object(subprocess, 'run') as run, contextlib.redirect_stdout(io.StringIO()):
+            builder.build_focused_surfaces(source, payload, builder.PAGES_SURFACES, environment, io.BytesIO())
+        calls = run.call_args_list
+        self.assertEqual(len(calls), 21, 'one typecheck and twenty focused builds; NFT is copied from Computer')
+        self.assertEqual(calls[0].args[0], ['/usr/bin/node', str(source / 'node_modules/typescript/bin/tsc')])
+        self.assertEqual(calls[0].kwargs['env'], environment)
+        for call, (name, (host, flag)) in zip(calls[1:], builder.PAGES_SURFACES.items()):
+            self.assertEqual(call.args[0][:3], ['/usr/bin/node', str(source / 'node_modules/vite/bin/vite.js'), 'build'])
+            self.assertEqual(call.kwargs['cwd'], source)
+            expected = {**environment, 'VITE_POW_API_BASE': 'https://' + host + '.proofofwork.me'}
+            if flag: expected[flag] = '1'
+            self.assertEqual(call.kwargs['env'], expected)
+            self.assertIn(str(payload / 'surfaces' / name), call.args[0])
+            self.assertTrue(call.kwargs['check'])
+        with patch.object(subprocess, 'run', side_effect=subprocess.CalledProcessError(2, ['tsc'])) as run:
+            with self.assertRaises(subprocess.CalledProcessError):
+                builder.build_focused_surfaces(source, payload, builder.PAGES_SURFACES, environment, io.BytesIO())
+            self.assertEqual(run.call_count, 1, 'failed source typechecking cannot produce any focused bundle')
+
     def plan(self):
         return {'schema': 'proof-of-work-audit29-ui-transport-plan-v1',
                 'releaseId': RELEASE, 'commit': COMMIT, 'tree': TREE,
@@ -155,14 +199,14 @@ class ReleaseRefusals(unittest.TestCase):
                         self.release.preflight(types.SimpleNamespace(output=str(output)))
                 self.assertFalse(output.exists())
 
-    def build_inputs(self):
+    def build_inputs(self, pages=False):
         source = self.base / 'source.tgz'
         surfaces = self.base / 'surfaces.tgz'
         write_tar(source, [('source/README.md', b'local source', tarfile.REGTYPE)])
         top = 'proofofwork-ui-surfaces-' + RELEASE
         prefix = top + '/surfaces/'
         members = [(top, b'', tarfile.DIRTYPE), (top + '/surfaces', b'', tarfile.DIRTYPE)]
-        for name in self.release.SURFACES:
+        for name in self.release.PAGES_SURFACES if pages else self.release.SURFACES:
             members.extend([(prefix + name, b'', tarfile.DIRTYPE),
                             (prefix + name + '/index.html', name.encode(), tarfile.REGTYPE)])
         write_tar(surfaces, members)
@@ -171,6 +215,8 @@ class ReleaseRefusals(unittest.TestCase):
                    for kind, path in [('source', source), ('surfaces', surfaces)]}
         build = {'commit': COMMIT, 'tree': TREE, 'releaseId': RELEASE,
                  'sourceAllocatedBytes': 4096, 'bundles': bundles}
+        if pages:
+            build.update(releaseFormat='proofofwork-ui-release-v4', surfaces=list(self.release.PAGES_SURFACES))
         keys = ['controller', 'receiver', 'stage-shell', 'phase-capacity', 'capacity',
                 'retained', 'publisher', 'stager', 'provenance', 'transport']
         preflight = {'retentionDeferred': True, 'checks': [{'exitCode': 0}],
@@ -209,6 +255,26 @@ class ReleaseRefusals(unittest.TestCase):
             self.assertGreater(plan['admissions'][kind + '-receive']['bytes'], 16 * 1024**2)
             self.assertGreaterEqual(plan['admissions'][kind + '-receive']['inodes'], 4000)
         self.assertGreater(plan['stageArchiveUpperBoundBytes'], 123456 + 32 * 1024**2)
+
+    def test_v4_plan_binds_all21_and_refuses_incomplete_or_wrong_format_receipts(self):
+        build, previous, args = self.build_inputs(pages=True)
+        with patch.object(subprocess, 'check_output', side_effect=self.git_output), contextlib.redirect_stdout(io.StringIO()):
+            self.release.make_plan(args)
+        plan = json.loads(Path(args.output).read_bytes())
+        self.assertEqual(plan['releaseFormat'], 'proofofwork-ui-release-v4')
+        self.assertEqual(set(plan['managedSurfaces']), set(self.release.PAGES_SURFACES))
+        self.assertEqual(len(plan['managedSurfaces']), 21)
+        self.assertEqual(self.release.load_plan(args.output)[0], plan)
+        Path(args.output).unlink()
+        for change in ('missing', 'duplicate', 'format'):
+            build, previous, args = self.build_inputs(pages=True)
+            if change == 'missing': build['surfaces'].remove('pages')
+            if change == 'duplicate': build['surfaces'].append('pages')
+            if change == 'format': build['releaseFormat'] = 'proofofwork-ui-release-v3'
+            Path(args.build_receipt).write_bytes(raw_json(build))
+            with patch.object(subprocess, 'check_output', side_effect=self.git_output), self.assertRaises(AssertionError):
+                self.release.make_plan(args)
+            self.assertFalse(Path(args.output).exists())
 
     def test_20_surface_plan_binds_phase_capacity_and_committed_wrapper_sources(self):
         self.assertEqual(len(self.release.SURFACES), 20)
@@ -432,6 +498,7 @@ class PublishCompatibilityTimeout(unittest.TestCase):
         script = ('set -euo pipefail\nwww_root=' + shlex.quote(str(self.live)) +
                   '\nstage_root=' + shlex.quote(str(self.stage)) + '\nsurfaces=(' +
                   ' '.join(shlex.quote(surface) for surface in self.surfaces) + ')\n' +
+                  'v3_surfaces=("${surfaces[@]}")\npages_surfaces=("${surfaces[@]}" pages)\n' +
                   function + '\nverify_prior_asset_compatibility\n: > ' +
                   shlex.quote(str(self.after_parser)) + '\n')
         return subprocess.run(['/usr/bin/bash'], input=script, capture_output=True,
@@ -555,7 +622,7 @@ class PublishCapacity(unittest.TestCase):
                 prefix = '/var/www/'
                 return root / value[len(prefix):] if value.startswith(prefix) else Path(value)
             namespace = functions_only('preflight.py', set())
-            namespace.update(Path=local_path, active_manifest={})
+            namespace.update(Path=local_path, active_manifest={'format': 'proofofwork-ui-release-v3'})
             exec(code, namespace)
             self.assertEqual(namespace['old_managed']['regularFiles'], 16)
             self.assertEqual(namespace['old_managed']['logicalBytes'], 48)
@@ -579,6 +646,27 @@ class PublishCapacity(unittest.TestCase):
             exec(code, namespace)
             self.assertEqual(namespace['old_managed']['regularFiles'], 20)
             self.assertEqual(namespace['old_managed']['logicalBytes'], 80)
+            (root / 'proofofwork-pages').mkdir()
+            (root / 'proofofwork-pages/index.html').write_bytes(b'1234567890123')
+            with self.assertRaises(AssertionError): exec(code, namespace)
+            namespace['active_manifest']['format'] = 'proofofwork-ui-release-v4'
+            exec(code, namespace)
+            self.assertEqual(namespace['old_managed']['regularFiles'], 21)
+            self.assertEqual(namespace['old_managed']['logicalBytes'], 93)
+
+    def test_pages_v4_capacity_charges_all21_and_refuses_missing_old_surface(self):
+        capacity = safe_module('phase_capacity.py')
+        with tempfile.TemporaryDirectory(prefix='pow-pages-capacity-', dir='/tmp') as name:
+            root = Path(name).resolve()
+            for surface in capacity.PAGES_SURFACES:
+                target = root / surface; target.mkdir(mode=0o755)
+                file = target / 'index.html'; file.write_bytes(b'exact UI'); file.chmod(0o644)
+            result = capacity.tree_budget(root, owner=os.geteuid())
+            self.assertEqual(result['entries'], 43)
+            self.assertEqual(result['logicalBytes'], 21 * len(b'exact UI'))
+            (root / 'jobs').rename(root / 'other')
+            with self.assertRaisesRegex(ValueError, 'complete managed set'):
+                capacity.tree_budget(root, owner=os.geteuid())
 
 
 class PreservedTransport(unittest.TestCase):
@@ -1186,14 +1274,21 @@ class HttpsRefusals(unittest.TestCase):
 
     def tearDown(self): self.temp.cleanup()
 
-    def archive(self, extra=(), omit=()):
+    def archive(self, extra=(), omit=(), pages=False, provenance_changes=None, omit_provenance=()):
         path = self.base / ('proofofwork-ui-release-' + RELEASE + '.tgz')
         members = [('surfaces', b'', tarfile.DIRTYPE)]
         members += [('surfaces/' + surface + '/index.html', surface.encode(), tarfile.REGTYPE)
-                    for surface in list(self.smoke.HOSTS) + ['nft'] if surface not in omit]
+                    for surface in list(self.smoke.PAGES_HOSTS if pages else self.smoke.HOSTS) + ['nft'] if surface not in omit]
+        if pages:
+            for surface in self.smoke.PAGES_HOSTS:
+                if surface in omit or surface in omit_provenance: continue
+                proof = {'format': 'proof-of-work-ui-source-v1', 'commit': COMMIT,
+                         'tree': TREE, 'trackedDirty': False}
+                if provenance_changes and surface == provenance_changes[0]: proof.update(provenance_changes[1])
+                members.append(('surfaces/' + surface + '/source-provenance.json', raw_json(proof), tarfile.REGTYPE))
         write_tar(path, members + list(extra))
         sha = hashlib.sha256(path.read_bytes()).hexdigest()
-        manifest = ('format=proofofwork-ui-release-v3\nrelease_id=' + RELEASE + '\ncommit=' + COMMIT +
+        manifest = ('format=proofofwork-ui-release-' + ('v4' if pages else 'v3') + '\nrelease_id=' + RELEASE + '\ncommit=' + COMMIT +
                     '\nsource_tree=' + TREE + '\narchive_name=' + path.name + '\narchive_sha256=' + sha + '\n').encode()
         (self.base / '.proofofwork-ui-release').write_bytes(manifest)
         Path(str(path) + '.provenance').write_bytes(manifest)
@@ -1212,6 +1307,46 @@ class HttpsRefusals(unittest.TestCase):
         self.assertEqual(receipt['archivedFilesChecked'], 19)
         self.assertEqual(receipt['hostnameRootsChecked'], 19)
         self.assertTrue(receipt['apexRedirectVerified'] and receipt['finalLocalEvidenceReverified'])
+
+    def test_pages_v4_checks_all20_public_hosts_and_refuses_missing_pages(self):
+        args, receipt = self.archive(pages=True)
+        requests = []
+        def compare(url, body, timeout, **kwargs):
+            requests.append(url)
+            return len(body)
+        with patch.dict(self.smoke.check.__globals__, compare_https=compare):
+            self.smoke.check(args, receipt)
+        self.assertEqual(receipt['publicSurfaces'], 20)
+        self.assertEqual(receipt['archivedFilesChecked'], 40)
+        self.assertEqual(receipt['hostnameRootsChecked'], 20)
+        self.assertIn('https://pages.proofofwork.me/index.html', requests)
+        self.assertIn('https://pages.proofofwork.me/', requests)
+        self.assertTrue(receipt['sourceProvenanceVerified'])
+        self.assertEqual(receipt['sourceProvenanceSurfaces'], 20)
+        self.assertIn('https://pages.proofofwork.me/source-provenance.json', requests)
+        args, receipt = self.archive(omit=('pages',), pages=True)
+        with patch.dict(self.smoke.check.__globals__, compare_https=unittest.mock.Mock()) as namespace:
+            with self.assertRaises(ValueError): self.smoke.check(args, receipt)
+            namespace['compare_https'].assert_not_called()
+
+    def test_v4_semantic_source_provenance_refuses_stale_dirty_or_missing_host_before_https(self):
+        for change in ({'commit': 'c'*40}, {'tree': 'd'*40}, {'trackedDirty': True},
+                       {'trackedDirty': 0}, {'format': 'unknown'}):
+            with self.subTest(change=change):
+                args, receipt = self.archive(pages=True, provenance_changes=('browser', change))
+                with patch.dict(self.smoke.check.__globals__, compare_https=unittest.mock.Mock()) as namespace:
+                    with self.assertRaisesRegex(ValueError, 'Source provenance differs'):
+                        self.smoke.check(args, receipt)
+                    namespace['compare_https'].assert_not_called()
+        args, receipt = self.archive(pages=True, omit_provenance=('pages',))
+        with patch.dict(self.smoke.check.__globals__, compare_https=unittest.mock.Mock()) as namespace:
+            with self.assertRaisesRegex(ValueError, 'source provenance is missing'):
+                self.smoke.check(args, receipt)
+            namespace['compare_https'].assert_not_called()
+        args, receipt = self.archive(extra=[('surfaces/pages/index.html', b'pages', tarfile.REGTYPE)])
+        with patch.dict(self.smoke.check.__globals__, compare_https=unittest.mock.Mock()) as namespace:
+            with self.assertRaises(ValueError): self.smoke.check(args, receipt)
+            namespace['compare_https'].assert_not_called()
 
     def test_archive_traversal_duplicates_links_unknown_or_missing_root_refuse(self):
         changes = [([('../escape', b'x', tarfile.REGTYPE)], ()),

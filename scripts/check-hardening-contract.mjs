@@ -12,6 +12,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
+import { loadConfigFromFile } from "vite";
 
 const caddy = readFileSync("deploy/Caddyfile", "utf8");
 const caddyService = readFileSync("deploy/caddy-hardening.conf", "utf8");
@@ -117,6 +119,9 @@ const privateApiProxy = readFileSync(
   "utf8",
 );
 const html = readFileSync("index.html", "utf8");
+const pagesRunnerHtml = readFileSync("public/pages-runner.html", "utf8");
+const pagesRunnerScript = pagesRunnerHtml.match(/<script>([\s\S]*?)<\/script>/u)?.[1];
+assert.ok(pagesRunnerScript, "Pages runner needs its trusted inline bootstrap.");
 
 for (const requiredHeader of [
   "Strict-Transport-Security",
@@ -158,7 +163,95 @@ assert.match(
   caddy,
   /\(landing_headers\)[\s\S]*frame-src 'self' https:\/\/www\.youtube\.com https:\/\/www\.youtube-nocookie\.com/u,
 );
-assert.doesNotMatch(caddy, /browser-sandbox|navigate-to|sandbox allow-scripts/u);
+const runnerHeaders = caddy.match(/^\(pages_runner_headers\) \{[\s\S]*?^\}/mu)?.[0];
+assert.ok(runnerHeaders, "Pages needs its own HTTP runner policy.");
+assert.doesNotMatch(caddy.replace(runnerHeaders, ""), /browser-sandbox|navigate-to|sandbox allow-scripts/u);
+assert.match(runnerHeaders, /@pages_runner path \/pages-runner\.html\n\theader @pages_runner \{/u);
+assert.match(runnerHeaders, /X-Frame-Options "SAMEORIGIN"/u);
+assert.match(runnerHeaders, /Referrer-Policy "no-referrer"/u);
+assert.match(runnerHeaders, /sandbox allow-scripts"/u);
+assert.doesNotMatch(runnerHeaders, /allow-same-origin|unsafe-eval|https:|wss:/u);
+assert.doesNotMatch(runnerHeaders, /script-src[^;"]*'self'/u);
+for (const directive of [
+  "default-src 'none'", "base-uri 'none'", "object-src 'none'",
+  "frame-ancestors 'self'", "form-action 'none'", "script-src 'unsafe-inline'",
+  "connect-src 'none'", "frame-src 'none'", "child-src 'none'", "worker-src 'none'",
+]) {
+  assert.ok(runnerHeaders.includes(directive), `Pages runner policy is missing ${directive}.`);
+}
+for (const name of ["common_headers", "landing_headers"]) {
+  const parentHeaders = caddy.match(new RegExp(`^\\(${name}\\) \\{[\\s\\S]*?^\\}`, "mu"))?.[0];
+  assert.ok(parentHeaders, `Caddy is missing ${name}.`);
+  assert.match(parentHeaders, /@parent_document not path \/pages-runner\.html\n\theader @parent_document \{/u);
+  assert.match(parentHeaders, /script-src 'self';/u);
+  assert.match(parentHeaders, /frame-ancestors 'none'/u);
+  assert.match(parentHeaders, /X-Frame-Options "DENY"/u);
+  assert.match(parentHeaders, /import pages_runner_headers/u);
+  assert.doesNotMatch(parentHeaders, /sandbox|script-src 'self' 'unsafe-inline'/u);
+}
+assert.equal(caddy.match(/sandbox allow-scripts/gu)?.length, 1);
+assert.doesNotMatch(pagesRunnerHtml, /<script\s+[^>]*src=/u);
+assert.equal(pagesRunnerHtml.match(/<script\b/gu)?.length, 1);
+assert.doesNotMatch(pagesRunnerScript, /\b(?:parent|top)\s*\.|\b(?:postMessage|addEventListener|onmessage|unisat|signPsbt|sendBitcoin)\b/u);
+assert.match(pagesRunnerScript, /MAX_FRAGMENT_CHARACTERS = 1_000_000/u);
+assert.match(pagesRunnerScript, /MAX_DOCUMENT_BYTES = 120_000/u);
+assert.match(pagesRunnerScript, /new TextEncoder\(\)\.encode\(html\)\.byteLength > MAX_DOCUMENT_BYTES/u);
+
+function runPagesRunner(hash, historyAllowed = true) {
+  const result = { errors: [], writes: [] };
+  runInNewContext(pagesRunnerScript, {
+    TextEncoder,
+    window: {
+      location: { hash, pathname: "/pages-runner.html", search: "" },
+      history: { replaceState() { if (!historyAllowed) throw new Error("Opaque origin."); } },
+      setTimeout(callback) { callback(); },
+    },
+    document: {
+      readyState: "complete",
+      body: { replaceChildren(node) { result.errors.push(node.textContent); } },
+      createElement() { return {}; },
+      open() {},
+      write(source) { result.writes.push(source); },
+      close() {},
+    },
+  });
+  return result;
+}
+const previewSource = "<!doctype html><p>Proof page</p>";
+assert.deepEqual(runPagesRunner(`#${encodeURIComponent(previewSource)}`).writes, [previewSource]);
+assert.deepEqual(runPagesRunner(`#${encodeURIComponent(previewSource)}`, false).writes, [previewSource]);
+for (const invalidSource of ["", "#%E0%A4%A", `#${"a".repeat(1_000_001)}`, `#${encodeURIComponent("é".repeat(60_001))}`, `#${encodeURIComponent("a".repeat(120_001))}`]) {
+  const result = runPagesRunner(invalidSource);
+  assert.equal(result.writes.length, 0, "Invalid Pages source must never reach document.write.");
+  assert.equal(result.errors.length, 1, "Invalid Pages source needs a plain-text error.");
+}
+assert.equal(runPagesRunner(`#${encodeURIComponent("a".repeat(120_000))}`).writes.length, 1);
+const localViteConfig = await loadConfigFromFile(
+  { command: "serve", mode: "development" }, join(process.cwd(), "vite.config.ts"),
+);
+const runnerHeaderPlugin = localViteConfig?.config.plugins.flat(Infinity)
+  .find((plugin) => plugin?.name === "proof-pages-runner-headers");
+assert.ok(runnerHeaderPlugin, "Local app preview needs the HTTP sandbox in dev and preview.");
+const expectedRunnerCsp = runnerHeaders.match(/Content-Security-Policy "([^"]+)"/u)?.[1];
+for (const hook of ["configureServer", "configurePreviewServer"]) {
+  let middleware;
+  runnerHeaderPlugin[hook]({ middlewares: { use(handler) { middleware = handler; } } });
+  assert.equal(typeof middleware, "function");
+  for (const path of ["/pages-runner.html", "/pages-runner.html?preview=1", "/%70ages-runner.html", "/folder/%2e%2e/pages-runner.html"]) {
+    const headers = {};
+    let continued = 0;
+    middleware({ url: path }, { setHeader(name, value) { headers[name] = value; } }, () => { continued += 1; });
+    assert.equal(continued, 1);
+    assert.equal(headers["Content-Security-Policy"], expectedRunnerCsp);
+    assert.equal(headers["X-Frame-Options"], "SAMEORIGIN");
+    assert.equal(headers["Referrer-Policy"], "no-referrer");
+  }
+  for (const path of ["/", "/pages-runner.js", "/pages-runner.html/other", "/?path=/pages-runner.html"]) {
+    const headers = {};
+    middleware({ url: path }, { setHeader(name, value) { headers[name] = value; } }, () => {});
+    assert.deepEqual(headers, {}, "Runner relaxation must not reach another document or script.");
+  }
+}
 for (const redirectHost of [
   "proofofwork.me",
   "token.proofofwork.me",

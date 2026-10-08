@@ -1659,12 +1659,19 @@ expect("Desktop public route must not expose network switching controls", !/onNe
 expectAll("Desktop public route has dedicated metadata", app, [
   /desktopRoute[\s\S]*?Search public confirmed ProofOfWork files by address or confirmed ProofOfWork ID\./,
   /title:\s*"ProofOfWork Desktop"/,
-  /\},\s*\[browserRoute,\s*desktopRoute,\s*dnsLaunchMode,\s*idLaunchMode\]\)/,
+  /\},\s*\[browserRoute,\s*pagesRoute,\s*desktopRoute,\s*dnsLaunchMode,\s*idLaunchMode\]\)/,
 ]);
 expectAll("Browser public route has dedicated metadata", app, [
   /browserRoute[\s\S]*?Render ProofOfWork HTML message bodies and verified HTML attachments by transaction ID\./,
   /title:\s*"ProofOfWork Browser"/,
-  /\},\s*\[browserRoute,\s*desktopRoute,\s*dnsLaunchMode,\s*idLaunchMode\]\)/,
+  /\},\s*\[browserRoute,\s*pagesRoute,\s*desktopRoute,\s*dnsLaunchMode,\s*idLaunchMode\]\)/,
+]);
+expectAll("Browser .pow page resolution uses current first-party DNS and confirmed HTML", app, [
+  /async function fetchBrowserTargetPage/,
+  /new URLSearchParams\(\{ current: "1", fresh: "1" \}\)/,
+  /fetchProofApiJson<unknown>\(`\/api\/v1\/dns\//,
+  /fetchBrowserPage\(dnsLink\.pageTxid, network, signal\)/,
+  /if \(!page\.confirmed\) throw new Error/,
 ]);
 expect("fetchAddressMail must not call public mempool.space", !/mempool\.space/i.test(fetchAddressMailSource));
 expect("loadDesktopTarget must not call public mempool.space", !/mempool\.space/i.test(loadDesktopTargetSource));

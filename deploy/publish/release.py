@@ -27,6 +27,7 @@ HEX40 = re.compile('[0-9a-f]{40}')
 HEX64 = re.compile('[0-9a-f]{64}')
 RELEASE = re.compile('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z')
 SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split()
+PAGES_SURFACES = [*SURFACES, 'pages']
 DEPLOYMENT_ONLY_PATHS = frozenset({
     'deploy/proofofwork-ui-release-stage.py',
     'deploy/proofofwork-ui-release-provenance.sh',
@@ -54,7 +55,7 @@ def artifact_tooling_binding(commit, tree):
     return {'toolingCommit': head, 'toolingTree': head_tree, 'deploymentOnlyChanges': changed}
 
 
-def bundle_payload_fingerprint(path, release):
+def bundle_payload_fingerprint(path, release, surfaces=SURFACES):
     """Independently bind extracted bytes/modes to the already SHA-pinned local tar."""
     prefix = 'proofofwork-ui-surfaces-' + release
     rows, seen, total = [], set(), 0
@@ -82,7 +83,7 @@ def bundle_payload_fingerprint(path, release):
     by_path = {row[0]: row for row in rows}
     assert by_path.get('.', [None, None])[1] == 'directory'
     assert by_path.get('surfaces', [None, None])[1] == 'directory'
-    assert {row[0].split('/')[1] for row in rows if row[0].startswith('surfaces/')} == set(SURFACES)
+    assert {row[0].split('/')[1] for row in rows if row[0].startswith('surfaces/')} == set(surfaces)
     assert all(row[0] in ('.', 'surfaces') or row[0].startswith('surfaces/') for row in rows)
     for row in rows:
         if row[0] != '.':
@@ -94,6 +95,7 @@ def bundle_payload_fingerprint(path, release):
 
 def surface_resume_binding(args, current):
     original, original_sha, _ = load_plan(args.resume_plan)
+    assert original.get('releaseFormat', 'proofofwork-ui-release-v3') == current.get('releaseFormat', 'proofofwork-ui-release-v3')
     evidence = json.loads(Path(args.resume_evidence).read_bytes())
     inventory = json.loads(Path(args.resume_inventory).read_bytes())
     assert original['publicationAttempt'] != current['publicationAttempt'], 'Resume requires a fresh attempt'
@@ -130,6 +132,7 @@ def surface_resume_binding(args, current):
 def preserved_stage_binding(args, current):
     """Resume only the exact preserved-input full-copy scratch refusal."""
     original, original_sha, _ = load_plan(args.preserved_plan)
+    assert original.get('releaseFormat', 'proofofwork-ui-release-v3') == current.get('releaseFormat', 'proofofwork-ui-release-v3')
     evidence = json.loads(Path(args.preserved_evidence).read_bytes())
     incoming = json.loads(Path(args.preserved_incoming_receipt).read_bytes())
     inventory = json.loads(Path(args.preserved_inventory).read_bytes())
@@ -227,6 +230,11 @@ def load_plan(path):
     assert RELEASE.fullmatch(p['releaseId']) and HEX40.fullmatch(p['commit']) and HEX40.fullmatch(p['tree'])
     assert p['releaseId'].startswith(p['commit'][:12] + '-')
     assert re.fullmatch('[a-z0-9][a-z0-9-]{0,30}', p['publicationAttempt'])
+    release_format = p.get('releaseFormat', 'proofofwork-ui-release-v3')
+    assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4')
+    if release_format == 'proofofwork-ui-release-v4' or 'managedSurfaces' in p:
+        surfaces = PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
+        assert set(p['managedSurfaces']) == set(surfaces) and len(p['managedSurfaces']) == len(surfaces)
     return p, hashlib.sha256(raw).hexdigest(), raw
 
 def preflight(args):
@@ -261,6 +269,11 @@ def committed_wrapper_sources():
 def make_plan(args):
     b = json.loads(Path(args.build_receipt).read_bytes())
     p = json.loads(Path(args.preflight).read_bytes())
+    release_format = b.get('releaseFormat', 'proofofwork-ui-release-v3')
+    assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4')
+    surfaces = PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
+    if release_format == 'proofofwork-ui-release-v4' or 'surfaces' in b:
+        assert set(b['surfaces']) == set(surfaces) and len(b['surfaces']) == len(surfaces)
     assert HEX40.fullmatch(b['commit']) and HEX40.fullmatch(b['tree']) and RELEASE.fullmatch(b['releaseId'])
     assert b['releaseId'].startswith(b['commit'][:12] + '-') and p['retentionDeferred'] is True
     assert all(item['exitCode'] == 0 for item in p['checks'])
@@ -270,6 +283,7 @@ def make_plan(args):
     assert len(p['retained']) <= 16
     pub = ROOT / 'publish.py'; ast.parse(pub.read_bytes())
     c = {'schema': 'proof-of-work-audit29-ui-transport-plan-v1', 'releaseId': b['releaseId'],
+         'releaseFormat': release_format, 'managedSurfaces': list(surfaces),
          'commit': b['commit'], 'tree': b['tree'], 'sourceAllocatedBytes': b['sourceAllocatedBytes'],
          'admissions': {}, 'helperSha256': {k: p['helpers'][k]['sha256'] for k in
              ['controller', 'receiver', 'stage-shell', 'phase-capacity', 'capacity', 'retained']},
@@ -304,10 +318,10 @@ def make_plan(args):
             assert all(v.isdir() or v.isfile() for v in members)
             expected = 'proofofwork-ui-surfaces-' + b['releaseId'] + '/surfaces/'
             roots = {v.name[len(expected):].split('/')[0] for v in members if v.name.startswith(expected)}
-            assert roots == set(SURFACES)
+            assert roots == set(surfaces)
         c[kind] = {'compressedBytes': record['bytes'], 'sha256': record['sha256']}
         if kind == 'surfaces':
-            c['surfacesPayloadFingerprint'] = bundle_payload_fingerprint(path, b['releaseId'])
+            c['surfacesPayloadFingerprint'] = bundle_payload_fingerprint(path, b['releaseId'], surfaces)
         inode_budget = max(15000 if kind == 'source' else 4000,
                            len(members) + (256 if kind == 'source' else 128))
         assert inode_budget <= 100000

@@ -17,6 +17,7 @@ Do not change these without an explicit migration plan:
 - Registration price: `1000` proofs
 - Mutation price: `546` proofs for resolver updates, transfers, on-chain listings, seals, delistings, and buyer-funded marketplace transfers
 - Subdomain action payment: one `546`-proof self-payment to the root owner for create, update, or revoke; this is not a registry mutation fee
+- Page-link candidate action payment: one `546`-proof self-payment to the root owner for set or clear; production admission opens at height 970426 only with complete canonical page-link coverage
 - Protocol prefix: `pwdns1:`
 - Registration event: `pwdns1:r1:<name-base64url>:<owner-address>:<resolver-address>`
 - Resolver update event: `pwdns1:u:<name-base64url>:<resolver-address>`
@@ -39,6 +40,8 @@ domain.proofofwork.me   redirect to https://dns.proofofwork.me/
 domains.proofofwork.me  redirect to https://dns.proofofwork.me/
 amo.proofofwork.me      DNS tab for root management, subdomains, and trading
 computer.proofofwork.me DNS workspace for claims/search/subdomains; AMO for root management/trading
+pages.proofofwork.me    intended local-candidate root-name page linking/HTML authoring
+browser.proofofwork.me  reads confirmed root-name page links after activation
 ```
 
 Computer exposes a dedicated DNS workspace beside IDs at `/?folder=dns`, also
@@ -216,3 +219,80 @@ confirmed below height 969489 never acquire authority. Wallet review names the
 exact action, full child name, parent owner,
 ownership epoch, resolver mode, self-payment destination, miner fee, change,
 and public wire record. Signing stays local.
+
+## Owner-controlled root page links V1
+
+The additive `pwdns1:page1` protocol binds a root such as `alice.pow` to a
+published HTML transaction, separate from root payment resolution and child
+records. The approved mainnet source pin is
+`DNS_PAGE_LINK_ACTIVATION_HEIGHT = 970426`. Its canonical predecessor at 970425
+is `00000000000000000001a22c08622961c9fc0a1b063510bf5fc9141577b77537`, verified
+against Core and canonical index coverage during shipping preflight. Writes
+require complete independent raw discovery from the opening through the
+verified checkpoint. Zero remains an explicit disabled boundary. No
+existing registration, resolver, ownership, fee, or AMO rule is migrated.
+
+The record is:
+
+```text
+pwdns1:page1:<canonical-json-base64url>
+```
+
+Set uses this exact JSON key order:
+
+```json
+{"action":"set","name":"alice","epoch":{"txid":"<root-ownership-event-txid>","protocolVout":1,"recordOrdinal":0},"pageTxid":"<published-html-txid>"}
+```
+
+Clear omits `pageTxid` entirely:
+
+```json
+{"action":"clear","name":"alice","epoch":{"txid":"<root-ownership-event-txid>","protocolVout":1,"recordOrdinal":0}}
+```
+
+`name` is one bare canonical lowercase root label, with the existing root name
+validation; child names are outside this version. User builders accept a bare
+label or its full `.pow` spelling. `epoch` has exactly `txid`, `protocolVout`,
+and `recordOrdinal` and identifies the accepted ownership event. Both txids use
+64 lowercase hexadecimal characters. The epoch output index is a nonnegative
+uint32 and the ordinal a nonnegative safe integer. Encoding is canonical
+unpadded base64url containing exact canonical UTF-8 JSON: alternate key order,
+whitespace, extra or duplicate keys, escaped equivalents, and alternate number
+encodings are rejected. A carrier is bounded to 2,048 text characters.
+
+Every action requires at least **546 proofs** paid explicitly to the current
+root owner before its own protocol OP_RETURN, plus the miner fee. Every input
+must resolve to that same owner. Unknown prevouts, mixed authors, coinbase
+inputs, or missing input addresses fail authorization. Exactly one `page1`
+carrier is allowed per transaction; matching malformed carriers count too.
+Self-payments are neither registry fees nor a new network-value contribution.
+
+Replay binds complete accepted root history and independently discovered page
+carriers to one checkpoint. It orders events by exact block height, transaction
+index, protocol output index, and record ordinal. The root must exist with the
+bound ownership epoch confirmed in an earlier block. At the action's exact
+position the author must still own that root. A valid set creates or replaces
+its active link; a clear removes an existing active link and rejects when no
+link is active. Confirmed direct transfers and purchases
+invalidate links, including same-address transfers and Alice → Bob → Alice
+ownership sequences. Resolver updates, listings, seals, and delistings retain
+the link. Invalidated and rejected records remain inspectable history; reorg
+replay rebuilds state from the surviving chain. Pending page actions never
+alter Browser resolution or authorize subsequent pending actions.
+
+Root API responses expose page links separately from root payment and child
+state: `pageLink`, `pageLinkEvents`, `pageLinkPendingEvents`, and
+`pageLinkHistoricalRecords`. `pageLinkCoverage` reports completeness, indexed
+height, checkpoint hash, and witness hash; `pageLinkAdmission` reports readiness,
+the pinned activation height, minimum self-payment, prefix, and any unavailable
+reason. Missing or incomplete link coverage cannot masquerade as a complete
+empty namespace. These fields do not replace root or child coverage.
+
+Pages reviews set/clear with the current owner, root name, bound epoch, target
+txid when present, self-payment, miner fee, change, and exact public wire record.
+The target must be confirmed HTML verified through the existing Browser reader.
+Signing stays local. Browser accepts a full root name such as `alice.pow`,
+requires an active confirmed link plus complete matching checkpoint coverage,
+then verifies the target transaction independently and renders it statically.
+Pending, missing, cleared, invalidated, or unverified targets do not resolve to
+a page. Payment-address lookup continues to return the existing resolver.

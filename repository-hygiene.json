@@ -94,6 +94,7 @@
       "SEARCH.md",
       "CODE.md",
       "JOBS.md",
+      "PAGES.md",
       "REPOSITORY_HYGIENE.md"
     ],
     "ledger-and-audit-evidence": [
@@ -218,6 +219,7 @@
     ],
     "support-notes": [
       "deploy/jobs/README.md",
+      "deploy/pages/README.md",
       "TRADEMARKS.md",
       "test-api/README.md",
       "deploy/audit29/INVOCATION.md",
