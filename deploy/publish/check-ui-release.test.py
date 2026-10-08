@@ -13,6 +13,8 @@ import io
 import json
 import os
 import shlex
+import shutil
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -668,6 +670,177 @@ class PublishCapacity(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'complete managed set'):
                 capacity.tree_budget(root, owner=os.geteuid())
 
+
+
+class ClosedManagedArchive(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='pow-closed-managed-archive-', dir='/tmp')
+        self.base = Path(self.temp.name).resolve()
+        self.phase = safe_module('phase_capacity.py')
+        self.stager = safe_module('../proofofwork-ui-release-stage.py')
+        self.order = list(self.phase.PAGES_SURFACES)
+        self.owner = os.geteuid()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def row(self, relative, content=b'content'):
+        return {'path': relative, 'kind': 'file', 'size': len(content), 'mode': 0o644,
+                'uid': self.owner, 'gid': os.getegid(), 'xattrs': [],
+                'sha256': hashlib.sha256(content).hexdigest()}
+
+    def minimal_rows(self):
+        return {surface: [{'path': '.', 'kind': 'directory'}, self.row('index.html')]
+                for surface in self.order}
+
+    def actual_rows(self, root):
+        rows = []
+        for path in [root, *sorted(root.rglob('*'))]:
+            relative = '.' if path == root else path.relative_to(root).as_posix()
+            if path.is_dir(): rows.append({'path': relative, 'kind': 'directory'})
+            else: rows.append(self.row(relative, path.read_bytes()))
+        return rows
+
+    def test_exact_gnu_tar_v4_long_paths_empty_files_nft_alias_and_hard_dereference(self):
+        incoming, stage, archive_base = [self.base / name for name in ('incoming', 'stage', 'archive-base')]
+        for path in (incoming, stage, archive_base): path.mkdir(mode=0o755)
+        (archive_base / 'surfaces').mkdir(mode=0o755)
+        common = bytes(range(256))*257
+        long_directory = '/'.join(['a'*190, 'b'*190, 'c'*120])
+        rows, compatibility = {}, {}
+        for surface in self.order:
+            root = incoming / surface; (root / 'assets').mkdir(parents=True, mode=0o755); root.chmod(0o755)
+            (root / 'index.html').write_bytes(b'<script src="/assets/common.js"></script>')
+            (root / 'assets/common.js').write_bytes(common)
+            (root / 'empty').write_bytes(b'')
+            (root / long_directory).mkdir(parents=True, mode=0o755)
+            (root / long_directory / 'empty-leaf').write_bytes(b'')
+            for path in root.rglob('*'): path.chmod(0o755 if path.is_dir() else 0o644)
+            rows[surface] = self.actual_rows(root)
+            shutil.copytree(root, stage / ('proofofwork-' + surface))
+            # This missing prior path and its parents are part of every final
+            # served archive, while equal incoming overlap is included once.
+            compatibility[surface] = [self.row('assets/common.js', common),
+                {'path': 'prior', 'kind': 'directory'}, {'path': 'prior/deep', 'kind': 'directory'},
+                self.row('prior/deep/old.js', b'previous dependency')]
+            target = stage / ('proofofwork-' + surface) / 'prior/deep'
+            target.mkdir(parents=True); (target / 'old.js').write_bytes(b'previous dependency')
+            for parent in (target, target.parent): parent.chmod(0o755)
+            (target / 'old.js').chmod(0o644)
+        first = stage / 'proofofwork-computer/assets/common.js'
+        for surface in self.order:
+            target = stage / ('proofofwork-' + surface) / 'assets/common.js'
+            if target != first: target.unlink(); os.link(first, target)
+        modeled = self.phase.closed_managed_archive_budget(rows, compatibility, self.order)
+        measured = self.phase.tree_budget(stage, owner=self.owner, managed=True)
+        self.assertEqual(modeled['logicalBytes'], measured['logicalBytes'])
+        self.assertEqual(modeled['entries'], measured['entries'])
+        self.assertEqual(modeled['archiveUpperBoundBytes'], measured['archiveUpperBoundBytes'])
+        self.assertGreater(modeled['logicalBytes'], first.stat().st_size * 21)
+        archive = self.base / 'actual.tgz'
+        command = ['/usr/bin/tar', '--sort=name', '--create', '--gzip', '--hard-dereference',
+            '--file', str(archive), '--transform=s|^proofofwork-|surfaces/|',
+            '--directory', str(archive_base), 'surfaces', '--directory', str(stage),
+            *['proofofwork-' + surface for surface in self.order]]
+        subprocess.run(command, check=True, capture_output=True, timeout=20)
+        self.assertLessEqual(archive.stat().st_size, modeled['archiveUpperBoundBytes'])
+        with tarfile.open(archive, 'r:gz') as contents:
+            members = contents.getmembers()
+            self.assertEqual(sum(member.size for member in members if member.isfile()), modeled['logicalBytes'])
+            self.assertEqual(len(members), modeled['entries'])
+            self.assertFalse(any(member.islnk() or member.issym() for member in members))
+            self.assertEqual({member.name.split('/')[1] for member in members if member.name != 'surfaces'}, set(self.order))
+            for surface in ('computer', 'nft'):
+                self.assertEqual(contents.extractfile('surfaces/' + surface + '/assets/common.js').read(), common)
+            self.assertTrue(any(len(member.name.encode()) > 512 and member.isdir() for member in members))
+
+    def test_malformed_duplicate_and_colliding_rows_are_refused(self):
+        for change in ('negative', 'bool', 'size-type', 'kind', 'root-file', 'directory-size',
+                       'duplicate', 'parent-file', 'parent-missing', 'escape', 'uncanonical', 'missing-root'):
+            incoming = self.minimal_rows(); compatibility = {}
+            rows = incoming['pages']
+            with self.subTest(change=change):
+                if change == 'negative': rows[1]['size'] = -1
+                elif change == 'bool': rows[1]['size'] = True
+                elif change == 'size-type': rows[1]['size'] = '7'
+                elif change == 'kind': rows[1]['kind'] = 'symlink'
+                elif change == 'root-file': rows[0] = self.row('.')
+                elif change == 'directory-size': rows[0]['size'] = 0
+                elif change == 'duplicate': rows.append(copy.deepcopy(rows[1]))
+                elif change == 'parent-file': rows.extend([self.row('assets'), self.row('assets/file.js')])
+                elif change == 'parent-missing': rows.append(self.row('assets/file.js'))
+                elif change == 'escape': rows.append(self.row('../outside'))
+                elif change == 'uncanonical': rows.append(self.row('assets//file.js'))
+                elif change == 'missing-root': rows.pop(0)
+                with self.assertRaises(ValueError):
+                    self.phase.closed_managed_archive_budget(incoming, compatibility, self.order)
+        rows = self.minimal_rows()
+        for collision in (self.row('index.html', b'different'), {'path': 'index.html', 'kind': 'directory'}):
+            with self.subTest(collision=collision), self.assertRaisesRegex(ValueError, 'collision'):
+                self.phase.closed_managed_archive_budget(rows, {'pages': [collision]}, self.order)
+        with self.assertRaisesRegex(ValueError, 'surface'):
+            self.phase.closed_managed_archive_budget(rows, {'other': []}, self.order)
+
+    def test_stage_budget_preserves_all_reachable_prior_files_and_excludes_only_unreachable_old_archive_paths(self):
+        incoming, live = self.base / 'incoming', self.base / 'live'
+        incoming.mkdir(mode=0o755); live.mkdir(mode=0o755)
+        new_html = b'<script src="/assets/new.js"></script>'
+        for surface in self.order:
+            root = incoming / surface; (root / 'assets').mkdir(parents=True, mode=0o755); root.chmod(0o755)
+            (root / 'index.html').write_bytes(new_html); (root / 'assets/new.js').write_bytes(b'new content')
+            (root / 'unreferenced-new').write_bytes(b'keep complete incoming')
+            for path in root.rglob('*'): path.chmod(0o755 if path.is_dir() else 0o644)
+        for surface in self.phase.SURFACES:
+            root = live / ('proofofwork-' + surface); (root / 'assets/deep').mkdir(parents=True, mode=0o755); root.chmod(0o755)
+            (root / 'index.html').write_bytes(b'<script src="/assets/old.js"></script>')
+            (root / 'assets/old.js').write_bytes(b'import "./deep/leaf.js";')
+            (root / 'assets/deep/leaf.js').write_bytes(b'prior leaf')
+            (root / 'unreferenced-old').write_bytes(b'x'*4096)
+            for path in root.rglob('*'): path.chmod(0o755 if path.is_dir() else 0o644)
+        passthrough = live / 'historical-passthrough'; passthrough.write_bytes(b'p'*8192); passthrough.chmod(0o644)
+        before = {str(path): path.read_bytes() for path in live.rglob('*') if path.is_file()}
+        result = self.phase.stage_budget(incoming, live, self.stager, owner=self.owner)
+        closed = result['modeledManagedArchive']
+        expected = 21*(len(new_html)+len(b'new content')+len(b'keep complete incoming')) + \
+                   20*(len(b'import "./deep/leaf.js";')+len(b'prior leaf'))
+        self.assertEqual(closed['logicalBytes'], expected)
+        self.assertEqual(result['compatibilityCounters']['dependencies'], 40)
+        self.assertEqual(closed['entries'], 1 + 21*5 + 20*3)
+        self.assertEqual(closed['archiveUpperBoundBytes'], result['modeledManagedArchiveUpperBoundBytes'])
+        self.assertGreater(result['initialCopyUpperBytes'], 8192+20*4096)
+        self.assertEqual(before, {str(path): path.read_bytes() for path in live.rglob('*') if path.is_file()})
+
+    def test_transport_closed_bound_rejects_model_ceiling_or_actual_growth_before_archive(self):
+        closed = self.phase.closed_managed_archive_budget(self.minimal_rows(), {}, self.order)
+        model = {'modeledManagedArchive': closed, 'modeledManagedArchiveUpperBoundBytes': closed['archiveUpperBoundBytes']}
+        namespace = functions_only('remote_transport.py', {'modeled_managed_archive_upper'})
+        validate = namespace['modeled_managed_archive_upper']; upper = closed['archiveUpperBoundBytes']
+        self.assertEqual(validate(model, upper, self.order), upper)
+        self.assertLess(upper, 640537895)
+        for change in ('ceiling', 'bool', 'zero', 'record-mismatch', 'family', 'hardlinks'):
+            bad = copy.deepcopy(model); ceiling = upper
+            if change == 'ceiling': ceiling -= 1
+            elif change == 'bool': bad['modeledManagedArchiveUpperBoundBytes'] = True
+            elif change == 'zero': bad['modeledManagedArchiveUpperBoundBytes'] = 0
+            elif change == 'record-mismatch': bad['modeledManagedArchive']['archiveUpperBoundBytes'] += 1
+            elif change == 'family': bad['modeledManagedArchive']['managedSurfaces'].pop()
+            elif change == 'hardlinks': bad['modeledManagedArchive']['hardDereference'] = False
+            with self.subTest(change=change), self.assertRaises(AssertionError): validate(bad, ceiling, self.order)
+        # Run the actual module-level post-stage statements without invoking any
+        # remote script actions or tar; a too-small prediction refuses first.
+        module = ast.parse((ROOT / 'remote_transport.py').read_bytes())
+        branch = next(node for node in module.body if isinstance(node, ast.If) and
+                      any(isinstance(child, ast.Assign) and any(isinstance(t,ast.Name) and t.id=='managed'
+                          for t in child.targets) for child in node.body))
+        start = next(i for i,node in enumerate(branch.body) if isinstance(node,ast.Assign) and
+                     any(isinstance(t,ast.Name) and t.id=='upper' for t in node.targets))
+        code = compile(ast.Module(body=branch.body[start:start+2],type_ignores=[]),'actual-post-stage-bound','exec')
+        for actual in (upper, upper+1, 0, True):
+            scope = {'managed':{'archiveUpperBoundBytes':actual},'stage_archive_upper':upper,'p':{'stageArchiveUpperBoundBytes':640537895}}
+            with self.subTest(actual=actual):
+                if actual == upper and type(actual) is int: exec(code,scope)
+                else:
+                    with self.assertRaises(AssertionError):exec(code,scope)
 
 class PreservedTransport(unittest.TestCase):
     def setUp(self):

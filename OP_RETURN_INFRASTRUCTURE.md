@@ -207,6 +207,26 @@ another stream or move. Every original full logical-copy filesystem/inode
 guard remains active on the actual evidence filesystem before allocation and
 each copy; the phase model reports this independent full-copy bound as well.
 
+The phase model also derives a conservative managed archive bound from the
+complete verified incoming path set and the accepted prior dependency closure,
+including required parent directories. Every incoming file remains included,
+and each served regular path contributes its full logical size even when
+candidate files share an inode. The bound includes GNU tar headers, long-name
+padding, file padding, record/end framing and conservative gzip overhead; it
+does not substitute the candidate's smaller deduplicated allocation for archive
+size. Old files outside that closure remain in the complete prior rollback and
+sealed historical archives rather than entering the new managed archive.
+
+Both ordinary and evidence staging charge this source-bound closed archive
+upper bound to physical capacity, constrained by the plan's original absolute
+archive ceiling. Input identity snapshots and collision/path checks remain
+required. After staging, an independent managed-tree inventory must fit the
+predicted envelope before tar can run; the finished compressed archive must
+fit that measured bound. Missing, malformed or changed models fail closed.
+The full logical-copy guard, 5 GiB scratch ceiling, 10 GiB root reserve,
+64 MiB growth allowance, inode reserve and 32 MiB transport evidence allowance
+remain unchanged.
+
 After all copies, internal deduplication and integrity checks complete, the
 opted-in stager measures the completed candidate's stable unique inodes,
 charging the greater of physical allocation or rounded logical size plus
@@ -4227,16 +4247,37 @@ successor to that valid deployed bundle. Each served path still counts even
 when another surface serves identical bytes. Quoted text, escaped/backslash
 strings, non-ASCII literals, traversal
 candidates, and other strings that do not resolve to an existing regular file
-inside that surface are soft-ignored. Only resolved file edges count against
-the 4,096-edge graph limit. The September 5 read-only follow-up counted
+inside that surface are soft-ignored. Each distinct resolved target from one
+referrer counts once against the 4,096-edge graph limit; another referrer or
+served surface contributes its own edges. All raw quoted/CSS matches still
+consume the independent candidate limit. The October 8 sealed twenty-surface
+Jobs release (`fc396c9a9abd`, archive SHA256
+`962a790de9060deca5d54f295965f19a3797d39a620609a2bcc194efa6334452`) has
+4,400 resolved occurrences but 3,700 distinct referrer/target edges, with
+1,016,532 candidates, 1,200 reachable assets and 68,575,064 dependency bytes.
+Its old occurrence counter exceeded the edge ceiling despite that complete
+finite graph fitting the then-current limits. Both actual parsers now deduplicate
+resolved targets within each referrer; this preserves the same reachable
+assets and retains the 4,096-edge, 1,536-dependency and byte ceilings. The older
+edge measurements above and below remain historical occurrence counts. The
+October 8 twenty-one-surface Pages V4 payload built from source
+`85a22a03e0ffba96965dcc91e9e67cd971c163a9` (surfaces archive SHA256
+`bcd35df7bf078675d52b06cc4fa86479351692a9bc5b9a288c316f13bf98f965`)
+has 4,074 distinct referrer/target edges, 1,106,566 raw candidates, 1,323
+reachable assets and 73,365,591 dependency bytes. Its candidate count exceeds
+the former 1,048,576 ceiling. Both actual parsers therefore use a finite
+1,310,720-candidate ceiling, 18.45% above that measured graph; the other
+independent limits remain unchanged. The September 5 read-only follow-up counted
 527,332 quoted-reference candidates in the 15-surface live closure, with at
 most 35,160 per surface, 525 dependencies, 1,005 resolved edges and 43,649,254
 dependency bytes. This exceeded the former 524,288 search ceiling, which had
-covered the 421,994-candidate pre-v3 monolith. Both stager and publisher now use
-a finite 1,048,576-candidate ceiling, aligned with the previously doubled
-dependency allowance; dependency, edge, per-file, total-byte, path and collision
-limits remain independent. Both actual parsers accept the boundary and reject
-the next candidate. Thus a client that fetched the prior HTML
+covered the 421,994-candidate pre-v3 monolith. That September repair used a
+finite 1,048,576-candidate ceiling, aligned with the then-doubled dependency
+allowance; this remains historical evidence rather than the current scan
+ceiling. Both actual parsers accept the current 1,310,720 boundary and reject
+1,310,721, including repeated references to one target. Fixture-only replay also
+retains the historical 1,048,576/1,048,577 boundary. Dependency, edge, per-file,
+total-byte, path and collision limits remain independent. Thus a client that fetched the prior HTML
 immediately before exchange can still fetch its complete old asset graph
 afterward.
 

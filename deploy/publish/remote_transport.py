@@ -148,6 +148,22 @@ def payload_fingerprint(root):
             'entries': len(rows), 'regularBytes': sum(row[5] for row in rows)}
 
 
+
+def modeled_managed_archive_upper(model, plan_upper, surfaces):
+    """Admit only a source-bound closed model within the absolute plan ceiling."""
+    upper = model['modeledManagedArchiveUpperBoundBytes']
+    closed = model['modeledManagedArchive']
+    assert type(plan_upper) is int and type(upper) is int and 0 < upper <= plan_upper
+    assert closed['model'] == 'closed-managed-archive-tar-gzip-v1'
+    assert closed['hardDereference'] is True and closed['archiveUpperBoundBytes'] == upper
+    names = closed['managedSurfaces']
+    assert isinstance(names, list) and len(names) == len(set(names)) == len(surfaces) and set(names) == set(surfaces)
+    assert type(closed['logicalBytes']) is int and 0 <= closed['logicalBytes'] <= upper
+    assert type(closed['entries']) is int and closed['entries'] >= 1 + 2*len(surfaces)
+    assert type(closed['regularFiles']) is int and len(surfaces) <= closed['regularFiles'] < closed['entries']
+    return upper
+
+
 def run(argv, name, *, source=None, length=0, extra=None, timeout=600, file_limit=2*1024**3):
     global captured_log_bytes
     def limits():
@@ -451,6 +467,7 @@ if phase != 'source':
     run(['/usr/bin/python3', '-I', '-B', '-c', phase_capacity_source, 'stage', str(preserved / 'surfaces'), helpers['stager']['sha256'], *model_args], 'stage-model.json')
     model = json.loads((out / 'stage-model.json').read_bytes())
     assert model['inputStabilityVerified'] is True and model['installedStagerSha256'] == helpers['stager']['sha256']
+    stage_archive_upper = modeled_managed_archive_upper(model, p['stageArchiveUpperBoundBytes'], SURFACES)
     # The release archive lives outside scratch. Charge it only to actual disk.
     if phase == 'preserved-stage-resume':
         # No private candidate enters scratch until the installed stager has
@@ -459,12 +476,12 @@ if phase != 'source':
         full_copy = model['canonicalFullLogicalCopyBound']
         assert full_copy['allocationPath'] == str(evidence_root)
         capacity('check', evidence_root, max(full_copy['additionalBytes'], model['peakAdditionalBytes']) +
-                 p['stageArchiveUpperBoundBytes'] + EVIDENCE_RESERVE, 'stage-evidence')
+                 stage_archive_upper + EVIDENCE_RESERVE, 'stage-evidence')
         stager_args = ['--preserved-build-attempt', p['publicationAttempt'],
                        '--preserved-input-receipt-sha256', p['preservedStageResume']['incomingReceiptSha256']]
     else:
         capacity('check-scratch', BASE, model['peakAdditionalBytes'] + EVIDENCE_RESERVE, 'stage')
-        capacity('check', BASE, model['peakAdditionalBytes'] + p['stageArchiveUpperBoundBytes'] + EVIDENCE_RESERVE, 'stage')
+        capacity('check', BASE, model['peakAdditionalBytes'] + stage_archive_upper + EVIDENCE_RESERVE, 'stage')
         stager_args = []
     run([helpers['stager']['path'], '--release-id', release, '--surfaces-root', str(preserved / 'surfaces'),
          '--stage-root', str(stage), '--deduplicate-managed-files', *stager_args], 'stager.log', timeout=900)
@@ -483,7 +500,8 @@ if phase != 'source':
     assert payload_fingerprint(preserved) == input_before
     run(['/usr/bin/python3', '-I', '-B', '-c', phase_capacity_source, 'managed', str(stage)], 'managed-model.json')
     managed = json.loads((out / 'managed-model.json').read_bytes())
-    upper = managed['archiveUpperBoundBytes']; assert upper <= p['stageArchiveUpperBoundBytes']
+    upper = managed['archiveUpperBoundBytes']
+    assert type(upper) is int and 0 < upper <= stage_archive_upper <= p['stageArchiveUpperBoundBytes']
     capacity('check', ARCHIVES, upper + 65536, 'archive', inodes=16)
     for target in (archive, Path(str(archive)+'.sha256'), Path(str(archive)+'.provenance')):
         assert not os.path.lexists(target)

@@ -494,10 +494,11 @@ maximum_total_bytes = 512 * 1024 * 1024
 # candidate and per-file limits remain independent.
 maximum_dependencies = 1536
 maximum_reference_edges = 4096
-# The September 5 live 15-surface closure produces 527,332 candidates; the
-# pre-v3 input had 421,994. Keep this finite scan bound aligned with the stager
-# and doubled dependency ceiling; all edge/byte/path limits remain independent.
-maximum_reference_candidates = 1048576
+# The historical 15-surface closure produced 527,332 candidates; the October 8
+# twenty-one-root Pages V4 payload produces 1,106,566. Keep the finite 1,310,720
+# ceiling aligned with the stager (18.45% above that measured graph); all
+# dependency/unique-edge/byte/path limits remain independent.
+maximum_reference_candidates = 1310720
 dependency_count = 0
 reference_edge_count = 0
 reference_candidate_count = 0
@@ -596,6 +597,9 @@ def resolve_reference(surface_root, current_path, reference_bytes):
 def dependency_references(surface_root, current_path, content):
     global reference_candidate_count, reference_edge_count
     references = []
+    # Count directed referrer/target edges once, including overlapping CSS
+    # patterns. All raw matches still consume the independent candidate cap.
+    seen_targets = set()
     patterns = [quoted_reference_pattern]
     if os.path.splitext(current_path)[1].lower() == ".css":
         patterns.extend((css_url_pattern, css_import_pattern))
@@ -607,7 +611,8 @@ def dependency_references(surface_root, current_path, content):
             relative = resolve_reference(
                 surface_root, current_path, match.group("reference")
             )
-            if relative is not None:
+            if relative is not None and relative not in seen_targets:
+                seen_targets.add(relative)
                 reference_edge_count += 1
                 if reference_edge_count > maximum_reference_edges:
                     raise SystemExit("Prior UI compatibility reference-edge bound exceeded.")

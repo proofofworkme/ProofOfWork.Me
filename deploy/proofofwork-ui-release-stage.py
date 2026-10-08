@@ -67,11 +67,11 @@ MAXIMUM_TOTAL_BYTES = 512 * 1024 * 1024
 # measured set alongside the independent byte, edge and candidate limits.
 MAXIMUM_DEPENDENCIES = 1536
 MAXIMUM_REFERENCE_EDGES = 4096
-# The September 5 live 15-surface closure produces 527,332 candidates, slightly
-# beyond the former 524,288 ceiling (the pre-v3 input had 421,994). Match the
-# doubled dependency ceiling with a finite scan bound; edge/byte/path limits
-# still independently constrain files that can enter the release.
-MAXIMUM_REFERENCE_CANDIDATES = 1048576
+# The historical 15-surface closure produced 527,332 candidates. The October 8
+# twenty-one-root Pages V4 payload produces 1,106,566, exceeding the former
+# 1,048,576 ceiling. Retain a finite 1,310,720 bound (18.45% above that measured
+# graph); dependency/unique-edge/byte/path limits remain independent.
+MAXIMUM_REFERENCE_CANDIDATES = 1310720
 MAXIMUM_PAYLOAD_ENTRIES = 10000
 MAXIMUM_PAYLOAD_BYTES = 1024 * 1024 * 1024
 MANIFEST_NAME = ".proofofwork-ui-release"
@@ -973,6 +973,9 @@ def dependency_references(
     counters: dict[str, int],
 ) -> list[str]:
     references: list[str] = []
+    # Repeated literals and overlapping CSS patterns describe the same directed
+    # edge from this referrer. Every raw match still consumes the candidate cap.
+    seen_targets: set[str] = set()
     patterns = [QUOTED_REFERENCE_PATTERN]
     if current_path.suffix.lower() == ".css":
         patterns.extend((CSS_URL_PATTERN, CSS_IMPORT_PATTERN))
@@ -982,7 +985,8 @@ def dependency_references(
             if counters["reference_candidates"] > MAXIMUM_REFERENCE_CANDIDATES:
                 fail("Prior UI compatibility reference-candidate bound exceeded.")
             relative = resolve_reference(surface_root, current_path, match.group("reference"))
-            if relative is not None:
+            if relative is not None and relative not in seen_targets:
+                seen_targets.add(relative)
                 counters["reference_edges"] += 1
                 if counters["reference_edges"] > MAXIMUM_REFERENCE_EDGES:
                     fail("Prior UI compatibility reference-edge bound exceeded.")

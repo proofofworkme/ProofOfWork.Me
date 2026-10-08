@@ -92,6 +92,79 @@ def tree_budget(root, *, owner=0, managed=False):
             'archiveUpperBoundBytes': archive_upper}
 
 
+
+def closed_managed_archive_budget(incoming, compatibility, order):
+    """Bound GNU tar --hard-dereference from the verified final managed paths.
+
+    Every incoming path remains in the archive. Prior paths enter only through
+    the complete accepted compatibility closure; physical inode dedup never
+    reduces a file's logical tar contribution.
+    """
+    order = list(order)
+    if len(order) != len(set(order)) or set(order) not in (set(SURFACES), set(PAGES_SURFACES)):
+        raise ValueError('Closed archive requires the exact managed surface set')
+    if set(incoming) != set(order) or not set(compatibility) <= set(order):
+        raise ValueError('Closed archive row surface set differs')
+    tar_bytes, logical, entries, files = 2048, 0, 1, 0
+    file_keys = {'path', 'kind', 'size', 'mode', 'uid', 'gid', 'xattrs', 'sha256'}
+    for surface in order:
+        merged = {}
+        for source in (incoming[surface], compatibility.get(surface, [])):
+            seen = set()
+            for row in source:
+                if not isinstance(row, dict) or row.get('kind') not in ('directory', 'file'):
+                    raise ValueError('Closed archive row has an unsupported type')
+                relative = row.get('path')
+                if (not isinstance(relative, str) or not relative or '\\' in relative or
+                        any(ord(c) < 32 or ord(c) == 127 for c in relative) or
+                        Path(relative).is_absolute() or '..' in Path(relative).parts or
+                        Path(relative).as_posix() != relative):
+                    raise ValueError('Closed archive row path is not canonical')
+                if relative in seen:
+                    raise ValueError('Closed archive row path is duplicated')
+                seen.add(relative)
+                if row['kind'] == 'directory':
+                    if set(row) != {'path', 'kind'}:
+                        raise ValueError('Closed archive directory row has file fields')
+                else:
+                    if (set(row) != file_keys or relative == '.' or
+                            any(type(row[key]) is not int or row[key] < 0 for key in ('size', 'mode', 'uid', 'gid')) or
+                            row['mode'] > 0o7777 or row['mode'] & 0o7022 or
+                            not isinstance(row['sha256'], str) or len(row['sha256']) != 64 or
+                            any(c not in '0123456789abcdef' for c in row['sha256']) or
+                            not isinstance(row['xattrs'], list)):
+                        raise ValueError('Closed archive file row metadata is invalid')
+                previous = merged.get(relative)
+                if previous is not None:
+                    if (previous['kind'] != row['kind'] or row['kind'] == 'file' and
+                            (previous['size'], previous['sha256']) != (row['size'], row['sha256'])):
+                        raise ValueError('Closed archive row collision differs')
+                    continue
+                merged[relative] = row
+        if merged.get('.', {}).get('kind') != 'directory':
+            raise ValueError('Closed archive managed root is missing')
+        for relative, row in merged.items():
+            if relative != '.':
+                for parent in Path(relative).parents:
+                    if merged.get(parent.as_posix(), {}).get('kind') != 'directory':
+                        raise ValueError('Closed archive parent is missing or collides with a file')
+            managed_path = 'proofofwork-' + surface
+            if relative != '.':
+                managed_path += '/' + relative
+            # Match tree_budget's independently measured managed-stage envelope.
+            tar_bytes += 1024 + rounded(len(os.fsencode(managed_path)) + 1, 512)
+            entries += 1
+            if row['kind'] == 'file':
+                files += 1
+                logical += row['size']
+                tar_bytes += rounded(row['size'], 512)
+    tar_bytes = rounded(tar_bytes + 10240, 10240)
+    upper = tar_bytes + (tar_bytes + 999) // 1000 + 65536
+    return {'model': 'closed-managed-archive-tar-gzip-v1', 'managedSurfaces': order,
+            'hardDereference': True, 'logicalBytes': logical, 'entries': entries,
+            'regularFiles': files, 'archiveUpperBoundBytes': upper}
+
+
 def dedup_key(row):
     return (row['size'], row['mode'], row['uid'], row['gid'],
             tuple(tuple(value) for value in row['xattrs']), row['sha256'])
@@ -295,6 +368,9 @@ def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent
     stager.reject_nested_mounts(live_root, mountinfo)
     stager.reject_nested_mounts(incoming_root, mountinfo)
     result = phase_bound(initial, incoming, old_exclusive, compatibility, order, block)
+    archive_model = closed_managed_archive_budget(incoming, compatibility, order)
+    result['modeledManagedArchive'] = archive_model
+    result['modeledManagedArchiveUpperBoundBytes'] = archive_model['archiveUpperBoundBytes']
     result.update({'initialCopyUpperBytes': initial, 'exclusiveOldContributionBytes': sum(old_exclusive.values()),
                    'compatibilityCounters': counters, 'perSurfaceCounters': per_surface,
                    'blockSize': block, 'inputStabilityVerified': True})

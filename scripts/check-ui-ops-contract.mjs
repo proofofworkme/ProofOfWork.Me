@@ -234,7 +234,7 @@ assert.match(publisher, /verify_current_rollback_capability/u);
 assert.match(publisher, /"\$\{provenance_script\}" verify-rollback/u);
 assert.match(publisher, /maximum_dependencies = 1536/u);
 assert.match(publisher, /maximum_reference_edges = 4096/u);
-assert.match(publisher, /maximum_reference_candidates = 1048576/u);
+assert.match(publisher, /maximum_reference_candidates = 1310720/u);
 assert.match(publisher, /maximum_asset_bytes = 64 \* 1024 \* 1024/u);
 assert.match(publisher, /maximum_total_bytes = 512 \* 1024 \* 1024/u);
 assert.match(publisher, /details\.st_uid/u);
@@ -268,7 +268,7 @@ assert.match(
 );
 assert.match(stager, /MAXIMUM_DEPENDENCIES = 1536/u);
 assert.match(stager, /MAXIMUM_REFERENCE_EDGES = 4096/u);
-assert.match(stager, /MAXIMUM_REFERENCE_CANDIDATES = 1048576/u);
+assert.match(stager, /MAXIMUM_REFERENCE_CANDIDATES = 1310720/u);
 assert.match(stager, /MAXIMUM_ASSET_BYTES = 64 \* 1024 \* 1024/u);
 assert.match(stager, /MAXIMUM_TOTAL_BYTES = 512 \* 1024 \* 1024/u);
 assert.match(stager, /MAXIMUM_PAYLOAD_ENTRIES = 10000/u);
@@ -448,7 +448,7 @@ assert "maximum_dependencies = 1536" in publisher_code
 # token counting and refusal branches are the actual functions. Dependency copy
 # and publisher accept/reject branches are exercised below with a lowered ceiling
 # after the source-level assertions pin the production 1536-file limit.
-assert stage.MAXIMUM_REFERENCE_CANDIDATES == 1048576
+assert stage.MAXIMUM_REFERENCE_CANDIDATES == 1310720
 saved_argv = sys.argv
 try:
     sys.argv = ["verify", "/tmp/ui-bound-live", "/tmp/ui-bound-staged"]
@@ -458,26 +458,100 @@ finally:
     sys.argv = saved_argv
 assert publisher_parser["maximum_reference_candidates"] == stage.MAXIMUM_REFERENCE_CANDIDATES
 token = b'"https://example.invalid"'
-for boundary in (527332, 1048576):
-    counters = {"reference_candidates": boundary - 1, "reference_edges": 0}
-    assert stage.dependency_references(Path("/tmp/ui-bound-live"), Path("/tmp/ui-bound-live/index.html"), token, counters) == []
-    assert counters["reference_candidates"] == boundary
-    publisher_parser["reference_candidate_count"] = boundary - 1
-    assert publisher_parser["dependency_references"]("/tmp/ui-bound-live", "/tmp/ui-bound-live/index.html", token) == []
-    assert publisher_parser["reference_candidate_count"] == boundary
-try:
-    stage.dependency_references(Path("/tmp/ui-bound-live"), Path("/tmp/ui-bound-live/index.html"), token, counters)
-except stage.StageError as error:
-    assert "reference-candidate bound exceeded" in str(error)
-else:
-    raise AssertionError("Stager accepted 1048577 reference candidates")
-try:
-    publisher_parser["dependency_references"]("/tmp/ui-bound-live", "/tmp/ui-bound-live/index.html", token)
-except SystemExit as error:
-    assert "reference-candidate bound exceeded" in str(error)
-else:
-    raise AssertionError("Publisher accepted 1048577 reference candidates")
-print("UI candidate regression: measured527332 and limit1048576 accepted;1048577 rejected by both parsers", flush=True)
+
+def candidate_ceiling(ceiling, measured):
+    # Only this local fixture changes the ceiling when replaying the historical
+    # bound. Every candidate still goes through each shipped parser's real branch.
+    saved_stage = stage.MAXIMUM_REFERENCE_CANDIDATES
+    saved_publisher = publisher_parser["maximum_reference_candidates"]
+    stage.MAXIMUM_REFERENCE_CANDIDATES = ceiling
+    publisher_parser["maximum_reference_candidates"] = ceiling
+    try:
+        for boundary in (*measured, ceiling):
+            counters = {"reference_candidates": boundary - 1, "reference_edges": 0}
+            assert stage.dependency_references(Path("/tmp/ui-bound-live"), Path("/tmp/ui-bound-live/index.html"), token, counters) == []
+            assert counters["reference_candidates"] == boundary
+            publisher_parser["reference_candidate_count"] = boundary - 1
+            assert publisher_parser["dependency_references"]("/tmp/ui-bound-live", "/tmp/ui-bound-live/index.html", token) == []
+            assert publisher_parser["reference_candidate_count"] == boundary
+        try:
+            stage.dependency_references(Path("/tmp/ui-bound-live"), Path("/tmp/ui-bound-live/index.html"), token, counters)
+        except stage.StageError as error:
+            assert "reference-candidate bound exceeded" in str(error)
+        else:
+            raise AssertionError("Stager accepted " + str(ceiling + 1) + " reference candidates")
+        try:
+            publisher_parser["dependency_references"]("/tmp/ui-bound-live", "/tmp/ui-bound-live/index.html", token)
+        except SystemExit as error:
+            assert "reference-candidate bound exceeded" in str(error)
+        else:
+            raise AssertionError("Publisher accepted " + str(ceiling + 1) + " reference candidates")
+    finally:
+        stage.MAXIMUM_REFERENCE_CANDIDATES = saved_stage
+        publisher_parser["maximum_reference_candidates"] = saved_publisher
+
+candidate_ceiling(1310720, (527332, 1016532, 1106566))
+candidate_ceiling(1048576, (527332, 1016532))
+assert stage.MAXIMUM_REFERENCE_CANDIDATES == publisher_parser["maximum_reference_candidates"] == 1310720
+print("UI candidate regression: measured527332/1016532/1106566 and current1310720 accepted;1310721 refused; historical1048576/1048577 boundary preserved by both parsers", flush=True)
+
+# Resolved edges count distinct targets per referrer; every raw occurrence still
+# costs a candidate. Exercise both actual parsers, including CSS overlap.
+with tempfile.TemporaryDirectory(prefix="ui-reference-edge-regression-") as directory:
+    root = Path(directory)
+    (root / "assets").mkdir()
+    for name in ("shared.js", "shared.css", "one.js", "two.js"):
+        (root / "assets" / name).write_bytes(b"fixture dependency")
+
+    def parsed(kind, current, content, candidates=0, edges=0):
+        if kind == "stager":
+            counts = {"reference_candidates": candidates, "reference_edges": edges}
+            result = stage.dependency_references(root, current, content, counts)
+            return result, counts["reference_candidates"], counts["reference_edges"]
+        publisher_parser["reference_candidate_count"] = candidates
+        publisher_parser["reference_edge_count"] = edges
+        result = publisher_parser["dependency_references"](str(root), str(current), content)
+        return result, publisher_parser["reference_candidate_count"], publisher_parser["reference_edge_count"]
+
+    for kind in ("stager", "publisher"):
+        refs, candidates, edges = parsed(kind, root / "assets/one.js", b'"shared.js" ' * 5000)
+        assert refs == ["assets/shared.js"] and candidates == 5000 and edges == 1
+        refs, candidates, edges = parsed(kind, root / "assets/two.js", b'"shared.js"', candidates, edges)
+        assert refs == ["assets/shared.js"] and candidates == 5001 and edges == 2
+        refs, candidates, edges = parsed(kind, root / "assets/one.css", b'@import "shared.css";body{background:url("shared.css")}')
+        assert refs == ["assets/shared.css"] and candidates == 6 and edges == 1
+        refs, candidates, edges = parsed(kind, root / "assets/one.js", b'"shared.js" "/assets/shared.js" "../assets/shared.js"')
+        assert refs == ["assets/shared.js"] and candidates == 3 and edges == 1
+        refs, candidates, edges = parsed(kind, root / "assets/one.js", b'"shared.js" ' * 3, edges=4095)
+        assert refs == ["assets/shared.js"] and candidates == 3 and edges == 4096
+        try:
+            parsed(kind, root / "assets/two.js", b'"shared.js"', edges=4096)
+        except (stage.StageError, SystemExit) as error:
+            assert "reference-edge bound exceeded" in str(error)
+        else:
+            raise AssertionError(kind + " accepted a distinct 4097th referrer/target edge")
+        refs, candidates, edges = parsed(kind, root / "assets/one.js", b'"shared.js"', candidates=1310719)
+        assert refs == ["assets/shared.js"] and candidates == 1310720 and edges == 1
+        try:
+            parsed(kind, root / "assets/one.js", b'"shared.js" "shared.js"', candidates=1310719)
+        except (stage.StageError, SystemExit) as error:
+            assert "reference-candidate bound exceeded" in str(error)
+        else:
+            raise AssertionError(kind + " stopped charging repeated raw candidates")
+
+    for number in range(4097):
+        (root / "assets" / ("edge-" + str(number) + ".js")).write_bytes(b"edge")
+    tokens = [b'"/assets/edge-' + str(number).encode() + b'.js"' for number in range(4097)]
+    for kind in ("stager", "publisher"):
+        refs, candidates, edges = parsed(kind, root / "index.html", b" ".join(tokens[:4096]))
+        assert len(refs) == candidates == edges == 4096
+        try:
+            parsed(kind, root / "index.html", b" ".join(tokens))
+        except (stage.StageError, SystemExit) as error:
+            assert "reference-edge bound exceeded" in str(error)
+        else:
+            raise AssertionError(kind + " accepted 4097 unique edges")
+print("UI edge regression: duplicateJS/CSS overlap retain each target; distinct4096 accepted/4097 refused; every raw candidate charged by both parsers", flush=True)
 
 def fixture(parent, count):
     live, staged = parent / "live", parent / "staged"
