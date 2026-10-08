@@ -4276,7 +4276,7 @@ when another surface serves identical bytes. Quoted text, escaped/backslash
 strings, non-ASCII literals, traversal
 candidates, and other strings that do not resolve to an existing regular file
 inside that surface are soft-ignored. Each distinct resolved target from one
-referrer counts once against the 4,096-edge graph limit; another referrer or
+referrer counts once against the 5,120-edge graph limit; another referrer or
 served surface contributes its own edges. All raw quoted/CSS matches still
 consume the independent candidate limit. The October 8 sealed twenty-surface
 Jobs release (`fc396c9a9abd`, archive SHA256
@@ -4284,9 +4284,9 @@ Jobs release (`fc396c9a9abd`, archive SHA256
 4,400 resolved occurrences but 3,700 distinct referrer/target edges, with
 1,016,532 candidates, 1,200 reachable assets and 68,575,064 dependency bytes.
 Its old occurrence counter exceeded the edge ceiling despite that complete
-finite graph fitting the then-current limits. Both actual parsers now deduplicate
-resolved targets within each referrer; this preserves the same reachable
-assets and retains the 4,096-edge, 1,536-dependency and byte ceilings. The older
+finite graph fitting the then-current limits. That repair made both actual parsers
+deduplicate resolved targets within each referrer; it preserved the same reachable
+assets and retained the then-current 4,096-edge, 1,536-dependency and byte ceilings. The older
 edge measurements above and below remain historical occurrence counts. The
 October 8 twenty-one-surface Pages V4 payload built from source
 `85a22a03e0ffba96965dcc91e9e67cd971c163a9` (surfaces archive SHA256
@@ -4295,7 +4295,26 @@ has 4,074 distinct referrer/target edges, 1,106,566 raw candidates, 1,323
 reachable assets and 73,365,591 dependency bytes. Its candidate count exceeds
 the former 1,048,576 ceiling. Both actual parsers therefore use a finite
 1,310,720-candidate ceiling, 18.45% above that measured graph; the other
-independent limits remain unchanged. The September 5 read-only follow-up counted
+independent limits remained unchanged by that candidate-bound repair.
+
+The sealed October 8 twenty-two-root Permission V5 release
+`9b56f32ff83125e1e9b3238318adefdefb58c4f9` (managed archive SHA256
+`1d97f4d1cc2cb64d110a17e531d2d66a245e6fd3f7c64fdd1ef8527b159eebfe`)
+has 4,708 distinct served-root/referrer/target edges, 1,452 reachable dependencies,
+1,201,324 raw candidates and 78,259,401 dependency bytes. Its 946 reachable
+referrers are each parsed once. The independent, read-only census verified all
+22 live surface fingerprints and found every reachable asset in the checked
+successor payload; identical bytes shared by surfaces still count separately.
+The former 4,096-edge ceiling refuses this complete graph at its 4,097th edge.
+Both actual parsers therefore use a finite 5,120-edge ceiling, 412 edges (8.75%)
+above that measured set. Counting, path resolution and per-file verification are
+unchanged; the 1,536-dependency, 1,310,720-candidate, 64 MiB per-file, 2 MiB index
+and 512 MiB dependency-byte ceilings remain independent and unchanged. Both
+parsers accept 5,120 distinct edges and refuse 5,121. Fixture-only replay retains
+the historical 4,096/4,097 boundary. The sealed archive, historical limits and
+refusal evidence remain preserved.
+
+The September 5 read-only follow-up counted
 527,332 quoted-reference candidates in the 15-surface live closure, with at
 most 35,160 per surface, 525 dependencies, 1,005 resolved edges and 43,649,254
 dependency bytes. This exceeded the former 524,288 search ceiling, which had

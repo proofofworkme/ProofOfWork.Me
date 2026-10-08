@@ -505,7 +505,10 @@ maximum_total_bytes = 512 * 1024 * 1024
 # served-path ceiling aligned with the canonical stager; byte, reference-edge,
 # candidate and per-file limits remain independent.
 maximum_dependencies = 1536
-maximum_reference_edges = 4096
+# The sealed October 8 twenty-two-root Permission V5 graph has 4,708 distinct
+# served-root/referrer/target edges. Align the finite 5,120 ceiling with the
+# stager (8.75% above that measured set); all other limits remain independent.
+maximum_reference_edges = 5120
 # The historical 15-surface closure produced 527,332 candidates; the October 8
 # twenty-one-root Pages V4 payload produces 1,106,566. Keep the finite 1,310,720
 # ceiling aligned with the stager (18.45% above that measured graph); all

@@ -67,7 +67,10 @@ MAXIMUM_TOTAL_BYTES = 512 * 1024 * 1024
 # Count each served path separately and retain a finite ceiling above that
 # measured set alongside the independent byte, edge and candidate limits.
 MAXIMUM_DEPENDENCIES = 1536
-MAXIMUM_REFERENCE_EDGES = 4096
+# The sealed October 8 twenty-two-root Permission V5 graph has 4,708 distinct
+# served-root/referrer/target edges. Keep a finite 5,120 ceiling (8.75% above
+# that measured set); served-path, raw-candidate and byte limits are independent.
+MAXIMUM_REFERENCE_EDGES = 5120
 # The historical 15-surface closure produced 527,332 candidates. The October 8
 # twenty-one-root Pages V4 payload produces 1,106,566, exceeding the former
 # 1,048,576 ceiling. Retain a finite 1,310,720 bound (18.45% above that measured
