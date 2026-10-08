@@ -4,7 +4,7 @@ Pages is the local-first HTML page and app authoring workspace for the
 ProofOfWork Computer. It reuses confirmed identity resolution, verified HTML
 Files, Browser previews, and Mail transaction review.
 
-The Pages production candidate is approved for release at
+Pages is approved for production release at
 `pages.proofofwork.me`, alongside Computer Pages. Deployment acceptance must
 verify the exact committed source, hostname, headers, API coverage and local
 preview; source support alone is not a production verification receipt.

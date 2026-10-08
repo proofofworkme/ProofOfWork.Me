@@ -5274,7 +5274,7 @@ HTML or a verified `pwm1:a` attachment. Preview or local authoring activity does
 not create a chain event, and existing Mail/Files/WORK attribution is not added
 again for Pages.
 
-The additive root DNS page-link candidate uses `pwdns1:page1` owner
+The additive root DNS page-link protocol uses `pwdns1:page1` owner
 self-messages, separate from root registry/payment and child projections.
 Existing `/api/v1/dns/:name?network=livenet` responses expose active, historical,
 and pending page-link state with independent `pageLinkCoverage` and
@@ -5300,8 +5300,19 @@ approved V4 UI contract extends 20 managed surfaces to 21 with Pages while
 retaining older manifest families as historical rollback evidence. Verify DNS,
 hosting, same-origin `/api/*`, serving security headers, the exact standalone
 bundle, and Computer integration. Preserve every prior product and rollback
-root. [deploy/pages/README.md](deploy/pages/README.md) governs the four-file
-API overlay and preserves accepted live runtime changes.
+root unless a separately approved exact archival retirement passes its complete
+recovery and preservation checks. [deploy/pages/README.md](deploy/pages/README.md)
+governs the four-file API overlay and preserves accepted live runtime changes.
+
+The user separately approved the five-root UI storage proposal on 2026-10-08,
+SHA-256 `b7ec857468f3c425fa9bed1f366bf2313536913e3d62b18a8246ccd29f68f591`.
+[The storage runbook](deploy/pages/UI_STORAGE.md) restricts it to complete,
+independently verified off-host backups of the five named older rollback copies,
+followed by retirement of only those duplicate root directories. The current UI,
+immediate prior, sealed release archives, source and audit/transport/recovery
+evidence stay on the host. Existing locks, timer masks, retention holds and
+root/scratch/inode reserves remain enforced. Approval is not execution evidence;
+only sealed export, restoration and retirement receipts establish completion.
 
 DNS subdomain self-messages use a dedicated complete discovery lane after the
 protocol's pinned activation height. Registry-address Electrum history still

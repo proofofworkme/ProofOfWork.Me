@@ -344,15 +344,15 @@ Future agents must preserve these unless the user explicitly asks for a migratio
   changes, direct transfers, and trading stay in AMO's DNS tab.
 - `desktop.proofofwork.me` is the public read-only file desktop.
 - `browser.proofofwork.me` is the standalone public HTML renderer.
-- Pages is locally prepared for `pages.proofofwork.me` and Computer's Pages
-  workspace. It is the HTML page/app authoring surface over existing confirmed
-  identity, Files, Browser, and Mail tools. Static preview remains the default;
+- Pages is the HTML page/app authoring product for `pages.proofofwork.me` and
+  Computer's Pages workspace. It reuses confirmed identity and Code source,
+  Files, Browser, and Mail tools. Static preview remains the default;
   explicit inline-script execution stays in an opaque sandbox with no network,
   wallet provider, or parent signing lane. Publishing stages existing Mail
   review and local wallet signing without replacing an unsent Mail draft.
   HTML publication adds no new carrier or duplicate Growth/WORK value. Pages
   also prepares owner-reviewed root `.pow` page links through the additive
-  `pwdns1:page1` candidate. Confirmed ownership epochs govern set/clear and reset
+  `pwdns1:page1` protocol. Confirmed ownership epochs govern set/clear and reset
   on every transfer or purchase; payment resolution stays independent. Browser
   follows only confirmed, covered links to independently verified static HTML.
   The approved page-link opening is 970426, with independently complete raw
@@ -386,7 +386,7 @@ Future agents must preserve these unless the user explicitly asks for a migratio
 - DNS mutation price: `546` proofs for resolver updates, direct transfers, AMO listings, seals, delistings, and buyer-funded AMO transfers.
 - Current DNS event: `pwdns1:r1:<name-base64url>:<owner-address>:<resolver-address>`
 - DNS names are displayed with `.pow`, but users type the bare prefix and the app implies the suffix.
-- Root DNS page links are a separately gated V1 candidate. Set/clear requires
+- Root DNS page links use the separately gated V1 protocol. Set/clear requires
   an owner self-payment of at least 546 proofs and binds the current confirmed
   ownership event. Resolver recipients never control links, pending records
   never route, and incomplete coverage never becomes false empty state.

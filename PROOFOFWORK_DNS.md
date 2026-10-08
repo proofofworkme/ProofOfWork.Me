@@ -17,7 +17,7 @@ Do not change these without an explicit migration plan:
 - Registration price: `1000` proofs
 - Mutation price: `546` proofs for resolver updates, transfers, on-chain listings, seals, delistings, and buyer-funded marketplace transfers
 - Subdomain action payment: one `546`-proof self-payment to the root owner for create, update, or revoke; this is not a registry mutation fee
-- Page-link candidate action payment: one `546`-proof self-payment to the root owner for set or clear; production admission opens at height 970426 only with complete canonical page-link coverage
+- Page-link action payment: one `546`-proof self-payment to the root owner for set or clear; production admission opens at height 970426 only with complete canonical page-link coverage
 - Protocol prefix: `pwdns1:`
 - Registration event: `pwdns1:r1:<name-base64url>:<owner-address>:<resolver-address>`
 - Resolver update event: `pwdns1:u:<name-base64url>:<resolver-address>`

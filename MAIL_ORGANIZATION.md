@@ -371,8 +371,8 @@ recorded in [audits/2026-10-07-code-v1-production-release.md](audits/2026-10-07-
 
 ## Pages
 
-Pages is the locally prepared HTML authoring surface at `/?pages=1` and the
-Computer workspace at `/?folder=pages`, intended for `pages.proofofwork.me`.
+Pages is the HTML authoring surface at `pages.proofofwork.me`, with local
+`/?pages=1` and the Computer workspace at `/?folder=pages`.
 It keeps local page/app drafts separate from Mail drafts, supports full HTML
 source and templates, reuses verified HTML Files and the Browser transaction
 reader, and inserts identity markup only after confirmed-ID resolution.
@@ -391,7 +391,7 @@ verified `pwm1:a` file attachment carrier, so confirmed Pages output follows
 the normal Files/Desktop and Browser rules. No new protocol fee or second
 Growth/WORK value contribution is created.
 
-The local Pages candidate includes root DNS page-link set/clear review. It uses
+Pages includes root DNS page-link set/clear review. It uses
 an existing confirmed HTML txid, not unsaved source; only unchanged confirmed
 imports prefill the field. Mainnet owners review the exact `pwdns1:page1` record,
 current ownership epoch, at least 546 proofs paid back to themselves, and miner

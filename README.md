@@ -406,13 +406,13 @@ discovery, and replay rules.
 - Adds a standalone public Browser app that loads a txid, renders HTML from a message body or verified `text/html` attachment in a sandbox, and exposes a Computer-native HTML template.
 - Keeps wallet signing outside Browser-rendered HTML pages.
 - Exposes Browser as a first-class Computer sidebar workspace, so HTML pages are part of the ProofOfWork Computer and not only a standalone subdomain.
-- Adds the locally prepared Pages authoring surface and Computer workspace for
+- Adds the Pages authoring surface and Computer workspace for
   HTML/CSS/JavaScript source, templates, local drafts, import/export, confirmed
   identity insertion, and verified HTML Files reuse. Static Browser preview is
   the default; explicit Run app uses an isolated inline-script iframe without
   network or wallet access. Publication stages into existing Mail review and
   local wallet signing, preserving any existing unsent Mail draft.
-- Prepares an owner-controlled root `.pow` page-link candidate: Pages reviews
+- Supports owner-controlled root `.pow` page links: Pages reviews
   set/clear against the current confirmed ownership epoch, and Browser can
   resolve `alice.pow` to independently verified static HTML from its confirmed
   linked txid. Payment resolver state stays separate; transfers invalidate

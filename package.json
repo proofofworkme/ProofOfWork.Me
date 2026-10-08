@@ -137,7 +137,7 @@
     "check:audit29-remediation": "node --test server/registry-pending-times.test.mjs scripts/check-audit29-ui-regressions.test.mjs && npm run check:audit19-accounting && python3 -B scripts/check-backup-supervision.py && python3 -B scripts/check-approved-retirements.py",
     "check:audit29-release": "node --test deploy/audit29/verify-candidate.test.mjs && python3 -I -B deploy/audit29/check-release.test.py && python3 -I -B deploy/audit29/check-private-verify.test.py && python3 -I -B scripts/check-audit29-ops-install.py && python3 -B scripts/check-audit29-cleanup.py && python3 -B scripts/check-postgres-query-health.py",
     "check:audit30-first-batch": "npm run check:fee-rate-precision && python3 -I -B scripts/check-approved-retirements.py && python3 -I -B scripts/check-audit28-persistent-retention.py && python3 -I -B scripts/check-retention-service-namespace.py && python3 -I -B deploy/audit30/check-install-retention.test.py && python3 -I -B deploy/audit30/check-ui-storage.test.py && python3 -I -B deploy/audit30/ui-release/check-ui-release.test.py",
-    "check:pages:deploy": "python3 -I -B deploy/pages/check-scoped-node.test.py && python3 -I -B deploy/pages/check-release.test.py",
+    "check:pages:deploy": "python3 -I -B deploy/pages/check-scoped-node.test.py && python3 -I -B deploy/pages/check-release.test.py && python3 -I -B deploy/pages/check-ui-storage.test.py",
     "check:release-sync": "node scripts/check-release-sync.mjs"
   },
   "dependencies": {
