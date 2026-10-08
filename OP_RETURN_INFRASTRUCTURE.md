@@ -5482,9 +5482,11 @@ this does not replace fresh admission for the following release. The original
 public verification included the still-unactivated concurrent Permission hostname
 and retained its TLS failure. Individual Browser, Computer, Pages and DNS HTTPS
 probes confirmed the existing clean ABA release, while protected Caddy state
-remained unchanged. Permission activation and the final release-sync gate remain
-required for that separate release. Terminal and independent receipt-review
-hashes, all limitations, and custody provenance are recorded in the runbook.
+remained unchanged. At that dated storage handoff, Permission hostname activation
+and that separate release's final release-sync gate had not yet passed; later
+status is established by its own fresh release receipts. Terminal and independent
+receipt-review hashes, all limitations, and custody provenance are recorded in the
+runbook.
 
 DNS subdomain self-messages use a dedicated complete discovery lane after the
 protocol's pinned activation height. Registry-address Electrum history still

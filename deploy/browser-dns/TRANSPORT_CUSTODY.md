@@ -52,9 +52,9 @@ The release owners coordinated a temporary UI publication hold. The exact review
 controller completed removal of all six approved extracted payload trees under
 the normal deployment lock. Fourteen creation-only receipts account for all
 26,702 entries, with no remaining target paths. Eighteen parent objects, the
-current ABA live release, all five rollback roots, sealed archives, other transport
-evidence, Caddy and systemd configuration, service state, retention hold and
-masked/inactive prune timers remained unchanged. This operation did not restore
+ABA release live at that operation, all five rollback roots, sealed archives,
+other transport evidence, Caddy and systemd configuration, service state,
+retention hold and masked/inactive prune timers remained unchanged. This operation did not restore
 or remove any additional historical payload.
 
 The retrieved terminal receipt is SHA-256
@@ -99,5 +99,6 @@ Independent review of the qualified seal, SHA-256
 `f3ca2f01de68040857e526e7a8635d46e0cfb0bb6079f94c4247b83543563afc`,
 replayed its local assertions and retained the same limitations. Root explicitly
 returned the temporary publication hold to the concurrent Permission release
-owner after that review; Browser/DNS integration and deployment continue to
-wait for that release's synchronized completion.
+owner after that review. At that handoff, Browser/DNS integration and deployment
+remained held pending Permission's synchronized completion; later work requires
+fresh source, host, capacity and release-sync evidence.
