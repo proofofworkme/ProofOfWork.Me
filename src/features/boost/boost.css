@@ -212,6 +212,7 @@
     radial-gradient(circle at 20% 40%, rgba(240, 201, 106, 0.26), transparent 34%),
     linear-gradient(135deg, #322914, #19231d 70%, #0e0f0c);
   background-size: 24px 24px, 24px 24px, auto, auto;
+  border: 0;
   min-height: 0;
 }
 
