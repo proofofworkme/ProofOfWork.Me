@@ -411,10 +411,27 @@ function browserReadHarness(owner = "BrowserApp") {
   assert.equal(fromLocation(), "alice.pow");
   location.pathname = "/tx/" + "a".repeat(64);
   assert.equal(fromLocation(), "a".repeat(64));
-  const route = appFunction("browserRoutePath", { normalizeBrowserTarget: normalize, isLocalPreviewHost: () => false });
+  location.hostname = "browser.proofofwork.me";
+  const route = appFunction("browserRoutePath", { window: { location }, normalizeBrowserTarget: normalize, isLocalPreviewHost: () => false });
   assert.equal(route("alice.pow", "livenet"), "/name/alice.pow");
   assert.equal(route("app.alice.pow", "livenet"), "/name/app.alice.pow");
   assert.equal(route("a".repeat(64), "testnet4"), "/tx/" + "a".repeat(64) + "?network=testnet4");
+  assert.equal(route("", "livenet"), "/");
+  for (const host of ["computer.proofofwork.me", "pages.proofofwork.me"]) {
+    location.hostname = host;
+    assert.equal(route("alice.pow", "livenet"), "/name/alice.pow?browser=1");
+    assert.equal(route("app.alice.pow", "livenet"), "/name/app.alice.pow?browser=1");
+    assert.equal(route("a".repeat(64), "livenet"), "/tx/" + "a".repeat(64) + "?browser=1");
+    assert.equal(route("a".repeat(64), "testnet4"), "/tx/" + "a".repeat(64) + "?network=testnet4&browser=1");
+    assert.equal(route("", "livenet"), "/?browser=1");
+    assert.equal(route("", "testnet4"), "/?network=testnet4&browser=1");
+  }
+  location.hostname = "localhost";
+  const previewRoute = appFunction("browserRoutePath", { window: { location }, normalizeBrowserTarget: normalize, isLocalPreviewHost: () => true });
+  assert.equal(previewRoute("alice.pow", "livenet"), "/?browser=1&name=alice.pow");
+  assert.equal(previewRoute("app.alice.pow", "livenet"), "/?browser=1&name=app.alice.pow");
+  assert.equal(previewRoute("a".repeat(64), "testnet4"), "/?network=testnet4&browser=1&txid=" + "a".repeat(64));
+  assert.equal(previewRoute("", "livenet"), "/?browser=1");
 }
 {
   const { readDnsPageLinkSnapshot } = await import("../src/features/pages/dnsPageLinkClient.mjs");

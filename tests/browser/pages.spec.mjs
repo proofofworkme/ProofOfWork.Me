@@ -198,7 +198,10 @@ for (const [label, path] of [["standalone", "/?pages=1"], ["Computer", "/?folder
     expect(reads[1].searchParams.get("snapshot")).toBe("fixture-code-snapshot");
     expect(reads[1].searchParams.get("version")).toBe(CODE_VERSION);
     expect(reads[1].searchParams.get("path")).toBe("site/index.html");
-    await expect(page.getByRole("link", { name: "Open Code", exact: true })).toHaveAttribute("href", /code=1.*repo=/u);
+    const host = new URL(page.url()).hostname;
+    const local = ["localhost", "127.0.0.1", "::1"].includes(host) || host.endsWith(".localhost");
+    const codeHref = `${local ? "/?code=1&" : "https://code.proofofwork.me/?"}network=livenet&repo=${CODE_REPO}&path=site%2Findex.html`;
+    await expect(page.getByRole("link", { name: "Open Code", exact: true })).toHaveAttribute("href", codeHref);
     await page.getByRole("button", { name: "Preview", exact: true }).click();
     await expect(page.frameLocator(".pages-workspace iframe").getByRole("heading", { name: "Confirmed Code source" })).toBeVisible();
     await expect(page.frameLocator(".pages-workspace iframe").locator("body")).not.toHaveAttribute("data-executed", "yes");

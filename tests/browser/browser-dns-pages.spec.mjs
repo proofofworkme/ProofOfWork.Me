@@ -106,6 +106,18 @@ async function search(page, value) {
   await page.getByRole("button", { name: "View Page", exact: true }).click();
 }
 
+async function expectStandaloneRoute(page, target = "") {
+  const { origin, hostname } = new URL(page.url());
+  const local = ["localhost", "127.0.0.1", "::1"].includes(hostname) || hostname.endsWith(".localhost");
+  const expected = {
+    "alice.pow": ["/?browser=1&name=alice.pow", "/name/alice.pow", "/name/alice.pow?browser=1"],
+    "app.alice.pow": ["/?browser=1&name=app.alice.pow", "/name/app.alice.pow", "/name/app.alice.pow?browser=1"],
+    [PAGE]: [`/?browser=1&txid=${PAGE}`, `/tx/${PAGE}`, `/tx/${PAGE}?browser=1`],
+    "": ["/?browser=1", "/", "/?browser=1"],
+  };
+  await expect(page).toHaveURL(origin + expected[target][local ? 0 : hostname === "browser.proofofwork.me" ? 1 : 2]);
+}
+
 async function expectPage(page, title = "Alice page") {
   await expect(page.locator(".browser-page-grid")).toBeVisible();
   await expect(page.frameLocator(".browser-preview-card iframe").getByRole("heading", { name: title, exact: true })).toBeVisible();
@@ -126,7 +138,9 @@ for (const route of ["/?browser=1", "/?folder=browser"]) {
     await expect(page.locator(".browser-proof-card")).toContainText(LINK);
     expect(state.requests.some(url => url.pathname === "/api/v1/dns/alice")).toBe(true);
     if (route.includes("browser=1")) {
-      await expect(page).toHaveURL(/name=alice\.pow/u);
+      await expectStandaloneRoute(page, "alice.pow");
+      await page.reload();
+      await expectPage(page);
       await page.screenshot({ path: "/tmp/pages-dns-browser-desktop.png", fullPage: true });
     }
   });
@@ -147,7 +161,7 @@ for (const route of ["/?browser=1", "/?folder=browser"]) {
     expect(state.requests.some(url => url.pathname === "/api/v1/dns/app.alice")).toBe(true);
     expect(state.requests.some(url => url.pathname === "/api/v1/dns/alice")).toBe(false);
     if (route.includes("browser=1")) {
-      await expect(page).toHaveURL(/name=app\.alice\.pow/u);
+      await expectStandaloneRoute(page, "app.alice.pow");
       await page.reload();
       await expectPage(page);
     }
@@ -247,6 +261,11 @@ test("Direct txids retain pending preview and skip DNS resolution", async ({ pag
   await page.goto(`/?browser=1&txid=${PAGE}`);
   await expectPage(page);
   await expect(page.locator(".browser-proof-card")).toContainText("Pending");
+  await search(page, PAGE);
+  await expectStandaloneRoute(page, PAGE);
+  await page.reload();
+  await expectPage(page);
+  await expect(page.locator(".browser-proof-card")).toContainText("Pending");
   expect(state.requests.some(url => url.pathname.startsWith("/api/v1/dns/"))).toBe(false);
 });
 
@@ -323,6 +342,20 @@ test("Published app frame cannot navigate outside the Browser's frame policy", a
   await page.waitForTimeout(250);
   expect(state.external).toEqual([]);
   await expect(page).toHaveURL(new RegExp(PAGE, "u"));
+});
+
+test("A new Browser tab stays in Browser after a fresh reload", async ({ page }) => {
+  await fixture(page);
+  await page.goto("/?browser=1");
+  await search(page, PAGE);
+  await expectPage(page);
+  await page.getByRole("button", { name: "New tab", exact: true }).click();
+  await expectStandaloneRoute(page);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "ProofOfWork Browser", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Transaction ID or .pow name", { exact: true })).toBeEmpty();
+  await expect(page.locator(".browser-page-grid")).toHaveCount(0);
+  await expect(page.getByRole("tab")).toHaveCount(1);
 });
 
 test("Browser tabs keep independent Back/Forward history and never restore app execution", async ({ page }) => {

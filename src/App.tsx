@@ -39424,6 +39424,9 @@ function browserRoutePath(txid: string, network: BitcoinNetwork) {
   if (network !== "livenet") {
     params.set("network", network);
   }
+  if (!isLocalPreviewHost() && window.location.hostname !== "browser.proofofwork.me") {
+    params.set("browser", "1");
+  }
 
   if (!normalizedTxid) {
     if (isLocalPreviewHost()) params.set("browser", "1");
