@@ -709,6 +709,14 @@ uncertain signatures across grant changes and restarts. Duration and named-agent
 binding are outside Permission v1. The release synchronization gate now also
 verifies public Permission provenance.
 
+Permission fee-rate policies record the owner's chosen construction rate in
+proofs/vB. Keep that agent rate separate from the fee paid to publish a grant.
+Preserve older absolute-cap grants and unresolved recovery receipts instead of
+inferring a rate or silently migrating them. The controller must derive fees
+from verified transaction structure and exact decimal arithmetic; extra dust
+fees and automatic rate increases require owner review. This policy update does
+not open autonomous signing.
+
 Use canonical message bodies for accounting classification within their
 protocol era. A subject-only detail or missing display tag must not hide new
 confirmed HTML from Browser flow, while frozen legacy baselines retain their

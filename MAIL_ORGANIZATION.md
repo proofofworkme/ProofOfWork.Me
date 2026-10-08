@@ -7,7 +7,11 @@ grant manager. Drafts and signed transaction recovery are local browser state;
 confirmed wallet authority and lifecycle come from complete chain replay. The
 workspace checks the connected wallet before local grant signing, preserves
 uncertain broadcast receipts, and leaves autonomous signing closed. It never
-collects a wallet password. See [PERMISSION.md](PERMISSION.md) for the public
+collects a wallet password. New grant drafts have a separate on-chain agent fee
+rate and local publication fee rate, each with shared presets and custom entry.
+Legacy drafts and signed recovery receipts retain their original absolute-cap
+terms; explicit rate selection upgrades an unsigned task, while unresolved
+original receipts retain duplicate protection. See [PERMISSION.md](PERMISSION.md) for the public
 schema and [local controller](local/permission-controller/README.md) for protected
 credential references and budget accounting.
 

@@ -112,7 +112,17 @@ transaction.
 The generic transaction layer verifies version-zero PSBT framing, the exact
 unsigned transaction, exact prevouts/values/scripts, outputs, change script,
 wallet proof debit, miner fee, recipient restrictions, WORK caps/pricing/listing
-constraints and complete wallet input signing scope. It checks that returned
+constraints and complete wallet input signing scope. Rate-based policies use the
+canonical `minerFeeRateProofsPerVbyte` decimal string. The controller derives the
+conservative construction size from the exact verified unsigned transaction,
+including output serialization, CompactSize counts and the shared 160-vB input
+estimate. It calculates the whole-proof fee with integer Q8 ceiling arithmetic
+and requires the actual input-minus-output fee to equal that result. A different
+rate, claimed size, automatic bump or extra dust absorption cannot substitute
+for the owner-selected policy. Signed size may be smaller because signatures
+vary; it must fit the conservative estimate. Existing absolute-cap policies
+retain their original validation. Actual miner fees count in both transaction
+and daily wallet debit. It checks that returned
 signed transactions preserve the reviewed shape and permitted sighash types.
 Initial final-signature decoding supports native Taproot key-path and native
 P2WPKH inputs only; other wallet/script paths fail closed. Chain signature

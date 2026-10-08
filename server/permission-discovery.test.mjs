@@ -104,3 +104,74 @@ test('database discovery is read-only, exact-tip fenced and rejects incomplete t
   assert.equal(result.complete, true); assert.equal(observed, 1); assert.equal(released, true);
   row.complete = false; await assert.rejects(() => readIndex('livenet', options), /incomplete/);
 });
+
+function feeBoundaryDiscovery({ observedFeeParent = hash, changeFeeParent = false } = {}) {
+  const { row, core } = fixture(), tipHash = 'e'.repeat(64), tipHeight = height + 1;
+  const descriptor = commit({ emptyCompleteCoreBlock: tipHeight });
+  const finalCore = { descriptor, rawProtocolCandidateCount: 0, rawRecords: [], transactions: [] };
+  const finalRow = { ...row, height: tipHeight, block_hash: tipHash, previous_block_hash: hash,
+    protocol_record_count: 0, raw_protocol_candidate_count: 0,
+    payload: { replayRecords: [], replayDescriptorCommitment: commit([]), blockDescriptorCommitment: descriptor, rawProtocolCandidateCount: 0 } };
+  let feeReads = 0, blockReads = 0;
+  const discovery = createPermissionDiscovery({ feeRateActivationHeight: height + 1, feeRateActivationPreviousBlockHash: hash,
+    readCoreHash: async observed => {
+      if (observed === height - 1) return parent;
+      if (observed === tipHeight) return tipHash;
+      assert.equal(observed, height); feeReads += 1;
+      return changeFeeParent && feeReads > 1 ? 'f'.repeat(64) : observedFeeParent;
+    },
+    readCoreBlock: async observed => { blockReads += 1; return Number(observed.height) === height ? core : finalCore; },
+    hydratePending: async () => [],
+    readIndex: async (_network, options) => {
+      for (const block of [row, finalRow]) if (block.height >= (options.fromHeight ?? height)) await options.onBlock(block);
+      return { complete: true, activationHeight: height, activationPreviousBlockHash: parent,
+        indexedThroughBlock: tipHeight, checkpointHash: tipHash, blockCount: 2, witnessSha256: 'd'.repeat(64) };
+    },
+  });
+  return { discovery, checkpoint: { height: tipHeight, blockHash: tipHash }, feeReads: () => feeReads, blockReads: () => blockReads };
+}
+
+test('v2 parent is independently fenced before and after discovery, including cached reads', async () => {
+  const { discovery, checkpoint, feeReads, blockReads } = feeBoundaryDiscovery();
+  for (let index = 0; index < 2; index += 1) {
+    const result = await discovery('livenet', checkpoint, height, parent);
+    assert.equal(result.coverage.feeRateAdmissionVerified, true);
+    assert.equal(result.coverage.feeRateActivationHeight, height + 1);
+    assert.equal(result.coverage.feeRateActivationPreviousBlockHash, hash);
+  }
+  assert.equal(feeReads(), 4); assert.equal(blockReads(), 2);
+  for (const observedFeeParent of [null, 'f'.repeat(64)]) {
+    const unavailable = feeBoundaryDiscovery({ observedFeeParent });
+    await assert.rejects(() => unavailable.discovery('livenet', unavailable.checkpoint, height, parent), /fee-rate activation parent/);
+    assert.equal(unavailable.blockReads(), 0);
+  }
+  const changing = feeBoundaryDiscovery({ changeFeeParent: true });
+  await assert.rejects(() => changing.discovery('livenet', changing.checkpoint, height, parent), error =>
+    error.statusCode === 409 && error.details.code === 'PERMISSION_CHECKPOINT_REORG' && /fee-rate activation parent/.test(error.message));
+});
+
+test('v1 coverage below the new parent stays available without requesting future Core hashes', async () => {
+  const { row, core } = fixture(), observed = [];
+  const discovery = createPermissionDiscovery({ feeRateActivationHeight: height + 2, feeRateActivationPreviousBlockHash: 'e'.repeat(64),
+    readCoreHash: async requested => { observed.push(requested); assert.ok(requested <= height); return requested === height - 1 ? parent : hash; },
+    readCoreBlock: async () => core, hydratePending: async () => [],
+    readIndex: async (_network, options) => { await options.onBlock(row); return { complete: true, activationHeight: height,
+      activationPreviousBlockHash: parent, indexedThroughBlock: height, checkpointHash: hash, blockCount: 1, witnessSha256: 'd'.repeat(64) }; },
+  });
+  const result = await discovery('livenet', { height, blockHash: hash }, height, parent);
+  assert.equal(result.coverage.complete, true); assert.equal(result.coverage.feeRateAdmissionVerified, false);
+  assert.equal(result.transactions.length, 1); assert.deepEqual(observed, [height - 1, height, height - 1, height]);
+});
+
+test('the v2 parent at the exact checkpoint reuses its independently read hash', async () => {
+  const { row, core } = fixture(), observed = [];
+  const discovery = createPermissionDiscovery({ feeRateActivationHeight: height + 1, feeRateActivationPreviousBlockHash: hash,
+    readCoreHash: async requested => { observed.push(requested); return requested === height - 1 ? parent : hash; },
+    readCoreBlock: async () => core, hydratePending: async () => [],
+    readIndex: async (_network, options) => { await options.onBlock(row); return { complete: true, activationHeight: height,
+      activationPreviousBlockHash: parent, indexedThroughBlock: height, checkpointHash: hash, blockCount: 1, witnessSha256: 'd'.repeat(64) }; },
+  });
+  const result = await discovery('livenet', { height, blockHash: hash }, height, parent);
+  assert.equal(result.coverage.feeRateAdmissionVerified, true);
+  assert.deepEqual(observed, [height - 1, height, height - 1, height]);
+});

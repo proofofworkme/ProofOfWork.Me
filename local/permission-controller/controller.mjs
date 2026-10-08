@@ -31,7 +31,7 @@ export class PermissionController {
     const prepared = await adapter.prepare(context)
     const expected = await adapter.verify({ ...context, prepared })
     const checked = validatePrepared({ prepared, expected, request, config: this.config, policy: grant.policy, checkpoint: grant.evidence.checkpoint })
-    return { requestId: id, action: request.action, grantTxid: grant.txid, status: previous?.status || 'prepared', executable: false, costProofs: checked.costProofs, minerFeeProofs: checked.minerFeeProofs, templateDigest: checked.templateDigest, budget: this.ledger.usage(this.now()), reason: 'SIGNING_REQUIRES_VERIFIED_ISOLATED_BRIDGE' }
+    return { requestId: id, action: request.action, grantTxid: grant.txid, status: previous?.status || 'prepared', executable: false, costProofs: checked.costProofs, minerFeeProofs: checked.minerFeeProofs, ...(checked.minerFeeRateProofsPerVbyte === undefined ? {} : { minerFeeRateProofsPerVbyte: checked.minerFeeRateProofsPerVbyte, estimatedVirtualBytes: checked.estimatedVirtualBytes }), templateDigest: checked.templateDigest, budget: this.ledger.usage(this.now()), reason: 'SIGNING_REQUIRES_VERIFIED_ISOLATED_BRIDGE' }
   }
   async execute(input) {
     const request = normalizeRequest(input), id = requestId(this.config, request)

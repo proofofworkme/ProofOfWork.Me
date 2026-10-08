@@ -20,11 +20,11 @@ export async function verifyPermissionAuthority(plan: PermissionPlan, address: s
   for (const recipient of plan.policy?.allowedRecipients ?? []) scriptForAddress(recipient, network, "Permitted recipient");
   if (plan.draft.action === "grant") {
     const inventory = await fetchPermissions(network, { address, fresh: true });
-    if (!permissionPublicationReady(inventory)) throw new Error(inventory.admission.reason || "Permission publication is closed until confirmed discovery and activation are ready.");
+    if (!permissionPublicationReady(inventory, plan.metadata.v)) throw new Error(inventory.admission.reason || "Permission fee-rate publication is closed until the backend verifies this record version, confirmed discovery and activation.");
   } else {
     const history = await fetchPermission(network, plan.draft.grant, { fresh: true, requireComplete: true });
     const latest = history.currentPermission ?? history.permission;
-    if (!permissionPublicationReady(history)) throw new Error(history.admission.reason || "Current confirmed Permission history and activation are unavailable.");
+    if (!permissionPublicationReady(history, plan.metadata.v)) throw new Error(history.admission.reason || "Current confirmed Permission history or fee-rate record support is unavailable.");
     if (!sameCodeAddress(latest.walletAddress, address, network)) throw new Error("Only the original authorizing wallet can replace or revoke this permission.");
     if (latest.rootTxid !== plan.draft.grant || latest.headTxid !== plan.draft.parent || latest.status !== "active") throw new Error("The permission's current confirmed state changed. Refresh and prepare a new review.");
   }
@@ -40,7 +40,7 @@ export async function preparePermissionTransaction(plan: PermissionPlan, address
   const recipient = evidence.outputs.find(output => output.kind === "payment");
   if (!recipient || !sameCodeAddress(recipient.address, address, network) || recipient.proofs !== "546" || JSON.stringify(evidence.records) !== JSON.stringify(plan.payloads)) throw new Error("Prepared permission record or self-payment differs from the reviewed intent.");
   await verifyPermissionAuthority(plan, address, network, assertCurrent);
-  const review: ActionReview = { title: PERMISSION_ACTION_LABELS[plan.draft.action], networkLabel: "Mainnet", fields: [["Authorizing and permitted wallet", address], ...plan.fields],
+  const review: ActionReview = { title: PERMISSION_ACTION_LABELS[plan.draft.action], networkLabel: "Mainnet", fields: [["Authorizing and permitted wallet", address], ...plan.fields, ["Permission publication fee rate", `${plan.draft.feeRate} proofs/vB`]],
     evidence, feeRate: String(plan.draft.feeRate), dustFeeProofs: String(payment.dustFeeSats), paymentLabels: ["546 proofs returned to your authorizing wallet"], walletSpendProofs: evidence.feeProofs,
     explanation: plan.draft.action === "revoke" ? "This public record stops new authorization after confirmation and verified replay. It preserves permission history and cannot cancel signatures already released. Autonomous signing remains closed."
       : "The public permission is permanently bound to this input-authorizing wallet. The 546-proof ordinary Mail self-payment is counted once; only the miner fee is spent. No password or secret is published. Publishing this grant does not open autonomous signing." };

@@ -1,6 +1,6 @@
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
-import { normalizePermissionPolicy, parsePermissionBody, PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH, PERMISSION_MIN_SELF_PAYMENT_PROOFS, type PermissionPolicy, type PermissionMetadata } from "../../shared/protocol/permissions.mjs";
+import { normalizePermissionPolicy, parsePermissionBody, PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH, PERMISSION_MIN_SELF_PAYMENT_PROOFS, PERMISSION_FEE_RATE_ACTIVATION_HEIGHT, PERMISSION_FEE_RATE_ACTIVATION_PREVIOUS_BLOCK_HASH, type PermissionPolicy, type PermissionMetadata } from "../../shared/protocol/permissions.mjs";
 
 export const PERMISSION_TXID = /^[a-f0-9]{64}$/u;
 export type PermissionRecord = {
@@ -39,8 +39,11 @@ export function hasVerifiedPermissionHistory(value: PermissionEvidence) {
   return value.complete === true && value.source === "proof-indexer-exact-canonical-permission-replay" && value.coverage?.complete === true && value.currentStatusVerified !== false &&
     Number.isSafeInteger(checkpoint.height) && Number(checkpoint.height) >= 0 && typeof checkpoint.hash === "string" && PERMISSION_TXID.test(checkpoint.hash);
 }
-export function permissionPublicationReady(value: PermissionEvidence) {
-  return hasVerifiedPermissionHistory(value) && PERMISSION_ACTIVATION_HEIGHT > 0 && value.admission.ready === true && value.admission.writesEnabled === true &&
+export function permissionPublicationReady(value: PermissionEvidence, version = 1) {
+  const checkpoint = permissionCheckpoint(value);
+  const rateReady = version === 1 || (version === 2 && PERMISSION_FEE_RATE_ACTIVATION_HEIGHT > 0 && Number.isSafeInteger(checkpoint.height) && Number(checkpoint.height) >= PERMISSION_FEE_RATE_ACTIVATION_HEIGHT && Array.isArray(value.admission.supportedRecordVersions) && value.admission.supportedRecordVersions.includes(2) && value.admission.feeRatePolicyReady === true &&
+    value.admission.feeRateActivationHeight === PERMISSION_FEE_RATE_ACTIVATION_HEIGHT && value.admission.feeRateActivationPreviousBlockHash === PERMISSION_FEE_RATE_ACTIVATION_PREVIOUS_BLOCK_HASH);
+  return rateReady && hasVerifiedPermissionHistory(value) && PERMISSION_ACTIVATION_HEIGHT > 0 && value.admission.ready === true && value.admission.writesEnabled === true &&
     value.admission.activationHeight === PERMISSION_ACTIVATION_HEIGHT && value.coverage.activationHeight === PERMISSION_ACTIVATION_HEIGHT &&
     value.admission.activationPreviousBlockHash === PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH && value.admission.minimumSelfPaymentProofs === PERMISSION_MIN_SELF_PAYMENT_PROOFS &&
     value.admission.autonomousSigningEnabled === false;

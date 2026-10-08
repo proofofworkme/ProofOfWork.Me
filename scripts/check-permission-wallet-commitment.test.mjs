@@ -5,6 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
+import * as permissionSchema from "../src/shared/protocol/permissions.mjs";
 
 bitcoin.initEccLib(ecc);
 async function loadClient(relative, imports = {}, globals = {}) {
@@ -263,4 +264,108 @@ test("Permission preparation rejects unsupported account before network, discove
   }, { window: { unisat: { getAccounts: async () => [witnessOwner.address] } } });
   await assert.rejects(permission.preparePermissionTransaction({ draft: { action: "grant", feeRate: 1 } }, witnessOwner.address, "livenet", () => {}), /mainnet P2PKH/u);
   assert.equal(reached, false);
+});
+
+
+async function permissionDraftClient() {
+  const fixture = await boostFixture();
+  const encoding = await loadClient("src/shared/utils/encoding.ts", { "bitcoinjs-lib": bitcoin });
+  return loadClient("src/features/permission/permissionProtocol.ts", {
+    "../../shared/protocol/permissions.mjs": permissionSchema,
+    "../../shared/utils/encoding": encoding,
+    "../boost/boostWallet": fixture.boost,
+  });
+}
+function legacyPermissionDraft(client) {
+  const { feePolicyVersion, minerFeeRateProofsPerVbyte, ...base } = client.emptyPermissionDraft;
+  return { ...base, label: "Retained legacy permission", maxMinerFeeProofs: "1000", feeRate: 2 };
+}
+
+test("new draft presets and exact custom rates round-trip without changing publication fees", async () => {
+  const client = await permissionDraftClient();
+  for (const rate of ["0.1", "0.5", "1", "2", "0.12345678"]) {
+    const draft = { ...client.emptyPermissionDraft, label: "Exact agent fee", minerFeeRateProofsPerVbyte: rate, feeRate: 0.5 };
+    const restored = client.restorePermissionDraft(client.permissionDraftFields(draft));
+    assert.equal(JSON.stringify(restored), JSON.stringify(draft));
+    const plan = client.buildPermissionPlan(restored), parsed = permissionSchema.parsePermissionBody(plan.body);
+    assert.equal(parsed.metadata.v, 2); assert.equal(parsed.metadata.policy.minerFeeRateProofsPerVbyte, rate);
+    assert.equal(parsed.metadata.policy.maxMinerFeeProofs, undefined); assert.equal(plan.draft.feeRate, 0.5);
+    assert.match(permissionSchema.permissionPolicyEnv(parsed.metadata.policy), new RegExp(`AGENT_MINER_FEE_RATE_PROOFS_PER_VBYTE=${rate.replaceAll(".", "\\.")}`));
+  }
+  const trailing = client.buildPermissionPlan({ ...client.emptyPermissionDraft, label: "Trim decimal", minerFeeRateProofsPerVbyte: "0.50000000" });
+  assert.equal(trailing.policy.minerFeeRateProofsPerVbyte, "0.5");
+});
+
+test("agent custom rate validation refuses unsupported precision or bounds instead of rounding", async () => {
+  const client = await permissionDraftClient();
+  for (const rate of ["", "0", "0.05", "-1", "0.123456789", "1e-1", "01.0", " 0.5 "]) {
+    assert.throws(() => client.buildPermissionPlan({ ...client.emptyPermissionDraft, label: "Rejected rate", minerFeeRateProofsPerVbyte: rate }), /fee rate|transaction fee rate/u);
+  }
+});
+
+test("legacy draft and confirmed-policy replacement retain historical caps without inventing a rate", async () => {
+  const client = await permissionDraftClient(), legacy = legacyPermissionDraft(client);
+  assert.equal(client.isPermissionDraft(legacy), true);
+  assert.equal(JSON.stringify(client.restorePermissionDraft(client.permissionDraftFields(legacy))), JSON.stringify(legacy));
+  assert.throws(() => client.buildPermissionPlan(legacy), /Choose an agent transaction fee rate/u);
+  const policy = { signingEnabled: true, allowedActions: ["mail.send"], maxTransactionProofs: "5000", dailyLimitProofs: "30000", maxMinerFeeProofs: "1000", allowedRecipients: null, workLimits: null };
+  const replacement = client.permissionDraftFromPolicy(policy, "Legacy grant", "a".repeat(64), "b".repeat(64));
+  assert.equal(replacement.minerFeeRateProofsPerVbyte, ""); assert.equal(replacement.legacyMaxMinerFeeProofs, "1000");
+  assert.throws(() => client.buildPermissionPlan(replacement), /Choose an agent transaction fee rate/u);
+  const upgraded = client.permissionDraftWithFeeRate(legacy, "0.5");
+  assert.equal(upgraded.maxMinerFeeProofs, undefined); assert.equal(upgraded.legacyMaxMinerFeeProofs, "1000"); assert.equal(upgraded.feeRate, 2);
+  const plan = client.buildPermissionPlan(upgraded);
+  assert.equal(plan.metadata.v, 2); assert.equal(plan.policy.minerFeeRateProofsPerVbyte, "0.5");
+  assert.equal(plan.policy.maxMinerFeeProofs, undefined); assert.equal(policy.maxMinerFeeProofs, "1000");
+});
+
+test("restored legacy receipt preserves its original task key across explicit upgrade and serialization", async () => {
+  const client = await permissionDraftClient(), legacy = legacyPermissionDraft(client);
+  const recoveryKey = `permission:grant:${"c".repeat(64)}`;
+  const upgraded = client.permissionDraftWithFeeRate({ ...legacy, recoveryKey }, "0.12345678");
+  const restored = client.restorePermissionDraft(client.permissionDraftFields(upgraded));
+  assert.equal(restored.recoveryKey, recoveryKey);
+  const plan = client.buildPermissionPlan(restored);
+  assert.equal(plan.draft.recoveryKey, recoveryKey); assert.notEqual(plan.key, recoveryKey);
+  assert.equal(plan.metadata.recoveryKey, undefined); assert.equal(plan.metadata.policy.legacyMaxMinerFeeProofs, undefined);
+  assert.equal(client.isPermissionDraft({ ...legacy, feePolicyVersion: 2, minerFeeRateProofsPerVbyte: "0.5" }), false);
+});
+
+test("v2 publication requires explicit backend support, exact activation pins and ready history", async () => {
+  const client = await loadClient("src/features/permission/permissionApi.ts", {
+    "../../shared/api/proofApiClient": {}, "../../shared/protocol/permissions.mjs": permissionSchema,
+  });
+  const evidence = { network: "livenet", complete: true, source: "proof-indexer-exact-canonical-permission-replay", currentStatusVerified: true,
+    coverage: { complete: true, indexedThroughBlock: permissionSchema.PERMISSION_FEE_RATE_ACTIVATION_HEIGHT, indexedThroughBlockHash: "a".repeat(64), activationHeight: permissionSchema.PERMISSION_ACTIVATION_HEIGHT },
+    admission: { ready: true, writesEnabled: true, autonomousSigningEnabled: false, activationHeight: permissionSchema.PERMISSION_ACTIVATION_HEIGHT,
+      activationPreviousBlockHash: permissionSchema.PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH, minimumSelfPaymentProofs: permissionSchema.PERMISSION_MIN_SELF_PAYMENT_PROOFS,
+      supportedRecordVersions: [1, 2], feeRatePolicyReady: true, feeRateActivationHeight: permissionSchema.PERMISSION_FEE_RATE_ACTIVATION_HEIGHT,
+      feeRateActivationPreviousBlockHash: permissionSchema.PERMISSION_FEE_RATE_ACTIVATION_PREVIOUS_BLOCK_HASH } };
+  assert.equal(client.permissionPublicationReady(evidence, 2), true);
+  assert.equal(client.permissionPublicationReady({ ...evidence, coverage: { ...evidence.coverage, indexedThroughBlock: permissionSchema.PERMISSION_FEE_RATE_ACTIVATION_HEIGHT - 1 } }, 2), false);
+  for (const admission of [ { supportedRecordVersions: [1] }, { feeRatePolicyReady: false }, { feeRateActivationHeight: 0 }, { feeRateActivationPreviousBlockHash: "b".repeat(64) }, { writesEnabled: false } ]) {
+    assert.equal(client.permissionPublicationReady({ ...evidence, admission: { ...evidence.admission, ...admission } }, 2), false);
+  }
+  assert.equal(client.permissionPublicationReady({ ...evidence, admission: { ...evidence.admission, supportedRecordVersions: undefined, feeRatePolicyReady: undefined } }, 2), false);
+  assert.equal(client.permissionPublicationReady({ ...evidence, admission: { ...evidence.admission, supportedRecordVersions: undefined, feeRatePolicyReady: undefined } }), true);
+});
+
+
+test("autosaved legacy draft captures its exact v1 task key before either an ordinary edit or a fee upgrade", async () => {
+  const client = await permissionDraftClient(), legacy = legacyPermissionDraft(client);
+  const policy = permissionSchema.normalizePermissionPolicy({ signingEnabled: legacy.signingEnabled, allowedActions: legacy.allowedActions,
+    maxTransactionProofs: legacy.maxTransactionProofs, dailyLimitProofs: legacy.dailyLimitProofs, maxMinerFeeProofs: legacy.maxMinerFeeProofs,
+    allowedRecipients: null, workLimits: null });
+  const body = permissionSchema.encodePermissionRecord("grant", { v: 1, network: "livenet", label: legacy.label, policy });
+  const expectedKey = `permission:grant:${Buffer.from(bitcoin.crypto.sha256(Buffer.from(body))).toString("hex")}`;
+  assert.equal(client.legacyPermissionDraftRecoveryKey(legacy), expectedKey);
+  assert.equal(client.permissionDraftWithFeeRate(legacy, "0.5").recoveryKey, expectedKey);
+  const edited = { ...client.permissionDraftWithRecoveryKey(legacy), label: "Changed before selecting a rate", allowedActions: ["mail.send"] };
+  const upgraded = client.restorePermissionDraft(client.permissionDraftFields(client.permissionDraftWithFeeRate(edited, "0.5")));
+  assert.equal(upgraded.recoveryKey, expectedKey);
+  assert.notEqual(client.buildPermissionPlan(upgraded).key, expectedKey);
+  for (const label of ["", " leading", "trailing ", "control\nlabel", "x".repeat(201)]) assert.equal(client.legacyPermissionDraftRecoveryKey({ ...legacy, label }), undefined);
+  assert.equal(client.legacyPermissionDraftRecoveryKey({ ...legacy, maxMinerFeeProofs: "invalid" }), undefined);
+  assert.equal(client.permissionDraftWithFeeRate({ ...legacy, recoveryKey: `permission:grant:${"f".repeat(64)}` }, "0.5").recoveryKey, `permission:grant:${"f".repeat(64)}`);
+  assert.equal(client.legacyPermissionDraftRecoveryKey({ ...legacy, action: "replace", grant: "a".repeat(64), parent: "b".repeat(64) }), `permission:root:${"a".repeat(64)}:${"b".repeat(64)}`);
 });

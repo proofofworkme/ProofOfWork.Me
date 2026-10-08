@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
-import { encodePermissionRecord, PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH } from '../src/shared/protocol/permissions.mjs';
+import { encodePermissionRecord, PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH,
+  PERMISSION_FEE_RATE_ACTIVATION_HEIGHT, PERMISSION_FEE_RATE_ACTIVATION_PREVIOUS_BLOCK_HASH } from '../src/shared/protocol/permissions.mjs';
 import { createPermissionSnapshot, permissionsPayload, permissionPayload, permissionRecordPayload, permissionSnapshotRequest, permissionReadError } from './permissions.mjs';
 import { CanonicalPolicyApi } from '../local/permission-controller/adapters.mjs';
 import { PermissionController } from '../local/permission-controller/controller.mjs';
@@ -19,7 +20,7 @@ function transaction(action = 'grant', nonce = grantTxid, metadata = {}) {
     label:'Integration fixture', height:action==='grant'?height:height+1, hash, index:action==='grant'?1:2});
 }
 
-function runtime({ transactions = [transaction()], tipHeight = height, changedTip = false, warnings = [] } = {}) {
+function runtime({ transactions = [transaction()], tipHeight = height, changedTip = false, warnings = [], feeRateAdmissionVerified = false } = {}) {
   let calls = 0;
   class FixedDate extends Date { constructor(...args) { super(...(args.length ? args : [time])); } static now() { return time; } }
   const context = vm.createContext({
@@ -30,7 +31,7 @@ function runtime({ transactions = [transaction()], tipHeight = height, changedTi
     discoverPermissions: async (network, checkpoint, activation, parent) => {
       assert.equal(network, 'livenet'); assert.deepEqual(JSON.parse(JSON.stringify(checkpoint)), { height: tipHeight, blockHash: hash });
       assert.equal(activation, PERMISSION_ACTIVATION_HEIGHT); assert.equal(parent, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH);
-      return { transactions, pendingWarnings: warnings, coverage: { complete: true, witnessSha256: 'c'.repeat(64) } };
+      return { transactions, pendingWarnings: warnings, coverage: { complete: true, witnessSha256: 'c'.repeat(64), feeRateAdmissionVerified } };
     },
   });
   vm.runInContext(functionSource + '\nthis.read = verifiedPermissionPayload;', context);
@@ -119,4 +120,26 @@ test('API history retains an invalid NONE-signed revocation while the verified o
   assert.equal(payload.events[0].ownerSignatureOutputCommitmentVerified,true);
   assert.equal(payload.events[1].valid,false); assert.equal(payload.events[1].applied,false);
   assert.ok(payload.events[1].validationErrors.includes('permission-input-signature-sighash-unsupported'));
+});
+
+test('actual API wiring admits v2 rates only with complete independently verified fee-boundary evidence', async () => {
+  const feePolicy = { signingEnabled: true, allowedActions: ['mail.send'], maxTransactionProofs: '5000', dailyLimitProofs: '30000',
+    minerFeeRateProofsPerVbyte: '0.12345678', allowedRecipients: null, workLimits: null };
+  const grant = permissionFixture({ metadata: { v: 2 }, policy: feePolicy, height: PERMISSION_FEE_RATE_ACTIVATION_HEIGHT, hash });
+  for (const evidence of [false, undefined, 'true']) {
+    const unavailable = await runtime({ tipHeight: PERMISSION_FEE_RATE_ACTIVATION_HEIGHT, transactions: [grant],
+      feeRateAdmissionVerified: evidence })('livenet', new URLSearchParams(), false);
+    assert.equal(unavailable.admission.feeRatePolicyReady, false); assert.equal(unavailable.permissions.length, 0);
+    assert.equal(unavailable.stats.invalidEvents, 1); assert.equal(unavailable.admission.autonomousSigningEnabled, false);
+  }
+  const verified = await runtime({ tipHeight: PERMISSION_FEE_RATE_ACTIVATION_HEIGHT, transactions: [grant],
+    feeRateAdmissionVerified: true })('livenet', new URLSearchParams({ txid: grant.txid }), true);
+  assert.equal(verified.admission.feeRatePolicyReady, true);
+  assert.deepEqual(verified.admission.supportedRecordVersions, [1, 2]);
+  assert.equal(verified.admission.feeRateActivationHeight, PERMISSION_FEE_RATE_ACTIVATION_HEIGHT);
+  assert.equal(verified.admission.feeRateActivationPreviousBlockHash, PERMISSION_FEE_RATE_ACTIVATION_PREVIOUS_BLOCK_HASH);
+  assert.equal(verified.policy.minerFeeRateProofsPerVbyte, '0.12345678');
+  assert.match(verified.env, /AGENT_MINER_FEE_RATE_PROOFS_PER_VBYTE=0\.12345678/);
+  assert.equal(verified.events[0].metadata.v, 2); assert.equal(verified.events[0].applied, true);
+  assert.equal(verified.budget.available, false); assert.equal(verified.admission.autonomousSigningEnabled, false);
 });

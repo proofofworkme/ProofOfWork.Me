@@ -35159,7 +35159,8 @@ async function verifiedPermissionPayload(network, params, detail) {
   const discovery = await discoverPermissions(network, checkpoint, PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH);
   if (discovery.coverage.complete !== true) throw permissionReadError("Complete Permission history is unavailable.");
   const state = createPermissionSnapshot({ network, checkpointHeight: checkpoint.height, checkpointHash: checkpoint.blockHash,
-    transactions: discovery.transactions, generatedAt: new Date().toISOString(), writesEnabled: true });
+    transactions: discovery.transactions, generatedAt: new Date().toISOString(), writesEnabled: true,
+    feeRateAdmissionVerified: discovery.coverage.feeRateAdmissionVerified === true });
   state.discoveryWitnessSha256 = discovery.coverage.witnessSha256 ?? discovery.coverage.witnessHash ?? null;
   state.pendingWarnings = discovery.pendingWarnings ?? [];
   const payload = detail ? permissionPayload(state, params) : permissionsPayload(state, params);

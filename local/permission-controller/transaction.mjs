@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { canonical, digest, exactKeys, fail, HEX, integer, object, TXID } from './schema.mjs'
+import { permissionMinerFeeProofs } from '../../src/shared/protocol/permissions.mjs'
+import { canonical, digest, exactKeys, fail, HEX, integer, normalizePolicy, object, TXID } from './schema.mjs'
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest()
 class Reader {
@@ -43,7 +44,7 @@ export function decodeTransaction(rawHex) {
   const lockBytes = reader.take(4), locktime = lockBytes.readUInt32LE()
   if (reader.offset !== bytes.length) fail('TRAILING_TRANSACTION_BYTES')
   const stripped = Buffer.concat([versionBytes, bytes.subarray(inputStart, outputEnd), lockBytes])
-  return { version, locktime, inputs, outputs, witness, txid: Buffer.from(sha256(sha256(stripped))).reverse().toString('hex') }
+  return { version, locktime, inputs, outputs, witness, virtualBytes: Math.ceil((stripped.length * 3 + bytes.length) / 4), txid: Buffer.from(sha256(sha256(stripped))).reverse().toString('hex') }
 }
 export function transactionShape(tx) {
   return { version: tx.version, locktime: tx.locktime, inputs: tx.inputs.map(({ txid, vout, sequence }) => ({ txid, vout, sequence })), outputs: tx.outputs }
@@ -70,8 +71,23 @@ export function unsignedTransactionFromPsbt(psbtHex) {
   if (reader.offset !== reader.bytes.length) fail('TRAILING_PSBT_BYTES')
   return { raw, tx, inputs, outputs }
 }
+function compactSizeBytes(value) { return value < 0xfd ? 1 : value <= 0xffff ? 3 : value <= 0xffffffff ? 5 : 9 }
+/** Match the existing wallet selector's conservative 160-vB input convention.
+ * Counts and output scripts come from the exact unsigned transaction; input
+ * scripts have already been checked against independently verified prevouts.
+ * No requestor/adapter estimate or claimed fee can influence the calculation.
+ */
+export function estimatedTransactionVirtualBytes(tx, inputScripts) {
+  if (!Array.isArray(inputScripts) || inputScripts.length !== tx.inputs.length) fail('INPUT_TEMPLATE_MISMATCH')
+  for (const script of inputScripts) {
+    if (typeof script !== 'string' || !/^(?:76a914[a-f0-9]{40}88ac|0014[a-f0-9]{40}|5120[a-f0-9]{64})$/.test(script)) fail('UNSUPPORTED_FEE_ESTIMATE_INPUT')
+  }
+  return 8 + compactSizeBytes(tx.inputs.length) + compactSizeBytes(tx.outputs.length) + tx.inputs.length * 160 +
+    tx.outputs.reduce((total, output) => { const bytes = output.scriptPubKey.length / 2; return total + 8 + compactSizeBytes(bytes) + bytes }, 0)
+}
 /** Expected template MUST come from the separately trusted action verifier, never the requestor or signer. */
 export function validatePrepared({ prepared, expected, request, config, policy, checkpoint }) {
+  policy = normalizePolicy(policy)
   exactKeys(prepared, ['psbtHex', 'unsignedTransactionHex'])
   object(expected)
   exactKeys(expected, ['action', 'requestDigest', 'checkpoint', 'version', 'locktime', 'inputs', 'outputs', 'work', 'signaturePolicy'])
@@ -110,7 +126,17 @@ export function validatePrepared({ prepared, expected, request, config, policy, 
     if (output.kind === 'payment' && (!output.recipientAddress || (policy.allowedRecipients !== null && ![config.walletAddress, ...policy.allowedRecipients].includes(output.recipientAddress)))) fail('RECIPIENT_DENIED')
   }
   const fee = totalInput - totalOutput, cost = walletInput - walletOutput
-  if (fee < 0n || cost < 0n || fee > integer(policy.maxMinerFeeProofs) || cost > integer(policy.maxTransactionProofs)) fail('TRANSACTION_LIMIT_EXCEEDED')
+  if (fee < 0n || cost < 0n || cost > integer(policy.maxTransactionProofs)) fail('TRANSACTION_LIMIT_EXCEEDED')
+  let feeRateEvidence
+  if (Object.hasOwn(policy, 'minerFeeRateProofsPerVbyte')) {
+    const estimatedVirtualBytes = estimatedTransactionVirtualBytes(tx, expected.inputs.map(input => input.scriptPubKey))
+    const targetFee = permissionMinerFeeProofs(policy.minerFeeRateProofsPerVbyte, estimatedVirtualBytes)
+    if (targetFee === null) fail('INVALID_MINER_FEE_RATE')
+    // Exact ceiling is the only rounding allowance. Dust must be returned or
+    // funding reselected; it cannot silently raise the granted construction fee.
+    if (fee.toString() !== targetFee) fail('MINER_FEE_RATE_MISMATCH')
+    feeRateEvidence = { minerFeeRateProofsPerVbyte: policy.minerFeeRateProofsPerVbyte, estimatedVirtualBytes }
+  } else if (fee > integer(policy.maxMinerFeeProofs)) fail('TRANSACTION_LIMIT_EXCEEDED')
   if (request.action.startsWith('amo.')) {
     const work = expected.work, limits = policy.workLimits
     if (!limits || !work || work.canonicalVerified !== true || work.quantityBoundVerified !== true) fail('WORK_EVIDENCE_REQUIRED')
@@ -132,11 +158,12 @@ export function validatePrepared({ prepared, expected, request, config, policy, 
     const declared = psbt.inputs[input.index].get('03')
     if (declared && (declared.length !== 4 || !input.sighashTypes.includes(declared.readUInt32LE()))) fail('PSBT_SIGHASH_DENIED')
   }
-  return { costProofs: cost.toString(), minerFeeProofs: fee.toString(), templateDigest: digest(transactionShape(tx)), signaturePolicy: expected.signaturePolicy, inputScripts: expected.inputs.map(input => input.scriptPubKey), shape: transactionShape(tx) }
+  return { costProofs: cost.toString(), minerFeeProofs: fee.toString(), ...feeRateEvidence, templateDigest: digest(transactionShape(tx)), signaturePolicy: expected.signaturePolicy, inputScripts: expected.inputs.map(input => input.scriptPubKey), shape: transactionShape(tx) }
 }
 export function validateSigned(rawHex, checked) {
   const tx = decodeTransaction(rawHex)
   if (canonical(transactionShape(tx)) !== canonical(checked.shape)) fail('SIGNED_TRANSACTION_CHANGED')
+  if (checked.estimatedVirtualBytes !== undefined && tx.virtualBytes > checked.estimatedVirtualBytes) fail('SIGNED_FEE_ESTIMATE_EXCEEDED')
   for (const policy of checked.signaturePolicy.inputs) {
     const input = tx.inputs[policy.index], script = checked.inputScripts[policy.index], stack = input.witnessStack || []
     let type

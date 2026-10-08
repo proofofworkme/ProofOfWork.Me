@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { workAmoV5CanonicalPayloadCommitment } from './work-amo-v5.mjs';
-import { PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH } from '../src/shared/protocol/permissions.mjs';
+import { PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH,
+  PERMISSION_FEE_RATE_ACTIVATION_HEIGHT, PERMISSION_FEE_RATE_ACTIVATION_PREVIOUS_BLOCK_HASH } from '../src/shared/protocol/permissions.mjs';
 import { permissionCandidateParts, permissionReadError } from './permissions.mjs';
 
 const prefixHex = Buffer.from('pwm1:m:pwperm1:').toString('hex');
@@ -46,7 +47,9 @@ export function assertPermissionRawBlockCoverage(row, core) {
 
 /** Independent complete first-party Core verification; no feed, search or local marker proves authority. */
 export function createPermissionDiscovery({ readIndex, readCoreBlock, readCoreHash, hydratePending,
-  maxCacheBytes = 128 * 1024 * 1024, maxProjectionBytes = 64 * 1024 * 1024, readBudgetMs = 25000, now = () => Date.now() }) {
+  maxCacheBytes = 128 * 1024 * 1024, maxProjectionBytes = 64 * 1024 * 1024, readBudgetMs = 25000, now = () => Date.now(),
+  feeRateActivationHeight = PERMISSION_FEE_RATE_ACTIVATION_HEIGHT,
+  feeRateActivationPreviousBlockHash = PERMISSION_FEE_RATE_ACTIVATION_PREVIOUS_BLOCK_HASH }) {
   const blocks = new Map(), inFlight = new Map(), reads = new Map(), prefixes = new Map();
   let cacheBytes = 0;
   async function block(row) {
@@ -63,7 +66,21 @@ export function createPermissionDiscovery({ readIndex, readCoreBlock, readCoreHa
     if (network !== 'livenet' || !Number.isSafeInteger(activationHeight) || activationHeight < 1 || !TXID.test(parentHash) ||
         !Number.isSafeInteger(checkpoint?.height) || checkpoint.height < activationHeight - 1 || !TXID.test(checkpoint?.blockHash) || typeof readCoreHash !== 'function') throw permissionReadError('Permission discovery requires a pinned first-admission boundary and exact checkpoint.');
     const deadline = now() + readBudgetMs, budget = () => { if (now() > deadline) throw permissionReadError('Permission verification exceeded its read budget; retry to continue catch-up.'); };
-    if (await readCoreHash(activationHeight - 1, network) !== parentHash || await readCoreHash(checkpoint.height, network) !== checkpoint.blockHash) throw permissionReadError('Permission activation parent or checkpoint is no longer canonical.');
+    if (!Number.isSafeInteger(feeRateActivationHeight) || feeRateActivationHeight < activationHeight || !TXID.test(feeRateActivationPreviousBlockHash ?? '')) throw permissionReadError('Permission fee-rate admission requires its pinned Core parent.');
+    async function verifyCoreBoundaries(final = false) {
+      const observedParent = await readCoreHash(activationHeight - 1, network);
+      const observedCheckpoint = await readCoreHash(checkpoint.height, network);
+      if (observedParent !== parentHash || observedCheckpoint !== checkpoint.blockHash) throw permissionReadError(
+        final ? 'Permission Core checkpoint changed during discovery.' : 'Permission activation parent or checkpoint is no longer canonical.',
+        final ? 409 : 503, final ? 'PERMISSION_CHECKPOINT_REORG' : 'PERMISSION_UNAVAILABLE');
+      if (checkpoint.height < feeRateActivationHeight - 1) return false;
+      const feeParent = feeRateActivationHeight - 1 === checkpoint.height ? observedCheckpoint :
+        feeRateActivationHeight - 1 === activationHeight - 1 ? observedParent : await readCoreHash(feeRateActivationHeight - 1, network);
+      if (feeParent !== feeRateActivationPreviousBlockHash) throw permissionReadError('Permission fee-rate activation parent is no longer canonical.',
+        final ? 409 : 503, final ? 'PERMISSION_CHECKPOINT_REORG' : 'PERMISSION_UNAVAILABLE');
+      return true;
+    }
+    const feeRateAdmissionVerified = await verifyCoreBoundaries();
     const scope = `${network}:${activationHeight}:${parentHash}`;
     let prefix = prefixes.get(scope);
     if (prefix && (prefix.height > checkpoint.height || await readCoreHash(prefix.height, network) !== prefix.blockHash)) { prefixes.delete(scope); prefix = null; }
@@ -83,7 +100,7 @@ export function createPermissionDiscovery({ readIndex, readCoreBlock, readCoreHa
         coverage.activationHeight !== activationHeight || coverage.activationPreviousBlockHash !== parentHash ||
         coverage.blockCount !== checkpoint.height - activationHeight + 1 || next !== checkpoint.height + 1 || previousHash !== checkpoint.blockHash || !TXID.test(coverage.witnessSha256)) throw permissionReadError('Permission discovery lacks complete exact checkpoint coverage.');
     budget();
-    if (await readCoreHash(activationHeight - 1, network) !== parentHash || await readCoreHash(checkpoint.height, network) !== checkpoint.blockHash) throw permissionReadError('Permission Core checkpoint changed during discovery.', 409, 'PERMISSION_CHECKPOINT_REORG');
+    await verifyCoreBoundaries(true);
     const prior = prefixes.get(scope);
     if (!prior || prior.height <= checkpoint.height) prefixes.set(scope, { height: checkpoint.height, blockHash: checkpoint.blockHash,
       witnessSha256: coverage.witnessSha256, projectionBytes: bytes, transactions: [...confirmed] });
@@ -98,6 +115,7 @@ export function createPermissionDiscovery({ readIndex, readCoreBlock, readCoreHa
     }
     return { transactions: [...confirmed, ...pending], pendingWarnings,
       coverage: { ...coverage, pendingTxids: undefined, model: 'permission-core-raw-block-coverage-v1',
+        feeRateAdmissionVerified, feeRateActivationHeight, feeRateActivationPreviousBlockHash,
         permissionSha256: createHash('sha256').update(JSON.stringify(confirmed)).digest('hex') } };
   }
   return async function discover(network, checkpoint, activationHeight = PERMISSION_ACTIVATION_HEIGHT, parentHash = PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH) {

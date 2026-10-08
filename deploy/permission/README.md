@@ -107,8 +107,21 @@ independent verification against the complete reconstructed transaction.
 remain inspectable rejected Permission records. The human writer selects this
 strict mode before funding/fee preparation, pins ALL on prepared inputs and
 checks each final signature before broadcast. No new witness hydration,
-autonomous signing, Mail economics, wire schema or activation migration is
-introduced by this admission correction.
+autonomous signing, Mail economics, wire schema or activation migration was
+introduced by that owner-signature admission correction.
+
+The separately approved fee-rate update adds metadata version 2 with a canonical
+`minerFeeRateProofsPerVbyte` construction target. It preserves exact version-1
+bytes/cap semantics and the original admission boundary. Version 2 opens at
+970546 after Core parent 970545 /
+`000000000000000000018bee4a1759e02b289063d6d5a9afe704dd68d50101dc`;
+new-parent verification and complete canonical coverage must agree before the
+API advertises fee-rate readiness. Use this same reviewed-helper-upgrade mode
+for every changed existing Permission helper, pinning the previous synchronized
+release as the base. Preserve accepted Browser/DNS and native reader overlays
+through the existing-file merge and full dependency fences. No controller
+allowlist expansion, database/configuration migration, new wallet operation or
+autonomous activation is included.
 
 A conflict refuses with its source inputs and conflicted output preserved.
 After independently reviewing active, base, repository candidate and resolved

@@ -4,6 +4,7 @@ import * as ecc from '@bitcoinerlab/secp256k1';
 import {
   parsePermissionBody, permissionPolicyEnv, PERMISSION_BODY_PREFIX,
   PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH,
+  PERMISSION_FEE_RATE_ACTIVATION_HEIGHT, PERMISSION_FEE_RATE_ACTIVATION_PREVIOUS_BLOCK_HASH,
   PERMISSION_MIN_SELF_PAYMENT_PROOFS,
 } from '../src/shared/protocol/permissions.mjs';
 import { decodeCanonicalOpReturnOutput, canonicalRawProtocolRecordSetFromTransaction } from './canonical-op-return.mjs';
@@ -128,7 +129,8 @@ export function permissionInputCommitmentErrors(tx, walletAddress, network = 'li
 }
 
 /** Raw scripts and independently hydrated prevouts establish authority, never a claimed PowID. */
-export function verifyPermissionTransaction(tx, { network = 'livenet', activationHeight = PERMISSION_ACTIVATION_HEIGHT } = {}) {
+export function verifyPermissionTransaction(tx, { network = 'livenet', activationHeight = PERMISSION_ACTIVATION_HEIGHT,
+  feeRateActivationHeight = PERMISSION_FEE_RATE_ACTIVATION_HEIGHT } = {}) {
   const candidates = permissionCandidateParts(tx);
   if (!candidates.length) return null;
   const decoded = tx.vout.map((output, vout) => ({ ...decodeCanonicalOpReturnOutput(output), vout }));
@@ -166,6 +168,10 @@ export function verifyPermissionTransaction(tx, { network = 'livenet', activatio
       !Number.isSafeInteger(blockTransactionIndex) || blockTransactionIndex < 0)) reject('permission-canonical-position-unavailable');
   if (!Number.isSafeInteger(activationHeight) || activationHeight < 1) reject('permission-activation-disabled');
   else if (confirmed && Number.isSafeInteger(blockHeight) && blockHeight < activationHeight) reject('permission-before-activation');
+  if (parsed?.metadata.v === 2) {
+    if (!Number.isSafeInteger(feeRateActivationHeight) || feeRateActivationHeight < 1 || feeRateActivationHeight < activationHeight) reject('permission-fee-rate-activation-disabled');
+    else if (confirmed && Number.isSafeInteger(blockHeight) && blockHeight < feeRateActivationHeight) reject('permission-fee-rate-before-activation');
+  }
   return { txid: tx.txid, protocol: 'pwm1', app: 'Permission', action: parsed?.action ?? 'invalid',
     kind: `permission-${parsed?.action ?? 'invalid'}`, walletAddress, authorAddress: walletAddress,
     metadata: parsed?.metadata ?? null, rootTxid: parsed?.action === 'grant' ? tx.txid : parsed?.metadata.grant ?? '',
@@ -232,16 +238,22 @@ export function permissionSnapshotRequest(params, network) {
   return { snapshot, continuation };
 }
 export function createPermissionSnapshot({ network, checkpointHeight, checkpointHash, transactions, generatedAt,
-  activationHeight = PERMISSION_ACTIVATION_HEIGHT, activationPreviousBlockHash = PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH, writesEnabled = false }) {
+  activationHeight = PERMISSION_ACTIVATION_HEIGHT, activationPreviousBlockHash = PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH,
+  feeRateActivationHeight = PERMISSION_FEE_RATE_ACTIVATION_HEIGHT,
+  feeRateActivationPreviousBlockHash = PERMISSION_FEE_RATE_ACTIVATION_PREVIOUS_BLOCK_HASH,
+  feeRateAdmissionVerified = false, writesEnabled = false }) {
   if (network !== 'livenet' || !Number.isSafeInteger(checkpointHeight) || checkpointHeight < 1 || !TXID.test(checkpointHash)) throw permissionReadError('Permission has no exact canonical checkpoint.');
   if (transactions.some(tx => tx.status?.confirmed === true && (tx.status.block_height > checkpointHeight ||
       (tx.status.block_height === checkpointHeight && tx.status.block_hash !== checkpointHash)))) throw permissionReadError('Permission source transaction exceeds or differs from its exact checkpoint.');
-  const options = { network, activationHeight };
+  const feeRateParentVerified = feeRateAdmissionVerified === true && Number.isSafeInteger(activationHeight) && activationHeight > 0 && Number.isSafeInteger(feeRateActivationHeight) &&
+    feeRateActivationHeight >= activationHeight && TXID.test(feeRateActivationPreviousBlockHash ?? '');
+  const options = { network, activationHeight, feeRateActivationHeight: feeRateParentVerified ? feeRateActivationHeight : 0 };
   const snapshot = { model: PERMISSION_SNAPSHOT_MODEL, network, checkpointHeight, checkpointHash };
   const confirmed = replayPermissionTransactions(transactions.filter(tx => tx.status?.confirmed === true), options);
   const observed = replayPermissionTransactions(transactions, options);
   return { ...confirmed, pendingEvents: observed.events.filter(event => !event.confirmed),
-    snapshot: { ...snapshot, id: token(snapshot) }, generatedAt, activationHeight, activationPreviousBlockHash, writesEnabled };
+    snapshot: { ...snapshot, id: token(snapshot) }, generatedAt, activationHeight, activationPreviousBlockHash,
+    feeRateActivationHeight, feeRateActivationPreviousBlockHash, feeRateAdmissionVerified: feeRateParentVerified, writesEnabled };
 }
 function requestAtSnapshot(state, params) {
   const request = permissionSnapshotRequest(params, state.snapshot.network);
@@ -259,6 +271,10 @@ function envelope(state) {
     admission: { ready: state.writesEnabled === true && state.activationHeight > 0,
       writesEnabled: state.writesEnabled === true, activationHeight: state.activationHeight,
       activationPreviousBlockHash: state.activationPreviousBlockHash, minimumSelfPaymentProofs: PERMISSION_MIN_SELF_PAYMENT_PROOFS,
+      supportedRecordVersions: [1, 2], feeRateActivationHeight: state.feeRateActivationHeight,
+      feeRateActivationPreviousBlockHash: state.feeRateActivationPreviousBlockHash,
+      feeRatePolicyReady: state.writesEnabled === true && state.activationHeight > 0 && state.feeRateAdmissionVerified === true &&
+        indexedThroughBlock >= state.feeRateActivationHeight,
       autonomousSigningEnabled: false, reason: state.writesEnabled === true ? null : 'permission-writes-disabled' },
     evidence: { complete: true, authorityVerified: true, checkpoint: { height: indexedThroughBlock, hash: checkpointHash }, verifiedAt: state.generatedAt },
     budget: { available: false, reset: 'UTC', scope: 'wallet', reason: 'protected-controller-required' },

@@ -7,32 +7,45 @@ export function FeeRateControl({
   feeRate,
   setFeeRate,
   sidecar,
+  label = "Fee proofs/vB",
+  presetsLabel = "Fee presets",
+  disabled = false,
+  inputValue,
+  setInputValue,
 }: {
   feeRate: number;
   setFeeRate: (value: number) => void;
   sidecar?: ReactNode;
+  label?: string;
+  presetsLabel?: string;
+  disabled?: boolean;
+  inputValue?: string;
+  setInputValue?: (value: string) => void;
 }) {
   return (
     <div className="fee-control">
       <div className={sidecar ? "fee-control-grid" : undefined}>
         <label>
-          Fee proofs/vB
+          {label}
           <input
             min={0.1}
-            onChange={(event) => setFeeRate(Number(event.target.value))}
+            disabled={disabled}
+            inputMode="decimal"
+            onChange={(event) => setInputValue ? setInputValue(event.target.value) : setFeeRate(Number(event.target.value))}
             step={FEE_RATE_STEP}
-            type="number"
-            value={feeRate}
+            type={inputValue === undefined ? "number" : "text"}
+            value={inputValue ?? feeRate}
           />
         </label>
         {sidecar}
       </div>
-      <div className="fee-presets" aria-label="Fee presets">
+      <div className="fee-presets" aria-label={presetsLabel}>
         {FEE_RATE_PRESETS.map((preset) => (
           <button
-            aria-pressed={Math.abs(feeRate - preset) < 0.00000001}
+            aria-pressed={inputValue === undefined ? Math.abs(feeRate - preset) < 0.00000001 : feeRate === preset}
+            disabled={disabled}
             key={preset}
-            onClick={() => setFeeRate(preset)}
+            onClick={() => setInputValue ? setInputValue(String(preset)) : setFeeRate(preset)}
             type="button"
           >
             {preset} proofs/vB

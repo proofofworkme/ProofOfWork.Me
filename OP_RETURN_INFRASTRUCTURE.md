@@ -16,6 +16,21 @@ transition-payload accessor when installed. `/api/v1/permissions` and
 `/api/v1/permission` fail closed on incomplete history; `inspect=1` permits only
 single-record inspection and never asserts current lifecycle status.
 
+Fee-rate metadata version 2 opens at height 970546, after independently pinned
+Core parent 970545 /
+`000000000000000000018bee4a1759e02b289063d6d5a9afe704dd68d50101dc`.
+It records `minerFeeRateProofsPerVbyte` as an exact decimal string and exports
+`AGENT_MINER_FEE_RATE_PROOFS_PER_VBYTE`. Version 1 retains its original
+`maxMinerFeeProofs` meaning and byte-canonical replay. Discovery independently
+verifies the new parent alongside the original boundary, and the API exposes
+version support and fee-rate readiness for the writer to pin. Missing or
+mismatched evidence closes version-2 publication; earlier version-2 records
+remain inspectable rejected events. The controller checks the chosen construction
+rate with exact ceiling arithmetic and verified transaction size estimates;
+transaction/daily debit budgets still include the actual miner fee. Extra dust
+absorption and automatic bumps are refused. The publication fee remains separate.
+This adds no migration, economics, wallet operation or autonomous bridge.
+
 The Permission scoped node release preserves live source overlays, dependency
 hashes, gateway/worker behavior and authority-service state. UI release V5 adds
 Permission to the complete 22-root contract; V3/V4 archives remain replayable

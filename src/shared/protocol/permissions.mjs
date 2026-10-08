@@ -1,9 +1,14 @@
-/** Permission v1 is public policy data. It never supplies a wallet credential. */
+/** Permission is public policy data. It never supplies a wallet credential. */
 export const PERMISSION_BODY_PREFIX = "pwperm1:";
-export const PERMISSION_VERSION = 1;
+export const PERMISSION_VERSION = 2;
+export const PERMISSION_LEGACY_VERSION = 1;
 // First admission is pinned to an independently reviewed Core parent. No wallet operation established this boundary.
 export const PERMISSION_ACTIVATION_HEIGHT = 970_492;
 export const PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH = "00000000000000000000c4a4a4121cb0fece4308ecee0003de2da0e5bdc7a3d1";
+// Additive metadata v2 starts after its independently reviewed Core parent.
+// Earlier v2 lookalikes remain rejected; original v1 admission is unchanged.
+export const PERMISSION_FEE_RATE_ACTIVATION_HEIGHT = 970_546;
+export const PERMISSION_FEE_RATE_ACTIVATION_PREVIOUS_BLOCK_HASH = "000000000000000000018bee4a1759e02b289063d6d5a9afe704dd68d50101dc";
 export const PERMISSION_MAX_METADATA_BYTES = 8_192;
 export const PERMISSION_MIN_SELF_PAYMENT_PROOFS = "546";
 export const PERMISSION_ACTIONS = Object.freeze([
@@ -14,10 +19,26 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const TXID = /^[0-9a-f]{64}$/u;
 const PROOFS_MAX = 2_100_000_000_000_000n;
+const FEE_RATE_SCALE = 100_000_000n;
 const WORK_MAX = 210_000_000_000_000_000_000_000n;
 const record = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const keys = (value, names) => record(value) && Object.keys(value).length === names.length && names.every(name => Object.hasOwn(value, name));
 const bounded = (value, maximum) => typeof value === "string" && /^(?:0|[1-9]\d*)$/u.test(value) && value.length <= 30 && BigInt(value) <= maximum;
+/** Exact Q8 rate; canonical decimal text, minimum 0.1 proofs/vB. */
+export function permissionFeeRateProofsQ8(value) {
+  if (typeof value !== "string" || value.length > 32) return null;
+  const parts = /^(0|[1-9]\d*)(?:\.(\d{1,8}))?$/u.exec(value);
+  if (!parts || (parts[2] && parts[2].endsWith("0"))) return null;
+  const rate = BigInt(parts[1]) * FEE_RATE_SCALE + BigInt((parts[2] ?? "").padEnd(8, "0"));
+  return rate >= 10_000_000n && rate <= PROOFS_MAX * FEE_RATE_SCALE ? rate : null;
+}
+/** Construction fee with one integer-proof ceiling, never binary floating point. */
+export function permissionMinerFeeProofs(rate, virtualBytes) {
+  const rateQ8 = permissionFeeRateProofsQ8(rate);
+  if (rateQ8 === null || !Number.isSafeInteger(virtualBytes) || virtualBytes < 1) return null;
+  const fee = (rateQ8 * BigInt(virtualBytes) + FEE_RATE_SCALE - 1n) / FEE_RATE_SCALE;
+  return fee <= PROOFS_MAX ? fee.toString() : null;
+}
 function addresses(value) {
   if (value === null) return null;
   if (!Array.isArray(value) || value.length > 100 || value.some(address => typeof address !== "string" ||
@@ -25,11 +46,16 @@ function addresses(value) {
   return [...value].sort();
 }
 export function normalizePermissionPolicy(value) {
-  if (!keys(value, ["signingEnabled", "allowedActions", "maxTransactionProofs", "dailyLimitProofs", "maxMinerFeeProofs", "allowedRecipients", "workLimits"]) ||
+  if (!record(value)) return null;
+  const feeRatePolicy = Object.hasOwn(value, "minerFeeRateProofsPerVbyte");
+  const feeField = feeRatePolicy ? "minerFeeRateProofsPerVbyte" : "maxMinerFeeProofs";
+  if (!keys(value, ["signingEnabled", "allowedActions", "maxTransactionProofs", "dailyLimitProofs", feeField, "allowedRecipients", "workLimits"]) ||
       typeof value.signingEnabled !== "boolean" || !Array.isArray(value.allowedActions) ||
       value.allowedActions.some(action => !PERMISSION_ACTIONS.includes(action)) || new Set(value.allowedActions).size !== value.allowedActions.length ||
-      !bounded(value.maxTransactionProofs, PROOFS_MAX) || !bounded(value.dailyLimitProofs, PROOFS_MAX) || !bounded(value.maxMinerFeeProofs, PROOFS_MAX) ||
-      BigInt(value.maxTransactionProofs) > BigInt(value.dailyLimitProofs) || BigInt(value.maxMinerFeeProofs) > BigInt(value.maxTransactionProofs)) return null;
+      !bounded(value.maxTransactionProofs, PROOFS_MAX) || !bounded(value.dailyLimitProofs, PROOFS_MAX) ||
+      (feeRatePolicy ? permissionFeeRateProofsQ8(value.minerFeeRateProofsPerVbyte) === null :
+        !bounded(value.maxMinerFeeProofs, PROOFS_MAX) || BigInt(value.maxMinerFeeProofs) > BigInt(value.maxTransactionProofs)) ||
+      BigInt(value.maxTransactionProofs) > BigInt(value.dailyLimitProofs)) return null;
   const allowedRecipients = addresses(value.allowedRecipients);
   if (allowedRecipients === undefined) return null;
   let workLimits = null;
@@ -43,18 +69,18 @@ export function normalizePermissionPolicy(value) {
   }
   return { signingEnabled: value.signingEnabled, allowedActions: [...value.allowedActions].sort(),
     maxTransactionProofs: value.maxTransactionProofs, dailyLimitProofs: value.dailyLimitProofs,
-    maxMinerFeeProofs: value.maxMinerFeeProofs, allowedRecipients, workLimits };
+    [feeField]: value[feeField], allowedRecipients, workLimits };
 }
 function normalizeMetadata(action, value) {
   const names = ["v", "network", ...(action === "grant" ? [] : ["grant", "parent"]), ...(action === "revoke" ? [] : ["label", "policy"])];
-  if (!["grant", "replace", "revoke"].includes(action) || !keys(value, names) || value.v !== 1 || value.network !== "livenet" ||
+  if (!["grant", "replace", "revoke"].includes(action) || !keys(value, names) || ![PERMISSION_LEGACY_VERSION, PERMISSION_VERSION].includes(value.v) || value.network !== "livenet" ||
       (action !== "grant" && (!TXID.test(value.grant) || !TXID.test(value.parent)))) return null;
-  const base = { v: 1, network: "livenet", ...(action === "grant" ? {} : { grant: value.grant, parent: value.parent }) };
+  const base = { v: value.v, network: "livenet", ...(action === "grant" ? {} : { grant: value.grant, parent: value.parent }) };
   if (action === "revoke") return base;
   if (typeof value.label !== "string" || encoder.encode(value.label).length > 200 || value.label.trim() !== value.label || /[\u0000-\u001f\u007f-\u009f]/u.test(value.label)) return null;
   try { if (decoder.decode(encoder.encode(value.label)) !== value.label) return null; } catch { return null; }
   const policy = normalizePermissionPolicy(value.policy);
-  return policy ? { ...base, label: value.label, policy } : null;
+  return policy && (value.v === PERMISSION_VERSION) === Object.hasOwn(policy, "minerFeeRateProofsPerVbyte") ? { ...base, label: value.label, policy } : null;
 }
 function b64(bytes) {
   let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -62,7 +88,7 @@ function b64(bytes) {
 }
 export function encodePermissionRecord(action, value) {
   const metadata = normalizeMetadata(action, value);
-  if (!metadata) throw new Error("Invalid Permission v1 metadata.");
+  if (!metadata) throw new Error("Invalid Permission metadata.");
   const bytes = encoder.encode(JSON.stringify(metadata));
   if (bytes.length > PERMISSION_MAX_METADATA_BYTES) throw new Error("Permission metadata exceeds its byte budget.");
   return `${PERMISSION_BODY_PREFIX}${action}:${b64(bytes)}`;
@@ -83,13 +109,15 @@ export function parsePermissionBody(body) {
 /** Display/export data only. Never evaluate or shell-source public records. */
 export function permissionPolicyEnv(value) {
   const policy = normalizePermissionPolicy(value);
-  if (!policy) throw new Error("Invalid Permission v1 policy.");
+  if (!policy) throw new Error("Invalid Permission policy.");
   return [
     `AGENT_SIGNING_ENABLED=${policy.signingEnabled}`,
     `AGENT_ALLOWED_ACTIONS=${policy.allowedActions.join(",")}`,
     `AGENT_MAX_TRANSACTION_PROOFS=${policy.maxTransactionProofs}`,
     `AGENT_DAILY_LIMIT_PROOFS=${policy.dailyLimitProofs}`,
-    `AGENT_MAX_MINER_FEE_PROOFS=${policy.maxMinerFeeProofs}`,
+    Object.hasOwn(policy, "minerFeeRateProofsPerVbyte")
+      ? `AGENT_MINER_FEE_RATE_PROOFS_PER_VBYTE=${policy.minerFeeRateProofsPerVbyte}`
+      : `AGENT_MAX_MINER_FEE_PROOFS=${policy.maxMinerFeeProofs}`,
     "AGENT_DAILY_RESET=UTC",
     `AGENT_ALLOWED_RECIPIENTS=${policy.allowedRecipients === null ? "any" : policy.allowedRecipients.length ? policy.allowedRecipients.join(",") : "self"}`,
     `AGENT_WORK_LIMITS=${JSON.stringify(policy.workLimits)}`,

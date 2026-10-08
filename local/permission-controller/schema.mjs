@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { permissionFeeRateProofsQ8 } from '../../src/shared/protocol/permissions.mjs'
 
 export class PermissionError extends Error {
   constructor(code, message = code) { super(message); this.name = 'PermissionError'; this.code = code }
@@ -34,10 +35,14 @@ export function canonical(value) {
 export const digest = value => createHash('sha256').update(typeof value === 'string' ? value : canonical(value)).digest('hex')
 export function immutable(value) { if (value && typeof value === 'object') { for (const child of Object.values(value)) immutable(child); Object.freeze(value) } return value }
 export function normalizePolicy(policy) {
-  exactKeys(policy, ['signingEnabled', 'allowedActions', 'maxTransactionProofs', 'dailyLimitProofs', 'maxMinerFeeProofs', 'allowedRecipients', 'workLimits'])
+  object(policy)
+  const ratePolicy = Object.hasOwn(policy, 'minerFeeRateProofsPerVbyte')
+  exactKeys(policy, ['signingEnabled', 'allowedActions', 'maxTransactionProofs', 'dailyLimitProofs', ratePolicy ? 'minerFeeRateProofsPerVbyte' : 'maxMinerFeeProofs', 'allowedRecipients', 'workLimits'])
   if (typeof policy.signingEnabled !== 'boolean' || !Array.isArray(policy.allowedActions) || new Set(policy.allowedActions).size !== policy.allowedActions.length || policy.allowedActions.some(action => !ACTIONS.includes(action))) fail('INVALID_POLICY_ACTIONS')
-  for (const key of ['maxTransactionProofs', 'dailyLimitProofs', 'maxMinerFeeProofs']) integer(policy[key])
-  if (integer(policy.maxMinerFeeProofs) > integer(policy.maxTransactionProofs) || integer(policy.maxTransactionProofs) > integer(policy.dailyLimitProofs)) fail('INCONSISTENT_POLICY_LIMITS')
+  for (const key of ['maxTransactionProofs', 'dailyLimitProofs']) integer(policy[key])
+  if (ratePolicy) { if (permissionFeeRateProofsQ8(policy.minerFeeRateProofsPerVbyte) === null) fail('INVALID_MINER_FEE_RATE') }
+  else if (integer(policy.maxMinerFeeProofs) > integer(policy.maxTransactionProofs)) fail('INCONSISTENT_POLICY_LIMITS')
+  if (integer(policy.maxTransactionProofs) > integer(policy.dailyLimitProofs)) fail('INCONSISTENT_POLICY_LIMITS')
   if (policy.allowedRecipients !== null) {
     if (!Array.isArray(policy.allowedRecipients) || new Set(policy.allowedRecipients).size !== policy.allowedRecipients.length) fail('INVALID_RECIPIENTS')
     policy.allowedRecipients.forEach(address)

@@ -45,6 +45,28 @@ Grant metadata is a closed schema. UTF-8 JSON, property order, sorted action and
 recipient sets, decimal strings and unpadded base64url must match the shared
 encoder exactly. Unknown fields and ambiguous or malformed carriers fail closed.
 
+New grants and replacements from the fee-rate editor use metadata version 2:
+
+```json
+{
+  "v": 2,
+  "network": "livenet",
+  "label": "armyofyouth@proofofwork.me",
+  "policy": {
+    "signingEnabled": true,
+    "allowedActions": ["boost.post", "mail.send", "publish.article"],
+    "maxTransactionProofs": "5000",
+    "dailyLimitProofs": "30000",
+    "minerFeeRateProofsPerVbyte": "0.5",
+    "allowedRecipients": null,
+    "workLimits": null
+  }
+}
+```
+
+Version 1 remains immutable replay and current-policy compatibility. Its original
+absolute miner-fee cap has its original meaning, as in this historical form:
+
 ```json
 {
   "v": 1,
@@ -71,13 +93,63 @@ A null WORK policy denies asset operations even when an action is listed.
 WORK uses its canonical asset ID; other AMO assets are outside v1.
 
 Replacement metadata adds `grant` and `parent` TXIDs before `label` and `policy`.
-Revocation contains only `v`, `network`, `grant`, and `parent`.
+Revocation contains only `v`, `network`, `grant`, and `parent`. Versions 1 and 2
+use the same Mail carrier and wallet/head lifecycle. Version 1 accepts only the
+absolute-cap policy; version 2 accepts only the fee-rate policy. Mixed forms and
+version/field mismatches are invalid.
+
+## Agent transaction fee rate
+
+The owner selects **Agent transaction fee rate (proofs/vB)** using the same
+`0.1`, `0.5`, `1`, and `2` presets as the other fee panels, or a custom value of
+at least `0.1` with up to eight decimal places. The public value is a canonical
+decimal string, never a floating-point approximation or an exponent. The export
+contains, for example:
+
+```dotenv
+AGENT_MINER_FEE_RATE_PROOFS_PER_VBYTE=0.5
+```
+
+This is the agent's construction target. The agent cannot substitute another
+rate or automatically raise it when funding or relay conditions change. A
+failure to construct within the selected terms requires owner review. The
+closed controller derives the conservative size from the verified transaction,
+uses the existing 160-vB-per-input construction convention and exact whole-proof
+ceiling, and requires the miner fee to match that calculation. Extra fee from
+dust absorption is rejected. Conservative input estimates and final signature
+sizes mean the effective signed fee divided by its exact vsize may differ from
+the selected construction rate. Miner fees still count toward transaction and
+daily wallet-debit budgets.
+
+**Permission publication fee rate** separately pays for creating, replacing or
+revoking the grant. Changing that local publication rate never changes the
+agent's on-chain rate. Changing either selected rate does not change the other.
+Updating on-chain terms requires a new transaction review; the total publication
+fee depends on the resulting transaction size.
+
+Existing version-1 grants retain their absolute cap. Their display/export is
+preserved; no rate is inferred from that cap. Replacing one with a rate-based
+policy requires an explicit owner rate selection and a new version-2 record.
+Legacy drafts and signed recovery receipts remain inspectable with their original
+terms. Upgrading an unsigned task requires explicit rate selection; unresolved
+original signed receipts still block duplicate preparation or signing.
 
 Admission begins at height **970492**, whose independently verified Core parent
 at 970491 is
 `00000000000000000000c4a4a4121cb0fece4308ecee0003de2da0e5bdc7a3d1`.
 No real-wallet transaction established this product boundary. Earlier lookalike
 records cannot become v1 authority.
+
+Fee-rate metadata version 2 begins at **970546**, with independently verified
+Core parent 970545 /
+`000000000000000000018bee4a1759e02b289063d6d5a9afe704dd68d50101dc`.
+Earlier version-2 lookalikes remain inspectable rejected records. The verifier
+checks this second parent independently while preserving the original discovery
+boundary and all version-1 rules. Admission reports `supportedRecordVersions`,
+`feeRateActivationHeight`, `feeRateActivationPreviousBlockHash`, and
+`feeRatePolicyReady`; the fee-rate writer requires complete coherent evidence
+and matching pins before preparing a transaction. Missing or mismatched new
+admission evidence cannot silently fall back to an absolute-cap grant.
 
 ## Verified reads
 
