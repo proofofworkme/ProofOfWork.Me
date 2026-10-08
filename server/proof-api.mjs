@@ -59770,10 +59770,14 @@ function isBrowserActivityItem(item) {
     searchText.includes("text/html") ||
     searchText.includes("application/xhtml+xml") ||
     /\.x?html?\b/u.test(searchText);
+  // Keep the frozen pre-V5 Mail accounting for canonical memo-only rows.
+  const blockHeight = Number(item.blockHeight ?? 0);
   const hasHtmlBody =
     tags.some((tag) => String(tag).toLowerCase() === "html body") ||
     isBrowserHtmlMessageBody(item.detail ?? "") ||
-    isBrowserHtmlMessageBody(item.memo ?? "");
+    (Number.isSafeInteger(blockHeight) &&
+      blockHeight >= WORK_AMO_V5_ACTIVATION_HEIGHT &&
+      isBrowserHtmlMessageBody(item.memo ?? ""));
 
   if (item.kind === "file") {
     return hasHtmlAttachment;

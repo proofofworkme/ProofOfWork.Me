@@ -19,9 +19,11 @@ autonomous-signing gate, which remains closed pending verified isolation and a
 real UniSat bridge. See [deployment](deploy/permission/README.md).
 
 The accompanying Browser/Mail projection repair recognizes HTML in a canonical
-message `memo` alongside existing detail/tag detection. A confirmed HTML message
-with a subject must retain its existing Browser proof-flow contribution even
-when the indexed row has no presentation detail or HTML tag. Keep AMO
+message `memo` alongside existing detail/tag detection, only for qualified
+canonical heights at or after `WORK_AMO_V5_ACTIVATION_HEIGHT`. The frozen legacy
+baseline retains its prior classification; existing detail/tag behavior remains
+unchanged. A new confirmed HTML message with a subject retains its Browser
+proof-flow contribution even without presentation detail or an HTML tag. Keep AMO
 reconciliation strict: the normal supervised worker republishes derived
 summaries from unchanged canonical records; no ledger rewrite, carry exception
 or economic migration is part of this repair.

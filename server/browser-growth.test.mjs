@@ -47,6 +47,17 @@ const helpers=build();
 const html='<!doctype html>\n<html lang="en"><head><title>My ProofOfWork App</title></head><body>App</body></html>';
 const cases=[
  {name:'actual canonical HTML mail with absent detail',item:{kind:'mail',memo:html},raw:[`pwm1:m:${html}`],expected:'browserFlowSats'},
+ {name:'historical block 949253 HTML memo preserves frozen Mail accounting',item:{kind:'mail',memo:html,blockHeight:949253},expected:'mailFlowSats'},
+ {name:'HTML memo before AMO V5 activation preserves Mail accounting',item:{kind:'mail',memo:html,blockHeight:amo.WORK_AMO_V5_ACTIVATION_HEIGHT-1},expected:'mailFlowSats'},
+ {name:'HTML memo at AMO V5 activation uses Browser accounting',item:{kind:'mail',memo:html,blockHeight:amo.WORK_AMO_V5_ACTIVATION_HEIGHT},raw:[`pwm1:m:${html}`],expected:'browserFlowSats'},
+ {name:'canonical integer text height is normalized at activation',item:{kind:'mail',memo:html,blockHeight:String(amo.WORK_AMO_V5_ACTIVATION_HEIGHT)},expected:'browserFlowSats'},
+ {name:'missing height cannot activate HTML memo accounting',item:{kind:'mail',memo:html,blockHeight:undefined},expected:'mailFlowSats'},
+ {name:'null height cannot activate HTML memo accounting',item:{kind:'mail',memo:html,blockHeight:null},expected:'mailFlowSats'},
+ {name:'non-integer height cannot activate HTML memo accounting',item:{kind:'mail',memo:html,blockHeight:amo.WORK_AMO_V5_ACTIVATION_HEIGHT+0.5},expected:'mailFlowSats'},
+ {name:'unsafe integer height cannot activate HTML memo accounting',item:{kind:'mail',memo:html,blockHeight:Number.MAX_SAFE_INTEGER+1},expected:'mailFlowSats'},
+ {name:'invalid text height cannot activate HTML memo accounting',item:{kind:'mail',memo:html,blockHeight:'not-a-height'},expected:'mailFlowSats'},
+ {name:'existing HTML detail still applies before activation',item:{kind:'mail',memo:'plain',detail:html,blockHeight:949253},expected:'browserFlowSats'},
+ {name:'existing HTML tag still applies before activation',item:{kind:'reply',memo:'plain',tags:['HTML body'],blockHeight:949253},expected:'browserFlowSats'},
  {name:'canonical HTML reply with subject-only detail',item:{kind:'reply',memo:html,detail:'Subject: My ProofOfWork App'},raw:[`pwm1:r:${'a'.repeat(64)}`,`pwm1:m:${html}`],expected:'browserFlowSats'},
  {name:'HTML whitespace and mixed case',item:{kind:'mail',memo:' \n\t<!DOCTYPE HTML>\n<html><body>x</body></html>'},raw:['pwm1:m: \n\t<!DOCTYPE HTML>\n<html><body>x</body></html>'],expected:'browserFlowSats'},
  {name:'ordinary canonical mail',item:{kind:'mail',memo:'hello world'},raw:['pwm1:m:hello world'],expected:'mailFlowSats'},
@@ -61,7 +72,7 @@ const cases=[
  {name:'HTML-looking file memo does not reclassify ordinary file',item:{kind:'file',memo:html,detail:'image.png · image/png'},expected:'driveFlowSats'},
 ];
 function contribution(helper,item){
- const events=helper.growthActualBaseNetworkValueEvents([],[{...item,txid:'b'.repeat(64),confirmed:true,valid:true,amountSats:'546',createdAt:'2026-10-08T13:55:10.000Z',blockHeight:970498,blockIndex:2789,protocolVout:1,recordOrdinal:0}],[],[],[],[],[]);
+ const events=helper.growthActualBaseNetworkValueEvents([],[{txid:'b'.repeat(64),confirmed:true,valid:true,amountSats:'546',createdAt:'2026-10-08T13:55:10.000Z',blockHeight:970498,blockIndex:2789,protocolVout:1,recordOrdinal:0,...item}],[],[],[],[],[]);
  assert.equal(events.length,1);
  return {field:events[0].contribution.field,value:events[0].contribution.value.toString()};
 }
@@ -108,4 +119,29 @@ test('strict reconciliation still refuses forged bootstrap evidence', () => {
   const result=helpers.workAmoV5LegacyBootstrapReconciliation(state,value,{actualValue},{...evidence,txid:'c'.repeat(64)});
   assert.equal(result.valid,false);
   assert.equal(result.reason,'legacy-bootstrap-evidence-mismatch');
+});
+
+test('mixed historical and current HTML contributions preserve the frozen baseline', () => {
+  const row = (txid,blockHeight,createdAt) => ({
+    kind:'mail',memo:html,confirmed:true,valid:true,amountSats:'546',
+    txid,blockHeight,createdAt,blockIndex:2789,protocolVout:1,recordOrdinal:0,
+  });
+  const contributions=helpers.growthActualBaseNetworkValueEvents([], [
+    row('8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b',949253,'2026-05-13T18:42:47.000Z'),
+    row('04f285dda730030ba27d517032c6750a0c6cf985250c2ae6a10f627e1e144913',970498,'2026-10-08T13:55:10.000Z'),
+  ],[],[],[],[],[]).map(event=>({field:event.contribution.field,value:event.contribution.value.toString()}));
+  assert.deepEqual(JSON.parse(JSON.stringify(contributions)),[
+    {field:'mailFlowSats',value:'546'},
+    {field:'browserFlowSats',value:'546'},
+  ]);
+  const mixedValid={...valid,mailFlowSats:'546'};
+  const mixedCommitted={...mixedValid,tokenMarketplaceFeeSats:String(mutation)};
+  const mixedState={...state,baseState:mixedCommitted};
+  const mixedValue={baseNetworkValueQ8:String(helpers.growthActualBaseStateTotalQ8(mixedCommitted))};
+  const mixedActual={...actualValue,...mixedValid,baseNetworkValueQ8:String(helpers.growthActualBaseStateTotalQ8(mixedValid))};
+  assert.equal(helpers.workAmoV5LegacyBootstrapReconciliation(mixedState,mixedValue,{actualValue:mixedActual},evidence).valid,true);
+  const retroactive={...mixedActual,browserFlowSats:'1092',mailFlowSats:'0'};
+  const rejected=helpers.workAmoV5LegacyBootstrapReconciliation(mixedState,mixedValue,{actualValue:retroactive},evidence);
+  assert.equal(rejected.valid,false);
+  assert.equal(rejected.reason,'legacy-bootstrap-base-field-diverged:browserFlowSats');
 });

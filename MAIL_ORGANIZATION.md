@@ -234,10 +234,11 @@ The app should scan confirmed known mail and show only messages with attachments
 
 Browser-readable HTML message bodies are also files for UX purposes. If a confirmed `pwm1:m` body looks like HTML and has no attachment, Files/Desktop should synthesize a `.html` file from the message body and open it through Browser by txid. This is a derived view only; it does not create a new protocol or pretend an attachment exists on-chain.
 
-Growth's Browser classification also reads the canonical message `memo`, even
-when a subject replaces the displayed detail or a derived HTML tag is absent.
-Presentation fields must not hide a confirmed HTML body from the existing
-Browser proof-flow projection. This changes no transaction, fee or ledger row.
+For canonical messages at or after AMO V5 activation, Growth's Browser
+classification also reads `memo`, even when a subject replaces the displayed
+detail or a derived HTML tag is absent. Earlier records retain their frozen
+legacy classification; existing detail/tag behavior is preserved at every
+height. This changes no transaction, fee or ledger row.
 
 The default Files experience should feel more like a desktop/file manager than an email reader:
 

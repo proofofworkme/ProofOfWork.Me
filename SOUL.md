@@ -688,7 +688,7 @@ uncertain signatures across grant changes and restarts. Duration and named-agent
 binding are outside Permission v1. The release synchronization gate now also
 verifies public Permission provenance.
 
-Use canonical message bodies for accounting classification. A subject-only
-detail or missing display tag must not hide confirmed HTML from Browser flow.
-Repair the read projection while preserving strict reconciliation and every
-canonical record.
+Use canonical message bodies for accounting classification within their
+protocol era. A subject-only detail or missing display tag must not hide new
+confirmed HTML from Browser flow, while frozen legacy baselines retain their
+prior classification. Preserve strict reconciliation and every canonical record.
