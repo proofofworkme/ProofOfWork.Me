@@ -1,9 +1,61 @@
-# Jobs v1 release runbook
+# Jobs release runbook
 
 This is a release procedure, not a production receipt. The user approved Jobs
 v1's build, configuration, tests, hygiene, commit, push, deployment, verification,
 rollback preservation and release announcement on 2026-10-07. Publication remains
 conditional on the exact candidate passing its local and chain/API checks.
+
+## WORK rewards upgrade
+
+The user approved the complete Jobs WORK-reward build-and-ship scope on
+2026-10-08. Metadata version 2 preserves v1 and the original discovery boundary;
+its additional opening is 970577 after independently verified Core parent
+970576 / `00000000000000000001bc401b09150a6f092579644cc5616a828949f48bbd1d`.
+No bootstrap rewrite or database migration is part of this upgrade. Verify the
+new parent, complete current Jobs coverage, original Welcome job and separate
+proof/WORK paid totals before UI publication. The current UI contract is V5
+with all 22 managed roots, including Pages and Permission. The original
+twenty-root v1 release below remains historical recovery context.
+
+For this upgrade, use the previous synchronized source commit
+`b40d4f4a0d3144996058cc034a7480e048a88793` as the three-way merge base. Capture
+from the new exact controller, then plan from a clean exact committed checkout:
+
+```sh
+python3 -I -B deploy/jobs/release.py capture /tmp/jobs-work-runtime-capture.json
+python3 -I -B deploy/jobs/release.py plan "$PWD" "$candidate_commit" \
+  b40d4f4a0d3144996058cc034a7480e048a88793 \
+  /tmp/jobs-work-runtime-capture.json /tmp/jobs-work-runtime-plan \
+  --reviewed-helper-upgrades /tmp/jobs-work-helper-review.json
+```
+
+The explicit review file uses format
+`proof-of-work-jobs-reviewed-helper-upgrades-v1`, exact `baseCommit` and
+`sourceCommit`, and a `sources` array with one row per changed existing helper:
+`path`, `activeSha256`, `baseSha256`, `repositoryCandidateSha256`, and `reason`.
+Only `server/jobs.mjs`, `server/db/jobs-reader.mjs`, and
+`src/shared/protocol/jobs.mjs` are helper-upgrade targets. Each active helper
+must exactly equal the prior released base bytes; replacement bytes come only
+from the committed candidate. The remote manifest and receipt preserve these
+review pins. An unchanged helper must not have an unnecessary upgrade row.
+
+Without a flag, the planner retains creation-only first-install behavior.
+`--preserve-existing-helpers` instead requires every existing helper to equal
+the candidate bytes and permits no helper change. It is mutually exclusive with
+the reviewed-upgrade mode. A conflicted shared-file merge can use the explicit
+`--reviewed-merges` file with format `proof-of-work-jobs-reviewed-merges-v1` and
+hash-bound active, base, candidate and reviewed `/tmp` merged bytes. Only the
+five existing non-helper runtime paths accept such a resolution. Conflicts,
+missing reviews, changed input hashes or unreviewed helper drift refuse.
+
+Complete captured source inventory, dependency/runtime hashes and API/worker
+service units/state are fenced. Keep accepted native transition access and all
+unrelated overlays. Apply the reviewed plan using `release.py overlay`; the
+controller preserves original bytes and verifies application or rollback
+before Search restoration. Interrupted or incomplete rollback retains the
+Search hold and recovery evidence for supervised recovery. Ordinary indexing
+continues the existing candidate witness after the short source cutover;
+underlying WORK and Mail economics are unchanged.
 
 ## Preserve the active runtime
 

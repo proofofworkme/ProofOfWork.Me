@@ -7260,6 +7260,32 @@ Caddy host activation. Production acceptance completed on 2026-10-08 UTC
 binds source `fc396c9a9abd`, the scoped runtime, complete discovery and the
 verified twenty-root UI release. Existing protocol and economic rules remain authoritative.
 
+### Jobs WORK rewards — metadata version 2
+
+Jobs accepts rewards in proofs or the fixed canonical WORK credit. Version-1
+schemas, bytes, first-admission boundary and replay remain intact. Metadata
+version 2 opens at 970577, after independently Core-verified parent 970576 /
+`00000000000000000001bc401b09150a6f092579644cc5616a828949f48bbd1d`.
+The public reader verifies that parent alongside complete existing Jobs discovery
+and exposes version readiness before the local writer can prepare version 2.
+
+WORK Paid state requires an exact same-transaction canonical Q16 `send3` to the
+assigned historical worker, its separate 546-proof WORK-registry payment and
+ordinary worker-directed Mail signal. Jobs compares the accepted relational
+WORK transfer to its exact sealed raw replay and payment/movement claims; a
+decoded carrier alone cannot establish settlement. Missing evidence fails
+acceptance closed. The existing WORK engine owns balances, fees and network-value
+attribution once. This update adds no database migration, reward conversion,
+escrow, new economic formula or Jobs registry fee.
+
+Upgrade the existing three Jobs helpers through the runbook's explicitly
+reviewed, source-commit/hash-bound helper mode. Shared runtime changes remain
+three-way merges over the captured active source, preserving native transition
+storage and accepted Audit31/Code/Pages/Permission overlays. Capture complete
+dependencies and service identities, preserve rollback bytes, and restore Search
+only after verified application or rollback. UI publication retains the current
+complete 22-root V5 contract. All release synchronization checks remain mandatory.
+
 ## Mandatory release synchronization
 
 Every deployed product or upgrade must finish with GitHub `main`, the primary local checkout on `main`, the local app preview, and the production UI representing the same released source commit. This is a release completion gate, authorized by the user on 2026-10-08.

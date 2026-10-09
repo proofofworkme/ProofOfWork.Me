@@ -1,16 +1,17 @@
 import { expect, test } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import * as bitcoin from 'bitcoinjs-lib';
-import { encodeJobRecord, JOBS_ACTIVATION_HEIGHT, JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH } from '../../src/shared/protocol/jobs.mjs';
+import { encodeJobRecord, JOBS_ACTIVATION_HEIGHT, JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH, JOBS_V2_ACTIVATION_HEIGHT, JOBS_V2_ACTIVATION_PREVIOUS_BLOCK_HASH, JOBS_WORK_TOKEN_ID, JOBS_WORK_REGISTRY_ADDRESS } from '../../src/shared/protocol/jobs.mjs';
 
 const id = n => n.toString(16).padStart(64, '0');
 const requester = 'bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e';
 const worker = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa';
 const scope = 'Deliver exact work.\r\n<script>window.jobsInjected = true</script>\r\nPreserve this acceptance criterion.  ';
-const snapshot = { id: 'fixture-jobs-snapshot', checkpointHeight: JOBS_ACTIVATION_HEIGHT, checkpointHash: 'a'.repeat(64) };
+const snapshot = { id: 'fixture-jobs-snapshot', checkpointHeight: JOBS_V2_ACTIVATION_HEIGHT, checkpointHash: 'a'.repeat(64) };
 const evidence = { network: 'livenet', complete: true, source: 'proof-indexer-exact-canonical-jobs-replay', snapshot,
   indexedThroughBlock: snapshot.checkpointHeight, indexedThroughBlockHash: snapshot.checkpointHash,
-  activationHeight: JOBS_ACTIVATION_HEIGHT, activationPreviousBlockHash: JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH };
+  activationHeight: JOBS_ACTIVATION_HEIGHT, activationPreviousBlockHash: JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH,
+  versions: { supported: [1, 2], current: 2, v2ActivationHeight: JOBS_V2_ACTIVATION_HEIGHT, v2ActivationPreviousBlockHash: JOBS_V2_ACTIVATION_PREVIOUS_BLOCK_HASH, v2Ready: true } };
 const pagination = { limit: 30, total: 1, hasMore: false, nextCursor: null };
 const job = { txid: id(1), title: 'Fixture paid work', brief: 'Original scope', scope, rewardSats: '1234567', offeredRewardSats: '900',
   requesterAddress: requester, workerAddress: worker, status: 'delivered', headTxid: id(4), proposalTxid: id(2), assignmentTxid: id(3),
@@ -26,20 +27,26 @@ const funding = new bitcoin.Transaction(); funding.addInput(Buffer.alloc(32, 1),
 const utxo = { txid: funding.getId(), vout: 0, value: 2000000, status: { confirmed: true } };
 const blankDraft = { action: 'brief', title: '', scope: '', rewardSats: '546', job: '', proposal: '', assignment: '', delivery: '', text: '', artifacts: '', reason: '', expectedHead: '', feeRate: 1 };
 
-async function fixture(page, { unavailable = false, empty = false, wallet = false, paid = false, unknown = false } = {}) {
+const workReward = { asset: 'WORK', token: JOBS_WORK_TOKEN_ID, amountSubatoms: '10000000000000001' };
+async function fixture(page, { unavailable = false, empty = false, wallet = false, walletAddress = requester, paid = false, unknown = false, work = false, workAdmission = true } = {}) {
   let current = paid ? { ...job, status: 'paid', headTxid: id(5), acceptanceTxid: id(5), paymentTxid: id(5), paidSats: job.rewardSats } : { ...job };
-  if (wallet) await page.addInitScript(({ requester, utxo }) => {
-    const handlers = new Map(); window.jobsSignatureCalls = 0; window.jobsAccounts = [requester];
+  if (work) current = { ...current, rewardSats: '0', offeredRewardSats: '0', paidSats: '0', reward: workReward, offeredReward: workReward, paidReward: paid ? workReward : null,
+    ...(paid ? { workSettlement: { valid: true, source: 'canonical-work-send3-relational-raw-replay', reward: workReward, paymentTxid: id(5), protocolVout: 5, registryVout: 4,
+      blockHeight: snapshot.checkpointHeight, blockHash: snapshot.checkpointHash, blockTransactionIndex: 5 } } : {}) };
+  const currentProposal = work ? { ...proposal, metadata: { v: 2, job: job.txid, scope, reward: workReward } } : proposal;
+  let workSpendable = workReward.amountSubatoms;
+  if (wallet) await page.addInitScript(({ walletAddress, utxo }) => {
+    const handlers = new Map(); window.jobsSignatureCalls = 0; window.jobsAccounts = [walletAddress];
     window.jobsWalletEvent = (event, values) => { if (event === 'accountsChanged') window.jobsAccounts = values; for (const handler of handlers.get(event) ?? []) handler(values); };
     window.unisat = { getAccounts: async () => window.jobsAccounts, requestAccounts: async () => window.jobsAccounts,
       getNetwork: async () => 'livenet', getBitcoinUtxos: async () => [utxo],
       on: (event, handler) => handlers.set(event, [...(handlers.get(event) ?? []), handler]),
       removeListener: (event, handler) => handlers.set(event, (handlers.get(event) ?? []).filter(value => value !== handler)),
       signPsbt: async () => { window.jobsSignatureCalls++; throw new Error('Rejected by disposable test wallet'); } };
-  }, { requester, utxo });
+  }, { walletAddress, utxo });
   if (unknown) {
-    const draft = { ...blankDraft, title: 'Retained broadcast brief', scope: 'Exact unsent criteria', rewardSats: '900' };
-    const memo = encodeJobRecord('brief', { v: 1, title: draft.title, scope: draft.scope, rewardSats: draft.rewardSats });
+    const draft = { ...blankDraft, title: 'Retained broadcast brief', scope: 'Exact unsent criteria', rewardSats: '900', ...(work ? { rewardAsset: 'WORK', rewardWork: '1.0000000000000001' } : {}) };
+    const memo = encodeJobRecord('brief', work ? { v: 2, title: draft.title, scope: draft.scope, reward: workReward } : { v: 1, title: draft.title, scope: draft.scope, rewardSats: draft.rewardSats });
     const key = `jobs:brief:${createHash('sha256').update(memo).digest('hex')}`;
     await page.addInitScript(({ requester, draft, key, txid }) => {
       localStorage.setItem(`proofofwork.jobs.draft.v1:livenet:${requester}`, JSON.stringify(draft));
@@ -52,25 +59,35 @@ async function fixture(page, { unavailable = false, empty = false, wallet = fals
     if (route.request().method() !== 'GET') return route.abort('blockedbyclient');
     if (url.pathname === '/api/v1/jobs') return route.fulfill(unavailable
       ? { status: 503, json: { error: 'Jobs candidate discovery is incomplete', details: { code: 'JOBS_DISCOVERY_INCOMPLETE' } } }
-      : { json: { ...evidence, jobs: empty ? [] : [current], pagination } });
+      : { json: { ...evidence, jobs: empty ? [] : [current], pagination, stats: { paidProofs: paid && !work ? job.rewardSats : '0', paidWorkSubatoms: paid && work ? workReward.amountSubatoms : '0' } } });
     if (url.pathname === '/api/v1/job') return route.fulfill({ json: { ...evidence, job: current,
-      events: [proposal, delivery, invalid], proposals: [proposal], deliveries: [delivery], eventsComplete: true, proposalsComplete: true, deliveriesComplete: true } });
+      events: [currentProposal, delivery, invalid], proposals: [currentProposal], deliveries: [delivery], eventsComplete: true, proposalsComplete: true, deliveriesComplete: true } });
     if (url.pathname.endsWith('/utxo')) return route.fulfill({ json: [utxo] });
     if (url.pathname.endsWith('/hex')) return route.fulfill({ json: { hex: funding.toHex() } });
     if (url.pathname.endsWith('/status')) return route.fulfill(unknown
       ? { status: 503, json: { error: 'Fixture transaction status unavailable' } }
       : { json: { status: 'confirmed', confirmed: true } });
     if (url.pathname === '/api/v1/registry') return route.fulfill({ json: { network: 'livenet', records: [], listings: [], coverage: { complete: true }, collectionHasMore: { listings: false } } });
-    if (url.pathname === '/api/v1/token') return route.fulfill({ json: { network: 'livenet', listings: [], source: 'proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state', walletScoped: true, authoritativeWallet: true, summaryOnly: true } });
+    if (url.pathname === '/api/v1/token') return route.fulfill({ json: { network: 'livenet', listings: [], closedListings: [], transfers: [], sales: [], holders: [], canonicalWorkCapacities: [], source: 'proof-indexer-wallet-token-overlay+proof-indexer-wallet-address-state', walletScoped: true, authoritativeWallet: true, summaryOnly: true,
+      ...(work && url.searchParams.get('asset') === JOBS_WORK_TOKEN_ID ? { indexedThroughBlock: snapshot.checkpointHeight, indexedThroughBlockHash: snapshot.checkpointHash,
+        holders: [{ address: requester, tokenId: JOBS_WORK_TOKEN_ID, balanceSubatoms: workSpendable }],
+        canonicalWorkCapacities: [{ model: 'canonical-work-wallet-capacity-v1', network: 'livenet', address: requester, tokenId: JOBS_WORK_TOKEN_ID,
+          indexedThroughBlock: snapshot.checkpointHeight, indexedThroughBlockHash: snapshot.checkpointHash, confirmedBalanceSubatoms: workSpendable,
+          reservedBalanceSubatoms: '0', transferableBalanceSubatoms: workSpendable, reservations: [],
+          tokenStateCommitment: { model: 'canonical-work-amo-payload-sha256-v1', sha256: id(20), payloadBytes: 100 } }] } : {}) } });
+    if (url.pathname === '/api/v1/work-floor') return route.fulfill({ json: { workAmoV8: { version: 'pwt-sale-v8', pinsRequested: true, pinsConfigured: true, protocolReady: workAdmission, writeAdmission: workAdmission, activation: { active: true, reached: true, tipVerified: true, evidenceComplete: true } } } });
     if (url.pathname === '/api/v1/boost') return route.fulfill({ json: { network: 'livenet', complete: true, items: [], hasMore: false } });
     return route.fulfill({ json: { records: [], items: [], listings: [], complete: true, minimumFee: 0.1, fastestFee: 1, halfHourFee: 1, hourFee: 1 } });
   });
-  return { change: value => { current = { ...current, ...value }; } };
+  return { change: value => { current = { ...current, ...value }; }, setWorkSpendable: value => { workSpendable = value; } };
 }
 async function connect(page) {
   const button = page.getByRole('button', { name: 'Connect UniSat', exact: true });
   await button.first().click();
   await expect(page.getByRole('button', { name: 'Disconnect UniSat', exact: true })).toBeVisible();
+}
+async function snapshotTop(page) {
+  await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); window.scrollTo(0, 0); document.querySelector('.jobs-embedded-app')?.scrollTo(0, 0); });
 }
 async function prepareBrief(page, title = 'Local review brief') {
   await page.getByRole('button', { name: 'Post a job', exact: true }).first().click();
@@ -202,4 +219,95 @@ test('unknown broadcast evidence blocks a duplicate review while retaining task 
   await expect(page.getByRole('dialog')).toHaveCount(0); expect(await page.evaluate(() => window.jobsSignatureCalls)).toBe(0);
   const receipts = await page.evaluate(() => JSON.parse(localStorage.getItem('proofofwork-action-receipts-v1')));
   expect(receipts[0].status).toBe('unknown'); expect(receipts[0].txid).toBe(id(9));
+});
+for (const url of ['/?jobs=1', '/?folder=jobs']) {
+  for (const width of [390, 1440]) {
+  test(`${url} WORK offers preserve Q16 drafts and review the promise without requiring WORK funding at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 }); await fixture(page, { wallet: true }); await page.goto(url); await connect(page);
+    await page.getByRole('button', { name: 'Post a job', exact: true }).first().click();
+    await page.getByRole('textbox', { name: 'Job title', exact: false }).fill('WORK offer');
+    await page.getByRole('textbox', { name: 'Brief and acceptance criteria', exact: true }).fill('Deliver exact work for WORK credit.');
+    await page.getByRole('combobox', { name: 'Reward currency', exact: true }).selectOption('WORK');
+    await page.getByRole('textbox', { name: 'Offered reward in WORK', exact: false }).fill('1.0000000000000001');
+    await expect.poll(() => page.evaluate(address => JSON.parse(localStorage.getItem(`proofofwork.jobs.draft.v1:livenet:${address}`)).rewardWork, requester)).toBe('1.0000000000000001');
+    expect(await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: innerWidth }))).toEqual({ width, viewport: width });
+    await snapshotTop(page); await page.screenshot({ path: `/tmp/jobs-work-ui-composer-${url.includes('folder') ? 'computer' : 'standalone'}-${width}.png`, fullPage: true });
+    await page.getByRole('button', { name: 'Review transaction', exact: true }).click();
+    const review = page.getByRole('dialog', { name: 'Publish job', exact: true });
+    await expect(review).toBeVisible(); await expect(review).toContainText('1.0000000000000001 WORK');
+    await expect(review).toContainText('546 proofs'); await expect(review).toContainText('promise, not escrow');
+    expect(await page.evaluate(() => window.jobsSignatureCalls)).toBe(0);
+  });
+  }
+  test(`${url} WORK acceptance reviews separate fees and rechecks spendability before signing`, async ({ page }) => {
+    const controller = await fixture(page, { wallet: true, work: true }); await page.goto(`${url}&job=${job.txid}`); await connect(page);
+    await page.getByRole('button', { name: 'Accept and pay', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Accept and pay 1.0000000000000001 WORK', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Review transaction', exact: true }).click();
+    const review = page.getByRole('dialog', { name: 'Accept delivery and pay', exact: true });
+    await expect(review).toBeVisible(); await expect(review).toContainText('1.0000000000000001 WORK');
+    await expect(review).toContainText(JOBS_WORK_REGISTRY_ADDRESS); await expect(review).toContainText('Separate Mail signal to the worker');
+    await expect(review).toContainText('WORK transfer registry fee'); await expect(review).toContainText(worker);
+    controller.setWorkSpendable('10000000000000000');
+    await page.getByRole('button', { name: 'Continue to wallet', exact: true }).click();
+    await expect(page.getByText(/exceeds your authoritative spendable WORK/)).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0); expect(await page.evaluate(() => window.jobsSignatureCalls)).toBe(0);
+  });
+}
+test('a worker can propose WORK on a proofs brief and assignment freezes its selected currency', async ({ page }) => {
+  await fixture(page, { wallet: true, walletAddress: worker }); await page.goto(`/?jobs=1&job=${job.txid}`); await connect(page);
+  await page.unroute('**/api/v1/**'); const controller = await fixture(page);
+  controller.change({ status: 'open', headTxid: job.txid, workerAddress: '', proposalTxid: '', assignmentTxid: '', deliveryTxid: '' });
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await page.getByRole('button', { name: 'Propose work', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Reward currency', exact: true }).selectOption('WORK');
+  await page.getByRole('textbox', { name: 'Proposed reward in WORK', exact: false }).fill('0.0000000000000001');
+  await expect(page.getByRole('button', { name: 'Review transaction', exact: true })).toBeEnabled();
+  await expect.poll(() => page.evaluate(address => JSON.parse(localStorage.getItem(`proofofwork.jobs.draft.v1:livenet:${address}`)).rewardAsset, worker)).toBe('WORK');
+});
+for (const url of ['/?jobs=1', '/?folder=jobs']) {
+  for (const width of [390, 1440]) {
+  test(`${url} paid WORK totals and receipt preserve every decimal at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 }); await fixture(page, { paid: true, work: true }); await page.goto(url);
+    await expect(page.locator('.jobs-card-reward')).toContainText('1.0000000000000001 WORK');
+    await expect(page.getByLabel('Confirmed Jobs reward payments')).toContainText('0 proofs');
+    await expect(page.getByLabel('Confirmed Jobs reward payments')).toContainText('1.0000000000000001 WORK');
+    await page.getByRole('button', { name: job.title, exact: true }).click();
+    await page.getByRole('button', { name: 'Work receipt', exact: true }).click();
+    await expect(page.locator('.jobs-receipt')).toContainText('1.0000000000000001 WORK');
+    await expect(page.locator('.jobs-receipt')).toContainText('Acceptance and direct payment');
+    expect(await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: innerWidth }))).toEqual({ width, viewport: width });
+    await snapshotTop(page); await page.screenshot({ path: `/tmp/jobs-work-ui-receipt-${url.includes('folder') ? 'computer' : 'standalone'}-${width}.png`, fullPage: true });
+  });
+  }
+}
+test('WORK acceptance fails closed during WORK protocol pause', async ({ page }) => {
+  await fixture(page, { wallet: true, work: true, workAdmission: false }); await page.goto(`/?jobs=1&job=${job.txid}`); await connect(page);
+  await page.getByRole('button', { name: 'Accept and pay', exact: true }).click();
+  await page.getByRole('button', { name: 'Review transaction', exact: true }).click();
+  await expect(page.getByText('WORK Q16 transfer admission is unavailable. No transaction was created.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0); expect(await page.evaluate(() => window.jobsSignatureCalls)).toBe(0);
+});
+test('unknown WORK broadcast retains exact currency and blocks duplicate preparation', async ({ page }) => {
+  await fixture(page, { wallet: true, unknown: true, work: true }); await page.goto('/?jobs=1'); await connect(page);
+  await page.getByRole('button', { name: 'Resume draft', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Reward currency', exact: true })).toHaveValue('WORK');
+  await expect(page.getByRole('textbox', { name: 'Offered reward in WORK', exact: false })).toHaveValue('1.0000000000000001');
+  await page.getByRole('button', { name: 'Review transaction', exact: true }).click();
+  await expect(page.getByText(/Fixture transaction status unavailable|unresolved or pending/).first()).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0); expect(await page.evaluate(() => window.jobsSignatureCalls)).toBe(0);
+});
+test('a WORK proposal on an existing proof brief freezes the WORK terms in assignment review', async ({ page }) => {
+  const controller = await fixture(page, { wallet: true, work: true });
+  controller.change({ status: 'open', headTxid: job.txid, workerAddress: '', proposalTxid: '', assignmentTxid: '', deliveryTxid: '', reward: { asset: 'proofs', amountSats: '900' }, offeredReward: { asset: 'proofs', amountSats: '900' }, rewardSats: '900', offeredRewardSats: '900' });
+  await page.goto(`/?jobs=1&job=${job.txid}`); await connect(page);
+  await page.getByRole('button', { name: 'Proposals (1)', exact: true }).click();
+  await expect(page.locator('.jobs-proposal')).toContainText('1.0000000000000001 WORK');
+  await page.getByRole('button', { name: 'Review assignment', exact: true }).click();
+  await expect(page.locator('.jobs-agreement')).toContainText('1.0000000000000001 WORK');
+  await page.getByRole('button', { name: 'Review transaction', exact: true }).click();
+  const review = page.getByRole('dialog', { name: 'Assign proposal', exact: true });
+  await expect(review).toBeVisible(); await expect(review).toContainText('Assigned proposal reward');
+  await expect(review).toContainText('1.0000000000000001 WORK'); await expect(review).toContainText(worker);
+  expect(await page.evaluate(() => window.jobsSignatureCalls)).toBe(0);
 });

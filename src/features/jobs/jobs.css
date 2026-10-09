@@ -62,6 +62,10 @@
 .jobs-empty p { max-width: 480px; margin: 12px auto 24px; }
 .jobs-load-more { display: flex !important; margin: 24px auto; }
 .jobs-saved-draft { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; margin: 16px 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; overflow-wrap: anywhere; }
+.jobs-paid-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+.jobs-paid-stats > div { min-width: 0; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.jobs-paid-stats span { display: block; color: var(--text-soft); font-size: 11px; margin-bottom: 8px; }
+.jobs-paid-stats strong { display: block; max-width: 100%; overflow: auto; white-space: nowrap; font: 500 20px var(--font-display); font-variant-numeric: tabular-nums; }
 .jobs-detail { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-soft); min-width: 0; overflow: hidden; }
 .jobs-detail-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 26px; }
 .jobs-detail-heading > div:first-child { min-width: 0; }
@@ -82,7 +86,7 @@
 .jobs-proposal, .jobs-delivery { min-width: 0; padding: 20px 0; border-bottom: 1px solid var(--border); }
 .jobs-proposal:last-child, .jobs-delivery:last-child { border-bottom: 0; }
 .jobs-proposal > div:first-child { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--text-muted); }
-.jobs-proposal > strong { display: block; margin: 16px 0; font: 500 20px var(--font-display); }
+.jobs-proposal > strong { display: block; max-width: 100%; overflow: auto; white-space: nowrap; margin: 16px 0; font: 500 20px var(--font-display); }
 .jobs-row-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .jobs-tx-link { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--accent); font: 11px var(--font-mono); }
 .jobs-file-evidence { min-width: 0; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm); margin: 16px 0; padding: 12px 16px; }
@@ -110,7 +114,8 @@
 .jobs-editor-reference code { margin-top: 8px; }
 .jobs-agreement { padding: 22px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); margin: 20px 0; min-width: 0; }
 .jobs-agreement > svg { color: var(--accent); }
-.jobs-agreement h4 { font: 500 20px var(--font-display); }
+.jobs-agreement h4 { max-width: 100%; overflow: auto; font: 500 20px var(--font-display); }
+.jobs-agreement > strong { display: block; max-width: 100%; overflow: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .jobs-agreement > p { font-size: 13px; line-height: 1.75; }
 .jobs-reference-input { font-family: var(--font-mono) !important; font-size: 11px !important; }
 .jobs-upload-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -154,7 +159,7 @@
   .jobs-detail > .jobs-tabs { max-width: calc(100% - 36px); width: calc(100% - 36px); box-sizing: border-box; }
   .jobs-detail > .jobs-tabs button { flex: 1; }
   .jobs-detail-body, .jobs-receipt { padding: 8px 18px 22px; }
-  .jobs-receipt-fields, .jobs-editor-reference, .jobs-editor-costs { grid-template-columns: minmax(0, 1fr); }
+  .jobs-receipt-fields, .jobs-editor-reference, .jobs-editor-costs, .jobs-paid-stats { grid-template-columns: minmax(0, 1fr); }
   .jobs-history { margin: 0 18px 20px; padding: 6px 12px; }
   .jobs-editor-actions > button { width: 100%; }
   .jobs-saved-draft { flex-direction: column; align-items: stretch; }

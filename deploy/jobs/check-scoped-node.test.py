@@ -32,6 +32,10 @@ class ControllerTests(unittest.TestCase):
             'releaseId':'abcdef123456-20261007T010000Z', 'services':list(module.UNITS),
             'sourceCommit':'abcdef123456'+'a'*28, 'baselineHead':'b'*40, 'sources':rows,
             'dependencies':deps, 'nodeSha256':'c'*64,
+            'helperReview':{'baseCommit':'b'*40,'sourceCommit':'abcdef123456'+'a'*28,'upgrades':[]},
+            'protectedServices':{'files':{unit:'c'*64 for unit in module.PROTECTED},
+                'states':{unit:{'ActiveState':'active','MainPID':'123','WorkingDirectory':str(module.ROOT)}
+                    for unit in module.PROTECTED}},
             'gateway':{'files':{unit:'f'*64 for unit in module.GATEWAY},
                 'active':{unit:'active' for unit in module.GATEWAY},
                 'unitFileStates':{module.GATEWAY[0]:'enabled',module.GATEWAY[1]:'static'}},
@@ -95,7 +99,8 @@ class ControllerTests(unittest.TestCase):
                 **({'MainPID':'321' if live[unit]=='active' else '0'} if unit.endswith('.service') else {})}
                 for unit in module.GATEWAY}
         def states(units):
-            return {unit:{'ActiveState':live[unit],'MainPID':'123' if live[unit]=='active' else '0'} for unit in units}
+            return {unit:{'ActiveState':live[unit],'MainPID':'123' if live[unit]=='active' else '0',
+                'WorkingDirectory':str(module.ROOT)} for unit in units}
         with patch.object(module.subprocess,'run',side_effect=run), patch.object(module,'states',side_effect=states), \
                 patch.object(module,'gateway_states',side_effect=gateway):
             with self.assertRaises(subprocess.CalledProcessError): run(['/usr/bin/systemctl','stop',module.UNITS[0]])
@@ -131,10 +136,12 @@ class ControllerTests(unittest.TestCase):
 
     def test_install_and_rollback_preserve_original_bytes_metadata_and_new_helpers(self):
         module.install(self.root,self.backup,self.manifest['sources'],self.metadata,True,'test')
+        module.verify_sources(self.root,self.manifest,self.metadata)
         for row in self.manifest['sources']:
             self.assertEqual(module.sha((self.root/row['path']).read_bytes()),row['after'])
             self.assertEqual((self.root/row['path']).stat().st_mode & 0o777,0o640)
         module.install(self.root,self.backup,self.manifest['sources'],self.metadata,False,'test')
+        module.verify_sources(self.root,self.manifest,self.metadata,rollback=True)
         for row in self.manifest['sources']:
             self.assertEqual(module.sha((self.root/row['path']).read_bytes()),row['before'] or row['after'])
 
@@ -149,6 +156,7 @@ class ControllerTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError,'injected'):
                 module.install(self.root,self.backup,self.manifest['sources'],self.metadata,True,'partial')
         module.install(self.root,self.backup,self.manifest['sources'],self.metadata,False,'partial')
+        module.verify_sources(self.root,self.manifest,self.metadata,rollback=True)
         for row in self.manifest['sources']:
             file=self.root/row['path']
             self.assertEqual(module.sha(file.read_bytes()) if file.exists() else None,
@@ -157,5 +165,74 @@ class ControllerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'unexpected source'):
             module.install(self.root,self.backup,self.manifest['sources'],self.metadata,False,'refuse')
         self.assertEqual(file.read_bytes(),b'new audit authority')
+
+    def existing_helper(self, manifest, path='server/jobs.mjs'):
+        before = b'// released Jobs helper\nexport {};\n'
+        file = self.root/path; file.write_bytes(before); file.chmod(0o640)
+        index = next(i for i,row in enumerate(manifest['sources']) if row['path'] == path)
+        row = manifest['sources'][index]; row['before'] = module.sha(before)
+        manifest['dependencies'][path] = row['before']
+        (self.backup/f'before-{index}.mjs').write_bytes(before)
+        review = {'path':path,'activeSha256':row['before'],'baseSha256':row['before'],
+            'repositoryCandidateSha256':row['after'],'reason':'Exact WORK Jobs reward verification.'}
+        manifest['helperReview']['upgrades'].append(review)
+        return row, review
+
+    def test_changed_existing_helpers_require_exact_remote_upgrade_pins(self):
+        manifest = copy.deepcopy(self.manifest); row, review = self.existing_helper(manifest)
+        module.fence(self.root,manifest,module.validate_manifest(manifest))
+        for key in ('activeSha256','baseSha256','repositoryCandidateSha256'):
+            changed = copy.deepcopy(manifest); changed['helperReview']['upgrades'][0][key] = 'f'*64
+            with self.assertRaisesRegex(ValueError,'source pins'): module.validate_manifest(changed)
+        changed = copy.deepcopy(manifest); changed['helperReview']['upgrades'] = []
+        with self.assertRaisesRegex(ValueError,'explicit upgrade review'): module.validate_manifest(changed)
+        for field,value in [('sourceCommit','f'*40),('baseCommit','f'*39)]:
+            changed = copy.deepcopy(manifest); changed['helperReview'][field] = value
+            with self.assertRaisesRegex(ValueError,'provenance'): module.validate_manifest(changed)
+        for change in ('duplicate','unchanged','wrong-path','blank-reason'):
+            changed=copy.deepcopy(manifest); upgrade=changed['helperReview']['upgrades'][0]
+            if change == 'duplicate': changed['helperReview']['upgrades'].append(upgrade)
+            elif change == 'unchanged':
+                target=next(r for r in changed['sources'] if r['path']==row['path']); target['before']=target['after']
+            elif change == 'wrong-path': upgrade['path']='server/proof-api.mjs'
+            else: upgrade['reason']=' '
+            with self.assertRaises(ValueError): module.validate_manifest(changed)
+
+    def test_existing_helper_rollback_restores_original_bytes_and_metadata(self):
+        manifest=copy.deepcopy(self.manifest); row,_=self.existing_helper(manifest)
+        module.validate_manifest(manifest)
+        module.install(self.root,self.backup,manifest['sources'],self.metadata,True,'upgrade')
+        self.assertEqual(module.sha((self.root/row['path']).read_bytes()),row['after'])
+        module.install(self.root,self.backup,manifest['sources'],self.metadata,False,'upgrade')
+        module.verify_sources(self.root,manifest,self.metadata,rollback=True)
+        self.assertEqual(module.sha((self.root/row['path']).read_bytes()),row['before'])
+        self.assertEqual((self.root/row['path']).stat().st_mode & 0o777,0o640)
+
+    def test_rollback_verification_refuses_byte_metadata_or_inactive_dependency_drift(self):
+        manifest=copy.deepcopy(self.manifest)
+        dependency=self.root/'server/accepted-inactive-helper.mjs'
+        dependency.write_bytes(b'// accepted inactive helper\n'); dependency.chmod(0o640)
+        manifest['dependencies']['server/accepted-inactive-helper.mjs']=module.sha(dependency.read_bytes())
+        module.install(self.root,self.backup,manifest['sources'],self.metadata,True,'verify')
+        module.install(self.root,self.backup,manifest['sources'],self.metadata,False,'verify')
+        module.verify_sources(self.root,manifest,self.metadata,rollback=True)
+        target=self.root/'server/proof-api.mjs'; original=target.read_bytes()
+        target.write_bytes(b'// concurrent unapproved edit\n')
+        with self.assertRaisesRegex(ValueError,'Restored bytes differ'):
+            module.verify_sources(self.root,manifest,self.metadata,rollback=True)
+        target.write_bytes(original); target.chmod(0o600)
+        with self.assertRaisesRegex(ValueError,'metadata differs'):
+            module.verify_sources(self.root,manifest,self.metadata,rollback=True)
+        target.chmod(0o640); dependency.write_bytes(b'// concurrent inactive edit\n')
+        with self.assertRaisesRegex(ValueError,'Unrelated source changed'):
+            module.verify_sources(self.root,manifest,self.metadata,rollback=True)
+
+    def test_runtime_service_pins_require_api_and_worker(self):
+        for key in ('files','states'):
+            manifest=copy.deepcopy(self.manifest); del manifest['protectedServices'][key][module.UNITS[0]]
+            with self.assertRaisesRegex(ValueError,'protected service pins'): module.validate_manifest(manifest)
+        for unit in module.PROTECTED:
+            manifest=copy.deepcopy(self.manifest); manifest['protectedServices']['states'][unit]['MainPID']='0'
+            with self.assertRaisesRegex(ValueError,'protected service pins'): module.validate_manifest(manifest)
 
 if __name__ == '__main__': unittest.main()

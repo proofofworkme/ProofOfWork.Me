@@ -13,6 +13,7 @@ BACKUPS = Path('/data/proofofwork-release-backups')
 LOCK = Path('/run/proofofwork-audit29-ops.lock')
 HOLD = Path('/run/proofofwork-search-release.hold')
 UNITS = ('proofofwork-api.service', 'proofofwork-indexer-worker.service')
+PROTECTED = UNITS
 GATEWAY = ('proofofwork-api-wg.socket', 'proofofwork-api-wg.service')
 AUTHORITY = ('bitcoind.service', 'electrs.service', 'postgresql@16-main.service')
 SEARCH = ('proofofwork-search-index.service', 'proofofwork-search-index.timer')
@@ -106,12 +107,42 @@ def validate_manifest(m):
         raw = base64.b64decode(row['base64'], validate=True)
         require(len(raw) <= 10*1024**2 and sha(raw) == row['after'], 'Candidate bytes differ')
         raw.decode('utf-8'); candidates[row['path']] = raw
+    review = m.get('helperReview')
+    require(isinstance(review, dict) and set(review) == {'baseCommit', 'sourceCommit', 'upgrades'}
+        and isinstance(review['baseCommit'], str) and re.fullmatch('[0-9a-f]{40}', review['baseCommit'])
+        and review['sourceCommit'] == m['sourceCommit'], 'Invalid helper review provenance')
+    upgrades = review['upgrades']
+    require(isinstance(upgrades, list) and len(upgrades) <= len(NEW), 'Invalid helper upgrade reviews')
+    changed = {row['path']:row for row in rows if row['path'] in NEW
+        and row['before'] is not None and row['before'] != row['after']}
+    fields = {'path', 'activeSha256', 'baseSha256', 'repositoryCandidateSha256', 'reason'}
+    seen = set()
+    for upgrade in upgrades:
+        require(isinstance(upgrade, dict) and set(upgrade) == fields
+            and upgrade['path'] in changed and upgrade['path'] not in seen,
+            'Invalid helper upgrade allowlist')
+        seen.add(upgrade['path']); row = changed[upgrade['path']]
+        require(upgrade['activeSha256'] == row['before'] and upgrade['baseSha256'] == row['before']
+            and upgrade['repositoryCandidateSha256'] == row['after'], 'Helper upgrade source pins differ')
+        require(isinstance(upgrade['reason'], str) and 0 < len(upgrade['reason'].strip())
+            and len(upgrade['reason']) <= 2000, 'Helper upgrade requires review reason')
+    require(seen == set(changed), 'Changed Jobs helper requires explicit upgrade review')
     deps = m.get('dependencies')
     require(isinstance(deps, dict) and 1 <= len(deps) <= 2000 and
         {'package.json', 'package-lock.json'} <= deps.keys(), 'Missing dependencies')
     for path, expected in deps.items():
         source_path(path); require(isinstance(expected, str) and SHA.fullmatch(expected), 'Invalid dependency pin')
     require(isinstance(m.get('nodeSha256'), str) and SHA.fullmatch(m['nodeSha256']), 'Missing Node pin')
+    protected = m.get('protectedServices')
+    require(isinstance(protected, dict) and set(protected) == {'files', 'states'}
+        and set(protected['files']) == set(PROTECTED)
+        and set(protected['states']) == set(PROTECTED), 'Missing protected service pins')
+    require(all(isinstance(value, str) and SHA.fullmatch(value) for value in protected['files'].values())
+        and all(isinstance(row, dict) and set(row) == {'ActiveState', 'MainPID', 'WorkingDirectory'}
+            and row['ActiveState'] == 'active' and isinstance(row['MainPID'], str)
+            and row['MainPID'].isdigit() and int(row['MainPID']) > 0
+            and row['WorkingDirectory'] == str(ROOT) for row in protected['states'].values()),
+        'Invalid protected service pins')
     gateway = m.get('gateway')
     require(isinstance(gateway, dict) and set(gateway) == {'files', 'active', 'unitFileStates'}
         and all(isinstance(gateway[key], dict) and set(gateway[key]) == set(GATEWAY)
@@ -145,6 +176,23 @@ def ctl(*args):
 def states(units):
     return {unit: dict(line.split('=', 1) for line in ctl('show', unit, '-p', 'ActiveState',
         '-p', 'MainPID', '-p', 'WorkingDirectory').splitlines()) for unit in units}
+
+def require_protected_services(pins, phase='baseline'):
+    require(phase in ('baseline', 'drained', 'restored'), 'Unknown protected service phase')
+    actual = states(PROTECTED)
+    if phase == 'baseline':
+        require(actual == pins['states'], 'Protected service changed')
+    elif phase == 'drained':
+        require(all(row['ActiveState'] == 'inactive' and row['MainPID'] == '0'
+            and row['WorkingDirectory'] == str(ROOT) for row in actual.values()),
+            'Runtime services not drained')
+    else:
+        require(all(row['ActiveState'] == 'active' and row['WorkingDirectory'] == str(ROOT)
+            and row['MainPID'].isdigit() and int(row['MainPID']) > 0 for row in actual.values()),
+            'Runtime services not restored')
+    for name, expected in pins['files'].items():
+        require(sha(safe_read(Path('/etc/systemd/system')/name,65536)) == expected,
+            'Protected service unit changed')
 
 def require_search_held(search):
     service, timer = search[SEARCH[0]], search[SEARCH[1]]
@@ -182,6 +230,13 @@ def restore_apps(gateway_pins):
             subprocess.run(['/usr/bin/systemctl', 'start', unit], check=True, timeout=60)
     require_gateway_baseline(gateway_states(), gateway_pins)
 
+def restore_verified_apps(m, authority, search, hold_raw):
+    restore_apps(m['gateway'])
+    require_protected_services(m['protectedServices'], 'restored')
+    require(states(AUTHORITY)==authority and states(SEARCH)==search
+        and safe_read(HOLD,65536)==hold_raw, 'Unrelated recovery state changed')
+    return states(UNITS)
+
 def durable(path, raw):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'wb') as output: output.write(raw); output.flush(); os.fsync(output.fileno())
@@ -203,6 +258,21 @@ def install(root, backup, rows, metadata, candidate, stamp):
         durable(temp, (backup/f'{"candidate" if candidate else "before"}-{index}.mjs').read_bytes())
         uid, gid, mode = metadata[row['path']]; os.chown(temp, uid, gid); os.chmod(temp, mode)
         os.replace(temp, target); sync(target.parent)
+
+def verify_sources(root, m, metadata, rollback=False):
+    for row in m['sources']:
+        target = root/row['path']; raw = safe_read(target, absent=rollback and row['before'] is None)
+        if raw is None:
+            require(rollback and row['before'] is None, 'Missing installed source: '+row['path'])
+            continue
+        expected = row['before'] if rollback and row['before'] is not None else row['after']
+        require(sha(raw) == expected, 'Restored bytes differ: '+row['path'] if rollback
+            else 'Installed bytes differ: '+row['path'])
+        info = target.stat()
+        require((info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == metadata[row['path']],
+            'Source metadata differs: '+row['path'])
+    require(all(sha(safe_read(root/path)) == expected for path,expected in m['dependencies'].items()
+        if path not in ALLOWED), 'Unrelated source changed')
 
 def main():
     require(os.geteuid() == 0 and sys.flags.isolated and len(sys.argv) == 1,
@@ -228,6 +298,7 @@ def main():
     for name, expected in m['searchHold']['bindings']['files'].items():
         require(sha(safe_read(Path('/etc/systemd/system')/name,65536)) == expected, 'Search unit changed')
     search, authority, services = states(SEARCH), states(AUTHORITY), states(UNITS)
+    require_protected_services(m['protectedServices'])
     require_search_held(search)
     for name, expected in m['gateway']['files'].items():
         require(sha(safe_read(Path('/etc/systemd/system')/name,65536)) == expected, 'Gateway unit changed')
@@ -242,7 +313,9 @@ def main():
     backup = BACKUPS/('jobs-'+m['releaseId']+'-'+stamp); backup.mkdir(mode=0o700)
     receipt = {'format':m['format'], 'releaseId':m['releaseId'], 'sourceCommit':m['sourceCommit'],
         'baselineHead':head, 'manifestSha256':sha(raw), 'rollbackRoot':str(backup),
-        'dependencyCount':len(m['dependencies']), 'authority':authority, 'gateway':m['gateway'], 'installed':False,
+        'dependencyCount':len(m['dependencies']), 'authority':authority, 'gateway':m['gateway'],
+        'protectedServices':m['protectedServices'], 'helperReview':m['helperReview'],
+        'servicesBefore':services, 'installed':False,
         'rolledBack':False, 'sources':[{k:v for k,v in row.items() if k != 'base64'} for row in m['sources']]}
     def save():
         temp = backup/'receipt.tmp'; durable(temp,(json.dumps(receipt,indent=2)+'\n').encode())
@@ -259,26 +332,30 @@ def main():
     try:
         receipt['stopRequested']=True; save()
         drain_apps()
+        require_protected_services(m['protectedServices'], 'drained')
         require(states(AUTHORITY)==authority and states(SEARCH)==search and safe_read(HOLD,65536)==hold_raw,
             'Unrelated state changed'); fence(ROOT,m,candidates)
         receipt['sourceWritesStarted']=True; save()
         install(ROOT,backup,m['sources'],metadata,True,stamp); receipt['installed']=True; save()
-        require(all(sha(safe_read(ROOT/row['path']))==row['after'] for row in m['sources']), 'Installed bytes differ')
-        require(all(sha(safe_read(ROOT/path))==expected for path,expected in m['dependencies'].items()
-            if path not in ALLOWED), 'Unrelated source changed')
+        verify_sources(ROOT,m,metadata)
         require_apps_drained()
-        restore_apps(m['gateway'])
-        require(all(row['ActiveState']=='active' and row['WorkingDirectory']==str(ROOT)
-            for row in states(UNITS).values()), 'Services not restarted')
-        require(states(AUTHORITY)==authority and states(SEARCH)==search and safe_read(HOLD,65536)==hold_raw,
-            'Unrelated state changed')
+        require_protected_services(m['protectedServices'], 'drained')
+        receipt['servicesAfter']=restore_verified_apps(m, authority, search, hold_raw)
         receipt['completedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat(); save(); print(json.dumps(receipt),flush=True)
     except BaseException as error:
         receipt['errorClass']=type(error).__name__
-        drain_apps()
-        if receipt.get('sourceWritesStarted'):
-            install(ROOT,backup,m['sources'],metadata,False,stamp)
-        restore_apps(m['gateway'])
-        receipt['rolledBack']=True; receipt['newHelpersRetained']=True; save(); print(json.dumps(receipt),flush=True); raise
+        try:
+            drain_apps()
+            if receipt.get('sourceWritesStarted'):
+                install(ROOT,backup,m['sources'],metadata,False,stamp)
+                verify_sources(ROOT,m,metadata,rollback=True)
+            else:
+                fence(ROOT,m,candidates)
+            receipt['servicesAfterRollback']=restore_verified_apps(m, authority, search, hold_raw)
+            receipt['rolledBack']=True; receipt['newHelpersRetained']=True
+        except BaseException as recovery_error:
+            receipt['recoveryIncomplete']=True; receipt['recoveryErrorClass']=type(recovery_error).__name__
+            save(); print(json.dumps(receipt),flush=True); raise
+        save(); print(json.dumps(receipt),flush=True); raise
 
 if __name__ == '__main__': main()

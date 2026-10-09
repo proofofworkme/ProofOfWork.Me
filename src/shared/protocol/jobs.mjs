@@ -1,7 +1,14 @@
 export const JOBS_BODY_PREFIX = 'pwj1:';
-export const JOBS_VERSION = 1;
+export const JOBS_VERSION = 2;
+export const JOBS_SUPPORTED_VERSIONS = Object.freeze([1, 2]);
 export const JOBS_ACTIVATION_HEIGHT = 970404;
 export const JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH = '00000000000000000000cf98017be585521a2a84e4030e20021565479c6218fe';
+export const JOBS_V2_ACTIVATION_HEIGHT = 970577;
+export const JOBS_V2_ACTIVATION_PREVIOUS_BLOCK_HASH = '00000000000000000001bc401b09150a6f092579644cc5616a828949f48bbd1d';
+export const JOBS_WORK_TOKEN_ID = 'd4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8';
+export const JOBS_WORK_REGISTRY_ADDRESS = '1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV';
+export const JOBS_WORK_SUBATOMS_PER_WORK = '10000000000000000';
+export const JOBS_WORK_MAX_SUBATOMS = '210000000000000000000000';
 export const JOBS_MAX_METADATA_BYTES = 16000;
 export const JOBS_ACTIONS = Object.freeze(['brief', 'propose', 'assign', 'deliver', 'accept', 'cancel']);
 const encoder = new TextEncoder();
@@ -18,22 +25,62 @@ function text(value, max, nonempty = false, clean = false) {
 function proofs(value) {
   return typeof value === 'string' && /^[1-9]\d{0,15}$/u.test(value) && BigInt(value) >= 546n && BigInt(value) <= 2100000000000000n;
 }
+const exactKeys = (value, keys) => object(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+function workSubatoms(value) {
+  return typeof value === 'string' && /^[1-9]\d{0,23}$/u.test(value) && BigInt(value) <= BigInt(JOBS_WORK_MAX_SUBATOMS);
+}
+/** Rewards are exact asset amounts, never a WORK-floor conversion or escrow. */
+export function normalizeJobReward(value) {
+  if (exactKeys(value, ['asset', 'amountSats']) && value.asset === 'proofs' && proofs(value.amountSats)) {
+    return { asset: 'proofs', amountSats: value.amountSats };
+  }
+  if (exactKeys(value, ['asset', 'token', 'amountSubatoms']) && value.asset === 'WORK' &&
+      value.token === JOBS_WORK_TOKEN_ID && workSubatoms(value.amountSubatoms)) {
+    return { asset: 'WORK', token: JOBS_WORK_TOKEN_ID, amountSubatoms: value.amountSubatoms };
+  }
+  return null;
+}
+export const parseJobReward = normalizeJobReward;
+export function jobRewardFromMetadata(metadata) {
+  if (!object(metadata)) return null;
+  return metadata.v === 1 && proofs(metadata.rewardSats)
+    ? { asset: 'proofs', amountSats: metadata.rewardSats }
+    : metadata.v === 2 ? normalizeJobReward(metadata.reward) : null;
+}
+export function parseJobWorkDecimal(value) {
+  if (typeof value !== 'string' || !/^(?:0|[1-9]\d{0,7})(?:\.\d{1,16})?$/u.test(value)) return null;
+  const [whole, fraction = ''] = value.split('.');
+  const subatoms = (BigInt(whole) * BigInt(JOBS_WORK_SUBATOMS_PER_WORK) + BigInt(fraction.padEnd(16, '0'))).toString();
+  return workSubatoms(subatoms) ? subatoms : null;
+}
+export function formatJobWorkSubatoms(value) {
+  if (typeof value !== 'string' || !/^(?:0|[1-9]\d*)$/u.test(value)) throw new Error('Invalid exact WORK amount.');
+  const padded = value.padStart(17, '0'), whole = padded.slice(0, -16), fraction = padded.slice(-16).replace(/0+$/u, '');
+  return fraction ? `${whole}.${fraction}` : whole;
+}
+export function formatJobReward(value) {
+  const reward = normalizeJobReward(value);
+  if (!reward) throw new Error('Invalid Jobs reward.');
+  return reward.asset === 'proofs' ? `${reward.amountSats} proofs` : `${formatJobWorkSubatoms(reward.amountSubatoms)} WORK`;
+}
 function normalize(action, value) {
-  if (!object(value) || value.v !== JOBS_VERSION) return null;
+  if (!object(value) || !JOBS_SUPPORTED_VERSIONS.includes(value.v)) return null;
+  const version = value.v, reward = jobRewardFromMetadata(value);
   let normalized;
-  if (action === 'brief' && text(value.title, 200, true, true) && text(value.scope, 10000, true) && proofs(value.rewardSats)) {
-    normalized = { v: 1, title: value.title, scope: value.scope, rewardSats: value.rewardSats };
-  } else if (action === 'propose' && txid(value.job) && text(value.scope, 10000, true) && proofs(value.rewardSats)) {
-    normalized = { v: 1, job: value.job, scope: value.scope, rewardSats: value.rewardSats };
+  const rewardFields = version === 1 ? { rewardSats: value.rewardSats } : { reward };
+  if (action === 'brief' && text(value.title, 200, true, true) && text(value.scope, 10000, true) && reward) {
+    normalized = { v: version, title: value.title, scope: value.scope, ...rewardFields };
+  } else if (action === 'propose' && txid(value.job) && text(value.scope, 10000, true) && reward) {
+    normalized = { v: version, job: value.job, scope: value.scope, ...rewardFields };
   } else if (action === 'assign' && txid(value.job) && txid(value.proposal)) {
-    normalized = { v: 1, job: value.job, proposal: value.proposal };
+    normalized = { v: version, job: value.job, proposal: value.proposal };
   } else if (action === 'deliver' && txid(value.job) && txid(value.assignment) && text(value.text, 10000, true) &&
       Array.isArray(value.artifacts) && value.artifacts.length <= 16 && value.artifacts.every(txid) && new Set(value.artifacts).size === value.artifacts.length) {
-    normalized = { v: 1, job: value.job, assignment: value.assignment, text: value.text, artifacts: value.artifacts };
+    normalized = { v: version, job: value.job, assignment: value.assignment, text: value.text, artifacts: value.artifacts };
   } else if (action === 'accept' && txid(value.job) && txid(value.delivery)) {
-    normalized = { v: 1, job: value.job, delivery: value.delivery };
+    normalized = { v: version, job: value.job, delivery: value.delivery };
   } else if (action === 'cancel' && txid(value.job) && text(value.reason, 1000, true)) {
-    normalized = { v: 1, job: value.job, reason: value.reason };
+    normalized = { v: version, job: value.job, reason: value.reason };
   }
   return normalized && Object.keys(value).length === Object.keys(normalized).length &&
     Object.keys(normalized).every(key => Object.hasOwn(value, key)) ? normalized : null;

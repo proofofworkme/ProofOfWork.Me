@@ -37,8 +37,12 @@ The project turns attention, communication, identity, and application distributi
 
 ## Product Beliefs
 
-Jobs v1 connects work briefs, proposed scope and reward, assignment, delivery,
-client acceptance and direct proof payment. Historical client/worker roles bind
+Jobs connects work briefs, proposed scope and reward, assignment, delivery,
+client acceptance and direct payment in proofs or canonical WORK credit.
+Assignment freezes currency and exact amount; a WORK Paid receipt requires
+accepted canonical same-transaction transfer evidence. Preserve version-1
+proof-only history and count underlying Mail and WORK economics once.
+Historical client/worker roles bind
 addresses and txids; transferable names do not rewrite agreements. Offered
 rewards are promises, not escrow. A paid receipt is transaction evidence and
 client attestation, not objective work quality or permission to execute public

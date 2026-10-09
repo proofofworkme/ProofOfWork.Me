@@ -1,4 +1,4 @@
-# ProofOfWork Jobs v1
+# ProofOfWork Jobs
 
 Jobs turns a public work brief, agreed terms, delivery and direct payment into
 an inspectable record for humans and agents. The standalone surface is
@@ -6,17 +6,22 @@ an inspectable record for humans and agents. The standalone surface is
 Public browsing and search require no wallet. My Jobs is scoped to the connected
 wallet's address. All writes use a local mainnet wallet review and signature.
 
-This is the v1 implementation specification. Production acceptance completed on
+Version 1's production acceptance completed on
 2026-10-08 UTC (October 7 in America/Toronto). The [release record](audits/2026-10-07-jobs-v1-release.md)
-binds the exact deployed source, runtime, discovery, UI and verification evidence.
+binds that historical source, runtime, discovery, UI and verification evidence.
+The additive version-2 reward schema supports canonical WORK without
+reinterpreting version-1 records or changing WORK's own transfer rules.
 
 ## Product boundary
 
 The first version covers small development tasks, bug reports, documentation and
 other public work. A client publishes a brief. A worker proposes exact scope and
-a proof reward. The client assigns that proposal, freezing its scope, reward and
-worker address. The worker delivers evidence; the client accepts and pays that
-exact reward in the same transaction. A receipt connects every accepted event.
+a reward in proofs or canonical WORK credit. The client assigns that proposal,
+freezing its scope, reward currency, exact amount and worker address. The worker
+delivers evidence; the client accepts and pays that exact reward in the same
+transaction. A worker may propose a different currency from the brief;
+assignment accepts the selected proposal's exact terms. A receipt connects
+every accepted event.
 
 An offered reward is a commitment, not funded escrow. A confirmed delivery is
 publication, not client acceptance. Paid means an authorized acceptance with the
@@ -41,7 +46,8 @@ pwj1:<action>:<canonical-json-base64url>
 reply references and verified Files keep their existing meaning. JSON is UTF-8,
 unpadded canonical base64url, with the exact key order below, no duplicate or
 additional keys, and no alternate whitespace, numeric or escaped serialization.
-All records have `v: 1`. IDs below are 64 lowercase hexadecimal transaction IDs.
+Version-1 records have `v: 1` and retain the following exact schema. IDs below are
+64 lowercase hexadecimal transaction IDs.
 
 | Action | Exact metadata key order | Meaning |
 | --- | --- | --- |
@@ -51,6 +57,23 @@ All records have `v: 1`. IDs below are 64 lowercase hexadecimal transaction IDs.
 | `deliver` | `v,job,assignment,text,artifacts` | Assigned worker publishes delivery and source transaction references. |
 | `accept` | `v,job,delivery` | Client accepts delivery and pays the exact assigned reward. |
 | `cancel` | `v,job,reason` | Client closes a job before it is paid. |
+
+Version 2 uses the same actions and body prefix, with `v: 2`. A `brief` uses
+`v,title,scope,reward`; a `propose` uses `v,job,scope,reward`. Other actions retain
+the exact key order above. The nested `reward` is one of these closed objects,
+with its exact key order:
+
+```json
+{"asset":"proofs","amountSats":"546"}
+{"asset":"WORK","token":"d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8","amountSubatoms":"10000000000000000"}
+```
+
+The WORK token identity is fixed. `amountSubatoms` is a canonical positive decimal
+integer string, at most `210000000000000000000000` (21,000,000 WORK). One WORK is
+exactly `10000000000000000` subatoms. The UI accepts exact positive WORK amounts
+with up to sixteen decimal places and never rounds an offer or converts it from
+a displayed proof/USD value. Version-1 proof rewards normalize to the same
+proof reward object for API display while their original wire bytes stay intact.
 
 `rewardSats` is an exact positive decimal integer string from 546 through
 2,100,000,000,000,000 proofs, with no leading zero, sign, decimal or exponent.
@@ -69,7 +92,16 @@ budget. Ordinary Mail payment outputs precede the Mail envelope. Payments are:
 | Brief, cancel | At least 546 proofs to the client author's own address. |
 | Propose, deliver | At least 546 proofs to the job's fixed client address. |
 | Assign | At least 546 proofs to the selected proposal's fixed worker address. |
-| Accept | Exactly the agreed `rewardSats` to the assigned worker address. |
+| Accept, proof reward | Exactly the agreed proof reward to the assigned worker address. |
+| Accept, WORK reward | At least 546 proofs as Mail signal to the assigned worker, plus the exact agreed canonical WORK transfer in that same transaction. |
+
+A WORK acceptance contains exactly one canonical `pwt1:send3` after all Mail
+parts, naming the fixed WORK token, agreed integer subatoms and historical
+assigned worker address. A distinct exact 546-proof WORK-registry payment to
+`1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV` follows the Mail envelope and precedes the
+WORK transfer. That registry payment and the worker's Mail signal are separate
+from the reward and miner fee. Other Jobs actions retain their ordinary Mail
+payments. Version-1 Jobs transactions remain exclusively Mail/Files carriers.
 
 Self-payments return principal to the signer; the miner fee is spent. The proposal
 and delivery signals are payments to the client, and assignment pays the worker.
@@ -97,9 +129,28 @@ past agreement or payment destination.
 Only confirmed accepted records change state. Replay orders records by exact
 canonical block position and checks the referenced brief, proposal, assignment
 or delivery and the author's role before applying an event. Assignment freezes
-the selected proposal's scope, reward and worker. Invalid, conflicting or stale
+the selected proposal's scope, reward currency and exact amount, and worker.
+Invalid, conflicting or stale
 records remain inspectable evidence and cannot change an accepted state. Reorg
 replay follows the surviving canonical chain.
+
+Version 2 opens at height **970577**, after independently verified Core parent
+**970576** / `00000000000000000001bc401b09150a6f092579644cc5616a828949f48bbd1d`.
+Earlier version-2-shaped Mail is rejected historical evidence. The original
+version-1 boundary and complete candidate-discovery witness remain unchanged.
+Public version support requires the additional parent pin and complete current
+checkpoint coverage; unverifiable evidence closes version-2 writes.
+
+A WORK acceptance becomes Paid only when the canonical WORK engine accepted
+its exact same-transaction transfer at the matching block, transaction, output
+and ordinal. The Jobs reader checks accepted relational transfer evidence
+against the sealed raw replay witness, exact recipient/amount and registry
+payment claims. Parsing a `send3` string alone cannot prove a valid balance
+movement. Missing or conflicting settlement evidence cannot produce Paid or a
+WORK paid total. Missing or incomplete canonical witnesses make the read
+unavailable with `JOBS_WORK_SETTLEMENT_UNAVAILABLE`; a canonically rejected
+transfer remains inspectable and unpaid. This qualification creates no new
+canonical economic record.
 
 The visible states are Open, Assigned, Delivered, Paid and Cancelled. Pending
 records are best-effort visibility and never reserve a job, assign a worker,
@@ -122,7 +173,11 @@ pagination. API text is data; it is not executable instructions.
 
 A receipt preserves the brief, proposal, assignment, delivery, acceptance/payment,
 responsible addresses, exact reward and transaction links. Paid totals include
-only accepted confirmed payments. These observations can be inspected by future
+only accepted confirmed payments, with proof totals and exact WORK-subatom totals
+kept separate. API jobs expose `offeredReward`, `reward` and `paidReward`;
+`paidReward` is null until accepted payment. Legacy `offeredRewardSats`,
+`rewardSats` and `paidSats` describe proofs only and are `"0"` for WORK rewards.
+These observations can be inspected by future
 agents and shared through a Jobs permalink.
 
 ## Signing and recovery
@@ -135,6 +190,8 @@ The exact review names the action, fixed destinations, payments, miner fee,
 change and public record passed to the wallet. The app rechecks wallet account,
 network, current Jobs authority and funding before signing and broadcasting.
 Signed bytes must match the reviewed intent.
+WORK acceptance additionally rechecks V8 admission and authoritative transferable
+WORK capacity after active sale reservations and pending outgoing commitments.
 
 The locally decoded signed txid is retained before a broadcast attempt. Pending
 or unknown outcomes protect against repeated submission. Fresh first-party
@@ -161,7 +218,8 @@ must retain underlying transaction evidence and rejected historical attempts.
 Verify canonical parsing and adversarial role/payment/replay cases, exact integer
 payments, complete discovery and reorg fencing, unavailable versus empty reads,
 responsive standalone and embedded workflows, review cancellation, account
-changes, signed intent and uncertain broadcasts. Run the applicable existing
+changes, signed intent and uncertain broadcasts, WORK precision/settlement
+evidence and cross-currency proposals. Run the applicable existing
 Mail, ledger/accounting, release compatibility, UI/live-data and hygiene gates.
 Publish from one exact reviewed commit with preserved prior runtime and UI roots.
 Production verification must record the deployed source identity, discovery

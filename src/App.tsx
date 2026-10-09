@@ -4356,7 +4356,7 @@ function folderSubtitle(folder: Folder) {
   if (folder === "publish") return "ProofOfWork articles and shared social activity";
   if (folder === "search") return "Search Computer protocols and public data";
   if (folder === "code") return "On-chain source repositories and revision history";
-  if (folder === "jobs") return "Commission work, inspect delivery, and pay in proofs";
+  if (folder === "jobs") return "Commission work, inspect delivery, and pay in proofs or WORK";
   if (folder === "permission") return "Wallet-bound agent grants and verified permission history";
 
   if (folder === "contacts") {

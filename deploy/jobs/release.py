@@ -44,8 +44,99 @@ def capture(args):
         'baselineHead':snapshot['baselineHead'], 'sourceFiles':len(snapshot['sources']),
         'runtimeDependencies':len(snapshot['dependencyPaths'])}))
 
+def reviewed_merges(path, ns):
+    """Load explicit resolutions, bound to the exact captured/base/candidate bytes."""
+    if path is None: return {}
+    raw = ns.safe_read(path, 65536)
+    value = json.loads(raw)
+    if set(value) != {'format', 'sources'} or value['format'] != 'proof-of-work-jobs-reviewed-merges-v1':
+        raise ValueError('Wrong reviewed merge manifest')
+    rows = value['sources']
+    if not isinstance(rows, list) or len(rows) > len(ns.ALLOWED - ns.NEW):
+        raise ValueError('Wrong reviewed merge count')
+    result = {}
+    fields = {'path', 'activeSha256', 'baseSha256', 'repositoryCandidateSha256',
+        'mergedPath', 'mergedSha256', 'reason'}
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != fields or row['path'] not in ns.ALLOWED - ns.NEW or row['path'] in result:
+            raise ValueError('Wrong reviewed merge allowlist')
+        if not all(isinstance(row[key], str) and ns.SHA.fullmatch(row[key]) for key in
+                ('activeSha256', 'baseSha256', 'repositoryCandidateSha256', 'mergedSha256')):
+            raise ValueError('Invalid reviewed merge source pin')
+        source = Path(row['mergedPath'])
+        if not source.is_absolute() or source.resolve(strict=True) != source or not str(source).startswith('/tmp/'):
+            raise ValueError('Reviewed merge must use a canonical /tmp source')
+        if not isinstance(row['reason'], str) or not row['reason'].strip() or len(row['reason']) > 2000:
+            raise ValueError('Reviewed merge requires an explicit review reason')
+        merged = ns.safe_read(source)
+        if sha(merged) != row['mergedSha256']:
+            raise ValueError('Reviewed merge bytes differ')
+        if re.search(br'(?m)^(<<<<<<< |\|\|\|\|\|\|\| |=======\s*$|>>>>>>> )', merged):
+            raise ValueError('Reviewed merge still contains conflict markers')
+        merged.decode('utf-8')
+        result[row['path']] = {**row, 'mergedBytes':merged}
+    return result
+
+def selected_merge(name, merged, conflict, active, base, candidate, reviewed):
+    row = reviewed.get(name)
+    if row is None:
+        if conflict: raise ValueError('Jobs merge requires explicit review: '+name)
+        return merged, None
+    if any(row[key] != sha(raw) for key, raw in
+            [('activeSha256',active), ('baseSha256',base), ('repositoryCandidateSha256',candidate)]):
+        raise ValueError('Reviewed merge source identity differs: '+name)
+    return row['mergedBytes'], {key:value for key,value in row.items() if key != 'mergedBytes'}
+
+def reviewed_helper_upgrades(path, ns, base_commit, candidate_commit):
+    """Authorize only committed helper replacements with exact reviewed pins."""
+    if path is None: return {}
+    value = json.loads(ns.safe_read(path, 65536))
+    if not isinstance(value, dict) or set(value) != {'format', 'baseCommit', 'sourceCommit', 'sources'} or value['format'] != 'proof-of-work-jobs-reviewed-helper-upgrades-v1':
+        raise ValueError('Wrong reviewed helper upgrade manifest')
+    if value['baseCommit'] != base_commit or value['sourceCommit'] != candidate_commit:
+        raise ValueError('Reviewed helper upgrade commit identity differs')
+    rows = value['sources']
+    if not isinstance(rows, list) or not 1 <= len(rows) <= len(ns.NEW):
+        raise ValueError('Wrong reviewed helper upgrade count')
+    result = {}
+    fields = {'path', 'activeSha256', 'baseSha256', 'repositoryCandidateSha256', 'reason'}
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != fields or row['path'] not in ns.NEW or row['path'] in result:
+            raise ValueError('Wrong reviewed helper upgrade allowlist')
+        if not all(isinstance(row[key], str) and ns.SHA.fullmatch(row[key]) for key in ('activeSha256', 'baseSha256', 'repositoryCandidateSha256')):
+            raise ValueError('Invalid reviewed helper upgrade source pin')
+        if not isinstance(row['reason'], str) or not row['reason'].strip() or len(row['reason']) > 2000:
+            raise ValueError('Reviewed helper upgrade requires an explicit review reason')
+        result[row['path']] = row
+    return result
+
+def helper_baseline(name, current, candidate, preserve_existing, *, upgrade_mode=False, base=None, upgrade=None):
+    """Keep first-install/preservation behavior; upgrades need distinct review."""
+    if upgrade_mode:
+        if preserve_existing: raise ValueError('Conflicting Jobs helper modes')
+        if current is None: raise ValueError('Missing existing Jobs helper: '+name)
+        raw = base64.b64decode(current['base64'], validate=True)
+        if sha(raw) != current['sha256']: raise ValueError('Captured source hash differs: '+name)
+        if raw != base: raise ValueError('Existing Jobs helper differs from exact base commit: '+name)
+        if candidate == base:
+            if upgrade is not None: raise ValueError('Reviewed helper upgrade does not change helper: '+name)
+        else:
+            if upgrade is None: raise ValueError('Jobs helper upgrade requires explicit review: '+name)
+            if any(upgrade[key] != sha(value) for key, value in [('activeSha256',raw), ('baseSha256',base), ('repositoryCandidateSha256',candidate)]):
+                raise ValueError('Reviewed helper upgrade source identity differs: '+name)
+        return current['sha256']
+    if upgrade is not None or base is not None: raise ValueError('Helper upgrade review requires explicit upgrade mode')
+    if not preserve_existing:
+        if current is not None: raise ValueError('New Jobs helper already exists: '+name)
+        return None
+    if current is None: raise ValueError('Missing existing Jobs helper: '+name)
+    raw = base64.b64decode(current['base64'], validate=True)
+    if sha(raw) != current['sha256']: raise ValueError('Captured source hash differs: '+name)
+    if raw != candidate: raise ValueError('Existing Jobs helper differs from committed candidate: '+name)
+    return current['sha256']
+
 def native_jobs_overlay(raw, active_indexer):
-    """Mirror the already accepted Code native accessor for new Jobs closure."""
+    """Preserve the exact accepted native accessor on installation and upgrade."""
     source = raw.decode(); active = active_indexer.decode()
     if 'read_work_transition_payload_v1' not in active: return raw, False
     if "import { assertNativeTransitionStorageContract }" not in active:
@@ -57,7 +148,13 @@ def native_jobs_overlay(raw, active_indexer):
   const [events, transition] = await Promise.all(['''
     query = 'SELECT block_height,block_hash,payload FROM proof_indexer.work_amo_block_transitions WHERE network=$1 AND block_height=$2 AND block_hash=$3'
     replacement = 'SELECT block_height,block_hash,proof_indexer.read_work_transition_payload_v1(network,block_height,block_hash,payload) AS payload FROM proof_indexer.work_amo_block_transitions WHERE network=$1 AND block_height=$2 AND block_hash=$3'
-    if source.count(old) != 1: raise ValueError('Jobs closure boundary differs')
+    if source.count(new) == 1 and source.count(old) == 0:
+        start = source.index(new); end = source.index('\nasync function bootstrapJobsCandidates', start)
+        fragment = source[start:end]
+        if fragment.count(replacement) != 1 or query in fragment:
+            raise ValueError('Jobs native transition query differs')
+        return raw, True
+    if source.count(old) != 1 or new in source: raise ValueError('Jobs closure boundary differs')
     start = source.index(old); end = source.index('\nasync function bootstrapJobsCandidates', start)
     fragment = source[start:end]
     if fragment.count(query) != 1: raise ValueError('Jobs native transition query differs')
@@ -84,7 +181,9 @@ def plan(args):
         raise ValueError('Require exact committed candidate checkout')
     if git(repo, 'status', '--porcelain', '--untracked-files=all'):
         raise ValueError('Candidate checkout must be clean before release planning')
-    if not re.fullmatch('[0-9a-f]{40}', args.base_commit): raise ValueError('Require full pre-Jobs source commit')
+    if not re.fullmatch('[0-9a-f]{40}', args.base_commit): raise ValueError('Require full previous source commit')
+    git(repo, 'merge-base', '--is-ancestor', args.base_commit, args.commit)
+    reviewed = reviewed_merges(getattr(args, 'reviewed_merges', None), ns)
     release = args.release_id or args.commit[:12]+'-'+datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     if not re.fullmatch('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', release) or release.split('-')[0] != args.commit[:12]:
         raise ValueError('Release must bind the exact source commit')
@@ -96,6 +195,17 @@ def plan(args):
     for path in (ROOT/'release.py', ROOT/'capture-node.py', ROOT/'scoped-node.py', ROOT/'rollout-node.py', ROOT/'bootstrap-node.py', holder):
         if path.read_bytes() != git(repo, 'show', args.commit+':'+str(path.relative_to(repo))):
             raise ValueError('Tool differs from committed candidate: '+path.name)
+    preserve_existing = getattr(args, 'preserve_existing_helpers', False)
+    if type(preserve_existing) is not bool: raise ValueError('Invalid preserve-existing-helpers mode')
+    upgrade_path = getattr(args, 'reviewed_helper_upgrades', None)
+    upgrade_mode = upgrade_path is not None
+    if preserve_existing and upgrade_mode: raise ValueError('Conflicting Jobs helper modes')
+    upgrades = reviewed_helper_upgrades(upgrade_path, ns, args.base_commit, args.commit)
+    helper_candidates = {name:git(repo, 'show', args.commit+':'+name) for name in sorted(ns.NEW)}
+    helper_bases = {name:git(repo, 'show', args.base_commit+':'+name) for name in sorted(ns.NEW)} if upgrade_mode else {}
+    helper_before = {name:helper_baseline(name, snapshot['sources'].get(name), candidate, preserve_existing,
+        upgrade_mode=upgrade_mode, base=helper_bases.get(name), upgrade=upgrades.get(name))
+        for name, candidate in helper_candidates.items()}
     args.output.mkdir(mode=0o700)
     active_root = args.output/'captured-runtime'; active_root.mkdir(mode=0o700)
     for name, row in snapshot['sources'].items():
@@ -104,11 +214,10 @@ def plan(args):
         target = active_root/name; target.parent.mkdir(parents=True, exist_ok=True, mode=0o700); save(target,raw)
     candidates, rows, reviews = {}, [], []
     for name in sorted(ns.ALLOWED):
-        candidate = git(repo, 'show', args.commit+':'+name)
+        candidate = helper_candidates[name] if name in ns.NEW else git(repo, 'show', args.commit+':'+name)
         current = snapshot['sources'].get(name)
         if name in ns.NEW:
-            if current is not None: raise ValueError('New Jobs helper already exists: '+name)
-            merged = candidate; before = None; conflict = False; resolved = False
+            merged = candidate; before = helper_before[name]; conflict = False; resolved = False; resolution = None
         else:
             if current is None: raise ValueError('Missing active source: '+name)
             before = current['sha256']; base = git(repo, 'show', args.base_commit+':'+name)
@@ -120,9 +229,10 @@ def plan(args):
             resolved = False
             if conflict:
                 save(location.with_name(location.name+'.conflicted'), merged)
-                if name != 'scripts/backfill-proof-indexer.mjs' or result.returncode != 1:
-                    raise ValueError('Jobs merge requires review: '+name)
-                merged = resolve_jobs_activation_import_conflict(merged); resolved = True
+                if name == 'scripts/backfill-proof-indexer.mjs' and result.returncode == 1 and name not in reviewed:
+                    merged = resolve_jobs_activation_import_conflict(merged); resolved = True
+            merged, resolution = selected_merge(name, merged, conflict and not resolved,
+                (active_root/name).read_bytes(), base, candidate, reviewed)
             save(location, merged)
         adapted = False
         if name == 'scripts/backfill-proof-indexer.mjs':
@@ -133,13 +243,17 @@ def plan(args):
         rows.append({'path':name,'before':before,'after':sha(merged),'base64':base64.b64encode(merged).decode()})
         reviews.append({'path':name,'before':before,'after':sha(merged),'repositoryCandidateSha256':sha(candidate),
             'preservedNativeOverlay':adapted,'cleanThreeWayMerge':not conflict,
-            'reviewedAdditiveImportConflict':resolved,'syntaxVerified':True})
-    deps = {name:snapshot['sources'][name]['sha256'] for name in snapshot['dependencyPaths']}
+            'reviewedAdditiveImportConflict':resolved,'explicitResolution':resolution,
+            'explicitHelperUpgrade':upgrades.get(name),'syntaxVerified':True})
+    if set(reviewed) - candidates.keys(): raise ValueError('Unused reviewed merge input')
+    deps = {name:row['sha256'] for name,row in snapshot['sources'].items()}
     for row in rows:
         if row['before'] is not None: deps[row['path']] = row['before']
     template = {'format':'proof-of-work-jobs-scoped-runtime-v1','sourceCommit':args.commit,
         'releaseId':release,'baselineHead':snapshot['baselineHead'],'services':list(ns.UNITS),
         'sources':rows,'dependencies':deps,'nodeSha256':snapshot['nodeSha256'],'gateway':snapshot['gateway'],
+        'protectedServices':snapshot['protectedServices'],
+        'helperReview':{'baseCommit':args.base_commit,'sourceCommit':args.commit,'upgrades':list(upgrades.values())},
         'searchHold':{'markerSha256':'0'*64,'bindings':{'releaseId':release,'attempt':'initial','files':snapshot['searchFiles']}}}
     ns.validate_manifest(template); ns.fence(active_root, template, candidates)
     preview = {'format':'proof-of-work-jobs-rollout-plan-v1','releaseId':release,'sourceCommit':args.commit,
@@ -149,7 +263,7 @@ def plan(args):
         'runtimeManifestTemplate':template,'nodePath':snapshot['nodePath'],'workerUnitSha256':snapshot['workerUnitSha256'],
         'rolloutSupervisorSha256':sha((ROOT/'rollout-node.py').read_bytes()),
         'bootstrapSupervisorSha256':sha((ROOT/'bootstrap-node.py').read_bytes()),
-        'reviews':reviews,'productionMutation':False}
+        'reviews':reviews,'reviewedHelperUpgrades':list(upgrades.values()),'productionMutation':False}
     raw = encoded(preview)
     if len(raw) > 20*1024**2: raise ValueError('Rollout manifest exceeds controller bound')
     save(args.output/'plan.json',raw); save(args.output/'review.json',encoded(reviews))
@@ -188,7 +302,13 @@ def main():
     p = sub.add_parser('capture'); p.add_argument('output', type=Path); p.set_defaults(fn=capture)
     p = sub.add_parser('plan'); p.add_argument('repository', type=Path); p.add_argument('commit');
     p.add_argument('base_commit'); p.add_argument('capture', type=Path); p.add_argument('output', type=Path)
-    p.add_argument('--release-id'); p.set_defaults(fn=plan)
+    p.add_argument('--release-id'); p.add_argument('--reviewed-merges', type=Path)
+    helper_mode = p.add_mutually_exclusive_group()
+    helper_mode.add_argument('--preserve-existing-helpers', action='store_true',
+        help='Require all three Jobs helpers to exist and match committed candidate bytes exactly; no helper upgrade')
+    helper_mode.add_argument('--reviewed-helper-upgrades', type=Path,
+        help='Review-bound committed helper upgrades; require every current helper to match the exact base commit')
+    p.set_defaults(fn=plan)
     for phase in ('overlay','bootstrap'):
         p = sub.add_parser(phase); p.add_argument('plan',type=Path); p.add_argument('receipt',type=Path); p.set_defaults(fn=overlay,phase=phase)
     args = parser.parse_args(); os.umask(0o077); args.fn(args)

@@ -59,6 +59,8 @@ def capture(controller):
         'sources': sources, 'dependencyPaths': closure,
         'nodePath': str(node), 'nodeSha256': ns['sha'](read(node, 200*1024**2)),
         'gateway': pins, 'searchFiles': search, 'services': services,
+        'protectedServices':{'files':{unit:file_hash(units/unit) for unit in ns['PROTECTED']},
+            'states':{unit:services[unit] for unit in ns['PROTECTED']}},
         'authority': ns['states'](ns['AUTHORITY']), 'search': ns['states'](ns['SEARCH']),
         'workerUnitSha256': file_hash(units/'proofofwork-indexer-worker.service')}
 

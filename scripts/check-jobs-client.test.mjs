@@ -42,10 +42,11 @@ const files = await loadClient('src/features/jobs/jobsArtifacts.ts', {
   '../../shared/api/proofApiClient': { fetchProofApiJson: async () => response },
   '../../shared/utils/encoding': encoding, './jobsApi': api,
 });
-const snapshot = { id: 'fixture-jobs-snapshot', checkpointHeight: codec.JOBS_ACTIVATION_HEIGHT, checkpointHash: 'a'.repeat(64) };
+const snapshot = { id: 'fixture-jobs-snapshot', checkpointHeight: codec.JOBS_V2_ACTIVATION_HEIGHT, checkpointHash: 'a'.repeat(64) };
 const evidence = { network: 'livenet', complete: true, source: 'proof-indexer-exact-canonical-jobs-replay', snapshot,
   indexedThroughBlock: snapshot.checkpointHeight, indexedThroughBlockHash: snapshot.checkpointHash,
-  activationHeight: codec.JOBS_ACTIVATION_HEIGHT, activationPreviousBlockHash: codec.JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH };
+  activationHeight: codec.JOBS_ACTIVATION_HEIGHT, activationPreviousBlockHash: codec.JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH,
+  versions: { supported: [1, 2], current: 2, v2ActivationHeight: codec.JOBS_V2_ACTIVATION_HEIGHT, v2ActivationPreviousBlockHash: codec.JOBS_V2_ACTIVATION_PREVIOUS_BLOCK_HASH, v2Ready: true } };
 const pagination = { hasMore: false, nextCursor: null };
 const job = { txid: id(1), headTxid: id(4), title: 'Fixture brief', brief: 'Original criteria', scope: 'Exact agreed scope\r\n',
   rewardSats: '1200', offeredRewardSats: '900', requesterAddress: requester, workerAddress: worker,
@@ -57,6 +58,7 @@ const event = (n, action, authorAddress, metadata) => ({ txid: id(n), action, au
 const proposal = event(2, 'propose', worker, { v: 1, job: job.txid, scope: job.scope, rewardSats: job.rewardSats });
 const delivery = event(4, 'deliver', worker, { v: 1, job: job.txid, assignment: id(3), text: 'Exact delivered work', artifacts: [] });
 const detail = { ...evidence, job, events: [proposal, delivery], proposals: [proposal], deliveries: [delivery], eventsComplete: true, proposalsComplete: true, deliveriesComplete: true };
+const workSettlement = reward => ({ valid: true, source: 'canonical-work-send3-relational-raw-replay', reward, paymentTxid: id(5), protocolVout: 5, registryVout: 4, blockHeight: snapshot.checkpointHeight, blockHash: snapshot.checkpointHash, blockTransactionIndex: 5 });
 
 test('Jobs evidence requires the exact source, activation pin and consistent checkpoint', async () => {
   response = { ...evidence, jobs: [job], pagination };
@@ -68,6 +70,7 @@ test('Jobs evidence requires the exact source, activation pin and consistent che
     await assert.rejects(api.fetchJobs('livenet'), /evidence|checkpoint/i);
   }
   response = { ...evidence, indexedThroughBlock: codec.JOBS_ACTIVATION_HEIGHT - 1,
+    versions: { ...evidence.versions, v2Ready: false },
     indexedThroughBlockHash: codec.JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH,
     snapshot: { ...snapshot, checkpointHeight: codec.JOBS_ACTIVATION_HEIGHT - 1, checkpointHash: codec.JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH }, jobs: [], pagination };
   assert.equal((await api.fetchJobs('livenet')).jobs.length, 0);
@@ -107,6 +110,52 @@ test('plans encode the canonical body inside ordinary Mail and retain exact draf
   for (const change of [{ rewardSats: '0546' }, { rewardSats: '545' }, { rewardSats: '1.2' },
     { rewardSats: '2100000000000001' }, { title: ' leading space' }, { scope: ' ' }]) assert.throws(() => plans.buildJobsPlan({ ...draft, ...change }));
 });
+test('WORK promises preserve all Q16 places, change currency explicitly and retain historical proof drafts', () => {
+  const draft = { ...plans.emptyJobsDraft, title: 'Exact WORK brief', scope: 'Full precision scope', rewardAsset: 'WORK', rewardWork: '1.0000000000000001' };
+  const plan = plans.buildJobsPlan(draft), metadata = codec.parseJobBody(plan.memo).metadata;
+  assert.equal(metadata.v, 2); assert.equal(metadata.reward.asset, 'WORK');
+  assert.equal(metadata.reward.amountSubatoms, '10000000000000001');
+  assert.equal(metadata.reward.token, codec.JOBS_WORK_TOKEN_ID); assert.equal(metadata.rewardSats, undefined);
+  assert.ok(plan.fields.some(([label, value]) => label === 'Proposed reward' && value.includes('1.0000000000000001 WORK')));
+  assert.equal(plans.restoreJobsDraft(plans.jobsDraftFields(draft)).rewardWork, draft.rewardWork);
+  for (const rewardWork of ['0', '-1', '1e3', '0.00000000000000001', '21000000.0000000000000001', '01']) assert.throws(() => plans.buildJobsPlan({ ...draft, rewardWork }));
+  const legacy = { ...draft, rewardSats: '900' }; delete legacy.rewardAsset; delete legacy.rewardWork;
+  assert.equal(JSON.stringify(plans.restoreJobsDraft(plans.jobsDraftFields(legacy))), JSON.stringify(legacy));
+  assert.equal(codec.parseJobBody(plans.buildJobsPlan(legacy).memo).metadata.v, 1);
+});
+test('WORK API receipts require exact frozen asset, canonical token and paid amount without using zero proof aliases', async () => {
+  const reward = { asset: 'WORK', token: codec.JOBS_WORK_TOKEN_ID, amountSubatoms: '10000000000000001' };
+  const workJob = { ...job, rewardSats: '0', offeredRewardSats: '0', reward, offeredReward: reward, paidReward: null };
+  response = { ...evidence, jobs: [workJob], pagination };
+  assert.equal((await api.fetchJobs('livenet')).jobs[0].reward.amountSubatoms, reward.amountSubatoms);
+  const paid = { ...workJob, status: 'paid', acceptanceTxid: id(5), paymentTxid: id(5), paidReward: reward, workSettlement: workSettlement(reward) };
+  response = { ...evidence, jobs: [paid], pagination };
+  assert.equal((await api.fetchJobs('livenet')).jobs[0].paidSats, '0');
+  for (const change of [{ reward: { ...reward, token: id(9) } }, { rewardSats: '546' }, { paidReward: { ...reward, amountSubatoms: '10000000000000002' } }, { paidReward: null }]) {
+    response = { ...evidence, jobs: [{ ...paid, ...change }], pagination };
+    await assert.rejects(api.fetchJobs('livenet'), /evidence|terms|payment/i);
+  }
+  response = { ...evidence, jobs: [{ ...workJob, paidReward: reward }], pagination };
+  await assert.rejects(api.fetchJobs('livenet'), /payment/i);
+  for (const change of [{ valid: false }, { source: 'raw-send3-shape-only' }, { paymentTxid: id(6) }, { reward: { ...reward, amountSubatoms: '1' } }, { protocolVout: -1 }, { registryVout: 5 }, { blockHeight: snapshot.checkpointHeight + 1 }, { blockHash: id(9) }, { blockTransactionIndex: '5' }]) {
+    response = { ...evidence, jobs: [{ ...paid, workSettlement: { ...paid.workSettlement, ...change } }], pagination };
+    await assert.rejects(api.fetchJobs('livenet'), /evidence|settlement|checkpoint/i);
+  }
+  response = { ...evidence, jobs: [{ ...paid, workSettlement: undefined }], pagination };
+  await assert.rejects(api.fetchJobs('livenet'), /settlement/i);
+  response = { ...detail, job: { ...paid, workSettlement: { ...paid.workSettlement, blockHeight: snapshot.checkpointHeight + 1 } } };
+  await assert.rejects(api.fetchJob('livenet', paid.txid), /checkpoint/i);
+});
+test('WORK-capable paid totals never infer zero from absent or rounded WORK evidence', async () => {
+  for (const paidWorkSubatoms of [undefined, 0, '01', '1.2']) {
+    response = { ...evidence, jobs: [job], pagination, stats: { paidProofs: '0', paidWorkSubatoms } };
+    await assert.rejects(api.fetchJobs('livenet'), /totals/i);
+  }
+  response = { ...evidence, jobs: [job], pagination, stats: { paidProofs: '0', paidWorkSubatoms: '0' } };
+  assert.equal((await api.fetchJobs('livenet')).stats.paidWorkSubatoms, '0');
+  response = { ...evidence, versions: undefined, jobs: [job], pagination, stats: { paidProofs: '0' } };
+  assert.equal((await api.fetchJobs('livenet')).stats.paidWorkSubatoms, undefined);
+});
 test('delivery attachments and downloads prove exact bytes, size and hash, never metadata alone', () => {
   const bytes = Buffer.from('\ufeff<script>untrusted work</script>\r\n');
   const file = { name: 'evidence.txt', mime: 'text/plain', size: bytes.length, sha256: hash(bytes), data: bytes.toString('base64url') };
@@ -129,7 +178,8 @@ test('autosave is verified and unreadable receipts never silently become empty d
   assert.equal(plans.restoreJobsDraft([['Jobs draft', '{broken']]), undefined);
 });
 
-let currentDetail = detail, activeAddress = requester, reserved = [], fundingPresent = true, corruptPayment = false;
+let currentDetail = detail, activeAddress = requester, reserved = [], fundingPresent = true, corruptPayment = false, corruptWork = false;
+let workSpendable = 10000000000000001n, workAdmission = true, workReads = 0, workAdmissionReads = 0;
 const paymentReview = await loadClient('src/shared/wallet/paymentReview.ts', { 'bitcoinjs-lib': bitcoin });
 const funding = new bitcoin.Transaction(); funding.addInput(Buffer.alloc(32, 1), 0); funding.addOutput(bitcoin.address.toOutputScript(requester), 2000000n);
 const reservationScopes = ['', 'd4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8',
@@ -152,15 +202,18 @@ const walletApi = { fetchProofApiJson: async (path, network) => {
   return { txid: path.split('/').at(-1), status: { confirmed: true } };
 } };
 const boostWallet = { ensureWalletNetwork: async (_wallet, _network, address) => { if (address !== activeAddress) throw new Error('Account changed'); }, assertActiveWalletAddress: async (_wallet, address) => { if (address !== activeAddress) throw new Error('Account changed'); },
+    dataCarrierBytesForPayload: payload => bitcoin.payments.embed({ data: [Buffer.from(payload)] }).output.length,
     scriptForAddress: address => bitcoin.address.toOutputScript(address),
     fetchReservedAmoAnchorOutpoints: async (_address, _network, additional) => additional,
     buildBoostPaymentPsbt: async options => {
       paymentBuilds.push(options);
-      const { fromAddress, payments, protocolPayloads } = options;
+      const { fromAddress, payments, protocolPayloads, postProtocolPayments = [], postProtocolPayloads = [] } = options;
       const psbt = new bitcoin.Psbt(); psbt.addInput({ hash: funding.getId(), index: 0, witnessUtxo: funding.outs[0] });
-      const amount = payments[0].amountSats + (corruptPayment ? 1 : 0), fee = 1000, change = 2000000 - amount - fee;
+      const amount = payments[0].amountSats + (corruptPayment ? 1 : 0), fee = 1000, change = 2000000 - amount - postProtocolPayments.reduce((sum, item) => sum + item.amountSats, 0) - fee;
       psbt.addOutput({ address: payments[0].address, value: BigInt(amount) });
       for (const payload of protocolPayloads) psbt.addOutput({ script: bitcoin.payments.embed({ data: [Buffer.from(payload)] }).output, value: 0n });
+      for (const item of postProtocolPayments) psbt.addOutput({ address: item.address, value: BigInt(item.amountSats) });
+      for (const payload of postProtocolPayloads) psbt.addOutput({ script: bitcoin.payments.embed({ data: [Buffer.from(corruptWork ? payload.replace('10000000000000001', '10000000000000002') : payload)] }).output, value: 0n });
       psbt.addOutput({ address: fromAddress, value: BigInt(change) });
       return { psbtHex: psbt.toHex(), feeSats: fee, changeSats: change, dustFeeSats: 0, inputCount: 1, walletInputIndexes: [0] };
     } };
@@ -178,8 +231,41 @@ const wallet = await loadClient('src/features/jobs/jobsWallet.ts', {
   'bitcoinjs-lib': bitcoin, './jobsApi': { ...api, fetchJobs: async () => evidence, fetchJob: async () => structuredClone(currentDetail) }, './jobsProtocol': plans,
   '../../shared/api/proofApiClient': walletApi, '../../shared/wallet/paymentReview': paymentReview,
   '../code/codeWallet': codeWallet, '../boost/boostWallet': boostWallet,
+  './jobsWorkCapacity': { fetchJobsWorkCapacity: async () => { workReads++; return { anchorOutpoints: [{ txid: id(80), vout: 2 }], spendableSubatoms: workSpendable }; } },
+  '../../shared/protocol/jobs.mjs': codec,
+  '../boost/boostWorkComposer': { BOOST_WORK_REGISTRY_ADDRESS: codec.JOBS_WORK_REGISTRY_ADDRESS, BOOST_WORK_MUTATION_PROOFS: 546,
+    requireBoostWorkWriteAdmission: async () => { workAdmissionReads++; if (!workAdmission) throw new Error('WORK Q16 transfer admission is unavailable'); },
+    buildBoostWorkSendPayload: (amount, address) => `pwt1:send3:${codec.JOBS_WORK_TOKEN_ID}:${amount}:${address}` },
 });
 const acceptance = plans.buildJobsPlan({ ...plans.emptyJobsDraft, action: 'accept', job: job.txid, expectedHead: job.headTxid, delivery: job.deliveryTxid });
+test('WORK acceptance pays the exact frozen Q16 amount, with separate Mail and registry fees and fresh spendability', async () => {
+  const reward = { asset: 'WORK', token: codec.JOBS_WORK_TOKEN_ID, amountSubatoms: '10000000000000001' };
+  currentDetail = { ...detail, job: { ...job, rewardSats: '0', offeredRewardSats: '0', reward, offeredReward: reward, paidReward: null } };
+  const workPlan = plans.buildJobsPlan({ ...acceptance.draft, rewardAsset: 'WORK', rewardWork: '1.0000000000000001' });
+  workReads = 0; workAdmissionReads = 0;
+  const prepared = await wallet.prepareJobsTransaction(workPlan, requester, 'livenet', () => {});
+  assert.equal(prepared.amountSats, '546'); assert.equal(prepared.destination, worker);
+  assert.equal(prepared.reward.amountSubatoms, reward.amountSubatoms);
+  const outputs = prepared.review.evidence.outputs, payments = outputs.filter(output => output.kind === 'payment');
+  assert.equal(payments.length, 2); assert.equal(payments[0].address, worker); assert.equal(payments[0].proofs, '546');
+  assert.equal(payments[1].address, codec.JOBS_WORK_REGISTRY_ADDRESS); assert.equal(payments[1].proofs, '546');
+  assert.equal(prepared.review.evidence.records.at(-1), `pwt1:send3:${codec.JOBS_WORK_TOKEN_ID}:10000000000000001:${worker}`);
+  assert.ok(payments[1].index > outputs.filter(output => output.kind === 'record').at(-2).index);
+  assert.ok(paymentBuilds.at(-1).excludeOutpoints.some(item => item.txid === id(80)));
+  assert.ok(prepared.review.fields.some(([label, value]) => label === 'Exact WORK reward' && value === '1.0000000000000001 WORK'));
+  assert.ok(workReads >= 3 && workAdmissionReads >= 3);
+  await wallet.verifyJobsFunding(prepared);
+  workSpendable = 10000000000000000n;
+  await assert.rejects(wallet.verifyJobsFunding(prepared), /spendable/i);
+  workSpendable = 10000000000000001n; workAdmission = false;
+  await assert.rejects(wallet.prepareJobsTransaction(workPlan, requester, 'livenet', () => {}), /admission/i);
+  workAdmission = true; corruptWork = true;
+  await assert.rejects(wallet.prepareJobsTransaction(workPlan, requester, 'livenet', () => {}), /intent|record/i);
+  corruptWork = false;
+  currentDetail = { ...currentDetail, versions: { ...evidence.versions, v2Ready: false } };
+  await assert.rejects(wallet.prepareJobsTransaction(workPlan, requester, 'livenet', () => {}), /Jobs v2 admission/i);
+  currentDetail = detail;
+});
 test('acceptance freezes requester, assigned worker, exact reward and latest confirmed delivery', async () => {
   const prepared = await wallet.prepareJobsTransaction(acceptance, requester, 'livenet', () => {});
   assert.equal(prepared.amountSats, '1200'); assert.equal(prepared.destination, worker);
