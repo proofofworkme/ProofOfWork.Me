@@ -260,6 +260,39 @@ another stream or move. Every original full logical-copy filesystem/inode
 guard remains active on the actual evidence filesystem before allocation and
 each copy; the phase model reports this independent full-copy bound as well.
 
+A V5 initial attempt that preserved its incoming input and then stopped at the
+outer filesystem guard has a separate `preserved-capacity-resume` phase. It
+recognizes exactly seven records: intent, receive admission, receiver log,
+input evidence check, stage model, sufficient scratch check, and the root-space
+refusal in `stage-check.json`. It rejects inode-only refusals, sufficient
+filesystem checks, stager entry, partial candidates, extra records and prior
+continuations. The existing six/eight-record full-copy resumes retain their
+original rules.
+
+Plan creation for this phase requires all four `--capacity-plan`,
+`--capacity-evidence`, `--capacity-incoming-receipt` and `--capacity-inventory`
+inputs. Exported records include their exact base64 bytes, SHA256, length, path
+and decoded value; the planner checks that these representations agree. The
+inventory includes the canonical receiver receipt in the same form, complete
+live/retained fingerprints, preserved-input fingerprint, the quiet original
+failed unit with its InvocationID, and unused transport/source/publication
+path and unit namespaces. The native controller rechecks every record pin,
+the exact seven-file membership, original failed unit, receipts, preserved
+payload, helper bytes and complete roots under the continuous deploy lock
+before creating new attempt evidence. It sends no surface stream and performs
+no second input move. It uses ordinary scratch staging with all existing
+stager, filesystem, inode, archive, source and publication guards unchanged.
+Any further refusal or interruption preserves evidence and requires a new
+explicit reconciliation; this mode does not recognize its own partial runs.
+
+This phase does not provide space or approve cleanup. Capacity must cover the
+remaining candidate, managed archive, source receipt and archive-verification
+peaks, while preserving all prior input/evidence. If recovery changes the
+committed tooling, the final product release must be rebuilt and synchronized
+to the new source commit across GitHub, primary checkout, preview and
+production. Charge that fresh incoming payload while retaining the earlier
+failed input; reusing an older artifact is not a final release-sync pass.
+
 The phase model also derives a conservative managed archive bound from the
 complete verified incoming path set and the accepted prior dependency closure,
 including required parent directories. Every incoming file remains included,

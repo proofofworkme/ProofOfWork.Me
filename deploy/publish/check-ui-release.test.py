@@ -5,6 +5,7 @@ These tests use real local artifacts, AST-extracted safe functions, and mocked
 SSH/HTTPS/process boundaries. They certify refusal behavior, not a deployment.
 """
 import ast
+import base64
 import contextlib
 import copy
 import fcntl
@@ -1570,6 +1571,338 @@ class HttpsRefusals(unittest.TestCase):
                 opener = types.SimpleNamespace(open=lambda *a, **kw: response)
                 with patch.object(self.smoke.urllib.request, 'build_opener', return_value=opener):
                     with self.assertRaises(ValueError): self.smoke.compare_https(url, b'exact', 1)
+
+
+class OuterCapacityResume(unittest.TestCase):
+    """Exercise the real planner, native recognizer and no-stream branch offline."""
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='pow-outer-capacity-', dir='/tmp')
+        self.base = Path(self.temporary.name).resolve()
+        self.release = safe_module('release.py')
+
+    def tearDown(self): self.temporary.cleanup()
+
+    def fixture(self, remote=False):
+        base = str(self.base) if remote else '/var/tmp/proofofwork-deploy'
+        evidence_base = str(self.base / 'evidence') if remote else '/var/backups/proofofwork-ui/transport-evidence'
+        pool = evidence_base + '/' + RELEASE
+        fingerprint = {'sha256': '8'*64, 'entries': 2, 'regularBytes': 12}
+        original = {'schema': 'proof-of-work-audit29-ui-transport-plan-v1', 'releaseFormat': 'proofofwork-ui-release-v5',
+            'releaseId': RELEASE, 'commit': COMMIT, 'tree': TREE, 'publicationAttempt': 'initial',
+            'managedSurfaces': list(self.release.PERMISSION_SURFACES), 'inputStorage': 'release-evidence-v1',
+            'source': {'sha256': '1'*64, 'compressedBytes': 12}, 'surfaces': {'sha256': '2'*64, 'compressedBytes': 12},
+            'sourceAllocatedBytes': 100, 'admissions': {'source-receive': {'bytes': 100, 'inodes': 10}},
+            'preservedSurfacesRoot': pool + '/proofofwork-ui-surfaces-' + RELEASE + '/surfaces',
+            'preservedSourceCheckout': pool + '/proofofwork-ui-source-' + RELEASE,
+            'surfacesPayloadFingerprint': fingerprint, 'oldLiveManifestSha256': '3'*64,
+            'oldFullRootTreeSha256': '4'*64, 'retainedRoots': [], 'publicationHelpers': {'stager': {'sha256': '5'*64}},
+            'helperSha256': {'capacity': '6'*64}, 'installedStagerSha256': '5'*64, 'phaseCapacity': {'sha256': '7'*64},
+            'stageArchiveUpperBoundBytes': 2000}
+        original_path = self.base / ('recovery-plan-' + RELEASE + '-initial.json')
+        original_path.write_bytes(raw_json(original)); original_sha = self.release.digest(original_path)
+        model = {'inputStabilityVerified': True, 'installedStagerSha256': '5'*64, 'peakAdditionalBytes': 1000,
+            'modeledManagedArchiveUpperBoundBytes': 2000, 'modeledManagedArchive': {
+                'model': 'closed-managed-archive-tar-gzip-v1', 'hardDereference': True,
+                'archiveUpperBoundBytes': 2000, 'managedSurfaces': list(self.release.PERMISSION_SURFACES)}}
+        scratch = {'status': 'sufficient', 'phase': 'recovery-stage', 'path': '/var/tmp/proofofwork-deploy',
+            'maximumBytes': 5*1024**3, 'allocatedBytes': 2606174208, 'additionalBytes': 1000 + 32*1024**2,
+            'cleanupApproved': False}
+        refusal = {'availableBytes': 10*1024**3, 'requiredBytes': 10*1024**3 + 64*1024**2 + scratch['additionalBytes'] + 2000,
+            'availableInodes': 100000, 'requiredInodes': 10128, 'path': '/', 'phase': 'recovery-stage'}
+        receiver = {'status': 'verified', 'kind': 'surfaces', 'releaseId': RELEASE, 'archiveSha256': '2'*64,
+            'compressedBytes': 12, 'entries': 2, 'logicalBytes': 12,
+            'extractedRoot': base + '/proofofwork-ui-surfaces-' + RELEASE}
+        incoming = {'format': 'proof-of-work-ui-incoming-evidence-v1', 'releaseId': RELEASE,
+            'commit': COMMIT, 'tree': TREE, 'planSha256': original_sha, 'payloadFingerprint': fingerprint,
+            'preservedPath': str(Path(original['preservedSurfacesRoot']).parent),
+            'movePreservedInodes': True, 'historicalDeletion': False, 'receiverReceipt': receiver}
+        failed_name = 'recovery-transport-' + RELEASE + '-surfaces-stage-initial'
+        failed = self.base / failed_name; failed.mkdir(mode=0o700)
+        values = {'intent.json': {'releaseId': RELEASE, 'commit': COMMIT, 'tree': TREE, 'planSha256': original_sha,
+                'phase': 'surfaces-stage', 'historicalDeletion': False, 'retentionDeferred': True},
+            'input-evidence-check.json': {'status': 'sufficient'}, 'receive-admission.log': {'status': 'sufficient'},
+            'receiver.log': receiver, 'stage-model.json': model, 'stage-check-scratch.json': scratch,
+            'stage-check.json': 'UI capacity refused ' + json.dumps(refusal) + '\n'}
+        def record(path, value):
+            raw = value.encode() if isinstance(value, str) else raw_json(value)
+            return {'path': path, 'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw),
+                    'base64': base64.b64encode(raw).decode(), 'value': value}, raw
+        records = {}
+        for name, value in values.items():
+            records[name], raw = record(base + '/' + failed_name + '/' + name, value)
+            (failed / name).write_bytes(raw)
+        incoming_record, incoming_raw = record(pool + '/incoming-receipt.json', incoming)
+        receiver_record, receiver_raw = record(base + '/audit5-stream-surfaces-' + RELEASE + '.json', receiver)
+        unit = {'name': 'proofofwork-recovery-ui-transport-' + RELEASE + '-surfaces-stage-initial.service',
+            'LoadState': 'loaded', 'ActiveState': 'failed', 'SubState': 'failed', 'MainPID': '0',
+            'InvocationID': '9'*32, 'Result': 'exit-code'}
+        evidence = {'evidence': base + '/' + failed_name, 'records': records, 'failedUnit': unit,
+            'stageExists': False, 'sourceExists': False, 'privateStages': [], 'preservedInputExists': True}
+        inventory = {'stageExists': False, 'sourceExists': False, 'scratchPayloadExists': False,
+            'archiveExists': False, 'checksumExists': False, 'provenanceExists': False,
+            'privateStages': [], 'allLiveAndRetainedRootsUnchanged': True,
+            'live': {'manifestSha256': '3'*64, 'treeSha256': '4'*64}, 'retained': [],
+            'preservedInputFingerprint': fingerprint, 'failedUnit': unit,
+            'freshNamespaces': {name: True for name in ['transportEvidence', 'sourceEvidence', 'publishEvidence',
+                'transportUnit', 'sourceUnit', 'publishUnit']},
+            'surfaceReceiverReceipt': receiver, 'receiverReceipt': receiver_record,
+            'receiverReceiptSha256': receiver_record['sha256']}
+        current = {**original, 'publicationAttempt': 'capacity-v1'}
+        if not remote:
+            paths = [self.base / name for name in ('failed-evidence.json', 'incoming-record.json', 'inventory.json')]
+            for path, value in zip(paths, (evidence, incoming_record, inventory)): path.write_bytes(raw_json(value))
+            args = types.SimpleNamespace(capacity_plan=original_path, capacity_evidence=paths[0],
+                capacity_incoming_receipt=paths[1], capacity_inventory=paths[2])
+            return original, current, args, evidence, incoming_record, inventory, failed
+        release_pool = self.base / 'evidence' / RELEASE; release_pool.mkdir(parents=True)
+        (release_pool / 'incoming-receipt.json').write_bytes(incoming_raw)
+        Path(incoming['preservedPath']).mkdir()
+        (self.base / ('audit5-stream-surfaces-' + RELEASE + '.json')).write_bytes(receiver_raw)
+        pins = {name: {'sha256': record['sha256'], 'bytes': record['bytes']} for name, record in records.items()}
+        current['preservedCapacityResume'] = {'failedPlanPath': str(original_path), 'failedPlanSha256': original_sha,
+            'failedEvidence': str(failed), 'failedRecords': pins, 'failedUnit': unit,
+            'receiverReceiptPath': str(self.base / ('audit5-stream-surfaces-' + RELEASE + '.json')),
+            'receiverReceiptSha256': receiver_record['sha256'], 'incomingReceiptPath': str(release_pool / 'incoming-receipt.json'),
+            'incomingReceiptSha256': incoming_record['sha256'], 'incomingReceiptBytes': len(incoming_raw), 'filesystemRefusal': refusal}
+        namespace = functions_only('remote_transport.py', {'outer_capacity_refusal', 'unused_capacity_namespaces', 'validate_capacity_resume'})
+        def bound(path, digest, maximum=65536):
+            raw = Path(path).read_bytes(); assert len(raw) <= maximum and hashlib.sha256(raw).hexdigest() == digest; return raw
+        namespace.update(BASE=self.base, EVIDENCE=self.base / 'evidence', ARCHIVES=self.base / 'archives', ENV={},
+            bound=bound, directory=lambda path: Path(path).resolve(strict=True),
+            validate_evidence_ancestors=lambda *a, **k: release_pool,
+            payload_fingerprint=lambda path: fingerprint)
+        def state(argv, **kwargs):
+            value = {key: val for key, val in unit.items() if key != 'name'} if argv[2] == unit['name'] else {
+                'LoadState': 'not-found', 'ActiveState': 'inactive', 'MainPID': '0'}
+            return ''.join(key + '=' + val + '\n' for key, val in value.items())
+        return namespace, current, incoming, failed, state
+
+    def test_local_binding_verifies_raw_bytes_and_exact_seven_record_outer_refusal(self):
+        original, current, args, evidence, incoming, inventory, failed = self.fixture()
+        before = {p.name: p.read_bytes() for p in failed.iterdir()}
+        binding = self.release.preserved_capacity_binding(args, current)
+        self.assertEqual(binding['failedUnit']['InvocationID'], '9'*32)
+        self.assertEqual(set(binding['failedRecords']), set(before))
+        self.assertEqual(before, {p.name: p.read_bytes() for p in failed.iterdir()})
+        for field in ('base64', 'value', 'sha256', 'bytes'):
+            bad = copy.deepcopy(evidence)
+            bad['records']['stage-check.json'][field] = {'base64': 'eA==', 'value': 'forged', 'sha256': '0'*64, 'bytes': 1}[field]
+            args.capacity_evidence.write_bytes(raw_json(bad))
+            with self.subTest(field=field), self.assertRaises(AssertionError): self.release.preserved_capacity_binding(args, current)
+
+    def test_local_binding_refuses_changed_artifacts_roots_gates_and_occupied_namespaces(self):
+        original, current, args, evidence, incoming, inventory, failed = self.fixture()
+        for key in ('commit', 'tree', 'source', 'surfaces', 'admissions', 'retainedRoots', 'phaseCapacity', 'publicationHelpers', 'stageArchiveUpperBoundBytes'):
+            bad = copy.deepcopy(current); bad[key] = None
+            with self.subTest(key=key), self.assertRaises(AssertionError): self.release.preserved_capacity_binding(args, bad)
+        for attempt in ('initial', '', '../escape', 'UPPER', 'a'*32):
+            bad = copy.deepcopy(current); bad['publicationAttempt'] = attempt
+            with self.subTest(attempt=attempt), self.assertRaises(AssertionError): self.release.preserved_capacity_binding(args, bad)
+        for key in inventory['freshNamespaces']:
+            bad = copy.deepcopy(inventory); bad['freshNamespaces'][key] = False
+            args.capacity_inventory.write_bytes(raw_json(bad))
+            with self.subTest(namespace=key), self.assertRaises(AssertionError): self.release.preserved_capacity_binding(args, current)
+        args.capacity_inventory.write_bytes(raw_json(inventory))
+        for extra in ('stager.log', 'receipt.json'):
+            bad = copy.deepcopy(evidence); bad['records'][extra] = {}
+            args.capacity_evidence.write_bytes(raw_json(bad))
+            with self.subTest(extra=extra), self.assertRaises(AssertionError): self.release.preserved_capacity_binding(args, current)
+
+    def test_native_recognizer_rechecks_unit_receipts_namespace_and_preserved_payload(self):
+        namespace, plan, incoming, failed, state = self.fixture(remote=True)
+        before = {p.name: p.read_bytes() for p in failed.iterdir()}
+        validate = namespace['validate_capacity_resume']
+        with patch.object(subprocess, 'check_output', side_effect=state):
+            self.assertEqual(validate(plan), incoming)
+            for field in ('failedPlanSha256', 'incomingReceiptSha256', 'receiverReceiptSha256'):
+                bad = copy.deepcopy(plan); bad['preservedCapacityResume'][field] = '0'*64
+                with self.subTest(field=field), self.assertRaises(AssertionError): validate(bad)
+            occupied = self.base / ('proofofwork-www-stage-' + RELEASE); occupied.mkdir()
+            with self.assertRaisesRegex(AssertionError, 'namespace occupied'): validate(plan)
+            occupied.rmdir()
+            namespace['payload_fingerprint'] = lambda path: {'sha256': '0'*64}
+            with self.assertRaises(AssertionError): validate(plan)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in failed.iterdir()})
+
+    def test_native_refuses_changed_failed_unit_and_extra_or_partial_evidence(self):
+        namespace, plan, incoming, failed, state = self.fixture(remote=True)
+        validate = namespace['validate_capacity_resume']
+        for before, after in [('MainPID=0', 'MainPID=1'), ('InvocationID='+'9'*32, 'InvocationID='+'0'*32),
+                ('ActiveState=failed', 'ActiveState=active'), ('Result=exit-code', 'Result=success')]:
+            def changed(argv, **kwargs): return state(argv, **kwargs).replace(before, after)
+            with patch.object(subprocess, 'check_output', side_effect=changed), self.subTest(field=before), self.assertRaisesRegex(AssertionError, 'failed unit changed'): validate(plan)
+        with patch.object(subprocess, 'check_output', side_effect=state):
+            for name in ('stager.log', 'receipt.json'):
+                path = failed / name; path.write_bytes(b'partial or completed')
+                with self.subTest(name=name), self.assertRaises(AssertionError): validate(plan)
+                path.unlink()
+            for path in list(failed.iterdir()):
+                raw = path.read_bytes(); path.unlink()
+                with self.subTest(missing=path.name), self.assertRaises(AssertionError): validate(plan)
+                path.write_bytes(raw)
+            (failed / 'receiver.log').write_bytes(b'changed')
+            with self.assertRaises(AssertionError): validate(plan)
+
+    def test_classifier_matches_both_sources_and_refuses_other_capacity_shapes(self):
+        original, current, args, evidence, incoming, inventory, failed = self.fixture()
+        namespace = functions_only('remote_transport.py', {'outer_capacity_refusal'})
+        records = {name: record['value'] for name, record in evidence['records'].items()}
+        classifiers = (self.release.outer_capacity_refusal, namespace['outer_capacity_refusal'])
+        definitions = []
+        for source in ('release.py', 'remote_transport.py'):
+            definition = next(node for node in ast.parse((ROOT / source).read_bytes()).body
+                if isinstance(node, ast.FunctionDef) and node.name == 'outer_capacity_refusal')
+            definitions.append(ast.dump(definition, include_attributes=False))
+        self.assertEqual(*definitions, 'Planner/native refusal classification must remain identical')
+        for classifier in classifiers:
+            expected = classifier(records, original)
+            for case in ('scratch', 'inode', 'reserve', 'sufficient', 'full-copy', 'wrong-root'):
+                bad = copy.deepcopy(records)
+                refusal = copy.deepcopy(expected)
+                if case == 'scratch': bad['stage-check-scratch.json']['maximumBytes'] += 1
+                elif case == 'inode': refusal['availableInodes'] = 0
+                elif case == 'reserve': refusal['requiredBytes'] -= 1
+                elif case == 'sufficient': refusal['availableBytes'] = refusal['requiredBytes']
+                elif case == 'full-copy': bad['stage-check.json'] = 'UI deployment scratch review required {}'
+                elif case == 'wrong-root': refusal['path'] = '/var/backups'
+                if case not in ('scratch', 'full-copy'): bad['stage-check.json'] = 'UI capacity refused ' + json.dumps(refusal)
+                with self.subTest(source=classifier.__module__, case=case), self.assertRaises(AssertionError): classifier(bad, original)
+
+    def test_native_refuses_each_future_unit_and_partial_source_archive_namespace(self):
+        namespace, plan, incoming, failed, state = self.fixture(remote=True)
+        validate = namespace['validate_capacity_resume']; pool = self.base / 'evidence' / RELEASE
+        partials = [pool / 'archive-base', pool / ('.audit5-stream-source-' + RELEASE),
+            pool / ('audit5-stream-source-' + RELEASE + '.json'),
+            pool / ('proofofwork-ui-source-' + RELEASE),
+            pool / ('proofofwork-ui-release-' + RELEASE + '.tgz.incoming'), pool / 'archive.sha256.incoming',
+            self.base / ('proofofwork-ui-surfaces-' + RELEASE),
+            self.base / ('recovery-transport-' + RELEASE + '-preserved-capacity-resume-capacity-v1'),
+            self.base / ('recovery-transport-' + RELEASE + '-source-capacity-v1'),
+            self.base / ('recovery-publish-' + RELEASE + '-capacity-v1'),
+            pool / ('.proofofwork-ui-stage-' + RELEASE + '.partial'),
+            self.base / ('.proofofwork-ui-stage-' + RELEASE + '.partial')]
+        archives = self.base / 'archives'; archives.mkdir()
+        archive = archives / ('proofofwork-ui-release-' + RELEASE + '.tgz')
+        partials += [archive, Path(str(archive)+'.sha256'), Path(str(archive)+'.provenance')]
+        with patch.object(subprocess, 'check_output', side_effect=state):
+            for path in partials:
+                path.mkdir()
+                with self.subTest(path=path), self.assertRaises(AssertionError): validate(plan)
+                path.rmdir()
+        for part in ('-source-capacity-v1.service', '-ui-capacity-v1.service'):
+            def occupied(argv, **kwargs):
+                value = state(argv, **kwargs)
+                return value.replace('LoadState=not-found', 'LoadState=loaded') if argv[2].endswith(part) else value
+            with patch.object(subprocess, 'check_output', side_effect=occupied), self.subTest(unit=part), self.assertRaises(AssertionError): validate(plan)
+
+    def test_capacity_dispatch_has_no_stream_and_uses_pinned_controller_fresh_unit(self):
+        transport = safe_module('transport_preserve.py')
+        bundle = self.base / 'bundle.tgz'; bundle.write_bytes(b'pinned archive')
+        plan = {'releaseId': RELEASE, 'publicationAttempt': 'capacity-v1', 'inputStorage': 'release-evidence-v1',
+            'preservedCapacityResume': {'verified': True}, 'preservingTransportSha256': self.release.digest(ROOT / 'remote_transport.py'),
+            'localBundles': {'surfaces': str(bundle)}, 'surfaces': {'compressedBytes': bundle.stat().st_size, 'sha256': self.release.digest(bundle)}}
+        path = self.base / 'plan.json'; path.write_bytes(raw_json(plan)); log = self.base / 'transport.log'
+        previous = os.umask(0o022)
+        try:
+            with patch('sys.argv', ['transport_preserve.py', str(path), 'preserved-capacity-resume', str(log)]), patch.object(subprocess, 'run') as run:
+                transport.main(); command = run.call_args.args[0][-1]
+                self.assertEqual(run.call_args.kwargs['stdin'], subprocess.DEVNULL)
+                self.assertIn('preserved-capacity-resume-capacity-v1.service', command)
+                self.assertIn('Transport unit namespace occupied', command)
+                self.assertIn('--property=KillMode=control-group', command)
+        finally: os.umask(previous)
+
+    def test_actual_capacity_branch_reuses_input_and_keeps_normal_allocation_guards(self):
+        tree = ast.parse((ROOT / 'remote_transport.py').read_bytes())
+        branch = next(node for node in tree.body if isinstance(node, ast.If) and
+            isinstance(node.test, ast.Compare) and isinstance(node.test.left, ast.Name) and node.test.left.id == 'phase' and
+            isinstance(node.test.ops[0], ast.NotEq) and node.test.comparators[0].value == 'source')
+        incoming = {'preservedPath': str(self.base / 'preserved'), 'receiverReceipt': {'status': 'verified'}}
+        calls = []
+        scope = {'phase': 'preserved-capacity-resume', 'p': {'surfacesPayloadFingerprint': 'fingerprint'}, 'capacity_incoming': incoming,
+            'Path': Path, 'directory': lambda path: calls.append(('directory', path)),
+            'payload_fingerprint': lambda path: calls.append(('fingerprint', path)) or 'fingerprint',
+            'validate_preserved_stage': lambda plan: self.fail('Old recognizer was invoked')}
+        exec(compile(ast.Module(body=[branch.body[0]], type_ignores=[]), 'actual-capacity-input-branch', 'exec'), scope)
+        self.assertEqual(scope['incoming'], incoming)
+        self.assertEqual(calls, [('directory', Path(incoming['preservedPath'])), ('fingerprint', Path(incoming['preservedPath']))])
+        guard = next(node for node in branch.body if isinstance(node, ast.If) and
+            isinstance(node.test, ast.Compare) and isinstance(node.test.comparators[0], ast.Constant) and
+            node.test.comparators[0].value == 'preserved-stage-resume' and
+            any(isinstance(child, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'stager_args' for t in child.targets) for child in node.body))
+        guards = []
+        scope.update(BASE=self.base, EVIDENCE_RESERVE=32*1024**2, model={'peakAdditionalBytes': 1000},
+            stage_archive_upper=2000, capacity=lambda *args: guards.append(args))
+        exec(compile(ast.Module(body=[guard], type_ignores=[]), 'actual-capacity-normal-guards', 'exec'), scope)
+        self.assertEqual(scope['stager_args'], [])
+        self.assertEqual(guards, [('check-scratch', self.base, 1000+32*1024**2, 'stage'),
+            ('check', self.base, 1000+2000+32*1024**2, 'stage')])
+        # Validation precedes evidence creation, so refusal/cancellation never
+        # enters input replay or grants publication authority.
+        source = (ROOT / 'remote_transport.py').read_text()
+        self.assertLess(source.index('capacity_incoming = validate_capacity_resume'), source.index('out.mkdir(mode=0o700)'))
+        self.assertIn("'productionPublished': False", source)
+
+    def test_native_capacity_refusal_stops_before_stager_and_keeps_input_evidence(self):
+        tree = ast.parse((ROOT / 'remote_transport.py').read_bytes())
+        outer = next(node for node in tree.body if isinstance(node, ast.If) and
+            isinstance(node.test, ast.Compare) and isinstance(node.test.left, ast.Name) and node.test.left.id == 'phase'
+            and isinstance(node.test.ops[0], ast.NotEq) and node.test.comparators[0].value == 'source')
+        guard = next(node for node in outer.body if isinstance(node, ast.If) and
+            isinstance(node.test, ast.Compare) and isinstance(node.test.comparators[0], ast.Constant)
+            and node.test.comparators[0].value == 'preserved-stage-resume'
+            and any(isinstance(child, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'stager_args' for t in child.targets) for child in node.body))
+        before = self.base / 'preserved-input'; before.write_bytes(b'unchanged canonical incoming evidence')
+        for stop in ('check-scratch', 'check'):
+            calls = []
+            def capacity(command, *args):
+                calls.append(command)
+                if command == stop: raise RuntimeError('native capacity refusal')
+            scope = {'phase': 'preserved-capacity-resume', 'BASE': self.base, 'EVIDENCE_RESERVE': 32*1024**2,
+                'model': {'peakAdditionalBytes': 1000}, 'stage_archive_upper': 2000, 'capacity': capacity}
+            with self.subTest(stop=stop), self.assertRaisesRegex(RuntimeError, 'native capacity refusal'):
+                exec(compile(ast.Module(body=[guard], type_ignores=[]), 'actual-refusal-block', 'exec'), scope)
+            self.assertNotIn('stager_args', scope)
+            self.assertEqual(before.read_bytes(), b'unchanged canonical incoming evidence')
+            self.assertEqual(calls, ['check-scratch'] if stop == 'check-scratch' else ['check-scratch', 'check'])
+
+    def test_new_branch_child_timeout_preserves_original_input_and_partial_evidence(self):
+        namespace, plan, incoming, failed, state = self.fixture(remote=True)
+        preserved = Path(incoming['preservedPath'])
+        original_input = preserved / 'source'; original_input.write_bytes(b'exact preserved input')
+        original_records = {path.name: path.read_bytes() for path in failed.iterdir()}
+        incoming_before = (self.base / 'evidence' / RELEASE / 'incoming-receipt.json').read_bytes()
+        with patch.object(subprocess, 'check_output', side_effect=state):
+            admitted = namespace['validate_capacity_resume'](plan)
+        # Execute the actual new input branch, then the same actual bounded
+        # child runner used for its stager. A killed copy can leave a candidate;
+        # neither the branch nor runner rewrites old input/evidence or publishes.
+        tree = ast.parse((ROOT / 'remote_transport.py').read_bytes())
+        branch = next(node for node in tree.body if isinstance(node, ast.If) and
+            isinstance(node.test, ast.Compare) and isinstance(node.test.left, ast.Name) and node.test.left.id == 'phase'
+            and isinstance(node.test.ops[0], ast.NotEq) and node.test.comparators[0].value == 'source')
+        scope = {'phase': 'preserved-capacity-resume', 'p': plan, 'capacity_incoming': admitted,
+            'Path': Path, 'directory': namespace['directory'], 'payload_fingerprint': namespace['payload_fingerprint']}
+        exec(compile(ast.Module(body=[branch.body[0]], type_ignores=[]), 'actual-admitted-input', 'exec'), scope)
+        out = self.base / ('recovery-transport-' + RELEASE + '-preserved-capacity-resume-capacity-v1'); out.mkdir()
+        runner = functions_only('remote_transport.py', {'run'})
+        runner.update(out=out, env={}, lock_fd=os.open(self.base, os.O_RDONLY | os.O_DIRECTORY),
+            captured_log_bytes=0, TOTAL_LOG_CEILING=16*1024**2)
+        stage = self.base / ('proofofwork-www-stage-' + RELEASE)
+        child = "import os,time; from pathlib import Path; Path(" + repr(str(stage)) + ").mkdir(); print(os.getpid(),flush=True); time.sleep(30)"
+        try:
+            with self.assertRaisesRegex(AssertionError, 'Child deadline exceeded'):
+                runner['run'](['/usr/bin/python3', '-I', '-B', '-c', child], 'stager.log', timeout=0.05)
+        finally: os.close(runner['lock_fd'])
+        child_pid = int((out / 'stager.log').read_text().strip())
+        with self.assertRaises(ProcessLookupError): os.kill(child_pid, 0)
+        self.assertTrue(stage.is_dir())
+        self.assertFalse((out / 'receipt.json').exists())
+        self.assertEqual(original_input.read_bytes(), b'exact preserved input')
+        self.assertEqual(incoming_before, (self.base / 'evidence' / RELEASE / 'incoming-receipt.json').read_bytes())
+        self.assertEqual(original_records, {path.name: path.read_bytes() for path in failed.iterdir()})
+        with patch.object(subprocess, 'check_output', side_effect=state), self.assertRaisesRegex(AssertionError, 'namespace occupied'):
+            namespace['validate_capacity_resume'](plan)
 
 
 if __name__ == '__main__':

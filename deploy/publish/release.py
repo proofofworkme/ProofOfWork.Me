@@ -6,6 +6,7 @@ Transport/publish retain the installed capacity gates and all rollback roots.
 """
 import argparse
 import ast
+import base64
 import hashlib
 import json
 import os
@@ -206,6 +207,119 @@ def preserved_stage_binding(args, current):
             'privateCandidateParent': '/var/backups/proofofwork-ui/transport-evidence/' + current['releaseId'] +
                 '/.proofofwork-ui-stage-' + current['releaseId'] + '.' + current['publicationAttempt']}
 
+def outer_capacity_refusal(records, plan):
+    """Recognize only a sufficient scratch guard followed by root-space refusal."""
+    model = records['stage-model.json']; scratch = records['stage-check-scratch.json']
+    assert model['inputStabilityVerified'] is True
+    assert model['installedStagerSha256'] == plan['installedStagerSha256']
+    closed = model['modeledManagedArchive']
+    assert closed['model'] == 'closed-managed-archive-tar-gzip-v1' and closed['hardDereference'] is True
+    assert closed['archiveUpperBoundBytes'] == model['modeledManagedArchiveUpperBoundBytes']
+    assert 0 < closed['archiveUpperBoundBytes'] <= plan['stageArchiveUpperBoundBytes']
+    assert len(closed['managedSurfaces']) == len(set(closed['managedSurfaces'])) == 22
+    assert set(closed['managedSurfaces']) == set(plan['managedSurfaces'])
+    assert scratch['status'] == 'sufficient' and scratch['phase'] == 'recovery-stage'
+    assert scratch['path'] == '/var/tmp/proofofwork-deploy' and scratch['cleanupApproved'] is False
+    assert scratch['maximumBytes'] == 5*1024**3
+    assert scratch['additionalBytes'] == model['peakAdditionalBytes'] + 32*1024**2
+    assert scratch['allocatedBytes'] + scratch['additionalBytes'] <= scratch['maximumBytes']
+    prefix = 'UI capacity refused '; raw = records['stage-check.json']
+    assert isinstance(raw, str) and raw.startswith(prefix)
+    refusal = json.loads(raw[len(prefix):])
+    assert set(refusal) == {'availableBytes', 'availableInodes', 'path', 'phase', 'requiredBytes', 'requiredInodes'}
+    assert all(type(refusal[key]) is int and refusal[key] >= 0 for key in
+               ('availableBytes', 'availableInodes', 'requiredBytes', 'requiredInodes'))
+    assert refusal['path'] == '/' and refusal['phase'] == 'recovery-stage'
+    assert refusal['availableBytes'] < refusal['requiredBytes']
+    assert refusal['availableInodes'] >= refusal['requiredInodes'] == 10128
+    assert refusal['requiredBytes'] == 10*1024**3 + 64*1024**2 + scratch['additionalBytes'] + closed['archiveUpperBoundBytes']
+    return refusal
+
+
+def preserved_capacity_binding(args, current):
+    """Bind one seven-record initial outer-filesystem refusal; no general retry."""
+    original, original_sha, _ = load_plan(args.capacity_plan)
+    evidence = json.loads(Path(args.capacity_evidence).read_bytes())
+    incoming = json.loads(Path(args.capacity_incoming_receipt).read_bytes())
+    inventory = json.loads(Path(args.capacity_inventory).read_bytes())
+    assert original['publicationAttempt'] == 'initial' and original['publicationAttempt'] != current['publicationAttempt']
+    assert re.fullmatch('[a-z0-9][a-z0-9-]{0,30}', current['publicationAttempt']), 'Invalid fresh capacity attempt'
+    assert original['releaseFormat'] == current['releaseFormat'] == 'proofofwork-ui-release-v5'
+    assert original['inputStorage'] == current['inputStorage'] == 'release-evidence-v1'
+    assert not any(key in original for key in ('resumeSurfaces', 'preservedStageResume', 'preservedCapacityResume'))
+    for key in ('releaseId', 'commit', 'tree', 'source', 'surfaces', 'surfacesPayloadFingerprint',
+                'preservedSurfacesRoot', 'preservedSourceCheckout', 'oldLiveManifestSha256', 'oldFullRootTreeSha256',
+                'retainedRoots', 'managedSurfaces', 'admissions', 'sourceAllocatedBytes', 'stageArchiveUpperBoundBytes',
+                'publicationHelpers', 'helperSha256', 'installedStagerSha256', 'phaseCapacity'):
+        assert original[key] == current[key], 'Capacity resume changes an artifact or native gate binding: ' + key
+    release = current['releaseId']
+    failed_root = '/var/tmp/proofofwork-deploy/recovery-transport-' + release + '-surfaces-stage-initial'
+    assert evidence['evidence'] == failed_root
+    assert evidence['stageExists'] is False and evidence['sourceExists'] is False and evidence['privateStages'] == []
+    assert evidence['preservedInputExists'] is True
+    for key in ('stageExists', 'sourceExists', 'scratchPayloadExists', 'archiveExists', 'checksumExists', 'provenanceExists'):
+        assert inventory[key] is False
+    assert inventory['privateStages'] == [] and inventory['allLiveAndRetainedRootsUnchanged'] is True
+    assert inventory['live']['manifestSha256'] == current['oldLiveManifestSha256']
+    assert inventory['live']['treeSha256'] == current['oldFullRootTreeSha256'] and inventory['retained'] == current['retainedRoots']
+    assert inventory['preservedInputFingerprint'] == current['surfacesPayloadFingerprint']
+    assert set(inventory['freshNamespaces']) == {'transportEvidence', 'sourceEvidence', 'publishEvidence', 'transportUnit', 'sourceUnit', 'publishUnit'}
+    assert all(value is True for value in inventory['freshNamespaces'].values())
+    unit = evidence['failedUnit']; assert inventory['failedUnit'] == unit
+    assert set(unit) == {'name', 'LoadState', 'ActiveState', 'SubState', 'MainPID', 'InvocationID', 'Result'}
+    assert unit['name'] == 'proofofwork-recovery-ui-transport-' + release + '-surfaces-stage-initial.service'
+    assert unit['LoadState'] == 'loaded' and unit['ActiveState'] == unit['SubState'] == 'failed'
+    assert unit['MainPID'] == '0' and unit['Result'] == 'exit-code' and re.fullmatch('[0-9a-f]{32}', unit['InvocationID'])
+    names = {'intent.json', 'receive-admission.log', 'receiver.log', 'input-evidence-check.json',
+             'stage-model.json', 'stage-check-scratch.json', 'stage-check.json'}
+    records = evidence['records']; assert set(records) == names
+    values = {}
+    for name, record in records.items():
+        assert record['path'] == failed_root + '/' + name
+        values[name] = capacity_record_value(record)
+    intent = values['intent.json']
+    assert intent['planSha256'] == original_sha and intent['phase'] == 'surfaces-stage'
+    assert intent['releaseId'] == release and intent['commit'] == current['commit'] and intent['tree'] == current['tree']
+    assert intent['historicalDeletion'] is False and intent['retentionDeferred'] is True
+    refusal = outer_capacity_refusal(values, original)
+    pins = {name: {'sha256': records[name]['sha256'], 'bytes': records[name]['bytes']} for name in names}
+    for pin in pins.values(): assert HEX64.fullmatch(pin['sha256']) and 0 < pin['bytes'] <= 65536
+    receiver_record = inventory['receiverReceipt']
+    assert receiver_record['path'] == '/var/tmp/proofofwork-deploy/audit5-stream-surfaces-' + release + '.json'
+    receiver = capacity_record_value(receiver_record)
+    assert receiver == inventory['surfaceReceiverReceipt'] == values['receiver.log']
+    assert receiver['status'] == 'verified' and receiver['kind'] == 'surfaces' and receiver['releaseId'] == release
+    assert receiver['archiveSha256'] == current['surfaces']['sha256'] and receiver['compressedBytes'] == current['surfaces']['compressedBytes']
+    assert receiver['entries'] == current['surfacesPayloadFingerprint']['entries'] and receiver['logicalBytes'] == current['surfacesPayloadFingerprint']['regularBytes']
+    assert receiver['extractedRoot'] == '/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-' + release
+    assert receiver_record['sha256'] == inventory['receiverReceiptSha256']
+    receipt_path = '/var/backups/proofofwork-ui/transport-evidence/' + release + '/incoming-receipt.json'
+    assert incoming['path'] == receipt_path and HEX64.fullmatch(incoming['sha256']) and 0 < incoming['bytes'] <= 65536
+    value = capacity_record_value(incoming)
+    assert value['format'] == 'proof-of-work-ui-incoming-evidence-v1'
+    assert value['releaseId'] == release and value['commit'] == current['commit'] and value['tree'] == current['tree']
+    assert value['planSha256'] == original_sha and value['payloadFingerprint'] == current['surfacesPayloadFingerprint']
+    assert value['preservedPath'] == str(Path(current['preservedSurfacesRoot']).parent)
+    assert value['movePreservedInodes'] is True and value['historicalDeletion'] is False and value['receiverReceipt'] == receiver
+    return {'failedPlanPath': remote_plan(original), 'failedPlanSha256': original_sha,
+            'failedEvidence': failed_root, 'failedRecords': pins, 'failedUnit': unit,
+            'receiverReceiptPath': '/var/tmp/proofofwork-deploy/audit5-stream-surfaces-' + release + '.json',
+            'receiverReceiptSha256': inventory['receiverReceiptSha256'],
+            'incomingReceiptPath': receipt_path, 'incomingReceiptSha256': incoming['sha256'],
+            'incomingReceiptBytes': incoming['bytes'], 'filesystemRefusal': refusal}
+
+
+def capacity_record_value(record):
+    """Bind exported decoded metadata to its exact bounded native record bytes."""
+    assert HEX64.fullmatch(record['sha256']) and type(record['bytes']) is int and 0 < record['bytes'] <= 65536
+    assert isinstance(record['base64'], str) and len(record['base64']) <= 87384
+    raw = base64.b64decode(record['base64'], validate=True)
+    assert len(raw) == record['bytes'] and hashlib.sha256(raw).hexdigest() == record['sha256']
+    try: value = json.loads(raw)
+    except json.JSONDecodeError: value = raw.decode('utf-8')
+    assert value == record['value']
+    return value
+
 def digest(path):
     with Path(path).open('rb') as source:
         return hashlib.file_digest(source, 'sha256').hexdigest()
@@ -333,11 +447,14 @@ def make_plan(args):
     assert all(resume_args) or not any(resume_args), 'Resume requires plan, failed evidence and inventory'
     preserved_args = [getattr(args, name, None) for name in ('preserved_plan', 'preserved_evidence', 'preserved_incoming_receipt', 'preserved_inventory')]
     assert all(preserved_args) or not any(preserved_args), 'Preserved stage requires plan, refusal, incoming receipt and inventory'
-    assert not (any(resume_args) and any(preserved_args)), 'Choose one explicit resume phase'
-    if all(resume_args): c['resumeSurfaces'] = surface_resume_binding(args, c)
-    if all(preserved_args): c['preservedStageResume'] = preserved_stage_binding(args, c)
+    capacity_args = [getattr(args, name, None) for name in ('capacity_plan', 'capacity_evidence', 'capacity_incoming_receipt', 'capacity_inventory')]
+    assert all(capacity_args) or not any(capacity_args), 'Capacity resume requires plan, refusal, incoming receipt and inventory'
+    assert sum(bool(any(values)) for values in (resume_args, preserved_args, capacity_args)) <= 1, 'Choose one explicit resume phase'
     old = p['oldManaged']
     c['stageArchiveUpperBoundBytes'] = old['logicalBytes'] + logical['surfaces'] + (old['entries']+entries['surfaces'])*2048 + 32*1024**2
+    if all(resume_args): c['resumeSurfaces'] = surface_resume_binding(args, c)
+    if all(preserved_args): c['preservedStageResume'] = preserved_stage_binding(args, c)
+    if all(capacity_args): c['preservedCapacityResume'] = preserved_capacity_binding(args, c)
     c['allocationDerivation'] = {'oldManaged': old, 'newLogicalBytes': logical, 'newEntries': entries,
         'receiveMetadataBytesPerEntry': 4096, 'receiveFixedMarginBytes': 16*1024**2,
         'archiveFixedMarginBytes': 32*1024**2, 'archivePaddingBytesPerEntry': 2048}
@@ -409,6 +526,7 @@ def main():
     p = sub.add_parser('preflight'); p.add_argument('output'); p.set_defaults(fn=preflight)
     p = sub.add_parser('make-plan'); p.add_argument('build_receipt'); p.add_argument('preflight'); p.add_argument('output'); p.add_argument('--attempt', default='initial')
     p.add_argument('--resume-plan'); p.add_argument('--resume-evidence'); p.add_argument('--resume-inventory'); p.add_argument('--preserved-plan'); p.add_argument('--preserved-evidence'); p.add_argument('--preserved-incoming-receipt'); p.add_argument('--preserved-inventory'); p.set_defaults(fn=make_plan)
+    p.add_argument('--capacity-plan'); p.add_argument('--capacity-evidence'); p.add_argument('--capacity-incoming-receipt'); p.add_argument('--capacity-inventory')
     p = sub.add_parser('upload-plan'); p.add_argument('plan'); p.set_defaults(fn=upload_plan)
     p = sub.add_parser('publish'); p.add_argument('plan'); p.add_argument('log'); p.set_defaults(fn=publish)
     args = parser.parse_args()

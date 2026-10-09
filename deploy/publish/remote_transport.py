@@ -313,6 +313,126 @@ def validate_preserved_stage(plan):
     assert not list((EVIDENCE / release).glob('.proofofwork-ui-stage-*'))
     return incoming
 
+def outer_capacity_refusal(records, plan):
+    """Recognize only a sufficient scratch guard followed by root-space refusal."""
+    model = records['stage-model.json']; scratch = records['stage-check-scratch.json']
+    assert model['inputStabilityVerified'] is True
+    assert model['installedStagerSha256'] == plan['installedStagerSha256']
+    closed = model['modeledManagedArchive']
+    assert closed['model'] == 'closed-managed-archive-tar-gzip-v1' and closed['hardDereference'] is True
+    assert closed['archiveUpperBoundBytes'] == model['modeledManagedArchiveUpperBoundBytes']
+    assert 0 < closed['archiveUpperBoundBytes'] <= plan['stageArchiveUpperBoundBytes']
+    assert len(closed['managedSurfaces']) == len(set(closed['managedSurfaces'])) == 22
+    assert set(closed['managedSurfaces']) == set(plan['managedSurfaces'])
+    assert scratch['status'] == 'sufficient' and scratch['phase'] == 'recovery-stage'
+    assert scratch['path'] == '/var/tmp/proofofwork-deploy' and scratch['cleanupApproved'] is False
+    assert scratch['maximumBytes'] == 5*1024**3
+    assert scratch['additionalBytes'] == model['peakAdditionalBytes'] + 32*1024**2
+    assert scratch['allocatedBytes'] + scratch['additionalBytes'] <= scratch['maximumBytes']
+    prefix = 'UI capacity refused '; raw = records['stage-check.json']
+    assert isinstance(raw, str) and raw.startswith(prefix)
+    refusal = json.loads(raw[len(prefix):])
+    assert set(refusal) == {'availableBytes', 'availableInodes', 'path', 'phase', 'requiredBytes', 'requiredInodes'}
+    assert all(type(refusal[key]) is int and refusal[key] >= 0 for key in
+               ('availableBytes', 'availableInodes', 'requiredBytes', 'requiredInodes'))
+    assert refusal['path'] == '/' and refusal['phase'] == 'recovery-stage'
+    assert refusal['availableBytes'] < refusal['requiredBytes']
+    assert refusal['availableInodes'] >= refusal['requiredInodes'] == 10128
+    assert refusal['requiredBytes'] == 10*1024**3 + 64*1024**2 + scratch['additionalBytes'] + closed['archiveUpperBoundBytes']
+    return refusal
+
+
+def unused_capacity_namespaces(plan):
+    """Check every future namespace before creating this attempt's evidence."""
+    release = plan['releaseId']; attempt = plan['publicationAttempt']
+    archive = ARCHIVES / ('proofofwork-ui-release-' + release + '.tgz')
+    pool = EVIDENCE / release
+    for path in (BASE / ('proofofwork-www-stage-' + release), Path(plan['preservedSourceCheckout']),
+                 BASE / ('proofofwork-ui-surfaces-' + release), archive,
+                 Path(str(archive) + '.sha256'), Path(str(archive) + '.provenance'),
+                 BASE / ('recovery-transport-' + release + '-preserved-capacity-resume-' + attempt),
+                 BASE / ('recovery-transport-' + release + '-source-' + attempt),
+                 BASE / ('recovery-publish-' + release + '-' + attempt),
+                 pool / 'archive-base', pool / (archive.name + '.incoming'), pool / 'archive.sha256.incoming',
+                 pool / ('audit5-stream-source-' + release + '.json'), pool / ('.audit5-stream-source-' + release)):
+        assert not os.path.lexists(path), 'Capacity resume namespace occupied: ' + str(path)
+    assert not list((EVIDENCE / release).glob('.proofofwork-ui-stage-*'))
+    assert not list(BASE.glob('.proofofwork-ui-stage-' + release + '.*'))
+    for unit in ('proofofwork-recovery-ui-transport-' + release + '-source-' + attempt + '.service',
+                 'proofofwork-recovery-release-' + release + '-ui-' + attempt + '.service'):
+        fields = dict(line.split('=', 1) for line in subprocess.check_output([
+            '/usr/bin/systemctl', 'show', unit, '-p', 'LoadState', '-p', 'ActiveState', '-p', 'MainPID'],
+            env=ENV, text=True, timeout=10).splitlines())
+        assert fields == {'LoadState': 'not-found', 'ActiveState': 'inactive', 'MainPID': '0'}, 'Capacity resume unit occupied'
+
+
+def validate_capacity_resume(plan):
+    """Verify one preserved-input outer refusal under the continuous parent lock."""
+    resume = plan['preservedCapacityResume']; release = plan['releaseId']
+    assert set(resume) == {'failedPlanPath', 'failedPlanSha256', 'failedEvidence', 'failedRecords', 'failedUnit',
+        'receiverReceiptPath', 'receiverReceiptSha256', 'incomingReceiptPath', 'incomingReceiptSha256',
+        'incomingReceiptBytes', 'filesystemRefusal'}
+    assert not any(key in plan for key in ('resumeSurfaces', 'preservedStageResume'))
+    original = json.loads(bound(resume['failedPlanPath'], resume['failedPlanSha256'], 65536))
+    assert resume['failedPlanPath'] == str(BASE / ('recovery-plan-' + release + '-initial.json'))
+    assert original['publicationAttempt'] == 'initial' and plan['publicationAttempt'] != 'initial'
+    assert original['releaseFormat'] == plan['releaseFormat'] == 'proofofwork-ui-release-v5'
+    assert original['inputStorage'] == plan['inputStorage'] == 'release-evidence-v1'
+    assert not any(key in original for key in ('resumeSurfaces', 'preservedStageResume', 'preservedCapacityResume'))
+    for key in ('releaseId', 'commit', 'tree', 'source', 'surfaces', 'surfacesPayloadFingerprint',
+                'preservedSurfacesRoot', 'preservedSourceCheckout', 'oldLiveManifestSha256', 'oldFullRootTreeSha256',
+                'retainedRoots', 'managedSurfaces', 'admissions', 'sourceAllocatedBytes', 'stageArchiveUpperBoundBytes',
+                'publicationHelpers', 'helperSha256', 'installedStagerSha256', 'phaseCapacity'):
+        assert original[key] == plan[key]
+    failed = BASE / ('recovery-transport-' + release + '-surfaces-stage-initial')
+    assert resume['failedEvidence'] == str(failed); directory(failed)
+    names = {'intent.json', 'receive-admission.log', 'receiver.log', 'input-evidence-check.json',
+             'stage-model.json', 'stage-check-scratch.json', 'stage-check.json'}
+    assert set(resume['failedRecords']) == names and {path.name for path in failed.iterdir()} == names
+    records = {}
+    for name, pin in resume['failedRecords'].items():
+        raw = bound(failed / name, pin['sha256'], 65536)
+        assert len(raw) == pin['bytes']
+        records[name] = raw.decode() if name == 'stage-check.json' else json.loads(raw)
+    intent = records['intent.json']
+    assert intent['planSha256'] == resume['failedPlanSha256'] and intent['phase'] == 'surfaces-stage'
+    assert intent['releaseId'] == release and intent['commit'] == plan['commit'] and intent['tree'] == plan['tree']
+    assert intent['historicalDeletion'] is False and intent['retentionDeferred'] is True
+    assert outer_capacity_refusal(records, original) == resume['filesystemRefusal']
+    unit = resume['failedUnit']
+    assert set(unit) == {'name', 'LoadState', 'ActiveState', 'SubState', 'MainPID', 'InvocationID', 'Result'}
+    assert unit['name'] == 'proofofwork-recovery-ui-transport-' + release + '-surfaces-stage-initial.service'
+    assert unit['LoadState'] == 'loaded' and unit['ActiveState'] == unit['SubState'] == 'failed'
+    assert unit['MainPID'] == '0' and unit['Result'] == 'exit-code' and re.fullmatch('[0-9a-f]{32}', unit['InvocationID'])
+    fields = dict(line.split('=', 1) for line in subprocess.check_output([
+        '/usr/bin/systemctl', 'show', unit['name'], '-p', 'LoadState', '-p', 'ActiveState', '-p', 'SubState',
+        '-p', 'MainPID', '-p', 'InvocationID', '-p', 'Result'], env=ENV, text=True, timeout=10).splitlines())
+    assert fields == {key: value for key, value in unit.items() if key != 'name'}, 'Original failed unit changed'
+    receiver_path = BASE / ('audit5-stream-surfaces-' + release + '.json')
+    assert resume['receiverReceiptPath'] == str(receiver_path)
+    receiver = json.loads(bound(receiver_path, resume['receiverReceiptSha256'], 65536))
+    assert receiver == records['receiver.log'] and receiver['status'] == 'verified' and receiver['kind'] == 'surfaces'
+    assert receiver['releaseId'] == release and receiver['archiveSha256'] == plan['surfaces']['sha256']
+    assert receiver['compressedBytes'] == plan['surfaces']['compressedBytes']
+    assert receiver['entries'] == plan['surfacesPayloadFingerprint']['entries'] and receiver['logicalBytes'] == plan['surfacesPayloadFingerprint']['regularBytes']
+    assert receiver['extractedRoot'] == str(BASE / ('proofofwork-ui-surfaces-' + release))
+    validate_evidence_ancestors(release, require_release=True)
+    incoming_path = EVIDENCE / release / 'incoming-receipt.json'
+    assert resume['incomingReceiptPath'] == str(incoming_path)
+    raw = bound(incoming_path, resume['incomingReceiptSha256'], 65536); assert len(raw) == resume['incomingReceiptBytes']
+    incoming = json.loads(raw)
+    assert incoming['format'] == 'proof-of-work-ui-incoming-evidence-v1'
+    assert incoming['releaseId'] == release and incoming['commit'] == plan['commit'] and incoming['tree'] == plan['tree']
+    assert incoming['planSha256'] == resume['failedPlanSha256'] and incoming['receiverReceipt'] == receiver
+    assert incoming['payloadFingerprint'] == plan['surfacesPayloadFingerprint']
+    assert incoming['preservedPath'] == str(Path(plan['preservedSurfacesRoot']).parent)
+    assert incoming['movePreservedInodes'] is True and incoming['historicalDeletion'] is False
+    unused_capacity_namespaces(plan)
+    directory(incoming['preservedPath'])
+    assert payload_fingerprint(Path(incoming['preservedPath'])) == plan['surfacesPayloadFingerprint']
+    return incoming
+
+
 def source_receiver_code(receiver_path, receiver_sha, evidence_root):
     """Invoke the unmodified pinned receiver function in its exact release pool."""
     receiver = bound(receiver_path, receiver_sha)
@@ -328,7 +448,7 @@ def source_receiver_code(receiver_path, receiver_sha, evidence_root):
 assert sys.flags.isolated and os.geteuid() == os.getegid() == 0
 os.umask(0o077); resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 plan_path, plan_sha, phase = sys.argv[1:]
-assert phase in ('surfaces-stage', 'surfaces-stage-resume', 'preserved-stage-resume', 'source')
+assert phase in ('surfaces-stage', 'surfaces-stage-resume', 'preserved-stage-resume', 'preserved-capacity-resume', 'source')
 p = json.loads(bound(plan_path, plan_sha, 65536)); release = p['releaseId']
 release_format = p.get('releaseFormat', 'proofofwork-ui-release-v3')
 assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5')
@@ -385,6 +505,7 @@ assert [str(path) for path in retained] == [record['root'] for record in p['reta
 for path, record in zip(retained, p['retainedRoots']):
     value = namespace['fingerprint'](path)
     assert value['manifestSha256'] == record['manifestSha256'] and value['treeSha256'] == record['treeSha256']
+capacity_incoming = validate_capacity_resume(p) if phase == 'preserved-capacity-resume' else None
 out = BASE / ('recovery-transport-' + release + '-' + phase + '-' + p['publicationAttempt'])
 assert not os.path.lexists(out)
 # Existing installed capacity checks run before this bounded receipt directory.
@@ -415,7 +536,7 @@ if phase == 'source':
          str(part['compressedBytes']), part['sha256'], str(evidence_root)], 'receiver.log',
          source=sys.stdin.buffer, length=part['compressedBytes'])
 elif phase == 'surfaces-stage':
-    assert 'resumeSurfaces' not in p and 'preservedStageResume' not in p
+    assert not any(key in p for key in ('resumeSurfaces', 'preservedStageResume', 'preservedCapacityResume'))
     run(['/usr/bin/python3', '-I', '-B', str(tools / 'release.py'), 'admit-ui',
         '--release-id', release, '--lock-fd', str(lock_fd), '--admission-id', 'recovery-' + kind + '-receive-' + p['publicationAttempt'],
         '--additional-bytes', str(allocation['bytes']), '--additional-inodes', str(allocation['inodes']),
@@ -426,9 +547,9 @@ elif phase == 'surfaces-stage':
 assert sys.stdin.buffer.read(1) == b'', 'Extra transport bytes'
 stage = BASE / ('proofofwork-www-stage-' + release)
 if phase != 'source':
-    if phase == 'preserved-stage-resume':
+    if phase in ('preserved-stage-resume', 'preserved-capacity-resume'):
         assert 'resumeSurfaces' not in p
-        incoming = validate_preserved_stage(p)
+        incoming = capacity_incoming if phase == 'preserved-capacity-resume' else validate_preserved_stage(p)
         preserved = Path(incoming['preservedPath']); directory(preserved)
         input_before = payload_fingerprint(preserved)
         assert input_before == p['surfacesPayloadFingerprint']
