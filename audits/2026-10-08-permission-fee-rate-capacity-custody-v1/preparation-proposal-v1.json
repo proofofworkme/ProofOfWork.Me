@@ -1,0 +1,84 @@
+{
+  "format": "permission-fee-rate-capacity-preparation-proposal-v1",
+  "status": "AWAITING_EXACT_HUMAN_AUTHORIZATION",
+  "targets": [
+    "/var/backups/proofofwork-ui/transport-evidence/ed838d5c8691-20261001T210406Z",
+    "/var/backups/proofofwork-ui/transport-evidence/d4d888757a1c-20261002T013828Z"
+  ],
+  "localCustodyDirectory": "/home/sixer/ProofOfWork.Me/audits/2026-10-08-permission-fee-rate-capacity-custody-v1",
+  "localDirectoryMode": "0700",
+  "archive": "/home/sixer/ProofOfWork.Me/audits/2026-10-08-permission-fee-rate-capacity-custody-v1/historical-ui-inputs.tgz",
+  "rawCensusSha256": "1079baee64c795e4de236270445a90dd77db4182b503ef7edda7eb289181f37c",
+  "entries": 1644,
+  "kinds": {
+    "directory": 74,
+    "file": 1570
+  },
+  "perTarget": {
+    "d4d888757a1c-20261002T013828Z": {
+      "allocatedBytes": 221601792,
+      "entries": 822
+    },
+    "ed838d5c8691-20261001T210406Z": {
+      "allocatedBytes": 221405184,
+      "entries": 822
+    }
+  },
+  "uniqueAllocatedBytes": 443006976,
+  "regularFilesHaveOneLink": true,
+  "externalHardlinks": false,
+  "readOnlyEligibilityVerified": true,
+  "archiveCreated": false,
+  "archiveVerified": false,
+  "restoreTestVerified": false,
+  "productionDryrunPassed": false,
+  "historicalRemovalAuthorized": false,
+  "protectedPinsSha256": "33d4144235b8246a03fa2d37a2eb94375c0dd831976ebb243081f4252abde4ac",
+  "protectedCurrentReleaseTrees": [
+    "/var/backups/proofofwork-ui/transport-evidence/06a2baf88d53-20261008T192602Z",
+    "/var/backups/proofofwork-ui/transport-evidence/b40d4f4a0d31-20261009T000001Z",
+    "/var/tmp/proofofwork-deploy/proofofwork-www-stage-b40d4f4a0d31-20261009T000001Z",
+    "/var/tmp/proofofwork-deploy/recovery-transport-b40d4f4a0d31-20261009T000001Z-source-fee-a1",
+    "/var/tmp/proofofwork-deploy/recovery-transport-b40d4f4a0d31-20261009T000001Z-surfaces-stage-fee-a1"
+  ],
+  "protectedCurrentArchiveSha256": "0d8f59d837964d072e8534151547d624fd351b4e21016e3f74fa3c9e1d32284c",
+  "protectedLiveCommit": "06a2baf88d53ebaccfcc7138b9a84c187cdbd91e",
+  "protectedRollbackRoots": 7,
+  "protectedHelperCount": 11,
+  "capacityForecast": {
+    "observedAvailableBytes": 10967445504,
+    "worstNativeRequiredRootBytes": 11260141568,
+    "worstExtractionShortfallBytes": 292696064,
+    "publicationEvidenceBytes": 8388608,
+    "manifestSidecarExchangeEnvelopeBytes": 1048576,
+    "additionalOperationalBufferBytes": 67108864,
+    "requiredReclamationIncludingBufferBytes": 369242112,
+    "proposedUniqueReclamationBytes": 443006976,
+    "projectedSurplusAfterBufferBytes": 73764864,
+    "nativeRootReserveBytes": 10737418240,
+    "nativeGrowthReserveBytes": 67108864,
+    "nativeScratchMaximumBytes": 5368709120,
+    "guardsUnchanged": true,
+    "freshCapacityGatesRequired": true
+  },
+  "sourceSha256": {
+    "capture-readonly-v3.py": "8e445cfb0f0c1c7ee6c2eec5cca2c2f3207202770f036f1dbd7ede2f63dcc6cb",
+    "custody-capture-and-verify-v1.py": "652c6c6bb4eb0a91f9f366bb0dbeeb59dceed77a000d2f3c4bc9eca4e03195b9",
+    "production-readonly-dryrun-v1.py": "0001dddcad7de4fd99cb5f6fd9c59f2ca9bb069d3e001429389ff9ea4961777b",
+    "removal-controller-proposal-v1.py": "3f22e34c2673f1b83d4ddf60c3ccc01c057180f8375174e91c262b9848c9c4ea",
+    "protected-expected-pins-v2.json": "33d4144235b8246a03fa2d37a2eb94375c0dd831976ebb243081f4252abde4ac",
+    "selected-readonly-eligibility-v1.json": "6bdf31e6dd78fe7e0fc860d227eb2a66cf03769c665635156884fa77d6a1c0f4",
+    "selected-readonly-metadata-census-v1.json": "73be72a25172b9d4610a549f2fd9c02e2cc6d531501640c0ea66564b8d5553b9",
+    "check-removal-proposal-v1.test.py": "162c797ea7e30b43bc16fc688fdf393cc9696db0d1266c1b3b960a742a16acdd",
+    "check-archive-verification-v1.test.py": "bbbeef3a5c67795554f2b91c883b7c370710ad5158d8ec4a597be3796ae3a852"
+  },
+  "automaticApprovalRejection": "Full contents transfer was rejected because the newly selected directories could contain sensitive data and exact payload export to this new local destination lacked explicit human authorization. No transfer or removal ran.",
+  "requiredApprovedSequence": [
+    "Capture exact reviewed census through stdout-only read-only SSH to the private local archive; refuse any census/protected drift before export.",
+    "Verify archive membership, content hashes, numeric ownership, modes, nanosecond times and internal links; restore locally and verify metadata/xattrs/content.",
+    "Build the closed exact-scope removal manifest from verified custody; independently review it and all unchanged protected pins.",
+    "Run the separate production read-only dry run with stdout-only local receipt; all comparisons must pass.",
+    "Only with explicit conditional human authorization and successful independent review/dry run, execute the inode-fenced two-path removal using its exact manifest SHA; preserve all other paths and receipts.",
+    "Re-run native capacity/preflight/provenance and use the unchanged publisher in a fresh unused namespace; preserve failed source evidence and signing closure."
+  ]
+}

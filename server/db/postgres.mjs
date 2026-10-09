@@ -25,7 +25,7 @@ export function createProofIndexPool(options = {}) {
     );
   }
 
-  return new Pool({
+  const pool = new Pool({
     application_name: String(env.POW_INDEX_DB_APP_NAME ?? "proof-indexer"),
     connectionString,
     connectionTimeoutMillis: Number(env.POW_INDEX_DB_CONNECT_TIMEOUT_MS ?? 10_000),
@@ -34,6 +34,18 @@ export function createProofIndexPool(options = {}) {
     options: "-c search_path=pg_catalog,\\ pg_temp",
     statement_timeout: Number(env.POW_INDEX_DB_STATEMENT_TIMEOUT_MS ?? 120_000),
   });
+  // pg removes a failed idle client before emitting this event. Handling it
+  // keeps a transient database interruption from terminating the process;
+  // subsequent acquisitions reconnect, while active query failures still reject.
+  pool.on("error", (error) => {
+    const code = String(error?.code ?? "");
+    console.error(JSON.stringify({
+      service: "proof-index-database",
+      event: "idle-client-error",
+      code: /^[A-Z0-9]{5}$/u.test(code) ? code : "UNKNOWN",
+    }));
+  });
+  return pool;
 }
 
 export async function withProofIndexClient(callback, options = {}) {

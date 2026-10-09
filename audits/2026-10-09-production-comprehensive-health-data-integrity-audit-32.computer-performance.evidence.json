@@ -1,0 +1,449 @@
+{
+  "schema": "pow-audit32-computer-performance-evidence-v1",
+  "completedAtUtc": "2026-10-09T15:24:23.367437+00:00",
+  "scope": "Completed read-only performance/data-efficiency/usability/accessibility/maintainability audit and proposal; no implementation approved",
+  "authorization": "User approved appending completed read-only audit; findings returned in conversation before append",
+  "sourceCommit": "c7935dde7239836f89be27c1ee29dfbc6a585e78",
+  "sourceTree": "70137cf4b831c792eeca5d2eaae21354ebed2ef9",
+  "log": {
+    "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.md",
+    "bytes": 105306,
+    "sha256": "0936d589bd857e8e546a3e142f77f916458a84749f6f44947b5b6ff091053020",
+    "parentPrefixBytes": 66461,
+    "parentPrefixSha256": "e031d3c4a1ff1fba9fff4cf6838e7cd69c0b23f9af8a5d079128422575b5186b",
+    "appendBytes": 38845,
+    "appendSha256": "d7f40ab80ce711441a2dab4d702e2ccaddb4ac1e5d09535c8aee4ac9f67f1d5c",
+    "appendStartLine": 337
+  },
+  "parentAuditBindings": [
+    {
+      "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.artifacts.json.gz",
+      "bytes": 1722654,
+      "sha256": "05858a2ffea9777bd398651e281dd2f30e1eb3485f3d9740860e6a18e6c98bc0"
+    },
+    {
+      "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.evidence.json",
+      "bytes": 545770,
+      "sha256": "8353642fcccd4f68fa5863035b51924da990aeb03e4c5b6cc351ae0a96d85628"
+    },
+    {
+      "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.md",
+      "bytes": 66461,
+      "sha256": "e031d3c4a1ff1fba9fff4cf6838e7cd69c0b23f9af8a5d079128422575b5186b"
+    },
+    {
+      "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.ordered-read-only-artifacts.json.gz",
+      "bytes": 1173521,
+      "sha256": "939f6048ac469c5aef50d6c0046f47f15560c7e719d5af81389e21e0c31f0dbe"
+    },
+    {
+      "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.ordered-read-only.evidence.json",
+      "bytes": 8470,
+      "sha256": "4f22b654bdd5089095a5a5b6e49b83d77403964b35688421ce4caf099cd2dc73"
+    }
+  ],
+  "artifactBundle": {
+    "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.computer-performance-artifacts.json.gz",
+    "bytes": 374523,
+    "sha256": "7094685664c7f3e52f494640a9c4e1aea25f44780218363498800dc5a8dc4bff",
+    "artifacts": [
+      {
+        "id": "pow-ui-perf-assets-report.json",
+        "sourcePath": "/tmp/pow-ui-perf-assets-report.json",
+        "bytes": 69433,
+        "sha256": "6d8c21ac7273b5cece0ae048a8b3de2433e516d306d1428e7a6dbbcabc0a457c"
+      },
+      {
+        "id": "pow-ui-perf-assets-inventory.json",
+        "sourcePath": "/tmp/pow-ui-perf-assets-inventory.json",
+        "bytes": 997565,
+        "sha256": "ce2d3bdb9c83d8c81784c2d08d2264caf451c364da6bdd9658af1b6c87d64e2d"
+      },
+      {
+        "id": "pow-ui-perf-static-graph.json",
+        "sourcePath": "/tmp/pow-ui-perf-static-graph.json",
+        "bytes": 116286,
+        "sha256": "25eae19ff9aa5fb16c051caf3ba65a72e3b5119502a282eecca0d384d23474be"
+      },
+      {
+        "id": "pow-ui-perf-static-transfers.json",
+        "sourcePath": "/tmp/pow-ui-perf-static-transfers.json",
+        "bytes": 669842,
+        "sha256": "f69b52807ba47043339e1f1a516c95a2b4d465c3c5265fe519ede28f3a1c1df2"
+      },
+      {
+        "id": "pow-ui-perf-copied-builds.json",
+        "sourcePath": "/tmp/pow-ui-perf-copied-builds.json",
+        "bytes": 2782,
+        "sha256": "1028a0d31f8ea4414ab0e4b1e807bead5736d07ff99da23f9ee8a4a1c6bece72"
+      },
+      {
+        "id": "pow-ui-perf-home-lab-method.json",
+        "sourcePath": "/tmp/pow-ui-perf-home-lab-method.json",
+        "bytes": 1448,
+        "sha256": "f5b86525e53363466693e87c6988e39a068cb1ae0fa9a7f88282761dfa2a7d26"
+      },
+      {
+        "id": "pow-ui-perf-home-lab-report.json",
+        "sourcePath": "/tmp/pow-ui-perf-home-lab-report.json",
+        "bytes": 152392,
+        "sha256": "9caf4461b0270d40ea64896deec01a95454e1961c5e27ed45f2e4dda7ad1559c"
+      },
+      {
+        "id": "pow-ui-perf-home-lab-passed-attachment.json",
+        "sourcePath": "/tmp/pow-ui-perf-home-lab-passed-attachment.json",
+        "bytes": 74863,
+        "sha256": "7549f2473203c16295845c97a34d78ad8a65cbdcbdeb2511abc53a2b38904e2a"
+      },
+      {
+        "id": "pow-ui-perf-assets-collector-failure.json",
+        "sourcePath": "/tmp/pow-ui-perf-assets-collector-failure.json",
+        "bytes": 242,
+        "sha256": "1461c3e18201d400bb116293f1433fd479b635c8ea0e618630dd583354d618e3"
+      },
+      {
+        "id": "pow-ui-perf-amo-lab-method.json",
+        "sourcePath": "/tmp/pow-ui-perf-amo-lab-method.json",
+        "bytes": 3443,
+        "sha256": "e35b98e35d0cd6df4f8623cd78c0353afe473ad79138238301cc004c37af837c"
+      },
+      {
+        "id": "pow-ui-perf-amo-summary.json",
+        "sourcePath": "/tmp/pow-ui-perf-amo-summary.json",
+        "bytes": 33283,
+        "sha256": "e334485ed186f39372e9c69f3c1526128ba590ff7ff8dc8fa71e553d8fff601e"
+      },
+      {
+        "id": "pow-ui-perf-amo-lab-report.json",
+        "sourcePath": "/tmp/pow-ui-perf-amo-lab-report.json",
+        "bytes": 2115475,
+        "sha256": "32b3d5f945b5995dfa91258be0101ae39733ac54aeb0ae0eeb87ccb6e3ee3a38"
+      },
+      {
+        "id": "pow-ui-perf-assets-remote.py",
+        "sourcePath": "/tmp/pow-ui-perf-assets-remote.py",
+        "bytes": 3305,
+        "sha256": "862a4dcf3f9e12cec329b3d979e33418be4b050d435fa01480fb84db2c518685"
+      },
+      {
+        "id": "pow-ui-perf-copy-production-builds.py",
+        "sourcePath": "/tmp/pow-ui-perf-copy-production-builds.py",
+        "bytes": 577,
+        "sha256": "69493145dd0eefcea553473467f917ebb49fab9c14212f6a598ef6160290533e"
+      },
+      {
+        "id": "pow-ui-perf-static-analyze.py",
+        "sourcePath": "/tmp/pow-ui-perf-static-analyze.py",
+        "bytes": 2921,
+        "sha256": "993167021e079e20ed3e5ed596fa201415662b9ba6bb17811be05e4a653fab33"
+      },
+      {
+        "id": "pow-ui-perf-static-transfers.py",
+        "sourcePath": "/tmp/pow-ui-perf-static-transfers.py",
+        "bytes": 4235,
+        "sha256": "b55e40b55b5e7dce0894cb0f85e814a4c08a1fa03021c769fcec00be70e8bdd4"
+      },
+      {
+        "id": "pow-ui-perf-home-lab-extract.py",
+        "sourcePath": "/tmp/pow-ui-perf-home-lab-extract.py",
+        "bytes": 7605,
+        "sha256": "f40b72a5ac5bce4192b431a9b6180be4f4a91e715edacf4b8f51d497435d2769"
+      },
+      {
+        "id": "pow-ui-perf-assets-report-assemble.py",
+        "sourcePath": "/tmp/pow-ui-perf-assets-report-assemble.py",
+        "bytes": 16254,
+        "sha256": "23e98edda823a4af9ff4c2158ce16ee171e35c7c3d2043350c7afa9b47784ec3"
+      },
+      {
+        "id": "pow-ui-perf-report-polish.py",
+        "sourcePath": "/tmp/pow-ui-perf-report-polish.py",
+        "bytes": 9632,
+        "sha256": "6a8be92e79a71a7889b464a1476eb3e3870fcc2d80ab5d9fbb1d7aea79657e78"
+      },
+      {
+        "id": "pow-ui-perf-amo-extract.py",
+        "sourcePath": "/tmp/pow-ui-perf-amo-extract.py",
+        "bytes": 6468,
+        "sha256": "aaf1f5a91b167dfe06b6384aa4db584afab4fdc3575318d84b742beee7769ad9"
+      },
+      {
+        "id": "pow-ui-perf-finalize.py",
+        "sourcePath": "/tmp/pow-ui-perf-finalize.py",
+        "bytes": 5115,
+        "sha256": "a27a225c548f274db43a408134be9ffad9012f3fe5ea22b68419c107662ca2f9"
+      },
+      {
+        "id": "perf-desktop.config.mjs",
+        "sourcePath": "/tmp/pow-ui-perf-existing-check-lab/perf-desktop.config.mjs",
+        "bytes": 143,
+        "sha256": "c827416114787798a8fb7258abe171adfc8f03404e2413fe65a4d7f71fcaa788"
+      },
+      {
+        "id": "perf-mobile.config.mjs",
+        "sourcePath": "/tmp/pow-ui-perf-existing-check-lab/perf-mobile.config.mjs",
+        "bytes": 142,
+        "sha256": "377bad45e987bcb47ec12fa9d99716ddee367b81c77802282de72aad2c265456"
+      },
+      {
+        "id": "pow-ui-perf-safe-manifest.json",
+        "sourcePath": "/tmp/pow-ui-perf-safe-manifest.json",
+        "bytes": 5660,
+        "sha256": "ddac308c2c748d6b52eba19dcdeab25bebe2e54bc00f51662ebb80567832c441"
+      },
+      {
+        "id": "pow-ui-perf-data-report.json",
+        "sourcePath": "/tmp/pow-ui-perf-data-report.json",
+        "bytes": 18449,
+        "sha256": "06af7ebb6c847e9c120308f9b8d3b36414a9e226a8a54263d7b8b202350e43ab"
+      },
+      {
+        "id": "pow-ui-perf-data-source-evidence.json",
+        "sourcePath": "/tmp/pow-ui-perf-data-source-evidence.json",
+        "bytes": 57836,
+        "sha256": "5f4b3687e53e35113668a0476f46c8fed8853f3bebd5d1d7295d01d64cc163d5"
+      },
+      {
+        "id": "pow-ui-perf-home-summary-lifecycle.json",
+        "sourcePath": "/tmp/pow-ui-perf-home-summary-lifecycle.json",
+        "bytes": 1795,
+        "sha256": "d89eac549af473dbbc2616540fe3d0de27d3e9cf96efa3542ae3ef7be796e6c5"
+      },
+      {
+        "id": "pow-ui-perf-a11y-source-report.json",
+        "sourcePath": "/tmp/pow-ui-perf-a11y-source-report.json",
+        "bytes": 32694,
+        "sha256": "187d6c0a3ef5f87223dc2766a38e469c924310aa83eb5e3acfa4e3e0c044fa66"
+      },
+      {
+        "id": "pow-ui-perf-a11y-folder-target-source.json",
+        "sourcePath": "/tmp/pow-ui-perf-a11y-folder-target-source.json",
+        "bytes": 5804,
+        "sha256": "a1429174fd6f5836408aba0cbc1dd0d62477f4b3acac8df1a800eeb64f36fd65"
+      },
+      {
+        "id": "pow-ui-perf-safety-report.json",
+        "sourcePath": "/tmp/pow-ui-perf-safety-report.json",
+        "bytes": 88205,
+        "sha256": "669cf1a56b48789bee201dfb73f9d7ec8f06a462c74dfaf6d4697cd2b2ee31d9"
+      },
+      {
+        "id": "pow-ui-perf-browser-navigation-report.json",
+        "sourcePath": "/tmp/pow-ui-perf-browser-navigation-report.json",
+        "bytes": 16554,
+        "sha256": "4368efeb269be6d3ba3c67f81451053a58713e1b226df270ae437874bb3cc92d"
+      },
+      {
+        "id": "pow-ui-perf-safety-outspend-body-fixture.json",
+        "sourcePath": "/tmp/pow-ui-perf-safety-outspend-body-fixture.json",
+        "bytes": 423,
+        "sha256": "b6b6ec28e259b8afa1a80d133a0d37c7dabbeb3f60bdd172dbbf6e1b6ae0ed02"
+      },
+      {
+        "id": "pow-ui-perf-live-observations.json",
+        "sourcePath": "/tmp/pow-ui-perf-live-observations.json",
+        "bytes": 7370,
+        "sha256": "ff45565951ab08ba02f4536340ad6cda77025a4cc305af2feb954f770d7c6a4e"
+      },
+      {
+        "id": "pow-ui-perf-baseline.json",
+        "sourcePath": "/tmp/pow-ui-perf-baseline.json",
+        "bytes": 1849,
+        "sha256": "fcf0bc5c4b6f6948561bfa24b58db619761c59f4f1416c0a3be171214f722f73"
+      },
+      {
+        "id": "pow-ui-perf-preappend-preservation.json",
+        "sourcePath": "/tmp/pow-ui-perf-preappend-preservation.json",
+        "bytes": 171,
+        "sha256": "5450af125f4b91b9cdc35891afc39fc2ca22b7a5a52dd6edc0b89103e4177fc3"
+      },
+      {
+        "id": "pow-ui-perf-prior-custody-recheck.json",
+        "sourcePath": "/tmp/pow-ui-perf-prior-custody-recheck.json",
+        "bytes": 335,
+        "sha256": "e4a02219203cfce17ad44d357b5956b48b2e5b86d164c188d92b8e1c9241ac1a"
+      },
+      {
+        "id": "pow-ui-perf-parent-audit-bindings.json",
+        "sourcePath": "/tmp/pow-ui-perf-parent-audit-bindings.json",
+        "bytes": 1105,
+        "sha256": "df266689bcc8047244c8c691df2ffda7d9f3ee1fda359e0e7bf016fafcf2d240"
+      },
+      {
+        "id": "pow-ui-perf-hygiene-check.log",
+        "sourcePath": "/tmp/pow-ui-perf-hygiene-check.log",
+        "bytes": 504,
+        "sha256": "83f47adfc85254aadd804ce36bde2cbe7c655ea57aa9d577ca097e4fdf4b9cfb"
+      },
+      {
+        "id": "pow-ui-perf-data-test-0.log",
+        "sourcePath": "/tmp/pow-ui-perf-data-test-0.log",
+        "bytes": 89,
+        "sha256": "c443a8700ba76bb3589bbcba616d52d4df0859956e44b0c8da3dd62f398d745c"
+      },
+      {
+        "id": "pow-ui-perf-data-test-1.log",
+        "sourcePath": "/tmp/pow-ui-perf-data-test-1.log",
+        "bytes": 92,
+        "sha256": "ad00a0d5be2024f675514d7c1393bdaaa36d72147c238889c789b9ac9809dbce"
+      },
+      {
+        "id": "pow-ui-perf-data-test-2.log",
+        "sourcePath": "/tmp/pow-ui-perf-data-test-2.log",
+        "bytes": 1689,
+        "sha256": "61bdd08469ace02510e2b1969c668495cbd652a3ce70d52e749c956ba7f7a2a0"
+      },
+      {
+        "id": "pow-ui-perf-data-test-3.log",
+        "sourcePath": "/tmp/pow-ui-perf-data-test-3.log",
+        "bytes": 26,
+        "sha256": "3c093d10a601d750288d31a4f8bb980af003cdd961d8d246a4ef8c056fe8ca7e"
+      },
+      {
+        "id": "pow-ui-perf-data-test-4.log",
+        "sourcePath": "/tmp/pow-ui-perf-data-test-4.log",
+        "bytes": 3119,
+        "sha256": "a53954847338681bfee6526e5bdc8ba495c9ec2cd048eaca1c3c72137b028aa5"
+      },
+      {
+        "id": "pow-ui-perf-safety-fee.log",
+        "sourcePath": "/tmp/pow-ui-perf-safety-fee.log",
+        "bytes": 245,
+        "sha256": "dd43cf74136a397cc14436b1009a3018d2a8cdfd0a5fe07abf5b5f3049c6b58b"
+      },
+      {
+        "id": "pow-ui-perf-safety-q16.log",
+        "sourcePath": "/tmp/pow-ui-perf-safety-q16.log",
+        "bytes": 139,
+        "sha256": "8e4565f6df954aa3d18ecd0c40dbcf191b584cbaddd3c1efc9c4e45158f89490"
+      },
+      {
+        "id": "pow-ui-perf-safety-work-contract.log",
+        "sourcePath": "/tmp/pow-ui-perf-safety-work-contract.log",
+        "bytes": 150,
+        "sha256": "d074b06818512f4d6eb8222cb3e50629644b648de573cb15dde3a8cace2654f9"
+      },
+      {
+        "id": "pow-ui-perf-safety-work-v8.log",
+        "sourcePath": "/tmp/pow-ui-perf-safety-work-v8.log",
+        "bytes": 524,
+        "sha256": "f5c8c3757186297b7c9d98bd3908b66d033c54a65df511ab67adbb5fd8b83e8a"
+      },
+      {
+        "id": "pow-ui-perf-safety-work-v8-gates.log",
+        "sourcePath": "/tmp/pow-ui-perf-safety-work-v8-gates.log",
+        "bytes": 180,
+        "sha256": "9588b0de74054e55370caceef7595430c0f351cc4b4411ca511c6dba9d70df47"
+      },
+      {
+        "id": "pow-ui-perf-safety-canonical-order.log",
+        "sourcePath": "/tmp/pow-ui-perf-safety-canonical-order.log",
+        "bytes": 40,
+        "sha256": "b737cfa6f42a430e8afef98f700d8b065174bfcfd0d5d3b4202d0eb57c3658a0"
+      },
+      {
+        "id": "pow-ui-perf-safety-send-prep.log",
+        "sourcePath": "/tmp/pow-ui-perf-safety-send-prep.log",
+        "bytes": 78,
+        "sha256": "bfdda1d62358cdb3dcc9b9ae0f6d340170df33c36710240d6fd1aefbcc3568ca"
+      },
+      {
+        "id": "pow-ui-perf-safety-bond-exact.log",
+        "sourcePath": "/tmp/pow-ui-perf-safety-bond-exact.log",
+        "bytes": 46,
+        "sha256": "15431945ca6e4603f3eda2f672b34b7e14cecbb73122623096c99a89d898618e"
+      },
+      {
+        "id": "pow-ui-perf-safety-utxo-refresh.log",
+        "sourcePath": "/tmp/pow-ui-perf-safety-utxo-refresh.log",
+        "bytes": 268,
+        "sha256": "163516e86d348a693e2f47a2d49c0980fc43c0e71900e4a589a36c4c873fb025"
+      },
+      {
+        "id": "pow-ui-perf-safety-api-client-authorized.log",
+        "sourcePath": "/tmp/pow-ui-perf-safety-api-client-authorized.log",
+        "bytes": 1678,
+        "sha256": "d627ec3b18e5959b640b57c4ef0675943e4338c0ce95c4532e0556fc16973447"
+      },
+      {
+        "id": "pow-ui-perf-safety-api-client.log",
+        "sourcePath": "/tmp/pow-ui-perf-safety-api-client.log",
+        "bytes": 1097,
+        "sha256": "118dc4ce7a3eee93a184d0603fdbe88dbedf3bb8beb90d4fefb11959b70d6650"
+      }
+    ]
+  },
+  "checks": {
+    "sourceAndDocs": {
+      "baselineMismatches": [],
+      "sourceBindingCount": 46,
+      "sourceBindingMismatches": [],
+      "head": "c7935dde7239836f89be27c1ee29dfbc6a585e78",
+      "headUnchanged": true
+    },
+    "prior951Bindings": {
+      "checked": 951,
+      "mismatches": [
+        {
+          "path": "/home/sixer/ProofOfWork.Me/repository-hygiene.json",
+          "currentSha256": "b8a1e57c6fde005925c2f933b2c925b48af5615a12c9e73caec17885b0eab22e",
+          "expectedSha256": "7f819472f62407a98d1dc1a1b7314ae34e134d7c92bea6b479427f1627bac214",
+          "currentBytes": 12508
+        }
+      ]
+    },
+    "priorBindingException": "repository-hygiene.json changed in the preceding first Audit32, already present at this pass baseline and unchanged here",
+    "initialStatusSha256": "701f0290874bc66212e4194045da68f48f4b6800008b28cdcf3cc77cbf6cfe73",
+    "preappendStatusSha256": "701f0290874bc66212e4194045da68f48f4b6800008b28cdcf3cc77cbf6cfe73",
+    "preappendStatusDelta": 0,
+    "hygieneCheckExitCode": 1,
+    "hygieneCheckFindings": "Only same four pre-existing AUD32-07 custody-note classifications; no fixer/cleanup/config update",
+    "hygieneFixRun": false,
+    "fieldWebVitalsAvailable": false,
+    "productionChanges": 0,
+    "buildOrInstall": false,
+    "runtimeControls": "CUA production viewport-only with uncontrolledcache; exact replicated labsettings in safe artifacts",
+    "amoCompletedTests": 24,
+    "amoPasses": 24,
+    "amoFailures": 0,
+    "amoNavigationPhases": 48,
+    "homeCompletedGatePasses": 1,
+    "homeGateFailures": 4,
+    "homeIsolatedFixturePasses": 0,
+    "interruptedAmoAttempt": "143 incomplete, not a test verdict",
+    "productionSignerCalls": 0
+  },
+  "newFindings": [
+    "AUD32-08 Home measurementisolation/image serving",
+    "AUD32-09 receiptmodal focus sourcegap",
+    "AUD32-10 observed44x36 foldertarget",
+    "AUD32-11 observedBrowser navigation reset",
+    "AUD32-12 outspendbody deadline source/mockgap"
+  ],
+  "existingLineagesExtended": [
+    "PERF-27-01",
+    "PERF-27-02",
+    "read containment/lifecycle",
+    "field/browser/AT coverage"
+  ],
+  "approvalRequired": "All proposed source/config/implementation/cleanup/release changes. No improvement performed.",
+  "postSaveVerification": {
+    "atUtc": "2026-10-09T15:24:55.831058+00:00",
+    "actualParentPrefixPreserved": true,
+    "previousCompanionsPreserved": true,
+    "bundledArtifactsReverified": 54,
+    "baselineSourceDocBindingsPreserved": true,
+    "headUnchanged": true,
+    "onlyAddedStatusLines": [
+      "?? audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.computer-performance-artifacts.json.gz",
+      "?? audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.computer-performance.evidence.json"
+    ],
+    "removedStatusLines": [],
+    "trackedDiffWhitespacePassed": true,
+    "appendDiffWhitespacePassed": true,
+    "postAppendHygieneCheckExitCode": 1,
+    "postAppendHygieneOutputMatchesPreappend": true,
+    "hygieneOutputSha256": "83f47adfc85254aadd804ce36bde2cbe7c655ea57aa9d577ca097e4fdf4b9cfb",
+    "productionChanges": 0
+  }
+}

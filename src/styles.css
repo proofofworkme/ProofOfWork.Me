@@ -1828,7 +1828,7 @@ code {
 .custom-folder-form {
   display: grid;
   gap: 6px;
-  grid-template-columns: minmax(0, 1fr) 36px;
+  grid-template-columns: minmax(0, 1fr) 44px;
   padding: 4px 0 6px;
 }
 
@@ -1839,9 +1839,9 @@ code {
 
 .custom-folder-form .icon-button {
   justify-content: center;
-  min-height: 36px;
+  min-height: 44px;
   padding: 0;
-  width: 36px;
+  width: 44px;
 }
 
 .registry-network-stat {

@@ -23,6 +23,13 @@ function fixture() {
   const wallet = [], chain = [], state = {};
   let refresh;
   const context = { address: "wallet", network: "livenet",
+    AbortController,
+    createVisibleReadLoop(read) {
+      const controllers = [];
+      refresh = () => { const controller = new AbortController(); controllers.push(controller); void read(controller.signal); };
+      refresh();
+      return () => controllers.forEach((controller) => controller.abort());
+    },
     fetchUtxos: () => { const d = deferred(); wallet.push(d); return d.promise; },
     fetchAddressApiUtxos: () => { const d = deferred(); chain.push(d); return d.promise; },
     errorMessage: (error) => error.message,

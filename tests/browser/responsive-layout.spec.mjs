@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { cpus, loadavg, platform, release, totalmem } from "node:os";
+import { resolve } from "node:path";
+import { layoutShiftSessionMaximum, startPerformanceFixtureServer } from "./performance-fixture-server.mjs";
 
 const WORK_TOKEN_ID =
   "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
@@ -90,6 +93,8 @@ const REPRESENTATIVE_EMBEDDED_ROUTES = [
     ready: ".boost-post",
   },
 ];
+const PERFORMANCE_FIXTURES = process.env.POW_PLAYWRIGHT_PERFORMANCE_FIXTURES === "1";
+const PERFORMANCE_REPETITIONS = 5;
 
 function surfaceUrl(baseUrl, path) {
   return baseUrl ? `${baseUrl}${path}` : path;
@@ -4041,56 +4046,244 @@ for (const workspace of ["standalone", "computer"]) {
   });
 }
 
-// Serve fixtures and production assets directly so this test can exercise real
-// HTTP cache reuse without Playwright interception disabling the browser cache.
-test("Home production assets cold and warm cache measurements", async ({ page }, testInfo) => {
-  test.skip(process.env.POW_PLAYWRIGHT_PRODUCTION_BUILD !== "1", "Requires npm run build.");
-  const { createServer } = await import("node:http");
-  const { readFile } = await import("node:fs/promises");
-  const { resolve, extname } = await import("node:path");
-  let apiHandler;
-  await installApiFixtures({ route: async (_pattern, handler) => { apiHandler = handler; } });
-  const root = resolve("dist");
-  const server = createServer(async (request, response) => {
-    const url = new URL(request.url, `http://${request.headers.host}`);
-    try {
-      if (url.pathname.startsWith("/api/v1/")) {
-        await apiHandler({ request: () => ({ url: () => url.href }),
-          fulfill: async ({ body, contentType = "application/json", status = 200 }) => {
-            response.writeHead(status, { "Content-Type": contentType, "Cache-Control": "no-store" });
-            response.end(body);
-          } });
-        return;
+// Cache-aware lab profiles use an actual production build, a loopback API
+// fixture, and a rejecting outbound proxy. No Playwright route disables cache.
+async function capturePerformanceDiagnostics(page, session) {
+  const [browser, metrics, dom] = await Promise.all([
+    page.evaluate(() => ({
+      navigation: performance.getEntriesByType("navigation").map((entry) => entry.toJSON()),
+      paint: performance.getEntriesByType("paint").map((entry) => entry.toJSON()),
+      resources: performance.getEntriesByType("resource").map((entry) => entry.toJSON()),
+      observations: window.__powPerformanceObservations,
+      domElements: document.querySelectorAll("*").length,
+      images: [...document.images].map((image) => ({ src: image.src, complete: image.complete,
+        naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight })),
+    })),
+    session.send("Performance.getMetrics"), session.send("Memory.getDOMCounters"),
+  ]);
+  const totals = {};
+  for (const entry of browser.resources) {
+    const path = new URL(entry.name).pathname;
+    const kind = path.startsWith("/api/") ? "api" : /\.js$/u.test(path) ? "js"
+      : /\.css$/u.test(path) ? "css" : /\.woff2?$/u.test(path) ? "font"
+      : /\.(png|jpg|jpeg|svg|webp|avif|gif|ico)$/u.test(path) ? "image" : "other";
+    const value = totals[kind] ||= { requests: 0, transferBytes: 0, encodedBodyBytes: 0, decodedBodyBytes: 0 };
+    value.requests++; value.transferBytes += entry.transferSize;
+    value.encodedBodyBytes += entry.encodedBodySize; value.decodedBodyBytes += entry.decodedBodySize;
+  }
+  return { ...browser, clsThroughObservation: layoutShiftSessionMaximum(browser.observations.cls),
+    resourceTotals: totals, chromeMetrics: metrics.metrics, dom };
+}
+
+function observePerformance() {
+  const observations = window.__powPerformanceObservations = { lcp: [], cls: [], longTasks: [], events: [] };
+  for (const [type, key] of [["largest-contentful-paint", "lcp"], ["layout-shift", "cls"],
+    ["longtask", "longTasks"], ["event", "events"]]) {
+    if (!PerformanceObserver.supportedEntryTypes.includes(type)) continue;
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (key === "cls" && entry.hadRecentInput) continue;
+        if (observations[key].length < 1_000) observations[key].push(entry.toJSON());
       }
-      const pathname = url.pathname.startsWith("/assets/") ? url.pathname : "/index.html";
-      const file = resolve(root, `.${pathname}`);
-      if (!file.startsWith(`${root}/`)) throw new Error("Invalid asset path");
-      const type = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".woff2": "font/woff2", ".woff": "font/woff" }[extname(file)] || "application/octet-stream";
-      response.writeHead(200, { "Content-Type": type, "Cache-Control": pathname.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache" });
-      response.end(await readFile(file));
-    } catch (error) { if (!response.headersSent) response.writeHead(500); response.end(String(error)); }
+    }).observe({ type, buffered: true, ...(type === "event" ? { durationThreshold: 16 } : {}) });
+  }
+}
+
+function performanceMetadata(browser, server, viewport, dataset) {
+  return {
+    kind: "isolated-same-source-production-build-lab", date: new Date().toISOString(),
+    browser: browser.version(), channel: process.env.POW_PLAYWRIGHT_CHANNEL || "chrome",
+    node: process.version, os: `${platform()} ${release()}`, cpu: cpus()[0]?.model,
+    logicalCpus: cpus().length, physicalMemoryBytes: totalmem(), viewport,
+    mobileHardwareEmulated: false, touch: false, deviceScaleFactor: 1,
+    cpuThrottleRate: Number(process.env.POW_PERFORMANCE_CPU_RATE || "1"),
+    network: "loopback HTTP/1.1; gzip JS/CSS/JSON; no throughput throttle; 20ms API fixture delay",
+    cache: "new browser context cold, same-context subsequent navigation warm; HTTP cache enabled; no routing",
+    wallet: "disconnected; no provider, account authorization, signing, or production requests",
+    dataset, source: server.build.source, buildManifestSha256: server.build.manifestSha256,
+    assets: server.build.files, apiConfiguration: "VITE_POW_API_BASE empty at build; same-origin fixture API",
+    outboundIsolation: "all outbound proxy traffic rejected; Chrome CONNECT proxy/autofill probes recorded separately from context-owned app requests",
+    comparedWithDeployedAbsoluteOriginBuild: false,
+    limitations: ["lab diagnostics, not field p75 or INP", "viewport mobile is not mobile hardware",
+      "driver interaction timings include automation and assertion overhead", "heap counters are not a leak certification",
+      "fixture API data is not full-node authority", "host load is shared and recorded for each sample",
+      "500ms post-ready traffic observation can include ongoing fresh book reconciliation; it is not steady-state idle"],
+  };
+}
+
+async function runCacheAwareMeasurements({ browser, testInfo, viewport, path, fixtureOptions, dataset, assertReady, interact }) {
+  let apiHandler;
+  await installApiFixtures({ route: async (_pattern, handler) => { apiHandler = handler; } }, {
+    responseDelayMs: 20, ...fixtureOptions,
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const server = await startPerformanceFixtureServer({ buildRoot: resolve(process.env.POW_PERFORMANCE_BUILD_ROOT), apiHandler });
+  const samples = [];
+  const failures = [];
   try {
-    const samples = [];
-    for (const phase of ["cold-cache", "warm-cache"]) {
-      const start = performance.now();
-      await page.goto(`http://127.0.0.1:${server.address().port}/?landing=1`);
-      await expect(page.locator(".landing-app")).toContainText("Full-node ProofOfWork ID and DNS registry summaries verified.");
-      await expect(page.getByRole("button", { name: "Refresh Registries", exact: true })).toBeEnabled();
-      const readyMs = performance.now() - start;
-      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      samples.push({ phase, readyMs, entries: await page.evaluate(() => ({
-        navigation: performance.getEntriesByType("navigation").map((entry) => entry.toJSON()),
-        paint: performance.getEntriesByType("paint").map((entry) => entry.toJSON()),
-        resources: performance.getEntriesByType("resource").map((entry) => entry.toJSON()),
-      })) });
+    for (let repetition = 0; repetition < PERFORMANCE_REPETITIONS; repetition++) {
+      const context = await browser.newContext({ viewport, deviceScaleFactor: 1, serviceWorkers: "block", proxy: server.proxy });
+      const page = await context.newPage();
+      const externalRequests = [];
+      context.on("request", (request) => { if (new URL(request.url()).origin !== server.origin) externalRequests.push(request.url()); });
+      await page.addInitScript(observePerformance);
+      const session = await context.newCDPSession(page);
+      await session.send("Performance.enable");
+      await session.send("Emulation.setCPUThrottlingRate", { rate: Number(process.env.POW_PERFORMANCE_CPU_RATE || "1") });
+      try {
+        for (const phase of ["cold-cache", "warm-cache"]) {
+          const requestStart = server.requests.length;
+          const startedAt = new Date().toISOString();
+          const start = performance.now();
+          const sample = { repetition, phase, startedAt, hostLoad: loadavg() };
+          samples.push(sample);
+          try {
+            await page.goto(`${server.origin}${path}`, { waitUntil: "load" });
+            sample.navigationLoadMs = performance.now() - start;
+            await assertReady(page);
+            sample.usefulVerifiedFixtureDataMs = performance.now() - start;
+            sample.interactions = await interact?.(page);
+            await page.evaluate(() => new Promise((resolveFrames) => requestAnimationFrame(() => requestAnimationFrame(resolveFrames))));
+            const idleStart = server.requests.length;
+            await page.waitForTimeout(500);
+            sample.postReadyObservationMs = 500;
+            sample.requestsStartedDuringPostReadyObservation = server.requests.length - idleStart;
+            sample.diagnostics = await capturePerformanceDiagnostics(page, session);
+            sample.serverRequests = server.requests.slice(requestStart).map((request) => ({ ...request }));
+            sample.completedRequests = sample.serverRequests.filter((request) => request.completed).length;
+            sample.abortedRequests = sample.serverRequests.filter((request) => request.aborted).length;
+            sample.pendingRequests = sample.serverRequests.filter((request) => !request.completed && !request.aborted).length;
+            if (dataset.listingCount) {
+              const nonfreshPages = sample.serverRequests.filter((request) => {
+                const url = new URL(request.path, server.origin);
+                return request.completed && url.pathname === "/api/v1/token-history" &&
+                  url.searchParams.get("kind") === "listings" && !url.searchParams.has("fresh");
+              });
+              sample.completeListingPages = nonfreshPages.length;
+              expect(nonfreshPages).toHaveLength(Math.ceil(dataset.listingCount / dataset.pageSize));
+            }
+            const keys = new Map();
+            for (const request of sample.serverRequests) keys.set(request.path, (keys.get(request.path) || 0) + 1);
+            sample.repeatedExactUrls = [...keys].filter(([, count]) => count > 1).map(([url, count]) => ({ url, count }));
+            expect(externalRequests, "A fixture build attempted an external request").toEqual([]);
+            // Chrome performs proxy/autofill probes outside page/context
+            // request events. They remain blocked and retained as evidence;
+            // any app-owned external request or other proxy authority fails.
+            sample.externalRequests = [...externalRequests];
+            sample.blockedBrowserProxyProbes = server.blocked.map((entry) => ({ ...entry }));
+            expect(server.blocked.filter((entry) => entry.method !== "CONNECT" ||
+              !["www.google.com:443", "content-autofill.googleapis.com:443"].includes(entry.authority)),
+              "Unexpected outbound proxy authority").toEqual([]);
+            expect(sample.serverRequests.filter((request) => request.status >= 400), "Fixture received an invalid asset/API response").toEqual([]);
+            for (const image of sample.diagnostics.images) {
+              expect(image.complete && image.naturalWidth > 0, `Invalid image bytes: ${image.src}`).toBe(true);
+            }
+            const js = sample.diagnostics.resources.filter((entry) => new URL(entry.name).pathname.endsWith(".js"));
+            expect(js.length).toBeGreaterThan(0);
+            if (phase === "cold-cache") expect(js.some((entry) => entry.transferSize > 0)).toBe(true);
+            else expect(js.every((entry) => entry.transferSize === 0), "Warm hashed JS assets were downloaded again").toBe(true);
+            sample.status = "passed";
+          } catch (error) {
+            sample.status = "failed"; sample.error = String(error); sample.elapsedMs = performance.now() - start;
+            sample.serverRequests = server.requests.slice(requestStart).map((request) => ({ ...request }));
+            sample.externalRequests = [...externalRequests]; sample.blocked = [...server.blocked];
+            failures.push({ repetition, phase, error: String(error) });
+          }
+        }
+      } finally { await context.close(); }
     }
-    const assets = (sample) => sample.entries.resources.filter((entry) => entry.name.includes("/assets/") && entry.name.endsWith(".js"));
-    expect(assets(samples[0]).some((entry) => entry.transferSize > 0)).toBe(true);
-    expect(assets(samples[1]).every((entry) => entry.transferSize === 0)).toBe(true);
-    await testInfo.attach("cold-warm-cache-measurements", { body: JSON.stringify({
-      scope: "Home production build; local HTTP server; API fixture readiness separate from assets", samples,
-    }, null, 2), contentType: "application/json" });
-  } finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
-});
+    const evidence = { ...performanceMetadata(browser, server, viewport, dataset), repetitions: PERFORMANCE_REPETITIONS,
+      samples, failures, blocked: server.blocked };
+    await testInfo.attach("cache-aware-production-measurements", { body: JSON.stringify(evidence, null, 2), contentType: "application/json" });
+    expect(failures, "All benchmark attempts, including failures, are retained in the attachment").toEqual([]);
+  } finally { await server.close(); }
+}
+
+for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+  test(`Home isolated production cold and warm ${viewport.width}px`, async ({ browser }, testInfo) => {
+    test.skip(!PERFORMANCE_FIXTURES, "Opt-in isolated production-build fixture profile.");
+    test.setTimeout(180_000);
+    await runCacheAwareMeasurements({ browser, testInfo, viewport, path: "/?landing=1",
+      dataset: { registryRecords: 0, fixtureDelayMs: 20 },
+      assertReady: async (page) => {
+        await expect(page.locator(".landing-app")).toContainText("Full-node ProofOfWork ID and DNS registry summaries verified.");
+        await expect(page.getByRole("button", { name: "Refresh Registries", exact: true })).toBeEnabled();
+      },
+      interact: async (page) => {
+        const start = performance.now();
+        await page.getByRole("button", { name: "Refresh Registries", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Refresh Registries", exact: true })).toBeEnabled();
+        await expect(page.locator(".landing-app")).toContainText("Full-node ProofOfWork ID and DNS registry summaries verified.");
+        return { freshRegistryRefreshMs: performance.now() - start };
+      },
+    });
+  });
+  for (const count of [1_000, 10_000]) {
+    for (const workspace of ["standalone", "computer"]) {
+      test(`AMO isolated production cold and warm ${count} records ${workspace} ${viewport.width}px`, async ({ browser }, testInfo) => {
+        test.skip(!PERFORMANCE_FIXTURES, "Opt-in isolated production-build fixture profile.");
+        test.setTimeout(240_000);
+        const rows = Array.from({ length: count }, (_, index) => ({ ...responsiveAmoListing(index),
+          saleAuthorization: { ...RESPONSIVE_AMO_LISTINGS[0].saleAuthorization,
+            anchorTxid: fixtureTxid(index), nonce: `measurement-${index}` },
+          sealConfirmed: true, sealTxid: fixtureTxid(index, 20_000),
+        }));
+        const book = completeTokenListingHistoryFixture(rows);
+        await runCacheAwareMeasurements({ browser, testInfo, viewport,
+          path: `/?${workspace === "computer" ? "folder=marketplace" : "marketplace=1"}&asset=${WORK_TOKEN_ID}`,
+          dataset: { listingCount: count, pageSize: 200, renderedPageSize: 25, snapshotId: book.snapshotId, fixtureDelayMs: 20 },
+          fixtureOptions: {
+            countedAmo: true,
+            marketplaceSummaryTransform: (summary) => ({ ...summary, token: { ...summary.token,
+              listings: rows.slice(0, 40), listingBookComplete: false,
+              totalCounts: { ...summary.token.totalCounts, listings: count },
+              stats: { ...summary.token.stats, confirmedOpenListings: count, openListings: count },
+            } }),
+            tokenListingHistoryResponse: (url) => {
+              const start = Number((url.searchParams.get("cursor") || "fixture-0").split("-")[1]);
+              const end = Math.min(start + 200, count);
+              return { ...book, items: book.items.slice(start, end), start, end,
+                cursor: url.searchParams.get("cursor") || "", page: Math.floor(start / 200),
+                pageCount: Math.ceil(count / 200), hasMore: end < count, nextCursor: end < count ? `fixture-${end}` : "" };
+            },
+          },
+          assertReady: async (page) => {
+            await expect(page.getByLabel("AMO summary verification")).toHaveAttribute("data-state", "ready", { timeout: 90_000 });
+            const rendered = await page.locator("#credit-market-book .token-market-row").count();
+            expect(rendered).toBeGreaterThan(0); expect(rendered).toBeLessThanOrEqual(25);
+          },
+          interact: async (page) => {
+            const start = performance.now();
+            await page.getByPlaceholder("Search sale tickets, sellers, txids").fill(rows[count - 1].listingId);
+            await expect(page.locator("#credit-market-book .token-market-row")).toHaveCount(1);
+            await expect(page.locator("#credit-market-book").getByRole("link", { name: "Listing TX", exact: true }))
+              .toHaveAttribute("href", new RegExp(`${rows[count - 1].listingId}$`, "u"));
+            return { exactLastRecordSearchMs: performance.now() - start, verifiedLastListingId: rows[count - 1].listingId };
+          },
+        });
+      });
+    }
+  }
+}
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 390, height: 568 }]) {
+  test(`Computer create-folder target and keyboard operation ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await installApiFixtures(page);
+    await page.setViewportSize(viewport);
+    await page.goto("/?folder=inbox");
+    if (viewport.width <= 620) await page.locator(".computer-mobile-nav").getByRole("button", { name: "More", exact: true }).click();
+    const sidebar = page.locator(".sidebar");
+    const input = sidebar.locator(".custom-folder-form input");
+    const button = sidebar.getByRole("button", { name: "Create folder", exact: true });
+    await input.fill("Target fixture");
+    await button.scrollIntoViewIfNeeded();
+    const box = await button.boundingBox();
+    expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
+    await input.focus();
+    await page.keyboard.press("Tab");
+    await expect(button).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(sidebar.getByRole("button", { name: /^Target fixture/u })).toBeVisible();
+    await expect(button).toBeFocused();
+    await assertNoDocumentOverflow(page, "Create-folder target");
+  });
+}

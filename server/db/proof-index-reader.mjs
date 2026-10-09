@@ -473,6 +473,8 @@ export const PUBLIC_LOG_EVENT_KINDS = new Set([
   "boost-seal",
   "boost-transfer",
   "boost-unfollow",
+  "code-commit",
+  "code-repository",
   "file",
   "dns-subdomain-create",
   "dns-subdomain-update",

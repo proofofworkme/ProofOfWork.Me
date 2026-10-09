@@ -1251,16 +1251,16 @@ expect(
     /accountWorkTokenState/.test(app) &&
     /accountPowbTokenState/.test(app) &&
     /accountIncbTokenState/.test(app) &&
-    /fetchTokenState\(\s*network,\s*false,\s*"",\s*true,\s*\[address\],\s*true,\s*false,\s*requestController\.signal,?\s*\)/.test(
+    /fetchTokenState\(\s*network,\s*false,\s*"",\s*true,\s*\[address\],\s*true,\s*false,\s*readSignal,?\s*\)/.test(
       app,
     ) &&
-    /fetchTokenState\(\s*network,\s*true,\s*WORK_TOKEN_ID,\s*false,\s*\[address\],\s*true,\s*true,\s*requestController\.signal,?\s*\)/.test(
+    /fetchTokenState\(\s*network,\s*true,\s*WORK_TOKEN_ID,\s*false,\s*\[address\],\s*true,\s*true,\s*readSignal,?\s*\)/.test(
       app,
     ) &&
-    /fetchTokenState\(\s*network,\s*false,\s*POWB_TOKEN_ID,\s*true,\s*\[address\],\s*true,\s*false,\s*requestController\.signal,?\s*\)/.test(
+    /fetchTokenState\(\s*network,\s*false,\s*POWB_TOKEN_ID,\s*true,\s*\[address\],\s*true,\s*false,\s*readSignal,?\s*\)/.test(
       app,
     ) &&
-    /fetchTokenState\(\s*network,\s*false,\s*INCB_TOKEN_ID,\s*true,\s*\[address\],\s*true,\s*false,\s*requestController\.signal,?\s*\)/.test(
+    /fetchTokenState\(\s*network,\s*false,\s*INCB_TOKEN_ID,\s*true,\s*\[address\],\s*true,\s*false,\s*readSignal,?\s*\)/.test(
       app,
     ),
 );
@@ -2534,7 +2534,7 @@ expect(
   /async function fetchFreshWalletTokenListingsForAnchors[\s\S]*fresh: "1"[\s\S]*wallet: "1"[\s\S]*authoritativeWallet !== true[\s\S]*walletScoped !== true[\s\S]*Array\.isArray\(payload\.listings\)[\s\S]*options\.allowCurrentFallback[\s\S]*wallet: "1"[\s\S]*payload\.walletScoped === true[\s\S]*Array\.isArray\(payload\.listings\)/.test(
     app,
   ) &&
-    /async function fetchFreshProofOfWorkListingAnchorOutpoints[\s\S]*allowCurrentTokenFallback[\s\S]*\["", WORK_TOKEN_ID, POWB_TOKEN_ID, INCB_TOKEN_ID\][\s\S]*fetchIdRegistryState\(network, true\)[\s\S]*fetchFreshWalletTokenListingsForAnchors[\s\S]*allowCurrentFallback:[\s\S]*options\.allowCurrentTokenFallback[\s\S]*tokenScope === POWB_TOKEN_ID \|\| tokenScope === INCB_TOKEN_ID[\s\S]*activeListingAnchorOutpointsForAddress[\s\S]*activeTokenListingAnchorOutpointsForAddress[\s\S]*No transaction was created/.test(
+    /async function fetchFreshProofOfWorkListingAnchorOutpoints[\s\S]*allowCurrentTokenFallback[\s\S]*\["", WORK_TOKEN_ID, POWB_TOKEN_ID, INCB_TOKEN_ID\][\s\S]*fetchIdRegistryState\(network, true, false, options\.signal\)[\s\S]*fetchFreshWalletTokenListingsForAnchors[\s\S]*allowCurrentFallback:[\s\S]*options\.allowCurrentTokenFallback[\s\S]*tokenScope === POWB_TOKEN_ID \|\| tokenScope === INCB_TOKEN_ID[\s\S]*activeListingAnchorOutpointsForAddress[\s\S]*activeTokenListingAnchorOutpointsForAddress[\s\S]*No transaction was created/.test(
       app,
     ) &&
     /fetchFreshProofOfWorkListingAnchorOutpoints/.test(
@@ -2771,7 +2771,8 @@ const walletSyncBlock =
 expect(
   "wallet account and network events preserve the active Computer workspace",
   /walletSyncGenerationRef/.test(walletSyncBlock) &&
-    /ensureWalletNetwork/.test(walletSyncBlock) &&
+    /walletConnectionRef\.current\.connect\(wallet/.test(walletSyncBlock) &&
+    /requiredNetwork: mainnetWorkspaceMode \? "livenet" : undefined/.test(walletSyncBlock) &&
     !/setActiveFolder\(/.test(walletSyncBlock),
 );
 expect(

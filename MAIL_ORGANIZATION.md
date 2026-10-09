@@ -839,3 +839,24 @@ Unknown signed tips retain local Transaction recovery evidence before retry.
 ## Jobs workspace
 
 Jobs at `jobs.proofofwork.me` and Computer `/?folder=jobs` connects public work briefs, proposals, assignment, delivery and exact client-approved payments in proofs or canonical WORK credit. Versioned `pwj1:` metadata lives in the ordinary Mail body; [JOBS.md](JOBS.md) defines authority, replay, payment and evidence rules. Assignment freezes the selected proposal's currency and exact amount. WORK acceptance adds the canonical same-transaction transfer and its separate registry fee, and Paid requires accepted transfer evidence. Version-1 proof rewards and local drafts remain compatible. Historical contracting parties are fixed addresses and txids; current IDs are display conveniences. Drafts and recovery remain local. Offered rewards are not escrow, pending records are not paid work, and confirmed underlying Mail/Files and WORK economics are counted once.
+
+
+### Display-read lifecycle and connection recovery
+
+Account displays retain their verified values during refresh or unavailability.
+Their automatic UTXO, full ID reservation and separate credit/WORK/POWB/INCB
+lanes pause while hidden and catch up once on return. A workspace/account/network
+change cancels obsolete display work. Identical display HTTP reads can share
+transport with independent cancellation; fresh transaction preparation and
+pre-broadcast reads remain independent. Curated wallet membership is never
+replaced by raw node evidence through this optimization. Cancelled delayed
+WORK/Growth follow-ups cannot run after leaving the workspace. Shared reads
+already serving another consumer retain their existing deadline and validity.
+
+UniSat connection reports bounded account/network stages and releases its busy
+control before API hydration. Retry owns one local attempt, ignores obsolete
+completion, rechecks active account/network, and can recover already-granted
+access from an unresolved authorization prompt. A local timeout cannot close an
+extension prompt. Connection and cached display data do not authorize spending;
+existing fresh admission, reservation and local signing checks remain required.
+Drafts, contacts, folders, backups and local recovery evidence are unchanged.

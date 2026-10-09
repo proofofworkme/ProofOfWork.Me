@@ -436,6 +436,8 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "boost-transfer",
   "boost-unfollow",
   "browser",
+  "code-commit",
+  "code-repository",
   "dns-subdomain-create",
   "dns-subdomain-update",
   "dns-subdomain-revoke",

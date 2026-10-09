@@ -200,7 +200,19 @@
       "audits/2026-10-07-code-v1-production-release.md",
       "audits/2026-10-07-grouped-navigation-release.md",
       "audits/2026-10-07-jobs-v1-release.md",
-      "audits/2026-10-07-jobs-v1-release.evidence.json"
+      "audits/2026-10-07-jobs-v1-release.evidence.json",
+      "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.md",
+      "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.evidence.json",
+      "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.artifacts.json.gz",
+      "audits/2026-10-09-audit32-cleanup-review.json",
+      "audits/2026-10-08-permission-fee-rate-capacity-custody-v1/README.md",
+      "audits/2026-10-08-permission-fee-rate-capacity-custody-v1/README-v2.md",
+      "audits/2026-10-08-permission-fee-rate-capacity-custody-v1/REVIEW.md",
+      "audits/2026-10-08-permission-fee-rate-capacity-custody-v1/REVIEW-v2.md",
+      "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.ordered-read-only.evidence.json",
+      "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.ordered-read-only-artifacts.json.gz",
+      "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.computer-performance.evidence.json",
+      "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.computer-performance-artifacts.json.gz"
     ],
     "presentation-and-generated-notes": [
       "PROOFOFWORK_GENERAL_DECK.md",
@@ -231,7 +243,8 @@
       "deploy/audit29/INVOCATION.md",
       "deploy/audit30/STORAGE.md",
       "deploy/audit30/recovery/PROPOSAL.md",
-      "deploy/audit30/recovery/PROPOSAL-v2.md"
+      "deploy/audit30/recovery/PROPOSAL-v2.md",
+      "deploy/audit32-first-batch/README.md"
     ]
   },
   "protectedTrackedPaths": [

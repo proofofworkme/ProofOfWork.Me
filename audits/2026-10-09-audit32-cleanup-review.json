@@ -1,0 +1,2763 @@
+{
+  "schema": "pow-audit32-cleanup-review-v1",
+  "atUtc": "2026-10-09T13:35:56.306411+00:00",
+  "authorization": "Inventory/preparation only; no production removal performed or approved by this record",
+  "ui": {
+    "schema": "pow-audit32-ui-inventory-not-approved-v1",
+    "host": "77.42.91.106",
+    "observedAtUtc": "2026-10-09T13:04:36.678255+00:00",
+    "retainCurrent": "/var/www",
+    "retainCurrentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-c7935dde7239-20261009T043549Z.tgz",
+    "retainRollback": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c7935dde7239-20261009T043549Z",
+    "retainRollbackArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-b40d4f4a0d31-20261009T000001Z.tgz",
+    "rollbackReviewCandidates": [
+      {
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-06a2baf88d53-20261008T192602Z",
+        "releaseId": "67253136c0fa-20261008T162533Z",
+        "commit": "67253136c0fa05c4b71f5f0ca6623275682239cd",
+        "archiveName": "proofofwork-ui-release-67253136c0fa-20261008T162533Z.tgz",
+        "manifestSha256": "0c0b6233a7b71bf0a0d9ecc53392c7b2568dc4e2f3b1e68c69a8ad92f5f486c8",
+        "uniqueRegularAllocatedBytes": 260960256,
+        "regularLogicalBytesByPath": 537225981,
+        "regularPathReferences": 2404,
+        "uniqueInodes": 1149,
+        "classification": "older-rollback-review-candidate"
+      },
+      {
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-506b1ab0833e-20261008T065838Z",
+        "releaseId": "c243081bb18c-20261008T042348Z",
+        "commit": "c243081bb18cf1544da8783ccc6f9bfea3334e85",
+        "archiveName": "proofofwork-ui-release-c243081bb18c-20261008T042348Z.tgz",
+        "manifestSha256": "c61aa2a42995a2074ae2d7056bd1ba3d13d5c71117e0776ae2229dd23035ccf7",
+        "uniqueRegularAllocatedBytes": 254136320,
+        "regularLogicalBytesByPath": 516600044,
+        "regularPathReferences": 2288,
+        "uniqueInodes": 1078,
+        "classification": "older-rollback-review-candidate"
+      },
+      {
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-67253136c0fa-20261008T162533Z",
+        "releaseId": "aba69af9c0ca-20261008T153152Z",
+        "commit": "aba69af9c0caba1145fbf7dd28c0fa3acc963dce",
+        "archiveName": "proofofwork-ui-release-aba69af9c0ca-20261008T153152Z.tgz",
+        "manifestSha256": "968531b9a69d46e2a737e4f9a8b4926a12b96e37930f3708524c14ddfd03c402",
+        "uniqueRegularAllocatedBytes": 233639936,
+        "regularLogicalBytesByPath": 504827530,
+        "regularPathReferences": 1986,
+        "uniqueInodes": 810,
+        "classification": "older-rollback-review-candidate"
+      },
+      {
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-9b56f32ff831-20261008T133400Z",
+        "releaseId": "506b1ab0833e-20261008T065838Z",
+        "commit": "506b1ab0833e7bedc7c5781563d2a3508c3b92c2",
+        "archiveName": "proofofwork-ui-release-506b1ab0833e-20261008T065838Z.tgz",
+        "manifestSha256": "69da9ce63677cb06a588adee3bcb39a8bb7b01525d10a0d3a029b4578bef7945",
+        "uniqueRegularAllocatedBytes": 255557632,
+        "regularLogicalBytesByPath": 515083856,
+        "regularPathReferences": 2121,
+        "uniqueInodes": 1009,
+        "classification": "older-rollback-review-candidate"
+      },
+      {
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-aba69af9c0ca-20261008T153152Z",
+        "releaseId": "9b56f32ff831-20261008T133400Z",
+        "commit": "9b56f32ff83125e1e9b3238318adefdefb58c4f9",
+        "archiveName": "proofofwork-ui-release-9b56f32ff831-20261008T133400Z.tgz",
+        "manifestSha256": "f32c23024d36ccaea1169e28b0d7acf9ce1860c3a47cc812f89057437aed7511",
+        "uniqueRegularAllocatedBytes": 258412544,
+        "regularLogicalBytesByPath": 533761060,
+        "regularPathReferences": 2427,
+        "uniqueInodes": 1135,
+        "classification": "older-rollback-review-candidate"
+      },
+      {
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b40d4f4a0d31-20261009T000001Z",
+        "releaseId": "06a2baf88d53-20261008T192602Z",
+        "commit": "06a2baf88d53ebaccfcc7138b9a84c187cdbd91e",
+        "archiveName": "proofofwork-ui-release-06a2baf88d53-20261008T192602Z.tgz",
+        "manifestSha256": "959c67792a858b731ed663cf2f6ced324d4287a74af03c1a65977a093b0bf496",
+        "uniqueRegularAllocatedBytes": 261795840,
+        "regularLogicalBytesByPath": 540943013,
+        "regularPathReferences": 2536,
+        "uniqueInodes": 1175,
+        "classification": "older-rollback-review-candidate"
+      },
+      {
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c243081bb18c-20261008T042348Z",
+        "releaseId": "fc396c9a9abd-20261007T233244Z",
+        "commit": "fc396c9a9abd1cdb1081b0b3585f1d02f3289a1d",
+        "archiveName": "proofofwork-ui-release-fc396c9a9abd-20261007T233244Z.tgz",
+        "manifestSha256": "30a6c0e9273b601eff11b4fecb4f2fab5a62ae9d0f076d871363bbea66944c40",
+        "uniqueRegularAllocatedBytes": 249253888,
+        "regularLogicalBytesByPath": 498461058,
+        "regularPathReferences": 2038,
+        "uniqueInodes": 949,
+        "classification": "older-rollback-review-candidate"
+      },
+      {
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-fc396c9a9abd-20261007T233244Z",
+        "releaseId": "19cc93a7c97f-20261007T161406Z",
+        "commit": "19cc93a7c97f8003a235d6c9ca30fac4f952cb98",
+        "archiveName": "proofofwork-ui-release-19cc93a7c97f-20261007T161406Z.tgz",
+        "manifestSha256": "832192886705912b8793cc3d1e5cd9aadb87996648ee87b195192c44c98061ca",
+        "uniqueRegularAllocatedBytes": 246640640,
+        "regularLogicalBytesByPath": 481876684,
+        "regularPathReferences": 1742,
+        "uniqueInodes": 834,
+        "classification": "older-rollback-review-candidate"
+      }
+    ],
+    "archiveReviewCandidates": [
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-01ec4968caa9-20261007T150110Z.tgz",
+        "bytes": 238937352,
+        "allocatedBytes": 238944256,
+        "mtimeUtc": "2026-10-07T15:22:47.777324+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 939019,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "73dd7daf87d62e16c6c5cbd80bad9f8bfdfb4b642ca1509e0b1723f57471ceed",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-01ec4968caa9-20261007T150110Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-01ec4968caa9-20261007T150110Z.tgz.provenance"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-06a2baf88d53-20261008T192602Z.tgz",
+        "bytes": 279153989,
+        "allocatedBytes": 279158784,
+        "mtimeUtc": "2026-10-08T22:07:48.527386+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 1149714,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "7c94ce813801fdd8e8a346994be3f645a04d8b0d45b670431c4dfc0313951146",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-06a2baf88d53-20261008T192602Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-06a2baf88d53-20261008T192602Z.tgz.provenance"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-13ddf6d7f401-20261007T030045Z.tgz",
+        "bytes": 238033282,
+        "allocatedBytes": 238039040,
+        "mtimeUtc": "2026-10-07T03:23:53.773883+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 938993,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "f57f6c5f589938f35ef2061015e4abc53c50121c9eccdb75a5a09e77e578259d",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-13ddf6d7f401-20261007T030045Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-13ddf6d7f401-20261007T030045Z.tgz.provenance"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-19cc93a7c97f-20261007T161406Z.tgz",
+        "bytes": 237912381,
+        "allocatedBytes": 237920256,
+        "mtimeUtc": "2026-10-07T16:38:48.738629+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 1055333,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "99879912ce86548396d817fb72fd5db5f66a34f61bf1ba561c1e126af6eb0801",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-19cc93a7c97f-20261007T161406Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-19cc93a7c97f-20261007T161406Z.tgz.provenance"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-471a30c41991-20261004T122500Z.tgz",
+        "bytes": 224294960,
+        "allocatedBytes": 224301056,
+        "mtimeUtc": "2026-10-04T12:41:56.444927+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 931042,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "85342536449c0730d2bb476f3d104c14c00f2f9d52c932964f3d2468c4c636f6",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-471a30c41991-20261004T122500Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-471a30c41991-20261004T122500Z.tgz.provenance"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-4ce85597f099-20261008T183712Z.tgz",
+        "bytes": 279158173,
+        "allocatedBytes": 279162880,
+        "mtimeUtc": "2026-10-08T18:55:00.600283+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 1194841,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "44e884e09d3feb6b12a0accdb3766bee46fe462c55a68a82794e37acec0ff202",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-4ce85597f099-20261008T183712Z.tgz.sha256"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-506b1ab0833e-20261008T065838Z.tgz",
+        "bytes": 263990164,
+        "allocatedBytes": 263995392,
+        "mtimeUtc": "2026-10-08T08:07:41.169369+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 1160725,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "4927e8e763bd48dd22bad964b4d3a047a6f1a82293e2d3b0eb4e01b8b259cf8e",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-506b1ab0833e-20261008T065838Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-506b1ab0833e-20261008T065838Z.tgz.provenance"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-67253136c0fa-20261008T162533Z.tgz",
+        "bytes": 278423660,
+        "allocatedBytes": 278429696,
+        "mtimeUtc": "2026-10-08T17:58:10.128030+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 1186311,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "64ec735d9f2cb53e267c535cee0cb6c9fa8da6a9192871ce65011c2269b9c9ac",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-67253136c0fa-20261008T162533Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-67253136c0fa-20261008T162533Z.tgz.provenance"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-7bad9495d118-20261006T180919Z.tgz",
+        "bytes": 225315229,
+        "allocatedBytes": 225320960,
+        "mtimeUtc": "2026-10-06T18:28:26.873422+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 894796,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "36b1a072ed28d174cb338a454d3998be4656678ea0a3655be13cbbc98848501e",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-7bad9495d118-20261006T180919Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-7bad9495d118-20261006T180919Z.tgz.provenance"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9b56f32ff831-20261008T133400Z.tgz",
+        "bytes": 277656894,
+        "allocatedBytes": 277663744,
+        "mtimeUtc": "2026-10-08T14:09:16.231885+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 1169227,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "1d97f4d1cc2cb64d110a17e531d2d66a245e6fd3f7c64fdd1ef8527b159eebfe",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9b56f32ff831-20261008T133400Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9b56f32ff831-20261008T133400Z.tgz.provenance"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d64a4668a9a-20261004T105542Z.tgz",
+        "bytes": 224825875,
+        "allocatedBytes": 224833536,
+        "mtimeUtc": "2026-10-04T11:17:30.363868+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 921840,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "483721477e06308e15c38aa2770c1d4a28322833c906366f95c9d3f4690f6222",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d64a4668a9a-20261004T105542Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d64a4668a9a-20261004T105542Z.tgz.provenance"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-aba69af9c0ca-20261008T153152Z.tgz",
+        "bytes": 270731509,
+        "allocatedBytes": 270737408,
+        "mtimeUtc": "2026-10-08T15:45:00.193888+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 1177763,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "6c78943888ba511f883fadf5ae74dba52fe83ba6b02525967c371f6229b53713",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-aba69af9c0ca-20261008T153152Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-aba69af9c0ca-20261008T153152Z.tgz.provenance"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-c243081bb18c-20261008T042348Z.tgz",
+        "bytes": 264427806,
+        "allocatedBytes": 264433664,
+        "mtimeUtc": "2026-10-08T04:37:43.865656+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 1152208,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "96efe0d267dbffdbacf1bd7eb047de9216f340428031e64b0d63e3e168106fbd",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-c243081bb18c-20261008T042348Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-c243081bb18c-20261008T042348Z.tgz.provenance"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-fc396c9a9abd-20261007T233244Z.tgz",
+        "bytes": 251135758,
+        "allocatedBytes": 251142144,
+        "mtimeUtc": "2026-10-07T23:59:37.039708+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 1064823,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "962a790de9060deca5d54f295965f19a3797d39a620609a2bcc194efa6334452",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-fc396c9a9abd-20261007T233244Z.tgz.sha256",
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-fc396c9a9abd-20261007T233244Z.tgz.provenance"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-fc5bd0eee0a6-20261003T004504Z.tgz",
+        "bytes": 198746849,
+        "allocatedBytes": 198754304,
+        "mtimeUtc": "2026-10-03T01:39:21.740413+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 794130,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "e2f5a7ac4ceac4265d2e8680a3a0f0ea78e11fc9902712e2a6e66088181f3e05",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-fc5bd0eee0a6-20261003T004504Z.tgz.sha256"
+        ]
+      }
+    ],
+    "olderHistoricalPreProtocolArchivesPreserve": [
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-pre-amo-v5-20260726T200700Z.tgz",
+        "bytes": 163620886,
+        "allocatedBytes": 163627008,
+        "mtimeUtc": "2026-07-26T20:08:34.277759+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 511234,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "c219ea80299a7faec1d9731efcbd6e109040bd02cfd8a62eeea5e46454d746d2",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-pre-amo-v5-20260726T200700Z.tgz.sha256"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-pre-mail-work-admission-27a3c25.tgz",
+        "bytes": 152090909,
+        "allocatedBytes": 152092672,
+        "mtimeUtc": "2026-08-01T06:51:43.319576+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 513769,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "955345b13bc849b919c8614078b7f0ab5fc407c322651954fec7dbc94f65e02e",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/proofofwork-ui-pre-mail-work-admission-27a3c25.tgz.sha256"
+        ]
+      },
+      {
+        "path": "/var/backups/proofofwork-ui/releases/ui-pre-work-atoms-20260716T185321Z.tgz",
+        "bytes": 140026173,
+        "allocatedBytes": 140034048,
+        "mtimeUtc": "2026-07-16T18:53:28.653751+00:00",
+        "mode": "0o644",
+        "uid": 0,
+        "gid": 0,
+        "inode": 511110,
+        "dev": 2049,
+        "nlink": 1,
+        "symlink": false,
+        "sha256": "db3e4e47b5da9c816c2b981e982435def77b22b9d8fc21fa3a922fb1547a8250",
+        "checksumPresent": true,
+        "checksumMatches": true,
+        "classification": "older-archive-review-candidate",
+        "sidecarPaths": [
+          "/var/backups/proofofwork-ui/releases/ui-pre-work-atoms-20260716T185321Z.tgz.sha256"
+        ]
+      }
+    ],
+    "rootRegularExclusiveAllocatedBytesBeforeExternalLinkQualification": 2020397056,
+    "modernArchiveAllocatedBytes": 3752837120,
+    "requiredBeforeRemoval": [
+      "New explicit exact-path approval",
+      "Fresh locked stable complete census and file/content fingerprints",
+      "Live/prior recovery pair preserved and verified at execution time",
+      "Pin/hold intersection and historical dependency review",
+      "Any unique historical evidence/source/provenance preserved in verified custody",
+      "Current service/config/process/mount/FD checks",
+      "Hardlink-aware measured savings",
+      "Durable intent/completion/recheck receipts"
+    ],
+    "removalAuthorized": false
+  },
+  "qualifiedUiCandidateAllocatedBytes": 5773234176,
+  "nodeConditionalReview": [
+    {
+      "path": "/data/proofofwork-postgres-backups/logical/proof_indexer-20260929T031853Z.dumpset",
+      "dumpFileBytes": 19363782935,
+      "retentionPin": true,
+      "qualification": "Older pinned original recovery authority; retire only after approved latest restore/custody/inverse proof.",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-postgres-backups/logical/proof_indexer-20261003T031852Z.dumpset",
+      "dumpFileBytes": 20878072656,
+      "retentionPin": true,
+      "qualification": "Older pinned restore-verified recovery authority; retirement requires explicit approved pin promotion and custody proof.",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-postgres-backups/logical/proof_indexer-20261007T031849Z.dumpset",
+      "dumpFileBytes": 27176979892,
+      "retentionPin": true,
+      "qualification": "Latest whole isolated restore proved by Audit31; retain until a newer full restore admission passes.",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-postgres-backups/logical/proof_indexer-20261009T031849Z.dumpset",
+      "dumpFileBytes": 27384359985,
+      "retentionPin": false,
+      "qualification": "Current full SHA256/TOC pass only, not restored; retain newest candidate alongside latest verified authority until promotion approval.",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-audit31-priority4-restore-20261007T040043Z/cluster",
+      "allocatedBytes": 52742062080,
+      "qualification": "Stopped Audit31 restored clone; verified and checksum-certified then, but protects rollback/recovery admission and requires custody/inverse proof before approved retirement. No deletion during this audit.",
+      "deletionApproved": false
+    },
+    {
+      "databaseRelation": "proof_indexer.work_amo_block_transitions_audit31_native_rollback_v2",
+      "allocatedBytes": 40933457920,
+      "qualification": "Historical v2 rollback table retained by approved native rollout; production SQL/schema data, explicit user approval required. Never remove as cache.",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-incb-final-source-replay-20260925T022000Z",
+      "allocatedBytes": 89525575680,
+      "qualification": "Active canonical replay, repair, pinned source and recovery evidence dependencies. Retain.",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-incb-final-source-replay-20260924T143604Z",
+      "allocatedBytes": 32853667840,
+      "qualification": "Historical replay/recovery evidence; dependency closure and custody unknown. Retain.",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-incb-scoped-rehearsal-20260927",
+      "allocatedBytes": 20162818048,
+      "qualification": "Protected replay rehearsal evidence; requires complete inverse/custody review before approval.",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-incb-production-backup-20260927T082400Z",
+      "allocatedBytes": 20256141312,
+      "qualification": "Protected production backup evidence; exact allocation path verified in storage trend receipt; retain until approved closure.",
+      "deletionApproved": false
+    }
+  ],
+  "nodeAdditionalAllocationInventory": [
+    {
+      "path": "/data/proofofwork-postgres-backups/recovery-evidence",
+      "allocatedBytes": 438272,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-postgres-backups/validation-evidence",
+      "allocatedBytes": 6909952,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-postgres-backups/logical",
+      "allocatedBytes": 94803288064,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-postgres-backups/h7-02-canonical-reorg-recovery-20260911T121240Z",
+      "allocatedBytes": 102400,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-postgres-backups",
+      "allocatedBytes": 94810742784,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-postgres-tablespaces/proof_indexer_large_state_v1",
+      "allocatedBytes": 49762861056,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-postgres-tablespaces",
+      "allocatedBytes": 49762865152,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-api-cache",
+      "allocatedBytes": 174735360,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit29-native-controller-20261001T070141Z",
+      "allocatedBytes": 57344,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/permission-9b56f32ff831-20261008T131810Z-20261008T132004Z",
+      "allocatedBytes": 14110720,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-final-combined-20261005T145108Z",
+      "allocatedBytes": 7888896,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit29-controller-bd7e9ad1bea8-20261001T061323Z",
+      "allocatedBytes": 49152,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-treasury-missing-raw-20261003T080000Z",
+      "allocatedBytes": 17883136,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-rpc-hydration-20261004T173515Z",
+      "allocatedBytes": 5218304,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-wallet-snapshot-20261004T191532Z",
+      "allocatedBytes": 10960896,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-body-authority-20261003T142900Z",
+      "allocatedBytes": 24576,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-api-html-after-20261003T202300Z",
+      "allocatedBytes": 3706880,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-private-diagnostics-20261005T010847Z",
+      "allocatedBytes": 5263360,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-readiness-closure-20261003T021158Z",
+      "allocatedBytes": 65536,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/jobs-c7935dde7239-20261009T040352Z-20261009T040752Z",
+      "allocatedBytes": 18849792,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-api-html-after-20261003T200200Z",
+      "allocatedBytes": 28672,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/content-tips-20261006T181034Z",
+      "allocatedBytes": 18464768,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-body-production-20261003T145500Z-apply",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit29-controller-e007b77dcad6-20261001T060224Z",
+      "allocatedBytes": 61440,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-search-shared-20261005T200316Z",
+      "allocatedBytes": 1310720,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-sql-unit-diagnostic-20261003T011420Z",
+      "allocatedBytes": 4907008,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/code-13ddf6d7f401-20261007T030045Z-20261007T031053Z",
+      "allocatedBytes": 19795968,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/dns-subdomains-controller-53b5b428e864-20261001T201028Z",
+      "allocatedBytes": 221184,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-root-dns-20261005T022310Z",
+      "allocatedBytes": 5234688,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/jobs-fc396c9a9abd-20261007T233244Z-20261007T233835Z",
+      "allocatedBytes": 18599936,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/rollbacks",
+      "allocatedBytes": 56610816,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-combined-freshness-20261004T175950Z",
+      "allocatedBytes": 10952704,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-old-tip-wiring-20261004T225212Z",
+      "allocatedBytes": 10964992,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-root-dns-20261005T014326Z",
+      "allocatedBytes": 5234688,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/permission-b40d4f4a0d31-20261009T000001Z-20261009T010514Z",
+      "allocatedBytes": 14241792,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-body-census-20261003T005716Z",
+      "allocatedBytes": 28672,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-transition-v2-20261006T114359Z",
+      "allocatedBytes": 251252736,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-readiness-closure-20261003T020747Z",
+      "allocatedBytes": 61440,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/quarantine",
+      "allocatedBytes": 28332032,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit29-remediation-20261001T054000Z",
+      "allocatedBytes": 1232896,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/pages-11c0dd7d5640-20261008T024812Z-20261008T024844Z",
+      "allocatedBytes": 14036992,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-wallet-coalescing-20261004T235420Z",
+      "allocatedBytes": 11476992,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/permission-291b99e7db4a-20261008T142241Z-20261008T142425Z",
+      "allocatedBytes": 14168064,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/browser-dns-06a2baf88d53-20261008T192602Z-20261008T221337Z",
+      "allocatedBytes": 14241792,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit29-native-controller-20261001T064920Z",
+      "allocatedBytes": 53248,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-treasury-final-closure-20261003T090000Z",
+      "allocatedBytes": 8278016,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/ui-preservation-evidence",
+      "allocatedBytes": 1475809280,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-transition-core-witness-20261003T023000Z",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-body-census-20261003T011506Z",
+      "allocatedBytes": 16408576,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T040230Z",
+      "allocatedBytes": 180224,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-sql-diagnostic-20261003T010850Z",
+      "allocatedBytes": 4898816,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-sql-unit-diagnostic-20261003T011000Z",
+      "allocatedBytes": 12288,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-treasury-parent-chunk1-20261003T083000Z",
+      "allocatedBytes": 14635008,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-final-combined-20261005T142635Z",
+      "allocatedBytes": 7892992,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/pages-196dccdb8ab0-20261008T023538Z-20261008T023932Z",
+      "allocatedBytes": 14036992,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/cleanup-evidence",
+      "allocatedBytes": 23552000,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-sql-unit-diagnostic-20261003T010625Z",
+      "allocatedBytes": 20480,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-body-production-20261003T160000Z-apply",
+      "allocatedBytes": 528384,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/permission-67253136c0fa-20261008T162533Z-20261008T163004Z",
+      "allocatedBytes": 14180352,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/boost-tags-controller-d4d888757a1c-20261002T013828Z",
+      "allocatedBytes": 167936,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-wallet-deadline-20261005T131037Z",
+      "allocatedBytes": 5242880,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-index-mode-20261003T004706Z",
+      "allocatedBytes": 294912,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/managed",
+      "allocatedBytes": 7635046400,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-search-shared-20261005T210223Z",
+      "allocatedBytes": 954368,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-body-production-20261003T152000Z-apply",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-physical-sizing-20261003T095500Z",
+      "allocatedBytes": 24576,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-node-release-3399d767103e-20261003T020420Z",
+      "allocatedBytes": 360448,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-wallet-freshness-20261004T165136Z",
+      "allocatedBytes": 8298496,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/permission-7670b5c2e141-20261008T144000Z-20261008T143516Z",
+      "allocatedBytes": 14168064,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-node-release-fc5bd0eee0a6-20261003T004504Z",
+      "allocatedBytes": 188416,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/code-13ddf6d7f401-20261007T030045Z-20261007T031803Z",
+      "allocatedBytes": 19795968,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-treasury-address-20261003T031100Z",
+      "allocatedBytes": 17842176,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-node-release-38ac6e2bff2a-20261003T042000Z",
+      "allocatedBytes": 1171456,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-timeout-20261004T221031Z",
+      "allocatedBytes": 10969088,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit29-controller-527e4cbaa66f-20261001T062733Z",
+      "allocatedBytes": 94208,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-wallet-snapshot-20261004T191248Z",
+      "allocatedBytes": 10960896,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-trigger-catalog-20261003T015500Z",
+      "allocatedBytes": 16384,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit31-wallet-deadline-20261005T131151Z",
+      "allocatedBytes": 5242880,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-physical-sizing-20261003T104000Z",
+      "allocatedBytes": 45056,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-node-release-04e685a4c7ea-20261003T025240Z",
+      "allocatedBytes": 188416,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/code-ed0fc2c5df56-20261007T033400Z-20261007T034027Z",
+      "allocatedBytes": 19873792,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups/audit30-mail-api-baseline-20261003T050300Z",
+      "allocatedBytes": 3538944,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/data/proofofwork-release-backups",
+      "allocatedBytes": 9920532480,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-10795467c328-20260914T015628Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-85ce5651ad4b-20260919T170643Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-e007b77dcad6-20261001T060224Z",
+      "allocatedBytes": 256909312,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-04e685a4c7ea-20261003T025240Z",
+      "allocatedBytes": 264986624,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/bitcoin-31.1",
+      "allocatedBytes": 192253952,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-38ac6e2bff2a-20261003T042000Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-35d21493757d-20260922T033203Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-9d04fd3cf1f6-20260927T094716Z",
+      "allocatedBytes": 248045568,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-04e685a4c7ea-20261003T025240Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-9d64a4668a9a-20261004T105542Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/cargo",
+      "allocatedBytes": 157585408,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-8f19f2c8430d-20260929T155139Z",
+      "allocatedBytes": 249384960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-993523cc6869-20260930T045021Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-2f0b32356677-20260926T024513Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-9795c8a9aab9-20260925T090900Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-stage-0e15fe3",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-bf81f9cffcc7-20260927T093457Z",
+      "allocatedBytes": 248152064,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-b22376c787a8-20261001T054959Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-9fa3581d2b06-20260929T152445Z",
+      "allocatedBytes": 249937920,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-07929dd3c6e4-20260919T145727Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-3bc6c9d44e00-20260929T200136Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-a4d2548f55b0-20260922T040224Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-005a4e582f58-20260919T165018Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-1149633c2d1a-20260924T015319Z",
+      "allocatedBytes": 246087680,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-9fa3581d2b06-20260929T152445Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-5970b26e610b-20260926T224701Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-f4ca769e9202-20260927T055111Z",
+      "allocatedBytes": 247627776,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-e007b77dcad6-20261001T060224Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-92eb5fbdaacf-20261004T111041Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-2f0b32356677-20260926T024513Z",
+      "allocatedBytes": 277549056,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-d2c0afaffd9c-20260929T160642Z",
+      "allocatedBytes": 249376768,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-589bc71e7c96-20260919T172951Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-f4ca769e9202-20260927T055111Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-bf81f9cffcc7-20260927T093457Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/node-v24.18.0-linux-x64",
+      "allocatedBytes": 211828736,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-9d04fd3cf1f6-20260927T094716Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-661e576453ca-20260922T025214Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-d5a8493119ba-20261003T222517Z",
+      "allocatedBytes": 265490432,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-d2c0afaffd9c-20260929T160642Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/mempool",
+      "allocatedBytes": 24576,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-c12b68c51faa-20260929T131338Z",
+      "allocatedBytes": 249249792,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-39d5454e77f3-20260908T121810Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-6eb4a1e07131-20260919T161919Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-b608e73eab41-20260928T230907Z",
+      "allocatedBytes": 248705024,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-62bb44d2251b-20260928T000229Z",
+      "allocatedBytes": 249266176,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-863385322af4-20260929T140259Z",
+      "allocatedBytes": 249942016,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-node-work-03ab8d1d98d1-20260914T051142Z",
+      "allocatedBytes": 45092864,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-f48d3a777a50-20260929T042348Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-eb5e8c70cb0d-20261004T005638Z",
+      "allocatedBytes": 313929728,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-f48d3a777a50-20260929T042348Z",
+      "allocatedBytes": 249249792,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-b752518bf8b4-20260927T014810Z",
+      "allocatedBytes": 247521280,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-38ac6e2bff2a-20261003T040230Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-942478c7fa78-20260929T142944Z",
+      "allocatedBytes": 249339904,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/bitcoin-31.0",
+      "allocatedBytes": 192147456,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-bd7e9ad1bea8-20261001T061323Z",
+      "allocatedBytes": 256679936,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-22a1b0d31d1c-20260929T041430Z",
+      "allocatedBytes": 248913920,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/rustup",
+      "allocatedBytes": 612904960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-c12b68c51faa-20260929T131338Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-fc40384d40d7-20260925T051615Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-bd7e9ad1bea8-20261001T061323Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-53b5b428e864-20261001T201028Z",
+      "allocatedBytes": 256282624,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-b608e73eab41-20260928T230907Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-fc5bd0eee0a6-20261003T004504Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-d4d888757a1c-20261002T013828Z",
+      "allocatedBytes": 258174976,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-3399d767103e-20261003T020420Z",
+      "allocatedBytes": 265437184,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-a1e1f9b1c18d-20260922T041329Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-7b47a0cacfec-20260926T0152Z",
+      "allocatedBytes": 246427648,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-b752518bf8b4-20260927T014810Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-3bc6c9d44e00-20260929T200136Z",
+      "allocatedBytes": 249655296,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-38ac6e2bff2a-20261003T040230Z",
+      "allocatedBytes": 265494528,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-a1e1f9b1c18d-20260922T041933Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-f34268758527-20260908T125052Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-d5a8493119ba-20261003T222517Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-53b5b428e864-20261001T201028Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-f23c24fd97a9-20260914T012344Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-56694a7d6d76-20260920T180605Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-8f19f2c8430d-20260929T155139Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-863385322af4-20260929T140259Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-dbfc3f2614a1-20260922T034136Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-d4d888757a1c-20261002T013828Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/containerd",
+      "allocatedBytes": 12288,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-quarantine",
+      "allocatedBytes": 446771200,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-219f3861411c-20260923T212500Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-2ddefac163d5-20260905T180603Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api",
+      "allocatedBytes": 315023360,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-fc5bd0eee0a6-20261003T004504Z",
+      "allocatedBytes": 264925184,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-527e4cbaa66f-20261001T062733Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-942478c7fa78-20260929T142944Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-db853f434f9b-20260930T011125Z",
+      "allocatedBytes": 249671680,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-b22376c787a8-20261001T054959Z",
+      "allocatedBytes": 256610304,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-62bb44d2251b-20260928T000229Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-527e4cbaa66f-20261001T062733Z",
+      "allocatedBytes": 253386752,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-38ac6e2bff2a-20261003T042000Z",
+      "allocatedBytes": 258760704,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-5970b26e610b-20260926T224701Z",
+      "allocatedBytes": 247160832,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-58827586d1a3-20260923T213800Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit28-node-work-db853f434f9b-20260930T011125Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-1f467cc59f41-20260919T172013Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-22a1b0d31d1c-20260929T041430Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-92eb5fbdaacf-20261004T111041Z",
+      "allocatedBytes": 314429440,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-9d64a4668a9a-20261004T105542Z",
+      "allocatedBytes": 314470400,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-1149633c2d1a-20260924T015319Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/src",
+      "allocatedBytes": 508137472,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-3399d767103e-20261003T020420Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-api-stage-993523cc6869-20260930T045021Z",
+      "allocatedBytes": 250609664,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt/proofofwork-audit5-node-work-eb5e8c70cb0d-20261004T005638Z",
+      "allocatedBytes": 45096960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/opt",
+      "allocatedBytes": 14570196992,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/log/apt",
+      "allocatedBytes": 159744,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/log/dist-upgrade",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/log/sysstat",
+      "allocatedBytes": 21135360,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/log/journal",
+      "allocatedBytes": 1096359936,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/log/unattended-upgrades",
+      "allocatedBytes": 90112,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/log/private",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/log/landscape",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/log/postgresql",
+      "allocatedBytes": 139358208,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/log",
+      "allocatedBytes": 1331486720,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/lib/postgresql/proofofwork-incb-oracle-restore-20260912",
+      "allocatedBytes": 141500416,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/lib/postgresql/16",
+      "allocatedBytes": 6862843904,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/lib/postgresql/proofofwork-credit-balances-replay-20260912T1612-credit-balance-replay",
+      "allocatedBytes": 12288,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/lib/postgresql",
+      "allocatedBytes": 7004360704,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-proofofwork-indexer-worker.service-mhvtY6",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/incb-baseline-e2-upload",
+      "allocatedBytes": 18165760,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/boost-incb-one-shot-scope-fixture-20260924T181555Z",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/boost-incb-promotion-rehearsal-v3",
+      "allocatedBytes": 73396224,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/boost-incb-promotion-rehearsal-v2",
+      "allocatedBytes": 56152064,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/incb-guarded-upload-bf81f9cffcc7-20260927T093457Z",
+      "allocatedBytes": 30535680,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/boost-incb-h1-stop-20260924T172240Z",
+      "allocatedBytes": 20480,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/boost-incb-systemd-success-fixture-20260924T180413Z",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-systemd-resolved.service-TFvGJx",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit5-ops-20260905T144615Z",
+      "allocatedBytes": 12288,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-proofofwork-incident-parity-f34268758527-20260908T125052Z-strict-parity-1.service-7j9Lzg",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-proofofwork-api-wg.service-0Jjx3k",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit6-safeguard-audit6cert20260909",
+      "allocatedBytes": 65536,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit6-safeguard-audit6cert20260913",
+      "allocatedBytes": 65536,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit6-safeguard-audit6cert20260912",
+      "allocatedBytes": 65536,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/incb-completion-upload-ac488b0",
+      "allocatedBytes": 18161664,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/boost-incb-systemd-success-fixture-20260924T180715Z",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-q16-audit-009023c",
+      "allocatedBytes": 1110016,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-node-three-retirement-20261003T223000Z",
+      "allocatedBytes": 4354048,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/boost-incb-fullsize-helper-stage-20260924T102950Z",
+      "allocatedBytes": 126976,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit6-safeguard-audit6cert20260911",
+      "allocatedBytes": 65536,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/boost-incb-one-shot-scope-fixture-20260924T181651Z",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-proofofwork-code-discovery-13ddf6d7f401-typed-probe1.service-pEnI5n",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit30-private-sixteen-admission-diagnostic-20261003T073000Z",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit30-pin-promotion-20261003T120000Z-preflight",
+      "allocatedBytes": 262144,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/pow-boost-shadow-6a7d5c12e403-20260905T050928Z",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit30-output-property-probe-20261003T034500Z",
+      "allocatedBytes": 40960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit5-probe-v2-2ddefac163d5-20260905T180603Z",
+      "allocatedBytes": 40960,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit5-ops-20260905T174233Z",
+      "allocatedBytes": 12288,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-node-three-retirement-20261003T220700Z",
+      "allocatedBytes": 790528,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/boost-incb-h1-stop-tool-a7bd2304",
+      "allocatedBytes": 24576,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-proofofwork-code-discovery-13ddf6d7f401-sample2.service-tOpu19",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit5-ops-source-2ddefac163d5-20260905T180603Z",
+      "allocatedBytes": 143360,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/boost-incb-systemd-success-fixture-20260924T180853Z",
+      "allocatedBytes": 12288,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/incb-reader-rehearsal-upload",
+      "allocatedBytes": 18149376,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-deploy",
+      "allocatedBytes": 997187584,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-proofofwork-api.service-kFUeSa",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit5-probe-v4-2ddefac163d5-20260905T180603Z-resume2",
+      "allocatedBytes": 45056,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit6-safeguard-audit6cert20260910",
+      "allocatedBytes": 65536,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit5-ops-source-0b63c8604456-20260905T205150Z",
+      "allocatedBytes": 73728,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-bitcoind.service-33btld",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit5-ops-source-5a74ca8f9876-20260905T175921Z",
+      "allocatedBytes": 344064,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/incb-guarded-upload-f4ca769e9202-20260927T055111Z",
+      "allocatedBytes": 30748672,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/boost-incb-cgroup-fixture-20260924T180148Z",
+      "allocatedBytes": 12288,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-node-three-retirement-20261003T222000Z",
+      "allocatedBytes": 688128,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-systemd-logind.service-92mz33",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit30-pin-promotion-20261003T144000Z-preflight",
+      "allocatedBytes": 258048,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-electrs.service-AnTv91",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-systemd-timesyncd.service-jn6PWe",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit5-safeguard-ops-20260905T181729Z",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/incb-guarded-upload-9d04fd3cf1f6-20260927T094716Z",
+      "allocatedBytes": 31756288,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/incb-final-repair-upload-bf81f9c",
+      "allocatedBytes": 61440,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit30-oct3-full-read-20261003T102500Z-preflight",
+      "allocatedBytes": 258048,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-polkit.service-PGDc8T",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit30-old-retirement-proof-20261003T035500Z",
+      "allocatedBytes": 1716224,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/boost-incb-promotion-rehearsal",
+      "allocatedBytes": 48279552,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/boost-incb-systemd-success-fixture-20260924T180515Z",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit5-probe-v3-2ddefac163d5-20260905T180603Z-resume2",
+      "allocatedBytes": 45056,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit30-retirement-custody-20261003T082700Z",
+      "allocatedBytes": 4747264,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/incb-final-rehearsal-upload",
+      "allocatedBytes": 18157568,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp/proofofwork-audit5-ops-install-5a74ca8f9876-20260905T175921Z-node",
+      "allocatedBytes": 73728,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/var/tmp",
+      "allocatedBytes": 1562468352,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-reader-debug.10VXb7",
+      "allocatedBytes": 4337664,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-audit6-worker-systemd-results-audit6cert20260913",
+      "allocatedBytes": 73728,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-stage-probe-2791835",
+      "allocatedBytes": 1286144,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-audit6-worker-systemd-results-audit6cert20260911",
+      "allocatedBytes": 12288,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-id-local-audit-20260803T212225Z",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-systemd-logind.service-VSPjFW",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-api-walletfix-20260713",
+      "allocatedBytes": 24576,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-node-hotfix-f6e5110-stage",
+      "allocatedBytes": 16384,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-audit6-host-cert-audit6cert20260910",
+      "allocatedBytes": 90112,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-audit6-pg-audit6pg20260910",
+      "allocatedBytes": 47923200,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/.ICE-unix",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/snap-private-tmp",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/mempool-inspect",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/bitcoin-core-31.0-install",
+      "allocatedBytes": 6553600,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-proofofwork-indexer-worker.service-Y0Yt2B",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/.X11-unix",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/debug-token-conservation-2d14470-20260818T023221Z",
+      "allocatedBytes": 53780480,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-stage-20260714",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-systemd-timesyncd.service-VVXJJO",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-ui-smoke-89736d9d42f7-20260902T222258Z",
+      "allocatedBytes": 178458624,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-api-cache-rehearsal-574a04c",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-correctness-3fd3101-20260831T205932Z",
+      "allocatedBytes": 9326592,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-sixfix-candidate-6eed07a",
+      "allocatedBytes": 139264,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-c627-readiness-proof.RUPzIM",
+      "allocatedBytes": 12288,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-stage-probe-2791668",
+      "allocatedBytes": 1286144,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-sixfix-cache-6eed07a",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-c627-readiness-proof.vsXmPd",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-GdbOK",
+      "allocatedBytes": 225280,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/release-sidecar-repair-20260731T2050Z",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-audit6-pg-audit6pg20260909",
+      "allocatedBytes": 47923200,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/.XIM-unix",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-q16-candidate",
+      "allocatedBytes": 98304,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-proofofwork-api-wg.service-Z8SRtD",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-pending-diag-1e8d3ec",
+      "allocatedBytes": 204800,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-shadow.fAO7uR",
+      "allocatedBytes": 946176,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-diag-e7e40e3-20260804T2113Z",
+      "allocatedBytes": 204800,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-recovery-a7c2a63",
+      "allocatedBytes": 5279744,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-probe-ec021af",
+      "allocatedBytes": 45056,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/debug-token-predicate-2d14470-20260818T023302Z",
+      "allocatedBytes": 53784576,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-candidate-cache-20260714T040957Z",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-audit6-pg-audit6pg20260912",
+      "allocatedBytes": 48181248,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-node-stage-35d2149",
+      "allocatedBytes": 29446144,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-proofofwork-code-discovery-13ddf6d7f401-sample2.service-RDuOOm",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-proofofwork-incident-parity-f34268758527-20260908T125052Z-strict-parity-1.service-2oO79b",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-correctness-3fd3101-20260831T205932Z-preinstall-backup",
+      "allocatedBytes": 7643136,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-proofofwork-code-discovery-13ddf6d7f401-typed-probe1.service-znPv2s",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/incb-prebond-stage-58eea14",
+      "allocatedBytes": 2273280,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-fix-diagnostic",
+      "allocatedBytes": 20480,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-systemd-resolved.service-YvqfzL",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-probe-5a58fdf-retry1",
+      "allocatedBytes": 49152,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-docs-release-20260711",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-electrs.service-zorQNg",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-fix-diagnostic-v2",
+      "allocatedBytes": 20480,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-bridge-test",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-work-atoms-574a04c",
+      "allocatedBytes": 139264,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-api-e6c90df-cache",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-audit6-pg-source-audit6pg20260909",
+      "allocatedBytes": 5222400,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/.npm",
+      "allocatedBytes": 41734144,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/inception-v1-20260712",
+      "allocatedBytes": 32768,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-proofofwork-api.service-X29TDv",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/audit17-ui-upload-copies",
+      "allocatedBytes": 272588800,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-audit6-worker-systemd-results-audit6cert20260912",
+      "allocatedBytes": 32768,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-api-diag-2c54fe6",
+      "allocatedBytes": 221184,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-node-build-home-ec97e1817dd8-20260901T022632Z",
+      "allocatedBytes": 41738240,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-reader-debug.m2IMIq",
+      "allocatedBytes": 4337664,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-polkit.service-MWJZ2B",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-work-atoms-83b862b",
+      "allocatedBytes": 139264,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-audit6-host-cert-audit6cert20260909",
+      "allocatedBytes": 86016,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-lifecycle-debug-2792890",
+      "allocatedBytes": 1286144,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/bitcoin-core-31.1-upgrade",
+      "allocatedBytes": 318353408,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-v8-release-b03b642",
+      "allocatedBytes": 12288,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-empty-git-template",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-audit6-pg-audit6pg20260911",
+      "allocatedBytes": 47923200,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-marketlog-latency-20260717",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/debug-token-reader-2d14470-20260818T023132Z",
+      "allocatedBytes": 53780480,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-wallet-seal-stage-20260722T081502Z",
+      "allocatedBytes": 1110016,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/incb-h1-final-stage-58eea14",
+      "allocatedBytes": 2277376,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/audit17-storage-trend",
+      "allocatedBytes": 28672,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-stage-probe-2791986",
+      "allocatedBytes": 1286144,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-hardening-20260713",
+      "allocatedBytes": 20480,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-api-incb-canary",
+      "allocatedBytes": 47874048,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/node-compile-cache",
+      "allocatedBytes": 13230080,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/.font-unix",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-incb-shadow-20260717T1318Z",
+      "allocatedBytes": 24576,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/tmp.ksTIB1uwb1",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-reader-debug.QBnqZU",
+      "allocatedBytes": 4206592,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-stage-cache-20260714",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-marketlog-shadow-20260717",
+      "allocatedBytes": 24576,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/wallet-incb-stage-b752518bf8b4-20260927T014810Z",
+      "allocatedBytes": 30425088,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-candidate-20260714T040957Z",
+      "allocatedBytes": 2273280,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-amo-carry.vCrb5m",
+      "allocatedBytes": 1286144,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-incb-repair-4b9093d",
+      "allocatedBytes": 6639616,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-lifecycle-debug-2792540",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-node-npm-cache-4b8d84093c94-20260902T013326Z",
+      "allocatedBytes": 618496,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/boost-incb-connlimit-fixture-iR0TAq",
+      "allocatedBytes": 55963648,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/systemd-private-7060dbce913f41c5869cbf71e8a027d4-bitcoind.service-Vaxtq1",
+      "allocatedBytes": 8192,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-audit6-systemd-receipt-audit6cert20260913",
+      "allocatedBytes": 73728,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/testrepo",
+      "allocatedBytes": 45056,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/pow-credit-live-first.uZae0R",
+      "allocatedBytes": 2867200,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp/proofofwork-candidate-cache-seeded-20260714T040957Z",
+      "allocatedBytes": 4096,
+      "category": "dependency review required",
+      "deletionApproved": false
+    },
+    {
+      "path": "/tmp",
+      "allocatedBytes": 5110697984,
+      "category": "dependency review required",
+      "deletionApproved": false
+    }
+  ],
+  "noNodeRetirementSafeYet": "No production items independently satisfy complete dependency/custody/rollback criteria for immediate deletion in this read-only audit; all retained. Highest future savings are conditional clone/logical pin promotion and proven obsolete source/rollback retirement.",
+  "required": "Fresh exact locked fingerprints/current-prior verification and inverse dependency/citation/custody proof; explicit scope approval; no live data/ledgers/evidence/schema removal from generic cleanup authorization."
+}

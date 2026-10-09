@@ -9,7 +9,10 @@ import { verifyOwnerOutputCommitment, type OwnerOutputCommitmentEvidence } from 
 import { assertDnsPageLinkAction, readDnsPageLinkSnapshot } from "./features/pages/dnsPageLinkClient.mjs";
 import { buildDnsPageLinkPayload, dnsPageLinkNameError, DNS_PAGE_LINK_SELF_PAYMENT_SATS, normalizeDnsPageLinkName } from "./shared/protocol/dnsPages.mjs";
 import { readActionReceipts, saveActionReceipt, type ActionReceipt } from "./shared/wallet/actionRecovery";
+import { createWalletConnectionController } from "./shared/wallet/walletConnection.mjs";
 import { FEE_RATE_STEP } from "./shared/feeRate";
+import { createInFlightRequestPool } from "./shared/api/inFlightRequestPool";
+import { createVisibleReadLoop, waitForDisplayRead, consumeDisplayRead } from "./shared/api/useVisibleReadLoop";
 import { TransactionReview, type MailTransactionReview } from "./shared/components/TransactionReview";
 import { BackupPreview } from "./shared/components/BackupPreview";
 import { applyLocalRestore, isBackupStorageKey, prepareLocalRestore, type RestorePlan } from "./shared/localBackup";
@@ -16091,6 +16094,7 @@ async function fetchIdRegistryState(
   targetNetwork: BitcoinNetwork,
   fresh = false,
   summary = false,
+  signal?: AbortSignal,
 ): Promise<PowRegistryState> {
   const registryAddress = registryAddressForNetwork(targetNetwork);
   if (!registryAddress) {
@@ -16108,6 +16112,7 @@ async function fetchIdRegistryState(
   const payload = await fetchProofApiJson<PowRegistryApiResponse>(
     path,
     targetNetwork,
+    { signal },
   );
   if (!summary && !Array.isArray(payload.records)) {
     throw new Error(
@@ -16310,12 +16315,14 @@ async function fetchGlobalActivityPayload(
   targetNetwork: BitcoinNetwork,
   fresh = false,
   summary = false,
+  signal?: AbortSignal,
 ): Promise<PowActivityApiResponse> {
   const basePath = summary ? "/api/v1/log-summary" : "/api/v1/log";
   const path = fresh ? `${basePath}?fresh=1` : basePath;
   const payload = await fetchProofApiJson<PowActivityApiResponse>(
     path,
     targetNetwork,
+    { signal },
   );
   return {
     ...payload,
@@ -16331,6 +16338,7 @@ async function fetchGlobalActivityHistoryPage(
     pageSize?: number;
     query?: string;
     snapshotId?: string;
+    signal?: AbortSignal;
   } = {},
 ): Promise<PowPaginatedApiResponse<PowActivityItem>> {
   const params = new URLSearchParams();
@@ -16348,7 +16356,7 @@ async function fetchGlobalActivityHistoryPage(
 
   const payload = await fetchProofApiJson<
     PowPaginatedApiResponse<PowActivityItem>
-  >(`/api/v1/log-history?${params.toString()}`, targetNetwork);
+  >(`/api/v1/log-history?${params.toString()}`, targetNetwork, { signal: options.signal });
   return {
     ...payload,
     items: Array.isArray(payload.items) ? payload.items : [],
@@ -17085,12 +17093,14 @@ function mergeListingAnchorOutpoints(
 async function fetchFreshWalletTokenListingsForAnchors(
   walletAddress: string,
   tokenScope: string,
-  options: { allowCurrentFallback?: boolean } = {},
+  options: { allowCurrentFallback?: boolean; signal?: AbortSignal } = {},
 ) {
   let lastError: unknown;
   for (const delayMs of TOKEN_SPENDABLE_RECHECK_DELAYS_MS) {
+    options.signal?.throwIfAborted();
     if (delayMs > 0) {
-      await delay(delayMs);
+      if (options.signal) await waitForDisplayRead(delayMs, options.signal);
+      else await delay(delayMs);
     }
     try {
       const params = new URLSearchParams({
@@ -17102,6 +17112,7 @@ async function fetchFreshWalletTokenListingsForAnchors(
       const payload = await fetchProofApiJson<PowTokenApiResponse>(
         `/api/v1/token?${params.toString()}`,
         "livenet",
+        { signal: options.signal },
       );
       if (
         payload.authoritativeWallet !== true ||
@@ -17115,6 +17126,7 @@ async function fetchFreshWalletTokenListingsForAnchors(
       }
       return normalizeTokenListingRecords(payload.listings);
     } catch (error) {
+      options.signal?.throwIfAborted();
       lastError = error;
       if (!isTransientProofApiReadError(error)) {
         throw error;
@@ -17124,6 +17136,7 @@ async function fetchFreshWalletTokenListingsForAnchors(
       }
     }
   }
+  options.signal?.throwIfAborted();
   if (options.allowCurrentFallback) {
     const params = new URLSearchParams({
       address: walletAddress,
@@ -17133,6 +17146,7 @@ async function fetchFreshWalletTokenListingsForAnchors(
     const payload = await fetchProofApiJson<PowTokenApiResponse>(
       `/api/v1/token?${params.toString()}`,
       "livenet",
+      { signal: options.signal },
     );
     if (
       payload.walletScoped === true &&
@@ -17148,8 +17162,9 @@ async function fetchFreshWalletTokenListingsForAnchors(
 async function fetchFreshProofOfWorkListingAnchorOutpoints(
   walletAddress: string,
   network: BitcoinNetwork,
-  options: { allowCurrentTokenFallback?: boolean } = {},
+  options: { allowCurrentTokenFallback?: boolean; signal?: AbortSignal } = {},
 ) {
+  options.signal?.throwIfAborted();
   const normalizedAddress = walletAddress.trim();
   if (!normalizedAddress) {
     throw new Error(
@@ -17163,12 +17178,13 @@ async function fetchFreshProofOfWorkListingAnchorOutpoints(
         ? ["", WORK_TOKEN_ID, POWB_TOKEN_ID, INCB_TOKEN_ID]
         : [];
     const [registryState, ...walletTokenListings] = await Promise.all([
-      fetchIdRegistryState(network, true),
+      fetchIdRegistryState(network, true, false, options.signal),
       ...tokenScopes.map((tokenScope) =>
         fetchFreshWalletTokenListingsForAnchors(
           normalizedAddress,
           tokenScope,
           {
+            signal: options.signal,
             allowCurrentFallback:
               options.allowCurrentTokenFallback ||
               tokenScope === POWB_TOKEN_ID || tokenScope === INCB_TOKEN_ID,
@@ -17176,6 +17192,7 @@ async function fetchFreshProofOfWorkListingAnchorOutpoints(
         ),
       ),
     ]);
+    options.signal?.throwIfAborted();
     const idAnchors = activeListingAnchorOutpointsForAddress(
       registryState.listings,
       normalizedAddress,
@@ -17190,6 +17207,7 @@ async function fetchFreshProofOfWorkListingAnchorOutpoints(
     );
     return mergeListingAnchorOutpoints(idAnchors, tokenAnchors);
   } catch (error) {
+    options.signal?.throwIfAborted();
     throw new Error(
       `${errorMessage(error, "Reserved ProofOfWork listing anchors could not be verified.")} No transaction was created.`,
     );
@@ -19618,6 +19636,7 @@ function normalizeGrowthSummary(
 
 async function fetchGrowthSummary(
   fresh = false,
+  signal?: AbortSignal,
 ): Promise<{
   activity: PowActivityItem[];
   registry: PowRegistryState;
@@ -19627,6 +19646,7 @@ async function fetchGrowthSummary(
   const payload = await fetchProofApiJson<GrowthSummaryApiResponse>(
     fresh ? "/api/v1/growth-summary?fresh=1" : "/api/v1/growth-summary",
     "livenet",
+    { signal },
   );
 
   return {
@@ -19642,6 +19662,7 @@ async function fetchGrowthSummary(
 async function fetchUtxos(
   ownerAddress: string,
   ownerNetwork: BitcoinNetwork,
+  signal?: AbortSignal,
 ): Promise<MempoolUtxo[]> {
   const walletUtxoReader =
     window.unisat?.getBitcoinUtxos ?? window.unisat?.getUtxos;
@@ -19651,7 +19672,9 @@ async function fetchUtxos(
       : "wallet-generic";
   if (walletUtxoReader && ownerNetwork === "livenet") {
     try {
-      const rawWalletUtxos = await walletUtxoReader.call(window.unisat);
+      signal?.throwIfAborted();
+      const rawWalletUtxos = await consumeDisplayRead(walletUtxoReader.call(window.unisat), signal);
+      signal?.throwIfAborted();
       if (Array.isArray(rawWalletUtxos)) {
         const walletUtxos = normalizeWalletUtxos(
           rawWalletUtxos,
@@ -19669,6 +19692,7 @@ async function fetchUtxos(
           const statusEvidence = await fetchAddressApiUtxos(
             ownerAddress,
             ownerNetwork,
+            signal,
           );
           if (walletUtxos.length === 0) {
             return statusEvidence.length > 0 ? statusEvidence : walletUtxos;
@@ -19685,6 +19709,7 @@ async function fetchUtxos(
         throw new Error("UniSat returned an invalid curated UTXO response.");
       }
     } catch (error) {
+      signal?.throwIfAborted();
       if (walletUtxoSource === "wallet-curated") {
         throw new Error(
           `${errorMessage(error, "UniSat could not provide curated UTXOs.")} No raw address outputs were selected.`,
@@ -19694,23 +19719,44 @@ async function fetchUtxos(
     }
   }
 
-  return fetchAddressApiUtxos(ownerAddress, ownerNetwork);
+  signal?.throwIfAborted();
+  return fetchAddressApiUtxos(ownerAddress, ownerNetwork, signal);
 }
+
+const addressUtxoReadPool = createInFlightRequestPool<MempoolUtxo[]>();
 
 async function fetchAddressApiUtxos(
   ownerAddress: string,
   ownerNetwork: BitcoinNetwork,
+  signal?: AbortSignal,
+): Promise<MempoolUtxo[]> {
+  // Signing/pre-broadcast reads remain independent fresh authority reads.
+  if (!signal) return loadAddressApiUtxos(ownerAddress, ownerNetwork, new AbortController().signal);
+  // Coalesce cancellable display evidence only; never provider spendability.
+  const key = proofApiUrl(`/api/v1/address/${encodeURIComponent(ownerAddress)}/utxo`, ownerNetwork);
+  return addressUtxoReadPool.request(key, signal ?? new AbortController().signal,
+    (sharedSignal) => loadAddressApiUtxos(ownerAddress, ownerNetwork, sharedSignal));
+}
+
+async function loadAddressApiUtxos(
+  ownerAddress: string,
+  ownerNetwork: BitcoinNetwork,
+  signal: AbortSignal,
 ): Promise<MempoolUtxo[]> {
   const apiPath = `/api/v1/address/${encodeURIComponent(ownerAddress)}/utxo`;
   const utxoUrls = [proofApiUrl(apiPath, ownerNetwork)];
   let lastError: unknown;
   for (const url of utxoUrls) {
     for (const retryDelayMs of WALLET_UTXO_FETCH_RETRY_DELAYS_MS) {
+      signal.throwIfAborted();
       if (retryDelayMs > 0) {
-        await delay(retryDelayMs);
+        await waitForDisplayRead(retryDelayMs, signal);
       }
 
       const controller = new AbortController();
+      const abortFromCaller = () => controller.abort(signal.reason);
+      signal.addEventListener("abort", abortFromCaller, { once: true });
+      if (signal.aborted) abortFromCaller();
       let timedOut = false;
       const timeout = globalThis.setTimeout(() => {
         timedOut = true;
@@ -19723,7 +19769,10 @@ async function fetchAddressApiUtxos(
           signal: controller.signal,
         });
         if (!response.ok) {
-          const payload = await response.json().catch(() => null);
+          const payload = await response.json().catch((error: unknown) => {
+            if (controller.signal.aborted) throw error;
+            return null;
+          });
           const apiError =
             payload && typeof payload === "object" && "error" in payload
               ? String((payload as { error?: unknown }).error ?? "").trim()
@@ -19738,6 +19787,7 @@ async function fetchAddressApiUtxos(
           "api",
         );
       } catch (error) {
+        signal.throwIfAborted();
         lastError =
           timedOut ||
           (error instanceof DOMException && error.name === "AbortError")
@@ -19747,6 +19797,7 @@ async function fetchAddressApiUtxos(
             : error;
       } finally {
         globalThis.clearTimeout(timeout);
+        signal.removeEventListener("abort", abortFromCaller);
       }
     }
   }
@@ -19758,11 +19809,14 @@ async function fetchTokenTransferFundingReadiness(
   ownerAddress: string,
   ownerNetwork: BitcoinNetwork,
   futureFeeReserveSats: number,
+  signal?: AbortSignal,
 ): Promise<TokenTransferFundingReadiness> {
+  signal?.throwIfAborted();
   const [walletUtxos, reservedListingAnchors] = await Promise.all([
-    fetchUtxos(ownerAddress, ownerNetwork),
-    fetchFreshProofOfWorkListingAnchorOutpoints(ownerAddress, ownerNetwork),
+    fetchUtxos(ownerAddress, ownerNetwork, signal),
+    fetchFreshProofOfWorkListingAnchorOutpoints(ownerAddress, ownerNetwork, { signal }),
   ]);
+  signal?.throwIfAborted();
   const reserved = new Set(
     reservedListingAnchors.map(
       (outpoint) => `${outpoint.txid}:${outpoint.vout}`,
@@ -19823,15 +19877,15 @@ async function fetchTransactionOutspend(
     controller.abort();
   }, TX_OUTSPEND_FETCH_TIMEOUT_MS);
 
-  let response: Response;
   try {
-    response = await fetch(url, {
+    const response = await fetch(url, {
       cache: "no-store",
       headers: {
         Accept: "application/json",
       },
       signal: controller.signal,
     });
+    return response.ok ? ((await response.json()) as Record<string, unknown>) : null;
   } catch (error) {
     if (
       timedOut ||
@@ -19847,7 +19901,6 @@ async function fetchTransactionOutspend(
     globalThis.clearTimeout(timeout);
   }
 
-  return response.ok ? ((await response.json()) as Record<string, unknown>) : null;
 }
 
 async function assertConfirmedFundingUtxo(
@@ -22137,24 +22190,23 @@ export default function App() {
       };
     }
 
-    void fetchTokenTransferFundingReadiness(
-      address,
-      network,
-      tokenPrepareTransferFeeReserveSats,
-    )
-      .then((readiness) => {
-        if (!canceled) {
-          setTokenTransferFundingReadiness(readiness);
-        }
-      })
-      .catch(() => {
-        if (!canceled) {
-          setTokenTransferFundingReadiness(undefined);
-        }
-      });
+    const stop = createVisibleReadLoop(async (signal) => {
+      try {
+        const readiness = await fetchTokenTransferFundingReadiness(
+          address,
+          network,
+          tokenPrepareTransferFeeReserveSats,
+          signal,
+        );
+        if (!canceled && !signal.aborted) setTokenTransferFundingReadiness(readiness);
+      } catch {
+        if (!canceled && !signal.aborted) setTokenTransferFundingReadiness(undefined);
+      }
+    });
 
     return () => {
       canceled = true;
+      stop();
     };
   }, [
     address,
@@ -22194,6 +22246,11 @@ export default function App() {
   const [activityLoading, setActivityLoading] = useState(false);
   const activitySearchGenerationRef = useRef(0);
   const activityHistoryGenerationRef = useRef(0);
+  const activityHeadReadControllerRef = useRef<AbortController>();
+  const activityHeadBusyOwnerRef = useRef<AbortController>();
+  const activityLoadingOwnerRef = useRef<AbortController>();
+  const activityHistoryReadControllerRef = useRef<AbortController>();
+  const activitySearchReadControllerRef = useRef<AbortController>();
   const [desktopLoading, setDesktopLoading] = useState(false);
   const desktopReadGenerationRef = useRef(0);
   const desktopReadControllerRef = useRef<AbortController>();
@@ -22468,6 +22525,19 @@ export default function App() {
                               }`;
   const activeWorkspaceStatusKeyRef = useRef(activeWorkspaceStatusKey);
   activeWorkspaceStatusKeyRef.current = activeWorkspaceStatusKey;
+  useEffect(() => () => {
+    activityHeadReadControllerRef.current?.abort();
+    activityHistoryReadControllerRef.current?.abort();
+    activitySearchReadControllerRef.current?.abort();
+    if (activityLoadingOwnerRef.current) {
+      activityLoadingOwnerRef.current = undefined;
+      setActivityLoading(false);
+    }
+    if (activityHeadBusyOwnerRef.current) {
+      activityHeadBusyOwnerRef.current = undefined;
+      setBusyForWorkspace(activeWorkspaceStatusKey, false);
+    }
+  }, [activeWorkspaceStatusKey, network]);
   const marketplaceReadContextRef = useRef(`${network}:${address}`);
   marketplaceReadContextRef.current = `${network}:${address}`;
   const workspaceStatusesRef = useRef(
@@ -22660,6 +22730,13 @@ export default function App() {
   const marketplaceWorkspaceIsCurrent = () =>
     marketplaceMode || activeFolderRef.current === "marketplace";
   const walletSyncGenerationRef = useRef(0);
+  const [walletConnection] = useState(() => createWalletConnectionController());
+  const walletConnectionRef = useRef(walletConnection);
+  useEffect(() => () => {
+    walletConnectionRef.current.invalidate();
+    walletSyncGenerationRef.current += 1;
+    setBusyForWorkspace(activeWorkspaceStatusKey, false);
+  }, [activeWorkspaceStatusKey]);
   const acceptedWorkFloorQuoteRef = useRef<WorkFloorQuote | undefined>();
   const workV8DeclarationBoundaryLatchRef = useRef(false);
   const acceptedGrowthSummaryRef = useRef<GrowthSummarySnapshot | undefined>();
@@ -26518,55 +26595,42 @@ export default function App() {
 
     let cancelled = false;
     let requestId = 0;
-    const loadAccountUtxos = () => {
+    const loadAccountUtxos = async (signal: AbortSignal) => {
       const currentRequestId = ++requestId;
-      fetchUtxos(address, network)
-        .then((utxos) => {
-          if (!cancelled && currentRequestId === requestId) {
-            setAccountUtxos(utxos);
-            setAccountUtxosLoaded(true);
-            setAccountUtxosError("");
-          }
-        })
-        .catch((error) => {
-          if (!cancelled && currentRequestId === requestId) {
-            setAccountUtxosError(
-              errorMessage(error, "Wallet UTXOs are unavailable."),
-            );
-          }
-        });
-      fetchAddressApiUtxos(address, network)
-        .then((utxos) => {
-          if (!cancelled && currentRequestId === requestId) {
-            setAccountChainUtxos(utxos);
-            setAccountChainUtxosLoaded(true);
-            setAccountChainUtxosError("");
-          }
-        })
-        .catch((error) => {
-          if (!cancelled && currentRequestId === requestId) {
-            setAccountChainUtxosError(
-              errorMessage(error, "Full-node wallet UTXOs are unavailable."),
-            );
-          }
-        });
+      const current = () => !cancelled && !signal.aborted && currentRequestId === requestId;
+      await Promise.all([
+        fetchUtxos(address, network, signal)
+          .then((utxos) => {
+            if (current()) {
+              setAccountUtxos(utxos);
+              setAccountUtxosLoaded(true);
+              setAccountUtxosError("");
+            }
+          })
+          .catch((error) => {
+            if (current()) setAccountUtxosError(errorMessage(error, "Wallet UTXOs are unavailable."));
+          }),
+        fetchAddressApiUtxos(address, network, signal)
+          .then((utxos) => {
+            if (current()) {
+              setAccountChainUtxos(utxos);
+              setAccountChainUtxosLoaded(true);
+              setAccountChainUtxosError("");
+            }
+          })
+          .catch((error) => {
+            if (current()) setAccountChainUtxosError(errorMessage(error, "Full-node wallet UTXOs are unavailable."));
+          }),
+      ]);
     };
-
     setAccountUtxos([]);
     setAccountUtxosLoaded(false);
     setAccountUtxosError("");
     setAccountChainUtxos([]);
     setAccountChainUtxosLoaded(false);
     setAccountChainUtxosError("");
-    loadAccountUtxos();
-    const interval = window.setInterval(loadAccountUtxos, 60_000);
-    window.addEventListener("focus", loadAccountUtxos);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      window.removeEventListener("focus", loadAccountUtxos);
-    };
+    const stop = createVisibleReadLoop(loadAccountUtxos, 60_000);
+    return () => { cancelled = true; stop(); };
   }, [address, network]);
 
   useEffect(() => {
@@ -26579,41 +26643,34 @@ export default function App() {
     let requestId = 0;
     let controller: AbortController | undefined;
     setAccountIdReservations({ scope, loaded: false, loading: true, error: "", listings: [] });
-    const refreshReservations = async () => {
+    const refreshReservations = async (signal: AbortSignal) => {
       const currentRequest = ++requestId;
       controller?.abort();
       const requestController = new AbortController();
       controller = requestController;
+      const readSignal = AbortSignal.any([signal, requestController.signal]);
       setAccountIdReservations((current) => ({ ...current, loading: true }));
       try {
         // registry-summary has capped listings; the full registry is required here.
         const payload = await fetchProofApiJson<PowRegistryApiResponse>(
-          "/api/v1/registry", network, { signal: requestController.signal },
+          "/api/v1/registry", network, { signal: readSignal },
         );
         assertCompleteIdReservations(payload);
-        if (cancelled || currentRequest !== requestId) return;
+        if (cancelled || readSignal.aborted || currentRequest !== requestId) return;
         setAccountIdReservations({
           scope, loaded: true, loading: false, error: "",
           listings: (payload.listings ?? []).filter((listing) => listing.sellerAddress === address),
         });
       } catch (error) {
-        if (cancelled || currentRequest !== requestId) return;
+        if (cancelled || readSignal.aborted || currentRequest !== requestId) return;
         setAccountIdReservations((current) => ({
           ...current, loading: false,
           error: errorMessage(error, "ID reservations are unavailable."),
         }));
       }
     };
-    void refreshReservations();
-    const refresh = () => { void refreshReservations(); };
-    const interval = window.setInterval(refresh, 60_000);
-    window.addEventListener("focus", refresh);
-    return () => {
-      cancelled = true;
-      controller?.abort();
-      window.clearInterval(interval);
-      window.removeEventListener("focus", refresh);
-    };
+    const stop = createVisibleReadLoop(refreshReservations, 60_000);
+    return () => { cancelled = true; controller?.abort(); stop(); };
   }, [address, network, registryAddress]);
 
   useEffect(() => {
@@ -26640,12 +26697,13 @@ export default function App() {
     setAccountIncbTokenState(emptyTokenState());
     setAccountTokenLaneStatuses(emptyAccountTokenLaneStatuses());
 
-    const loadAccountTokenBalances = () => {
+    const loadAccountTokenBalances = async (signal: AbortSignal) => {
       if (inFlight) return;
       inFlight = true;
       const currentRequestId = ++requestId;
       const requestController = new AbortController();
       controller = requestController;
+      const readSignal = AbortSignal.any([signal, requestController.signal]);
       const loadAccountTokenLane = (
         lane: AccountTokenLane,
         load: () => Promise<PowTokenState>,
@@ -26658,7 +26716,7 @@ export default function App() {
         }));
         return load()
           .then((state) => {
-            if (!cancelled && currentRequestId === requestId) {
+            if (!cancelled && !readSignal.aborted && currentRequestId === requestId) {
               commit(state);
               if (options.refresh) {
                 setAccountTokenLaneStatuses((current) => ({
@@ -26668,7 +26726,7 @@ export default function App() {
                 return options
                   .refresh()
                   .then((freshState) => {
-                    if (!cancelled && currentRequestId === requestId) {
+                    if (!cancelled && !readSignal.aborted && currentRequestId === requestId) {
                       commit(freshState);
                       setAccountTokenLaneStatuses((current) => ({
                         ...current,
@@ -26677,7 +26735,7 @@ export default function App() {
                     }
                   })
                   .catch((error) => {
-                    if (!cancelled && currentRequestId === requestId) {
+                    if (!cancelled && !readSignal.aborted && currentRequestId === requestId) {
                       setAccountTokenLaneStatuses((current) => ({
                         ...current,
                         [lane]: {
@@ -26699,7 +26757,7 @@ export default function App() {
             }
           })
           .catch((error) => {
-            if (!cancelled && currentRequestId === requestId) {
+            if (!cancelled && !readSignal.aborted && currentRequestId === requestId) {
               setAccountTokenLaneStatuses((current) => ({
                 ...current,
                 [lane]: {
@@ -26727,7 +26785,7 @@ export default function App() {
               [address],
               true,
               false,
-              requestController.signal,
+              readSignal,
             ),
           setAccountTokenState,
         ),
@@ -26742,7 +26800,7 @@ export default function App() {
               [address],
               true,
               true,
-              requestController.signal,
+              readSignal,
             ),
           setAccountWorkTokenState,
           {
@@ -26755,7 +26813,7 @@ export default function App() {
                 [address],
                 true,
                 true,
-                requestController.signal,
+                readSignal,
               ),
           },
         ),
@@ -26770,7 +26828,7 @@ export default function App() {
               [address],
               true,
               false,
-              requestController.signal,
+              readSignal,
             ),
           setAccountPowbTokenState,
         ),
@@ -26785,26 +26843,18 @@ export default function App() {
               [address],
               true,
               false,
-              requestController.signal,
+              readSignal,
             ),
           setAccountIncbTokenState,
         ),
       ];
-      void Promise.all(reads).finally(() => {
-        if (!cancelled && currentRequestId === requestId) inFlight = false;
+      await Promise.all(reads).finally(() => {
+        if (currentRequestId === requestId) inFlight = false;
       });
     };
 
-    loadAccountTokenBalances();
-    const interval = window.setInterval(loadAccountTokenBalances, 60_000);
-    window.addEventListener("focus", loadAccountTokenBalances);
-
-    return () => {
-      cancelled = true;
-      controller?.abort();
-      window.clearInterval(interval);
-      window.removeEventListener("focus", loadAccountTokenBalances);
-    };
+    const stop = createVisibleReadLoop(loadAccountTokenBalances, 60_000);
+    return () => { cancelled = true; controller?.abort(); stop(); };
   }, [address, network, tokenIndexAddress]);
 
   useEffect(
@@ -27204,77 +27254,26 @@ export default function App() {
     }
 
     let cancelled = false;
-    let settleTimer: number | undefined;
-
-    const loadVisibleLog = (fresh = false) => {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-
+    let first = true;
+    const loadVisibleLog = async (signal: AbortSignal) => {
+      if (activityLoadingOwnerRef.current || activityHeadBusyOwnerRef.current) return;
       const historyTarget = activityHistoryRefreshTarget();
       const searchGeneration = activitySearchGenerationRef.current;
-      void (async () => {
-        await loadLogHead(true, fresh);
-        if (
-          cancelled ||
-          searchGeneration !== activitySearchGenerationRef.current
-        ) {
-          return;
+      const silent = !first;
+      first = false;
+      await loadLogHead(silent, false, signal);
+      if (cancelled || signal.aborted || activityLoadingOwnerRef.current || searchGeneration !== activitySearchGenerationRef.current) return;
+      if (historyTarget) {
+        await loadLogHistoryPage(historyTarget.pageIndex, true, historyTarget.query, { signal });
+        const profile = activityProfileRef.current;
+        if (!cancelled && !signal.aborted && !activityLoadingOwnerRef.current && !activityHeadBusyOwnerRef.current &&
+            searchGeneration === activitySearchGenerationRef.current && profile && profile.query === activityQueryRef.current) {
+          await loadActivityTarget(profile.query, signal);
         }
-
-        if (historyTarget) {
-          await loadLogHistoryPage(
-            historyTarget.pageIndex,
-            true,
-            historyTarget.query,
-          );
-          const currentProfile = activityProfileRef.current;
-          if (
-            !cancelled &&
-            searchGeneration === activitySearchGenerationRef.current &&
-            currentProfile &&
-            currentProfile.query === activityQueryRef.current
-          ) {
-            void loadActivityTarget(currentProfile.query);
-          }
-        }
-
-        if (fresh) {
-          window.clearTimeout(settleTimer);
-          settleTimer = window.setTimeout(() => {
-            if (
-              !cancelled &&
-              document.visibilityState === "visible" &&
-              searchGeneration === activitySearchGenerationRef.current
-            ) {
-              void loadLogHead(true, false);
-              if (historyTarget) {
-                void loadLogHistoryPage(
-                  historyTarget.pageIndex,
-                  true,
-                  historyTarget.query,
-                );
-              }
-            }
-          }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
-        }
-      })();
+      }
     };
-
-    void refreshLogSurface(false, false);
-
-    const interval = window.setInterval(() => {
-      loadVisibleLog(false);
-    }, LOG_LIVE_REFRESH_MS);
-    const focusHandler = () => loadVisibleLog(false);
-    window.addEventListener("focus", focusHandler);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      window.clearTimeout(settleTimer);
-      window.removeEventListener("focus", focusHandler);
-    };
+    const stop = createVisibleReadLoop(loadVisibleLog, LOG_LIVE_REFRESH_MS);
+    return () => { cancelled = true; stop(); };
   }, [
     activeFolder,
     activityMode,
@@ -27288,10 +27287,10 @@ export default function App() {
     }
 
     let cancelled = false;
-    const refreshMailWorkAdmission = () => {
+    const refreshMailWorkAdmission = async (signal: AbortSignal) => {
       setMailWorkAdmissionError("");
-      void refreshWorkFloor(true, true).then((quote) => {
-        if (!cancelled && !quote && !acceptedWorkFloorQuoteRef.current) {
+      await refreshWorkFloor(true, true).then((quote) => {
+        if (!cancelled && !signal.aborted && !quote && !acceptedWorkFloorQuoteRef.current) {
           setMailWorkAdmissionError(
             "Verified WORK transfer admission is unavailable. Refresh and try again; no transaction can be prepared.",
           );
@@ -27299,18 +27298,8 @@ export default function App() {
       });
     };
 
-    refreshMailWorkAdmission();
-    const interval = window.setInterval(
-      refreshMailWorkAdmission,
-      WORK_FLOOR_LIVE_REFRESH_MS,
-    );
-    window.addEventListener("focus", refreshMailWorkAdmission);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      window.removeEventListener("focus", refreshMailWorkAdmission);
-    };
+    const stop = createVisibleReadLoop(refreshMailWorkAdmission, WORK_FLOOR_LIVE_REFRESH_MS);
+    return () => { cancelled = true; stop(); };
   }, [mailWorkFloorHydrationRequired, network]);
 
   useEffect(() => {
@@ -27327,44 +27316,16 @@ export default function App() {
       return;
     }
 
-    const refreshWorkFloorMetrics = () => {
-      if (document.visibilityState === "visible") {
-        void (async () => {
-          const useMarketplaceSummary =
-            marketplaceMode || activeFolder === "marketplace";
-          if (useMarketplaceSummary) {
-            await refreshMarketplaceSummary(true, false);
-          } else {
-            await Promise.all([
-              refreshTokenBtcUsd(false),
-              refreshWorkFloor(true, false),
-            ]);
-          }
-          window.setTimeout(() => {
-            if (document.visibilityState === "visible") {
-              if (useMarketplaceSummary) {
-                void refreshMarketplaceSummary(true, true);
-              } else {
-                void refreshTokenBtcUsd(true);
-                void refreshWorkFloor(true, true);
-              }
-            }
-          }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
-        })();
-      }
+    const refreshWorkFloorMetrics = async (signal: AbortSignal) => {
+      const useMarketplaceSummary = marketplaceMode || activeFolder === "marketplace";
+      if (useMarketplaceSummary) await refreshMarketplaceSummary(true, false);
+      else await Promise.all([refreshTokenBtcUsd(false), refreshWorkFloor(true, false)]);
+      await waitForDisplayRead(BACKGROUND_FRESH_REFRESH_DELAY_MS, signal);
+      signal.throwIfAborted();
+      if (useMarketplaceSummary) await refreshMarketplaceSummary(true, true);
+      else await Promise.all([refreshTokenBtcUsd(true), refreshWorkFloor(true, true)]);
     };
-
-    refreshWorkFloorMetrics();
-    const interval = window.setInterval(
-      refreshWorkFloorMetrics,
-      WORK_FLOOR_LIVE_REFRESH_MS,
-    );
-    window.addEventListener("focus", refreshWorkFloorMetrics);
-
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", refreshWorkFloorMetrics);
-    };
+    return createVisibleReadLoop(refreshWorkFloorMetrics, WORK_FLOOR_LIVE_REFRESH_MS);
   }, [
     activeFolder,
     marketplaceMode,
@@ -27431,29 +27392,12 @@ export default function App() {
       return;
     }
 
-    const refreshGrowthMetrics = () => {
-      if (document.visibilityState === "visible") {
-        void (async () => {
-          await refreshGrowth(true, false);
-          window.setTimeout(() => {
-            if (document.visibilityState === "visible") {
-              void refreshGrowth(true, true);
-            }
-          }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
-        })();
-      }
+    const refreshGrowthMetrics = async (signal: AbortSignal) => {
+      await refreshGrowth(true, false, signal);
+      await waitForDisplayRead(BACKGROUND_FRESH_REFRESH_DELAY_MS, signal);
+      await refreshGrowth(true, true, signal);
     };
-    refreshGrowthMetrics();
-    const interval = window.setInterval(
-      refreshGrowthMetrics,
-      WORK_FLOOR_LIVE_REFRESH_MS,
-    );
-    window.addEventListener("focus", refreshGrowthMetrics);
-
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", refreshGrowthMetrics);
-    };
+    return createVisibleReadLoop(refreshGrowthMetrics, WORK_FLOOR_LIVE_REFRESH_MS);
   }, [growthMode, network, registryAddress]);
 
   useEffect(() => {
@@ -27622,55 +27566,31 @@ export default function App() {
     }
 
     let cancelled = false;
-    if (mainnetWorkspaceMode) {
-      void (async () => {
-        const wallet = window.unisat as UnisatWallet;
-        const [currentAddress = ""] =
-          (await wallet.getAccounts?.().catch(() => [])) ?? [];
-        if (!currentAddress) {
-          if (!cancelled) {
-            setNetwork("livenet");
-          }
-          return;
-        }
-
-        try {
-          const verifiedAddress = await ensureWalletNetwork(
-            wallet,
-            "livenet",
-            currentAddress,
-          );
-          if (!cancelled) {
-            setAddress(verifiedAddress);
-            setNetwork("livenet");
-          }
-        } catch (error) {
-          if (!cancelled) {
-            setStatus({
-              tone: "bad",
-              text: errorMessage(
-                error,
-                "Switch UniSat to mainnet before using this workspace.",
-              ),
-            });
-          }
-        }
-      })();
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    getWalletNetwork(window.unisat)
-      .then((walletNetwork) => {
-        if (!cancelled && walletNetwork) {
-          setNetwork(walletNetwork);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
+    const wallet = window.unisat;
+    const workspaceKey = activeWorkspaceStatusKeyRef.current;
+    const generation = walletSyncGenerationRef.current;
+    if (walletConnectionRef.current.isConnecting) return;
+    void walletConnectionRef.current.connect(wallet, {
+      authorize: false,
+      requiredNetwork: mainnetWorkspaceMode ? "livenet" : undefined,
+      sameAddress: samePaymentAddress,
+      isCurrent: () => !cancelled && generation === walletSyncGenerationRef.current &&
+        wallet === window.unisat && workspaceKey === activeWorkspaceStatusKeyRef.current,
+    }).then((connected) => {
+      if (cancelled || generation !== walletSyncGenerationRef.current) return;
+      setNetwork(connected.network);
+      if (mainnetWorkspaceMode) setAddress(connected.address);
+    }).catch((error) => {
+      if (cancelled || generation !== walletSyncGenerationRef.current) return;
+      if (error?.code === "no-account") {
+        if (mainnetWorkspaceMode) setNetwork("livenet");
+        return;
+      }
+      if (error?.code !== "stale") setStatusForWorkspace(workspaceKey, {
+        tone: "bad", text: errorMessage(error, "Wallet state could not be verified. Retry Connect."),
+      });
+    });
+    return () => { cancelled = true; };
   }, [
     activityMode,
     browserRoute,
@@ -27698,20 +27618,18 @@ export default function App() {
 
     const syncWallet = async () => {
       const wallet = window.unisat as UnisatWallet;
+      const workspaceKey = activeWorkspaceStatusKeyRef.current;
       const generation = ++walletSyncGenerationRef.current;
-      let accounts = await wallet.getAccounts?.().catch(() => []);
-      let nextAddress = accounts?.[0] ?? "";
-      if (mainnetWorkspaceMode) {
-        nextAddress = await ensureWalletNetwork(wallet, "livenet", nextAddress);
-        accounts = await wallet.getAccounts?.().catch(() => []);
-        nextAddress = accounts?.[0] ?? nextAddress;
-      }
-      const nextNetwork = mainnetWorkspaceMode
-        ? "livenet"
-        : ((await getWalletNetwork(wallet)) ?? network);
-      if (generation !== walletSyncGenerationRef.current) {
-        return;
-      }
+      const connected = await walletConnectionRef.current.connect(wallet, {
+        authorize: false,
+        requiredNetwork: mainnetWorkspaceMode ? "livenet" : undefined,
+        sameAddress: samePaymentAddress,
+        isCurrent: () => generation === walletSyncGenerationRef.current &&
+          window.unisat === wallet && workspaceKey === activeWorkspaceStatusKeyRef.current,
+      });
+      const nextAddress = connected.address;
+      const nextNetwork = connected.network;
+      if (generation !== walletSyncGenerationRef.current) return;
 
       setAddress(nextAddress);
       setNetwork(nextNetwork);
@@ -27733,7 +27651,6 @@ export default function App() {
           activeFolder === "inception"
         ) {
           const config = standaloneBondConfig ?? activeBondConfig;
-          await ensureWalletNetwork(wallet, "livenet", nextAddress);
           const snapshot = await fetchBondSummary(config, false);
           if (
             generation !== walletSyncGenerationRef.current ||
@@ -27760,7 +27677,6 @@ export default function App() {
         }
 
         if (marketplaceWorkspaceIsCurrent()) {
-          await ensureWalletNetwork(wallet, "livenet", nextAddress);
           const snapshot = await refreshMarketplaceSummary(true, false);
           if (
             generation !== walletSyncGenerationRef.current ||
@@ -27785,7 +27701,6 @@ export default function App() {
           activeFolder === "wallet" ||
           activeFolder === "work"
         ) {
-          await ensureWalletNetwork(wallet, "livenet", nextAddress);
           const workWorkspace = workTokenMode || activeFolder === "work";
           const walletWorkspace = walletMode || activeFolder === "wallet";
           const workSummary = workWorkspace
@@ -27829,7 +27744,6 @@ export default function App() {
 
         if (dnsLaunchMode || activeFolderRef.current === "dns") {
           const workspaceKey = activeWorkspaceStatusKeyRef.current;
-          await ensureWalletNetwork(wallet, "livenet", nextAddress);
           const state = await fetchDnsRegistryState("livenet");
           if (
             generation !== walletSyncGenerationRef.current ||
@@ -27848,7 +27762,6 @@ export default function App() {
         }
 
         if (mainnetWorkspaceMode) {
-          await ensureWalletNetwork(wallet, "livenet", nextAddress);
           const state = await fetchIdRegistryState("livenet");
           if (
             generation !== walletSyncGenerationRef.current ||
@@ -27878,6 +27791,7 @@ export default function App() {
           text: `${shortAddress(nextAddress)} loaded. ${mailboxSummary(inboxMessages, sentMessages)}.${mailState.readWarning ? ` ${mailState.readWarning}` : ""}`,
         });
       } catch (error) {
+        if (generation !== walletSyncGenerationRef.current || workspaceKey !== activeWorkspaceStatusKeyRef.current) return;
         setStatus({
           tone: "bad",
           text: errorMessage(error, "Address scan failed."),
@@ -27889,10 +27803,14 @@ export default function App() {
       mailWalletRevisionRef.current += 1;
       finishMailReview(false);
       finishActionReview(false);
+      if (walletConnectionRef.current.isConnecting) return;
+      const workspaceKey = activeWorkspaceStatusKeyRef.current;
       void syncWallet().catch((error) => {
-        setStatus({
-          tone: "bad",
-          text: errorMessage(error, "Wallet state could not be verified."),
+        if (workspaceKey !== activeWorkspaceStatusKeyRef.current || error?.code === "stale") return;
+        clearWalletSession();
+        setStatusForWorkspace(workspaceKey, {
+          tone: error?.code === "no-account" ? "idle" : "bad",
+          text: error?.code === "no-account" ? "Wallet account disconnected." : errorMessage(error, "Wallet state could not be verified."),
         });
       });
     };
@@ -28963,7 +28881,12 @@ export default function App() {
     return { activity, stats };
   }
 
-  async function loadLogHead(silent = true, fresh = false) {
+  async function loadLogHead(silent = true, fresh = false, signal?: AbortSignal) {
+    if (silent && activityHeadBusyOwnerRef.current) return undefined;
+    activityHeadReadControllerRef.current?.abort();
+    const controller = new AbortController();
+    activityHeadReadControllerRef.current = controller;
+    const readSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     const readSource = "log-head";
     const readAttempt = nextProofApiReadAttempt();
@@ -28972,6 +28895,7 @@ export default function App() {
     }
 
     if (!silent) {
+      activityHeadBusyOwnerRef.current = controller;
       setBusyForWorkspace(requestWorkspaceKey, true);
       setStatusForWorkspace(requestWorkspaceKey, {
         tone: "idle",
@@ -28980,7 +28904,8 @@ export default function App() {
     }
 
     try {
-      const payload = await fetchGlobalActivityPayload(network, fresh, true);
+      const payload = await fetchGlobalActivityPayload(network, fresh, true, readSignal);
+      if (readSignal.aborted || activeWorkspaceStatusKeyRef.current !== requestWorkspaceKey) return undefined;
       const { activity, stats } = applyActivityPayload(payload);
       verifiedActivityReadRef.current = true;
       if (fresh) {
@@ -28999,6 +28924,7 @@ export default function App() {
       }
       return payload;
     } catch (error) {
+      if (readSignal.aborted || activeWorkspaceStatusKeyRef.current !== requestWorkspaceKey) return undefined;
       const retainedLastGood =
         fresh &&
         verifiedActivityReadRef.current &&
@@ -29016,7 +28942,8 @@ export default function App() {
       }
       return undefined;
     } finally {
-      if (!silent) {
+      if (activityHeadBusyOwnerRef.current === controller) {
+        activityHeadBusyOwnerRef.current = undefined;
         setBusyForWorkspace(requestWorkspaceKey, false);
       }
     }
@@ -29028,15 +28955,20 @@ export default function App() {
     query = activityProfileRef.current?.query === activityQueryRef.current
       ? activityProfileRef.current.address
       : activityQueryRef.current,
-    options: { snapshotId?: string } = {},
+    options: { snapshotId?: string; signal?: AbortSignal } = {},
   ) {
+    if (silent && activityLoadingOwnerRef.current) return undefined;
+    activityHistoryReadControllerRef.current?.abort();
+    const controller = new AbortController();
+    activityHistoryReadControllerRef.current = controller;
+    const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     const readSource = "log-history";
     const generation = ++activityHistoryGenerationRef.current;
     const searchGeneration = activitySearchGenerationRef.current;
     const requestedInput = activityQueryRef.current;
     const requestIsActive = () =>
-      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
+      !signal.aborted && activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
       generation === activityHistoryGenerationRef.current &&
       searchGeneration === activitySearchGenerationRef.current &&
       requestedInput === activityQueryRef.current;
@@ -29053,6 +28985,7 @@ export default function App() {
     }
 
     if (!silent) {
+      activityLoadingOwnerRef.current = controller;
       setActivityLoading(true);
     }
 
@@ -29062,6 +28995,7 @@ export default function App() {
         pageSize: ACTIVITY_FEED_PAGE_SIZE,
         query,
         snapshotId: options.snapshotId,
+        signal,
       });
       if (!requestIsActive()) return undefined;
       clearLastGoodReadWarning(
@@ -29095,7 +29029,8 @@ export default function App() {
       }
       return undefined;
     } finally {
-      if (!silent && requestIsActive()) {
+      if (activityLoadingOwnerRef.current === controller) {
+        activityLoadingOwnerRef.current = undefined;
         setActivityLoading(false);
       }
     }
@@ -29123,11 +29058,11 @@ export default function App() {
     return undefined;
   }
 
-  async function refreshLogSurface(silent = true, fresh = false) {
+  async function refreshLogSurface(silent = true, fresh = false, signal?: AbortSignal) {
     const historyTarget = activityHistoryRefreshTarget();
     const searchGeneration = activitySearchGenerationRef.current;
-    const head = await loadLogHead(silent, fresh);
-    if (searchGeneration !== activitySearchGenerationRef.current) {
+    const head = await loadLogHead(silent, fresh, signal);
+    if (signal?.aborted || searchGeneration !== activitySearchGenerationRef.current) {
       return head;
     }
     if (historyTarget) {
@@ -29135,19 +29070,27 @@ export default function App() {
         historyTarget.pageIndex,
         true,
         historyTarget.query,
+        { signal },
       );
     }
     return head;
   }
 
-  async function loadActivityTarget(target = activityQuery) {
+  async function loadActivityTarget(target = activityQuery, callerSignal?: AbortSignal) {
+    activityLoadingOwnerRef.current = undefined;
+    setActivityLoading(false);
+    activitySearchReadControllerRef.current?.abort();
+    activityHistoryReadControllerRef.current?.abort();
+    const controller = new AbortController();
+    activitySearchReadControllerRef.current = controller;
+    const signal = callerSignal ? AbortSignal.any([callerSignal, controller.signal]) : controller.signal;
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     activityHistoryGenerationRef.current += 1;
     const generation = ++activitySearchGenerationRef.current;
     const readSource = "log-search";
     const readAttempt = nextProofApiReadAttempt();
     const requestIsActive = () =>
-      activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
+      !signal.aborted && activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
       generation === activitySearchGenerationRef.current;
     const query = target.trim();
     let cacheKey = "";
@@ -29156,7 +29099,7 @@ export default function App() {
     if (!query) {
       setActivityProfile(undefined);
       setActivityMail([]);
-      await loadLogHistoryPage(0, true, "");
+      await loadLogHistoryPage(0, true, "", { signal });
       setStatusForWorkspace(requestWorkspaceKey, {
         tone: "idle",
         text: "Log search cleared.",
@@ -29165,6 +29108,7 @@ export default function App() {
     }
 
     const txidOnly = /^[0-9a-fA-F]{64}$/u.test(query);
+    activityLoadingOwnerRef.current = controller;
     setActivityLoading(true);
     setStatusForWorkspace(requestWorkspaceKey, {
       tone: "idle",
@@ -29185,6 +29129,7 @@ export default function App() {
           pageIndex: 0,
           pageSize: ACTIVITY_FEED_PAGE_SIZE,
           query: normalizedTxid,
+          signal,
         });
         if (!requestIsActive()) {
           return;
@@ -29212,7 +29157,8 @@ export default function App() {
         registryAddress,
       );
       if (resolved.isId || resolved.error) {
-        const state = await fetchIdRegistryState(network);
+        const state = await fetchIdRegistryState(network, false, false, signal);
+        if (!requestIsActive()) return;
         setIdRegistry(state.records);
         setIdListings(state.listings);
         setIdPendingEvents(state.pendingEvents);
@@ -29258,6 +29204,7 @@ export default function App() {
         pageIndex: 0,
         pageSize: ACTIVITY_FEED_PAGE_SIZE,
         query: resolved.paymentAddress,
+        signal,
       });
       if (!requestIsActive()) {
         return;
@@ -29317,11 +29264,17 @@ export default function App() {
         });
       }
     } finally {
-      if (requestIsActive()) setActivityLoading(false);
+      if (activityLoadingOwnerRef.current === controller) {
+        activityLoadingOwnerRef.current = undefined;
+        setActivityLoading(false);
+      }
     }
   }
 
   function changeActivityQuery(query: string) {
+    activityLoadingOwnerRef.current = undefined;
+    activitySearchReadControllerRef.current?.abort();
+    activityHistoryReadControllerRef.current?.abort();
     activitySearchGenerationRef.current += 1;
     activityHistoryGenerationRef.current += 1;
     activityQueryRef.current = query;
@@ -29333,6 +29286,9 @@ export default function App() {
   }
 
   function clearActivity() {
+    activityLoadingOwnerRef.current = undefined;
+    activitySearchReadControllerRef.current?.abort();
+    activityHistoryReadControllerRef.current?.abort();
     activitySearchGenerationRef.current += 1;
     activityHistoryGenerationRef.current += 1;
     activityQueryRef.current = "";
@@ -30397,7 +30353,7 @@ export default function App() {
     }
   }
 
-  async function refreshGrowth(silent = false, fresh = !silent) {
+  async function refreshGrowth(silent = false, fresh = !silent, signal?: AbortSignal) {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     if (growthRefreshInFlightRef.current) {
       return;
@@ -30418,9 +30374,11 @@ export default function App() {
 
     try {
       const [summaryPayload, btcUsdQuote] = await Promise.all([
-        fetchGrowthSummary(fresh),
+        fetchGrowthSummary(fresh, signal),
         fetchBtcUsdPrice(fresh).catch(() => undefined),
       ]);
+      signal?.throwIfAborted();
+      if (activeWorkspaceStatusKeyRef.current !== requestWorkspaceKey) return;
       const { activity, registry: registryState, snapshot, token: tokenState } =
         summaryPayload;
       applyRegistryState(
@@ -30459,6 +30417,7 @@ export default function App() {
         });
       }
     } catch (error) {
+      if (signal?.aborted || activeWorkspaceStatusKeyRef.current !== requestWorkspaceKey) return;
       const lastGoodSnapshot = acceptedGrowthSummaryRef.current;
       const retainedLastGood =
         fresh &&
@@ -30583,34 +30542,28 @@ export default function App() {
       return;
     }
 
-    setBusy(true);
-    setStatus({ tone: "idle", text: "Opening UniSat..." });
-
+    const wallet = window.unisat;
+    const workspaceKey = activeWorkspaceStatusKeyRef.current;
+    const generation = ++walletSyncGenerationRef.current;
+    const current = () => generation === walletSyncGenerationRef.current &&
+      wallet === window.unisat && workspaceKey === activeWorkspaceStatusKeyRef.current;
+    setBusyForWorkspace(workspaceKey, true);
+    setStatusForWorkspace(workspaceKey, { tone: "idle", text: "Opening UniSat..." });
     try {
-      const generation = ++walletSyncGenerationRef.current;
-      const accounts = window.unisat.requestAccounts
-        ? await window.unisat.requestAccounts()
-        : await window.unisat.getAccounts?.();
-
-      let firstAddress = accounts?.[0];
-      if (!firstAddress) {
-        throw new Error("UniSat did not return an address.");
-      }
-
-      const walletNetwork = await getWalletNetwork(window.unisat);
-      if (mainnetWorkspaceMode) {
-        firstAddress = await ensureWalletNetwork(
-          window.unisat,
-          "livenet",
-          firstAddress,
-        );
-        setNetwork("livenet");
-      } else if (walletNetwork) {
-        setNetwork(walletNetwork);
-      }
-      if (generation !== walletSyncGenerationRef.current) {
-        return;
-      }
+      const connected = await walletConnectionRef.current.connect(wallet, {
+        requiredNetwork: mainnetWorkspaceMode ? "livenet" : undefined,
+        sameAddress: samePaymentAddress,
+        isCurrent: current,
+        onStage: ({ message }) => setStatusForWorkspace(workspaceKey, { tone: "idle", text: message }),
+      });
+      if (!current()) return;
+      let firstAddress = connected.address;
+      const walletNetwork = connected.network;
+      setNetwork(walletNetwork);
+      setBusyForWorkspace(workspaceKey, false);
+      setStatusForWorkspace(workspaceKey, {
+        tone: "good", text: "UniSat connected. Loading verified application data...",
+      });
 
       setAddress(firstAddress);
       setMailReadScope("");
@@ -30743,7 +30696,6 @@ export default function App() {
 
         if (dnsLaunchMode || activeFolderRef.current === "dns") {
           const workspaceKey = activeWorkspaceStatusKeyRef.current;
-          firstAddress = await ensureWalletNetwork(window.unisat, "livenet", firstAddress);
           if (
             generation !== walletSyncGenerationRef.current ||
             activeWorkspaceStatusKeyRef.current !== workspaceKey
@@ -30801,6 +30753,7 @@ export default function App() {
           text: `UniSat connected. ${mailboxSummary(inboxMessages, sentMessages)}.${mailState.readWarning ? ` ${mailState.readWarning}` : ""}`,
         });
       } catch (error) {
+        if (!current()) return;
         setStatus({
           tone: "bad",
           text: errorMessage(
@@ -30810,16 +30763,19 @@ export default function App() {
         });
       }
     } catch (error) {
-      setStatus({
+      if (!current()) return;
+      setStatusForWorkspace(workspaceKey, {
         tone: "bad",
         text: errorMessage(error, "Could not connect UniSat."),
       });
     } finally {
-      setBusy(false);
+      if (current()) setBusyForWorkspace(workspaceKey, false);
     }
   }
 
   async function disconnectWallet() {
+    walletConnectionRef.current.invalidate();
+    walletSyncGenerationRef.current += 1;
     setBusy(true);
     setStatus({ tone: "idle", text: "Disconnecting UniSat..." });
 
@@ -53471,6 +53427,7 @@ function TokenMarketplacePanel({
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     setTokenMarketLogPageLoading(true);
     setTokenMarketActivityReadState({
       status: "loading",
@@ -53478,6 +53435,7 @@ function TokenMarketplacePanel({
     });
     const historyKind = tokenMarketActivityHistoryKind(tokenMarketActivityTab);
     const historyOptions = {
+      signal: controller.signal,
       fresh: tokenMarketHistoryRefreshNonce > 0,
       pageIndex: activeTokenMarketLogPageIndex,
       pageSize: TOKEN_LIST_PREVIEW_COUNT,
@@ -53490,7 +53448,7 @@ function TokenMarketplacePanel({
       historyOptions,
     )
       .catch((error) => {
-        if (!historyOptions.fresh) {
+        if (controller.signal.aborted || !historyOptions.fresh) {
           throw error;
         }
         return fetchTokenHistoryPage<TokenMarketLogItem>(
@@ -53548,6 +53506,7 @@ function TokenMarketplacePanel({
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [
     network,

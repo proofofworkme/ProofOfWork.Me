@@ -1381,3 +1381,45 @@ The article reader has a spaced header and an accessible Back to articles arrow
 on standalone Publish and Computer.
 
 Release completion requires the same released source commit in production UI provenance, GitHub `main`, the primary local `main` checkout and its rebuilt preview. Follow the mandatory synchronization gate in [OP_RETURN_INFRASTRUCTURE.md](OP_RETURN_INFRASTRUCTURE.md#mandatory-release-synchronization) and preserve local work before switching branches.
+
+
+## Bounded display reads and wallet connection
+
+Automatic account and Log display refreshes run only while the document is
+visible, do not overlap their own cycle, and perform one catch-up on return.
+Abandoned UTXO/history reads cancel their body and retry work. Only identical
+cancellable display UTXO reads coalesce; signing and pre-broadcast funding reads
+remain independent. Shared floor/AMO/price requests already in progress may
+finish within their existing deadlines, while cancelled workspace delays cannot
+launch follow-up reads. Display readiness never grants transaction authority.
+
+UniSat account approval has a 60-second local deadline; account/network reads
+have 15-second stage deadlines and network switches have 30 seconds. A deadline
+releases the control, not the provider's pending prompt. Finish or close that
+prompt and retry. Retry can recover a granted account even if the authorization
+promise never settles, and never opens a second still-pending approval prompt.
+Final account/network verification precedes connection; application data has
+its separate loading and unavailable state. Signing stays local.
+
+## Cache-aware production-build lab measurements
+
+Build the same source with `VITE_POW_API_BASE=''` and run:
+
+```sh
+POW_PLAYWRIGHT_PERFORMANCE_FIXTURES=1 \
+POW_PERFORMANCE_BUILD_ROOT=/absolute/build/root \
+npm run check:ui:browser -- responsive-layout.spec.mjs --reporter=json
+node --test scripts/check-performance-fixture-server.test.mjs
+```
+
+This opt-in profile starts no Vite/live server, uses a rejecting loopback proxy,
+keeps HTTP caching enabled, and runs five fresh-context cold/same-context warm
+pairs for Home and AMO 1k/10k on desktop/mobile viewports. Attachments retain
+source/asset hashes, browser/host/CPU/network/cache configuration, failures,
+per-type transfer bytes, request counts, useful-data readiness, driver
+interaction times, LCP/CLS/event/long-task and DOM/heap diagnostics. Only
+browser-owned connectivity/autofill probes are allowed as explicitly recorded
+blocked proxy attempts; application requests must remain entirely local.
+Relative-origin fixture builds differ from deployed absolute-origin builds.
+Fixtures are not full-node authority, mobile viewports are not mobile hardware,
+and these diagnostics do not establish field p75 or INP certification.

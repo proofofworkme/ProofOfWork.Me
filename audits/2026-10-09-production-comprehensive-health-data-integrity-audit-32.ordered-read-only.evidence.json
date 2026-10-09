@@ -1,0 +1,186 @@
+{
+  "schema": "pow-audit32-ordered-read-only-evidence-v1",
+  "preparedAtUtc": "2026-10-09T14:37:28.603569+00:00",
+  "auditScope": "Ordered 20-surface read-only continuation, Computer last; two VPSs and canonical Core verification.",
+  "authorityAtUtc": "2026-10-09T14:20:47.067657+00:00",
+  "canonicalTip": 970643,
+  "canonicalHash": "00000000000000000001bcc4aaafbed8b3991389a516f409c80972ec0fe5c01b",
+  "parentBaseline": {
+    "at": "2026-10-09T13:49:28.015200+00:00",
+    "priorBindingsChecked": 951,
+    "priorBindingChanges": [
+      {
+        "path": "repository-hygiene.json",
+        "present": true,
+        "sha256": "b8a1e57c6fde005925c2f933b2c925b48af5615a12c9e73caec17885b0eab22e"
+      }
+    ],
+    "parents": [
+      {
+        "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.md",
+        "bytes": 36103,
+        "sha256": "6e138a2908bbf8871aac865b1e4d6386651c746f1accea8735041046ca5bb64f"
+      },
+      {
+        "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.evidence.json",
+        "bytes": 545770,
+        "sha256": "8353642fcccd4f68fa5863035b51924da990aeb03e4c5b6cc351ae0a96d85628"
+      },
+      {
+        "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.artifacts.json.gz",
+        "bytes": 1722654,
+        "sha256": "05858a2ffea9777bd398651e281dd2f30e1eb3485f3d9740860e6a18e6c98bc0"
+      },
+      {
+        "path": "audits/2026-10-09-audit32-cleanup-review.json",
+        "bytes": 99052,
+        "sha256": "d4fe0b94ed38bdc564e89f73b7fd2c67f7d71b01a1d1004a97b51656bdf595a7"
+      },
+      {
+        "path": "repository-hygiene.json",
+        "bytes": 12508,
+        "sha256": "b8a1e57c6fde005925c2f933b2c925b48af5615a12c9e73caec17885b0eab22e"
+      }
+    ],
+    "head": "c7935dde7239836f89be27c1ee29dfbc6a585e78"
+  },
+  "artifactBundle": {
+    "name": "2026-10-09-production-comprehensive-health-data-integrity-audit-32.ordered-read-only-artifacts.json.gz",
+    "bytes": 1173521,
+    "sha256": "939f6048ac469c5aef50d6c0046f47f15560c7e719d5af81389e21e0c31f0dbe",
+    "artifacts": 72
+  },
+  "logBinding": {
+    "name": "2026-10-09-production-comprehensive-health-data-integrity-audit-32.md",
+    "preservedPrefix": {
+      "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.md",
+      "bytes": 36103,
+      "sha256": "6e138a2908bbf8871aac865b1e4d6386651c746f1accea8735041046ca5bb64f"
+    },
+    "appendBytes": 30358,
+    "appendSha256": "eca2e7e0c043205545b9ba471c27e4909985b922b7cfb38323aa51b96ff32209",
+    "finalBytes": 66461,
+    "finalSha256": "e031d3c4a1ff1fba9fff4cf6838e7cd69c0b23f9af8a5d079128422575b5186b",
+    "prefixUnchanged": true,
+    "appendOnly": true
+  },
+  "counts": {
+    "pages": 20,
+    "browserCaptures": 69,
+    "validConfirmedEvents": 26351,
+    "confirmedTransactions": 25993,
+    "v8Terms": 1100,
+    "incbMints": 47,
+    "mathAssertionsPassed": 22735,
+    "newFindingIds": []
+  },
+  "priorIssueDisposition": "AUD32-01 through AUD32-07 retained; old freshness/Wallet/Log/recovery findings extended without duplicate IDs.",
+  "productionMutations": [],
+  "repositoryChangeScope": [
+    "append existing Audit32 log",
+    "two hash-bound ordered evidence companions"
+  ],
+  "readOnlyHygieneBeforeAppend": {
+    "atUtc": "2026-10-09T14:28:51.408074+00:00",
+    "command": "npm run hygiene:check",
+    "exitCode": 1,
+    "stdout": "\n> proofofwork-me@0.1.0 hygiene:check\n> node scripts/repository-hygiene.mjs check\n\n",
+    "stderr": "Repository hygiene failed:\n- Unclassified tracked note: audits/2026-10-08-permission-fee-rate-capacity-custody-v1/README-v2.md\n- Unclassified tracked note: audits/2026-10-08-permission-fee-rate-capacity-custody-v1/README.md\n- Unclassified tracked note: audits/2026-10-08-permission-fee-rate-capacity-custody-v1/REVIEW-v2.md\n- Unclassified tracked note: audits/2026-10-08-permission-fee-rate-capacity-custody-v1/REVIEW.md\n",
+    "scope": "Read-only check; fixer skipped per explicit read-only audit instruction."
+  },
+  "sourceEnd": {
+    "atUtc": "2026-10-09T14:29:06.944646+00:00",
+    "remoteMainExitCode": 0,
+    "remoteMain": "c7935dde7239836f89be27c1ee29dfbc6a585e78\trefs/heads/main",
+    "stderr": "",
+    "localHead": "c7935dde7239836f89be27c1ee29dfbc6a585e78",
+    "localTree": "70137cf4b831c792eeca5d2eaae21354ebed2ef9",
+    "mutation": false,
+    "qualification": "The first sandbox DNS attempt failed; this read-only network-enabled retry is saved separately."
+  },
+  "verificationPolicy": "Artifact hash checks and preservation checks are precise; scope and privacy limits are in the appendix and individual collector receipts.",
+  "completedAtUtc": "2026-10-09T14:38:35.685826+00:00",
+  "peerReview": {
+    "node": "Five qualifications reviewed and corrected: ID503 vs timeout; ticket existence vs all scripts/value; sealing vs closure; captured worker metadata vs transient; checked relational scope.",
+    "math": "Exact fresh assertions, vector scope, units, fees, snapshot/account fences and public evidence privacy independently reviewed.",
+    "storage": "Capacity/retention/recovery/header claims independently reviewed; provider-origin explanation qualified as possible, not proved."
+  },
+  "finalVerification": {
+    "atUtc": "2026-10-09T14:38:37.959227+00:00",
+    "logPrefixAndAppendVerified": true,
+    "parents": [
+      {
+        "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.md",
+        "bytes": 36103,
+        "sha256": "6e138a2908bbf8871aac865b1e4d6386651c746f1accea8735041046ca5bb64f",
+        "unchanged": true
+      },
+      {
+        "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.evidence.json",
+        "bytes": 545770,
+        "sha256": "8353642fcccd4f68fa5863035b51924da990aeb03e4c5b6cc351ae0a96d85628",
+        "unchanged": true
+      },
+      {
+        "path": "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.artifacts.json.gz",
+        "bytes": 1722654,
+        "sha256": "05858a2ffea9777bd398651e281dd2f30e1eb3485f3d9740860e6a18e6c98bc0",
+        "unchanged": true
+      },
+      {
+        "path": "audits/2026-10-09-audit32-cleanup-review.json",
+        "bytes": 99052,
+        "sha256": "d4fe0b94ed38bdc564e89f73b7fd2c67f7d71b01a1d1004a97b51656bdf595a7",
+        "unchanged": true
+      },
+      {
+        "path": "repository-hygiene.json",
+        "bytes": 12508,
+        "sha256": "b8a1e57c6fde005925c2f933b2c925b48af5615a12c9e73caec17885b0eab22e",
+        "unchanged": true
+      }
+    ],
+    "priorBindingsChecked": 951,
+    "changesAgainstOriginalFirstAuditBaseline": [
+      {
+        "path": "repository-hygiene.json",
+        "sha256": "b8a1e57c6fde005925c2f933b2c925b48af5615a12c9e73caec17885b0eab22e"
+      }
+    ],
+    "orderedConfigurationUnchanged": true,
+    "bundleAndAllEmbeddedArtifactHashesVerified": true,
+    "embeddedArtifactCount": 72,
+    "newStatusEntries": [
+      "?? audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.ordered-read-only-artifacts.json.gz",
+      "?? audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.ordered-read-only.evidence.json"
+    ],
+    "removedStatusEntries": [],
+    "preExistingTrackedDiffPaths": [
+      "repository-hygiene.json"
+    ],
+    "headUnchanged": true,
+    "diffWhitespaceCheck": {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "readOnlyHygieneCheck": {
+      "command": [
+        "npm",
+        "run",
+        "hygiene:check"
+      ],
+      "exitCode": 1,
+      "stdout": "\n> proofofwork-me@0.1.0 hygiene:check\n> node scripts/repository-hygiene.mjs check\n\n",
+      "stderr": "Repository hygiene failed:\n- Unclassified tracked note: audits/2026-10-08-permission-fee-rate-capacity-custody-v1/README-v2.md\n- Unclassified tracked note: audits/2026-10-08-permission-fee-rate-capacity-custody-v1/README.md\n- Unclassified tracked note: audits/2026-10-08-permission-fee-rate-capacity-custody-v1/REVIEW-v2.md\n- Unclassified tracked note: audits/2026-10-08-permission-fee-rate-capacity-custody-v1/REVIEW.md\n"
+    },
+    "hygieneFixRun": false,
+    "productionActions": [],
+    "qualification": "All earlier source/history and configuration preserved. Hygiene failure is the same four pre-existing unclassified notes; read-only authorization prevents fixer/classification changes."
+  }
+}

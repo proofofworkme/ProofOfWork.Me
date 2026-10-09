@@ -119,8 +119,11 @@ function visitLog(node) {
 }
 visitLog(ast);
 assert.ok(logDeclaration);
-const logRequests = []; const logAccepted = [];
+const logRequests = []; const logAccepted = []; const logLoading = [];
 const logEnv = {
+  AbortController, AbortSignal,
+  activityHistoryReadControllerRef: { current: undefined },
+  activityLoadingOwnerRef: { current: undefined },
   activityProfileRef: { current: undefined }, activityQueryRef: { current: "tx-current" },
   activityHistoryGenerationRef: { current: 0 }, activitySearchGenerationRef: { current: 0 },
   activeWorkspaceStatusKeyRef: { current: "log" }, network: "livenet", ACTIVITY_FEED_PAGE_SIZE: 50,
@@ -129,12 +132,13 @@ const logEnv = {
   clearLastGoodReadWarning() {}, acceptActivityHistoryPage: (_key, page) => { logAccepted.push(page); return page; },
   activityHistoryPagesRef: { current: new Map() }, isTransientProofApiReadError: () => false,
   showLastGoodReadWarning: () => false, setActivityHistoryPage() {}, setStatusForWorkspace() {},
-  setActivityLoading() {}, errorMessage: String,
+  setActivityLoading(value) { logLoading.push(value); }, errorMessage: String,
 };
 const logLoad = new Function(...Object.keys(logEnv), `${transpile(logDeclaration.getText(ast))};return loadLogHistoryPage`)(...Object.values(logEnv));
 const oldPage = logLoad(0);
 assert.equal(logRequests[0].params.query, "tx-current");
 const newPage = logLoad(1);
+assert.equal(logRequests[0].params.signal.aborted, true, "superseded page aborts transport");
 logRequests[1].resolve({ page: 1 }); await newPage;
 logRequests[0].resolve({ page: 0 }); await oldPage;
 assert.deepEqual(logAccepted, [{ page: 1 }]);
@@ -148,6 +152,27 @@ assert.equal(logRequests[3].params.query, "new-query");
 logEnv.activeWorkspaceStatusKeyRef.current = "wallet";
 logRequests[3].resolve({ page: 0, wrongWorkspace: true }); await newQuery;
 assert.equal(logAccepted.length, 1);
+const caller = new AbortController();
+logEnv.activeWorkspaceStatusKeyRef.current = "log";
+const cancelledPage = logLoad(0, true, undefined, { signal: caller.signal });
+caller.abort();
+assert.equal(logRequests[4].params.signal.aborted, true);
+logRequests[4].resolve({ page: 0, cancelled: true }); await cancelledPage;
+assert.equal(logAccepted.length, 1, "cancelled caller cannot accept a page");
+// A background refresh must not steal foreground loading ownership.
+const foregroundPage = logLoad(0, false);
+assert.equal(logLoading.at(-1), true);
+const backgroundCount = logRequests.length;
+await logLoad(1, true);
+assert.equal(logRequests.length, backgroundCount);
+assert.equal(logRequests.at(-1).params.signal.aborted, false);
+logRequests.at(-1).resolve({ page: 0, foreground: true }); await foregroundPage;
+assert.equal(logLoading.at(-1), false);
+const cancelledForeground = logLoad(0, false);
+logEnv.activeWorkspaceStatusKeyRef.current = "wallet";
+logEnv.activityHistoryReadControllerRef.current.abort();
+logRequests.at(-1).resolve({ page: 0, obsolete: true }); await cancelledForeground;
+assert.equal(logLoading.at(-1), false, "context cancellation releases loading ownership");
 console.log(JSON.stringify({ ok: true, coverage: ["log-live-query", "log-latest-page-wins", "log-search-fence", "log-workspace-fence"] }));
 
 // AMO must not accept the compact preview; retry the whole snapshot after a

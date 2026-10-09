@@ -8,6 +8,12 @@ const externalBaseUrl = (
   ""
 ).replace(/\/$/u, "");
 const localBaseUrl = "http://127.0.0.1:4173";
+// Opt-in fixture benchmarks serve their own copied production build. They
+// never start Vite or silently use a configured live destination.
+const performanceFixtures = process.env.POW_PLAYWRIGHT_PERFORMANCE_FIXTURES === "1";
+if (performanceFixtures && (!process.env.POW_PERFORMANCE_BUILD_ROOT || externalBaseUrl)) {
+  throw new Error("Performance fixtures require POW_PERFORMANCE_BUILD_ROOT and no live base URL.");
+}
 
 export default defineConfig({
   expect: {
@@ -15,6 +21,7 @@ export default defineConfig({
   },
   forbidOnly: Boolean(process.env.CI),
   fullyParallel: true,
+  ...(performanceFixtures ? { grep: /isolated production cold and warm/u } : {}),
   outputDir:
     process.env.POW_PLAYWRIGHT_OUTPUT_DIR ||
     "/tmp/proofofwork-me-playwright-results",
@@ -31,7 +38,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     video: "off",
   },
-  webServer: externalBaseUrl
+  webServer: externalBaseUrl || performanceFixtures
     ? undefined
     : {
         command:
@@ -40,5 +47,5 @@ export default defineConfig({
         timeout: 120_000,
         url: localBaseUrl,
       },
-  workers: process.env.CI ? 2 : 4,
+  workers: performanceFixtures ? 1 : process.env.CI ? 2 : 4,
 });
