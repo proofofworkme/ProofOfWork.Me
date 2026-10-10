@@ -785,6 +785,15 @@ preview with verified Files-backed avatar and confirmed connection counts.
 Unknown or pending IDs and failed reads remain explicitly unresolved or
 unavailable. Mention text does not register an ID or publish a social action.
 
+Bare root `.pow` names and one-level subdomains are clickable in Boost posts,
+replies, quotes and reboost originals, and in verified Publish article bodies.
+They open ProofOfWork Browser in a new tab with the selected network. Rendering
+text performs no DNS lookup; Browser independently verifies confirmed name and
+page-link evidence after navigation. Link styling does not assert registration
+or resolution. Email addresses, existing URLs, code regions and invalid names
+remain literal. Article text and its UTF-8 size/hash remain unchanged; Publish
+body rendering adds only DNS links, leaving tags and mentions literal.
+
 Boost details load confirmed replies, likes and reboosts by transaction ID,
 independently of timeline/profile filters or the currently loaded feed page.
 Activity tabs expose each actor's confirmed ID or address and the action TX;

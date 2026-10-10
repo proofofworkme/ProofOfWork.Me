@@ -4,6 +4,7 @@ import { explorerTxUrl, type BitcoinNetwork } from "../../shared/bitcoin/network
 import { PUBLISH_ARTICLE_VERIFICATION, normalizePublishArticleMetadata, publishArticleBodyBytes } from "../../shared/protocol/publishArticle.mjs";
 import { sha256Hex } from "../../shared/utils/encoding";
 import type { BoostFeedItem } from "../boost/boostProtocol";
+import { BoostText } from "../boost/BoostText";
 import { publishHref } from "./publishProtocol";
 
 export function PublishArticleCard({ item, network, embedded = false }: { item: BoostFeedItem; network: BitcoinNetwork; embedded?: boolean }) {
@@ -29,7 +30,7 @@ export function PublishArticleText({ item, network }: { item: BoostFeedItem; net
   const words = item.articleBody!.trim().split(/\s+/u).length;
   return <div className="publish-reading"><h1>{article.title}</h1>
     <p className="publish-byline">{formatDate(item.createdAt)} · {Math.max(1, Math.ceil(words / 220))} min read · Confirmed</p>
-    <div className="publish-article-body">{item.articleBody}</div>
+    <div className="publish-article-body"><BoostText text={item.articleBody!} dnsOnly network={network} /></div>
     <details className="publish-reader-proof"><summary>Exact article evidence</summary>
       <p>{article.size.toLocaleString()} UTF-8 bytes · Verified SHA-256</p><code>{article.sha256}</code>
       <code>{item.txid}</code><p><a href={explorerTxUrl(item.txid, network)} target="_blank" rel="noreferrer">View transaction</a></p>

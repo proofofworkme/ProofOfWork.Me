@@ -59,6 +59,16 @@ pagination. `profile=<address-or-id>&profileTab=boosts&format=article` reads an
 author archive. Existing exact-txid detail reads return verified `articleBody`.
 Invalid or unavailable body evidence never becomes rendered article text.
 
+After exact body verification, bare root `.pow` names and one-level subdomains
+become links to ProofOfWork Browser on the reader's selected network, in a new
+tab. This is a display projection: source characters, whitespace, UTF-8 size and
+SHA-256 remain unchanged. Rendering performs no name lookup and does not claim
+that a name is registered or has a confirmed page link. Browser independently
+verifies resolution after navigation and retains its static sandbox. Emails,
+existing URLs, inline/fenced code and invalid names remain literal. Article-body
+tags and mentions stay literal; writer previews and article-card titles retain
+their existing behavior.
+
 The article's self-payment and existing Mail envelope also produce normal
 Inbox and Sent records. Their canonical companion Boost post supplies compact
 article metadata; the body remains the exact `memo`, without another body

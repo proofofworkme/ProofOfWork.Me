@@ -696,6 +696,13 @@ Mail carrier owns canonical economics once. Tip observations never activate a
 separate Boost accounting version. Persist signed transaction evidence before
 broadcast and preserve unknown-outcome retry protection.
 
+Boost text and verified Publish bodies may link bare `.pow` names into
+ProofOfWork Browser. Preserve every source character and article commitment;
+link styling is navigation, never DNS authority. Resolve only after the human
+opens the link, preserve the selected network, and keep Browser content static
+until its existing explicit Run app action. No name preview or wallet permission
+comes from social text.
+
 - 2026-10-08: A product release is one source state across production, GitHub `main`, the primary local `main` checkout and the local preview. Every release must finish the sync, rebuild/restart the local app, and verify exact commit provenance on all four before it is called complete. Preserve concurrent local work in recoverable custody, integrate current `main`, and keep accepted node overlays through their guarded source/hash provenance; do not leave the user on an older audit branch or stale build after deploying a new product.
 
 The final release synchronization check is `npm run check:release-sync`. It verifies actual GitHub `main`, clean primary local `main`, production manifest commit/tree, and clean source provenance from the local preview plus public Pages and Computer. An unavailable or failed check leaves the release incomplete; fix the mismatch before announcing.

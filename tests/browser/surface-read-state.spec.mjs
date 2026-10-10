@@ -244,6 +244,8 @@ test("Boost never reports partial or zero facts while awaiting a matching indexe
   initial.release();
   await expect(posts).toContainText("2"); // full result count, despite one loaded row
   await expect(totalSignal).toContainText("1,092 proofs");
+  await page.getByRole("link", { name: "Search Boost", exact: true }).click();
+  await expect(page.getByPlaceholder("Search Boost", { exact: true })).toBeVisible();
   await page.clock.install();
   await page.clock.pauseAt(new Date());
   await page.getByPlaceholder("Search Boost", { exact: true }).fill("hidden-term");
@@ -327,6 +329,8 @@ test("Desktop merges one self-send file but keeps separate transaction publicati
     const url = new URL(route.request().url());
     if (url.pathname === `/api/v1/address/${address}/mail`) {
       return fulfill(route, {
+        address,
+        network: "livenet",
         inboxMessages: [
           { amountSats: 546, confirmed: true, createdAt: NOW, from: address, to: address, memo: "Self sent", network: "livenet", replyTo: address, attachment, txid },
           { amountSats: 546, confirmed: true, createdAt: NOW, from: address, to: address, memo: "Separate publication", network: "livenet", replyTo: address, attachment, txid: "f".repeat(64) },

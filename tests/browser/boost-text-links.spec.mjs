@@ -23,17 +23,17 @@ const post = (txid, text, overrides = {}) => ({
   replyCount: 1, likeCount: 0, reboostCount: 0, ...signal, text, ...overrides,
 });
 const original = post(ORIGINAL_TXID,
-  "Original $MiXeD99 #Mixed_tag @ArmyOfYouth armyofyouth@proofofwork.me");
-const reply = post(REPLY_TXID, "Reply $OTHER #Reply_tag @armyofyouth", {
+  "Original $MiXeD99 #Mixed_tag @ArmyOfYouth armyofyouth@proofofwork.me armyofyouth.pow");
+const reply = post(REPLY_TXID, "Reply $OTHER #Reply_tag @armyofyouth app.armyofyouth.pow", {
   kind: "boost-reply", targetTxid: ORIGINAL_TXID,
   actionSignalSats: 546, actionSignalQ8: signal.totalSignalQ8,
 });
-const quoted = post(QUOTED_TXID, "Quoted $QUOTED #Quote_tag @armyofyouth");
+const quoted = post(QUOTED_TXID, "Quoted $QUOTED #Quote_tag @armyofyouth armyofyouth.pow");
 const contextItems = [original, reply,
   post(REBOOST_TXID, "", { kind: "boost-reboost", targetTxid: ORIGINAL_TXID,
     boostTxid: ORIGINAL_TXID, reboostedPost: original,
     actionSignalSats: 546, actionSignalQ8: signal.totalSignalQ8 }),
-  post(QUOTE_TXID, "Quote comment $COMMENT #Comment_tag @armyofyouth", {
+  post(QUOTE_TXID, "Quote comment $COMMENT #Comment_tag @armyofyouth armyofyouth.pow", {
     quoteTxid: QUOTED_TXID, quotedPost: quoted,
   })];
 
@@ -106,6 +106,18 @@ function assertRoute(href, embedded, expected) {
   return url;
 }
 
+function assertBrowserRoute(href, sourceUrl, name, network) {
+  const source = new URL(sourceUrl), url = new URL(href, source);
+  const local = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(source.hostname) || source.hostname.endsWith(".localhost");
+  expect(url.origin).toBe(local ? source.origin : "https://browser.proofofwork.me");
+  expect(url.pathname).toBe("/");
+  expect(url.searchParams.get("name")).toBe(name);
+  expect(url.searchParams.get("network")).toBe(network);
+  expect(url.searchParams.get("browser")).toBe(local ? "1" : null);
+  expect(url.searchParams.has("folder")).toBe(false);
+  return url;
+}
+
 for (const embedded of [false, true]) {
   const route = embedded ? "/?folder=boost" : "/?boost=1";
   const surface = embedded ? "Computer" : "standalone Boost";
@@ -119,6 +131,7 @@ for (const embedded of [false, true]) {
       await expect(context.locator(".boost-text-link")).not.toHaveCount(0);
       const mention = context.locator(".boost-text-link").filter({ hasText: /^@armyofyouth$/i }).first();
       assertRoute(await mention.getAttribute("href"), embedded, { profile: "armyofyouth@proofofwork.me" });
+      await expect(context.locator(".boost-dns-link")).toHaveCount(1);
     }
     const cash = contexts[0].getByRole("link", { name: "$MiXeD99", exact: true });
     const hash = contexts[0].getByRole("link", { name: "#Mixed_tag", exact: true });
@@ -132,6 +145,7 @@ for (const embedded of [false, true]) {
     await contexts[0].press("Enter");
     const detail = page.getByRole("dialog", { name: "Boost detail", exact: true });
     await expect(detail.locator(".boost-thread-reply").getByRole("link", { name: "#Reply_tag", exact: true })).toBeVisible();
+    await expect(detail.locator(".boost-thread-reply .boost-dns-link")).toHaveText("app.armyofyouth.pow");
     expect(queries.some((query) => query.detail === ORIGINAL_TXID)).toBe(true);
     await page.keyboard.press("Escape");
     await expect(detail).toHaveCount(0);
@@ -293,6 +307,71 @@ for (const embedded of [false, true]) {
     });
   }
 }
+
+for (const embedded of [false, true]) {
+  for (const network of ["livenet", "testnet4"]) {
+    test(`${embedded ? "Computer" : "standalone Boost"} opens bare .pow names in a separate Browser on ${network}`, async ({ page }) => {
+      const { previews, queries } = await fixture(page, { network, items: [post(ORIGINAL_TXID,
+        "Visit (armyofyouth.pow), App.ArmyOfYouth.POW!  \n")] });
+      const dnsReads = [];
+      page.on("request", request => { if (new URL(request.url()).pathname.startsWith("/api/v1/dns/")) dnsReads.push(request.url()); });
+      // This test verifies the link boundary only. The existing Browser DNS
+      // suite separately verifies canonical resolution and sandbox rendering.
+      await page.context().route("**/*", route => {
+        const url = new URL(route.request().url());
+        return route.request().isNavigationRequest() && (url.hostname === "browser.proofofwork.me" || url.searchParams.get("browser") === "1")
+          ? route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Browser link fixture</title>" })
+          : route.fallback();
+      });
+      await page.goto(`/?${embedded ? "folder=boost" : "boost=1"}&network=${network}`);
+      const sourceUrl = page.url(), body = page.getByTestId("boost-post").locator(".boost-post-text");
+      await expect(body).toHaveText("Visit (armyofyouth.pow), App.ArmyOfYouth.POW!  \n");
+      const root = body.getByRole("link", { name: "armyofyouth.pow (open in Browser, new tab)", exact: true });
+      const child = body.getByRole("link", { name: "App.ArmyOfYouth.POW (open in Browser, new tab)", exact: true });
+      for (const [link, name] of [[root, "armyofyouth.pow"], [child, "app.armyofyouth.pow"]]) {
+        assertBrowserRoute(await link.getAttribute("href"), sourceUrl, name, network);
+        await expect(link).toHaveAttribute("target", "_blank");
+        await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+      }
+      await root.focus();
+      await expect(root).toBeFocused();
+      await root.hover();
+      await page.waitForTimeout(400); // Longer than the existing mention-preview delay.
+      expect(previews).toHaveLength(0);
+      expect(dnsReads).toHaveLength(0);
+      await expect(page.getByTestId("boost-mention-preview")).toHaveCount(0);
+      const popupReady = page.waitForEvent("popup");
+      await root.press("Enter");
+      const popup = await popupReady;
+      // The popup event can arrive while its initial empty document is ready.
+      // Wait for the exact link navigation rather than that initial load state.
+      await popup.waitForURL(new URL(await root.getAttribute("href"), sourceUrl).href, { waitUntil: "domcontentloaded" });
+      assertBrowserRoute(popup.url(), sourceUrl, "armyofyouth.pow", network);
+      expect(page.url()).toBe(sourceUrl);
+      expect(queries.some(query => query.detail)).toBe(false);
+      await expect(page.getByRole("dialog", { name: "Boost detail", exact: true })).toHaveCount(0);
+      await popup.close();
+      const childPopupReady = page.waitForEvent("popup");
+      await child.click();
+      const childPopup = await childPopupReady;
+      await childPopup.waitForURL(new URL(await child.getAttribute("href"), sourceUrl).href, { waitUntil: "domcontentloaded" });
+      assertBrowserRoute(childPopup.url(), sourceUrl, "app.armyofyouth.pow", network);
+      expect(page.url()).toBe(sourceUrl);
+      expect(queries.some(query => query.detail)).toBe(false);
+      await childPopup.close();
+    });
+  }
+}
+
+test("DNS projection preserves punctuation and excludes URLs, emails, code and invalid partial names", async ({ page }) => {
+  const text = "armyofyouth.pow! app.armyofyouth.pow, www.armyofyouth.pow; https://www.armyofyouth.pow/path person@armyofyouth.pow armyofyouth.pow/path `inline.pow`\n```\nfenced.pow\n```\ndeep.app.armyofyouth.pow -invalid.pow invalid_.pow <img src=x>";
+  await fixture(page, { items: [post(ORIGINAL_TXID, text)] });
+  await page.goto("/?boost=1");
+  const body = page.getByTestId("boost-post").locator(".boost-post-text");
+  expect(await body.textContent()).toBe(text);
+  await expect(body.locator(".boost-dns-link")).toHaveText(["armyofyouth.pow", "app.armyofyouth.pow", "www.armyofyouth.pow"]);
+  await expect(body.locator("img")).toHaveCount(0);
+});
 
 test("ID mentions share a confirmed owner preview, stay keyboard-accessible, and open without a Boost detail", async ({ page }, testInfo) => {
   const { previews, queries } = await fixture(page, { items: [original], delayPreview: 400 });

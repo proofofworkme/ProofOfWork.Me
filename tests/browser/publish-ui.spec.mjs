@@ -27,7 +27,10 @@ funding.addInput(Buffer.alloc(32, 1), 0);
 funding.addOutput(bitcoin.address.toOutputScript(address), 2_000_000n);
 const fundingUtxo = { txid: funding.getId(), vout: 0, value: 2_000_000, status: { confirmed: true } };
 
-async function fixture(page, { wallet = false, alteredBody = false, recovery = false, selectedIdentity = false, emptyWalletDraft = false } = {}) {
+async function fixture(page, { wallet = false, alteredBody = false, recovery = false, selectedIdentity = false, emptyWalletDraft = false,
+  articleBody = body, articleTitle = article.title, network = "livenet" } = {}) {
+  const fixtureArticle = { ...article, title: articleTitle, size: Buffer.byteLength(articleBody), sha256: createHash("sha256").update(articleBody).digest("hex") };
+  const fixturePost = { ...post, article: fixtureArticle, text: articleTitle };
   if (wallet) await page.addInitScript(({ address, utxo, recovery, identity, emptyWalletDraft }) => {
     if (window !== window.top) return;
     window.publishSignatureCalls = 0;
@@ -46,11 +49,74 @@ async function fixture(page, { wallet = false, alteredBody = false, recovery = f
     if (url.pathname.endsWith("/status")) return route.fulfill({ json: { status: url.pathname.includes("d".repeat(64)) ? "unavailable" : "confirmed" } });
     if (url.pathname.startsWith("/api/v1/ids/alice")) return route.fulfill({ json: { network: "livenet", record: { id: "alice", confirmed: true, network: "livenet", ownerAddress: address } } });
     if (url.pathname !== "/api/v1/boost") return route.fulfill({ json: { records: selectedIdentity ? [{ id: "alice", ownerAddress: address, confirmed: true, network: "livenet" }] : [], listings: [] } });
-    if (url.searchParams.has("detail")) return route.fulfill({ json: { complete: true, snapshotId: "article-detail", mode: "detail", post: { ...post, articleBody: alteredBody ? body.slice(0, -2) : body }, items: [], totalCount: 0, hasMore: false, start: 0 } });
-    const items = url.searchParams.has("listings") ? [] : [post];
-    return route.fulfill({ json: { complete: true, snapshotId: "articles", items, totalCount: items.length, hasMore: false, start: 0, network: "livenet", indexedAt: post.createdAt } });
+    if (url.searchParams.has("detail")) return route.fulfill({ json: { complete: true, snapshotId: "article-detail", mode: "detail", post: { ...fixturePost, articleBody: alteredBody ? articleBody.slice(0, -2) : articleBody }, items: [], totalCount: 0, hasMore: false, start: 0 } });
+    const items = url.searchParams.has("listings") ? [] : [fixturePost];
+    return route.fulfill({ json: { complete: true, snapshotId: "articles", items, totalCount: items.length, hasMore: false, start: 0, network, indexedAt: post.createdAt } });
   });
 }
+
+for (const embedded of [false, true]) {
+  test(`${embedded ? "Computer" : "standalone Publish"} linkifies only DNS names in verified article bodies`, async ({ page }) => {
+    const network = embedded ? "testnet4" : "livenet";
+    const exactBody = "Visit armyofyouth.pow and App.ArmyOfYouth.POW! $WORK #proof @alice\nhttps://armyofyouth.pow person@armyofyouth.pow `code.pow`\n```\nfenced.pow\n```\ndeep.app.armyofyouth.pow\nExact café 🧭 bytes.  \n";
+    const title = "armyofyouth.pow is a literal article title";
+    await fixture(page, { articleBody: exactBody, articleTitle: title, network });
+    const dnsReads = [], profileReads = [];
+    page.on("request", request => {
+      const url = new URL(request.url());
+      if (url.pathname.startsWith("/api/v1/dns/")) dnsReads.push(url.href);
+      if (url.pathname === "/api/v1/boost" && url.searchParams.has("profile") && url.searchParams.get("limit") === "1") profileReads.push(url.href);
+    });
+    await page.context().route("**/*", route => {
+      const url = new URL(route.request().url());
+      return route.request().isNavigationRequest() && (url.hostname === "browser.proofofwork.me" || url.searchParams.get("browser") === "1")
+        ? route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Browser link fixture</title>" })
+        : route.fallback();
+    });
+    await page.goto(`/?${embedded ? "folder=publish" : "publish=1"}&network=${network}`);
+    const card = page.locator(".publish-article-card");
+    await expect(card).toContainText(title);
+    await expect(card.locator("a")).toHaveCount(0); // Do not create nested card/title links.
+    await card.click();
+    const sourceUrl = page.url(), reader = page.locator(".publish-article-body");
+    expect(await reader.textContent()).toBe(exactBody);
+    expect(createHash("sha256").update(await reader.textContent()).digest("hex")).toBe(createHash("sha256").update(exactBody).digest("hex"));
+    await expect(reader.locator("a")).toHaveText(["armyofyouth.pow", "App.ArmyOfYouth.POW"]);
+    await expect(page.locator(".publish-reading h1 a")).toHaveCount(0);
+    const link = reader.getByRole("link", { name: "armyofyouth.pow (open in Browser, new tab)", exact: true });
+    const href = new URL(await link.getAttribute("href"), sourceUrl), source = new URL(sourceUrl);
+    const local = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(source.hostname) || source.hostname.endsWith(".localhost");
+    expect(href.origin).toBe(local ? source.origin : "https://browser.proofofwork.me");
+    expect(href.searchParams.get("browser")).toBe(local ? "1" : null);
+    expect(href.searchParams.get("name")).toBe("armyofyouth.pow");
+    expect(href.searchParams.get("network")).toBe(network);
+    expect(href.searchParams.has("folder")).toBe(false);
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    await link.focus();
+    await expect(link).toBeFocused();
+    await link.hover();
+    await page.waitForTimeout(400);
+    expect(dnsReads).toHaveLength(0);
+    expect(profileReads).toHaveLength(0);
+    await expect(page.getByTestId("boost-mention-preview")).toHaveCount(0);
+    const popupReady = page.waitForEvent("popup");
+    await link.press("Enter");
+    const popup = await popupReady;
+    await popup.waitForURL(href.href, { waitUntil: "domcontentloaded" });
+    expect(popup.url()).toBe(href.href);
+    expect(page.url()).toBe(sourceUrl);
+    expect(await reader.textContent()).toBe(exactBody);
+    await popup.close();
+  });
+}
+
+test("Publish does not expose DNS links when the article body commitment fails", async ({ page }) => {
+  await fixture(page, { alteredBody: true, articleBody: "armyofyouth.pow  \n" });
+  await page.goto(`/?publish=1&article=${txid}`);
+  await expect(page.getByRole("heading", { name: "Article text unavailable" })).toBeVisible();
+  await expect(page.locator(".publish-article-body, .boost-dns-link")).toHaveCount(0);
+});
 
 for (const { width, embedded } of [
   { width: 390, embedded: false },

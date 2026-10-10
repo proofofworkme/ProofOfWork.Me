@@ -162,6 +162,24 @@ carriers, including malformed Permission candidates, and cannot infer absence
 from a filtered feed. A changing tip, missing block, reorganization or unavailable
 witness closes current-status checks and human publication admission.
 
+Discovery catches up through bounded requests. A budget failure retains only
+whole blocks whose complete indexed raw carriers have already been independently
+checked against Core. That private prefix is not a grant response or permission
+to write. A retry rechecks the activation parents, Core target and prefix hash,
+then reauthenticates the prefix's compact index descriptors, exact row flags and
+native storage commitments in a read-only exact-checkpoint transaction. It
+resumes Core/raw comparisons after the verified prefix. The public rolling
+witness remains the same as a complete uninterrupted scan.
+
+Identical checkpoint reads share one attempt; different checkpoints in the same
+authority scope serialize, with queue waiting included in each request's
+existing read budget. Byte limits and final Core/index/fee-parent fences remain
+in force. Incomplete catch-up stays unavailable, including `limit=1`; pending
+visibility remains provisional. Prefix metadata is rechecked on retries, so the
+repair removes repeated raw/Core comparisons rather than all repeated work.
+Progress lives only in bounded process memory. A cold API restart begins fresh
+catch-up; there is no database marker, background service or persistent cache.
+
 `GET /api/v1/permission?txid=<record>&inspect=1` inspects a single first-party raw
 record when complete discovery is unavailable. It explicitly reports current
 status unverified and cannot enable signing, replacement or revocation.

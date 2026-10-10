@@ -16,6 +16,16 @@ transition-payload accessor when installed. `/api/v1/permissions` and
 `/api/v1/permission` fail closed on incomplete history; `inspect=1` permits only
 single-record inspection and never asserts current lifecycle status.
 
+Permission catch-up retains only independently verified contiguous per-block
+progress across bounded request failures. Each retry rebinds its network,
+activation parents, prefix height/hash and rolling witnesses to Core and the
+read-only canonical index before scanning the remaining suffix. Progress is
+process-local and bounded by the existing cache/projection budgets; a cold
+restart must verify history again. Partial progress is never a grant or an empty
+authority result. Complete exact-tip coverage, fee-parent verification and the
+final Core/API tip fences remain required before current authority is exposed.
+This adds no database persistence, migration or background service.
+
 Fee-rate metadata version 2 opens at height 970546, after independently pinned
 Core parent 970545 /
 `000000000000000000018bee4a1759e02b289063d6d5a9afe704dd68d50101dc`.

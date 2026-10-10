@@ -7,7 +7,7 @@ import ts from "typescript";
 import * as projection from "../server/boost-projection.mjs";
 import { verifiedBoostTicketClosures } from "../server/boost-marketplace-proof.mjs";
 import { decimalValueToQ8, formatWorkSubatoms, q8ToCanonicalDecimal, q8ToNumber, WORK_SUBATOM_UNIT_SCALE } from "../server/work-units.mjs";
-import { parseBoostText, boostTextMatchesTag } from "../src/shared/protocol/boostText.mjs";
+import { parseBoostText, parsePowDnsText, boostTextMatchesTag } from "../src/shared/protocol/boostText.mjs";
 
 const apiSource = await readFile(new URL("../server/proof-api.mjs", import.meta.url), "utf8");
 function definition(name) {
@@ -118,6 +118,71 @@ test("Boost token parsing excludes partial URLs, foreign emails and digit-only c
   assert.equal(boostTextMatchesTag(text, "#work"), false);
   assert.equal(parseBoostText('https://example.com/@"armyofyouth"').filter(segment => segment.kind !== "text").length, 0);
   assert.deepEqual(parseBoostText(""), []);
+});
+
+test("bare .pow roots and one-level children preserve source bytes and use lowercase Browser targets", () => {
+  // The reported Boost transaction contains the bare name armyofyouth.pow.
+  const label = "a".repeat(63);
+  const text = `Visit (armyofyouth.pow), App.ArmyOfYouth.POW! a.pow; ${label}.pow. see: armyofyouth.pow: ; www.armyofyouth.pow WWW.ArmyOfYouth.POW café 🧭  \n`;
+  for (const parse of [parseBoostText, parsePowDnsText]) {
+    const parsed = parse(text);
+    const restored = parsed.map(segment => segment.text).join("");
+    assert.equal(restored, text);
+    assert.equal(createHash("sha256").update(restored).digest("hex"), createHash("sha256").update(text).digest("hex"));
+    assert.deepEqual(parsed.filter(segment => segment.kind === "dns").map(segment => [segment.text, segment.value]), [
+      ["armyofyouth.pow", "armyofyouth.pow"], ["App.ArmyOfYouth.POW", "app.armyofyouth.pow"],
+      ["a.pow", "a.pow"], [`${label}.pow`, `${label}.pow`], ["armyofyouth.pow", "armyofyouth.pow"],
+      ["www.armyofyouth.pow", "www.armyofyouth.pow"], ["WWW.ArmyOfYouth.POW", "www.armyofyouth.pow"],
+    ]);
+  }
+  assert.deepEqual(parsePowDnsText(""), []);
+});
+
+test("DNS links do not extract partial names from URLs, emails, mentions or invalid labels", () => {
+  const invalid = [
+    "https://armyofyouth.pow", "https://www.armyofyouth.pow/path", "www.example.com/path/armyofyouth.pow", "armyofyouth.pow/path", "armyofyouth.pow?q=1", "armyofyouth.pow#section",
+    "person@armyofyouth.pow", "armyofyouth.pow@example.com", '"space name"@armyofyouth.pow',
+    "@armyofyouth.pow", '@"armyofyouth.pow"', '"armyofyouth.pow"@proofofwork.me', "$armyofyouth.pow", "#armyofyouth.pow",
+    "deep.app.armyofyouth.pow", "app..armyofyouth.pow", "armyofyouth.pow.evil", "armyofyouth.powders", ".armyofyouth.pow",
+    "-armyofyouth.pow", "armyofyouth-.pow", "armyofyouth.pow-", "army_of_youth.pow", "名armyofyouth.pow", "armyofyouth.pow名", "ſite.pow",
+    `${"a".repeat(64)}.pow`, `${"a".repeat(64)}.armyofyouth.pow`, "armyofyouth.pow:443", "folder/armyofyouth.pow",
+    "see:armyofyouth.pow", "fake:alice.pow", "armyofyouth.pow:word",
+  ];
+  for (const text of invalid) {
+    for (const parse of [parseBoostText, parsePowDnsText]) {
+      const parsed = parse(text);
+      assert.equal(parsed.map(segment => segment.text).join(""), text);
+      assert.equal(parsed.filter(segment => segment.kind === "dns").length, 0, text);
+    }
+  }
+});
+
+test("DNS-only projection handles a maximum-size mixed article without altering any source bytes", () => {
+  const unit = "armyofyouth.pow https://example.com/hidden.pow person@email.pow `inline.pow` #proof @alice\n";
+  const text = unit.repeat(Math.ceil(100_000 / unit.length)).slice(0, 100_000);
+  const parsed = parsePowDnsText(text);
+  assert.equal(Buffer.byteLength(text), 100_000);
+  assert.equal(parsed.map(segment => segment.text).join(""), text);
+  assert.ok(parsed.filter(segment => segment.kind === "dns").length > 1_000);
+  assert.ok(parsed.filter(segment => segment.kind === "dns").every(segment => segment.value === "armyofyouth.pow"));
+  const unbroken = `${"x".repeat(99_984)} armyofyouth.pow`;
+  assert.equal(Buffer.byteLength(unbroken), 100_000);
+  assert.deepEqual(parsePowDnsText(unbroken).filter(segment => segment.kind === "dns").map(segment => segment.value), ["armyofyouth.pow"]);
+});
+
+test("DNS-only article projection leaves tags and mentions literal and excludes code regions", () => {
+  const text = "$WORK #proof @alice armyofyouth.pow\n`inline.pow` ``code ` nested.pow``\n```text\nfenced.pow\n```\n~~~\ntilde.pow\n~~~\nApp.ArmyOfYouth.POW.  \n";
+  const parsed = parsePowDnsText(text);
+  assert.equal(parsed.map(segment => segment.text).join(""), text);
+  assert.deepEqual(parsed.filter(segment => segment.kind !== "text").map(segment => [segment.kind, segment.value]), [
+    ["dns", "armyofyouth.pow"], ["dns", "app.armyofyouth.pow"],
+  ]);
+  for (const text of ["`unfinished.pow", "```\nunfinished.pow", "~~~\nunfinished.pow", "``code.pow``"]) {
+    assert.equal(parsePowDnsText(text).filter(segment => segment.kind === "dns").length, 0, text);
+  }
+  assert.equal(boostTextMatchesTag("armyofyouth.pow $WORK", "$work"), true);
+  assert.equal(boostTextMatchesTag("armyofyouth.pow", "$work"), false);
+  assert.equal(boostTextMatchesTag("`$WORK` armyofyouth.pow", "$work"), true, "existing tag search semantics are unchanged");
 });
 
 test("quoted Boost mentions support arbitrary ID delimiters, whitespace and JSON escapes", () => {

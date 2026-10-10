@@ -20,7 +20,8 @@ function transaction(action = 'grant', nonce = grantTxid, metadata = {}) {
     label:'Integration fixture', height:action==='grant'?height:height+1, hash, index:action==='grant'?1:2});
 }
 
-function runtime({ transactions = [transaction()], tipHeight = height, changedTip = false, warnings = [], feeRateAdmissionVerified = false } = {}) {
+function runtime({ transactions = [transaction()], tipHeight = height, changedTip = false, warnings = [], feeRateAdmissionVerified = false,
+  complete = true, discoveryError = null } = {}) {
   let calls = 0;
   class FixedDate extends Date { constructor(...args) { super(...(args.length ? args : [time])); } static now() { return time; } }
   const context = vm.createContext({
@@ -31,7 +32,8 @@ function runtime({ transactions = [transaction()], tipHeight = height, changedTi
     discoverPermissions: async (network, checkpoint, activation, parent) => {
       assert.equal(network, 'livenet'); assert.deepEqual(JSON.parse(JSON.stringify(checkpoint)), { height: tipHeight, blockHash: hash });
       assert.equal(activation, PERMISSION_ACTIVATION_HEIGHT); assert.equal(parent, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH);
-      return { transactions, pendingWarnings: warnings, coverage: { complete: true, witnessSha256: 'c'.repeat(64), feeRateAdmissionVerified } };
+      if (discoveryError) throw discoveryError;
+      return { transactions, pendingWarnings: warnings, coverage: { complete, witnessSha256: 'c'.repeat(64), feeRateAdmissionVerified } };
     },
   });
   vm.runInContext(functionSource + '\nthis.read = verifiedPermissionPayload;', context);
@@ -63,6 +65,18 @@ test('API verification fences changing tips and refuses stale pagination rather 
   await assert.rejects(() => runtime({ changedTip: true })('livenet', new URLSearchParams(), false), /tip changed/);
   const snapshot = Buffer.from(JSON.stringify({ model: 'proof-permission-snapshot-v1', network: 'livenet', checkpointHeight: height - 1, checkpointHash: hash })).toString('base64url');
   await assert.rejects(() => runtime()('livenet', new URLSearchParams({ snapshot }), false), error => error.statusCode === 409 && error.details.code === 'PERMISSION_SNAPSHOT_STALE');
+});
+test('actual API authority stays unavailable during catch-up even when a partial corpus contains a signed grant', async () => {
+  for (const detail of [false, true]) {
+    const params = new URLSearchParams({ network: 'livenet', limit: '1', txid: grantTxid });
+    await assert.rejects(() => runtime({ complete: false, feeRateAdmissionVerified: true })('livenet', params, detail),
+      error => error.statusCode === 503 && /Complete Permission history is unavailable/.test(error.message));
+    await assert.rejects(() => runtime({ discoveryError: permissionReadError('Permission verification exceeded its read budget; retry to continue catch-up.') })('livenet', params, detail),
+      error => error.statusCode === 503 && /read budget/.test(error.message));
+  }
+  const ready = await runtime()('livenet', new URLSearchParams({ limit: '1' }), false);
+  assert.equal(ready.complete, true); assert.equal(ready.permissions.length, 1);
+  assert.equal(ready.admission.autonomousSigningEnabled, false); assert.equal(ready.budget.available, false);
 });
 test('incomplete pending hydration warns without changing confirmed grants or inventing a budget', async () => {
   const warning = { txid: 'e'.repeat(64), reason: 'pending-raw-evidence-unavailable' };

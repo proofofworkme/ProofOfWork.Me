@@ -1,0 +1,322 @@
+{
+  "format": "proof-of-work-audit32-next-reliability-candidate-v1",
+  "recordedAtUtc": "2026-10-10T01:51:32.097550+00:00",
+  "baselineCommit": "d8ae8220d897f876d85b0025db86306dc27e6fe5",
+  "approvedScope": [
+    "Permission process-local verified-prefix catch-up",
+    "two existing Boost/Desktop browser-fixture repairs",
+    "bare .pow links in Boost and verified Publish body projections",
+    "tests, documentation, hygiene, controlled release preparation and eventual verification/announcement"
+  ],
+  "implementationStatus": "implemented; clean committed full-surface build and full-phase capacity admission pending",
+  "productionMutationPerformed": false,
+  "deploymentStatus": "pending; no backend overlay or UI input upload",
+  "announcementStatus": "pending actual successful release synchronization",
+  "sourceFiles": [
+    {
+      "path": "/home/sixer/ProofOfWork.Me/OP_RETURN_INFRASTRUCTURE.md",
+      "bytes": 473116,
+      "sha256": "3ce9bdbb635d1374017f767a83873246018ec52b556f6fe250c89804a51e577a"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/PERMISSION.md",
+      "bytes": 12615,
+      "sha256": "1c97b26da63d3b8f9595706f8708eca5b88281bb92c3ac5407a3cae9a6212de1"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/PUBLISH.md",
+      "bytes": 10481,
+      "sha256": "198e4b4cdf78bf4a16591c12072d905f885560fe5d12f103bb8d5bacee3fecc5"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/README.md",
+      "bytes": 128094,
+      "sha256": "35959ea6bce8adbdce6ad309bd3bcb5bbaf5b86a682b64a761852587860ff919"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/SOUL.md",
+      "bytes": 99082,
+      "sha256": "1cf25101644449420fc8d40bb62db9abd51f7d3d8694b5dc98b38fd07734fe2b"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/scripts/check-boost-regressions.mjs",
+      "bytes": 90837,
+      "sha256": "cfbdf977c79a43b86921cbb0612ec1aa5864f278705cbd7a58ebb1c18da98e55"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/scripts/check-ui-capacity-boundaries.py",
+      "bytes": 9334,
+      "sha256": "feb4daeaebe9220fd40a8dba93c86da47133832bfff878d6ee5aa7e7444c5cb7"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/server/db/permission-reader.mjs",
+      "bytes": 13101,
+      "sha256": "8477080c4c581555868d2592e9e50ba80da25b7b9e3808234ae6acdd00152628"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/server/db/permission-reader.test.mjs",
+      "bytes": 14109,
+      "sha256": "c196acdb6cfab6b53241f0896a440d2d432df28d126d64e8d1d98f4fe96466af"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/server/permission-api.test.mjs",
+      "bytes": 14649,
+      "sha256": "e8e31ee3e924313da516618b8d776f9de3a12720385c60e55a0bf58a53789490"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/server/permission-discovery.mjs",
+      "bytes": 13900,
+      "sha256": "bc4f872f764d7f66b7797e25c463614e9b5d98c59ed40e681a1ea07a91287176"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/server/permission-discovery.test.mjs",
+      "bytes": 26398,
+      "sha256": "7e5fc24bd04a7b591e77de01929251ea5dec9f8227258a80a8cae04e43e2012d"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/src/features/boost/BoostText.tsx",
+      "bytes": 14608,
+      "sha256": "e2c4b8c2b85983183f57cd028f59013e6a314d38606be71757edfdebe11e6130"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/src/features/publish/PublishArticle.tsx",
+      "bytes": 2776,
+      "sha256": "14378d7d9af7e903ea9394180bfb1b6d3fe026f854757f45bb9487ac342e5e05"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/src/shared/protocol/boostText.d.mts",
+      "bytes": 377,
+      "sha256": "7896bf3b3e6572ce9e1b0d45091ab73eded6a489cec6c9c00ff5bb0972e978ff"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/src/shared/protocol/boostText.mjs",
+      "bytes": 11003,
+      "sha256": "e9aa84f3d3377e3021df9a7cebc25635ea8c23ad0084d1fbbd25a0f0d581323c"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/tests/browser/boost-text-links.spec.mjs",
+      "bytes": 29650,
+      "sha256": "430304f54de7e76a6828e8ccc49320bc689221a447f1d2d7ea9d4ef753b5d9e5"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/tests/browser/publish-ui.spec.mjs",
+      "bytes": 25525,
+      "sha256": "fb540d9deeb2e83f0324807d11bde194cd85cd2c190cc568759dbd2cb7ec3d38"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/tests/browser/surface-read-state.spec.mjs",
+      "bytes": 20779,
+      "sha256": "b4cda7109eb861100a2093bfa61cdc15143cb954cef1b224a659d294ff5c8fb7"
+    }
+  ],
+  "checks": [
+    {
+      "name": "product-build-v3",
+      "path": "/tmp/pow-audit32-next-reliability/product-build-v3.execution.json",
+      "bytes": 712,
+      "sha256": "b22efef0f954c088110ea80778d0500158a4d84d9e58eef680485b616dd04c96",
+      "exitCode": 0
+    },
+    {
+      "name": "boost-regressions",
+      "path": "/tmp/pow-audit32-next-reliability/boost-regressions.execution.json",
+      "bytes": 631,
+      "sha256": "7d8a152d6246c0896b5e33d65d4f1a07716f7b61b3335a3ce7bdd13827f488da",
+      "exitCode": 0
+    },
+    {
+      "name": "publish-regressions",
+      "path": "/tmp/pow-audit32-next-reliability/publish-regressions.execution.json",
+      "bytes": 626,
+      "sha256": "f1bd01909824f6c862e4205f95ff979c789f4d141fd5fa7fdc2938e22e4a1634",
+      "exitCode": 0
+    },
+    {
+      "name": "containment-regressions",
+      "path": "/tmp/pow-audit32-next-reliability/containment-regressions.execution.json",
+      "bytes": 649,
+      "sha256": "bfb954587d0d125b8fbd347be6a1fd53fd1e8f5c25a5a3d89554eaf18e1348d7",
+      "exitCode": 0
+    },
+    {
+      "name": "ui-source-contract",
+      "path": "/tmp/pow-audit32-next-reliability/ui-source-contract.execution.json",
+      "bytes": 617,
+      "sha256": "71e1212c146c6cd6eb6210dd023e28192bab3c104d2019e8a282f176da403914",
+      "exitCode": 0
+    },
+    {
+      "name": "surface-source-contract",
+      "path": "/tmp/pow-audit32-next-reliability/surface-source-contract.execution.json",
+      "bytes": 645,
+      "sha256": "8e9b0cafebf6bc8cad8ca9b351127ba83dd14404ffdfc1e695dd7543050c5fc2",
+      "exitCode": 0
+    },
+    {
+      "name": "permission-controller-node",
+      "path": "/tmp/pow-audit32-next-reliability/permission-controller-node.execution.json",
+      "bytes": 682,
+      "sha256": "ff58017422d295ffcedce1fd1e273e379b222c7cbcc376d8861def44b7746a1b",
+      "exitCode": 0
+    },
+    {
+      "name": "permission-controller-release",
+      "path": "/tmp/pow-audit32-next-reliability/permission-controller-release.execution.json",
+      "bytes": 684,
+      "sha256": "0e671698e6180bad493681acd7dc4669f49b571ae4c992c62710b5e7eed3174b",
+      "exitCode": 0
+    },
+    {
+      "name": "publish-controller",
+      "path": "/tmp/pow-audit32-next-reliability/publish-controller.execution.json",
+      "bytes": 638,
+      "sha256": "bb0ec74ada62aa45e4dcc0204699b33ee3c08a2bcb1ec917d377418208c57607",
+      "exitCode": 0
+    },
+    {
+      "name": "hygiene-fix-v1",
+      "path": "/tmp/pow-audit32-next-reliability/hygiene-fix-v1.execution.json",
+      "bytes": 613,
+      "sha256": "dd47997a0cd0d09baf0f76a17961fb59b1abd0bd8ebfadd2f2e6185f3f1f9104",
+      "exitCode": 0
+    },
+    {
+      "name": "hygiene-check-v1",
+      "path": "/tmp/pow-audit32-next-reliability/hygiene-check-v1.execution.json",
+      "bytes": 619,
+      "sha256": "4c6f75941b44ba932cad203a9fd3f48cb6c67ae610d37d666efcd0aa8fc8ee6f",
+      "exitCode": 0
+    },
+    {
+      "name": "browser-combined-v1",
+      "path": "/tmp/pow-audit32-next-reliability/browser-combined-v1.execution.json",
+      "bytes": 840,
+      "sha256": "7b9a06ce225c4a5a42ad3deff38509517b66417e21bc8f96d0f5bc125f0f5925",
+      "exitCode": 1
+    },
+    {
+      "name": "browser-combined-v2",
+      "path": "/tmp/pow-audit32-next-reliability/browser-combined-v2.execution.json",
+      "bytes": 780,
+      "sha256": "5f07a81b01b76c596fedc801b9fd446b18e09a8e75a35f828d02460cdf86a61d",
+      "exitCode": 0
+    },
+    {
+      "name": "ui-capacity-contract",
+      "path": "/tmp/pow-audit32-next-reliability/ui-capacity-contract.execution.json",
+      "bytes": 635,
+      "sha256": "be49ae57d38eb70c288db1b35485e1664a4b29ff411bcfc2048365ed794e4d9a",
+      "exitCode": 1
+    },
+    {
+      "name": "canonical-baseline",
+      "path": "/tmp/pow-audit32-next-reliability/canonical-baseline.execution.json",
+      "bytes": 810,
+      "sha256": "5b4124579f4033bab0855416ef775d87eae1e42ba6d4bfa505313cfa9c762f96",
+      "exitCode": 0
+    },
+    {
+      "name": "ui-capacity-contract-jobs-fixture-v2",
+      "path": "/tmp/pow-audit32-next-reliability/ui-capacity-contract-jobs-fixture-v2.execution.json",
+      "bytes": 2950,
+      "sha256": "c2e26c1fdde173fba4fe9cde3cae44bf2ee06cd3bdcf110c03b1fdb97c59cef6",
+      "exitCode": 0
+    }
+  ],
+  "additionalPrivateEvidence": [
+    {
+      "path": "/tmp/pow-permission-prefix-catchup-primary-v1.result.json",
+      "bytes": 2263,
+      "sha256": "54a9927a8570191ec2e91168ce5bb6afcd2865737e74494fe2bf30be20afc94f"
+    },
+    {
+      "path": "/tmp/pow-permission-prefix-catchup-wallet-independent-peer-v1.json",
+      "bytes": 3984,
+      "sha256": "f3b64628cf8fdfe50ff5faa2e302974f7352c79bff5a103a9bc7a6469737642f"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/native-permission-contract-v1.review.json",
+      "bytes": 2276,
+      "sha256": "85b2448e2e6c59d5145778159bea7112190bdb5d6702edc6dbc8b31871c3b2e1"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/ui-preflight-v1.json",
+      "bytes": 56114,
+      "sha256": "419865098b99b9775b3411ee2af56e8b9c81fe92750d095e18185d1e2245d974"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/permission-capture-v1.json",
+      "bytes": 18461628,
+      "sha256": "956c7c9e2c1c0166fe35184eb384b82436a3fc3ee8b247f9a34ebe2e13622976"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/canonical-baseline.json",
+      "bytes": 64237,
+      "sha256": "1e4a64a2da2153c0d746dfc98fae0d7276689892efad4f0dd618058b4a7b9ea6"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/pow-dns-parser-benchmark-v2.execution.json",
+      "bytes": 1363,
+      "sha256": "5d801c32a6877b0ccb5617cbfc1d4257e6dc9cc52838e4f165f83307f9192544"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/pow-dns-parser-benchmark-v2.stdout.json",
+      "bytes": 108353,
+      "sha256": "08347f9534337ece9448a44beb01686c396964e084af448b0a81e800923eba7f"
+    }
+  ],
+  "browserVerification": {
+    "compiledBuildExecution": "product-build-v3",
+    "loopbackOrigin": "http://127.0.0.1:4180",
+    "channel": "chrome",
+    "workers": 2,
+    "retries": 0,
+    "productionBuildFlag": true,
+    "firstInvocation": {
+      "cases": 114,
+      "passed": 108,
+      "failed": 6,
+      "failureClass": "New popup fixtures inspected initial empty document before exact navigation committed; exact href/request correct."
+    },
+    "secondInvocation": {
+      "cases": 50,
+      "passed": 50,
+      "failed": 0,
+      "skipped": 0
+    },
+    "uniquePassingCases": 117,
+    "coverage": {
+      "boostText": 26,
+      "publish": 21,
+      "permission": 18,
+      "browserDnsPages": 34,
+      "surfaceReadState": 15,
+      "computerReadEfficiency": 3
+    },
+    "qualification": "Mocked browser chain/wallet fixtures on compiled production build; not live API convergence, field Web Vitals, screen reader or full chain/math certification."
+  },
+  "testMaintenance": {
+    "capacityFixture": "Added Jobs to the existing v3 historical surface tuple so current provenance guard reaches all original capacity fault assertions. Original failure preserved; repaired full rerun passed11 capacity tests and7 native helper boundary checks without changing guards, faults or assertions.",
+    "popupFixtures": "Wait for exact popup URL before unchanged destination and containment assertions.",
+    "originalTwoRepairs": "Open existing Boost Search view before fill; bind self-send mailbox fixture to address and network."
+  },
+  "coreBaseline": {
+    "height": 970705,
+    "blockHash": "0000000000000000000103c370a06600166531f6131989a2fac5d64823b09478",
+    "stableOpeningClosing": true,
+    "knownCodeTx": "02da093cb127fe152af0305cccbe12ceaaa52c2a57a151c84cc979e78b8bed98",
+    "codeContributionProofs": "0",
+    "mailContributionOnceProofs": "546",
+    "qualifiedScope": "One transaction independently reconciled Core/database position/outputs/event uniqueness; five public probes HTTP200, not universal protocol proof."
+  },
+  "capacityBaseline": {
+    "observedAtUtc": "2026-10-10T01:32:28Z",
+    "availableBytes": 11530080256,
+    "reserveFloorBytes": 10804527104,
+    "reserveHeadroomBytes": 725553152,
+    "retainedRoots": 6,
+    "capacityGo": false,
+    "qualification": "Baseline preflight only; actual new bundles and every native phase must admit before any production mutation. No backup retirement, reserve exception or infrastructure expansion authorized."
+  },
+  "rollback": "Guarded scoped source release/overlay restoration preserving accepted node native overlays; no production ledger/history/data restoration or deletion."
+}

@@ -478,3 +478,121 @@ Current build graph identifies16 old alternate chunks/~1.286MB per inspected Com
 Actions were read-only source/runtime inspection, copied existing production artifacts to temporary audit custody, bounded read-only HTTP asset diagnostics, existing offline/loopback tests, safe evidence custody and this authorized appendix. No code/config/inventory/source documentation changes, production data/records/ledgers/backups/logs/infrastructure changes, installation/rebuild/restart, signing/broadcast, commit/push/deploy or public announcement. Temporary lab servers were closed without deleting evidence. No improvement is implemented by a proposal.
 
 **hygiene:fix is not run**, honoring the user's prohibition on cleanup/config changes. Read-only hygiene:check and final append-prefix/source/artifact/status/diff checks are recorded in the structured companion; the existing four AUD32-07 custody-note classifications remain unresolved. The completed findings were returned in the conversation before appending. Any product/source/config/server/cleanup/release action needs a separate explicit approval of its concrete scope.
+
+### Approved next batch — implementation and release-admission review, 2026-10-09
+
+This supplement follows the user's explicit approval to implement and ship
+Permission catch-up, the two browser-fixture repairs and clickable `.pow` links
+across Boost and Publish, including tests, documentation, hygiene, controlled
+deployment, synchronization and announcement. It records implementation and
+pre-release evidence; it does **not** certify an unperformed deployment. The
+released baseline is `d8ae8220d897f876d85b0025db86306dc27e6fe5`. See
+`audits/2026-10-09-audit32-next-reliability-candidate.evidence.json` for scoped
+source hashes, private execution receipts, original failures and qualifications.
+
+**Existing AUD32-02:** Permission discovery now retains process-local progress
+only after a whole canonical block's raw carriers have been compared against
+Core and its independently calculated public/private witness chains agree.
+Retries recheck network, activation parents, target/prefix height and hash,
+compact index descriptors, row flags and native storage commitments before
+resuming suffix Core comparisons. Identical checkpoints coalesce; other targets
+serialize under their original admission deadlines. Partial catch-up, expired
+pending hydration and incomplete exact-tip coverage cannot return authority.
+Projection/cache limits, final index/Core/fee-parent fences and public witness
+semantics remain intact. There is no persistent marker, schema migration or
+background service. Cold restarts still require catch-up; retries still repeat
+compact metadata verification, and an individually slow reconstruction can
+exhaust the unchanged budget. Production convergence remains a release gate,
+so the existing availability finding is not yet marked resolved.
+
+Fresh read-only installed definitions for
+`proof_indexer.work_transition_metadata_v1(jsonb)` and
+`proof_indexer.read_work_transition_payload_v1(text,integer,text,jsonb)` exactly
+match the accepted native SQL bodies and function attributes. Both descriptor
+commitments remain in compact metadata. The source-bound primary Permission
+gate passed six backend/controller entrypoints and 35 signing cases; an
+independent peer reran reader/discovery/API cases and reviewed native witness,
+deadline, queue, reorg, cap and result-cloning behavior. This is compatibility
+and regression evidence, not certification of every grant or chain record.
+
+**Approved navigation improvement:** bare ASCII root names and one-level child
+names, including `www.armyofyouth.pow`, link from Boost posts, replies, quotes,
+reboost originals and exact verified Publish bodies to standalone Browser on
+the selected network in a separate tab. Original source characters, article
+UTF-8 length/hash and literal article tags/mentions remain intact. Emails,
+existing URLs, code regions and invalid/partial names remain literal. There
+are no display-time DNS/preview reads; link styling asserts no registration or
+resolution. Browser's independent confirmed resolution, static sandbox and
+existing explicit Run app boundary are unchanged. No signing or authority is
+derived from social text. No new dependency, CSS redesign or protocol change
+is included.
+
+The original Boost fixture now opens the existing Search view before filling
+its field; the Desktop self-send response now binds its existing mailbox to
+the address/network. Browser validation uses the compiled production build,
+Chrome, loopback `127.0.0.1:4180`, two workers, no retries and the existing
+production-build opt-in. Across six specifications, **117 unique cases passed**:
+26 Boost, 21 Publish, 18 Permission, 34 Browser DNS/page-containment, 15 surface
+read-state and three Computer read-efficiency cases. The initial 114-case run
+retained six failures in the new popup fixtures: correct URLs/requests were
+observed, but assertions ran before popup navigation committed. Exact URL
+waiting repaired the fixtures without weakening assertions; all 47 Boost/
+Publish cases and three read-efficiency cases then passed with zero skips.
+These mocked fixtures do not prove live API readiness, field Web Vitals, actual
+screen-reader operation or real transaction signing.
+
+An untouched capacity-boundary fixture initially refused because its historical
+v3 surface tuple omitted Jobs, which the current provenance guard requires.
+Necessary test maintenance adds only Jobs to that tuple; production helpers,
+reserves and every fault/assertion remain unchanged. Original failure evidence
+is preserved. The repaired full capacity gate passed 11 capacity cases and seven
+actual helper boundary checks; this is not a live deployment capacity GO.
+The production build, affected Boost/Publish/read-containment/surface/UI source
+gates and 68 UI controller cases passed. The initial sandbox build's Git
+subprocess refusal is preserved separately from its successful authorized
+production-build rerun. Hygiene cleanup removed only allowlisted local `dist`
+and an empty Vite cache after preserving the released local build; hygiene
+check passed. No production storage cleanup occurred.
+
+The final DNS-only parser benchmark records four exact 100,000-byte inputs,
+five warmups and 30 samples each on Node22.23.3/Linux/i5-10210U with eight
+logical CPUs and no artificial throttling. With concurrent browser work,
+p50/p95 were mixed15.83/33.04ms, dense15.97/27.38ms, fenced9.41/23.24ms and
+unbroken-prefix2.79/5.30ms. Source reconstruction matched exactly. Raw samples,
+input/source hashes and shared-CPU qualification are preserved; these are
+lexical diagnostics, not browser rendering or field speed claims. The change
+eliminates avoidable repeated scanning and adds no eager DNS work; a general
+startup speedup is not claimed.
+
+At the fresh bounded full-node baseline, Core blocks/headers and all three
+indexes were synchronized at970705, IBD=false, unpruned, with a loaded mempool.
+Opening and closing hash was
+`0000000000000000000103c370a06600166531f6131989a2fac5d64823b09478`.
+The known Code/Mail transaction
+`02da093cb127fe152af0305cccbe12ceaaa52c2a57a151c84cc979e78b8bed98`
+reconciled transaction position, outputs, carrier/event identities and
+uniqueness against Core/database: Code contributes0 proofs, companion Mail
+contributes546 once. Five bounded public probes returned HTTP200. Broader
+previous math, field/browser and historical-replay coverage gaps remain their
+existing findings; no fee, ledger, historical record or protocol math changed.
+
+**Existing capacity finding, materially changed deployment condition:** the
+fresh UI preflight observed11,530,080,256 available bytes, with unchanged
+10GiB+64MiB floor10,804,527,104 and only725,553,152 bytes of headroom. Six
+protected rollback roots and their canonical archive/sidecar dependencies
+remain intact. Scratch allocation was2,869,706,752 of5,368,709,120 bytes.
+This baseline is not a GO for new input, staging, full live-root copying,
+source publication or new canonical archive extraction. Exact committed
+22-root bundles and **every** native phase must admit before any production
+mutation. Prior release sizes are planning seeds only. No backup retirement,
+retention-hold exception, reserve reduction or infrastructure expansion is
+included in this batch's approval.
+
+Current production remains the prior release. Any eventual completion must
+have fresh reviewed node overlay pins preserving accepted native changes,
+controlled UI publication, Core-backed Permission convergence, affected live
+surface checks, actual GitHub/clean primary-main/local-preview/production
+`check:release-sync`, and one verified announcement with the required cashtags.
+If capacity refuses, preserve the candidate and original evidence, document a
+concrete additional capacity proposal and obtain separate approval; do not
+upload inputs, restart production or announce an incomplete release.

@@ -14,7 +14,7 @@ PROVENANCE = ROOT / 'deploy/proofofwork-ui-release-provenance.sh'
 PUBLISHER = ROOT / 'deploy/proofofwork-ui-release-publish.sh'
 CAPACITY = ROOT / 'deploy/proofofwork-ui-capacity.py'
 SURFACES = ('activity', 'browser', 'boost', 'code', 'computer', 'desktop', 'dns', 'growth', 'id',
-            'inception', 'infinity', 'landing', 'marketplace', 'nft', 'publish', 'search', 'token', 'wallet', 'work')
+            'inception', 'infinity', 'jobs', 'landing', 'marketplace', 'nft', 'publish', 'search', 'token', 'wallet', 'work')
 
 
 def write(path, content, mode=0o644):

@@ -12,7 +12,9 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import { parseBoostText } from "../../shared/protocol/boostText.mjs";
+import { parseBoostText, parsePowDnsText } from "../../shared/protocol/boostText.mjs";
+import { BROWSER_APP_URL, LOCAL_BROWSER_APP_URL } from "../../app/appLinks";
+import { appHref } from "../../app/routeRegistry";
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import { createInFlightRequestPool } from "../../shared/api/inFlightRequestPool";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
@@ -259,15 +261,23 @@ function MentionLink({ text, value, context }: { text: string; value: string; co
   </>;
 }
 
-export function BoostText({ text }: { text: string }) {
+export function BoostText({ text, dnsOnly = false, network }: { text: string; dnsOnly?: boolean; network?: BitcoinNetwork }) {
   const context = useContext(BoostTextContext);
-  const segments = useMemo(() => parseBoostText(text), [text]);
-  if (!context) return <>{text}</>;
-  return <>{segments.map((segment, index) => segment.kind === "text" ||
-      (segment.kind === "mention" && segment.identityKind === "address" && !isValidBitcoinAddress(segment.value, context.network))
-    ? <Fragment key={index}>{segment.text}</Fragment>
-    : segment.kind === "mention" ? <MentionLink key={`${index}:${segment.value}`} text={segment.text}
+  const segments = useMemo(() => dnsOnly ? parsePowDnsText(text) : parseBoostText(text), [text, dnsOnly]);
+  const selectedNetwork = network ?? context?.network;
+  if ((!context && !dnsOnly) || !selectedNetwork) return <>{text}</>;
+  return <>{segments.map((segment, index) => {
+    if (segment.kind === "dns") return <a key={index} className="boost-text-link boost-dns-link"
+      href={boostRouteHref(appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL), { name: segment.value, network: selectedNetwork })}
+      target="_blank" rel="noopener noreferrer" aria-label={`${segment.text} (open in Browser, new tab)`}
+      onClick={event => event.stopPropagation()}>{segment.text}</a>;
+    if (!context || segment.kind === "text" ||
+        (segment.kind === "mention" && segment.identityKind === "address" && !isValidBitcoinAddress(segment.value, context.network))) {
+      return <Fragment key={index}>{segment.text}</Fragment>;
+    }
+    return segment.kind === "mention" ? <MentionLink key={`${index}:${segment.value}`} text={segment.text}
       value={segment.identityKind === "address" ? segment.value : `${segment.value}@proofofwork.me`} context={context} />
       : <a key={index} className="boost-text-link" href={textRoute(context, { q: segment.value })}
-        onClick={event => event.stopPropagation()}>{segment.text}</a>)}</>;
+        onClick={event => event.stopPropagation()}>{segment.text}</a>;
+  })}</>;
 }
