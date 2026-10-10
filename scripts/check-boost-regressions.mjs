@@ -1439,3 +1439,282 @@ test("tip associations add no second canonical Growth payment over their Mail co
   assert.equal(context.delta([mail, tip]).totalSats, 61725);
   assert.equal(context.delta([tip]).totalSats, 0);
 });
+
+
+function boundWorkTipEvent(id, target, amount = "10000000000000001", recipient = "owner") {
+  const item = event(id, "boost-tip", { action: "tip", targetTxid: target, tipCurrency: "WORK", tipWorkSubatoms: amount,
+    tokenId: "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8", authorAddress: "reader",
+    payload: `pwb1:tip2:${target}:d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8:${amount}`,
+    recipientAddress: recipient, recipients: [], blockHash: "a".repeat(64), proofSignalSats: 0,
+    workSignalVerification: "canonical-same-tx-work-tip-transfer-v1" });
+  item.tipWorkTransfer = { txid: item.txid, tokenId: item.tokenId, amountSubatoms: amount,
+    senderAddress: item.authorAddress, recipientAddress: recipient, transferVersion: "send3", amountStorageModel: "work-subatoms-v2",
+    protocolVout: 3, recordOrdinal: 0, blockHeight: item.blockHeight, blockHash: item.blockHash, blockIndex: item.blockIndex,
+    registryAddress: "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV", registryVout: 2, paidSats: "546",
+    rawPayload: `pwt1:send3:${item.tokenId}:${amount}:${recipient}`, canonicalVerifier: "/api/v1/internal/work-amo-v5-block-verifier", confirmed: true, valid: true,
+    canonicalReplay: { outcome: { kind: "pwt1-valid", reasonCode: "", valid: true }, boostCarrierCount: 1, pwtCarrierCount: 1,
+      rawRecordParts: [{ protocolVout: 3, decodeValid: true, text: `pwt1:send3:${item.tokenId}:${amount}:${recipient}` }],
+      transitionChainCommitmentAfter: { model: "canonical-work-amo-raw-transition-chain-sha256-v1", payloadBytes: 1, sha256: "c".repeat(64) } } };
+  return item;
+}
+
+test("WORK tips qualify only a bound accepted transfer to the historical content owner", () => {
+  const good = boundWorkTipEvent(2, txid(1));
+  const afterTransfer = boundWorkTipEvent(4, txid(1), "1", "buyer");
+  const owners = new Map([["2", "owner"], ["4", "buyer"]]);
+  const accepted = projection.qualifyBoostPaidActions([good, afterTransfer], [], owners);
+  assert.equal(accepted.rejected.length, 0);
+  assert.equal(accepted.accepted[0].applicationBoostOwnerWorkSubatoms, "10000000000000001");
+  assert.equal(accepted.accepted[1].applicationBoostOwnerWorkSubatoms, "1");
+  assert.equal(accepted.accepted[0].applicationBoostOwnerPaymentSats, undefined);
+  for (const mutate of [
+    item => { item.tipWorkTransfer = undefined; },
+    item => { item.payload += ":extra"; },
+    item => { item.targetTxid = "invalid"; },
+    item => { item.blockHash = undefined; },
+    item => { item.blockIndex = undefined; },
+    item => { item.authorAddress = ""; },
+    item => { item.tipWorkTransfer.canonicalVerifier = "/api/v1/internal/token-verifier"; },
+    item => { item.tipWorkTransfer.canonicalReplay = undefined; },
+    item => { item.tipWorkTransfer.canonicalReplay.outcome.valid = false; },
+    item => { item.tipWorkTransfer.canonicalReplay.boostCarrierCount = 2; },
+    item => { item.tipWorkTransfer.canonicalReplay.pwtCarrierCount = 2; },
+    item => { item.tipWorkTransfer.canonicalReplay.rawRecordParts[0].text += "x"; },
+    item => { item.tipWorkTransfer.canonicalReplay.transitionChainCommitmentAfter.sha256 = "bad"; },
+    item => { item.workSignalVerification = undefined; },
+    item => { item.tipWorkTransfer.valid = false; },
+    item => { item.tipWorkTransfer.confirmed = false; },
+    item => { item.tipWorkTransfer.senderAddress = "other"; },
+    item => { item.tipWorkTransfer.recipientAddress = "other"; },
+    item => { item.tipWorkTransfer.amountSubatoms = "1"; },
+    item => { item.tipWorkTransfer.blockHash = "b".repeat(64); },
+    item => { item.tipWorkTransfer.protocolVout = 1; },
+    item => { item.tipWorkTransfer.registryVout = 1; },
+    item => { item.tipWorkTransfer.paidSats = "547"; },
+    item => { item.tipWorkTransfer.rawPayload += "x"; },
+    item => { item.tipWorkTransfer.tokenId = "b".repeat(64); },
+    item => { item.recipients = [{address:"owner",amountSats:"546",vout:0}]; },
+    item => { item.confirmed = false; },
+  ]) {
+    const bad = structuredClone(good); mutate(bad);
+    assert.equal(projection.qualifyBoostPaidActions([bad], [], owners).rejected.length, 1);
+  }
+  const stale = boundWorkTipEvent(4, txid(1), "1", "owner");
+  assert.equal(projection.qualifyBoostPaidActions([stale], [], owners).rejected.length, 1);
+});
+
+test("WORK tip preparation binds one canonical send3 and exact registry output", async () => {
+  const { parseBoostTip, parseBoostWorkTip } = await import("../src/shared/protocol/boostTip.mjs");
+  const source = await readFile(new URL("./backfill-proof-indexer.mjs", import.meta.url), "utf8");
+  const start = source.indexOf("function preparedProtocolItemsWithCanonicalMailAttachments(");
+  const end = source.indexOf("\nasync function preparedProtocolItemsForTx(", start);
+  const tokenId = "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const registryAddress = "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
+  const context = vm.createContext({ BigInt, Map, Set, createHash, formatWorkSubatoms,
+    WORK_TOKEN_ID: tokenId, WORK_TOKEN_TICKER: "WORK", WORK_SUBATOM_PROJECTION_MODEL: "work-subatoms-v2",
+    WORK_AMO_V8_TRANSFER_VERSION: "send3", WORK_AMO_V8_GLOBAL_PRECISION_MODEL: "work-subatoms-v2",
+    WORK_TOKEN_REGISTRY_ADDRESS: registryAddress, WORK_ATOM_TO_SUBATOM_SCALE: 100000000n,
+    MAIL_WORK_ATTACHMENT_KINDS: new Set(["mail"]), boostSelfSend: () => false, canonicalWorkAtomsText: () => "",
+    canonicalWorkSubatomsText: value => typeof value === "string" && /^[1-9]\d*$/u.test(value) ? value : "",
+    isHexTxid: value => /^[0-9a-f]{64}$/u.test(value), withWorkSubatomPrecisionMetadata: item => item,
+    sameCanonicalPaymentAddress: (a,b) => Boolean(a && b && a === b),
+    invalidProtocolItem: (item, reason) => ({...item, kind:`${item.kind}-invalid`, valid:false, reason}) });
+  vm.runInContext(`${source.slice(start,end)}\nthis.prepare = preparedProtocolItemsWithCanonicalMailAttachments;`, context);
+  const tip = boundWorkTipEvent(2, txid(1)); delete tip.workSignalVerification; delete tip.tipWorkTransfer;
+  const transfer = { txid:tip.txid, protocol:"pwt1", kind:"token-transfer", confirmed:true, valid:true,
+    tokenId, senderAddress:"reader", recipientAddress:"owner", amountSubatoms:tip.tipWorkSubatoms,
+    amountStorageModel:"work-subatoms-v2", transferVersion:"send3", protocolVout:3, recordOrdinal:0,
+    blockHeight:tip.blockHeight, blockHash:tip.blockHash, blockIndex:tip.blockIndex,
+    registryAddress, paidSats:546, recipients:[{address:registryAddress,amountSats:"546",vout:2}],
+    payload:`pwt1:send3:${tokenId}:${tip.tipWorkSubatoms}:owner`, canonicalVerifier:"/api/v1/internal/token-verifier" };
+  const prepare = (items) => context.prepare(items.map(item=>({item})))[0].item;
+  const accepted = prepare([tip, transfer]);
+  assert.equal(accepted.valid, true);
+  assert.equal(accepted.workSignalVerification, "canonical-same-tx-work-tip-transfer-v1");
+  assert.equal(accepted.tipWorkTransfer.amountSubatoms, tip.tipWorkSubatoms);
+  assert.equal(accepted.tipWorkTransfer.registryVout, 2);
+  assert.equal(accepted.recipientAddress, "owner");
+  assert.equal(prepare([tip]).valid, false);
+  assert.equal(prepare([tip, transfer, structuredClone(transfer)]).valid, false);
+  assert.equal(prepare([tip, structuredClone(tip), transfer]).valid, false);
+  for (const sibling of ["boost-post", "boost-like", "boost-profile"]) {
+    const extra = { ...tip, kind: sibling, action: sibling.slice(6), protocolVout: 4 };
+    assert.equal(prepare([tip, transfer, extra]).valid, false);
+  }
+  for (const mutate of [
+    item=>{item.valid=false;}, item=>{item.confirmed=false;}, item=>{item.canonicalVerifier=undefined;},
+    item=>{item.senderAddress="other";}, item=>{item.amountSubatoms="1";}, item=>{item.tokenId="b".repeat(64);},
+    item=>{item.transferVersion="send2";}, item=>{item.blockIndex=99;}, item=>{item.recordOrdinal=1;},
+    item=>{item.payload+="x";}, item=>{item.recipients[0].amountSats="547";},
+    item=>{item.recipients[0].vout=1;}, item=>{item.paidSats=547;},
+  ]) { const bad=structuredClone(transfer);mutate(bad);assert.equal(prepare([tip,bad]).valid,false); }
+  const pending = prepare([{...tip,confirmed:false}, {...transfer,confirmed:false}]);
+  assert.equal(pending.tipWorkTransfer, undefined);
+  assert.equal(pending.workSignalVerification, undefined);
+  const parserStart=source.indexOf("function boostItemFromMessage(");
+  const parserEnd=source.indexOf("\nfunction ",parserStart+1);
+  const parser=vm.createContext({parseBoostTip,parseBoostWorkTip,formatWorkSubatoms,
+    normalizedLowerText:value=>String(value).toLowerCase(), normalizedText:value=>String(value??"").trim(),
+    boostTxidText:value=>/^[0-9a-f]{64}$/u.test(value??"")?value:"", senderAddressFromTx:()=>"reader",
+    baseProtocolItem:(_tx,_message,kind)=>({...tip,kind,amountSats:"0"}), protocolMessagesFromTx:tx=>tx.records,
+    invalidProtocolItem:(item,reason)=>({...item,valid:false,reason})});
+  vm.runInContext(`${source.slice(parserStart,parserEnd)}\nthis.parse=boostItemFromMessage;`,parser);
+  const record={text:`pwb1:tip2:${txid(1)}:${tokenId}:1`};
+  const parsed=parser.parse({records:[record]},record)[0];
+  assert.equal(parsed.valid,true);assert.equal(parsed.kind,"boost-tip");assert.equal(parsed.tipCurrency,"WORK");
+  assert.equal(parsed.tipWorkSubatoms,"1");assert.equal(parsed.proofSignalSats,0);
+  assert.equal(parser.parse({records:[record,{text:`pwb1:tip:${txid(1)}:546`}]},record)[0].valid,false);
+});
+
+
+test("final WORK tip evidence follows actual canonical Q16 replay and preserves raw outcome parity", async () => {
+  const bitcoin = await import("bitcoinjs-lib");
+  const raw = await import("../server/work-amo-v5-raw.mjs");
+  const canonical = await import("../server/work-amo-v5.mjs");
+  const v8 = await import("../server/work-amo-v8.mjs");
+  const { canonicalRawProtocolRecordSetFromTransaction } = await import("../server/canonical-op-return.mjs");
+  const { parseBoostWorkTip } = await import("../src/shared/protocol/boostTip.mjs");
+  const source = await readFile(new URL("./backfill-proof-indexer.mjs", import.meta.url), "utf8");
+  const start = source.indexOf("function preparedProtocolItemsWithCanonicalWorkTipReplay(");
+  const end = source.indexOf("\nasync function preparedProtocolItemsForTx(", start);
+  assert.ok(start > 0 && end > start);
+  assert.match(source, /prepared\.items = preparedProtocolItemsWithCanonicalWorkTipReplay\(\s*prepared\.items, transition\.replayRecords/u);
+  const tokenId = "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const context = vm.createContext({ parseBoostWorkTip, WORK_TOKEN_ID: tokenId,
+    WORK_TOKEN_REGISTRY_ADDRESS: canonical.WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
+    WORK_SUBATOM_PROJECTION_MODEL: "work-subatoms-v2", WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL: raw.WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+    sameCanonicalPaymentAddress: (a,b) => Boolean(a && b && a === b) });
+  vm.runInContext(`${source.slice(start,end)}\nthis.close = preparedProtocolItemsWithCanonicalWorkTipReplay;`, context);
+  const sender = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv", owner = "1H1arP2xpam6MZmHt6k1tB83stqVdH6ANK";
+  const amount = "10000000000000001", height = 965000, priorHash = "b".repeat(64);
+  const registry = canonical.WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS;
+  const tipPayload = `pwb1:tip2:${txid(1)}:${tokenId}:${amount}`;
+  const sendPayload = `pwt1:send3:${tokenId}:${amount}:${owner}`;
+  const opReturn = payload => Buffer.from(bitcoin.script.compile([bitcoin.opcodes.OP_RETURN, Buffer.from(payload)])).toString("hex");
+  const serial = new bitcoin.Transaction(); serial.version = 2;
+  serial.addInput(Buffer.from(txid(99),"hex").reverse(),0,0xffffffff,Buffer.alloc(0));
+  const outputs = [{value:"0",scriptpubkey:opReturn(tipPayload)},
+    {value:"546",scriptpubkey:Buffer.from(bitcoin.address.toOutputScript(registry)).toString("hex"),scriptpubkey_address:registry},
+    {value:"0",scriptpubkey:opReturn(sendPayload)}];
+  for (const output of outputs) serial.addOutput(Buffer.from(output.scriptpubkey,"hex"),BigInt(output.value));
+  const transaction = {txid:serial.getId(),hex:serial.toHex(),version:2,locktime:0,
+    vin:[{txid:txid(99),vout:0,sequence:0xffffffff,prevout:{value:"646",scriptpubkey_address:sender,
+      scriptpubkey:Buffer.from(bitcoin.address.toOutputScript(sender)).toString("hex")}}],vout:outputs,
+    blockTransactionIndex:1,_powBlockIndex:1,status:{confirmed:true,block_height:height,block_hash:""}};
+  const coinbase = new bitcoin.Transaction(); coinbase.version=2;
+  coinbase.addInput(Buffer.alloc(32),0xffffffff,0xffffffff,Buffer.from("0401010101","hex"));
+  coinbase.addOutput(Buffer.from("51","hex"),0n);
+  const coinbaseEnvelope={txid:coinbase.getId(),hex:coinbase.toHex(),version:2,locktime:0,_powBlockIndex:0,
+    vin:[{coinbase:"0401010101",sequence:0xffffffff}],vout:[{scriptpubkey:"51",value:"0"}]};
+  const block=new bitcoin.Block();block.version=1;block.prevHash=Buffer.from(priorHash,"hex").reverse();
+  block.merkleRoot=bitcoin.Block.calculateMerkleRoot([coinbase,serial]);block.timestamp=1700000000;block.bits=0x1d00ffff;block.nonce=0;
+  const blockHash=Buffer.from(block.getHash()).reverse().toString("hex");transaction.status.block_hash=blockHash;
+  const decoded=canonicalRawProtocolRecordSetFromTransaction(transaction).records;
+  assert.equal(decoded.length,2);
+  const records=decoded.map(record=>({...record,position:{blockHeight:height,blockHash,blockTransactionIndex:1,
+    protocolVout:record.protocolVout,recordOrdinal:record.recordOrdinal},transactionMinerFeeSats:"100",transactionProtocolRecordCount:decoded.length,
+    rawPayloadHex:record.rawRecordParts.map(part=>part.payloadHex).join(""),rawScriptPubKeyHex:record.rawRecordParts[0].scriptPubKeyHex,
+    tx:transaction,txid:transaction.txid}));
+  const generic=raw.normalizeWorkAmoV5RawGenericState({holders:[],listings:[],tokens:[]});
+  const ids=raw.normalizeWorkAmoV5RawIdState({records:[],listings:[]});
+  const work=raw.normalizeWorkAmoV5RawWorkState({amountStorageModel:"work-subatoms-v2",confirmedSupplySubatoms:amount,
+    holders:[{address:sender,balanceSubatoms:amount}],listings:[]});
+  const economic={model:canonical.WORK_AMO_V5_NETWORK_ACCUMULATOR_MODEL,network:"livenet",
+    baseState:Object.fromEntries(canonical.WORK_AMO_V5_BASE_STATE_FIELDS.map(field=>[field,"0"])),creditFixedQ8:"1000000000",
+    creditMovementFrozenValueQ8:"0",movements:[],networkValueQ8:"1000000000",quoteHead:null,
+    throughBlockHeight:height-1,throughBlockHash:priorHash,genericTokenStateCommitment:raw.workAmoV5RawGenericStateCommitment(generic),
+    idStateCommitment:raw.workAmoV5RawIdStateCommitment(ids),tokenStateCommitment:v8.workAmoV8CanonicalTokenStateCommitment(work)};
+  const options={blockHeaderHex:block.toHex(true),blockTransactions:[coinbaseEnvelope,transaction],expectedBlockHash:blockHash,
+    expectedBlockHeight:height,expectedPreviousBlockHash:priorHash,records,openingGenericState:generic,openingIdState:ids,openingWorkState:work,
+    openingEconomicState:economic,workAmoV8:{activationHeight:960601}};
+  const replay=raw.replayWorkAmoV5RawBlock(options);
+  const witnesses=result=>result.events.map(item=>({txid:item.txid,protocol:item.protocol,rawCandidate:true,position:item.position,
+    outcome:{valid:item.valid,kind:`${item.protocol}-${item.valid?"valid":"invalid"}`,reasonCode:item.reasonCode},output:item.output,
+    rawWitness:records.find(record=>record.protocol===item.protocol).payload,stateDelta:item.stateDelta,
+    transitionChainCommitmentAfter:item.transitionChainCommitmentAfter}));
+  const acceptedRecords=witnesses(replay);
+  assert.ok(acceptedRecords.every(record=>record.outcome.valid),JSON.stringify(acceptedRecords.map(record=>record.outcome)));
+  assert.equal(replay.workState.holders.find(holder=>holder.address===owner).balanceSubatoms,amount);
+  assert.equal(replay.economicState.baseState.tokenTransferFlowSats,"546");
+  assert.equal(replay.feeTransitions.length,1);
+  const tip = boundWorkTipEvent(2,txid(1),amount,owner);
+  Object.assign(tip,{txid:transaction.txid,authorAddress:sender,payload:tipPayload,blockHash,blockIndex:1,protocolVout:0,
+    _workAmoV5ReplayBound:true,workAmoV5ReplayOutcome:acceptedRecords.find(record=>record.protocol==="pwb1").outcome});
+  Object.assign(tip.tipWorkTransfer,{txid:transaction.txid,senderAddress:sender,blockHash,blockIndex:1,protocolVout:2,registryVout:1,
+    rawPayload:sendPayload,canonicalVerifier:"/api/v1/internal/token-verifier",canonicalReplay:undefined});
+  const close=(records,items=[tip])=>context.close(items.map(item=>({item})),records)[0].item;
+  const accepted=close(acceptedRecords);
+  assert.equal(accepted.tipWorkTransfer.canonicalVerifier,"/api/v1/internal/work-amo-v5-block-verifier");
+  assert.deepEqual(accepted.tipWorkTransfer.canonicalReplay.transitionChainCommitmentAfter,
+    acceptedRecords.find(record=>record.protocol==="pwt1").transitionChainCommitmentAfter);
+  assert.equal(projection.qualifyBoostPaidActions([accepted],[],new Map([["2",owner]])).accepted[0].applicationBoostOwnerWorkSubatoms,amount);
+  const emptyWork=raw.normalizeWorkAmoV5RawWorkState({amountStorageModel:"work-subatoms-v2",confirmedSupplySubatoms:"0",holders:[],listings:[]});
+  const rejectedRecords=witnesses(raw.replayWorkAmoV5RawBlock({...options,openingWorkState:emptyWork,
+    openingEconomicState:{...economic,tokenStateCommitment:v8.workAmoV8CanonicalTokenStateCommitment(emptyWork)}}));
+  assert.equal(rejectedRecords.find(record=>record.protocol==="pwb1").outcome.valid,true);
+  assert.equal(rejectedRecords.find(record=>record.protocol==="pwt1").outcome.valid,false);
+  const rejected=close(rejectedRecords);
+  assert.equal(rejected.valid,true);assert.equal(rejected.workAmoV5ReplayOutcome.valid,true);
+  assert.equal(rejected.tipWorkTransfer,undefined);assert.equal(rejected.workSignalVerification,undefined);
+  assert.equal(projection.qualifyBoostPaidActions([rejected],[],new Map([["2",owner]])).rejected.length,1);
+  for (const mutate of [
+    record=>{record.outcome.valid=false;},record=>{record.outcome.reasonCode="rejected";},record=>{record.rawCandidate=false;},
+    record=>{record.output.amountSubatoms="1";},record=>{record.output.senderAddress=owner;},
+    record=>{record.output.projection.amountSubatoms="1";},record=>{record.output.projection.position.blockTransactionIndex=2;},
+    record=>{record.output.projection.parsed.payload+="x";},record=>{record.rawWitness.rawRecordParts[0].text+="x";},
+    record=>{record.stateDelta.economicOutputs[0].vout=0;},record=>{record.stateDelta.economicOutputs[0].outputSats="547";},
+    record=>{record.stateDelta.baseContributions[0].value="1092";},record=>{record.stateDelta.creditFixedSats="547";},
+    record=>{record.stateDelta.movement.amountSubatoms="1";},record=>{record.transitionChainCommitmentAfter.sha256="bad";},
+  ]) {
+    const bad=structuredClone(acceptedRecords);mutate(bad.find(record=>record.protocol==="pwt1"));
+    assert.equal(close(bad).tipWorkTransfer,undefined);
+    assert.equal(close(bad).valid,true);
+  }
+  assert.equal(close(acceptedRecords.filter(record=>record.protocol!=="pwt1")).tipWorkTransfer,undefined);
+  assert.equal(close([...acceptedRecords,structuredClone(acceptedRecords.find(record=>record.protocol==="pwt1"))]).tipWorkTransfer,undefined);
+  assert.equal(close(acceptedRecords,[{...tip,confirmed:false}]).tipWorkTransfer,undefined);
+  for (const kind of ["boost-post","boost-like","boost-profile"]) {
+    const extra={...tip,kind,action:kind.slice(6),protocolVout:3};
+    assert.equal(close(acceptedRecords,[tip,extra]).tipWorkTransfer,undefined);
+    const extraReplay=structuredClone(acceptedRecords.find(record=>record.protocol==="pwb1"));extraReplay.position.protocolVout=3;
+    assert.equal(close([...acceptedRecords,extraReplay]).tipWorkTransfer,undefined);
+  }
+});
+
+
+test("WORK tips accumulate exact target and profile signal once while proof fees stay separate", async () => {
+  const original = event(1, "boost-post", { workSignalSubatoms:"10000000000000000" });
+  const work = boundWorkTipEvent(2, txid(1));
+  const proofs = event(3,"boost-tip",{targetTxid:txid(1),authorAddress:"reader",tipAmountSats:"12345",
+    recipients:[{address:"owner",amountSats:"12345",vout:0}]});
+  const moved = event(4,"boost-transfer",{newOwnerAddress:"buyer",targetTxid:txid(1),authorAddress:"owner"});
+  const latest = boundWorkTipEvent(5,txid(1),"1","buyer");
+  const stale = boundWorkTipEvent(6,txid(1),"2","owner");
+  const pending = boundWorkTipEvent(7,txid(1),"3","buyer"); pending.confirmed=false;
+  const api=server(reader([original,work,proofs,moved,latest,stale,pending]).read,
+    {proofIndexRegistryPayload:async()=>identityRegistry([])});
+  const feed=await api.boostFeedPayload("livenet",new URLSearchParams());
+  assert.equal(feed.items.length,1);const post=feed.items[0];
+  assert.equal(post.tipCount,3);assert.equal(post.tipSatsExact,"12345");
+  assert.equal(post.tipWorkSubatomsExact,"10000000000000002");
+  assert.equal(post.workSignalSubatoms,"20000000000000002");
+  assert.equal(post.proofSignalSatsExact,"12891");
+  const detail=await api.boostFeedPayload("livenet",new URLSearchParams({detail:txid(1),activity:"tips"}));
+  assert.equal(detail.totalCount,3);
+  assert.deepEqual(Array.from(detail.items,item=>item.currency),["WORK","proofs","WORK"]);
+  assert.equal(detail.items[0].amountSubatomsExact,"10000000000000001");
+  assert.equal(detail.items[0].amountWorkExact,"1.0000000000000001");
+  assert.equal(detail.items[0].amountSatsExact,undefined);
+  assert.equal(detail.items[1].amountSatsExact,"12345");
+  assert.equal(detail.items[2].amountWorkExact,"0.0000000000000001");
+  const profile=await api.boostFeedPayload("livenet",new URLSearchParams({profile:"owner"}));
+  assert.equal(profile.profileSubject.workSignalSubatoms,"20000000000000002");
+  assert.equal(profile.profileSubject.proofSignalSatsExact,"12891");
+  const proofOnlyOriginal=event(1);let floorReads=0;
+  const noOriginalWork=server(reader([proofOnlyOriginal,work]).read,{proofIndexRegistryPayload:async()=>identityRegistry([]),
+    cachedWorkFloorPayload:async()=>{floorReads++;return{networkValueQ8:"2100000000000000",snapshotId:"fixture-snapshot",
+      indexedThroughBlock:965000,indexedThroughBlockHash:"a".repeat(64)};}});
+  const tipped=await noOriginalWork.boostFeedPayload("livenet",new URLSearchParams());
+  assert.equal(floorReads,1);assert.equal(tipped.items[0].workSignalSubatoms,"10000000000000001");
+  assert.equal(tipped.items[0].proofSignalSatsExact,"546");
+});

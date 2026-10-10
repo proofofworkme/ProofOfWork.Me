@@ -1,4 +1,4 @@
-import { parseBoostTip } from "../src/shared/protocol/boostTip.mjs";
+import { parseBoostTip, parseBoostWorkTip } from "../src/shared/protocol/boostTip.mjs";
 import { createHash } from "node:crypto";
 import {
   normalizePublishArticleMetadata, publishArticleBodyFromRecords,
@@ -50,9 +50,9 @@ function jsonField(text) {
 export function boostGrowthObservedAction(payload) {
   const parts = String(payload ?? "").split(":");
   if (parts[0] !== "pwb1") return null;
-  const action = parts[1] === "repost" ? "reboost" : parts[1];
+  const action = parts[1] === "repost" ? "reboost" : parts[1] === "tip2" ? "tip" : parts[1];
   if (!ACTION_COUNTS[action]) return null;
-  if (action === "tip") return parseBoostTip(payload) ? "tip" : null;
+  if (action === "tip") return (parts[1] === "tip2" ? parseBoostWorkTip(payload) : parseBoostTip(payload)) ? "tip" : null;
   const target = (value) => HEX_TXID.test(value ?? "");
   if (action === "post" || action === "reply") {
     if (parts.length !== (action === "post" ? 3 : 4)) return null;

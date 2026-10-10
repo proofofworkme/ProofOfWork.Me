@@ -689,12 +689,18 @@ This project is a computer for people and agents who want to walk the walk on ch
 
 Boost profile pictures and banners are selections from confirmed ProofOfWork Files, published as address-authored `pwb1:profile` references through a local wallet. Keep image bytes in Files, verify their transaction and hash before rendering, and preserve prior images when only the display ID changes. The profile avatar must stay opaque above the banner.
 
-Content tips share Boost and Publish's current confirmed owner routing. Default
-to 546 proofs while allowing exact custom whole-proof amounts and keeping miner
-fees separate. A `pwb1:tip` identifies the target and amount; its same-transaction
-Mail carrier owns canonical economics once. Tip observations never activate a
-separate Boost accounting version. Persist signed transaction evidence before
-broadcast and preserve unknown-outcome retry protection.
+Content tips share Boost, Publish and Computer's current confirmed owner
+routing and choose proofs or canonical WORK. Default proof tips to 546 while
+allowing exact positive whole-proof amounts; preserve WORK down to one Q16
+subatom with up to sixteen decimal places. Historical `pwb1:tip` and its
+same-transaction Mail carrier retain their economics. Additive `pwb1:tip2` binds
+an exact accepted canonical same-transaction `send3` from the payer to the
+historical current content owner. A WORK tip has no owner-directed proof tip
+payment or Mail delivery; its WORK transfer owns the existing 546-proof WORK
+registry fee and movement economics once. Miner fees stay separate. Tip
+observations never activate a separate Boost accounting version. Persist signed
+currency and exact quantity before broadcast, preserve unknown-outcome retry
+protection, and protect wallet-wide WORK capacity while a WORK outcome is unknown.
 
 Boost text and verified Publish bodies may link bare `.pow` names into
 ProofOfWork Browser. Preserve every source character and article commitment;

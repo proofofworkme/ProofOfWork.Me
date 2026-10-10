@@ -7,6 +7,7 @@ import { formatDate } from "../../functions";
 import { ProfileImage } from "./BoostProfileImages";
 import { createBoostReadLifecycle } from "./boostReadLifecycle";
 import { boostRouteHref, type BoostFeedItem, type BoostProfile } from "./boostProtocol";
+import { formatWorkAmount, workSubatomsFromCanonicalString } from "../../workAmount";
 import { boostSignalQ8 } from "./boostAmounts";
 
 export type ConnectionTab = "followers" | "following";
@@ -21,7 +22,7 @@ type ActivityTab = "replies" | "likes" | "reboosts" | "tips";
 type Person = { address: string; id?: string; displayName: string; profile?: BoostProfile;
   viewerFollowsProfile?: boolean; followsViewer?: boolean };
 type SocialRecord = Person & { txid: string; eventId?: string | number; createdAt: string;
-  confirmed: boolean; kind: string; amountSatsExact?: string; post?: BoostFeedItem };
+  confirmed: boolean; kind: string; currency?: "proofs" | "WORK"; amountSatsExact?: string; amountSubatoms?: string; amountSubatomsExact?: string; post?: BoostFeedItem };
 type SocialPayload = { complete: boolean; snapshotId: string; mode: string;
   items: SocialRecord[]; totalCount: number; hasMore: boolean; nextCursor: string;
   start: number; post?: BoostFeedItem; profileSubject?: Person };
@@ -48,7 +49,8 @@ function useSocialRecords(params: Record<string, string>, network: BitcoinNetwor
       if (next.complete !== true || !next.snapshotId || !Array.isArray(next.items) ||
           next.mode !== (params.detail ? "detail" : "connections") ||
           !Number.isSafeInteger(next.totalCount) || next.totalCount < 0 ||
-          next.items.some(row => row.confirmed !== true || !row.address || !/^[0-9a-f]{64}$/.test(row.txid)) ||
+          next.items.some(row => row.confirmed !== true || !row.address || !/^[0-9a-f]{64}$/.test(row.txid) ||
+            row.currency === "WORK" && (workSubatomsFromCanonicalString(row.amountSubatomsExact ?? row.amountSubatoms) ?? 0n) <= 0n) ||
           (params.detail && next.post?.txid !== params.detail)) {
         throw new Error("Complete confirmed social records are unavailable.");
       }
@@ -92,7 +94,8 @@ function PersonRow({ row, network, viewer, onFollow }: { row: SocialRecord; netw
       <span>{row.id ? `${row.id}@proofofwork.me` : row.address}</span>
       {row.followsViewer ? <span>Follows you</span> : null}
       {row.viewerFollowsProfile ? <span>Following</span> : null}
-      {row.amountSatsExact ? <span>{row.amountSatsExact} proofs tipped</span> : null}
+      {row.currency === "WORK" ? <span>{formatWorkAmount(workSubatomsFromCanonicalString(row.amountSubatomsExact ?? row.amountSubatoms) ?? 0n, true)} WORK tipped</span>
+        : row.amountSatsExact ? <span>{row.amountSatsExact} proofs tipped</span> : null}
       <div className="boost-person-meta"><details><summary>Proof details</summary><span className="boost-person-address">{row.address}</span>
         <span>{formatDate(row.createdAt)} · Confirmed</span>
       </details>

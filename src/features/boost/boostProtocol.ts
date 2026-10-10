@@ -95,6 +95,7 @@ export type BoostFeedItem = {
   likeCount?: number;
   tipCount?: number;
   tipSatsExact?: string;
+  tipWorkSubatomsExact?: string;
   network?: BitcoinNetwork;
   signalSats?: number;
   signalUsd?: number;

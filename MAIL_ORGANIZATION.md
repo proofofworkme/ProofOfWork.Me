@@ -830,11 +830,23 @@ commit late results.
 
 ### Content tip Mail records
 
-A Boost/Publish tip writes its target and exact proof amount in `pwb1:tip` and
-one ordinary same-transaction `pwm1:m` message. The single owner-directed payment
-uses existing Mail economics and appears in Inbox/Sent; tip, Log, Search and
-Growth projections never add a second payment or canonical value contribution.
-Unknown signed tips retain local Transaction recovery evidence before retry.
+Boost, Publish and Computer share tips in proofs or canonical WORK. A proof tip
+writes its target and exact amount in the unchanged `pwb1:tip` plus one ordinary
+same-transaction `pwm1:m` message. Its single owner-directed proof payment uses
+existing Mail economics and appears in Inbox/Sent.
+
+A WORK tip writes `pwb1:tip2` with the canonical WORK id and exact Q16 subatoms,
+matched to one accepted same-transaction `pwt1:send3` from the payer to the
+historical current content owner. It makes no proof tip payment to that owner
+and omits `pwm1:` Mail, so it creates no Inbox/Sent delivery. Its separate
+546-proof WORK registry payment and WORK movement remain owned by the canonical
+WORK transfer. Tips, Log, Search and Growth never add a second payment or value
+contribution. The shared prepared review exposes currency, exact amount,
+destinations and separate fees; confirmation alone establishes content totals.
+Unknown signed tips retain local Transaction recovery evidence with their
+currency and exact quantity. Unknown WORK outcomes protect wallet-wide WORK
+capacity across tip targets until first-party status resolves them; unavailable
+status reads preserve that protection.
 
 ## Jobs workspace
 

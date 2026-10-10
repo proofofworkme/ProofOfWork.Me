@@ -6002,6 +6002,12 @@ the WORK metric unavailable; it never becomes a verified zero. Mail/Files
 payment attribution deduplicates canonical recipient outputs and excludes
 the separate bond families.
 
+Raw `pwb1:tip2` is normalized to the existing `tip` observation and `tips` count;
+its exact accepted same-transaction WORK transfer appears in companion Q16
+quantity/overlap fields once, without requiring Mail. Search retains the raw
+canonical token id, exact subatoms, target reference and currency metadata; it
+never converts a WORK tip into `amountSats` or another economic event.
+
 A missing, incomplete, malformed, or differently bound observation must remain
 unavailable. It cannot acquire completeness from a recent feed page or inherit
 an unrelated WORK snapshot. The UI can still show the separately labeled
@@ -7220,37 +7226,101 @@ applications or publish a second announcement.
 
 ## Content tips
 
-Boost, Publish articles, and their Computer workspaces share a Tip action next
-to replies, likes, and reboosts. The default is 546 proofs; a custom positive
-whole-proof amount is preserved exactly, subject to funding and network dust
-rules. Miner fees are separate. Tips pay the target's current confirmed content
-owner, consistent with existing engagement routing, not a stale displayed ID.
-Ownership is checked before signing and before broadcast. Wallet signing stays
-local; the prepared outputs and payloads must survive signing unchanged.
+Boost, Publish articles, and their Computer workspaces share a Tip action with
+Proofs / WORK selection. Proofs default to 546; custom positive whole-proof
+amounts remain exact, subject to funding and network dust rules. WORK accepts
+positive exact amounts with up to sixteen decimal places, down to
+`0.0000000000000001 WORK`; the wire amount is a canonical positive Q16 integer
+bounded by the 21,000,000 WORK supply cap. Miner fees are separate. WORK tips also
+pay the existing 546-proof WORK registry mutation fee. There is no Boost
+registry tip fee.
 
-The wire record is `pwb1:tip:<target-txid>:<exact-proof-amount>`. A transaction
-contains at most one tip; its pre-carrier payments to the historical confirmed
-owner must equal that amount. There is no Boost registry fee or legacy
-registry-paid tip fallback. Repeated tips in separate transactions are allowed.
-Confirmed tips appear in content activity with payer, amount and transaction,
-contribute once to the target's signal and existing profile totals, and remain
-inspectable in Log and Search. Pending tips cannot establish confirmed totals.
+Both currencies route to the target's current confirmed content owner. A display
+ID does not determine payment authority. Ownership, confirmed funding and WORK
+admission/capacity where applicable are checked before signing and before
+broadcast. The prepared review shows the selected currency, exact tip, recipient,
+registry payment where applicable, miner fee, change, inputs and protocol records.
+Wallet signing stays local; signed transactions must preserve the review.
 
-The app also writes one `pwm1:m:Tip <amount> proofs for ProofOfWork content
-<target-txid>` in the same transaction. That ordinary Mail envelope owns the
-existing canonical payment-flow/network-value contribution. The Boost record
-and Search are associations and observations, never extra economic deltas.
-Growth reports tip records and its existing Mail overlap diagnostics; this does
-not activate the separate Boost accounting proposal or rewrite historical H-1
-values, WORK terms or INCB issuance. A standalone historical tip carrier without
-Mail can be inspected but gains no new canonical Boost economic contribution.
+The existing proof record remains unchanged:
 
-A signed tip txid is persisted before broadcast in Transaction recovery. An
-unknown outcome blocks another tip to that target until first-party status
-resolves it. Failed status reads preserve evidence. Confirmation, pending and
-dropped status remain distinct; wallet rejection retains the entered amount.
-The article reader has a spaced header and an accessible Back to articles arrow
-on standalone Publish and Computer.
+```text
+pwb1:tip:<target-txid>:<exact-proof-amount>
+```
+
+Its pre-carrier owner-directed proof payments must equal the declared amount;
+there is no legacy registry-paid tip fallback. The additive WORK record is:
+
+```text
+pwb1:tip2:<target-txid>:<canonical-WORK-id>:<amount-subatoms>
+```
+
+The canonical WORK id is
+`d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8`.
+A WORK tip must match exactly one accepted same-transaction canonical
+`pwt1:send3` transfer with the same payer, exact Q16 amount and historical current
+content owner as recipient. Final canonical raw block replay must accept the
+transfer, exact registry output and movement claim; token-verifier preparation
+alone cannot grant the association. A WORK-tip transaction has exactly one
+`pwb1:` carrier and one `pwt1:` carrier, preventing the same WORK transfer from
+signaling another Boost action. Decoded bytes alone cannot establish accepted
+transfer or tip validity. An association rejection clears its application signal
+evidence while retaining the raw canonical Boost outcome for replay and parity. The writer makes no owner-directed proof tip payment,
+places the 546-proof WORK registry output after the Boost carrier and before
+`send3`, and omits `pwm1:` Mail because there is no Mail delivery payment.
+
+A transaction contains at most one tip carrier across both forms, including
+malformed matching carriers. Repeated tips in separate transactions remain
+allowed. Both forms use the indexed `boost-tip` kind. Confirmed activity exposes
+payer, currency, exact amount and transaction; proof and WORK signal lanes count
+their respective accepted amounts once. Pending records remain visible without
+establishing confirmed totals. Log and Search preserve exact source amounts,
+canonical token identity and target references.
+
+Proof tips also write one `pwm1:m:Tip <amount> proofs for ProofOfWork content
+<target-txid>`. That ordinary Mail envelope owns its existing payment-flow and
+network-value contribution once. For WORK tips, the accepted WORK transfer owns
+its existing registry fee and WORK movement economics once; the tip association
+adds neither Mail delivery nor another economic delta. Growth observes both tip
+forms and existing companion Mail/WORK attribution. This does not activate the
+separate Boost accounting proposal or rewrite historical H-1 values, WORK terms
+or INCB issuance. A standalone historical proof-tip carrier without Mail remains
+inspectable without gaining a new canonical Boost economic contribution.
+
+Signed tip txids are persisted before broadcast in Transaction recovery, with
+currency and exact quantity retained. Unknown outcomes block another tip to that
+target; unknown WORK outcomes also protect wallet-wide WORK capacity across tip
+targets until first-party status resolves them. Failed status reads preserve
+evidence. Confirmed, pending and dropped status remain distinct, and wallet
+rejection retains the entered currency and amount. The article reader retains
+its spaced header and accessible Back to articles arrow on standalone Publish
+and Computer.
+
+
+### WORK tipping deployment and verification
+
+The [WORK tipping release planner](deploy/work-tips/release.py) captures current
+runtime bytes read-only and prepares an exact committed candidate in a private
+`/tmp` directory. Its [scoped controller](deploy/work-tips/scoped-node.py) changes
+only `server/proof-api.mjs`, `scripts/backfill-proof-indexer.mjs`,
+`server/boost-projection.mjs`, `server/boost-growth.mjs`, and
+`src/shared/protocol/boostTip.mjs`. Three-way merges preserve accepted live
+overlays; any explicit resolution binds captured, base, repository-candidate
+and merged hashes. Dependency closure, service and gateway identities, source
+provenance and rollback preimages remain fenced. The
+[rollout supervisor](deploy/work-tips/rollout-node.py) holds Search with its
+existing pinned controller and restores it only after verified application or
+rollback; incomplete recovery retains the hold for supervised resolution.
+Recapture after a concurrent release before preparing the final plan.
+
+Local verification includes `npm run check:boost-tips` for codecs, protected WORK
+capacity and canonical tip application, `npm run check:boost-tips:deploy` for the
+scoped controller and release planner, `npm run check:growth`, and
+`npm run check:search`. Browser coverage exercises Proofs / WORK selection,
+sixteen-decimal input, exact review, unchanged signed outputs, WORK readiness,
+recovery protection and both standalone/Computer readers. Complete the existing
+Publish, WORK precision, ledger, hygiene and mandatory release synchronization
+gates before announcing the release.
 
 ## Content tipping release — 2026-10-06
 

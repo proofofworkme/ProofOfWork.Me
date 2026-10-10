@@ -36,6 +36,21 @@ test('every record identity, position, participant, name and exact proof quantit
   assert.throws(()=>exactProofs(-1));
   assert.throws(()=>exactProofs(Number.MAX_SAFE_INTEGER+1));
 });
+test('WORK tip observations retain exact token, subatoms and target references without proof conversion',()=>{
+  const tokenId='d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8';
+  const targetTxid='c'.repeat(64),amountSubatoms='123456789012345678901234';
+  const refs=[{type:'boost',value:targetTxid},{type:'token',value:tokenId}];
+  const rawPayload=`pwb1:tip2:${targetTxid}:${tokenId}:${amountSubatoms}`;
+  const payload={title:'WORK content tip',tipCurrency:'WORK',tipWorkSubatoms:amountSubatoms,
+    tokenId,targetTxid,authorAddress:'bc1qpayer',recipientAddress:'bc1qcontentowner'};
+  const doc=buildSearchDocument(source({protocol:'pwb1',kind:'boost-tip',amountSats:'0',payload,refs,rawPayload}),HASH);
+  assert.equal(doc.record.amountSats,'0');
+  assert.deepEqual(doc.record.refs,refs);
+  assert.equal(doc.payload.tipWorkSubatoms,amountSubatoms);
+  assert.equal(doc.rawPayload,rawPayload);
+  for (const term of [targetTxid,tokenId,amountSubatoms,'WORK','boost-tip','bc1qpayer','bc1qcontentowner'])
+    assert.ok(doc.searchText.includes(term),term);
+});
 test('file text enters the index only after size and exact checksum verification',()=>{
   const file=attachment();
   const doc=buildSearchDocument(source({protocol:'pwm1',kind:'file',payload:{attachment:file}}),HASH);

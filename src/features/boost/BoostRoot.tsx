@@ -1,4 +1,4 @@
-import { buildBoostTip, boostTipAmount, BOOST_TIP_DEFAULT_SATS } from "../../shared/protocol/boostTip.mjs";
+import { buildBoostTip, buildBoostWorkTip, boostTipAmount, BOOST_TIP_DEFAULT_SATS } from "../../shared/protocol/boostTip.mjs";
 import {
   FormEvent,
   type KeyboardEvent,
@@ -121,7 +121,10 @@ import {
   scriptForAddress,
   signAndBroadcastBoostPsbt,
   type BoostSpentOutpoint,
+  type BoostPaymentPsbt,
 } from "./boostWallet";
+import { ActionTransactionReview, type ActionReview } from "../../shared/components/ActionTransactionReview";
+import { fetchBoostTipWorkCapacity } from "./boostTipWorkCapacity";
 import { inspectPreparedPayment } from "../../shared/wallet/paymentReview";
 import { readActionReceipts, saveActionReceipt, type ActionReceipt } from "../../shared/wallet/actionRecovery";
 import { ActionRecoveryPanel } from "../../shared/components/ActionRecoveryPanel";
@@ -135,6 +138,12 @@ import { syncSocialIdentityIntent, publishSocialIdentityIntent, subscribeSocialI
 import { verifiedSocialIdentityIntent } from "../identity/socialIdentityCore.mjs";
 import "./boost.css";
 import "../publish/publish.css";
+
+type PreparedContentTip = {
+  scope: string; targetTxid: string; ownerAddress: string; walletAddress: string;
+  currency: "proofs" | "WORK"; amountText: string; amountSats: number;
+  workSubatoms: bigint; feeRate: number; payment: BoostPaymentPsbt; review: ActionReview;
+};
 
 type BoostSortMode = "value" | "newest" | "oldest";
 type BoostValueWindow = "hour" | "day" | "week" | "all";
@@ -909,7 +918,7 @@ function BoostPost({
           <dl className="boost-proof-record">
             <dt>Transaction</dt><dd>{item.txid}</dd>
             <dt>Owner</dt><dd>{ownerAddress}</dd>
-            <dt>Confirmed tips</dt><dd>{item.tipCount ?? 0} · {item.tipSatsExact ?? "0"} proofs</dd>
+            <dt>Confirmed tips</dt><dd>{item.tipCount ?? 0} · {item.tipSatsExact ?? "0"} proofs · {formatWorkAmount(workSubatomsFromCanonicalString(item.tipWorkSubatomsExact) ?? 0n, true)} WORK</dd>
             {item.media?.sha256 ? <><dt>File SHA-256</dt><dd>{item.media.sha256}</dd></> : null}
           </dl>
         </details>
@@ -1143,6 +1152,12 @@ export default function BoostRoot({
   const [tipRecoveryError, setTipRecoveryError] = useState("");
   const [tipRecoveryChecking, setTipRecoveryChecking] = useState(false);
   const [tipAmountText, setTipAmountText] = useState(String(BOOST_TIP_DEFAULT_SATS));
+  const [tipCurrency, setTipCurrency] = useState<"proofs" | "WORK">("proofs");
+  const [tipWorkAmountText, setTipWorkAmountText] = useState("1");
+  const [tipWorkSpendable, setTipWorkSpendable] = useState<bigint | undefined>();
+  const [tipWorkStatus, setTipWorkStatus] = useState("");
+  const [preparedTip, setPreparedTip] = useState<PreparedContentTip | undefined>();
+  const tipReturnFocus = useRef<HTMLElement | null>(null);
   const [pendingPaidAction, setPendingPaidAction] =
     useState<PendingBoostPaidAction | undefined>();
   const [reboostMenuTarget, setReboostMenuTarget] = useState<BoostFeedItem | undefined>();
@@ -1226,9 +1241,28 @@ export default function BoostRoot({
     return [...byAddress.values()].slice(0, 4);
   }, [address, items, profileRouteValue, payload?.profileSubject?.address]);
   const topSignalItems = useMemo(() => visibleItems.slice(0, 3), [visibleItems]);
-  const modalOpen = Boolean(
+  const tipScope = JSON.stringify([address, network, pendingPaidAction?.action,
+    pendingPaidAction ? boostItemTxid(pendingPaidAction.item) : "", tipCurrency,
+    tipAmountText, tipWorkAmountText, feeRate]);
+  const currentTipScope = useRef(tipScope);
+  currentTipScope.current = tipScope;
+  const tipWorkSubatoms = workAtomsFromDecimal(tipWorkAmountText);
+  const modalOpen = !preparedTip && Boolean(
     directPostOpen || expandedItem || pendingPaidAction || replyTarget,
   );
+  useEffect(() => {
+    if (pendingPaidAction?.action !== "tip" || tipCurrency !== "WORK" || !address || network !== "livenet") {
+      setTipWorkSpendable(undefined); setTipWorkStatus(""); return;
+    }
+    let active = true;
+    setTipWorkSpendable(undefined); setTipWorkStatus("Checking spendable WORK...");
+    void fetchBoostTipWorkCapacity(address).then(capacity => {
+      if (active) { setTipWorkSpendable(capacity.spendableSubatoms); setTipWorkStatus(""); }
+    }, cause => {
+      if (active) { setTipWorkSpendable(undefined); setTipWorkStatus(cause instanceof Error ? cause.message : "Spendable WORK is unavailable."); }
+    });
+    return () => { active = false; };
+  }, [address, network, pendingPaidAction, tipCurrency]);
   const postWorkSubatoms = workAtomsFromDecimal(postWorkAmount);
   useEffect(() => {
     if (!directPostOpen || !address.trim()) {
@@ -1508,6 +1542,7 @@ export default function BoostRoot({
     action: BoostPaidAction,
     item: BoostFeedItem,
   ): Promise<boolean> {
+    if (action === "tip") { await prepareContentTip(item); return false; }
     if (paidActionInFlight.current || actionBusy) return false;
     const targetTxid = boostItemTxid(item);
     if (!targetTxid) {
@@ -1527,10 +1562,7 @@ export default function BoostRoot({
       setStatus({ tone: "bad", text: "The confirmed current Boost owner is unavailable." });
       return false;
     }
-    const tipAmount = action === "tip" ? boostTipAmount(tipAmountText) : BOOST_ACTION_PAYMENT_SATS;
-    if (tipAmount === null) { setStatus({ tone: "bad", text: "Enter a positive whole-proof tip amount." }); return false; }
-    const tip = action === "tip" ? buildBoostTip(targetTxid, tipAmount) : undefined;
-    const label = action === "tip" ? "Tip" : action === "like" ? "Boost like" : "Boost reboost";
+    const label = action === "like" ? "Boost like" : "Boost reboost";
     setOptimisticActions((current) => ({
       ...current,
       [targetTxid]: {
@@ -1540,46 +1572,12 @@ export default function BoostRoot({
     }));
     paidActionInFlight.current = true;
     setActionBusy(action);
-    let tipReceipt: ActionReceipt | undefined;
     try {
       const ready = await ensureBoostWriterReady(false);
-      const validateTipOwner = async () => {
-        if (networkRef.current !== "livenet" || !sameBoostWalletAddress(walletAddressRef.current, ready.walletAddress))
-          throw new Error("Wallet or network changed. Review a new tip.");
-        await assertActiveWalletAddress(window.unisat!, ready.walletAddress);
-        const fresh = await fetchProofApiJson<{ post?: BoostFeedItem }>(`/api/v1/boost?detail=${targetTxid}&fresh=1`, "livenet");
-        if (!fresh.post?.confirmed || !sameBoostWalletAddress(boostOwnerAddress(fresh.post), ownerAddress))
-          throw new Error("Content ownership changed or is unavailable. Refresh and review the tip again.");
-      };
-      if (tip) {
-        const unresolved = readActionReceipts(localStorage).find(row => row.key === `boost-tip:${targetTxid}` &&
-          sameBoostWalletAddress(row.address, ready.walletAddress) && row.network === "livenet" && row.status === "unknown");
-        if (unresolved) throw new Error("A signed tip has an unknown outcome. Check Transaction recovery before sending another tip.");
-        await validateTipOwner();
-      }
       const sent = await broadcastBoostPayload({
-        action,
-        paymentLabel: label,
-        payments: [
-          {
-            address: ownerAddress,
-            amountSats: tipAmount,
-          },
-        ],
-        protocolPayload: tip?.payload ?? buildBoostActionPayload(action, targetTxid),
-        additionalProtocolPayloads: tip ? [tip.mailPayload] : [],
-        beforeBroadcast: tip ? validateTipOwner : undefined,
-        onSigned: tip ? txid => {
-          tipReceipt = { txid, address: ready.walletAddress, network: "livenet", title: "Content tip",
-            key: `boost-tip:${targetTxid}`, status: "unknown", createdAt: new Date().toISOString(),
-            fields: [["Target", targetTxid], ["Recipient", ownerAddress], ["Tip amount", String(tipAmount)]] };
-          const receipts = saveActionReceipt(localStorage, tipReceipt);
-          setTipReceipts(receipts.filter(row => row.key.startsWith("boost-tip:") && sameBoostWalletAddress(row.address, ready.walletAddress)));
-        } : undefined,
-        onBroadcast: tip ? () => {
-          if (tipReceipt) setTipReceipts(saveActionReceipt(localStorage, { ...tipReceipt, status: "pending" })
-            .filter(row => row.key.startsWith("boost-tip:") && sameBoostWalletAddress(row.address, ready.walletAddress)));
-        } : undefined,
+        action, paymentLabel: label,
+        payments: [{ address: ownerAddress, amountSats: BOOST_ACTION_PAYMENT_SATS }],
+        protocolPayload: buildBoostActionPayload(action, targetTxid),
         walletAddress: ready.walletAddress,
       });
       if (!sent) {
@@ -1882,6 +1880,127 @@ export default function BoostRoot({
     } catch (cause) {
       if (currentWriterScope.current === expectedScope) setPublishRecoveryError(cause instanceof Error ? cause.message : "Transaction status is unavailable.");
     } finally { setPublishRecoveryChecking(false); }
+  }
+
+  function assertTipScope(prepared: Pick<PreparedContentTip, "scope">) {
+    if (currentTipScope.current !== prepared.scope) throw new Error("Tip fields, wallet, or network changed. Prepare a new review.");
+  }
+
+  function assertTipRecovery(targetTxid: string, walletAddress: string, ownSignedTxid?: string) {
+    const unresolved = readActionReceipts(localStorage).find(row => row.txid !== ownSignedTxid &&
+      row.key === `boost-tip:${targetTxid}` && sameBoostWalletAddress(row.address, walletAddress) &&
+      row.network === "livenet" && row.status === "unknown");
+    if (unresolved) throw new Error("A signed tip has an unknown outcome. Check Transaction recovery before sending another tip.");
+  }
+
+  async function verifyContentTip(prepared: PreparedContentTip, ownSignedTxid?: string, checkFunding = true) {
+    assertTipScope(prepared);
+    assertTipRecovery(prepared.targetTxid, prepared.walletAddress, ownSignedTxid);
+    if (networkRef.current !== "livenet" || !sameBoostWalletAddress(walletAddressRef.current, prepared.walletAddress))
+      throw new Error("Wallet or network changed. Prepare a new tip review.");
+    await ensureWalletNetwork(window.unisat!, "livenet", prepared.walletAddress);
+    await assertActiveWalletAddress(window.unisat!, prepared.walletAddress);
+    const fresh = await fetchProofApiJson<{ post?: BoostFeedItem }>(`/api/v1/boost?detail=${prepared.targetTxid}&fresh=1`, "livenet");
+    if (!fresh.post?.confirmed || !sameBoostWalletAddress(boostOwnerAddress(fresh.post), prepared.ownerAddress))
+      throw new Error("Content ownership changed or is unavailable. Refresh and review the tip again.");
+    const workCapacity = prepared.currency === "WORK"
+      ? await fetchBoostTipWorkCapacity(prepared.walletAddress, ownSignedTxid) : undefined;
+    if (workCapacity && prepared.workSubatoms > workCapacity.spendableSubatoms)
+      throw new Error(`Tip up to ${formatWorkAmount(workCapacity.spendableSubatoms)} spendable WORK. Prepare a new review.`);
+    if (workCapacity) await requireBoostWorkWriteAdmission();
+    if (checkFunding) {
+      const utxos = await fetchProofApiJson<Array<{ txid: string; vout: number; status?: { confirmed?: boolean } }>>(
+        `/api/v1/address/${encodeURIComponent(prepared.walletAddress)}/utxo`, "livenet");
+      if (!Array.isArray(utxos)) throw new Error("Fresh tip funding evidence is unavailable.");
+      const available = new Set(utxos.filter(row => row.status?.confirmed === true).map(row => `${row.txid}:${row.vout}`));
+      const reserved = await fetchReservedAmoAnchorOutpoints(prepared.walletAddress, "livenet",
+        [...boostListingAnchorOutpoints(items), ...(workCapacity?.anchorOutpoints ?? [])]);
+      const protectedInputs = new Set(reserved.map(row => `${row.txid}:${row.vout}`));
+      if (prepared.review.evidence!.inputs.some(input => !available.has(input.outpoint) || protectedInputs.has(input.outpoint)))
+        throw new Error("Reviewed tip funding changed or became reserved. Prepare a new review.");
+    }
+    assertTipScope(prepared);
+  }
+
+  async function prepareContentTip(item: BoostFeedItem) {
+    if (paidActionInFlight.current || actionBusy) return;
+    const targetTxid = boostItemTxid(item), ownerAddress = boostOwnerAddress(item);
+    const scope = tipScope, currency = tipCurrency, amountSats = currency === "proofs" ? boostTipAmount(tipAmountText) : 0;
+    const workSubatoms = currency === "WORK" ? workAtomsFromDecimal(tipWorkAmountText) : 0n;
+    if (!targetTxid || !isValidBitcoinAddress(ownerAddress, "livenet")) {
+      setStatus({ tone: "bad", text: "The confirmed current content owner is unavailable." }); return;
+    }
+    if (amountSats === null || workSubatoms === null || currency === "WORK" && workSubatoms <= 0n) {
+      setStatus({ tone: "bad", text: currency === "WORK" ? "Enter a positive WORK amount using up to 16 decimal places." : "Enter a positive whole-proof tip amount." }); return;
+    }
+    paidActionInFlight.current = true; setActionBusy("tip");
+    setStatus({ tone: "idle", text: "Preparing exact tip review..." });
+    try {
+      const ready = await ensureBoostWriterReady(false);
+      const workCapacity = currency === "WORK" ? await fetchBoostTipWorkCapacity(ready.walletAddress) : undefined;
+      if (workCapacity && workSubatoms > workCapacity.spendableSubatoms)
+        throw new Error(`Tip up to ${formatWorkAmount(workCapacity.spendableSubatoms)} spendable WORK.`);
+      if (workCapacity) await requireBoostWorkWriteAdmission();
+      assertTipRecovery(targetTxid, ready.walletAddress);
+      const tip = currency === "WORK" ? buildBoostWorkTip(targetTxid, workSubatoms) : buildBoostTip(targetTxid, amountSats);
+      const records = currency === "WORK" ? [tip.payload] : [tip.payload, buildBoostTip(targetTxid, amountSats).mailPayload];
+      const exclusions = await fetchReservedAmoAnchorOutpoints(ready.walletAddress, "livenet",
+        [...boostListingAnchorOutpoints(items), ...(workCapacity?.anchorOutpoints ?? [])]);
+      const payment = await buildBoostPaymentPsbt({ excludeOutpoints: exclusions, feeRate,
+        fromAddress: ready.walletAddress, network: "livenet",
+        payments: currency === "proofs" ? [{ address: ownerAddress, amountSats }] : [],
+        protocolPayloads: records,
+        postProtocolPayments: currency === "WORK" ? [{ address: BOOST_WORK_REGISTRY_ADDRESS, amountSats: BOOST_WORK_MUTATION_PROOFS }] : [],
+        postProtocolPayloads: currency === "WORK" ? [buildBoostWorkSendPayload(workSubatoms, ownerAddress)] : [],
+      });
+      const evidence = inspectPreparedPayment({ psbtHex: payment.psbtHex, network: bitcoin.networks.bitcoin,
+        paymentCount: currency === "proofs" ? 1 : 0, registryPaymentCount: currency === "WORK" ? 1 : 0,
+        feeSats: payment.feeSats, changeSats: payment.changeSats });
+      const amountText = currency === "WORK" ? formatWorkAmount(workSubatoms, true) : String(amountSats);
+      const prepared: PreparedContentTip = { scope, targetTxid, ownerAddress, walletAddress: ready.walletAddress,
+        currency, amountText, amountSats, workSubatoms, feeRate, payment,
+        review: { title: "Review content tip", networkLabel: "Mainnet", feeRate: String(feeRate),
+          dustFeeProofs: String(payment.dustFeeSats), evidence,
+          paymentLabels: [currency === "WORK" ? "WORK registry mutation payment" : "Tip paid to current content owner"],
+          fields: [["Content transaction", targetTxid], ["Current confirmed owner", ownerAddress], ["Tip", `${amountText} ${currency}`],
+            ...(currency === "WORK" ? [["Exact WORK subatoms", workSubatoms.toString()] as [string, string]] : [])],
+          explanation: currency === "WORK" ? "The exact WORK tip goes to the current confirmed content owner. The 546-proof WORK registry payment and miner fee are separate. No proofs are tipped to the owner." : "The exact proof tip goes to the current confirmed content owner. The miner fee is separate." } };
+      await verifyContentTip(prepared);
+      tipReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setPreparedTip(prepared); setStatus({ tone: "idle", text: "Review the exact tip before continuing to your wallet." });
+    } catch (cause) { setStatus({ tone: "bad", text: cause instanceof Error ? cause.message : "Tip preparation failed." }); }
+    finally { paidActionInFlight.current = false; setActionBusy(""); }
+  }
+
+  async function signContentTip() {
+    if (!preparedTip || paidActionInFlight.current || actionBusy) return;
+    const prepared = preparedTip;
+    let receipt: ActionReceipt | undefined;
+    paidActionInFlight.current = true; setActionBusy("tip");
+    try {
+      await verifyContentTip(prepared);
+      const broadcast = await signAndBroadcastBoostPsbt({ network: "livenet", wallet: window.unisat!,
+        signingAddress: prepared.walletAddress, psbtHex: prepared.payment.psbtHex,
+        inputCount: prepared.payment.inputCount, signInputIndexes: prepared.payment.walletInputIndexes,
+        onSigned: txid => {
+          receipt = { txid, address: prepared.walletAddress, network: "livenet", title: "Content tip",
+            key: `boost-tip:${prepared.targetTxid}`, status: "unknown", createdAt: new Date().toISOString(),
+            fields: [["Target", prepared.targetTxid], ["Recipient", prepared.ownerAddress], ["Currency", prepared.currency],
+              ["Tip amount", prepared.amountText], ...(prepared.currency === "WORK" ? [["WORK subatoms", prepared.workSubatoms.toString()] as [string, string]] : [])] };
+          const receipts = saveActionReceipt(localStorage, receipt);
+          setTipReceipts(receipts.filter(row => row.key.startsWith("boost-tip:") && sameBoostWalletAddress(row.address, prepared.walletAddress)));
+        },
+        beforeBroadcast: () => verifyContentTip(prepared, receipt?.txid),
+      });
+      if (receipt) setTipReceipts(saveActionReceipt(localStorage, { ...receipt, status: "pending" })
+        .filter(row => row.key.startsWith("boost-tip:") && sameBoostWalletAddress(row.address, prepared.walletAddress)));
+      setPreparedTip(undefined); setPendingPaidAction(undefined);
+      setStatus({ tone: "good", text: `Tip broadcast: ${shortAddress(broadcast.txid)}.`, links: [{ href: broadcast.url, text: "View TX", ariaLabel: "View tip transaction" }] });
+      void refresh(false, true, false);
+    } catch (cause) {
+      setPreparedTip(undefined);
+      setStatus({ tone: "bad", text: `${cause instanceof Error ? cause.message : "Tip failed."}${receipt ? " Signed evidence remains in Transaction recovery. Check its status before retrying." : ""}` });
+    } finally { paidActionInFlight.current = false; setActionBusy(""); }
   }
 
   async function publishBoostPost(event: FormEvent<HTMLFormElement>) {
@@ -2751,6 +2870,7 @@ export default function BoostRoot({
         }
         onTip={(boostItem) => {
           setTipAmountText(String(BOOST_TIP_DEFAULT_SATS));
+          setTipCurrency("proofs"); setTipWorkAmountText("1"); setPreparedTip(undefined);
           setPendingPaidAction({ action: "tip", item: boostItem });
         }}
         onList={(boostItem) => {
@@ -3474,6 +3594,9 @@ export default function BoostRoot({
         </aside>
       </div>
 
+      {preparedTip ? <ActionTransactionReview review={preparedTip.review} returnFocus={tipReturnFocus.current}
+        onCancel={() => { if (!paidActionInFlight.current) setPreparedTip(undefined); }}
+        onApprove={() => void signContentTip()} /> : null}
       {modalOpen ? (
         <div className="boost-modal-backdrop">
           <button
@@ -3710,13 +3833,25 @@ export default function BoostRoot({
                   : pendingPaidAction.item}
               />
               <p className="field-note">
-                This action sends {pendingPaidAction.action === "tip" ? tipAmountText : BOOST_ACTION_PAYMENT_SATS.toLocaleString()} proofs to the current owner and adds them to the content signal. The miner fee is separate.
+                {pendingPaidAction.action === "tip" && tipCurrency === "WORK"
+                  ? "The WORK tip goes to the current confirmed owner. A separate 546-proof WORK registry payment and miner fee require proof funds in your wallet."
+                  : `This action sends ${pendingPaidAction.action === "tip" ? tipAmountText : BOOST_ACTION_PAYMENT_SATS.toLocaleString()} proofs to the current owner and adds them to the content signal. The miner fee is separate.`}
               </p>
-              {pendingPaidAction.action === "tip" ? <label className="boost-tip-amount">Tip amount (proofs)
-                <input inputMode="numeric" type="text" value={tipAmountText} disabled={Boolean(actionBusy)}
-                  onChange={event => setTipAmountText(event.target.value)} aria-invalid={boostTipAmount(tipAmountText) === null} />
-                <small>Positive whole proofs. Wallet funds and network dust rules apply. The amount is never rounded up.</small>
-              </label> : null}
+              {pendingPaidAction.action === "tip" ? <>
+                <label className="boost-tip-amount">Tip currency
+                  <select value={tipCurrency} disabled={Boolean(actionBusy)} onChange={event => setTipCurrency(event.target.value as "proofs" | "WORK")}>
+                    <option value="proofs">Proofs</option><option value="WORK">WORK credit</option>
+                  </select>
+                </label>
+                <label className="boost-tip-amount">{`Tip amount (${tipCurrency === "WORK" ? "WORK" : "proofs"})`}
+                  <input inputMode={tipCurrency === "WORK" ? "decimal" : "numeric"} type="text"
+                    value={tipCurrency === "WORK" ? tipWorkAmountText : tipAmountText} disabled={Boolean(actionBusy)}
+                    onChange={event => tipCurrency === "WORK" ? setTipWorkAmountText(event.target.value) : setTipAmountText(event.target.value)}
+                    aria-invalid={tipCurrency === "WORK" ? tipWorkSubatoms === null || tipWorkSubatoms <= 0n : boostTipAmount(tipAmountText) === null} />
+                  <small>{tipCurrency === "WORK" ? "Exact positive WORK, up to 16 decimal places. The amount is never rounded." : "Positive whole proofs. Wallet funds and network dust rules apply. The amount is never rounded up."}</small>
+                </label>
+                {tipCurrency === "WORK" ? <p className="field-note" role="status">{tipWorkStatus || `Spendable WORK: ${tipWorkSpendable === undefined ? "Unavailable" : formatWorkAmount(tipWorkSpendable, true)}`}</p> : null}
+              </> : null}
               <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
               <div className="boost-modal-action-row">
                 <button
@@ -3728,7 +3863,8 @@ export default function BoostRoot({
                 </button>
                 <button
                   className="primary"
-                  disabled={Boolean(actionBusy) || !address || (pendingPaidAction.action === "tip" && boostTipAmount(tipAmountText) === null)}
+                  disabled={Boolean(actionBusy) || !address || (pendingPaidAction.action === "tip" &&
+                    (tipCurrency === "WORK" ? tipWorkSubatoms === null || tipWorkSubatoms <= 0n || tipWorkSpendable === undefined || tipWorkSubatoms > tipWorkSpendable : boostTipAmount(tipAmountText) === null))}
                   onClick={() => {
                     const pending = pendingPaidAction;
                     if (!pending) return;
@@ -3750,7 +3886,7 @@ export default function BoostRoot({
                       {actionBusy === pendingPaidAction.action
                         ? "Signing…"
                         : pendingPaidAction.action === "tip"
-                          ? `Tip · ${tipAmountText} proofs`
+                          ? `Review tip · ${tipCurrency === "WORK" ? tipWorkAmountText : tipAmountText} ${tipCurrency}`
                           : pendingPaidAction.action === "like"
                           ? "Like · 546 proofs"
                           : "Reboost · 546 proofs"}

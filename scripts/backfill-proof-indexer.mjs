@@ -1,5 +1,5 @@
 import { JOBS_ACTIVATION_HEIGHT, JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH } from "../src/shared/protocol/jobs.mjs";
-import { parseBoostTip } from "../src/shared/protocol/boostTip.mjs";
+import { parseBoostTip, parseBoostWorkTip } from "../src/shared/protocol/boostTip.mjs";
 import { verifyCodeTransaction } from "../src/shared/protocol/codeRepository.mjs";
 import { JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_META_KEY, JOBS_DISCOVERY_EMPTY_SHA256, advanceJobsCandidateDigest, jobsCandidateParts, isJobsCandidatePart, jobsCandidateEventClosure } from "../server/jobs.mjs";
 import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, CODE_DISCOVERY_EMPTY_SHA256, advanceCodeCandidateDigest, exactCodeOutputProofs, codeCandidateEventClosure, prefilterCodeRawBlock, assertCodeRawBlockCandidatesMatch } from "../server/code-repositories.mjs";
@@ -5090,18 +5090,25 @@ function boostItemFromMessage(tx, message) {
     "unfollow",
   ].includes(action);
 
-  if (action === "tip") {
-    const tip = parseBoostTip(message.text);
-    const item = { ...base, action, authorAddress: sender, boostTxid: targetTxid,
+  if (action === "tip" || action === "tip2") {
+    const workTip = action === "tip2" ? parseBoostWorkTip(message.text) : null;
+    const tip = action === "tip" ? parseBoostTip(message.text) : null;
+    const item = { ...base, kind: "boost-tip", action: "tip", authorAddress: sender, boostTxid: targetTxid,
       targetTxid, tipAmountSats: tip?.amountSats?.toString(), registryFeeSats: 0,
+      ...(workTip ? { tipCurrency: "WORK", tokenId: workTip.tokenId,
+        tipWorkSubatoms: workTip.amountSubatoms } : {}),
       proofSignalSats: tip?.amountSats ?? 0, signalSats: tip?.amountSats ?? 0,
-      title: "Boost tip", detail: `Tip ${tip?.amountSats ?? 0} proofs for ${targetTxid}`,
-      tags: ["Boost", "Tip"] };
-    const tips = protocolMessagesFromTx(tx).filter(record => String(record.text).startsWith("pwb1:tip:"));
-    // Only one tip per transaction can claim its payment outputs.
-    return tip && tips.length === 1 && BigInt(base.amountSats ?? 0) >= BigInt(tip.amountSats)
-      ? [{ ...item, valid: true }]
-      : [invalidProtocolItem(item, "Tip requires one valid carrier and its exact positive payment before OP_RETURN.")];
+      title: "Boost tip", detail: workTip
+        ? `Tip ${formatWorkSubatoms(workTip.amountSubatoms)} WORK for ${targetTxid}`
+        : `Tip ${tip?.amountSats ?? 0} proofs for ${targetTxid}`,
+      tags: workTip ? ["Boost", "Tip", "WORK"] : ["Boost", "Tip"] };
+    const tips = protocolMessagesFromTx(tx).filter(record => /^pwb1:tip(?:2)?:/u.test(String(record.text)));
+    // One association may bind one proof payment or one canonical WORK send.
+    const valid = tips.length === 1 && (workTip
+      ? BigInt(base.amountSats ?? 0) === 0n
+      : tip && BigInt(base.amountSats ?? 0) >= BigInt(tip.amountSats));
+    return valid ? [{ ...item, valid: true }]
+      : [invalidProtocolItem(item, "Tip requires one valid carrier and its exact proof payment or WORK-only transfer shape.")];
   }
 
   if (action === "profile" && parts.length === 3) {
@@ -7922,10 +7929,24 @@ function preparedProtocolItemsWithCanonicalMailAttachments(
   const ambiguousWorkTransferTxids = new Set();
   const boostOriginalCountsByTxid = new Map();
   const verifiedMailAttachmentsByTxid = new Map();
+  const tipCountsByTxid = new Map();
+  const boostCarrierCountsByTxid = new Map();
+  const pwtItemsByTxid = new Map();
 
   for (const entry of prepared) {
     const item = entry?.item ?? entry;
     const txid = String(item?.txid ?? "").trim().toLowerCase();
+    if (item?.protocol === "pwb1") {
+      boostCarrierCountsByTxid.set(txid, (boostCarrierCountsByTxid.get(txid) ?? 0) + 1);
+    }
+    if (item?.protocol === "pwb1" && (item?.action === "tip" || /^pwb1:tip(?:2)?:/u.test(String(item?.payload ?? "")))) {
+      tipCountsByTxid.set(txid, (tipCountsByTxid.get(txid) ?? 0) + 1);
+    }
+    if (item?.protocol === "pwt1") {
+      const records = pwtItemsByTxid.get(txid) ?? [];
+      records.push(item);
+      pwtItemsByTxid.set(txid, records);
+    }
     if (item?.protocol === "pwb1" && item?.action === "post") {
       boostOriginalCountsByTxid.set(
         txid,
@@ -8034,6 +8055,53 @@ function preparedProtocolItemsWithCanonicalMailAttachments(
 
   return prepared.map((entry) => {
     const item = entry?.item ?? entry;
+    if (item?.protocol === "pwb1" && item?.action === "tip" && item?.tipCurrency === "WORK") {
+      if (item.valid === false || item.confirmed !== true) return entry;
+      const txid = String(item.txid ?? "").trim().toLowerCase();
+      const amountSubatoms = canonicalWorkSubatomsText(item.tipWorkSubatoms);
+      const candidates = pwtItemsByTxid.get(txid) ?? [];
+      const transfer = candidates.length === 1 ? candidates[0] : null;
+      const registryOutputs = (Array.isArray(transfer?.recipients) ? transfer.recipients : [])
+        .filter(payment => payment.address === WORK_TOKEN_REGISTRY_ADDRESS);
+      const registry = registryOutputs.length === 1 ? registryOutputs[0] : null;
+      const matches = amountSubatoms && tipCountsByTxid.get(txid) === 1 &&
+        boostCarrierCountsByTxid.get(txid) === 1 &&
+        transfer?.kind === "token-transfer" && transfer.protocol === "pwt1" &&
+        transfer.confirmed === true && transfer.valid === true &&
+        transfer.canonicalVerifier === "/api/v1/internal/token-verifier" &&
+        transfer.transferVersion === WORK_AMO_V8_TRANSFER_VERSION &&
+        transfer.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+        transfer.tokenId === WORK_TOKEN_ID && transfer.amountSubatoms === amountSubatoms &&
+        (transfer.amountAtoms === undefined || transfer.amountAtoms === null || transfer.amountAtoms === "") &&
+        sameCanonicalPaymentAddress(transfer.senderAddress, item.authorAddress) &&
+        typeof transfer.recipientAddress === "string" && transfer.recipientAddress.length > 0 &&
+        transfer.payload === `pwt1:send3:${WORK_TOKEN_ID}:${amountSubatoms}:${transfer.recipientAddress}` &&
+        Number.isSafeInteger(item.blockHeight) && item.blockHeight > 0 &&
+        /^[0-9a-f]{64}$/u.test(String(item.blockHash ?? "")) &&
+        Number.isSafeInteger(item.blockIndex) && item.blockIndex >= 0 &&
+        transfer.blockHeight === item.blockHeight && transfer.blockHash === item.blockHash &&
+        transfer.blockIndex === item.blockIndex && transfer.recordOrdinal === 0 &&
+        Number.isSafeInteger(transfer.protocolVout) && transfer.protocolVout > item.protocolVout &&
+        transfer.registryAddress === WORK_TOKEN_REGISTRY_ADDRESS && String(transfer.paidSats) === "546" &&
+        registry && String(registry.amountSats) === "546" && Number.isSafeInteger(registry.vout) &&
+        registry.vout > item.protocolVout && registry.vout < transfer.protocolVout &&
+        Array.isArray(item.recipients) && item.recipients.length === 0;
+      if (!matches) {
+        const invalid = invalidProtocolItem(item, "WORK tip requires one exact confirmed canonical same-transaction send3 and its distinct registry payment.");
+        return entry?.item ? { ...entry, item: invalid } : invalid;
+      }
+      const bound = { ...item, recipientAddress: transfer.recipientAddress,
+        workSignalVerification: "canonical-same-tx-work-tip-transfer-v1",
+        tipWorkTransfer: { txid, tokenId: WORK_TOKEN_ID, amountSubatoms,
+          senderAddress: transfer.senderAddress, recipientAddress: transfer.recipientAddress,
+          transferVersion: "send3", amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+          protocolVout: transfer.protocolVout, recordOrdinal: 0,
+          blockHeight: item.blockHeight, blockHash: item.blockHash, blockIndex: item.blockIndex,
+          registryAddress: WORK_TOKEN_REGISTRY_ADDRESS, registryVout: registry.vout,
+          paidSats: "546", rawPayload: transfer.payload,
+          canonicalVerifier: transfer.canonicalVerifier, confirmed: true, valid: true } };
+      return entry?.item ? { ...entry, item: bound } : bound;
+    }
     if (item?.protocol === "pwb1" && item?.action === "post") {
       if (item?.valid === false) return entry;
       const txid = String(item?.txid ?? "").trim().toLowerCase();
@@ -8148,6 +8216,91 @@ function preparedProtocolItemsWithCanonicalMailAttachments(
     return entry?.item
       ? { ...entry, item: nextItem }
       : nextItem;
+  });
+}
+
+// Initial first-party transfer validation is preparation. Final block replay owns
+// acceptance. Association failure clears application signal evidence while the
+// generic pwb raw outcome remains intact for canonical replay and accounting.
+function preparedProtocolItemsWithCanonicalWorkTipReplay(preparedItems, replayRecords) {
+  const entries = Array.isArray(preparedItems) ? preparedItems : [];
+  const recordsByTxid = new Map(), boostCarrierCountsByTxid = new Map();
+  for (const record of Array.isArray(replayRecords) ? replayRecords : []) {
+    const siblings = recordsByTxid.get(record.txid) ?? [];
+    siblings.push(record);
+    recordsByTxid.set(record.txid, siblings);
+  }
+  for (const entry of entries) {
+    const item = entry?.item ?? entry;
+    if (item?.protocol === "pwb1") {
+      boostCarrierCountsByTxid.set(item.txid, (boostCarrierCountsByTxid.get(item.txid) ?? 0) + 1);
+    }
+  }
+  return entries.map(entry => {
+    const item = entry?.item ?? entry;
+    if (item?.protocol !== "pwb1" || item?.kind !== "boost-tip" || item?.tipCurrency !== "WORK") return entry;
+    const tip = parseBoostWorkTip(item.payload), bound = item.tipWorkTransfer;
+    const siblings = recordsByTxid.get(item.txid) ?? [];
+    const candidates = siblings.filter(record => record.protocol === "pwt1");
+    const boostCarriers = siblings.filter(record => record.protocol === "pwb1");
+    const replay = candidates.length === 1 ? candidates[0] : null;
+    const boostReplay = boostCarriers.length === 1 ? boostCarriers[0] : null;
+    const output = replay?.output, projection = output?.projection, parsed = projection?.parsed;
+    const position = replay?.position, parts = replay?.rawWitness?.rawRecordParts;
+    const boostPosition = boostReplay?.position, boostParts = boostReplay?.rawWitness?.rawRecordParts;
+    const economic = replay?.stateDelta?.economicOutputs;
+    const contribution = replay?.stateDelta?.baseContributions;
+    const movement = replay?.stateDelta?.movement;
+    const commitment = replay?.transitionChainCommitmentAfter;
+    const accepted = tip && bound && item.confirmed === true && item.valid === true &&
+      item.workSignalVerification === "canonical-same-tx-work-tip-transfer-v1" &&
+      item._workAmoV5ReplayBound === true && item.workAmoV5ReplayOutcome?.valid === true &&
+      boostCarrierCountsByTxid.get(item.txid) === 1 && boostReplay?.rawCandidate === true &&
+      boostReplay.outcome?.valid === true && boostReplay.outcome.kind === "pwb1-valid" && boostReplay.outcome.reasonCode === "" &&
+      boostPosition?.blockHeight === item.blockHeight && boostPosition.blockHash === item.blockHash &&
+      boostPosition.blockTransactionIndex === item.blockIndex && boostPosition.protocolVout === item.protocolVout &&
+      boostPosition.recordOrdinal === 0 && Array.isArray(boostParts) && boostParts.length === 1 &&
+      boostParts[0].protocolVout === item.protocolVout && boostParts[0].decodeValid === true && boostParts[0].text === item.payload &&
+      replay?.rawCandidate === true && replay.outcome?.valid === true && replay.outcome.kind === "pwt1-valid" &&
+      replay.outcome.reasonCode === "" && position?.blockHeight === item.blockHeight &&
+      position.blockHash === item.blockHash && position.blockTransactionIndex === item.blockIndex &&
+      position.protocolVout === bound.protocolVout && position.recordOrdinal === 0 &&
+      bound.tokenId === WORK_TOKEN_ID && bound.amountSubatoms === tip.amountSubatoms &&
+      output?.tokenId === WORK_TOKEN_ID && output.amountSubatoms === tip.amountSubatoms &&
+      sameCanonicalPaymentAddress(output.senderAddress, item.authorAddress) &&
+      sameCanonicalPaymentAddress(output.recipientAddress, bound.recipientAddress) &&
+      projection?.txid === item.txid && projection.protocol === "pwt1" && projection.kind === "token-transfer" &&
+      projection.tokenId === WORK_TOKEN_ID && projection.amountSubatoms === tip.amountSubatoms &&
+      sameCanonicalPaymentAddress(projection.senderAddress, item.authorAddress) &&
+      sameCanonicalPaymentAddress(projection.recipientAddress, bound.recipientAddress) &&
+      projection.position?.blockHeight === position.blockHeight && projection.position.blockHash === position.blockHash &&
+      projection.position.blockTransactionIndex === position.blockTransactionIndex &&
+      projection.position.protocolVout === position.protocolVout && projection.position.recordOrdinal === 0 &&
+      projection.valid === true && parsed?.kind === "send" && parsed.amountVersion === "send3" &&
+      parsed.tokenId === WORK_TOKEN_ID && parsed.amountSubatoms === tip.amountSubatoms &&
+      parsed.recipientAddress === bound.recipientAddress && parsed.payload === bound.rawPayload &&
+      Array.isArray(parts) && parts.length === 1 && parts[0]?.protocolVout === bound.protocolVout &&
+      parts[0].decodeValid === true && parts[0].text === bound.rawPayload &&
+      Array.isArray(economic) && economic.length === 1 && economic[0].address === WORK_TOKEN_REGISTRY_ADDRESS &&
+      economic[0].attributedSats === "546" && economic[0].outputSats === "546" &&
+      economic[0].role === "pwt-token-registry" && economic[0].vout === bound.registryVout &&
+      Array.isArray(contribution) && contribution.length === 1 && contribution[0].field === "tokenTransferFlowSats" &&
+      contribution[0].value === "546" && replay.stateDelta.creditFixedSats === "546" &&
+      movement?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL && movement.amountSubatoms === tip.amountSubatoms &&
+      movement.identity === `transfer:${item.txid}:${bound.protocolVout}:0` &&
+      commitment?.model === WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL &&
+      Number.isSafeInteger(commitment.payloadBytes) && commitment.payloadBytes > 0 &&
+      /^[0-9a-f]{64}$/u.test(String(commitment.sha256 ?? ""));
+    if (!accepted) {
+      const rejected = { ...item, workSignalVerification: undefined, tipWorkTransfer: undefined,
+        tipWorkVerificationReason: "WORK tip canonical block replay did not accept its sole exact same-transaction transfer and Boost carrier." };
+      return entry?.item ? { ...entry, item: rejected } : rejected;
+    }
+    const next = { ...item, tipWorkVerificationReason: undefined, tipWorkTransfer: { ...bound,
+      canonicalVerifier: "/api/v1/internal/work-amo-v5-block-verifier",
+      canonicalReplay: { outcome: replay.outcome, rawRecordParts: parts, transitionChainCommitmentAfter: commitment,
+        boostCarrierCount: 1, pwtCarrierCount: 1 } } };
+    return entry?.item ? { ...entry, item: next } : next;
   });
 }
 
@@ -24912,6 +25065,9 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
           }
         : nextItem;
     }).filter(Boolean);
+    prepared.items = preparedProtocolItemsWithCanonicalWorkTipReplay(
+      prepared.items, transition.replayRecords,
+    );
   }
   if (replayByPosition.size !== 0) {
     throw new Error(

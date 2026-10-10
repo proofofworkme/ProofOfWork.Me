@@ -100,6 +100,68 @@ test("mixed Mail, Boost and WORK provide exact nonadditive attribution once", ()
   assert.deepEqual(Object.keys(enriched).filter((key) => key !== "boost"), Object.keys(canonical));
 });
 
+function workTipTransaction(amount = "123456789012345678901234") {
+  const recipient = "bc1qcontentowner";
+  const tip = `pwb1:tip2:${"a".repeat(64)}:${WORK_TOKEN_ID}:${amount}`;
+  const transferPayload = `pwt1:send3:${WORK_TOKEN_ID}:${amount}:${recipient}`;
+  const row = transaction(90, [tip]);
+  row.raw_tx.vout = [opReturn(tip), { value: 546, scriptpubkey_address: "bc1qworkregistry" }, opReturn(transferPayload)];
+  row.events[0].op_return_vout = 0;
+  row.events.push(event("pwt1", "token-transfer", transferPayload, 2, {
+    payload: {
+      workAmoV5ReplayOutcome: { valid: true, kind: "pwt1-valid" },
+      workAmoV5RawCandidate: true,
+      workAmoV5ReplayOutput: { amountSubatoms: amount, tokenId: WORK_TOKEN_ID,
+        senderAddress: address, recipientAddress: recipient },
+    },
+  }));
+  return row;
+}
+
+test("WORK tips observe exact accepted Q16 transfer once without Mail or new economic value", () => {
+  const row = workTipTransaction();
+  row.events.push({ ...row.events[1] });
+  const result = observe([row]);
+  assert.equal(result.counts.events, 1);
+  assert.equal(result.counts.tips, 1);
+  assert.equal(result.counts.socialActions, 1);
+  assert.equal(result.counts.transactions, 1);
+  assert.equal(result.attachedWorkSubatoms, "123456789012345678901234");
+  assert.equal(result.attributedWorkSubatoms, "123456789012345678901234");
+  assert.equal(result.attributedMailSats, "0");
+  assert.equal(result.registryFeeSats, null, "A tip association does not invent Boost registry economics");
+  const canonical = Object.freeze({ actualValue: Object.freeze({ totalSats: "123456" }),
+    workFloor: Object.freeze({ networkValueSats: "123456" }) });
+  const enriched = withBoostGrowthObservation(canonical, result);
+  assert.strictEqual(enriched.actualValue, canonical.actualValue);
+  assert.strictEqual(enriched.workFloor, canonical.workFloor);
+  assert.equal(boostGrowthObservedAction(row.events[0].raw_payload), "tip");
+  assert.equal(boostGrowthObservedAction(row.events[0].raw_payload.replace(WORK_TOKEN_ID, "c".repeat(64))), null);
+});
+
+test("WORK tip observations keep missing or inexact canonical transfer evidence unavailable", () => {
+  for (const mutation of [
+    row => { row.events.pop(); },
+    row => { row.events[1].kind = "token-mint"; },
+    row => { row.events[1].payload.workAmoV5ReplayOutput.amountSubatoms = "123"; },
+    row => { row.events[1].payload.workAmoV5ReplayOutput.recipientAddress = "bc1qwrongrecipient"; },
+  ]) {
+    const row = workTipTransaction("1");
+    mutation(row);
+    const result = observe([row]);
+    assert.equal(result.counts.tips, 1);
+    assert.equal(result.attachedWorkSubatoms, null);
+    assert.equal(result.attributedWorkSubatoms, null);
+  }
+  const invalid = workTipTransaction("1");
+  invalid.events[0].valid = false;
+  invalid.events[1].valid = false;
+  invalid.events[1].payload = { valid: false, workAmoV5ReplayOutcome: { valid: false, kind: "pwt1-invalid" } };
+  const result = observe([invalid]);
+  assert.equal(result.counts.tips, 0, "An invalid tip is not a recognized accepted action");
+  assert.equal(result.attachedWorkSubatoms, "0");
+});
+
 test("paid record observations cannot claim verified registry payments or sales", () => {
   const like = `pwb1:like:${"a".repeat(64)}`;
   const buy = `pwb1:buy5:${"b".repeat(64)}:${address}`;

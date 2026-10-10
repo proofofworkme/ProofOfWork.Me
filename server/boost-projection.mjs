@@ -236,6 +236,46 @@ function boostExactPayments(item) {
   return payments;
 }
 
+function boostVerifiedWorkTip(item, ownerReceiver) {
+  const transfer = item.tipWorkTransfer;
+  const amount = String(item.tipWorkSubatoms ?? "");
+  const tokenId = "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
+  const registryAddress = "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV";
+  const replay = transfer?.canonicalReplay, commitment = replay?.transitionChainCommitmentAfter;
+  return /^[0-9a-f]{64}$/u.test(String(item.txid ?? "")) &&
+    /^[0-9a-f]{64}$/u.test(String(item.blockHash ?? "")) &&
+    /^[0-9a-f]{64}$/u.test(String(item.targetTxid ?? "")) &&
+    Number.isSafeInteger(item.blockHeight) && item.blockHeight > 0 &&
+    Number.isSafeInteger(item.blockIndex) && item.blockIndex >= 0 &&
+    Number.isSafeInteger(item.protocolVout) && item.protocolVout >= 0 && item.recordOrdinal === 0 &&
+    typeof item.authorAddress === "string" && item.authorAddress.length > 0 &&
+    item.payload === `pwb1:tip2:${item.targetTxid}:${tokenId}:${amount}` &&
+    item.confirmed === true && item.tipCurrency === "WORK" && item.tokenId === tokenId &&
+    item.workSignalVerification === "canonical-same-tx-work-tip-transfer-v1" &&
+    /^[1-9]\d{0,23}$/u.test(amount) && BigInt(amount) <= 210000000000000000000000n &&
+    transfer?.confirmed === true && transfer.valid === true && transfer.txid === item.txid &&
+    transfer.tokenId === tokenId && transfer.amountSubatoms === amount && transfer.transferVersion === "send3" &&
+    transfer.amountStorageModel === "work-subatoms-v2" &&
+    transfer.canonicalVerifier === "/api/v1/internal/work-amo-v5-block-verifier" &&
+    replay?.outcome?.valid === true && replay.outcome.kind === "pwt1-valid" && replay.outcome.reasonCode === "" &&
+    replay.boostCarrierCount === 1 && replay.pwtCarrierCount === 1 &&
+    commitment?.model === "canonical-work-amo-raw-transition-chain-sha256-v1" &&
+    Number.isSafeInteger(commitment.payloadBytes) && commitment.payloadBytes > 0 && /^[0-9a-f]{64}$/u.test(String(commitment.sha256 ?? "")) &&
+    Array.isArray(replay.rawRecordParts) && replay.rawRecordParts.length === 1 &&
+    replay.rawRecordParts[0].protocolVout === transfer.protocolVout && replay.rawRecordParts[0].decodeValid === true &&
+    replay.rawRecordParts[0].text === transfer.rawPayload &&
+    boostAddressIdentityKey(transfer.senderAddress) === boostAddressIdentityKey(item.authorAddress) &&
+    boostAddressIdentityKey(transfer.recipientAddress) === boostAddressIdentityKey(ownerReceiver) &&
+    boostAddressIdentityKey(item.recipientAddress) === boostAddressIdentityKey(ownerReceiver) &&
+    transfer.rawPayload === `pwt1:send3:${tokenId}:${amount}:${transfer.recipientAddress}` &&
+    transfer.blockHeight === item.blockHeight && transfer.blockHash === item.blockHash &&
+    transfer.blockIndex === item.blockIndex && transfer.recordOrdinal === 0 &&
+    Number.isSafeInteger(transfer.protocolVout) && transfer.protocolVout > item.protocolVout &&
+    transfer.registryAddress === registryAddress && transfer.paidSats === "546" &&
+    Number.isSafeInteger(transfer.registryVout) && transfer.registryVout > item.protocolVout &&
+    transfer.registryVout < transfer.protocolVout && Array.isArray(item.recipients) && item.recipients.length === 0;
+}
+
 // This qualifies application projections only. Raw events and consensus replay
 // outcomes are retained unchanged; a generic accepted carrier is not proof that
 // its payment reached the historical Boost receiver.
@@ -273,7 +313,8 @@ export function qualifyBoostPaidActions(items, registryItems, ownerByEvent = new
       : "";
     const directOwnerPayment = ownerReceiver && payments
       ? (item.kind === "boost-tip"
-        ? /^[1-9]\d*$/u.test(String(item.tipAmountSats ?? "")) &&
+        ? item.tipCurrency === "WORK" ? boostVerifiedWorkTip(item, ownerReceiver)
+        : /^[1-9]\d*$/u.test(String(item.tipAmountSats ?? "")) &&
           (payments.get(boostAddressIdentityKey(ownerReceiver)) ?? 0n) === BigInt(item.tipAmountSats)
         : (payments.get(boostAddressIdentityKey(ownerReceiver)) ?? 0n) >= 546n)
       : false;
@@ -312,7 +353,9 @@ export function qualifyBoostPaidActions(items, registryItems, ownerByEvent = new
       ...(acceptedRegistryPayment ? { applicationBoostRegistryReceiver: registryReceiver } : {}),
       ...(ownerReceiver && directOwnerPayment
         ? {
-            applicationBoostOwnerPaymentSats: (payments.get(boostAddressIdentityKey(ownerReceiver)) ?? 0n).toString(),
+            ...(item.kind === "boost-tip" && item.tipCurrency === "WORK"
+              ? { applicationBoostOwnerWorkSubatoms: item.tipWorkSubatoms }
+              : { applicationBoostOwnerPaymentSats: (payments.get(boostAddressIdentityKey(ownerReceiver)) ?? 0n).toString() }),
             applicationBoostOwnerReceiver: ownerReceiver,
           }
         : {}),

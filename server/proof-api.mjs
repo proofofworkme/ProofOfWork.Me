@@ -54200,7 +54200,18 @@ function boostOwnerSignalSats(item) {
   return sats <= 2_100_000_000_000_000n ? sats : 0n;
 }
 
+function boostOwnerWorkSignalSubatoms(item) {
+  const amount = canonicalNonNegativeIntegerText(item?.applicationBoostOwnerWorkSubatoms, {
+    allowZero: false,
+  });
+  if (!amount) return 0n;
+  const subatoms = BigInt(amount);
+  return subatoms <= BigInt(WORK_TOKEN_MAX_SUPPLY) * WORK_SUBATOM_UNIT_SCALE ? subatoms : 0n;
+}
+
 function boostActionSignalSats(item) {
+  // The WORK registry payment is a transfer fee, never a proof tip to the owner.
+  if (item?.kind === "boost-tip" && item?.tipCurrency === "WORK") return 0n;
   const ownerPayment = boostOwnerSignalSats(item);
   if (ownerPayment > 0n) return ownerPayment;
   const amount = String(item?.amountSats ?? "").trim();
@@ -54210,6 +54221,10 @@ function boostActionSignalSats(item) {
 }
 
 function boostWorkSignalSubatoms(item) {
+  if (item?.kind === "boost-tip") {
+    const subatoms = boostOwnerWorkSignalSubatoms(item);
+    return subatoms > 0n ? subatoms.toString() : "";
+  }
   const value = String(
     item?.workSignalSubatoms ?? item?.workSignalAtoms ?? item?.workSignal ?? "",
   ).trim();
@@ -54492,7 +54507,9 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
       likes: 0,
       tips: 0,
       tipSats: 0n,
+      tipWorkSubatoms: 0n,
       ownerSignalSats: 0n,
+      ownerWorkSignalSubatoms: 0n,
       reboosts: 0,
       replies: 0,
     };
@@ -54593,7 +54610,9 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
       if (counter) {
         counter.tips += 1;
         counter.tipSats += boostOwnerSignalSats(item);
+        counter.tipWorkSubatoms += boostOwnerWorkSignalSubatoms(item);
         counter.ownerSignalSats += boostOwnerSignalSats(item);
+        counter.ownerWorkSignalSubatoms += boostOwnerWorkSignalSubatoms(item);
       }
       continue;
     }
@@ -54807,8 +54826,13 @@ function boostFeedItemFromEvent(
     profileId ? `${profileId}@proofofwork.me` : "",
   );
   const actionType = kind.replace(/^boost-/u, "");
-  const workSignal = boostWorkSignalDisplay(item);
-  const workSignalSubatoms = boostWorkSignalSubatoms(item);
+  const originalWorkSubatoms = boostWorkSignalSubatoms(item);
+  const accumulatedOwnerWorkSubatoms = kind === "boost-post"
+    ? BigInt(counter.ownerWorkSignalSubatoms ?? 0n)
+    : 0n;
+  const totalWorkSubatoms = BigInt(originalWorkSubatoms || "0") + accumulatedOwnerWorkSubatoms;
+  const workSignalSubatoms = totalWorkSubatoms > 0n ? totalWorkSubatoms.toString() : "";
+  const workSignal = workSignalSubatoms ? formatWorkSubatoms(totalWorkSubatoms) : "";
   const workSignalValue = boostWorkSignalValue(workSignalSubatoms, workFloor);
   const socialAction = ["boost-tip", "boost-like", "boost-reply", "boost-reboost"].includes(kind);
   const actionSignalSats = socialAction && item?.confirmed === true
@@ -54853,6 +54877,7 @@ function boostFeedItemFromEvent(
     likeCount: Number(counter.likes ?? 0),
     tipCount: Number(counter.tips ?? 0),
     tipSatsExact: String(counter.tipSats ?? 0n),
+    tipWorkSubatomsExact: String(counter.tipWorkSubatoms ?? 0n),
     listing: state?.listing ?? null,
     listingPriceSats: state?.listing?.priceSats ?? 0,
     media: media
@@ -55506,7 +55531,18 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
       rows = sourceItems.filter(item => item.confirmed === true && item.kind === kind && boostTargetTxid(item) === activityTarget)
         .sort(compareBoostCanonicalEvents).map(item => ({ ...person(item.authorAddress ?? item.actor),
           eventId: item.eventId, txid: item.txid, createdAt: item.createdAt, confirmed: true, kind: item.kind,
-          ...(activity === "tips" ? { amountSatsExact: boostOwnerSignalSats(item).toString(), targetTxid: activityTarget } : {}),
+          ...(activity === "tips" ? {
+            targetTxid: activityTarget,
+            ...(item.tipCurrency === "WORK" ? {
+              currency: "WORK",
+              amountSubatoms: boostOwnerWorkSignalSubatoms(item).toString(),
+              amountSubatomsExact: boostOwnerWorkSignalSubatoms(item).toString(),
+              amountWorkExact: formatWorkSubatoms(boostOwnerWorkSignalSubatoms(item)),
+            } : {
+              currency: "proofs",
+              amountSatsExact: boostOwnerSignalSats(item).toString(),
+            }),
+          } : {}),
           ...(activity === "replies" ? { post: { ...toFeedEntry(item)?.feedItem,
             authorId: person(item.authorAddress ?? item.actor).id || undefined } } : {}) }));
     } else {

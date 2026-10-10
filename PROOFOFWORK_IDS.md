@@ -310,6 +310,8 @@ pwb1:post:<post-json-base64url>
 pwb1:reply:<parent-txid>:<post-json-base64url>
 pwb1:like:<target-txid>
 pwb1:reboost:<target-txid>
+pwb1:tip:<target-txid>:<exact-proof-amount>
+pwb1:tip2:<target-txid>:<canonical-WORK-id>:<amount-subatoms>
 pwb1:follow:<follow-json-base64url>
 pwb1:unfollow:<follow-json-base64url>
 pwb1:hide:<target-txid>
@@ -327,6 +329,7 @@ Rules to preserve:
 - Originals can be published through Mail's Boost ticker or either standalone Boost compose button. The standalone buttons open the same Proof/WORK composer with a Files attachment in the same transaction. Computer Mail compose retains its positive Proof self-send rule and optional WORK attachment. Boost records store file proof metadata and pointers, not duplicate bytes.
 - Every address can have a Boost profile shell. Confirmed PowIDs provide the preferred display identity, and profile picture/banner choices come from confirmed Files on that address.
 - `pwb1:like`, `pwb1:reply`, and `pwb1:reboost` are paid product actions. The current writer sends 546 proofs directly to the target Boost's confirmed current owner; each confirmed owner-directed payment is added to that original Boost's proof signal. Miner fee rate is a separate selectable transaction setting.
+- Content tips in Boost, Publish and Computer choose proofs or canonical WORK. Historical `pwb1:tip` keeps its exact owner-directed proof payment and ordinary Mail economics. Additive `pwb1:tip2` declares the canonical WORK id and exact Q16 subatoms and must match one accepted same-transaction `send3` from the payer to the historical confirmed content owner. WORK tips omit Mail and pay only the existing 546-proof WORK registry fee plus miner fee; their WORK transfer owns its existing economics once. Both forms remain `boost-tip` activity and add no second Boost network-value contribution. See [Content tips](README.md#content-tips).
 - `pwb1:follow` and `pwb1:unfollow` are paid social-graph actions. The current writer sends 546 proofs to the addressed profile target, never to the Boost registry for a new follow. Self-follow and self-unfollow are invalid. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active edge.
 - Likes, replies, reboosts, follows, and unfollows do not require the Boost registry to have a confirmed receiver. Registry payments remain required for direct transfers and listing-sale mutations below; historical registry-paid social actions remain replayable.
 - Likes, reboosts, and replies are disabled until the target Boost record is confirmed.
