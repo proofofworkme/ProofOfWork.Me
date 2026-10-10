@@ -1133,3 +1133,19 @@ The capacity-boundary fixture now creates its lock parent with the actual
 private 0700 contract, allowing the native capacity refusal path to be tested
 after the provenance lock repair. Production lock validation is unchanged.
 The 107-case provenance/controller suite passed against the combined source.
+
+
+The scoped WORK runtime overlay completed successfully from source 03d94805e334
+on 2026-10-10, preserving the accepted Node baseline 92eb5fb and all 212
+non-target source hashes. Core, Electrs and PostgreSQL process identities were
+unchanged. This does not yet establish a synchronized UI release. Independent
+review subsequently reproduced a deployment-supervisor timeout defect: the
+rollback-grace result was discarded, allowing Search restoration after an
+unverified recovery. That path was not triggered by the successful overlay.
+The supervisor now requires conclusive installation or rollback evidence before
+restoring Search, including after timeout, interruption, malformed output, or
+lost communication. An interrupted dispatch still reports failure even when
+its recovery is verified. Regression cases exercise the real invoke-to-rollout
+path at the subprocess boundary; the source correction changes no product,
+protocol, database, or installed Node module. Final UI artifacts are rebuilt
+from the corrected commit before publication and release synchronization.

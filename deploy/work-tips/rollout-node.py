@@ -10,6 +10,21 @@ def decoded(plan, key):
     if hashlib.sha256(raw).hexdigest() != plan[key+'Sha256']: raise ValueError('Changed '+key)
     return raw
 
+def controller_receipt(stdout, stderr, returncode, require_recovery_receipt):
+    try:
+        if len(stdout) > 1024*1024 or len(stderr) > 1024*1024:
+            raise ValueError('Controller output exceeds evidence ceiling')
+        receipt = json.loads(stdout)
+        if not isinstance(receipt, dict): raise ValueError('Controller receipt must be an object')
+    except BaseException as error:
+        if require_recovery_receipt:
+            raise ControllerStillRunning('Controller recovery is unverified; retain the Search hold for supervised recovery') from error
+        raise
+    if receipt.get('recoveryIncomplete') or (require_recovery_receipt and not (
+            receipt.get('rolledBack') is True or (returncode == 0 and receipt.get('installed') is True))):
+        raise ControllerStillRunning('Controller recovery is unverified; retain the Search hold for supervised recovery')
+    return receipt
+
 def invoke(code, argv=(), payload=None, require_recovery_receipt=False):
     child = subprocess.Popen(['/usr/bin/python3', '-I', '-B', '-c', code.decode(), *argv],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -18,20 +33,20 @@ def invoke(code, argv=(), payload=None, require_recovery_receipt=False):
     except BaseException:
         # SIGINT is a Python exception: both fixed controllers can finish their
         # existing rollback paths before this dispatcher leaves the hold scope.
-        if child.poll() is None: child.send_signal(signal.SIGINT)
-        try: child.communicate(timeout=600)
-        except subprocess.TimeoutExpired:
-            raise ControllerStillRunning('Controller rollback is still running; retain the Search hold for supervised recovery')
+        # Every interruption during signaling or grace remains uncertain.
+        try:
+            if child.poll() is None: child.send_signal(signal.SIGINT)
+            stdout, stderr = child.communicate(timeout=600)
+            controller_receipt(stdout, stderr, child.returncode, require_recovery_receipt)
+        except BaseException as recovery_error:
+            raise ControllerStillRunning('Controller recovery is unverified; retain the Search hold for supervised recovery') from recovery_error
+        # Verified installation/rollback permits Search restoration, but the
+        # original timeout/interruption must still fail the overall dispatch.
         raise
-    if len(stdout) > 1024*1024 or len(stderr) > 1024*1024:
-        raise ValueError('Controller output exceeds evidence ceiling')
+    receipt = controller_receipt(stdout, stderr, child.returncode, require_recovery_receipt)
     if child.returncode:
-        try: receipt = json.loads(stdout)
-        except (ValueError, UnicodeError): receipt = {}
-        if receipt.get('recoveryIncomplete') or (require_recovery_receipt and receipt.get('rolledBack') is not True):
-            raise ControllerStillRunning('Controller recovery is unverified; retain the Search hold for supervised recovery')
         raise ValueError('Controller refused: '+stderr[-4000:].decode(errors='replace'))
-    return json.loads(stdout)
+    return receipt
 
 def rollout(plan):
     if os.geteuid() != 0 or not sys.flags.isolated or plan.get('format') != 'proof-of-work-work-tips-rollout-plan-v1':
@@ -55,7 +70,7 @@ def rollout(plan):
         outcome['overlay'] = invoke(controller, payload=(json.dumps(manifest)+'\n').encode(), require_recovery_receipt=True)
     except ControllerStillRunning:
         restore = False
-        outcome['searchRestoreDeferred'] = 'Controller rollback is still running; preserve the exact Search hold'
+        outcome['searchRestoreDeferred'] = 'Controller recovery is unverified; preserve the exact Search hold'
         raise
     finally:
         if restore: outcome['searchRestore'] = invoke(holder, ['--phase','restore',*args])

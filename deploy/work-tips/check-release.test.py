@@ -68,6 +68,70 @@ class RolloutTests(unittest.TestCase):
         with patch.object(S.subprocess,'Popen',return_value=child):
             with self.assertRaisesRegex(ValueError,'Controller refused'):
                 S.invoke(b'# fixed controller',require_recovery_receipt=True)
+    def interrupted_rollout(self, stdout, stderr=b'', returncode=1, initial_error=None,
+                            grace_error=None, signal_error=None, poll_result=None, poll_error=None):
+        initial_error = initial_error or S.subprocess.TimeoutExpired('controller',360)
+        hold=Mock();hold.communicate.return_value=(b'{"held":true}',b'');hold.returncode=0
+        child=Mock();child.poll.return_value=poll_result;child.returncode=returncode
+        if poll_error: child.poll.side_effect=poll_error
+        child.communicate.side_effect=[initial_error, grace_error or (stdout,stderr)]
+        if signal_error: child.send_signal.side_effect=signal_error
+        restore=Mock();restore.communicate.return_value=(b'{"restored":true}',b'');restore.returncode=0
+        with patch.object(S.os,'geteuid',return_value=0),patch.object(S.subprocess,'Popen',side_effect=[hold,child,restore]) as popen,contextlib.redirect_stdout(io.StringIO()) as printed:
+            try: S.rollout(self.plan())
+            except BaseException as error: failure=error
+            else: self.fail('An interrupted dispatch must never return success')
+        child.kill.assert_not_called()
+        return failure,child,popen,json.loads(printed.getvalue())
+    def test_timeout_exited_unverified_controller_keeps_search_held(self):
+        for stdout,stderr,code in [
+                (b'{"recoveryIncomplete":true,"rolledBack":false}',b'',1),
+                (b'{"rolledBack":true,"recoveryIncomplete":true}',b'',1),
+                (b'{"installed":true}',b'',1), (b'{}',b'',0),
+                (b'{"rolledBack":1}',b'',1), (b'null',b'',1), (b'[]',b'',1),
+                (b'',b'',1), (b'not JSON',b'',1), (b'['*2000+b']'*2000,b'',1), (b'\xff',b'',1),
+                (b' '* (1024*1024+1),b'',1),
+                (b'{"rolledBack":true}',b' '* (1024*1024+1),1)]:
+            with self.subTest(stdout=stdout[:80],stderrBytes=len(stderr),returncode=code):
+                error,child,popen,evidence=self.interrupted_rollout(stdout,stderr,code)
+                self.assertIsInstance(error,S.ControllerStillRunning)
+                self.assertEqual(popen.call_count,2);self.assertIn('searchRestoreDeferred',evidence)
+                self.assertNotIn('searchRestore',evidence)
+                child.send_signal.assert_called_once_with(S.signal.SIGINT)
+                self.assertEqual(child.communicate.call_args_list[0].kwargs['timeout'],360)
+                self.assertEqual(child.communicate.call_args_list[1].kwargs['timeout'],600)
+    def test_signal_and_grace_errors_keep_search_held(self):
+        for kwargs in [dict(signal_error=ProcessLookupError('exit race')),
+                dict(poll_error=OSError('poll failed')),
+                dict(grace_error=S.subprocess.TimeoutExpired('controller',600)),
+                dict(grace_error=InterruptedError('second interruption')),
+                dict(grace_error=KeyboardInterrupt()),
+                dict(grace_error=OSError('lost stdout'))]:
+            with self.subTest(kwargs=kwargs):
+                error,child,popen,evidence=self.interrupted_rollout(b'{"rolledBack":true}',**kwargs)
+                self.assertIsInstance(error,S.ControllerStillRunning)
+                self.assertEqual(popen.call_count,2);self.assertNotIn('searchRestore',evidence)
+    def test_verified_grace_outcome_restores_search_but_keeps_original_failure(self):
+        for evidence,code in [(b'{"rolledBack":true}',1),
+                (b'{"installed":true,"rolledBack":true}',1),
+                (b'{"installed":true}',0), (b'{"rolledBack":true}',0)]:
+            for initial in (S.subprocess.TimeoutExpired('controller',360),InterruptedError('interrupted'),KeyboardInterrupt()):
+                with self.subTest(evidence=evidence,code=code,initial=type(initial).__name__):
+                    error,child,popen,outcome=self.interrupted_rollout(evidence,returncode=code,initial_error=initial)
+                    self.assertIs(error,initial);self.assertEqual(popen.call_count,3)
+                    self.assertIn('restore',popen.call_args_list[2].args[0])
+                    self.assertTrue(outcome['searchRestore']['restored']);self.assertNotIn('overlay',outcome)
+    def test_already_exited_controller_still_requires_grace_receipt_without_signaling(self):
+        error,child,popen,evidence=self.interrupted_rollout(b'{"rolledBack":true}',poll_result=1)
+        self.assertIsInstance(error,S.subprocess.TimeoutExpired);self.assertEqual(popen.call_count,3)
+        child.send_signal.assert_not_called()
+    def test_zero_exit_without_conclusive_receipt_keeps_search_held(self):
+        for evidence in (b'{}',b'null',b'[]',b'invalid',b'['*2000+b']'*2000,b'{"installed":1}',b'{"installed":true,"recoveryIncomplete":true}',b' '* (1024*1024+1)):
+            hold=Mock();hold.communicate.return_value=(b'{"held":true}',b'');hold.returncode=0
+            child=Mock();child.communicate.return_value=(evidence,b'');child.returncode=0
+            with self.subTest(evidence=evidence[:80]),patch.object(S.os,'geteuid',return_value=0),patch.object(S.subprocess,'Popen',side_effect=[hold,child]) as popen,contextlib.redirect_stdout(io.StringIO()) as printed:
+                with self.assertRaises(S.ControllerStillRunning):S.rollout(self.plan())
+            self.assertEqual(popen.call_count,2);self.assertNotIn('searchRestore',json.loads(printed.getvalue()))
     def test_bad_controller_hash_refuses_before_hold(self):
         value=self.plan();value['controllerSha256']='f'*64
         with patch.object(S.os,'geteuid',return_value=0),patch.object(S,'invoke') as invoke:
