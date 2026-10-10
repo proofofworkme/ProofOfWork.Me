@@ -1,0 +1,550 @@
+/* Computer owns layout; every app inherits the shared interface theme. */
+@layer legacy {
+.mail-app.computer-shell {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  height: auto;
+  min-height: 100dvh;
+  overflow: visible;
+  padding-bottom: 0;
+}
+
+.mail-app.computer-shell *,
+.mail-app.computer-shell *::before,
+.mail-app.computer-shell *::after { box-sizing: border-box; }
+.mail-app.computer-shell :is(h1, h2, h3) { font-family: var(--font-ui); font-weight: 500; letter-spacing: -.02em; }
+.mail-app.computer-shell strong { font-weight: 550; }
+.mail-app.computer-shell :is(button, input, select, textarea, label, dt) { font-weight: 400; }
+.mail-app.computer-shell :is(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: 2px;
+  box-shadow: var(--focus);
+}
+.mail-app.computer-shell [hidden] { display: none; }
+.mail-app.computer-shell .computer-legacy-workspace-links { display: none; }
+.mail-app.computer-shell .sidebar.is-expanded .computer-legacy-workspace-links { display: contents; }
+
+/* Header retains network, account and public app navigation. */
+.mail-app.computer-shell > .app-header-stack { background: var(--bg); flex: 0 0 auto; }
+.mail-app.computer-shell .topbar {
+  background: var(--bg);
+  backdrop-filter: none;
+  gap: 16px;
+  height: auto;
+  max-height: none;
+  min-height: var(--topbar-height);
+  padding: 10px 22px;
+}
+.mail-app.computer-shell .brand { flex: 0 1 240px; gap: 9px; max-width: 270px; }
+.mail-app.computer-shell .brand h1 { font-size: 14px; letter-spacing: -.2px; line-height: 1.2; }
+.mail-app.computer-shell .brand span { font-size: 10px; font-weight: 400; }
+.mail-app.computer-shell .brand-mark {
+  background: var(--computer-button);
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+  color: var(--computer-button-text);
+  flex-basis: 29px;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 550;
+  height: 29px;
+}
+.mail-app.computer-shell .domain-nav { flex: 0 1 auto; }
+.mail-app.computer-shell :is(.topbar-action-button, .app-menu-trigger, .domain-menu-trigger, .header-actions-trigger) {
+  background: transparent;
+  border-color: transparent;
+  border-radius: 9px;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.mail-app.computer-shell :is(.topbar-action-button, .app-menu-trigger, .domain-menu-trigger, .header-actions-trigger):hover:not(:disabled) {
+  background: var(--computer-hover);
+  border-color: transparent;
+  color: var(--text);
+}
+.mail-app.computer-shell .topbar-actions { gap: 4px; margin-left: auto; }
+.mail-app.computer-shell .account-signal-bar { background: var(--surface-soft); }
+.mail-app.computer-shell .account-signal-item { gap: 5px; min-width: 110px; padding: 9px 20px; }
+.mail-app.computer-shell .account-signal-item strong { font-size: 13px; font-weight: 500; }
+.mail-app.computer-shell .account-signal-item span { font-size: 10px; font-weight: 400; text-transform: none; }
+.mail-app.computer-shell > .app-status-row { background: var(--bg); flex: 0 0 auto; position: static; }
+.mail-app.computer-shell .status { background: transparent; color: var(--text-muted); font-size: 11px; font-weight: 400; padding: 9px 22px; }
+.mail-app.computer-shell .status.good { color: var(--green); }
+.mail-app.computer-shell .status.bad { color: var(--red); }
+.mail-app.computer-shell .action-recovery-panel { flex: 0 0 auto; font-size: 12px; }
+.mail-app.computer-shell .action-recovery-disclosure > summary { font-weight: 400; }
+
+.mail-app.computer-shell .computer-controls { align-items: center; display: flex; flex: 0 0 auto; gap: 8px; }
+.mail-app.computer-shell .computer-layout-switch {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+}
+.mail-app.computer-shell .computer-layout-switch button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-muted);
+  display: inline-flex;
+  font-size: 11px;
+  gap: 6px;
+  justify-content: center;
+  min-height: 44px;
+  padding: 7px 12px;
+}
+.mail-app.computer-shell .computer-layout-switch button[aria-pressed="true"] { background: var(--surface); box-shadow: var(--shadow-sm); color: var(--text); }
+.mail-app.computer-shell :is(.computer-launcher-button, .computer-local-data-button) {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--text-muted);
+  display: inline-flex;
+  font-size: 11px;
+  gap: 7px;
+  justify-content: center;
+  padding: 7px 10px;
+}
+.mail-app.computer-shell :is(.computer-launcher-button, .computer-local-data-button):hover { background: var(--computer-hover); color: var(--text); }
+.mail-app.computer-shell .computer-launcher-button kbd { color: var(--text-soft); font: 10px var(--font-ui); margin-left: 10px; }
+
+/* Both layouts retain the same mounted app window. */
+.mail-app.computer-shell > .computer-shell-layout { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; min-width: 0; }
+.mail-app.computer-shell .computer-body { display: grid; flex: 1 1 auto; gap: 0; grid-template-columns: 174px minmax(0, 1fr); min-height: 0; min-width: 0; }
+.mail-app.computer-shell .computer-app-rail {
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 23px 12px;
+  scrollbar-width: thin;
+}
+.mail-app.computer-shell .computer-rail-title { color: var(--text-soft); font-size: 11px; padding: 0 10px 13px; }
+.mail-app.computer-shell .computer-rail-app {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-muted);
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 12px;
+  gap: 10px;
+  padding: 9px 10px;
+  text-align: left;
+  width: 100%;
+}
+.mail-app.computer-shell .computer-rail-app:hover { background: var(--computer-hover); color: var(--text); }
+.mail-app.computer-shell .computer-rail-app[aria-current="page"] { background: var(--accent-soft); color: var(--text); font-weight: 500; }
+.mail-app.computer-shell .computer-rail-app svg { flex: 0 0 auto; height: 17px; stroke-width: 1.6; width: 17px; }
+.mail-app.computer-shell .computer-all-apps { margin-top: 8px; }
+.mail-app.computer-shell .computer-rail-note { color: var(--text-soft); font-size: 10px; line-height: 1.7; margin-top: auto; padding: 22px 10px 0; }
+.mail-app.computer-shell .computer-stage { min-height: 0; min-width: 0; padding: 26px; }
+.mail-app.computer-shell .computer-window {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 520px;
+  min-width: 0;
+}
+.mail-app.computer-shell .computer-windowbar {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-height: 51px;
+  padding: 12px 17px;
+}
+.mail-app.computer-shell .computer-window-title { align-items: center; display: inline-flex; font-size: 12px; font-weight: 500; gap: 9px; }
+.mail-app.computer-shell .computer-window-title svg { height: 16px; stroke-width: 1.6; width: 16px; }
+.mail-app.computer-shell .computer-window-meta { align-items: center; color: var(--text-soft); display: inline-flex; font-size: 10px; gap: 5px; margin-left: auto; }
+.mail-app.computer-shell .computer-window-content { border-radius: 0 0 14px 14px; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
+.mail-app.computer-shell .mail-layout { background: var(--surface); grid-template-columns: 182px minmax(260px, 330px) minmax(0, 1fr); height: 100%; min-height: 468px; }
+.mail-app.computer-shell[data-computer-mail="false"] .mail-layout { grid-template-columns: minmax(0, 1fr); }
+.mail-app.computer-shell[data-computer-mail="false"] .mail-layout > .sidebar { display: none; }
+.mail-app.computer-shell[data-computer-mail="false"] .mail-layout > :not(.sidebar):not(.computer-navigation-scrim) {
+  grid-column: 1 / -1;
+  max-width: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+}
+.mail-app.computer-shell .mail-layout > :is(.workspace, .ids-workspace, .contacts-workspace, .dns-workspace, .marketplace-workspace, .token-workspace) { padding: 22px; }
+
+.mail-app.computer-shell[data-computer-layout="desktop"] .computer-body {
+  align-items: start;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) 232px;
+  padding: 24px 24px 14px;
+}
+.mail-app.computer-shell[data-computer-layout="desktop"] .computer-app-rail { display: none; }
+.mail-app.computer-shell[data-computer-layout="desktop"] .computer-stage { align-self: stretch; padding: 0; }
+.mail-app.computer-shell[data-computer-layout="focus"] .computer-overview { display: none; }
+.mail-app.computer-shell[data-computer-layout="focus"] .computer-dock { display: none; }
+
+/* Account cards display existing verified evidence and its loading state. */
+.mail-app.computer-shell .computer-overview { display: grid; gap: 18px; min-height: 0; min-width: 0; }
+.mail-app.computer-shell .computer-overview-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-md); min-width: 0; overflow: hidden; }
+.mail-app.computer-shell .computer-overview-head { align-items: center; border-bottom: 1px solid var(--border); display: flex; gap: 8px; justify-content: space-between; min-height: 51px; padding: 10px 16px; }
+.mail-app.computer-shell .computer-overview-head :is(h2, h3, strong) { align-items: center; display: flex; font-size: 12px; font-weight: 500; gap: 8px; }
+.mail-app.computer-shell .computer-overview-head svg { flex-shrink: 0; height: 16px; stroke-width: 1.6; width: 16px; }
+.mail-app.computer-shell .computer-overview-head button { background: transparent; border: 0; border-radius: 7px; color: var(--text-muted); font-size: 10px; padding: 6px; }
+.mail-app.computer-shell .computer-overview-head button:hover { background: var(--computer-hover); color: var(--text); }
+.mail-app.computer-shell .computer-overview-balance { display: grid; gap: 5px; overflow-wrap: anywhere; padding: 21px 17px 14px; }
+.mail-app.computer-shell .computer-overview-balance > strong { font-size: 27px; font-variant-numeric: tabular-nums; font-weight: 500; letter-spacing: -.9px; line-height: 1.25; }
+.mail-app.computer-shell .computer-overview-balance > :is(span, small) { color: var(--text-muted); font-size: 11px; }
+.mail-app.computer-shell .computer-overview-stat { align-items: baseline; display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; margin: 0; padding: 9px 17px; }
+.mail-app.computer-shell .computer-overview-stat :is(dt, span) { color: var(--text-muted); font-size: 11px; text-transform: none; }
+.mail-app.computer-shell .computer-overview-stat :is(dd, strong) { font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 500; overflow-wrap: anywhere; }
+.mail-app.computer-shell .computer-overview-state { color: var(--text-muted); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; padding: 15px 17px 19px; }
+.mail-app.computer-shell .computer-overview-state svg { height: 12px; margin-right: 4px; vertical-align: middle; width: 12px; }
+.mail-app.computer-shell .computer-overview-files { display: grid; gap: 0; list-style: none; margin: 0; padding: 7px 17px; }
+.mail-app.computer-shell .computer-overview-file { align-items: center; background: transparent; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; color: var(--text); display: flex; gap: 10px; min-width: 0; padding: 12px 0; text-align: left; width: 100%; }
+.mail-app.computer-shell .computer-overview-file:last-child { border-bottom: 0; }
+.mail-app.computer-shell button.computer-overview-file:hover { color: var(--accent-strong); }
+.mail-app.computer-shell .computer-overview-file > svg { background: var(--surface-soft); border: 1px solid var(--border); border-radius: 5px; flex: 0 0 30px; height: 35px; padding: 6px; stroke-width: 1.5; width: 30px; }
+.mail-app.computer-shell .computer-overview-file > span { display: grid; gap: 4px; min-width: 0; }
+.mail-app.computer-shell .computer-overview-file strong { font-size: 11px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail-app.computer-shell .computer-overview-file small { color: var(--text-muted); font-size: 10px; overflow-wrap: anywhere; }
+
+.mail-app.computer-shell .computer-dock {
+  align-items: stretch;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 19px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  justify-content: center;
+  margin: 4px auto 21px;
+  max-width: calc(100% - 32px);
+  overflow-x: auto;
+  padding: 7px;
+  scrollbar-width: thin;
+  width: fit-content;
+}
+.mail-app.computer-shell .computer-dock-app { align-items: center; background: transparent; border: 0; border-radius: 11px; color: var(--text-muted); display: flex; flex: 0 0 62px; flex-direction: column; font-size: 10px; gap: 6px; margin: 0; padding: 9px 7px 10px; position: relative; }
+.mail-app.computer-shell .computer-dock-app svg { height: 21px; stroke-width: 1.6; width: 21px; }
+.mail-app.computer-shell .computer-dock-app:hover,
+.mail-app.computer-shell .computer-dock-app[aria-current="page"] { background: var(--computer-hover); color: var(--text); }
+.mail-app.computer-shell .computer-dock-app[aria-current="page"]::after { background: var(--accent); border-radius: 50%; bottom: 3px; content: ""; height: 3px; position: absolute; width: 3px; }
+.mail-app.computer-shell .computer-dock .computer-all-apps { border-left: 1px solid var(--border); border-radius: 0 11px 11px 0; margin-left: 5px; }
+
+/* Mail retains its list, reader, drafts and transaction review. */
+.mail-app.computer-shell .sidebar { background: var(--surface-soft); gap: 12px; grid-template-rows: auto minmax(0, 1fr) auto; padding: 16px 10px; }
+.mail-app.computer-shell .sidebar-toggle { display: none; }
+.mail-app.computer-shell .sidebar > .compose-button { display: flex; justify-content: center; }
+.mail-app.computer-shell .sidebar > .folders { display: grid; }
+.mail-app.computer-shell .sidebar > .account-box { display: grid; }
+.mail-app.computer-shell .mail-layout > :is(.message-column, .reader-pane) { order: 0; }
+.mail-app.computer-shell .compose-button { background: var(--computer-button); border: 1px solid transparent; border-radius: 999px; color: var(--computer-button-text); font-size: 12px; font-weight: 500; margin-bottom: 5px; }
+.mail-app.computer-shell .compose-button:hover:not(:disabled) { background: color-mix(in srgb, var(--computer-button) 88%, var(--surface)); color: var(--computer-button-text); }
+.mail-app.computer-shell .folders { gap: 2px; }
+.mail-app.computer-shell .folders button { border: 0; border-radius: 7px; color: var(--text-muted); font-size: 11px; padding: 8px 9px; }
+.mail-app.computer-shell .folders button:hover { background: var(--computer-hover); color: var(--text); }
+.mail-app.computer-shell .folders button[aria-current="true"] { background: var(--accent-soft); color: var(--text); font-weight: 500; }
+.mail-app.computer-shell .folder-label { gap: 8px; }
+.mail-app.computer-shell .folder-label svg { height: 15px; stroke-width: 1.6; width: 15px; }
+.mail-app.computer-shell .folders strong { color: var(--text-soft); font-size: 10px; font-weight: 400; }
+.mail-app.computer-shell .folder-group-label { color: var(--text-soft); font-size: 10px; font-weight: 400; letter-spacing: 0; margin: 6px 0; padding: 6px 9px; text-transform: none; }
+.mail-app.computer-shell .custom-folder-form input { background: var(--surface); border-color: var(--border); border-radius: 7px; font-size: 11px; padding: 8px; }
+.mail-app.computer-shell .custom-folder-row { grid-template-columns: minmax(0, 1fr) 44px; }
+.mail-app.computer-shell .account-box { color: var(--text-muted); font-size: 10px; gap: 7px; padding: 13px 5px 0; }
+.mail-app.computer-shell .account-box code { font-size: 10px; }
+.mail-app.computer-shell .backup-actions { gap: 5px; }
+.mail-app.computer-shell .backup-actions .secondary { font-size: 10px; padding: 6px; }
+.mail-app.computer-shell .list-toolbar { align-content: start; gap: 12px; grid-template-areas: "heading refresh" "signal sort"; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 19px 19px 16px; }
+.mail-app.computer-shell .list-toolbar h2 { font-size: 21px; letter-spacing: -.6px; }
+.mail-app.computer-shell .list-toolbar > div:first-child > span { font-size: 11px; line-height: 1.5; }
+.mail-app.computer-shell :is(.sort-control, .mail-signal-control) { font-size: 10px; font-weight: 400; }
+.mail-app.computer-shell .sort-control select { background-color: var(--surface); border-color: var(--border); border-radius: 7px; font-size: 10px; padding-left: 7px; }
+.mail-app.computer-shell .mail-signal-toggle { background: var(--surface-soft); border-color: var(--border); border-radius: 7px; gap: 2px; }
+.mail-app.computer-shell .mail-signal-toggle button { border-radius: 5px; font-size: 10px; font-weight: 400; padding: 5px 8px; }
+.mail-app.computer-shell .mail-signal-toggle button[aria-pressed="true"] { background: var(--accent-soft); box-shadow: none; color: var(--accent-strong); }
+.mail-app.computer-shell .message-row { gap: 6px; min-height: 112px; padding: 14px 19px; }
+.mail-app.computer-shell .message-row[aria-current="true"] { background: var(--surface-soft); }
+.mail-app.computer-shell .message-row::before { border-radius: 0; bottom: 0; top: 0; width: 2px; }
+.mail-app.computer-shell .message-row-top strong { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.mail-app.computer-shell .message-row-top > span { font-size: 10px; }
+.mail-app.computer-shell .message-subject { font-size: 12px; font-weight: 500; }
+.mail-app.computer-shell .message-preview { font-size: 11px; }
+.mail-app.computer-shell .message-meta { gap: 5px; }
+.mail-app.computer-shell .message-meta span { background: var(--surface-soft); border: 0; border-radius: 5px; font-size: 10px; font-weight: 400; padding: 3px 5px; }
+.mail-app.computer-shell :is(.compose-pane, .reader) { align-content: start; gap: 18px; padding: 24px; }
+.mail-app.computer-shell .pane-head { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; }
+.mail-app.computer-shell .pane-head h2 { font-size: 20px; }
+.mail-app.computer-shell .pane-head span { font-size: 11px; }
+.mail-app.computer-shell .reader-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.mail-app.computer-shell :is(.primary, .secondary, .attachment-picker) { border-radius: 999px; font-size: 12px; font-weight: 500; }
+.mail-app.computer-shell .primary { background: var(--computer-button); border-color: transparent; color: var(--computer-button-text); }
+.mail-app.computer-shell .primary:hover:not(:disabled) { background: color-mix(in srgb, var(--computer-button) 88%, var(--surface)); color: var(--computer-button-text); }
+.mail-app.computer-shell .secondary { background: var(--surface); border-color: var(--border); color: var(--text); }
+.mail-app.computer-shell .secondary:hover:not(:disabled) { background: var(--computer-hover); border-color: var(--border-strong); }
+.mail-app.computer-shell .icon-button { background: transparent; border-color: var(--border); border-radius: 8px; color: var(--text-muted); }
+.mail-app.computer-shell :is(input, textarea) { background: var(--surface); border-color: var(--border); border-radius: 8px; font-size: 13px; }
+.mail-app.computer-shell :is(input, textarea):focus { border-color: var(--accent); box-shadow: var(--focus); }
+.mail-app.computer-shell label { color: var(--text-muted); font-size: 11px; font-weight: 400; gap: 8px; }
+.mail-app.computer-shell :is(.headers, .reply-banner, .attachment-card) { background: var(--surface-soft); border-color: var(--border); border-radius: 10px; }
+.mail-app.computer-shell .headers { gap: 12px; padding: 16px; }
+.mail-app.computer-shell dt { font-size: 10px; letter-spacing: 0; text-transform: none; }
+.mail-app.computer-shell dd { font-size: 12px; }
+.mail-app.computer-shell :is(.empty-icon, .onboarding-icon, .attachment-icon) { border-color: var(--border); border-radius: 12px; }
+.mail-app.computer-shell :is(.empty-state, .empty-reader) { align-content: center; gap: 15px; padding: 28px; }
+.mail-app.computer-shell :is(.empty-state, .empty-reader) p { font-size: 12px; line-height: 1.7; max-width: 32ch; }
+.mail-app.computer-shell .onboarding-panel { border-color: var(--border); border-radius: 14px; box-shadow: none; max-width: 440px; padding: 26px; }
+.mail-app.computer-shell .onboarding-panel h2 { font-size: 23px; line-height: 1.25; }
+.mail-app.computer-shell .onboarding-panel p { color: var(--text-muted); font-size: 12px; line-height: 1.7; }
+.mail-app.computer-shell .onboarding-checks span { font-size: 11px; }
+.mail-app.computer-shell .review-dialog { border-color: var(--border-strong); border-radius: 18px; box-shadow: var(--shadow-lg); }
+.mail-app.computer-shell .review-dialog::backdrop { background: #24282255; }
+
+/* Earlier Browser and public Desktop chrome also uses the Computer palette. */
+.mail-app.computer-shell .browser-computer-workspace { background: var(--surface); color: var(--text); }
+.mail-app.computer-shell .browser-window .browser-new-tab { min-height: 340px; }
+.mail-app.computer-shell .browser-window .browser-new-tab h2 { font-size: clamp(25px, 3vw, 32px); letter-spacing: -.7px; }
+.mail-app.computer-shell .browser-window .browser-new-tab p { font-size: 12px; }
+.mail-app.computer-shell .browser-computer-workspace .browser-workspace-status { background: var(--surface-soft); border-color: var(--border); }
+.mail-app.computer-shell :is(.browser-search-card, .browser-template-card, .browser-empty) { background: var(--surface-soft); border-color: var(--border); box-shadow: none; }
+.mail-app.computer-shell :is(.browser-hero h2, .browser-card-head h3, .browser-empty h3) { color: var(--text); }
+.mail-app.computer-shell :is(.browser-hero p, .browser-empty p, .browser-template-card p, .browser-search-card label, .browser-template-fields label) { color: var(--text-muted); }
+.mail-app.computer-shell .browser-template-fields :is(input, textarea) { background: var(--surface); border-color: var(--border); color: var(--text); }
+.mail-app.computer-shell .browser-template-source { background: var(--bg); border-color: var(--border); color: var(--text); }
+.mail-app.computer-shell .browser-template-meta > div { background: var(--surface); border-color: var(--border); }
+.mail-app.computer-shell .browser-template-meta dt { color: var(--text-muted); }
+.mail-app.computer-shell .browser-template-meta dd { color: var(--text); }
+.mail-app.computer-shell .desktop-screensaver { background: var(--surface-soft); color: var(--text); min-height: 460px; }
+.mail-app.computer-shell .desktop-screensaver::after { display: none; }
+.mail-app.computer-shell .desktop-screen-card h2 { font-size: clamp(28px, 4vw, 42px); letter-spacing: -1px; line-height: 1.2; }
+.mail-app.computer-shell :is(.desktop-screen-card > span, .desktop-signal) { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.mail-app.computer-shell .desktop-signal span { border-color: var(--border); }
+.mail-app.computer-shell .desktop-search-large { background: var(--surface); border-color: var(--border); box-shadow: var(--shadow-sm); color: var(--text); }
+.mail-app.computer-shell .desktop-search-large :is(input, .public-search-field > span) { caret-color: var(--accent); color: var(--text); }
+.mail-app.computer-shell .desktop-search-large input:focus { color: var(--text); }
+.mail-app.computer-shell .text-viewer { background: var(--surface-soft); color: var(--text); }
+.mail-app.computer-shell .text-viewer code { color: var(--text); }
+.mail-app.computer-shell .attachment-viewer-head { border-color: var(--border); }
+.mail-app.computer-shell .attachment-viewer-head > span { color: var(--text-muted); font-size: 10px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+
+/* Launcher stays native: Escape, focus return and inert surroundings. */
+.mail-app.computer-shell .computer-app-dialog { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow-lg); color: var(--text); margin: auto; max-height: calc(100dvh - 32px); max-width: calc(100% - 32px); overflow: auto; padding: 0; width: 490px; }
+.mail-app.computer-shell .computer-app-dialog::backdrop { background: #24282255; backdrop-filter: blur(3px); }
+.mail-app.computer-shell .computer-launcher-head { align-items: center; border-bottom: 1px solid var(--border); display: flex; gap: 12px; justify-content: space-between; padding: 15px 20px; }
+.mail-app.computer-shell .computer-launcher-head h2 { font-size: 16px; }
+.mail-app.computer-shell .computer-launcher-head button { align-items: center; background: transparent; border: 0; border-radius: 8px; color: var(--text-muted); display: flex; justify-content: center; padding: 8px; }
+.mail-app.computer-shell .computer-launcher-head button:hover { background: var(--computer-hover); }
+.mail-app.computer-shell .computer-launcher-content { padding: 20px; }
+.mail-app.computer-shell .computer-app-search { color: var(--text-muted); display: grid; gap: 8px; padding: 0; width: 100%; }
+.mail-app.computer-shell .computer-app-search-field { align-items: center; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 10px; display: flex; gap: 9px; padding: 0 12px; }
+.mail-app.computer-shell .computer-app-search-field > svg { color: var(--text-muted); flex: 0 0 18px; stroke-width: 1.6; }
+.mail-app.computer-shell .computer-app-search-field > input { background: transparent; border: 0; border-radius: 0; min-width: 0; padding: 12px 0; }
+.mail-app.computer-shell .computer-app-search-field:focus-within { border-color: var(--accent); box-shadow: var(--focus); }
+.mail-app.computer-shell .computer-app-search-field > input:focus { box-shadow: none; }
+.mail-app.computer-shell .computer-app-search-field > input:focus-visible { outline: none; }
+.mail-app.computer-shell .computer-launcher-empty { color: var(--text-muted); font-size: 12px; padding: 15px 10px; }
+.mail-app.computer-shell .computer-launcher-note { color: var(--text-soft); font-size: 10px; line-height: 1.6; margin-top: 9px; }
+.mail-app.computer-shell .computer-launcher-results { display: grid; gap: 3px; list-style: none; margin: 16px 0 8px; max-height: min(48dvh, 390px); overflow-y: auto; padding: 2px; scrollbar-width: thin; }
+.mail-app.computer-shell .computer-launcher-app { align-items: center; background: transparent; border: 0; border-radius: 8px; color: var(--text); display: flex; gap: 12px; min-width: 0; padding: 11px 10px; text-align: left; width: 100%; }
+.mail-app.computer-shell .computer-launcher-app:hover { background: var(--computer-hover); }
+.mail-app.computer-shell .computer-launcher-app > svg { flex: 0 0 19px; height: 19px; stroke-width: 1.6; width: 19px; }
+.mail-app.computer-shell .computer-launcher-app-copy { display: grid; gap: 4px; min-width: 0; }
+.mail-app.computer-shell .computer-launcher-app-copy strong { font-size: 12px; font-weight: 500; }
+.mail-app.computer-shell .computer-launcher-app-copy small { color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+.mail-app.computer-shell .computer-record-search { align-items: center; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 9px; color: var(--text); display: flex; gap: 8px; justify-content: center; margin-top: 14px; padding: 10px 12px; width: 100%; }
+
+.mail-app.computer-shell > .app-footer { background: var(--bg); flex: 0 0 auto; font-size: 10px; padding: 4px 18px; }
+.mail-app.computer-shell > .app-footer :is(a, button) { font-size: 10px; font-weight: 400; }
+.mail-app.computer-shell .computer-mobile-nav { background: var(--surface); border-color: var(--border); }
+.mail-app.computer-shell .computer-mobile-nav button { color: var(--text-muted); font-weight: 400; }
+
+/* Local data and the compact More control share the existing navigation sheet. */
+.mail-app.computer-shell[data-computer-navigation-open="true"] .computer-navigation-scrim {
+  background: #24282270;
+  backdrop-filter: blur(3px);
+  border: 0;
+  border-radius: 0;
+  display: block;
+  inset: 0;
+  padding: 0;
+  position: fixed;
+  z-index: 70;
+}
+.mail-app.computer-shell[data-computer-navigation-open="true"] .mail-layout > .sidebar.is-expanded {
+  background: var(--surface-soft);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  box-shadow: var(--shadow-lg);
+  display: grid;
+  grid-column: auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  left: max(12px, env(safe-area-inset-left));
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  padding: 16px;
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  transform: none;
+  visibility: visible;
+  width: min(380px, calc(100vw - 24px));
+  z-index: 80;
+}
+.mail-app.computer-shell[data-computer-navigation-open="true"] .sidebar-toggle { align-items: center; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text); display: flex; font-size: 11px; gap: 8px; justify-content: space-between; width: 100%; }
+.mail-app.computer-shell[data-computer-navigation-open="true"] .sidebar.is-expanded .folders { display: grid; overflow-y: auto; overscroll-behavior: contain; }
+.mail-app.computer-shell[data-computer-navigation-open="true"] .sidebar.is-expanded :is(.compose-button, .account-box) { display: grid; }
+.mail-app.computer-shell[data-computer-navigation-open="true"] .sidebar.is-expanded .compose-button { display: flex; justify-content: center; }
+
+/* Roomy screens scroll each app inside its frame. Compact screens scroll the document. */
+@media (min-width: 1181px) and (min-height: 740px) {
+  .mail-app.computer-shell { height: 100dvh; min-height: 0; overflow: hidden; }
+  .mail-app.computer-shell .computer-body { min-height: 0; }
+  .mail-app.computer-shell .computer-window { min-height: 0; }
+  .mail-app.computer-shell .mail-layout { min-height: 0; }
+  .mail-app.computer-shell .computer-overview { max-height: 100%; overflow-y: auto; padding: 1px; }
+}
+
+@media (max-width: 1350px) {
+  .mail-app.computer-shell .topbar { flex-wrap: wrap; gap: 8px 14px; }
+  .mail-app.computer-shell .brand { flex: 0 1 215px; }
+  .mail-app.computer-shell .computer-stage { padding: 22px 18px; }
+  .mail-app.computer-shell .mail-layout { grid-template-columns: 164px minmax(244px, 290px) minmax(0, 1fr); }
+  .mail-app.computer-shell[data-computer-layout="desktop"] .computer-body { grid-template-columns: minmax(0, 1fr) 215px; padding: 22px 20px 14px; }
+  .mail-app.computer-shell :is(.compose-pane, .reader) { padding: 20px; }
+}
+
+@media (max-width: 1180px), (max-height: 739px) {
+  .mail-app.computer-shell > .app-header-stack { position: static; }
+  .mail-app.computer-shell .computer-window-content { overflow: visible; }
+  .mail-app.computer-shell .mail-layout { height: auto; overflow: visible; }
+  .mail-app.computer-shell :is(.sidebar, .message-column, .reader-pane) { overflow: visible; }
+  .mail-app.computer-shell .folders { overflow: visible; }
+  .mail-app.computer-shell .message-column { grid-template-rows: auto minmax(0, 1fr); }
+  .mail-app.computer-shell .message-list { max-height: 620px; min-height: 260px; overflow-y: auto; }
+  .mail-app.computer-shell .reader-pane { min-height: 468px; }
+  .mail-app.computer-shell .computer-body { align-items: start; }
+  .mail-app.computer-shell .computer-app-rail { align-self: start; max-height: max(300px, calc(100dvh - 190px)); }
+  .mail-app.computer-shell[data-computer-mail="false"] .mail-layout > :not(.sidebar):not(.computer-navigation-scrim) { overflow-y: visible; }
+}
+
+@media (max-width: 1100px) {
+  .mail-app.computer-shell .computer-body { grid-template-columns: 145px minmax(0, 1fr); }
+  .mail-app.computer-shell .computer-app-rail { padding: 22px 9px; }
+  .mail-app.computer-shell .computer-rail-app { font-size: 11px; gap: 8px; padding: 9px 8px; }
+  .mail-app.computer-shell .sidebar .backup-actions { grid-template-columns: minmax(0, 1fr); }
+  .mail-app.computer-shell .mail-layout { grid-template-columns: 150px minmax(218px, .95fr) minmax(0, 1.2fr); }
+  .mail-app.computer-shell[data-computer-layout="desktop"] .computer-body { grid-template-columns: minmax(0, 1fr); }
+  .mail-app.computer-shell .computer-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mail-app.computer-shell .computer-overview-card { align-self: start; }
+  .mail-app.computer-shell .list-toolbar { padding: 17px 14px; }
+  .mail-app.computer-shell .message-row { padding: 14px; }
+}
+
+@media (max-width: 860px) {
+  .mail-app.computer-shell { padding-bottom: calc(66px + env(safe-area-inset-bottom)); }
+  .mail-app.computer-shell .topbar { gap: 8px; padding: 10px 15px; }
+  .mail-app.computer-shell .brand { flex: 1 1 auto; max-width: none; }
+  .mail-app.computer-shell .brand h1 { font-size: 13px; }
+  .mail-app.computer-shell .topbar-actions { margin-left: auto; }
+  .mail-app.computer-shell .computer-controls { flex: 1 0 100%; justify-content: space-between; order: 4; }
+  .mail-app.computer-shell .computer-layout-switch { padding: 2px; }
+  .mail-app.computer-shell .computer-layout-switch button { min-height: 44px; }
+  .mail-app.computer-shell .computer-launcher-button kbd { display: none; }
+  .mail-app.computer-shell .computer-body { grid-template-columns: minmax(0, 1fr); }
+  .mail-app.computer-shell .computer-app-rail { border-bottom: 1px solid var(--border); border-right: 0; display: flex; flex-direction: row; gap: 3px; overflow-x: auto; padding: 8px 12px; }
+  .mail-app.computer-shell .computer-rail-app { flex: 0 0 auto; font-size: 11px; gap: 6px; padding: 8px 10px; width: auto; }
+  .mail-app.computer-shell .computer-app-rail :is(.computer-rail-title, .computer-rail-note) { display: none; }
+  .mail-app.computer-shell .computer-app-rail .computer-all-apps { margin-top: 0; }
+  .mail-app.computer-shell .computer-stage { padding: 20px 15px; }
+  .mail-app.computer-shell[data-computer-layout="desktop"] .computer-body { padding: 20px 15px 14px; }
+  .mail-app.computer-shell .mail-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); min-height: 468px; }
+  .mail-app.computer-shell .mail-layout > .sidebar {
+    background: var(--surface-soft);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    box-shadow: var(--shadow-lg);
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    overflow: hidden;
+    padding: 14px;
+  }
+  .mail-app.computer-shell .mail-layout > .sidebar.is-expanded { display: grid; }
+  .mail-app.computer-shell .sidebar-toggle { border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 11px; }
+  .mail-app.computer-shell .sidebar.is-expanded .folders { overflow-y: auto; }
+  .mail-app.computer-shell .sidebar.is-expanded :is(.compose-button, .folders, .account-box) { display: grid; }
+  .mail-app.computer-shell .sidebar.is-expanded .compose-button { display: flex; justify-content: center; }
+  .mail-app.computer-shell .computer-dock { display: none; }
+  .mail-app.computer-shell .computer-dock-app { flex-basis: 56px; }
+  .mail-app.computer-shell[data-computer-mail="false"] .mail-layout > .sidebar.is-expanded { display: grid; }
+  .mail-app.computer-shell .onboarding-pane { padding: 20px; }
+}
+
+@media (max-width: 620px) {
+  .mail-app.computer-shell .brand { flex: 1 1 100px; }
+  .mail-app.computer-shell .brand h1 { font-size: 11px; }
+  .mail-app.computer-shell .brand span { font-size: 9px; }
+  .mail-app.computer-shell .brand-mark { flex-basis: 27px; height: 27px; }
+  .mail-app.computer-shell .topbar { gap: 4px; padding: 8px 10px; }
+  .mail-app.computer-shell .topbar-actions { gap: 0; }
+  .mail-app.computer-shell .computer-controls { gap: 4px; padding-top: 8px; }
+  .mail-app.computer-shell :is(.computer-launcher-button, .computer-local-data-button) { gap: 5px; padding: 6px; }
+  .mail-app.computer-shell .computer-layout-switch button { gap: 4px; padding: 7px 10px; }
+  .mail-app.computer-shell .computer-stage { padding: 16px 12px; }
+  .mail-app.computer-shell[data-computer-layout="desktop"] .computer-body { gap: 14px; padding: 16px 12px 12px; }
+  .mail-app.computer-shell .computer-window { border-radius: 12px; }
+  .mail-app.computer-shell .computer-window-content { border-radius: 0 0 12px 12px; }
+  .mail-app.computer-shell .computer-windowbar { padding: 10px 14px; }
+  .mail-app.computer-shell .mail-layout { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .mail-app.computer-shell .message-column { border-bottom: 1px solid var(--border); border-right: 0; min-height: 300px; }
+  .mail-app.computer-shell .reader-pane { min-height: 340px; }
+  .mail-app.computer-shell .message-list { max-height: 460px; }
+  .mail-app.computer-shell .mail-layout.is-onboarding .reader-pane { order: -1; }
+  .mail-app.computer-shell .mail-layout.is-onboarding .message-column { order: 0; }
+  .mail-app.computer-shell .list-toolbar { grid-template-areas: "heading refresh" "signal sort"; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 18px; }
+  .mail-app.computer-shell .list-toolbar > button { justify-self: end; }
+  .mail-app.computer-shell .list-toolbar h2 { font-size: 20px; }
+  .mail-app.computer-shell :is(.compose-pane, .reader) { min-height: 0; padding: 20px 18px; }
+  .mail-app.computer-shell .compose-grid { grid-template-columns: minmax(0, 1fr); }
+  .mail-app.computer-shell .fee-control-grid { grid-template-columns: minmax(0, 1fr); }
+  .mail-app.computer-shell .onboarding-pane { min-height: 340px; padding: 22px 18px; }
+  .mail-app.computer-shell .onboarding-panel { padding: 22px 18px; }
+  .mail-app.computer-shell .onboarding-panel h2 { font-size: 22px; }
+  .mail-app.computer-shell .computer-overview { gap: 14px; grid-template-columns: minmax(0, 1fr); }
+  .mail-app.computer-shell .computer-overview-card { border-radius: 12px; }
+  .mail-app.computer-shell .mail-layout > :is(.workspace, .ids-workspace, .contacts-workspace, .dns-workspace, .marketplace-workspace, .token-workspace) { padding: 18px; }
+  .mail-app.computer-shell .computer-launcher-head { padding: 12px 16px; }
+  .mail-app.computer-shell .computer-launcher-content { padding: 16px; }
+  .mail-app.computer-shell .computer-app-dialog { max-height: calc(100dvh - 24px); max-width: calc(100% - 24px); }
+}
+
+@media (max-height: 480px) {
+  .mail-app.computer-shell { padding-bottom: 0; }
+  .mail-app.computer-shell .computer-mobile-nav { position: static; }
+  .mail-app.computer-shell[data-computer-navigation-open="true"] .mail-layout > .sidebar.is-expanded { bottom: 10px; display: flex; flex-direction: column; overflow-y: auto; }
+  .mail-app.computer-shell .sidebar.is-expanded > * { flex: 0 0 auto; }
+  .mail-app.computer-shell .sidebar.is-expanded .folders { overflow: visible; }
+  .mail-app.computer-shell .computer-launcher-results { max-height: 34dvh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mail-app.computer-shell *, .mail-app.computer-shell *::before, .mail-app.computer-shell *::after { scroll-behavior: auto; transition-duration: 0s; }
+}
+
+}

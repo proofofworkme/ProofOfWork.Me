@@ -17,6 +17,44 @@ credential references and budget accounting.
 
 Notes for mailbox features that make ProofOfWork.Me feel like a normal mail app while respecting ProofOfWork permanence.
 
+## Computer Focus and Desktop layouts
+
+Computer supports both Focus and Desktop through a visible layout switch.
+The user approved the UI release on 2026-10-10. The valid browser preference is
+stored as `focus` or `desktop` under `proofofwork-me-computer-layout-v1`, with Focus as the first-visit
+or unavailable-storage default. Appearance remains browser-local and is outside
+the supported organization-backup allowlist; it is not scoped wallet authority,
+mailbox organization or protocol state. Computer follows the system light/dark
+appearance without adding another backup key.
+
+Focus's app rail and Desktop's dock/launcher reach the same workspaces. Mail
+folders, local Contacts, draft handling, transaction recovery and local-data
+controls remain separate from app navigation. The launcher finds Computer apps;
+its public Search action opens the existing read-only Search workspace. IDs
+still provides registration, receiver updates and direct transfers; sale-ticket
+trades remain in AMO. Existing shareable workspace routes continue to work.
+
+Changing layout keeps the active workspace mounted, preserving the connected
+wallet and network, current draft, selected record, Browser tabs and in-memory
+navigation state. It does not submit, sign, broadcast or change a protocol record.
+Desktop initially hosts one active real workspace plus Wallet/Files overview
+cards. Those cards reuse existing account read evidence, preserve last verified
+qualification where applicable, and show disconnected, loading or unavailable
+states before claiming balances, file counts or empty collections. They do not
+create independent wallet/app sessions or synthetic file records.
+
+The shared product interface applies to the shell, every Computer workspace,
+and every public app. The user approved this full scope on 2026-10-10. It uses
+OpenAI-inspired warm neutral surfaces, restrained olive accents, monochrome
+primary actions, Inter for UI and headings, and system light/dark appearance.
+It preserves exact proof evidence, keyboard focus, and narrow/short-screen
+navigation. The appearance layer does not change read qualification, local
+state keys, transaction review, or signing authority.
+The app launcher contains keyboard focus; Escape returns focus to its opener.
+Computer's Desktop layout remains separate from the public read-only Desktop
+domain and its canonical file rules. The approved release retains the existing
+production verification and source synchronization requirements.
+
 ## Computer navigation on short screens
 
 At viewport heights of 480px or less, Computer uses document scrolling instead
@@ -24,8 +62,12 @@ of keeping its header, status, and mobile workspace controls fixed over the
 content. Controls retain their minimum 44px targets. On compact widths, the
 open navigation sheet scrolls as a whole so its workspaces and local backup
 controls remain reachable. Keyboard focus wraps within the sheet; Escape or
-choosing a workspace closes it and restores focus to More. Moving above the
-compact-width breakpoint closes the sheet and releases its scroll lock.
+choosing a workspace closes it and restores focus to its More or Local data
+opener. A native dialog opened from the sheet, such as Review local restore,
+retains keyboard focus until it closes and returns focus to its invoking
+control. App-launcher shortcuts cannot take focus from either modal. Moving
+above the compact-width breakpoint closes the sheet and releases its scroll
+lock.
 
 ## Shared product navigation
 
@@ -33,7 +75,7 @@ The public header and footer share the same product menus and order:
 
 | Menu | Products in order |
 | --- | --- |
-| UTILITY | COMPUTER, DESKTOP, BROWSER, CODE |
+| UTILITY | COMPUTER, DESKTOP, BROWSER, PAGES, CODE, JOBS, PERMISSION |
 | ID&SOC | ID, DNS, BOOST, PUBLISH |
 | FINANCE | WALLET, AMO, CREDIT, WORK, INFINITY, INCEPTION |
 | INSIGHTS | LOG, GROWTH, SEARCH |
@@ -58,6 +100,10 @@ domains.proofofwork.me      redirect to https://dns.proofofwork.me/
 computer.proofofwork.me     full mailbox/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser by txid
+pages.proofofwork.me        local HTML authoring and reviewed publication
+code.proofofwork.me         public source repositories and verified source history
+jobs.proofofwork.me         public briefs, delivery evidence and direct payments
+permission.proofofwork.me   wallet-bound agent permission grants
 boost.proofofwork.me        public Proof-ranked social feed
 publish.proofofwork.me      text-only articles with shared Boost identity and engagement
 search.proofofwork.me       public metaprotocol and data search

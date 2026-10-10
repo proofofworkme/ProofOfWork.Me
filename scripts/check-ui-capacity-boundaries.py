@@ -54,7 +54,8 @@ with tempfile.TemporaryDirectory(prefix='pow-ui-capacity-boundaries-') as tempor
     www, archives, staging, rollback, scratch, runtime = [base / name for name in
         ('www', 'archives', 'staging', 'rollback', 'private-scratch', 'runtime')]
     for directory in (www, archives, staging, rollback, scratch, runtime):
-        directory.mkdir(mode=0o755)
+        # The real deployment lock has a private 0700 parent.
+        directory.mkdir(mode=0o700 if directory == runtime else 0o755)
     for surface in SURFACES:
         directory = www / ('proofofwork-' + surface)
         directory.mkdir(mode=0o755)

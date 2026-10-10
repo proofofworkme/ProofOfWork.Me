@@ -1,3 +1,5 @@
+@layer legacy {
+
 .permission-app { min-width: 0; width: 100%; color: var(--text); }
 .permission-workspace { width: min(1200px, calc(100% - 48px)); margin: 32px auto 64px; min-width: 0; }
 .permission-app :is(button, input, select, summary) { min-height: 44px; }
@@ -124,4 +126,24 @@
   .permission-event > a { flex-shrink: 0; }
   .permission-embedded-app .permission-workspace { width: calc(100% - 24px); }
   .permission-code { padding: 16px; font-size: 11px; }
+}
+
+}
+
+@layer interface {
+.permission-heading h2 { color: var(--text); font-family: var(--font-ui); font-weight: 500; letter-spacing: -.035em; line-height: 1.2; }
+.permission-eyebrow { color: var(--text-muted); font-family: var(--font-ui); letter-spacing: 0; text-transform: none; }
+.permission-app :is(.permission-card, .permission-detail, .permission-editor, .permission-setup) { background: var(--surface); border-color: var(--border); box-shadow: none; }
+.permission-card { border-radius: var(--radius-lg); }
+.permission-card-top > button { font-weight: 500; }
+.permission-controller { background: var(--surface-soft); border-color: var(--border); }
+.permission-controller > svg { color: var(--text-muted); stroke-width: 1.6; }
+.permission-controller strong { font-weight: 500; }
+.permission-pill { border-radius: var(--radius-pill); font-family: var(--font-ui); }
+.permission-pill.is-closed { color: var(--text-muted); border-color: var(--border); }
+.permission-tools input { font: 12px var(--font-mono); }
+.permission-form textarea { font: 12px/1.7 var(--font-mono); }
+.permission-read-state, .permission-empty { background: var(--surface-soft); border-color: var(--border); }
+.permission-app :is(.primary, .secondary) { font-weight: 500; }
+
 }

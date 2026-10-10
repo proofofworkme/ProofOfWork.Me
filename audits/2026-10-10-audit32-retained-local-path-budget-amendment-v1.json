@@ -1,0 +1,552 @@
+{
+  "approvalRequiredBecause": "The last human approval explicitly retained the 75000-path limit. AGENTS.md requires explicit approval for new scope. This proposal changes only the temporary observation bounds and records retention of local directories; it is not activation.",
+  "dateUtc": "2026-10-10",
+  "evidence": {
+    "existingCoordinatorCandidate": {
+      "actualRamCases": 126,
+      "bytes": 196508,
+      "evidenceRole": "backendFinalCoordinatorEvidence",
+      "isPathAmendmentImplementation": false,
+      "nativeOrRootEntryInvoked": false,
+      "savedNewSourceFiles": 0,
+      "sha256": "20a337bab67cfc460364200230d67078daa456efb5ab29e4302889b8f70fec66"
+    },
+    "freshReadOnlyAggregateCensus": {
+      "actualExitCode": 0,
+      "allocatedBytes": 7025729536,
+      "independentRestorationAuthority": false,
+      "noFilesNetworkOrRootInvoked": true,
+      "opaqueConservativeObservedPaths": 8779,
+      "ordinaryObservedPaths": 65376,
+      "sourceAndIdentityClosuresPassed": true,
+      "unixMs": 1791666481115,
+      "wholeConservativeObservedPaths": 74155
+    },
+    "independentPlanningReview": {
+      "actualExitCode": 0,
+      "cases": 36,
+      "coverage": "Conditional arithmetic and existing source cleanup ordering; does not verify new guard wiring, metadata admission, or actual restoration.",
+      "driverBytes": 6081,
+      "driverSha256": "726c590e0438d2fed21ffe46f4e9a41830946d3588ab5bed5f04920eab55f450",
+      "finishedAtUtc": "2026-10-10T21:14:22.657007Z",
+      "startedAtUtc": "2026-10-10T21:14:22.537049Z",
+      "stdoutBytes": 1750,
+      "stdoutSha256": "7fa61a8347dec78d3a38f5d5dc0e0695b4da81bcf97d5a7b65f187240465f8e0"
+    },
+    "rootDiagnostic": {
+      "bytes": 350399,
+      "identity10": [
+        66306,
+        53911686,
+        33024,
+        1000,
+        1000,
+        1,
+        350399,
+        688,
+        1791665881534019847,
+        1791665881534019847
+      ],
+      "parentCore5": [
+        66306,
+        53890316,
+        16832,
+        1000,
+        1000
+      ],
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-readonly-local-topology-human-execution-v2.evidence.json.zlib",
+      "sha256": "455b42122c4661afb0bbb38853e11863843fba115b4c7c34f618d128f19e532d"
+    },
+    "rootDiagnosticActualExitCode": 0,
+    "rootDiagnosticGeometryClosingComplete": false,
+    "rootDiagnosticGivesReferenceAbsenceOrCleanupAuthority": false,
+    "rootDiagnosticSeconds": 16.44814
+  },
+  "format": "pow-audit32-retained-local-path-budget-amendment-proposal-v1",
+  "localDirectories": {
+    "archivesReceiptsLogsOriginalFailuresPreserved": true,
+    "deletionCreditAllocatedBytes": 0,
+    "deletionCreditPaths": 0,
+    "furtherLocalRootCleanupAuthenticationRequiredByThisProposal": false,
+    "localReferenceGeometryGuardsUnchanged": true,
+    "retain": [
+      "/tmp/pow-audit32-next-reliability-capacity-execution/complete-ui-build-amendment-v1/proofofwork-ui-source-4e77b5f11c80-20261010T052133Z",
+      "/tmp/pow-audit32-next-reliability-capacity-execution/complete-ui-build-amendment-v1/proofofwork-ui-surfaces-4e77b5f11c80-20261010T052133Z",
+      "/tmp/pow-audit32-next-reliability-capacity-execution/complete-ui-build-amendment-v1/build-home/.npm/_cacache"
+    ],
+    "retireNoneInThisRun": true
+  },
+  "metadata": {
+    "allOccupiedOldAndFailedEvidencePreserved": true,
+    "newSlotsMaximum": 0,
+    "onlyVerifiedStillUncreatedOptionalCopiesMayBeReassigned": true,
+    "previousRosterCount": 256,
+    "substitutions": [
+      {
+        "newSlot": "/home/sixer/ProofOfWork.Me/audits/2026-10-10-audit32-retained-local-path-budget-amendment-v1.json",
+        "uncreatedOldSlot": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-next-reliability-capacity/curated/one-verified-recovery-v1/performance-r-build-expansion-retirement-v2.py"
+      },
+      {
+        "newSlot": "/home/sixer/ProofOfWork.Me/audits/2026-10-10-audit32-retained-local-path-budget-authorization-v1.evidence.json",
+        "uncreatedOldSlot": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-next-reliability-capacity/curated/one-verified-recovery-v1/performance-r-build-expansion-retirement-v2.qa.json"
+      },
+      {
+        "newSlot": "/tmp/pow-audit32-next-reliability-capacity-execution/root-retained-local-path-budget-amendment-v1.evidence.json.zlib",
+        "uncreatedOldSlot": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-next-reliability-capacity/curated/one-verified-recovery-v1/local-r-build-expansion-retirement-v1.execution.json"
+      },
+      {
+        "newSlot": "/tmp/pow-audit32-next-reliability-capacity-execution/root-retained-local-path-budget-adapter-v1.py",
+        "uncreatedOldSlot": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-next-reliability-capacity/curated/one-verified-recovery-v1/backend-reference-rooted-view-v5.py"
+      }
+    ],
+    "unchangedFilesMaximum": 256
+  },
+  "onlyNumericChanges": {
+    "observedPathsMaximum": {
+      "comparison": "whole observations <= maximum",
+      "new": 90000,
+      "old": 75000
+    },
+    "preOpaquePathsMaximum": {
+      "comparison": "ordinary census observations < maximum",
+      "new": 80000,
+      "old": 70000
+    }
+  },
+  "originalControls": {
+    "authorization": {
+      "bytes": 3104,
+      "identity10": [
+        66306,
+        53911665,
+        33024,
+        1000,
+        1000,
+        1,
+        3104,
+        8,
+        1791659820652207586,
+        1791659820652207586
+      ],
+      "parentCore5": [
+        66306,
+        53890316,
+        16832,
+        1000,
+        1000
+      ],
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-one-verified-recovery-approval-v1.json",
+      "sha256": "109cdb87f011519182a0132f7d80598804d1b416a5afb320f50e8330f2ffeade"
+    },
+    "plan": {
+      "bytes": 14263,
+      "identity10": [
+        66306,
+        53911664,
+        33024,
+        1000,
+        1000,
+        1,
+        14263,
+        32,
+        1791659820649207569,
+        1791659820649207569
+      ],
+      "parentCore5": [
+        66306,
+        53890316,
+        16832,
+        1000,
+        1000
+      ],
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-one-verified-recovery-plan-v1.json",
+      "sha256": "f997e12be978fc9fa61c40ede8b7a871e1cd2559c83f18aabaef080381444577"
+    },
+    "window": {
+      "bytes": 1264,
+      "identity10": [
+        66306,
+        53911666,
+        33024,
+        1000,
+        1000,
+        1,
+        1264,
+        8,
+        1791659820656207609,
+        1791659820656207609
+      ],
+      "parentCore5": [
+        66306,
+        53890316,
+        16832,
+        1000,
+        1000
+      ],
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-one-verified-recovery-window-v1.json",
+      "sha256": "9204054fa763c1bbc717a17f7c79fb14c8691706c32f78ba63e6be296fc018b4"
+    }
+  },
+  "planningNotActualRestoration": {
+    "allocatedBytes": {
+      "conservativeSequencedMaximum": 11047555072,
+      "freshBuildReserveBytes": 2147483648,
+      "margin": 1837346816,
+      "newMetadataReserveBytes": 1610612736,
+      "unchangedMaximum": 12884901888
+    },
+    "freshBuildFootprintMustBeRecomputedFromSuccessorSource": true,
+    "freshNodeRuntimeCatalogNotYetIndependentlyQualified": true,
+    "observations": {
+      "allFixturesPlusBuild97547WouldRefuse": true,
+      "baseline": 74155,
+      "bothKeepersWithSlack": 85953,
+      "lastPhaseOrdinary": 79768,
+      "maximumPermittedOrdinary": 79999,
+      "nodeSuccessfulOwnFixtureCleanupThenBuildWithUiKeeperRetained": 88547,
+      "ordinaryStrictMargin": 231,
+      "uiKeeperWithSlack": 76953,
+      "wholeMargin": 1453
+    },
+    "suppliedEstimatesNeverGrantCleanupCredit": true
+  },
+  "protectedResources": [
+    "all live production data",
+    "database and SQL rollback relations",
+    "chain/node/indexer state",
+    "protocol history and ledgers",
+    "mempool data",
+    "wallet authority and private credentials",
+    "original audits, failures, custody, graphs, receipts, windows",
+    "all server infrastructure and timers",
+    "node accepted runtime overlays and all noncandidate recovery evidence"
+  ],
+  "purpose": "Complete the already approved VPS recovery and release while preserving all three local rebuildable directories; do not weaken unresolved local reference guards.",
+  "requiredImplementationValidation": [
+    "Exact original raw full10, parent and source/AST hashes close at opening, before dispatch, through independent verification, output fsync and final readback.",
+    "Only one 75000 integer changes to 90000 in each of the three specified derivative functions; every other AST predicate is identical.",
+    "Exercise actual nested Context/main calls in isolated namespaces; prove new current budgets reach every active admission while original namespaces/globals and historical 62 foundation definitions remain unchanged.",
+    "Positive and negative cases cover strict 79999/80000 and whole 90000/90001 boundaries, opaque 8779, all retained/failed objects, missing approval, expired hold, wrong phase/hash/pin, qualified and failed own-fixture cleanup, and disallowed build overlap.",
+    "Actual metadata/file census with all pre-created outputs and future slots, independent complete source ledger, byte reservations, all closing identities and unchanged production gates pass before any retirement.",
+    "Independent rerun, relevant original controller/protocol/browser regressions, approved audit bookkeeping, hygiene:fix semantic review and hygiene:check."
+  ],
+  "scopeId": "audit32-one-verified-recovery-20261010T191341Z",
+  "sequencingAndReadiness": [
+    "Admit exact human approval of this amendment, all original controls, expiry, source pins, metadata roster, and fresh actual aggregate census before any amended production phase.",
+    "Independently restore and qualify retained UI recovery set using the existing controller; its own newly created fixture may be retired only through the already approved proof, reference, journal and scratch-closure branch. Failed fixtures remain preserved.",
+    "Retire only the previously approved qualified UI subjects through unchanged native reference/removal gates.",
+    "Independently qualify and restore Node recovery including every accepted overlay; retire only the already approved Node subjects. Obtain actual typed exit 0, durable result and journal, artifactCleanup proof and all closing fences before granting any own-fixture credit.",
+    "Run a fresh census after qualified own-fixture cleanup. Admit fresh successor build and preview only if its measured reservation plus every failed and retained item fits 90000 whole observations, ordinary count <80000, 12GiB, the unchanged metadata/source pools and native production gates.",
+    "If any fixture fails or remains without qualified cleanup proof, stop dependent work. Do not automatically retry partial retirement, renew the window, delete additional items, or extend stale-data validity.",
+    "Complete already approved tests, audit receipts, hygiene, fresh build, controlled deployment, accepted overlay provenance, main/local-preview/public release synchronization and full readiness. Announce only after actual check:release-sync exit 0 and fresh readiness."
+  ],
+  "sourceAccounting": {
+    "adapterMaximumBytes": 65536,
+    "conservativePlannedMaximumBytes": 1994034,
+    "currentMutableCoordinatorBytes": 176270,
+    "derivedDefinitionsMaximumBytes": 65536,
+    "freshCompleteIndependentSourceLedgerBeforeActivationRequired": true,
+    "inactiveOriginalsMustNotBeDeletedOrDroppedForCredit": true,
+    "plannedMarginBytes": 103118,
+    "preservedHistoricalBytes": 772414,
+    "preservedNineNewIntermediateBytesWithCurrentMutableCoordinator": 1070210,
+    "replacementCoordinatorMaximumBytes": 196608,
+    "unchangedMaximumBytes": 2097152
+  },
+  "status": "PROPOSED_NOT_AUTHORIZED_NOT_APPLIED",
+  "temporaryImplementation": {
+    "activationModes": {
+      "node": [
+        "qualify",
+        "restore-keep",
+        "retire"
+      ],
+      "ui": [
+        "qualifyKeep",
+        "retire"
+      ]
+    },
+    "adapterMaximumPlaintextBytes": 65536,
+    "coordinatorOwnSourceMaximumBytes": 196608,
+    "currentOnlyFunctionTransformations": [
+      {
+        "astHashEncoding": "Python 3.12.3 ast.dump(include_attributes=False), UTF-8",
+        "derivedAstSha256": "aa3eb5bcf8e08b35484a06f9bc9151ffb6c8e5956062d3c459ad055efdd7a65b",
+        "exactChange": {
+          "integerConstant": 75000,
+          "occurrences": 1,
+          "replacement": 90000
+        },
+        "function": "consolidated_keep_reservation",
+        "functionRawBytes": 1345,
+        "functionRawSha256": "5befab04cbc6ca81dd737aeb3d1ff1552361c4f155842f95cac57eab795d63a1",
+        "originalAstSha256": "b56e871a86273ed3e3e948788344a532710b4256bc2a6e1b3bbcb069e8a3b909",
+        "source": {
+          "bytes": 257514,
+          "identity10": [
+            66306,
+            53911679,
+            33024,
+            1000,
+            1000,
+            1,
+            257514,
+            504,
+            1791662451463121134,
+            1791662504328317619
+          ],
+          "parentCore5": [
+            66306,
+            53890316,
+            16832,
+            1000,
+            1000
+          ],
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/backend-capacity-tail-retirement-controller-v7.py",
+          "sha256": "877ef44dd20719c41009231e95efd83825f04cf60163d1a5e619e14b7301488b"
+        }
+      },
+      {
+        "astHashEncoding": "Python 3.12.3 ast.dump(include_attributes=False), UTF-8",
+        "derivedAstSha256": "870761670841805050ef9b5584e80fd4be5b73f72ce9cd11f675befb4a9920f3",
+        "exactChange": {
+          "integerConstant": 75000,
+          "occurrences": 1,
+          "replacement": 90000
+        },
+        "function": "budget_admit",
+        "functionRawBytes": 1136,
+        "functionRawSha256": "e25ed003fcd04f7628671177605bcddf42d73ee0dc73b7eea699a7d2098be5d6",
+        "originalAstSha256": "0e940df51e5b3de820a1ed5a2990add41e7b96058eb401f9f34daa753e481086",
+        "source": {
+          "bytes": 113614,
+          "identity10": [
+            66306,
+            53911682,
+            33024,
+            1000,
+            1000,
+            1,
+            113614,
+            224,
+            1791663128541668610,
+            1791663172620835981
+          ],
+          "parentCore5": [
+            66306,
+            53890316,
+            16832,
+            1000,
+            1000
+          ],
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-one-rollback-retention-controller-v2.py",
+          "sha256": "599bd5562a45062dc7f24a5a54c3943dbfa80367fe4267a5ff5f4d9a2605470b"
+        }
+      },
+      {
+        "astHashEncoding": "Python 3.12.3 ast.dump(include_attributes=False), UTF-8",
+        "derivedAstSha256": "3ba32fd0d80521461138abdb926c3c1748a09d06f2a51c80049db2bbd7c81a49",
+        "exactChange": {
+          "integerConstant": 75000,
+          "occurrences": 1,
+          "replacement": 90000
+        },
+        "function": "retirement_budget_admit",
+        "functionRawBytes": 761,
+        "functionRawSha256": "b3c444a82ce373aa723d0b31953fe973f889861f87546861b08f0b1dbba39d3d",
+        "originalAstSha256": "45bed4578bfedec477871c9197b79d3739f4684a723ca5068a189204a2c867d8",
+        "source": {
+          "bytes": 113614,
+          "identity10": [
+            66306,
+            53911682,
+            33024,
+            1000,
+            1000,
+            1,
+            113614,
+            224,
+            1791663128541668610,
+            1791663172620835981
+          ],
+          "parentCore5": [
+            66306,
+            53890316,
+            16832,
+            1000,
+            1000
+          ],
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-one-rollback-retention-controller-v2.py",
+          "sha256": "599bd5562a45062dc7f24a5a54c3943dbfa80367fe4267a5ff5f4d9a2605470b"
+        }
+      }
+    ],
+    "files": {
+      "approvalReceipt": "/home/sixer/ProofOfWork.Me/audits/2026-10-10-audit32-retained-local-path-budget-authorization-v1.evidence.json",
+      "evidence": "/tmp/pow-audit32-next-reliability-capacity-execution/root-retained-local-path-budget-amendment-v1.evidence.json.zlib",
+      "existingMutableCoordinator": "/tmp/pow-audit32-next-reliability-capacity-execution/root-tail-retirement-coordinator-v5.py",
+      "existingMutableSourceGraph": "/tmp/pow-audit32-next-reliability-capacity-execution/root-one-verified-recovery-reviewed-source-graph-v1.json",
+      "oneBoundedAdapter": "/tmp/pow-audit32-next-reliability-capacity-execution/root-retained-local-path-budget-adapter-v1.py"
+    },
+    "forbiddenChanges": [
+      "No caller-selected arbitrary patch targets or hashes.",
+      "No original module-global mutation.",
+      "No change to any protocol/math/fee/balance/chain/ledger predicate.",
+      "No change to namespace, PID, full flags, reference, protected-resource, retention, removal, byte, timer, kernel or native production capacity guards.",
+      "No change to any historical 8GiB/75000 receipt verification, original plan constants, historical windows or the original 62 coordinator foundation ASTs."
+    ],
+    "namespaceConstruction": "Reuse each single held original raw source byte object to compile non-main into a fresh isolated namespace. Install only the three statically named, AST-authenticated integer derivatives there. Original module globals, classes, bodies and code provenance remain intact; no duplicated complete plaintext successor file.",
+    "newCurrentCoordinatorBudgets": [
+      "A separately named current-epoch census and budget implement <80000 ordinary and <=90000 including the unchanged opaque 8779 allowance. The historical allocator and CompositeRetirementBudget remain unchanged.",
+      "Current-only Node resource admission uses <=90000; all non-path resource checks remain unchanged.",
+      "An exact amendment-admission bridge binds original plan/authorization/window and new human authorization, source graph, adapter hash, derived hashes, phase and expiry; report original and effective bounds truthfully."
+    ],
+    "separatelyMaterializedDerivedDefinitionMaximumBytes": 65536
+  },
+  "unchangedLimits": {
+    "aggregateAllocatedBytesMaximum": 12884901888,
+    "allFailedOutputsCharged": true,
+    "combinedTemporarySourceBytesMaximum": 2097152,
+    "curatedPoolBytes": 134217728,
+    "frameMaximumBytes": 50331648,
+    "inclusiveMetadataPoolBytes": 1610612736,
+    "metadataFilesMaximum": 256,
+    "negativeFixturesStatOnlyExactly": 12,
+    "noMetadataDeletionCredit": true,
+    "remoteSavedEvidenceBytesMaximum": 67108864,
+    "rootMetadataPoolBytes": 16777216,
+    "sourceAndBindingsPoolBytes": 16777216,
+    "sshCommandExclusiveMaximumBytes": 110000,
+    "uiNativeFreeBytesMinimum": 10737418240,
+    "uiNativeScratchBytes": 5368709120,
+    "uiSafetyMarginBytes": 268435456,
+    "wireMaximumBytes": 8388608
+  },
+  "unchangedOperationLimits": {
+    "automaticRenewal": false,
+    "automaticRetryAfterPartialFailure": false,
+    "localRetirementRunMaximum": 1,
+    "nodeRunMaximum": 1,
+    "oldWindowsMustRemainByteIdentical": true,
+    "stopOnUnexpectedStateOrExpiredScope": true,
+    "uiRetirementAttempt": 3
+  },
+  "vpsScope": {
+    "acceptedRuntimeOverlaysRequired": true,
+    "independentRestorationStillMandatory": true,
+    "noAdditionalSubjects": true,
+    "nodeTargetsUnchanged": {
+      "host": "65.108.122.87",
+      "individualOldCopyExportException": true,
+      "keepAllAcceptedOverlayAndIncidentEvidence": true,
+      "keepCurrentArchive": "/data/proofofwork-release-backups/managed/proofofwork-node-release-92eb5fb-20261004T111041Z.tgz",
+      "keepLastWholeLogicalRestore": "/data/proofofwork-postgres-backups/logical/proof_indexer-20261007T031849Z.dumpset",
+      "keepRollbackArchive": "/data/proofofwork-release-backups/managed/proofofwork-node-release-eb5e8c7-20261004T005638Z.tgz",
+      "keepRoot": "/opt/proofofwork-api-stage-92eb5fbdaacf-20261004T111041Z",
+      "live": "/opt/proofofwork-api",
+      "obsoleteArchiveCompanions": [
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-38ac6e2-20261003T042000Z.tgz.sha256",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-38ac6e2-20261003T042000Z.tgz.provenance",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-527e4cb-20261001T062733Z.tgz.sha256",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-527e4cb-20261001T062733Z.tgz.provenance",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-53b5b42-20261001T201028Z.tgz.sha256",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-53b5b42-20261001T201028Z.tgz.provenance",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-993523c-20260930T045021Z.tgz.sha256",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-993523c-20260930T045021Z.tgz.provenance",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-d4d8887-20261002T013828Z.tgz.sha256",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-d4d8887-20261002T013828Z.tgz.provenance",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-d5a8493-20261003T222517Z.tgz.sha256",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-d5a8493-20261003T222517Z.tgz.provenance"
+      ],
+      "obsoleteArchives": [
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-38ac6e2-20261003T042000Z.tgz",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-527e4cb-20261001T062733Z.tgz",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-53b5b42-20261001T201028Z.tgz",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-993523c-20260930T045021Z.tgz",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-d4d8887-20261002T013828Z.tgz",
+        "/data/proofofwork-release-backups/managed/proofofwork-node-release-d5a8493-20261003T222517Z.tgz"
+      ],
+      "obsoleteStages": [
+        "/opt/proofofwork-api-stage-04e685a4c7ea-20261003T025240Z",
+        "/opt/proofofwork-api-stage-1149633c2d1a-20260924T015319Z",
+        "/opt/proofofwork-api-stage-22a1b0d31d1c-20260929T041430Z",
+        "/opt/proofofwork-api-stage-2f0b32356677-20260926T024513Z",
+        "/opt/proofofwork-api-stage-3399d767103e-20261003T020420Z",
+        "/opt/proofofwork-api-stage-38ac6e2bff2a-20261003T040230Z",
+        "/opt/proofofwork-api-stage-38ac6e2bff2a-20261003T042000Z",
+        "/opt/proofofwork-api-stage-3bc6c9d44e00-20260929T200136Z",
+        "/opt/proofofwork-api-stage-527e4cbaa66f-20261001T062733Z",
+        "/opt/proofofwork-api-stage-53b5b428e864-20261001T201028Z",
+        "/opt/proofofwork-api-stage-5970b26e610b-20260926T224701Z",
+        "/opt/proofofwork-api-stage-62bb44d2251b-20260928T000229Z",
+        "/opt/proofofwork-api-stage-7b47a0cacfec-20260926T0152Z",
+        "/opt/proofofwork-api-stage-863385322af4-20260929T140259Z",
+        "/opt/proofofwork-api-stage-8f19f2c8430d-20260929T155139Z",
+        "/opt/proofofwork-api-stage-942478c7fa78-20260929T142944Z",
+        "/opt/proofofwork-api-stage-993523cc6869-20260930T045021Z",
+        "/opt/proofofwork-api-stage-9d04fd3cf1f6-20260927T094716Z",
+        "/opt/proofofwork-api-stage-9d64a4668a9a-20261004T105542Z",
+        "/opt/proofofwork-api-stage-9fa3581d2b06-20260929T152445Z",
+        "/opt/proofofwork-api-stage-b22376c787a8-20261001T054959Z",
+        "/opt/proofofwork-api-stage-b608e73eab41-20260928T230907Z",
+        "/opt/proofofwork-api-stage-b752518bf8b4-20260927T014810Z",
+        "/opt/proofofwork-api-stage-bd7e9ad1bea8-20261001T061323Z",
+        "/opt/proofofwork-api-stage-bf81f9cffcc7-20260927T093457Z",
+        "/opt/proofofwork-api-stage-c12b68c51faa-20260929T131338Z",
+        "/opt/proofofwork-api-stage-d2c0afaffd9c-20260929T160642Z",
+        "/opt/proofofwork-api-stage-d4d888757a1c-20261002T013828Z",
+        "/opt/proofofwork-api-stage-d5a8493119ba-20261003T222517Z",
+        "/opt/proofofwork-api-stage-db853f434f9b-20260930T011125Z",
+        "/opt/proofofwork-api-stage-e007b77dcad6-20261001T060224Z",
+        "/opt/proofofwork-api-stage-eb5e8c70cb0d-20261004T005638Z",
+        "/opt/proofofwork-api-stage-f48d3a777a50-20260929T042348Z",
+        "/opt/proofofwork-api-stage-f4ca769e9202-20260927T055111Z",
+        "/opt/proofofwork-api-stage-fc5bd0eee0a6-20261003T004504Z"
+      ],
+      "requireIndependentlyRestoredCompleteKeepAndOverlayClosure": true
+    },
+    "oneIndependentlyVerifiedRecoverySetPerVpsRequired": true,
+    "uiTargetsUnchanged": {
+      "additionalArchivesIndividualExportException": true,
+      "additionalOldPairIndividualExportException": true,
+      "archiveSidecars": "Preserve every UI checksum/provenance sidecar and original evidence",
+      "conditionalOlderArchives": [
+        "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-01ec4968caa9-20261007T150110Z.tgz",
+        "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-13ddf6d7f401-20261007T030045Z.tgz",
+        "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-19cc93a7c97f-20261007T161406Z.tgz",
+        "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-471a30c41991-20261004T122500Z.tgz",
+        "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-506b1ab0833e-20261008T065838Z.tgz",
+        "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-7bad9495d118-20261006T180919Z.tgz",
+        "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9d64a4668a9a-20261004T105542Z.tgz",
+        "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-b40d4f4a0d31-20261009T000001Z.tgz",
+        "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-c243081bb18c-20261008T042348Z.tgz",
+        "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-fc396c9a9abd-20261007T233244Z.tgz"
+      ],
+      "firstPartialRootRemainingEntries": 1685,
+      "host": "77.42.91.106",
+      "keepCurrentArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d8ae8220d897-20261010T000925Z.tgz",
+      "keepRollbackArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-c7935dde7239-20261009T043549Z.tgz",
+      "keepRoot": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d8ae8220d897-20261010T000925Z",
+      "live": "/var/www",
+      "obsoleteRoots": [
+        "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-506b1ab0833e-20261008T065838Z",
+        "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-9b56f32ff831-20261008T133400Z",
+        "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c243081bb18c-20261008T042348Z",
+        "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c7935dde7239-20261009T043549Z",
+        "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-fc396c9a9abd-20261007T233244Z"
+      ],
+      "originalFourCustodyPreserved": true,
+      "priorUnlinks": 127,
+      "remainingOriginalEntries": 8356,
+      "requireIndependentlyRestoredLatestKeepBeforeAdditionalRetirement": true
+    }
+  },
+  "window": {
+    "expiresAtUtc": "2026-10-10T23:13:41Z",
+    "expiresUnixMs": 1791674021000,
+    "mustStopOnExpiry": true,
+    "newHoldWindowApproved": false,
+    "renewalApproved": false,
+    "startsUnixMs": 1791659621000
+  }
+}

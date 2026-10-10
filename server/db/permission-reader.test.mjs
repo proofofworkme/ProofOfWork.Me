@@ -104,7 +104,11 @@ test('resumption reauthenticates the complete compact prefix without reconstruct
 test('accepted externalized native shape preserves the same descriptors in reconstructed and compact rows', async () => {
   // Bind this shape fixture to the accepted native contract, rather than
   // presenting the same full payload as both accessor and compact SQL rows.
-  const nativeSql = readFileSync(new URL('../../deploy/audit31/transition-lossless-local/native-runtime-storage-v2.sql', import.meta.url), 'utf8');
+  // Immutable test-only snapshot of the accepted audit31 native storage SQL;
+  // its original deployment-candidate annotation is retained as historical evidence.
+  const nativeSql = readFileSync(new URL('./fixtures/native-runtime-storage-v2.sql', import.meta.url), 'utf8');
+  assert.equal(createHash('sha256').update(nativeSql).digest('hex'),
+    '01a95d76c606dad1dc9c3f40b9ea6002f7e8ad408c984536b8eb90b8594f9c16');
   const metadata = nativeSql.match(/CREATE FUNCTION proof_indexer\.work_transition_metadata_v1\(p jsonb\)[\s\S]*?p-ARRAY\[([^\]]+)\]/u);
   assert.ok(metadata);
   const removed = [...metadata[1].matchAll(/'([^']+)'/gu)].map(match => match[1]);

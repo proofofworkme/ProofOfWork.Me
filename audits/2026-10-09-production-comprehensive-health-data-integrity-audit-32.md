@@ -772,3 +772,364 @@ predicates, original evidence and refusal are preserved; no namespace is skipped
 or classified from speculation. This diagnostic started no custody clock and
 made no production mutation. The helper remains uninstalled, all four original
 pairs remain intact, and no deployment or release announcement has occurred.
+
+### Read-only local guard diagnosis and retained-local proposal, 2026-10-10 21:18 UTC
+
+This continuation covers the already approved one-verified-recovery capacity
+run and its blocked local build-expansion retirement. It is preparation and
+read-only diagnosis; it does not complete the application release.
+
+The two local retirement commands returned actual exit 1 before removal.
+Their original execution/stderr files remain preserved. The removal journal
+`/tmp/pow-audit32-next-reliability-capacity-execution/performance-r-build-expansion-retirement-v1.journal.jsonl.gz`
+remained absent. No deletion credit is taken for the three local source,
+surfaces, or npm-cache directories. The first read-only diagnostic also
+failed on its inherited 1,024-descriptor limit; that failure and its inputs
+are preserved in the immutable v1 diagnostic evidence.
+
+The corrected human-authenticated root diagnostic completed with actual root
+and outer exit 0 at **20:57:44.996880–20:58:01.445020 UTC** (16.45 seconds).
+Its immutable evidence is
+`/tmp/pow-audit32-next-reliability-capacity-execution/root-readonly-local-topology-human-execution-v2.evidence.json.zlib`,
+350,399 bytes, SHA-256
+`455b42122c4661afb0bbb38853e11863843fba115b4c7c34f618d128f19e532d`.
+Only its own soft descriptor limit was temporarily adjusted; it restored the
+original soft/hard limits and closed its additional descriptors. It performed
+no cleanup. Diagnostic success is not reference-absence or retirement admission:
+`geometryClosingComplete` was false. The unchanged native reference guard
+still refuses overlay and proc-filesystem geometries. Four member-root views
+could not open the recorded overlay backing names, and 57 member-topology
+observations failed with ESRCH. The diagnostic does not prove those processes
+are harmless zombies or those backing names identify the mounted objects.
+Repeatedly authenticating the same local cleanup would reproduce a refusal.
+
+A fresh read-only host-context Q5 census completed with actual exit 0 and
+closing source/identity checks: **7,025,729,536 allocated bytes**, **65,376
+ordinary observations**, plus the original **8,779** opaque custody allowance,
+for **74,155** conservative observations. The tooling sandbox first refused
+because it mapped a held root owner to 65534; the identical read-only host
+census then succeeded without sudo, file creation, or network traffic. This
+records the census method, not a new original-owner restoration.
+
+The existing 75,000-path ceiling cannot admit the UI keeper fixture while
+retaining the local directories. The
+[retained-local path-budget amendment](2026-10-10-audit32-retained-local-path-budget-amendment-v1.json)
+is **proposed, unapproved, and unapplied**. Its 27,551-byte body has SHA-256
+`5b3f1060d6768bf1aafd02251c88d1634d349aff788fc99a75afbae415aa93ea`.
+It requests only current-operation ceilings of 90,000 aggregate observations
+and ordinary observations strictly below 80,000, with all three local targets
+retained and zero removal credit. It preserves the 12 GiB, 256-file, 2 MiB,
+native capacity, source, reference, retention, and protected-resource limits
+and the existing **23:13:41 UTC / 7:13:41 PM Toronto** expiry.
+
+Conditional conservative planning peaks at **88,547 observations** (79,768
+ordinary) and **11,047,555,072 bytes**. Those are planning bounds, not measured
+restoration or build results. The fresh build must wait for the Node
+controller's already approved, independently qualified, durable successful
+own-fixture cleanup and a fresh census. If that fixture remains, the projected
+97,547-path overlap must refuse. Failed fixtures and evidence remain protected.
+The forecast does not require UI fixture deletion credit. The future Node
+runtime catalog and fresh successor-build footprint still require measurement
+and admission.
+
+The proposal specifies one bounded adapter, three exact AST-authenticated
+active budget comparisons, and a separately named current coordinator census.
+Historical 8 GiB/75,000 receipts, original controls, and the 62 foundation
+coordinator definitions remain unchanged. Original controller files and global
+namespaces remain intact. The conservative source calculation, including a
+maximum-size coordinator and two separate 65,536-byte adapter/derived-definition
+allowances, is **1,994,034 bytes**, 103,118 below 2 MiB. A complete independent
+source ledger and nested-call tests remain execution gates.
+
+Independent RAM planning checks passed **36 cases** with actual exit 0.
+Root independently verified all three original function/source hashes and
+specified single-constant derivative AST hashes. The metadata/archive/descriptor
+coordinator candidate passed **126 RAM cases** and an independent **126-case**
+rerun; it reproduces 196,508 bytes, SHA-256
+`20a337bab67cfc460364200230d67078daa456efb5ab29e4302889b8f70fec66`,
+within its unchanged 196,608-byte limit. The peer's first comparison wrapper
+used the wrong baseline and stopped before executing the drivers; that
+wrapper failure remains explicit. These checks invoked no production/root
+entry. Neither this coordinator candidate nor the new path adapter has been
+installed or executed. New amendment wiring, actual metadata admission,
+independent restorations, and fresh phase readiness are not yet passed.
+
+The exact 256-name evidence roster reassigned four still-uncreated optional
+curated-copy slots to the proposal, future authorization, amendment evidence,
+and bounded adapter. All occupied source, failure, receipt, archive, and
+historical evidence remains protected; the existing draft graph retains the
+lossless RAM driver/evidence package. No evidence file cap was raised and no
+deletion was used to manufacture capacity.
+
+No production retirement, configuration or timer change, live-data change,
+database/ledger/protocol mutation, commit, successor build, deployment,
+release synchronization, or announcement occurred at this checkpoint. The
+previous full-chain/math and field-performance coverage gaps are not resolved
+by these recovery diagnostics. Remaining actions require exact approval of
+the proposed observation-bound amendment, successful unchanged execution gates,
+and the already approved release workflow. No release is announced until
+fresh full readiness and actual `npm run check:release-sync` exit 0.
+
+Closing preparation hygiene: `hygiene:fix` returned actual exit 0 and found no
+allowlisted rebuildable state; `hygiene:check` and `git diff --check` returned
+actual exit 0. Semantic review found no product/protocol/operating-memory change
+requiring edits to SOUL or the canonical documents. The repository diff is
+limited to this audit-log append and the new unapproved JSON proposal; unrelated
+untracked and ignored material is preserved. No commit was created.
+
+
+### Approved retained-local path-budget amendment — implementation in progress
+
+The human directly approved the exact retained-local path-budget amendment
+`2026-10-10-audit32-retained-local-path-budget-amendment-v1.json`
+(27,551 bytes; SHA-256
+`5b3f1060d6768bf1aafd02251c88d1634d349aff788fc99a75afbae415aa93ea`).
+The separate immutable authorization receipt is 5,306 bytes, SHA-256
+`e6b78ae69fd00ba2d26c4f8ed6cff8e93c4b34ea5c023e0a9f8afa1b2fea3dc4`.
+Only current-epoch ordinary observations <80,000 and whole observations
+<=90,000 are authorized. The 12 GiB, 256 evidence-file, 2 MiB source,
+opaque 8,779 allowance, native production gates, protected resources and
+2026-10-10 23:13:41 UTC expiry remain unchanged. All three local build/cache
+directories remain retained, with zero deletion credit.
+
+The original 255,663-byte draft graph (SHA-256
+`97f7b7bd6e2ea7bfd5ddad7aee80d838be65f433b6aeca960304fed3898284ad`)
+was preserved losslessly in the approved archival evidence slot. The
+171,460-byte immutable zlib artifact has SHA-256
+`49c3c91ac7f32ef656de919925b02368522182e710c56f79e1fa7e260630b793`.
+The three archived QA projections, complete prior graph, original six-field
+archive reference, source declarations and 256-name closed roster remain
+verifiable. No occupied evidence was deleted or replaced.
+
+The approved bounded adapter was installed only in the temporary execution
+namespace: 14,574 bytes, SHA-256
+`5550e1bb34fb447cd7d4449d98ed4e82c48be1af1fbf9b3ebe016f623e8f1289`.
+Its primary isolated RAM driver returned actual exit 0 for 56 named cases.
+Nested Node main/Context and UI keeper calls used explicitly mocked native
+mutation dependencies. These are source-contract tests; they are not
+production restoration, reference absence, capacity qualification or
+retirement proof. Independent rerun and coordinator integration are pending.
+
+The new read-only Node strict Snapshot refused the root-owned live Git index.
+A bounded metadata diagnosis found this sole owner failure among 8,399 live
+and 8,356 retained-stage entries: `/opt/proofofwork-api/.git/index`,
+device 64512, inode 1222900, regular mode 0644, UID/GID 0/0, 292,941 bytes,
+SHA-256 `6640a6b78dd868a9fbad17b30b65680e4fdcf0c7f3db0a3233829e8c572351ad`.
+The strict catalogue and independent Node restoration remain unqualified.
+No owner predicate was relaxed. The human separately approved only a held-FD
+ownership correction to UID/GID 1000/1000, with content, mode, mtime, Git
+state and accepted overlays preserved, a receipt and conditional
+ownership-only rollback on verification failure. Its execution is pending.
+
+The fresh one-request Permission/Core check returned public 503 after
+26.478 seconds; canonicalPass/currentFullReadinessVerified were false and
+the UI/API failed closed. Opening and closing Core tips agreed at height
+970831, hash
+`0000000000000000000017021cb167eca7715b7fdd7208815881b60f4a93ff33`.
+The three checked accepted Permission sources closed unchanged. This does
+not invalidate the earlier complete check at height 970817, but the earlier
+result is not current release readiness.
+
+Automatic approval review initially refused the read-only Node source
+dispatch; the identical command was admitted after the exact new human
+manifest/authorization were supplied. It subsequently refused the local
+adapter/test transfer. The human separately approved the exact 50,269-byte
+packet (SHA-256
+`57fda33cd5a60b0e93f2d2cc00089e8026880bad300a2f5c444378739ad12b9c`)
+over `pow-audit32-fixture-graph-root-20261010`. The authorized transfer
+then completed and its lossless evidence was added to the existing draft
+graph. The first receiver timeout and failed connect made no graph or
+production change. No alternative relay bypassed review.
+
+GitHub main was freshly fetched and remains
+`d8ae8220d897f876d85b0025db86306dc27e6fe5`. The local approved candidate is
+`4e77b5f11c8003b19a4908b8ad0fdbd304ee721b`; release synchronization is
+not complete. No VPS retirement, production deployment or announcement is
+claimed by this entry.
+
+
+### 2026-10-10 scoped transport, Node index ownership receipt and remaining admission blocks
+
+The human approved the exact 50,269-byte local adapter/test transfer, the pinned Node Git-index ownership correction, and then the separately bounded transport of this audit's verified controller/adapters and paths/hashes to UI 77.42.91.106, Node 65.108.122.87 and the named local abstract Unix socket. These approvals add no cleanup subjects or native-gate exceptions. The two prior automatic-review transport refusals remain preserved in the peer evidence.
+
+The ownership-only action actually exited zero at 21:45:15 UTC. Held Node index inode 1222900 remained 292,941 bytes with SHA-256 6640a6b78dd868a9fbad17b30b65680e4fdcf0c7f3db0a3233829e8c572351ad. UID/GID changed from 0:0 to 1000:1000; mode 0644, bytes, mtime, xattrs, Git HEAD/tree, all ten checked overlay bodies and ancestor closures passed. Only unavoidable ctime changed. No rollback was needed and no application body, live record, database or chain data changed. Actual command stdout: 19,459 bytes, SHA-256 04d9347c9db18fbfba5aa3f798c151142dc635b3be256dff9974f115c123f67e.
+
+The post-correction read-only Node catalogue advanced and refused additional runtime overlays rather than accepting unproved changes. It found 35 current body deltas from the baseline: the ten supplied bindings, one additional exact first-batch postgres binding, and 24 other deltas. All 24 now match pinned retained candidates and provenance: Code/Jobs/Pages/Browser-DNS manifest entries and Audit31 Search/transition/private-diagnostics receipts. Their acceptance requires a new narrow catalogue/receipt amendment; the existing controller accepts three literal manifest formats and its predicates have not been widened. The proposed 31,680-byte amendment, SHA-256 3c5e2b6d8f2dbbfe59e6bee031ed8dae7241acc162fbb726df2bbad61a376967, is prospective and does not grant restoration or retirement authority.
+
+The reserved combined QA file was written once, mode 0400: curated/one-verified-recovery-v1/backend-one-verified-recovery-source-tests-v1.json, 213,439 bytes, SHA-256 c4e78e855db6c4e555ea966d91c60436553cd44b29d137bd56cb1dbeabb7b2dc. It preserves actual source-only adapter/coordinator/constructor tests, diagnostic failures and the ownership/action evidence. The mutable graph remains a draft; no phase activation is inferred from a test pass.
+
+A fresh read-only UI df check exited zero: root available 11,525,640,192 bytes, 70% used, 2,179,320 free inodes; /run available 397,426,688 bytes. Deployment and safety-margin gates remain unchanged. The complete prospective UI verification request still exceeds the original 8 MiB wire limit: after four authenticated local-archive projections, 8,395,244 bytes (6,636 over); after twelve projections, 8,393,068 bytes (4,460 over). Both measurements used the original preset-six XZ codec and strict 64 MiB decode verification, and neither was dispatched. Further lossless framing is under investigation; no limit or native predicate has been weakened.
+
+No UI/Node rollback or archive retirement, local-directory cleanup, source activation, successor build, commit, deployment, main synchronization or release announcement occurred in this continuation. All three approved-to-preserve local directories and original failure evidence remain preserved. The current hold still expires at 23:13:41 UTC (7:13:41 PM Toronto); no renewal is approved.
+
+
+### 2026-10-10 preserved QA2, lossless transport tests and one pending controller amendment
+
+The second reserved immutable QA record was sealed at mode 0400:
+`wallet-one-rollback-retention-source-tests-v2.json`, 395,959 bytes,
+SHA-256 `5ad22677168e2286b4d46a9e90366b3552b4e18970e2f9eb72d129fdbd122e38`.
+It preserves the complete previous 233,145-byte draft graph
+(`090fcba374a845d91134944ab4350290e2f39161137f3d7082fa076ffbab0155`),
+the final path-budget source/tests and the exact prospective 24-overlay
+Node provenance proposal. The first local collector timed out before
+creating a file; the successful bounded local collection and that failure
+remain distinct. The immutable original coordinator and failures remain
+preserved. Root independently reran the exact 56-case source-only driver:
+actual exit zero, all 62 original definition ASTs unchanged, no native
+entry or mutation.
+
+A subsequent independent negative test found the new local QA archive
+reader accepted an advertised byte count of one when the real identity
+and body hash were supplied. The proposed repair requires the advertised
+count to equal the held file size and requires true integer identity
+lists. Corrected RAM source 195,142 bytes,
+SHA-256 `71dc4dd7c6f608cd87766e3da0501b13e89927bfff6efdbb8da2674e218d1a1b`,
+passed 59 primary and 14 independent checks. Their exact drivers/results
+are preserved; the original deficient version and harness failures are
+retained. This repair is prospective and has not been activated.
+
+The 3,738-byte lossless UTF-8 packaging prototype,
+SHA-256 `02f927069db1f4bdc7933a512954b91f895ccd81c43d0a830f559f5db72bee2d`,
+passed 26 primary, 46 independent and four private-namespace checks.
+It transports the original source inventory and ten source bodies as
+exact UTF-8, then reconstructs and checks the complete original frame
+and each field before original admission. The actual original immutable
+frame round-tripped exactly at 7,497,436 XZ wire bytes. The prospective
+new request measured 7,536,584 bytes, 852,024 below the unchanged 8 MiB
+limit, using the unchanged preset-six codec and strict decode checks.
+The prospective measurement is a lab diagnostic; no native request was
+sent. Earlier over-limit measurements, harness failures and a local
+packing-size refusal are preserved.
+
+The existing mutable review graph now contains
+`pendingRecoveryCatalogueAndWireAmendment`: canonical 86,094 bytes,
+SHA-256 `55cff9d0aba318bd77392d9f61710f20d113ad260a5668d31f1632714c285d58`.
+The whole graph is 166,358 bytes,
+SHA-256 `d86ffa6b3e1ba3d3afe9758a22fe1136873510f2880559cda236ccecce46da47`,
+at
+`/tmp/pow-audit32-next-reliability-capacity-execution/root-one-verified-recovery-reviewed-source-graph-v1.json`.
+Four bulky fields are authenticated projections of the actual immutable
+QA2 record, whose complete original graph remains losslessly preserved.
+The graph remains explicitly draft, unapproved for this new amendment
+and inactive. No saved-file slot was added by this bookkeeping.
+
+The one pending approval requests only the exact 24-overlay provenance
+methods, lossless UI packaging/integration, the stricter temporary local
+archive reader, and bounded private source capsuling. It proposes one
+at-most-49,152-byte temporary adapter in place of one verified uncreated
+optional curated controller copy. All decoded source is charged to the
+unchanged 2 MiB pool; the coordinator remains at most 196,608 bytes.
+Fresh independent tests, source/storage/path/evidence accounting and all
+native qualification, custody, capacity, process, retention and readiness
+gates remain mandatory. The saved-file limit stays 256; local storage
+stays 12 GiB; ordinary/overall path ceilings stay 80,000/90,000. No new
+cleanup targets, timer/helper installation, hold renewal or weakening
+is requested. The existing cleanup expiry remains 23:13:41 UTC
+(7:13:41 PM Toronto). All three local build directories remain preserved.
+
+Transport approval covered these exact local evidence transfers. One
+initial sandbox socket bind failed with EPERM before creating a listener;
+the same explicitly authorized endpoint was then admitted by automatic
+review. No unapproved relay was used. No source activation, VPS
+retirement, successor build, commit, deployment, main synchronization
+or announcement occurred in this entry. The earlier verified
+ownership-only Node index correction remains the sole production action
+reported in this continuation.
+
+
+### 2026-10-10 exact catalogue/wire amendment approved; implementation gates pending
+
+The human directly approved `pendingRecoveryCatalogueAndWireAmendment`, canonical 86,094 bytes / SHA-256 `55cff9d0aba318bd77392d9f61710f20d113ad260a5668d31f1632714c285d58`. The exact approval text is preserved in the existing temporary graph under `recoveryCatalogueAndWireAuthorization`; canonical 1,967 bytes, SHA-256 `14fe6bf51f4c8c86621765646ff7e7868ad607b26c189478f7f0aeeae8a02adb`. Its canonical encoding is UTF-8, sorted compact JSON, ensure_ascii=false, without a trailing newline. The original proposal remains an unchanged prospective snapshot; the separate authorization records the new authority.
+
+Exactly one still-uncreated optional curated controller-copy name was reassigned to the new temporary combined adapter path. Both paths were verified absent before substitution, all other 255 roster entries remained ordered and identical, and the original physical Node controller is preserved. The source-family ceiling remains 65,536 bytes, including the existing 14,574-byte path adapter and a new adapter limited to 49,152 bytes. No saved evidence ceiling was raised. The temporary graph remains draft and inactive.
+
+The fresh read-only host-context allocation census returned actual exit zero with original source/receipt/ancestor closing checks at 22:29:02 UTC: 7,026,540,544 allocated bytes, 65,384 ordinary observations, 50,479 unique inodes, and the original 8,779 opaque allowance, yielding 74,163 conservative observations. All 12 retained negative fixtures account for 49,152 bytes and were stat-only; their original identities/modes/xattrs remained verified. No file was created, no production mutation occurred and no local-directory deletion credit was claimed.
+
+A new GitHub-main fetch completed with exit zero. Main remains `d8ae8220d897f876d85b0025db86306dc27e6fe5`; the approved local candidate remains `4e77b5f11c8003b19a4908b8ad0fdbd304ee721b`. Concurrent unmerged work is preserved. The new adapter/coordinator integration and complete independent accounting are in progress. Native qualification, independent keeper restoration, conditional retirement, fresh successor build and complete release synchronization are not yet passed. The unchanged cleanup expiry remains 23:13:41 UTC / 7:13:41 PM Toronto, with no renewal or automatic retry.
+
+One audit-append orchestration input hit a JavaScript template SyntaxError before any nested tool or mutation ran. This corrected append is a bookkeeping continuation; no production attempt was made by that failure.
+
+
+### Approved catalogue, wire and archive amendment — source installation checkpoint
+
+On 2026-10-10 the human explicitly approved `pendingRecoveryCatalogueAndWireAmendment` in the reviewed source graph. Its canonical 86,094-byte SHA-256 remains `55cff9d0aba318bd77392d9f61710f20d113ad260a5668d31f1632714c285d58`; the direct-human authorization is the canonical 1,967-byte record `14fe6bf51f4c8c86621765646ff7e7868ad607b26c189478f7f0aeeae8a02adb`. Neither the proposal nor the existing cleanup expiry was rewritten. The original expiry remains 2026-10-10 23:13:41 UTC / 7:13:41 PM Toronto.
+
+The approved combined adapter was created at the sole substituted optional evidence slot, `/tmp/pow-audit32-next-reliability-capacity-execution/root-one-verified-recovery-provenance-wire-adapter-v1.py`, with mode 0400, 39,822 bytes and SHA-256 `eb6300d9fb83b64bae60d80b19ea8da28a2bc5622cc2e15c0106822352b2a7f4`. The approved mutable coordinator at `/tmp/pow-audit32-next-reliability-capacity-execution/root-tail-retirement-coordinator-v5.py` was replaced with mode 0400, 195,271 bytes and SHA-256 `7792556bf42a806721a1e30f526b508dad9d953b11d09daf87685f48b617c2e7`. Its previous 176,270-byte `a5e3291838ce713f56a61e7f36fcc19c1b475f5c9f6b8969c2c37cba17650c89` body was first verified byte-for-byte in the immutable QA1 archive. Installation tool `788aba` returned actual exit 0 and closed hash, mode, ownership, inode, parent and fsync checks; Root independently reopened and compiled both actual pinned files with exit 0 (`49c048`). Root independently compared all 62 original Q4 function/class ASTs with the final physical coordinator: all 62 remained exact (`b989bb`, actual exit 0).
+
+The final assembly's 22 behavior/codec checks plus those 62 inherited AST checks passed against the actual final source hashes. The 109 catalogue/refusal cases and three original-main/original-Context dispatch tests also passed; their native effects and body-positive leaves were explicitly mocked. These are source and fixture results, not a claim of production qualification, recovery restoration, cleanup, readiness or release completion. The independent 24-case current-epoch recipe run returned actual exit 0 (`7902c7`) against the actual draft graph; its future-record positive branch was explicitly synthetic. The active recipe is 9,552 bytes / `0a3167c3c7033d1f2d2018a4144388ec58c755d298bd4dc5247577d9a89a7a95`. The conservative source total before any further active preparation helper is 2,081,440 bytes, below the unchanged 2 MiB ceiling; additional active helpers must still be charged before activation.
+
+The attempted large local source/test packet transfer never reached the receiver before its 120-second accept timeout (session 89556, actual exit 1); no packet was received and no file was created by that receiver. The agent stopped its own incomplete sender before connection and retained its transport/materialization trial failures. Exact source was then installed directly within the approved two-file scope. The smaller backend recipe/evidence packet transferred over the already approved local abstract socket with actual exit 0 (session 32808): strict single-stream zlib raw 31,650 bytes / `100af86b8ef2d02ea514c5e06f98b6e686b5f1ecde5107cfe5164a15940ebe7d`, packed 8,791 bytes / `45e37c5baf1f9fbee716ad413670d263bca091caf456e799a5df0e49b46f66fc`, exact UID/GID 1000. No external recipient or additional evidence filename was used.
+
+At this checkpoint no recovery qualification, retirement, deployment, push, preview restart or announcement had run. Git remains on the approved recovery branch at `4e77b5f11c8003b19a4908b8ad0fdbd304ee721b`; freshly fetched GitHub main remains `d8ae8220d897f876d85b0025db86306dc27e6fe5`. Formal manifest, actual final frame round trip, independent restoration, native capacity/readiness gates and release synchronization remain required.
+
+
+### 2026-10-10 consolidated release reconciliation
+
+The human approved the consolidated repair scope in the current release chat:
+“I approve the consolidated repair scope, do not fuck this up”. This authorizes
+reconciling the interrupted UI retirement against its verified backups and
+journal, repairing its controller mismatch, resolving Permission readiness,
+integrating the saved UI and WORK-tip branches, and completing one synchronized
+release. The earlier bounded attempts remain historical evidence. This new
+approval does not broaden the four original conditional UI retirement pairs,
+reduce native capacity reserves, or authorize unrelated Node housekeeping.
+
+The fresh investigation explains the stalled release. The original UI
+retirement completed 127 recorded unlinks before a process-identity check
+rejected a mutable kernel NOFS flag. The absent manifest in the first rollback
+root is its first journaled unlink, not unexplained loss. The later local
+adapter supplied a five-field identity to native consumers requiring four
+fields, and its saved review graph still lacked fields that a preceding
+command claimed to have written. No mocked controller test establishes native
+admission. Original sources, failure records, the complete-tail keeper restore,
+and the incomplete tree remain preserved for exact reconciliation. A small
+UI-only recovery will be qualified independently; Node catalogue housekeeping
+is not a prerequisite for this product release.
+
+Actual GitHub main and production remained d8ae8220d897f876d85b0025db86306dc27e6fe5
+at the opening check. The primary checkout was still on
+codex/audit32-capacity-recovery at 4e77b5f11c8003b19a4908b8ad0fdbd304ee721b,
+with its uncommitted audit continuation and extensive untracked evidence.
+The audit continuation was independently preserved as a 150,183-byte file,
+SHA-256 e6742f80b777850c2b1274796fc028453b4eff4f45c53241d70fd7cf05e82699,
+before being incorporated here. All untracked evidence remains untouched.
+The saved WORK-tip commit 68aaebabb73ad1c7dee05bb9994cd47c336f0cd4 and
+full-interface commit 1ed988d5083d15e9d9ae6cf746eb7ededded7a7a integrated
+without conflicts in an isolated release checkout.
+
+Permission is no longer demonstrated permanently unavailable. A fresh request
+converged in 21.33 seconds; same-checkpoint requests then completed in 0.90 and
+1.19 seconds. Opening and closing Core checks bound the complete coverage and
+verified authority to block 970839,
+00000000000000000001de5db4e8b7f25a25fd7f89c7b77e8041791b996d2bb9,
+with the pinned activation parents and fee-rate readiness intact. Autonomous
+signing remained disabled. Installed discovery and DB-reader bytes already
+match the resumable 4e77b5f implementation; no additional source change or
+production mutation was needed for this check. Cold catch-up latency remains
+a qualification, and readiness must be checked again after API restart.
+
+The release remains pending until exact committed artifacts, native capacity
+and deployment gates, scoped WORK runtime installation, affected production
+surfaces, primary local main and preview, and check:release-sync all pass.
+No publication or synchronized release is claimed by this source checkpoint.
+Separate follow-ups remain: installed-monitor overlay recognition (AUD32-03),
+math wording review (AUD32-06), purchase receipt presentation (AUD32-09), and
+Browser target/tab continuity (AUD32-11), plus the separately recorded audit
+backlog. This integration does not claim those findings fixed.
+
+
+Clean-checkout validation found that the committed Permission reader test
+referenced an untracked Audit 31 SQL source. The release now contains an exact
+test-only snapshot under server/db/fixtures/native-runtime-storage-v2.sql,
+17,255 bytes / SHA-256
+01a95d76c606dad1dc9c3f40b9ea6002f7e8ad408c984536b8eb90b8594f9c16.
+The test verifies this original hash before checking the native metadata
+contract. Full Permission validation passed 97 tests plus 35 wallet-commitment
+tests after the correction. This neither installs SQL nor changes runtime or
+DB authority. Integrated UI checks passed TypeScript, the UI contract, 60 tip
+regressions, 20 existing browser tip cases and 12 combined interface cases.
+
+The capacity-boundary fixture now creates its lock parent with the actual
+private 0700 contract, allowing the native capacity refusal path to be tested
+after the provenance lock repair. Production lock validation is unchanged.
+The 107-case provenance/controller suite passed against the combined source.

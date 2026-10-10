@@ -25,6 +25,7 @@ export function AppHeader({
   hasUnisat = true,
   homeHref = appHref(HOME_APP_URL, LOCAL_HOME_APP_URL),
   network,
+  navigationControls,
   onDomainNavigate,
   onNetworkChange,
   onRefresh,
@@ -41,6 +42,7 @@ export function AppHeader({
   hasUnisat?: boolean;
   homeHref?: string;
   network?: BitcoinNetwork;
+  navigationControls?: ReactNode;
   onDomainNavigate?: (label: string) => boolean | void;
   onNetworkChange?: (network: BitcoinNetwork) => void;
   onRefresh?: () => void;
@@ -104,6 +106,8 @@ export function AppHeader({
         </a>
 
         <DomainNav onNavigate={onDomainNavigate} />
+
+        {navigationControls}
 
         <div className="topbar-actions">
           {onRefresh ? (

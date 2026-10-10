@@ -219,7 +219,8 @@
       "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-artifacts.json.gz",
       "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery.evidence.json",
       "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-continuation.md",
-      "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-hygiene-close.evidence.json"
+      "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-hygiene-close.evidence.json",
+      "audits/2026-10-10-audit32-retained-local-path-budget-amendment-v1.json"
     ],
     "presentation-and-generated-notes": [
       "PROOFOFWORK_GENERAL_DECK.md",

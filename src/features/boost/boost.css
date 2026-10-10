@@ -1,3 +1,5 @@
+@layer legacy {
+
 .boost-public-app {
   container-name: boost-surface;
   container-type: inline-size;
@@ -1361,4 +1363,47 @@
 }
 @media (max-width: 480px) {
   .boost-detail-modal .boost-actions > a .button-content > span { display: none; }
+}
+
+}
+
+@layer interface {
+/* The timeline and its tools share one quiet visual hierarchy. */
+.boost-public-app { color: var(--text); }
+.boost-shell-instrument { background: var(--bg); background-image: none; }
+.boost-shell-instrument :is(.boost-sidebar, .boost-right-rail) { background: var(--bg); }
+.boost-shell-instrument :is(.boost-action-panel, .boost-rail-panel, .boost-quoted-post) { background: var(--surface-soft); border-color: var(--border); box-shadow: none; }
+.boost-shell-instrument .boost-feed-panel { background: var(--surface); box-shadow: none; }
+.boost-shell-instrument :is(.boost-timeline-head, .boost-profile-head, .boost-profile-main, .boost-feed-toolbar) { background: var(--surface); backdrop-filter: none; }
+.boost-shell-instrument .boost-feed { background: var(--surface); }
+.boost-shell-instrument .boost-post { background: var(--surface); border-color: var(--border); box-shadow: none; }
+.boost-shell-instrument .boost-post:hover { background: var(--surface-soft); border-color: var(--border); box-shadow: none; transform: none; }
+.boost-shell-instrument .boost-post:focus-visible { outline: 2px solid var(--focus-outline); outline-offset: -2px; box-shadow: none; }
+.boost-shell-instrument :is(.boost-timeline-tabs, .boost-profile-tabs) button { color: var(--text-muted); font-weight: 500; box-shadow: none; }
+.boost-shell-instrument :is(.boost-timeline-tabs, .boost-profile-tabs) button[aria-selected="true"] { background: var(--accent-soft); border-bottom-color: var(--accent); color: var(--text); box-shadow: none; }
+.boost-shell-instrument .boost-profile-cover { background: var(--surface-soft); background-image: none; }
+.boost-shell-instrument :is(.boost-profile-copy h2, .boost-profile-title strong, .boost-action-panel-head > strong, .boost-rail-head > strong) { color: var(--text); font-family: var(--font-ui); font-weight: 500; }
+.boost-shell-instrument :is(.boost-rail-head > span, .boost-action-panel-head > span, .boost-quoted-post-head, .boost-reboosted-label), .boost-modal-head span { color: var(--text-muted); font-family: var(--font-ui); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.boost-shell-instrument :is(.boost-author, .boost-author-name, .boost-follow-button) { font-weight: 500; }
+.boost-shell-instrument .boost-post-text { color: var(--text); line-height: 1.65; }
+.boost-shell-instrument :is(.boost-search, input, select, textarea) { background: var(--surface); border-color: var(--border-interactive); color: var(--text); }
+.boost-shell-instrument .boost-route-search > input { background: transparent; }
+.boost-shell-instrument :is(.boost-search, .boost-route-search):focus-within { outline: 2px solid var(--focus-outline); outline-offset: 2px; }
+.boost-shell-instrument .boost-composer-prompt, .boost-compact-nav .primary { background: var(--action); border-color: var(--action); color: var(--text-on-action); font-weight: 500; box-shadow: none; }
+.boost-shell-instrument .boost-composer-prompt:hover, .boost-compact-nav .primary:hover { background: color-mix(in srgb, var(--action) 90%, var(--surface)); color: var(--text-on-action); }
+.boost-shell-instrument .boost-sidebar :is(.primary, .secondary, .link-button) { font-weight: 500; }
+.boost-shell-instrument .boost-actions :is(button, a):hover { background: var(--hover); color: var(--text); }
+.boost-shell-instrument .boost-actions .is-active { color: var(--accent); }
+.boost-shell-instrument .boost-signal-row { color: var(--text-muted); }
+.boost-modal, .boost-image-dialog, .boost-mention-preview { background: var(--surface); border-color: var(--border); color: var(--text); box-shadow: var(--shadow-lg); }
+.boost-modal-head { background: var(--surface); border-color: var(--border); }
+.boost-modal-head strong { font-family: var(--font-ui); font-weight: 500; }
+.boost-profile-image-viewer { background: var(--surface); color: var(--text); }
+.boost-modal-backdrop, .boost-tools-backdrop, .boost-image-dialog::backdrop, .boost-profile-image-viewer::backdrop { background: var(--backdrop); }
+.boost-more-actions-panel, .boost-shell-instrument .boost-reboost-menu { background: var(--surface); border-color: var(--border); box-shadow: var(--shadow-md); }
+.boost-shell-instrument .boost-reboost-menu button:hover { background: var(--hover); color: var(--text); }
+.boost-mention-preview-head .boost-avatar-fallback { font-weight: 500; }
+.boost-public-app.mail-app > .app-footer.boost-footer { background: var(--bg); border-color: var(--border); }
+@container boost-surface (max-width: 600px) { .boost-compact-nav { background: var(--surface); border-color: var(--border); } }
+
 }

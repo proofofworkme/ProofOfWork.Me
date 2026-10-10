@@ -2303,7 +2303,7 @@ export default function BoostRoot({
     const request = readLifecycle.current.begin();
     const ownsRequest = () => request.current() && currentReadScope.current === readScope;
     setBusy(true);
-    if (announce) setStatus({ tone: "idle", text: "Refreshing Boost..." });
+    if (announce) setStatus({ tone: "idle", text: `Refreshing ${surfaceName}...` });
     try {
       const params = new URLSearchParams({
         limit: "50",
@@ -3177,7 +3177,7 @@ export default function BoostRoot({
           <a className="secondary link-button" href={boostAmoHref()}>
             <span className="button-content">
               <ShoppingBag size={16} />
-              <span>Boost AMO</span>
+              <span>AMO</span>
             </span>
           </a>
         </aside>
