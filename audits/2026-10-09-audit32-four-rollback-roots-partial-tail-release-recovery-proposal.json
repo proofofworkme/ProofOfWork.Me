@@ -1,0 +1,358 @@
+{
+  "format": "pow-audit32-partial-tail-release-recovery-proposal-v2",
+  "status": "READY_FOR_REVIEW_SEPARATE_APPROVAL_REQUIRED_NOT_EXECUTION_GO",
+  "auditDate": "2026-10-09",
+  "currentStateObservedAt": "2026-10-09T23:02:33.976773+00:00",
+  "causeAndImpact": "The strict approved controller stopped on a transient whole-root mount alias during its periodic reference scan after 1,407 completed file unlinks. It did not weaken the guard, resume automatically, remove any directory, or publish the UI. Exact records and an authenticated fresh server snapshot independently reconcile the partial state. One selected historical root is partial. The other three selected file trees retain their original full content fingerprints; their required archives are offhost. The current UI and five other local complete rollback pairs remain verified.",
+  "originalApprovalManifestSha256": "406e77bc5de8d2dc722a388f0821ff004c70516f67f4c8cfc1fc9cb52c223c04",
+  "originalFailedControllerSha256": "c670fbc7d35ee0d7b5010d6f460e381aa54a49b96d1160d261fd4cf51b1664d1",
+  "immutableOriginalFailedNamespace": "/var/backups/proofofwork-ui/recovery-evidence/audit32-four-complete-roots-four-roots-retire-1",
+  "originalFailedRecordPins": {
+    "failure.json": {
+      "bytes": 2316,
+      "sha256": "fa4234126e27b31c58dd607cca53b0f61ebaa1dcd5af21404df3ac52eff2e2fb"
+    },
+    "intent.json": {
+      "bytes": 2927,
+      "sha256": "dcad76125371d1c85a9b8622bed54d460ab6297f2044348705196563a77dd26d"
+    },
+    "journal.jsonl": {
+      "bytes": 1017008,
+      "sha256": "eead930154e33ad6ef1554227305d1f03f95c7e957b95e72c66369c088940c51"
+    }
+  },
+  "readOnlyRuntimeResult": {
+    "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-partial-state-1.result.json",
+    "bytes": 17373446,
+    "sha256": "83047959689283da120fd0519c1483e3ad628787cced51d0533e59c0797877ff"
+  },
+  "readOnlyRuntimeExecution": {
+    "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-partial-state-1.run.json",
+    "bytes": 1599,
+    "sha256": "2cf8d631cec1043d7536b48522b66028a939190430b448d1301fe8e450864591"
+  },
+  "backendIndependentActualReview": {
+    "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-actual-independent-review-v1.json",
+    "bytes": 2243,
+    "sha256": "8d0d279fa7ae29bdc6294dbc8bca33b2c6c4a47f372f82fefc30aeb2466a5a22"
+  },
+  "walletIndependentActualReview": {
+    "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-independent-actual-review-v2.json",
+    "bytes": 4616,
+    "sha256": "f6fe7cc9551ea0015297abb1e6f5ce69994952540ddf652afbdf64dbc6626552"
+  },
+  "exactRemainingDeletionManifest": {
+    "path": "/tmp/pow-audit32-first-batch/four-root-partial-tail-exact-deletion-manifest-v1.json",
+    "bytes": 5753720,
+    "sha256": "7ba51179bbde27ac28b74405d6d9b5a3413029810e8fee21fe505f438d3d97f8"
+  },
+  "exactFourRootPaths": [
+    "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-06a2baf88d53-20261008T192602Z",
+    "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-67253136c0fa-20261008T162533Z",
+    "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-aba69af9c0ca-20261008T153152Z",
+    "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b40d4f4a0d31-20261009T000001Z"
+  ],
+  "verifiedCompletedState": {
+    "completedFileUnlinks": 1407,
+    "completedDirectoryRemovals": 0,
+    "journalRecords": 2814,
+    "completedPathsRemainAbsent": true,
+    "noIncompletePrepareOrUnknownOperation": true
+  },
+  "verifiedRemainingScope": {
+    "filePaths": 7946,
+    "directoryPaths": 304,
+    "totalEntries": 8250,
+    "uniqueRegularInodes": 3632,
+    "exactBytesMetadataXattrsMembershipAndDynamicHardlinksVerified": true,
+    "evolvedImmediateDirectoryCount": 46,
+    "expectedMetadataAuthority": "Original complete custody plus exact journal-derived survivor transitions, with authenticated current values for 46 immediate directories whose size, allocation, mtime and ctime evolved. The private manifest contains all 8,250 remaining rows and exact directory membership. Atime is excluded.",
+    "partialRootSnapshots": [
+      {
+        "format": "pow-audit32-selected-partial-root-snapshot-v1",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-06a2baf88d53-20261008T192602Z",
+        "treeSha256": "df2b6bba5492fbd74870f7ae0af650e02cca262f649b2973a49c209ab4342408",
+        "manifestSha256": null,
+        "entries": 1073,
+        "regularBytes": 230130125,
+        "completeRollbackClaimed": false,
+        "classification": "Authenticated remaining retirement scope; not admitted as complete native rollback"
+      },
+      {
+        "format": "pow-audit32-selected-partial-root-snapshot-v1",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-67253136c0fa-20261008T162533Z",
+        "treeSha256": "d8b9a786f23e2236ae234f0a402b87ddb46baa344a54f6cf3f200d0bf548a4af",
+        "manifestSha256": "968531b9a69d46e2a737e4f9a8b4926a12b96e37930f3708524c14ddfd03c402",
+        "entries": 2062,
+        "regularBytes": 504827530,
+        "completeRollbackClaimed": false,
+        "classification": "Authenticated remaining retirement scope; not admitted as complete native rollback"
+      },
+      {
+        "format": "pow-audit32-selected-partial-root-snapshot-v1",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-aba69af9c0ca-20261008T153152Z",
+        "treeSha256": "f1383f9654320a6166c625e131f76d2f5ff1a206f9479806f97f47424ff47877",
+        "manifestSha256": "f32c23024d36ccaea1169e28b0d7acf9ce1860c3a47cc812f89057437aed7511",
+        "entries": 2503,
+        "regularBytes": 533761060,
+        "completeRollbackClaimed": false,
+        "classification": "Authenticated remaining retirement scope; not admitted as complete native rollback"
+      },
+      {
+        "format": "pow-audit32-selected-partial-root-snapshot-v1",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b40d4f4a0d31-20261009T000001Z",
+        "treeSha256": "460dcdea784d7c35d0096c8e34d76654ca1ee02caae50718558478e076119c54",
+        "manifestSha256": "959c67792a858b731ed663cf2f6ced324d4287a74af03c1a65977a093b0bf496",
+        "entries": 2612,
+        "regularBytes": 540943013,
+        "completeRollbackClaimed": false,
+        "classification": "Authenticated remaining retirement scope; not admitted as complete native rollback"
+      }
+    ],
+    "conservativeRegularAllocatedReclaimBytes": 866992128,
+    "directoryReclaimCreditBytes": 0
+  },
+  "freshProtectedMetadataSnapshot": {
+    "entries": 202729,
+    "uncompressedBytes": 112143002,
+    "uncompressedSha256": "9396eda4e239412230e6628542b6f7705e9689db5e47638c71b94160df77af82",
+    "compressedBytes": 6797576,
+    "compressedSha256": "85394175ddbf74955102cf9e32967495a9c2dbfcb8c58d3c37b48c279ed7f46a"
+  },
+  "historicalMetadataQualification": "The full current protected census is a new snapshot, not reconstructed equality with the original 204,000-entry metadata census. Original full per-entry metadata for the five unselected roots and live root was unavailable. Their complete native fingerprints verify bytes, names, type, mode, UID and GID. Opening and closing snapshot pins plus helper, configuration, phase, source and archive checks close the present observation. Raw remaining rows, journals and census stay restricted; public audit uses only counts, pins and qualified statements.",
+  "custodyAlreadyVerified": {
+    "containerSha256": "4ba49dc25b84bd079b8c723c1265547837c46b03fbe8fa3b9be5ed1b42e97b2a",
+    "containerBytes": 1025576960,
+    "restoreReceiptSha256": "e8155047468a99b1ccfc156d0b024be519c52a2abfaace8bace4bfe85b00043c",
+    "independentReceiptSha256": "176701454e2ae41a73f8306f59d680ad041780fb972de9597e52afef02e581da",
+    "admission": {
+      "path": "/tmp/pow-audit32-first-batch/four-root-retirement-offhost-admission-v1.json",
+      "bytes": 1562,
+      "sha256": "eff1fbe5756332f41e7619bb682b8b798a4bd9862bbdef0352902d3f810d29f6"
+    },
+    "requireFreshFullOffhostHashAndReceiptDurabilityRereadBeforeDispatch": true,
+    "recoveryQualification": "Recoverable original complete bytes and authenticated original metadata include hardlinks across selected roots and 88 managed surface/archive pairs. Actual offhost restoration normalizes ownership; original device, inode and ctime cannot be reproduced. Hydrating paired roots and archives remains separate capacity-qualified authority."
+  },
+  "protectedResources": {
+    "currentUiCommit": "c7935dde7239836f89be27c1ee29dfbc6a585e78",
+    "currentFullNativeFingerprint": {
+      "format": "proofofwork-ui-retained-root-v1",
+      "classification": "retain",
+      "root": "/var/www",
+      "manifestSha256": "ab94507fc9fefa610173be32eb789f76ea702153c1058699420bfd8a39bf5213",
+      "treeSha256": "4e7a3a172326a7a43d9e0ad0400f628f87f6d96bf5702ba4d3b9a831d7186d32",
+      "entries": 2458,
+      "regularBytes": 534540639
+    },
+    "fiveCompleteNativeFingerprints": [
+      {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-506b1ab0833e-20261008T065838Z",
+        "manifestSha256": "c61aa2a42995a2074ae2d7056bd1ba3d13d5c71117e0776ae2229dd23035ccf7",
+        "treeSha256": "35dd24035304f209a02febca02cd317904c1bb2f3a8a5048cd1391c4331aa3bf",
+        "entries": 2362,
+        "regularBytes": 516600044
+      },
+      {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-9b56f32ff831-20261008T133400Z",
+        "manifestSha256": "69da9ce63677cb06a588adee3bcb39a8bb7b01525d10a0d3a029b4578bef7945",
+        "treeSha256": "bdefc5fea0591ca5ac1dd9918804e657d6410b755381dec7eac75ca900d4d585",
+        "entries": 2195,
+        "regularBytes": 515083856
+      },
+      {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c243081bb18c-20261008T042348Z",
+        "manifestSha256": "30a6c0e9273b601eff11b4fecb4f2fab5a62ae9d0f076d871363bbea66944c40",
+        "treeSha256": "95b5848158fb5bcc023267d7f45527b1c56565e1141ae74bde19a5b409a1e19b",
+        "entries": 2110,
+        "regularBytes": 498461058
+      },
+      {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c7935dde7239-20261009T043549Z",
+        "manifestSha256": "a3659f1997f9a834a13ae9f4a0a7c37309f9cd27fce83ea74407e9d33d9ee719",
+        "treeSha256": "f979231917286e64222875567240426dae0da19cab37d2a0d9fbb2070f818ca9",
+        "entries": 2414,
+        "regularBytes": 534236797
+      },
+      {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-fc396c9a9abd-20261007T233244Z",
+        "manifestSha256": "832192886705912b8793cc3d1e5cd9aadb87996648ee87b195192c44c98061ca",
+        "treeSha256": "a6ea770a044780ab1f41176823f6cb17430ca50dd448ac4ee422858c2938dc24",
+        "entries": 1812,
+        "regularBytes": 481876684
+      }
+    ],
+    "allNineOriginalChecksumAndProvenanceSidecars": true,
+    "allFiveRemainingCanonicalArchives": true,
+    "sourceCandidateReadyReleaseAndOldFailedInputsReceipts": true,
+    "holdsAndRetentionPolicyFiles": true,
+    "nativePublicationCapacitySourceProvenanceAndRetentionHelpers": true,
+    "timersServicesCaddyUnitsInfrastructure": true,
+    "coreElectrsIndexerDatabaseApplicationDataLedgersWalletAuthority": true
+  },
+  "requestedNewScope": {
+    "exactRemaining8250EntryRetirementOnlyAfterFreshQualification": true,
+    "scopedAudit28RollbackRootsParentHoldExceptionOnlyForExactFourPaths": true,
+    "newFreshAttemptNamespaceWithDurablePerOperationIntentAndCompletionRecords": true,
+    "originalPartialAttemptNeverOverwrittenOrAutomaticallyResumed": true,
+    "preserveAllCompletedPathAbsencesAndEveryProtectedResource": true,
+    "proposedBoundedAliasOnlyWaiting": {
+      "wholeControllerDeadlineSeconds": 1800,
+      "noOperationPreparationOrMutationWhileAnyAliasPresent": true,
+      "freshStrictFullReferenceAndMountAbsenceRequiredBeforeContinuing": true,
+      "otherFdMapReferencesInspectionErrorsSourceByteMetadataOrLockDriftImmediateRefusal": true,
+      "noMountWhitelistOrTimerUnitPauseChange": true,
+      "exceedingBoundRefusesAndPreservesPartialEvidence": true,
+      "maximumSecondsAtEachExistingMandatoryReferenceFence": 5,
+      "budgetStart": "At detection of an observed mount alias at an existing mandatory reference fence; no new overall deadline or automatic rebase.",
+      "fullFdMapMountReferenceAndInspectionErrorRescanDuringWait": true,
+      "abortImmediatelyOnObservedNonMountReferenceErrorOrMetadataSourceHelperLockDrift": true,
+      "successfulFreshStrictAbsenceScanMustCompleteWithinPerFenceAndOverallMonotonicBounds": true
+    },
+    "temporaryPostCapacityAndFinalEvidenceAdapters": {
+      "required": true,
+      "scope": "Temporary read-only evidence, post-retirement, capacity and final aggregation adapters under /tmp and offhost custody only. No repository or installed native helper edit.",
+      "bindOriginalFailedPrefixAndNewSuccessfulTailSeparately": true,
+      "originalFailedApplyNeverReclassifiedSuccessful": true,
+      "old2814AndNewExpected16500RecordsAreSeparateRawEvidence": true,
+      "combinedExpectedOriginalEntryCoverage": 9657,
+      "sourceBoundMeaningfulTestsAndIndependentPeerBeforeUse": true,
+      "freshActualRemainingFiveAndFinalPublicationProofRequired": true,
+      "staleCapacityGoOrOriginalSuccessfulOnlyAggregatorInputsNeverSubstituted": true
+    },
+    "temporaryRecoveryImplementationAndExactAuditBookkeepingOnly": true,
+    "installedHelperServiceProductionConfigurationOrProtocolDataEdit": false,
+    "exactAuditBookkeeping": {
+      "editedTrackedFile": "repository-hygiene.json",
+      "base": {
+        "path": "/home/sixer/ProofOfWork.Me/repository-hygiene.json",
+        "bytes": 13342,
+        "sha256": "5e84b60597fa0dc68e52a87be2edc625fa5ed81515103cf5607cac77c1f74266"
+      },
+      "candidate": {
+        "path": "/tmp/pow-audit32-first-batch/partial-tail-repository-hygiene.candidate-v1.json",
+        "bytes": 13982,
+        "sha256": "3bb768568badde32bf4126ed5b7efefc2bd5ca6da79a5e86342fc4601b49291a"
+      },
+      "patch": {
+        "path": "/tmp/pow-audit32-first-batch/partial-tail-repository-hygiene.registration-v1.patch",
+        "bytes": 1416,
+        "sha256": "02254d71aeeb93b41f6831a5d544923e639cebbed9e00f53e00d7583d1aae2d5"
+      },
+      "change": "Append only the seven exact listed paths to noteInventory.ledger-and-audit-evidence; every other configuration property and existing inventory entry remains identical.",
+      "exactNewTrackedAuditFiles": [
+        "audits/2026-10-09-audit32-four-rollback-roots-recovery-proposal.json",
+        "audits/2026-10-09-audit32-four-rollback-roots-partial-tail-recovery-proposal.json",
+        "audits/2026-10-09-audit32-four-rollback-roots-partial-tail-release-recovery-proposal.json",
+        "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-artifacts.json.gz",
+        "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery.evidence.json",
+        "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-continuation.md",
+        "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-hygiene-close.evidence.json"
+      ],
+      "allPreviouslyCreatedAuditBodiesRemainByteIdentical": true,
+      "auditOnlyCommitRequired": true,
+      "productCodeChange": false,
+      "mandatoryCommitTrailers": [
+        "Documentation-Impact: updated",
+        "Repository-Hygiene: reviewed"
+      ],
+      "hooksAndHygieneMayNotBeBypassed": true,
+      "preserveEveryUnrelatedWorkingOrUntrackedFile": true,
+      "resultingSourceCommitMustBeFreshlyBuiltStagedPublishedAndSynchronized": true
+    },
+    "successorSourceRelease": {
+      "parentCommit": "1a7aebed17db8374b02a1b38b3470d1c26f83df0",
+      "expectedDiffOnly": [
+        "repository-hygiene.json",
+        "audits/2026-10-09-audit32-four-rollback-roots-recovery-proposal.json",
+        "audits/2026-10-09-audit32-four-rollback-roots-partial-tail-recovery-proposal.json",
+        "audits/2026-10-09-audit32-four-rollback-roots-partial-tail-release-recovery-proposal.json",
+        "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-artifacts.json.gz",
+        "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery.evidence.json",
+        "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-continuation.md",
+        "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-hygiene-close.evidence.json"
+      ],
+      "finalCommitMustBeRecordedAfterAuthorizedCommit": true,
+      "fetchAndInspectConcurrentMainChangesBeforeIntegration": true,
+      "unexpectedConcurrentProductChangeRequiresSeparateScopeReview": true,
+      "original1a7ReadyCandidateArchivePlanSourceAndFailuresRemainImmutable": true,
+      "original1a7CandidateCannotBeRelabeledAsSuccessor": true,
+      "noIntermediate1a7UiPublicationRequired": true,
+      "freshNormalBuildStageSourceSurfaceTransferArchivePlanCapacityAndPublicationForSuccessorRequired": true,
+      "tailQualificationContinuesToBindOriginal1a7StagedInputsBeforeBookkeepingCommit": true,
+      "newCompleteSourceCommitMustMatchGithubMainPrimaryMainPreviewProduction": true,
+      "allNativeHelpersAndAcceptedNodeOverlaysRemainUnchanged": true
+    }
+  },
+  "requiredExecutionGates": [
+    "Separate explicit approval binding this frozen successor proposal, exact remaining deletion manifest and exact additive audit-only bookkeeping patch. Renew the scoped Audit28 rollback-roots parent hold exception for only the four listed paths without changing production policy files.",
+    "Independently reviewed immutable temporary tail controller and coordinator, with source-bound tests for partial-prefix replay, evolved directory pins, pre-prepare and post-fsync FD/path races, dynamic hardlinks, durable journals, bounded alias-only waiting and partial-failure preservation.",
+    "Fresh complete custody container hashes, successful restore and independent process receipts, plus file and parent durability reread.",
+    "Fresh verification of the exact 8,250 remaining entries against the current snapshot, all 1,407 completed path absences, full five/live canonical archive and native root proofs, source, candidate, helper, policy, phase and reference closure. Changed expected evidence refuses; it is never silently rebased.",
+    "Read-only observation that the unchanged provenance timer completed successfully and a fresh quiet window is available. Keep every original deployment-lock metadata field strict; no service or timer changes.",
+    "Unmodified native capacity admission preserves the 10 GiB root reserve, 64 MiB growth reserve and 5 GiB scratch limit, including full evidence and publication verification peaks. Measure actual free space; do not admit projected cleanup savings as actual free space.",
+    "Remove only exact manifest paths through held directories and no-follow openat operations. Retain immediate path/FD fences after durable preparation, mandatory reference scans and final full protected checks.",
+    "At each existing mandatory reference fence, alias-only waiting may last at most 5 seconds within the unchanged 1,800-second overall monotonic deadline. Rescan every FD, maps and mount reference and inspection error. Refuse immediately on observed non-mount references, errors or metadata/source/helper/lock drift. Do not prepare or mutate while an alias is present; a fresh strict absence scan must finish inside both deadlines before continuing. No alias whitelist or timer pause.",
+    "After successful exact-tail retirement and independent actual proof, apply only the source-bound additive registry patch and track only the seven named audit/proposal files, preserving all immutable bodies and unrelated work. Run hygiene:fix, semantic review, relevant tests, hygiene:check, hooks and mandatory trailers, then create/integrate an audit-only successor commit from approved 1a7 after fetching and inspecting concurrent main. Record the actual commit/tree; do not relabel the staged 1a7 source or candidate. Freshly build, stage and transfer the successor through ordinary native source/archive/capacity/provenance gates, with exactly five retained roots in the fresh publication plan. Preserve all old nine-root plans, failed and staged1a7 evidence. No intermediate 1a7 UI publication is required.",
+    "The old successful-only post/capacity/final aggregator cannot admit this interrupted path. Narrow temporary read-only adapters must bind the original failed process and 2,814 records covering 1,407 completed files to a new source-bound successful tail and 16,500 records covering 8,250 remaining entries. Prove exact union of all 9,657 original entries, without duplicates, omissions, forged original success, relabeled raw journals or stale capacity GO. Require meaningful source-bound tests and independent privacy and safety review.",
+    "Verify all 22 managed archive/root artifacts and their provenance, all 21 public HTTPS endpoints, affected node/canonical/browser checks and accepted overlay provenance. The normal publisher captures current c793, so verify six complete retained rollback pairs after publication. Reconcile documentation and final diff, run the required hygiene fix/check again, synchronize actual GitHub main, clean primary local main, rebuilt local preview and production to the actual audit-only successor source commit, and pass actual npm run check:release-sync before completion or the single release announcement. Do not repeat the backend overlay or restart production services."
+  ],
+  "capacityObservedNotExecutionGo": {
+    "rootAvailableBytes": 11862667264,
+    "rootAvailableInodes": 2186912,
+    "scratchAllocatedBytes": 2869129216,
+    "scratchLimitBytes": 5368709120,
+    "rootAndGrowthReserveBytes": 10804527104,
+    "conservativeRemainingRegularReclaimBytes": 866992128,
+    "directoryCreditBytes": 0,
+    "arithmeticOnlyAvailablePlusRemainingAllocation": 12729659392,
+    "actualFutureFreeBytesMustBeMeasured": true,
+    "normalFullRemainingPublicationPeaksMustBeReadmitted": true,
+    "allFourArchiveRestorationAlternative": {
+      "originalArchiveAllocatedBytes": 1105989632,
+      "arithmeticAvailableAfterRestoreAllFour": 10756677632,
+      "belowReserveByBytesBeforeAnyVerificationPeak": 47849472,
+      "acceptable": false
+    },
+    "publicationRetainedRootCounts": {
+      "beforePublicationAfterSuccessfulTail": 5,
+      "afterNormalPublisherCapturesCurrentC793AsRollback": 6,
+      "allFinalLocallyRetainedDependenciesMustBeVerified": true
+    }
+  },
+  "runtimeEstimateNotGuarantee": {
+    "observed1407UnlinkPairSeconds": 15.328782,
+    "observedApplyMostTimeSpentInQualification": true,
+    "linear7946UnlinkOnlySecondsEstimate": 86.56894226865671,
+    "qualificationClosingReferencesDirectoryRemovalVariabilityAndNetworkExcluded": true,
+    "freshObservedTimerQuietWindowRequired": true,
+    "noWholeOperationAtomicityOrSuccessfulCompletionGuarantee": true,
+    "estimateDerivation": "15,328,782 microseconds × 7,946 remaining file paths ÷ 1,407 observed completed pairs ÷ 1,000,000. This excludes qualification, closing checks, directory removal, fsync, reference scans and network work; it is an estimate, not a bound."
+  },
+  "approvalText": "Approve this frozen partial-tail release recovery successor: the exact remaining 7,946 files and 304 directories bound by deletion manifest 7ba51179bbde27ac28b74405d6d9b5a3413029810e8fee21fe505f438d3d97f8 inside the original four roots, with their renewed scoped Audit28 parent-hold exception only. Authorize reviewed temporary tail controller/coordinator/tests and read-only post/capacity/final evidence adapters preserving the original failed prefix and new tail separately. Permit at most five seconds of alias-only waiting at each existing mandatory reference fence inside the unchanged 1,800-second overall deadline, with full rescans, immediate refusal on other references/errors/drift, no mutation while an alias exists and strict fresh absence before continuing. Preserve every original failure and all protected resources. After successful tail proof, authorize only the exact additive repository-hygiene.json patch and the seven listed audit/proposal files, ordinary hygiene/tests/hooks and an audit-only source commit, push/integration, fresh normal build/staging/deployment of that successor source commit and full release verification/synchronization. Preserve the staged1a7 evidence; do not relabel it or publish an unnecessary intermediate UI release. No other cleanup, product code, installed helper, production policy/configuration/service, protocol/data or wallet transaction change is authorized.",
+  "separateApprovalRequired": true,
+  "canResume": false,
+  "productionAuthority": false,
+  "actionsTakenByThisProposal": "Creation-only local proposal, audit correction and candidate patch. No repository registry edit, Git mutation, production mutation or tail dispatch.",
+  "supersedesProposalDraft": {
+    "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-four-rollback-roots-partial-tail-recovery-proposal.json",
+    "bytes": 21131,
+    "sha256": "813eb6da87638b468809c90bcf95f616a4f178be5eeaae8005036e4de4cf282a",
+    "qualification": "Preserve prior V4 exactly. This additive successor includes the final hygiene failure, exact audit-only bookkeeping, and a fresh successor source release in place of publication-only 1a7. The original four-root failed prefix, exact remaining deletion set and bounded strict alias handling remain unchanged."
+  },
+  "closingHygieneEvidence": {
+    "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-hygiene-close-v1.json",
+    "bytes": 6377,
+    "sha256": "bf455279d276f92e1c630f9fc08877407b9988fee0951ee5b97f0b5c69842b0b",
+    "publishedPath": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-hygiene-close.evidence.json"
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "format": "pow-audit32-partial-recovery-final-hygiene-close-v1",
+  "status": "INCOMPLETE_FINAL_HYGIENE_AND_RELEASE_FAILED",
+  "observedAtUtc": "2026-10-09T23:24:49.500869+00:00",
+  "qualifiedPriorMarkdown": {
+    "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-continuation.md",
+    "bytes": 11816,
+    "sha256": "d5d3bd7b9db5188dfd190a1584ab0ae3aa9ded7008df98ae86456fb675f29338"
+  },
+  "qualification": "The immutable Markdown describes the 22:45:32 hygiene fix and 22:45:46 check, which passed before the new audit note was created. This additive close records the later final check at 23:19:29, which failed. Earlier success is not final post-append success; no release completion is claimed.",
+  "actualFinalHygieneExecution": {
+    "atUtc": "2026-10-09T23:19:29.152317+00:00",
+    "command": [
+      "npm",
+      "run",
+      "hygiene:check"
+    ],
+    "exitCode": 1,
+    "format": "pow-audit32-partial-recovery-final-hygiene-execution-v1",
+    "productionMutation": false,
+    "sourceOrHistoricalParentChanged": false,
+    "stderr": {
+      "bytes": 137,
+      "path": "/tmp/pow-audit32-first-batch/partial-recovery-final-hygiene-check-v1.stderr",
+      "sha256": "299858a582e041b4f69a27309c9d6472d737f6d9d1434df3bc216f863a9a62e0"
+    },
+    "stdout": {
+      "bytes": 83,
+      "path": "/tmp/pow-audit32-first-batch/partial-recovery-final-hygiene-check-v1.log",
+      "sha256": "176ab245bbb51a9601241157fb772b9d1ed276e5eb91554d3be86534054a81b5"
+    }
+  },
+  "actualFinalHygieneExecutionPin": {
+    "path": "/tmp/pow-audit32-first-batch/partial-recovery-final-hygiene-check-v1.run.json",
+    "bytes": 623,
+    "sha256": "e989a33c9aa99dc7e541be90b6d6c0d281c4e1dc157569cb18a7c43704605a3a"
+  },
+  "actualFailureMessage": "Unclassified tracked note: audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-continuation.md",
+  "rootCause": "The authorized creation-only audit appender created a new Markdown companion without a corresponding noteInventory entry. The current native worktree checker enumerates tracked and non-ignored untracked files, so clean tracked Git state does not satisfy this classification gate.",
+  "actualAppenderExecution": {
+    "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-audit-append-actual-v1.run.json",
+    "bytes": 1366,
+    "sha256": "d1db0a5a634c69a3f3a1a3c22772618c84fbd6717a419aee4f45e92ecb64da5f"
+  },
+  "independentFinalReadbacks": [
+    {
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-audit-closing-readback-performance-v1.json",
+      "bytes": 2248,
+      "sha256": "d68d509965d1766809b4fdd44c7e86cebd73d30b29307bc80abc3d0bb308d537"
+    },
+    {
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-final-append-independent-readback-v1.json",
+      "bytes": 3301,
+      "sha256": "665b93d5c148954d9e0741cdeba1f35dd201cb832fe8dcd7e58c219e4fa119aa"
+    }
+  ],
+  "proposedRegistryBase": {
+    "path": "/home/sixer/ProofOfWork.Me/repository-hygiene.json",
+    "bytes": 13342,
+    "sha256": "5e84b60597fa0dc68e52a87be2edc625fa5ed81515103cf5607cac77c1f74266"
+  },
+  "proposedRegistryCandidate": {
+    "path": "/tmp/pow-audit32-first-batch/partial-tail-repository-hygiene.candidate-v1.json",
+    "bytes": 13982,
+    "sha256": "3bb768568badde32bf4126ed5b7efefc2bd5ca6da79a5e86342fc4601b49291a"
+  },
+  "proposedExactPatch": {
+    "path": "/tmp/pow-audit32-first-batch/partial-tail-repository-hygiene.registration-v1.patch",
+    "bytes": 1416,
+    "sha256": "02254d71aeeb93b41f6831a5d544923e639cebbed9e00f53e00d7583d1aae2d5"
+  },
+  "exactProposedInventoryAdditions": [
+    "audits/2026-10-09-audit32-four-rollback-roots-recovery-proposal.json",
+    "audits/2026-10-09-audit32-four-rollback-roots-partial-tail-recovery-proposal.json",
+    "audits/2026-10-09-audit32-four-rollback-roots-partial-tail-release-recovery-proposal.json",
+    "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-artifacts.json.gz",
+    "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery.evidence.json",
+    "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-continuation.md",
+    "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-hygiene-close.evidence.json"
+  ],
+  "alreadyCreatedPublicArtifacts": [
+    {
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-four-rollback-roots-recovery-proposal.json",
+      "bytes": 29687,
+      "sha256": "406e77bc5de8d2dc722a388f0821ff004c70516f67f4c8cfc1fc9cb52c223c04"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-four-rollback-roots-partial-tail-recovery-proposal.json",
+      "bytes": 21131,
+      "sha256": "813eb6da87638b468809c90bcf95f616a4f178be5eeaae8005036e4de4cf282a"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-artifacts.json.gz",
+      "bytes": 32568,
+      "sha256": "379b1fb437feaebe9a36ea36c89d12d5d42df0dbcef05dcb69d4461c6346811e"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-four-root-partial-recovery.evidence.json",
+      "bytes": 76201,
+      "sha256": "ecd43d39cfbea2b5d3636b0c903390cd2da9b0d071b5a2745c87c7dc3598551d"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-continuation.md",
+      "bytes": 11816,
+      "sha256": "d5d3bd7b9db5188dfd190a1584ab0ae3aa9ded7008df98ae86456fb675f29338"
+    }
+  ],
+  "requiredRemedy": "Only the exact additive ledger-and-audit-evidence inventory entries, tracking of the seven explicitly listed immutable audit/proposal records, and an audit-only source commit with ordinary hooks and mandatory trailers. No classifier bypass, evidence deletion or product/native helper change. After tail recovery, build/stage/publish the resulting clean successor source commit through unchanged native gates and verify full source synchronization.",
+  "repositoryEdited": false,
+  "gitMutationPerformed": false,
+  "productionMutationPerformed": false,
+  "finalHygienePassed": false,
+  "releaseComplete": false,
+  "productionAuthority": false,
+  "canResume": false,
+  "separateApprovalRequired": true,
+  "successorProposalPath": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-four-rollback-roots-partial-tail-release-recovery-proposal.json"
+}

@@ -1,0 +1,1390 @@
+{
+  "actionsRequiringSeparateApproval": [
+    "Any partial retirement resume, remaining-root deletion, restore, production changes or modified guards beyond an exact separately reviewed remaining-operations proposal."
+  ],
+  "actionsTaken": [
+    "Actual source-bound offhost export5/full fresh restorationV7/independentV7 completed before the conditional retirement attempt.",
+    "Approved conditional retirementAPPLY1 recorded partial operations and stopped at its repeating live-reference safety check.",
+    "Bounded read-only post-failure inspection and held-UI canonical sample collected; exact findings and gaps remain qualified.",
+    "Local mandatory hygiene passed and the clean same-commit local preview was restored; actual release-sync refused production source mismatch and no announcement followed.",
+    "Creation-only exact privacy-reviewed new audit Markdown/JSON/gzip, parent/public byte-SHA readback and file/parent fsync."
+  ],
+  "actualPartialState": {
+    "actualAttempt": {
+      "controller": {
+        "bytes": 96232,
+        "path": "/tmp/pow-audit32-first-batch/four-root-conditional-retirement-controller-v8.py",
+        "sha256": "c670fbc7d35ee0d7b5010d6f460e381aa54a49b96d1160d261fd4cf51b1664d1"
+      },
+      "execution": {
+        "bytes": 2020,
+        "path": "/tmp/pow-audit32-first-batch/four-root-retirement-apply-four-roots-retire-1.run.json",
+        "sha256": "9d7b821a1d4068e4c06e4412c901a3c8de4268b1d2e1ccd3c59015b7d32ce84f"
+      },
+      "exitCode": 1,
+      "finishedAt": "2026-10-09T22:35:41.170431+00:00",
+      "mode": "apply",
+      "name": "four-roots-retire-1",
+      "partialRetirementRequiresInspectionOnAnyFailure": true,
+      "productionPublished": false,
+      "startedAt": "2026-10-09T22:32:17.718257+00:00",
+      "stderr": {
+        "bytes": 649,
+        "path": "/tmp/pow-audit32-first-batch/four-root-retirement-apply-four-roots-retire-1.stderr",
+        "sha256": "58c40479b75b9f327ebc69fd153e9d9d32f77a7c28b49331ee4a94612a529d90"
+      },
+      "stdoutBytes": 0,
+      "successReceiptReturned": false
+    },
+    "approvalAndRecovery": {
+      "automaticResumeAuthorized": false,
+      "nextScope": "Backend read-only reconciliation and exact remaining-operations recovery proposal, followed by separate explicit human approval.",
+      "partialResumePerformed": false,
+      "productionConfigurationOrGuardWeakeningApproved": false
+    },
+    "completedOffhostCustodyRetainsValidity": true,
+    "createdAt": "2026-10-09T22:42:01.025556+00:00",
+    "durableRemoteRecordsObserved": {
+      "failure.json": {
+        "bytes": 2316,
+        "name": "failure.json",
+        "sha256": "fa4234126e27b31c58dd607cca53b0f61ebaa1dcd5af21404df3ac52eff2e2fb"
+      },
+      "intent.json": {
+        "bytes": 2927,
+        "name": "intent.json",
+        "sha256": "dcad76125371d1c85a9b8622bed54d460ab6297f2044348705196563a77dd26d"
+      },
+      "journal.jsonl": {
+        "bytes": 1017008,
+        "name": "journal.jsonl",
+        "sha256": "eead930154e33ad6ef1554227305d1f03f95c7e957b95e72c66369c088940c51"
+      }
+    },
+    "finalReleaseAggregatorExecuted": false,
+    "format": "pow-audit32-four-root-partial-retirement-public-projection-v1",
+    "liveStateObserved": {
+      "allNineRootContentUnchangedClaimed": false,
+      "allNineRootNamesPresent": true,
+      "completeRemainingRootFingerprintsVerifiedByThisProjection": false,
+      "earlierStrictReferenceGuardRefusalInvalidated": false,
+      "initialPlan": {
+        "bytes": 35413,
+        "path": "/tmp/pow-audit32-first-batch/recovery-ui-plan.json",
+        "sha256": "8c86fdb22458dee9e4b9030603be7b7805776bec5bc3800257f7506a2d8655ea"
+      },
+      "liveManifestSha256": "ab94507fc9fefa610173be32eb789f76ea702153c1058699420bfd8a39bf5213",
+      "matchesOriginalPrepublicationLiveManifestPin": true,
+      "previouslyCapturedMountNamespaceAbsentAtLaterObservation": true,
+      "retainedRootNamespaceCountObserved": 9
+    },
+    "partialJournal": {
+      "all9657OperationsCompletedClaimed": false,
+      "coordinatorReportedCompletedFileUnlinkPairs": 1407,
+      "fullRecordAndRemainingRootReconciliationPending": true,
+      "journalBytes": 1017008,
+      "journalSha256": "eead930154e33ad6ef1554227305d1f03f95c7e957b95e72c66369c088940c51",
+      "recordsObserved": 2814,
+      "zeroOperationsClaimed": false
+    },
+    "publicationStatus": "No successful publication in this attempt; final native publication and release synchronization gates remain unmet.",
+    "qualifications": [
+      "Line406 source-order location alone cannot prove zero changes: the qualified_live_rescan guard repeats every64 operations. Actual durable journal confirms a partial attempt.",
+      "Observed2814 journal records and coordinator-reported1407 completed file-unlink pairs are documented; complete journal semantics, exact changed paths and remaining byte/metadata/hardlink state require the separate bounded reconciliation.",
+      "All9 root names remaining does not prove intact root contents or original fingerprints. No all9 unchanged claim is made.",
+      "The later absence of the captured mount namespace does not undo the original captured reference-guard refusal or grant automatic resume authority.",
+      "Successful offhost export/restoration/independent proof remains preserved. The failed retirement does not constitute a completed four-root retirement or a release.",
+      "Current live manifest matches the original pinned prepublication manifest; this minimal check does not replace full live tree/native/canonical verification.",
+      "Original Audit32 MD, failed publication history, approved proposal/authentication, completed custody, prototypes and partial-operation records remain immutable."
+    ],
+    "rawHistoricalPayloadEmbedded": false,
+    "rawRemoteFailureOrJournalEmbedded": false,
+    "releaseId": "1a7aebed17db-20261009T190202Z",
+    "scope": "Read-only minimal projection of the actual failed conditional retirement and subsequent bounded live inspection; no raw historical journal or failure metadata is embedded.",
+    "status": "INCOMPLETE_PARTIAL_RECOVERY_NOT_SHIPPED",
+    "subsequentReadOnlyInspection": {
+      "execution": {
+        "bytes": 1041,
+        "path": "/tmp/pow-audit32-first-batch/four-root-retirement-failure-live-inspection-v2.run.json",
+        "sha256": "d9b29e356eb38ab359914cdee479c2f2b63b490dd76f6d353759d37ee0f0dc8d"
+      },
+      "fileFsync": true,
+      "finishedAt": "2026-10-09T22:39:52.030872+00:00",
+      "productionMutation": false,
+      "rawOutputPointer": {
+        "bytes": 4145,
+        "path": "/tmp/pow-audit32-first-batch/four-root-retirement-failure-live-inspection-v2.stdout",
+        "sha256": "719fd768f82cfdb25bfd3d6eefadfe3d629f7c7546e8c8d778f93b7be16da519"
+      },
+      "readOnly": true,
+      "sourceSha256": "2a65958c113f696c59418bac4df6b34c80afa6708f2f180b8f8e0a6ded423f93",
+      "startedAt": "2026-10-09T22:39:00.949244+00:00",
+      "typedExitCode": 0
+    },
+    "targetCommit": "1a7aebed17db8374b02a1b38b3470d1c26f83df0",
+    "targetTree": "5c925c73656f0490f0c6c5682e3e3a6661122027"
+  },
+  "artifactCustody": {
+    "compressedBytes": 32568,
+    "compressedSha256": "379b1fb437feaebe9a36ea36c89d12d5d42df0dbcef05dcb69d4461c6346811e",
+    "gzipMtime": 0,
+    "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-artifacts.json.gz",
+    "publicArtifactCount": 16,
+    "rawBytes": 142863,
+    "rawSha256": "9cc58371534bbf496c964060a13208f9fa0d1f4b11006372b162f2ef1451aed0"
+  },
+  "auditDate": "2026-10-09",
+  "automaticResumeAuthorizedByThisEvidence": false,
+  "createdAt": "2026-10-09T23:19:02.384922+00:00",
+  "finalReleaseAggregatorExecuted": false,
+  "format": "pow-audit32-first-batch-four-root-partial-recovery-evidence-v1",
+  "humanReadableAudit": {
+    "bytes": 11816,
+    "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-continuation.md",
+    "sha256": "d5d3bd7b9db5188dfd190a1584ab0ae3aa9ded7008df98ae86456fb675f29338"
+  },
+  "immutableParents": [
+    {
+      "bytes": 20554,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-performance.evidence.json",
+      "sha256": "f5475e446864c8084cdc5d161f9ec7b0464620efaa3fd81a7db1c4ee03a4dcaf"
+    },
+    {
+      "bytes": 5648109,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-performance-artifacts.json.gz",
+      "sha256": "5436d667c3ed9d07c78a8fbacd3b669c9e1a260073ec376531997aa8231037f0"
+    },
+    {
+      "bytes": 4047,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-execution.evidence.json",
+      "sha256": "c23ee74352d0d8f31aa17cd35f9161ff424d3d49c2b29bb557266a8a58839640"
+    },
+    {
+      "bytes": 1050325,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-execution-artifacts.json.gz",
+      "sha256": "c5cb73ea0bc3a75aadb695e2b76d47454ad70da2364e411ce8c3a742cab8ca8f"
+    },
+    {
+      "bytes": 37755,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-ui-capacity-readonly.json",
+      "sha256": "f8be4e46dce8936bb6cdd3c5697684bef0f2d743f87c7d557069481f63f65c9d"
+    },
+    {
+      "bytes": 6462,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-ui-recovery-proposal.json",
+      "sha256": "fb38ac49589d172d5fe2ec666fdd0737328b78efb944be92b1f6f8681b4e9b7d"
+    },
+    {
+      "bytes": 19139,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-ui-recovery-proposal-artifacts.json.gz",
+      "sha256": "763cdd894dd1362ef2c02c4bddc976f688b06097276ea3614568a242c98ff20b"
+    },
+    {
+      "bytes": 7878,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-ui-controller-recovery-proposal.json",
+      "sha256": "80b77602dabf63d617310ca00b5b67c40f9bf6e697a5d35441f8a87708723f4d"
+    },
+    {
+      "bytes": 30112,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-ui-custody-proposal.json",
+      "sha256": "0d6672f997a0e9a7e3b4238dcbe86db0bc1d751f601cbfabcac21526737fdb63"
+    },
+    {
+      "bytes": 29687,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-four-rollback-roots-recovery-proposal.json",
+      "sha256": "406e77bc5de8d2dc722a388f0821ff004c70516f67f4c8cfc1fc9cb52c223c04"
+    },
+    {
+      "bytes": 2364,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-four-rollback-roots-authorization.evidence.json",
+      "sha256": "96e64171134e390b7c350482c2af0d77b0be77f413d8a465f525f0c0c1454cf5"
+    },
+    {
+      "bytes": 18823,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-recovery-publication-refusal.evidence.json",
+      "sha256": "970bf48763ca463ac45c6e0dd7e198a73c40ea93399382dae4c8497601e4d597"
+    },
+    {
+      "bytes": 95677,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-recovery-publication-refusal-artifacts.json.gz",
+      "sha256": "13ebf9b63af03c108cc1a36dc5ec36d3e00d6c92d15b9d407e73309f273bacb8"
+    },
+    {
+      "bytes": 3452,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-recovery-publication-refusal-mapping-correction.evidence.json",
+      "sha256": "3919ec7af2bb1fa8a53a24ce526a519aba9eae5356071c39a5290ac8cc5bc1cc"
+    },
+    {
+      "bytes": 15018,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-recovery-blocked-verification.evidence.json",
+      "sha256": "d02e82fcebaba72a84c67ad3d8369bb202f19a3d2988970824b8f75e731d019d"
+    },
+    {
+      "bytes": 43425,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-recovery-blocked-verification-artifacts.json.gz",
+      "sha256": "9cc6813a60e11c8d0155a62ab1cb945cfc11a8bb60d75b934ef9a30ef6399b36"
+    },
+    {
+      "bytes": 105306,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.md",
+      "sha256": "0936d589bd857e8e546a3e142f77f916458a84749f6f44947b5b6ff091053020"
+    },
+    {
+      "bytes": 21131,
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-four-rollback-roots-partial-tail-recovery-proposal.json",
+      "sha256": "813eb6da87638b468809c90bcf95f616a4f178be5eeaae8005036e4de4cf282a"
+    }
+  ],
+  "independentPrivacyReview": {
+    "bytes": 7129,
+    "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-selection-final-v2-independent-privacy-review-v1.json",
+    "reviewer": "wallet_release independent primary reviewer",
+    "sha256": "05e34091c2a18e26f245dc92c5cc38703c49b35bdb89c9e38f6d719fbc290e3b"
+  },
+  "productionMutationByAppend": false,
+  "qualifications": [
+    "Actual failed retirement APPLY 1 is a partial attempt, not a pre-unlink refusal. The repeating line 406 guard does not prove zero operations.",
+    "Exact source-bound semantic replay and independent review verify 1,407 completed file-unlink pairs, 2,814 matched records, no unmatched prepare and zero directory removals.",
+    "Actual read-only reconciliation exited 0 and verifies all 8,250 remaining entries: 7,946 regular-file paths plus 304 directories, full selected bytes/metadata/dynamic links and exact completed path absences.",
+    "Forty-six immediate containing directories have authenticated newly evolved size/allocation/mtime/ctime; other original identities and membership remain strict and closing-fenced.",
+    "All nine root names remain, but the first selected root is partial with 1,073 entries and no active manifest. All four selected roots remain tail-recovery scope and are excluded from the five protected complete rollbacks; nine names do not mean nine healthy rollback trees.",
+    "The protected five and current live full native fingerprint, archive/sidecar/helper/policy/source/candidate/passthrough/phase closure passes. Protected historical per-entry inode/nlink/mtime/ctime/xattrs equality is not claimed; the 202,729-row metadata census is fresh, not historical equality.",
+    "Successful offhost custody remains valid under actual completed export 5/restorer V7/independent V7. Rootless restored owner UID/GID 1000 is explicit; original owner UID/GID 0 is authenticated, while original inode/device/ctime/atime and actual root-owned native restoration are not claimed.",
+    "Dated custody and partial projections were created before semantic/current-state reconciliation and retain their pending text as historical context. The actual remaining-state projection supersedes their pending-state wording.",
+    "After-refusal full qualification failed with an SSH connection closure and establishes no fingerprint result; later actual source-bound reconciliation is separate verified evidence.",
+    "Raw remote failure/intent/journal bytes were durably captured offhost under source-bound capture V3. Original partial records and all raw replay/reconciliation/stat/census/config/unit/node/container content remain pointer-only; the append does not read or embed restricted bodies.",
+    "Current available bytes/inodes and scratch are observations. Remaining regular allocation 866,992,128 B with zero directory credit is conservative potential reclaim, not measured future savings or publication capacity GO.",
+    "The fresh held-UI full-node sample has stable opening/closing height 970686 and reconciles the bounded known event/database accounting and five public API probes; it is not full genesis replay, every calculation, new UI rendering or final release verification.",
+    "Mandatory local hygiene fix/check passed; only inspected generated dist and empty Vite temporary output were removed. History and unrelated work remain. Clean same-commit local preview is restored, but actual release-sync exit 1 confirms production c793 versus target 1a7, leaving the release incomplete and no announcement.",
+    "The original 406e77 approved stop conditions require preserving refusal evidence and stopping. The new durable partial-tail proposal 813eb6da is independently reviewed but separate human approval remains pending.",
+    "New temporary tail controller/coordinator/adapters/tests have not been implemented or executed. Their meaningful source-bound tests, independent review, fresh action-time admission and separate approval remain required.",
+    "No automatic partial resume, deployment, guard/configuration changes, cleanup, release announcement or final successful release aggregation is authorized or performed by this evidence preparation.",
+    "Append V6 has 34 actual offline cases: 12 IO, 7 actual held-schema source contracts, 7 synthetic future-proof/Markdown source contracts and 8 restricted-pointer metadata cases. Synthetic fixtures did not establish actual current state; the independent live reconciliation does. The first test-only omitted STATUS attempt is preserved and source V5 remained unchanged.",
+    "Earlier performance evidence keeps its lab/cache/load/field/CLS/large-data qualifications and unchanged 170-file frontend binding. Temporary custody and recovery sources are not product changes.",
+    "Immutable Markdown/JSON/gzip creation and exact public/parent byte closure require the exact independent content/privacy receipt and root dispatch. Merely preparing this selection is not an append, recovery execution or release gate.",
+    "Two restricted private-custody stderr captures are genuinely empty. Integer zero bytes qualifies only with the exact empty-byte SHA256 and binary-pointer/no-embedding semantics. Public artifacts and immutable parents remain nonempty; no restricted body read or false success is introduced."
+  ],
+  "release": {
+    "commit": "1a7aebed17db8374b02a1b38b3470d1c26f83df0",
+    "releaseId": "1a7aebed17db-20261009T190202Z",
+    "tree": "5c925c73656f0490f0c6c5682e3e3a6661122027"
+  },
+  "releaseAnnouncementPublishedByAppend": false,
+  "releaseComplete": false,
+  "remainingStateVerification": {
+    "attempt": "partial-state-1",
+    "canResume": false,
+    "candidateAndSourcePreserved": {
+      "commit": "1a7aebed17db8374b02a1b38b3470d1c26f83df0",
+      "detachedAndClean": true,
+      "fullCurrentPassthroughComparisonPassed": true,
+      "fullManagedCandidateArchiveComparisonPassed": true,
+      "managedArchiveBytes": 278484370,
+      "managedArchiveSha256": "597e37e186f20133f744cb349b4b5c5846f6f64f0ad00096914cce41fd03d6a6",
+      "managedSurfaceCount": 22,
+      "originalPhaseRecordPinsSha256": "ecdbc60bbd07b1cae5dabb73fcae1bddec7425e68d449edf6fafe840f5c7495e",
+      "policyPinsSha256": "0cb9e9938c52283972fbc51294c9e2aeaae5eb836c2f3a99081a1a26814cb1c6",
+      "publicationHelperPinsSha256": "5fbe7fec39e9d0d5c17de953b9055dd7b9e46ce72d6e62f81601c4f85b1cc22b",
+      "sourceInstalledOrChanged": false,
+      "tree": "5c925c73656f0490f0c6c5682e3e3a6661122027"
+    },
+    "capacityGo": false,
+    "collectorSource": {
+      "bytes": 77386,
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-reconcile-v1.py",
+      "sha256": "d93683e242c67be0662ae498a67e82ec911e5b0021551c663068e49ea150a43e"
+    },
+    "completedPathsAbsent": true,
+    "completedRmdirs": 0,
+    "completedUnlinks": 1407,
+    "coordinatorSourceSha256": "b97fbc0057bb666d04474f32dbcf10fc5d6597df9ec241b10e2db52ac6622f90",
+    "createdAt": "2026-10-09T23:05:19.325206+00:00",
+    "currentFullNativeFingerprint": {
+      "classification": "retain",
+      "entries": 2458,
+      "format": "proofofwork-ui-retained-root-v1",
+      "manifestSha256": "ab94507fc9fefa610173be32eb789f76ea702153c1058699420bfd8a39bf5213",
+      "regularBytes": 534540639,
+      "root": "/var/www",
+      "treeSha256": "4e7a3a172326a7a43d9e0ad0400f628f87f6d96bf5702ba4d3b9a831d7186d32"
+    },
+    "currentFullNativeFingerprintVerified": true,
+    "currentSurvivorBytesAndMetadataVerified": true,
+    "dynamicHardlinkNlinkAndCtimeVerified": true,
+    "emptyOriginalAndCurrentSelectedXattrsVerified": true,
+    "evolvedImmediateContainingDirectories": 46,
+    "finalReleaseAggregatorExecuted": false,
+    "fiveProtectedNativeCompleteRootsVerified": true,
+    "fiveProtectedNativeFingerprints": [
+      {
+        "classification": "retain",
+        "entries": 2362,
+        "format": "proofofwork-ui-retained-root-v1",
+        "manifestSha256": "c61aa2a42995a2074ae2d7056bd1ba3d13d5c71117e0776ae2229dd23035ccf7",
+        "regularBytes": 516600044,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-506b1ab0833e-20261008T065838Z",
+        "treeSha256": "35dd24035304f209a02febca02cd317904c1bb2f3a8a5048cd1391c4331aa3bf"
+      },
+      {
+        "classification": "retain",
+        "entries": 2195,
+        "format": "proofofwork-ui-retained-root-v1",
+        "manifestSha256": "69da9ce63677cb06a588adee3bcb39a8bb7b01525d10a0d3a029b4578bef7945",
+        "regularBytes": 515083856,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-9b56f32ff831-20261008T133400Z",
+        "treeSha256": "bdefc5fea0591ca5ac1dd9918804e657d6410b755381dec7eac75ca900d4d585"
+      },
+      {
+        "classification": "retain",
+        "entries": 2110,
+        "format": "proofofwork-ui-retained-root-v1",
+        "manifestSha256": "30a6c0e9273b601eff11b4fecb4f2fab5a62ae9d0f076d871363bbea66944c40",
+        "regularBytes": 498461058,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c243081bb18c-20261008T042348Z",
+        "treeSha256": "95b5848158fb5bcc023267d7f45527b1c56565e1141ae74bde19a5b409a1e19b"
+      },
+      {
+        "classification": "retain",
+        "entries": 2414,
+        "format": "proofofwork-ui-retained-root-v1",
+        "manifestSha256": "a3659f1997f9a834a13ae9f4a0a7c37309f9cd27fce83ea74407e9d33d9ee719",
+        "regularBytes": 534236797,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c7935dde7239-20261009T043549Z",
+        "treeSha256": "f979231917286e64222875567240426dae0da19cab37d2a0d9fbb2070f818ca9"
+      },
+      {
+        "classification": "retain",
+        "entries": 1812,
+        "format": "proofofwork-ui-retained-root-v1",
+        "manifestSha256": "832192886705912b8793cc3d1e5cd9aadb87996648ee87b195192c44c98061ca",
+        "regularBytes": 481876684,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-fc396c9a9abd-20261007T233244Z",
+        "treeSha256": "a6ea770a044780ab1f41176823f6cb17430ca50dd448ac4ee422858c2938dc24"
+      }
+    ],
+    "freshProtectedMetadataSnapshot": {
+      "compressedBytes": 6797576,
+      "compressedSha256": "85394175ddbf74955102cf9e32967495a9c2dbfcb8c58d3c37b48c279ed7f46a",
+      "entries": 202729,
+      "format": "zlib-compressed-canonical-json",
+      "historicalMetadataEqualityClaimed": false,
+      "uncompressedBytes": 112143002,
+      "uncompressedSha256": "9396eda4e239412230e6628542b6f7705e9689db5e47638c71b94160df77af82"
+    },
+    "journalRecords": 2814,
+    "liveReferenceQualification": {
+      "configurationCoverageQualified": true,
+      "fullRawProcessMountConfigMapsEmbedded": false,
+      "originalLockAndReadSnapshotFenced": true,
+      "referencesAbsentAtOpeningAndClosing": true
+    },
+    "observedAt": "2026-10-09T23:02:33.976773+00:00",
+    "observedStorage": {
+      "conservativeRemainingRegularAllocatedBytes": 866992128,
+      "directoryReclaimCreditBytes": 0,
+      "futureCleanupGainOrPublicationGoClaimed": false,
+      "remainingUniqueRegularInodes": 3632,
+      "rootAndGrowthReserveBytes": 10804527104,
+      "rootAvailableBytes": 11862667264,
+      "rootAvailableInodes": 2186912,
+      "scratchAllocatedBytes": 2869129216,
+      "scratchLimitBytes": 5368709120
+    },
+    "originalJournalSha256": "eead930154e33ad6ef1554227305d1f03f95c7e957b95e72c66369c088940c51",
+    "partialFourScopeSnapshots": [
+      {
+        "classification": "Authenticated remaining retirement scope; not admitted as complete native rollback",
+        "completeRollbackClaimed": false,
+        "entries": 1073,
+        "manifestSha256": null,
+        "regularBytes": 230130125,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-06a2baf88d53-20261008T192602Z",
+        "treeSha256": "df2b6bba5492fbd74870f7ae0af650e02cca262f649b2973a49c209ab4342408"
+      },
+      {
+        "classification": "Authenticated remaining retirement scope; not admitted as complete native rollback",
+        "completeRollbackClaimed": false,
+        "entries": 2062,
+        "manifestSha256": "968531b9a69d46e2a737e4f9a8b4926a12b96e37930f3708524c14ddfd03c402",
+        "regularBytes": 504827530,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-67253136c0fa-20261008T162533Z",
+        "treeSha256": "d8b9a786f23e2236ae234f0a402b87ddb46baa344a54f6cf3f200d0bf548a4af"
+      },
+      {
+        "classification": "Authenticated remaining retirement scope; not admitted as complete native rollback",
+        "completeRollbackClaimed": false,
+        "entries": 2503,
+        "manifestSha256": "f32c23024d36ccaea1169e28b0d7acf9ce1860c3a47cc812f89057437aed7511",
+        "regularBytes": 533761060,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-aba69af9c0ca-20261008T153152Z",
+        "treeSha256": "f1383f9654320a6166c625e131f76d2f5ff1a206f9479806f97f47424ff47877"
+      },
+      {
+        "classification": "Authenticated remaining retirement scope; not admitted as complete native rollback",
+        "completeRollbackClaimed": false,
+        "entries": 2612,
+        "manifestSha256": "959c67792a858b731ed663cf2f6ced324d4287a74af03c1a65977a093b0bf496",
+        "regularBytes": 540943013,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b40d4f4a0d31-20261009T000001Z",
+        "treeSha256": "460dcdea784d7c35d0096c8e34d76654ca1ee02caae50718558478e076119c54"
+      }
+    ],
+    "productionAuthority": false,
+    "productionMutation": false,
+    "protectedHistoricalMetadataEqualityClaimed": false,
+    "qualifications": [
+      "Actual source-bound exit 0 verifies the remaining selected 8,250-entry snapshot and protected five/current full native file-byte/name/type/mode/owner/archive/policy/helper/source/phase closure at this observation. It grants no mutation or release authority.",
+      "The first selected root has 1,073 remaining entries and no active manifest. All four selected roots remain partial tail-recovery scope and are excluded from the five protected complete rollback roots.",
+      "Only 46 immediate containing directories have fresh evolved size/allocation/mtime/ctime after completed unlinks. Original dev/inode/type/mode/owner/nlink/membership remain required; new fields are captured and closing-fenced.",
+      "Protected five/current native fingerprints establish full file bytes, names, type, mode and owner. Original per-entry inode/nlink/mtime/ctime/xattrs were unavailable for that protected history. The 202,729-row census is fresh, not historical metadata equality.",
+      "Remaining 866,992,128 B allocation is conservative possible remaining regular reclaim; it is not already freed space, a cleanup promise, or publication capacity GO.",
+      "Opening/closing process/FD/maps/mount checks and bounded unit/Caddy/helper configuration coverage are qualified in the private source-bound evidence; fresh action-time admission remains mandatory.",
+      "Raw replay/reconciliation, remaining inode/stat arrays, compressed census, config/unit/process maps and all original journal/container bodies stay private pointers.",
+      "Separate exact remaining-operations approval is required; no automatic resume, deployment or installed-helper/guard changes are authorized."
+    ],
+    "rawHistoricalPayloadEmbedded": false,
+    "rawReconciliationPointer": {
+      "bytes": 17373446,
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-partial-state-1.result.json",
+      "sha256": "83047959689283da120fd0519c1483e3ad628787cced51d0533e59c0797877ff"
+    },
+    "readOnly": true,
+    "remainingDirectoryPaths": 304,
+    "remainingEntries": 8250,
+    "remainingFilePaths": 7946,
+    "schema": "pow-audit32-partial-remaining-state-public-projection-v1",
+    "separateApprovalRequired": true,
+    "stateVerificationPassed": true,
+    "status": "INCOMPLETE_PARTIAL_RECOVERY_NOT_SHIPPED",
+    "successfulReadOnlyExecutionPointer": {
+      "bytes": 1599,
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-partial-state-1.run.json",
+      "sha256": "2cf8d631cec1043d7536b48522b66028a939190430b448d1301fe8e450864591"
+    },
+    "typedExitCode": 0
+  },
+  "restrictedLocalPointersOnly": [
+    {
+      "bytes": 4145,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-retirement-failure-live-inspection-v2.stdout",
+      "role": "raw-readonly-failure-and-journal-identity-capture",
+      "sha256": "719fd768f82cfdb25bfd3d6eefadfe3d629f7c7546e8c8d778f93b7be16da519"
+    },
+    {
+      "bytes": 649,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-retirement-apply-four-roots-retire-1.stderr",
+      "role": "actual-partial-refusal-stack-and-captured-namespace",
+      "sha256": "58c40479b75b9f327ebc69fd153e9d9d32f77a7c28b49331ee4a94612a529d90"
+    },
+    {
+      "bytes": 226,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-retirement-failure-live-inspection-v1.stderr",
+      "role": "preserved-wrong-parent-readonly-inspection-error",
+      "sha256": "4775a75cd0caeda95c474627f709b4c5c7b0a78c615f12b4c750b6ff54f85e22"
+    },
+    {
+      "bytes": 43,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-retirement-qualify-retirement-four-roots-after-refusal-1.stderr",
+      "role": "after-refusal-SSH-connection-refusal-not-root-state-proof",
+      "sha256": "4cfeab8925ed58d4c688f5b9daa4ebb9c3947c76863e617e2667f8dd20ec8cdb"
+    },
+    {
+      "bytes": 27644,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/receipts/complete-root-restore-v2.json",
+      "role": "private-fourRootRestore",
+      "sha256": "e8155047468a99b1ccfc156d0b024be519c52a2abfaace8bace4bfe85b00043c"
+    },
+    {
+      "bytes": 13102,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/receipts/complete-root-independent-v3.json",
+      "role": "private-fourRootCustodyReview",
+      "sha256": "176701454e2ae41a73f8306f59d680ad041780fb972de9597e52afef02e581da"
+    },
+    {
+      "bytes": 1025576960,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/original-byte-streams/four-complete-roots-full-roots-export-5.tar",
+      "role": "private-fourRootContainer",
+      "sha256": "4ba49dc25b84bd079b8c723c1265547837c46b03fbe8fa3b9be5ed1b42e97b2a"
+    },
+    {
+      "bytes": 792009812,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/original-byte-streams/four-complete-roots-full-roots-export-5.transport.gz",
+      "role": "private-fourRootBodyTransportWire",
+      "sha256": "2d74170546c0dac8efa34011cdd3bea892f36301bdfc09e64169311b17758740"
+    },
+    {
+      "bytes": 10198190,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/tmp/pow-audit32-first-batch/recovery-four-roots-inventory.json",
+      "role": "private-fourRootSourceInventory",
+      "sha256": "5749f80ed3177d8c8029f34ef80cc73edc9a5ae281a49461cc6fd41b44c7fdf0"
+    },
+    {
+      "bytes": 64279,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/partial-retirement-canonical-v1.json",
+      "role": "raw-held-ui-fullnode-and-services-capture",
+      "sha256": "10f59b649fa871ea357237133b5641263f030f9d7cf9ccd714917591c3d11fb6"
+    },
+    {
+      "bytes": 197,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/partial-recovery-hygiene-fix-v1.log",
+      "role": "actual-local-hygiene-fix-log-pointer",
+      "sha256": "17c2c309fb124d89702f76874de4cee325da0e371e4bcdd8744c90a2d8901244"
+    },
+    {
+      "bytes": 134,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/partial-recovery-hygiene-check-v1.log",
+      "role": "actual-local-hygiene-check-log-pointer",
+      "sha256": "c501942de5d3c65c2445bb7178083e0794cc7491a71a7ba3a354acef2a10a8bb"
+    },
+    {
+      "bytes": 82,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/partial-recovery-release-sync-v1.log",
+      "role": "actual-local-release-sync-log-pointer",
+      "sha256": "bf85f587c84b3d5dcdfa856fa9574fb84bac973ab9bc42c39286a8ce52c90e42"
+    },
+    {
+      "bytes": 804,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/partial-recovery-release-sync-v1.stderr",
+      "role": "actual-local-release-sync-stderr-pointer",
+      "sha256": "17de01b1240a291fe375b202e1a4e1e3c4d3841b4d5bd1a096946e721765074c"
+    },
+    {
+      "bytes": 1564,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-records-capture-partial-capture-1.result.json",
+      "role": "private-exact-partial-records-offhost-custody-receipt",
+      "sha256": "850ae928fb233aa64a223368aac816e60ed1ab2a2528439da7e3121f084081d2"
+    },
+    {
+      "bytes": 881,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-records-capture-partial-capture-1.run.json",
+      "role": "private-exact-partial-records-custody-execution",
+      "sha256": "df751714313374cb075a8d1199bdd3df48853176e5e37363537c6184ac38586b"
+    },
+    {
+      "bytes": 1363644,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-records-capture-partial-capture-1.stdout",
+      "role": "private-raw-base64-partial-record-capture",
+      "sha256": "06e593369699390a7aaca3afe55fe972c46adc7f9c64860a1354c6d85c74327b"
+    },
+    {
+      "bytes": 2316,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fileAndParentFsyncVerifiedByCapture": true,
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "originalRecordByteHashVerifiedByCapture": true,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-retirement-partial-capture-1/failure.json",
+      "role": "private-offhost-partial-failure.json",
+      "sha256": "fa4234126e27b31c58dd607cca53b0f61ebaa1dcd5af21404df3ac52eff2e2fb"
+    },
+    {
+      "bytes": 2927,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fileAndParentFsyncVerifiedByCapture": true,
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "originalRecordByteHashVerifiedByCapture": true,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-retirement-partial-capture-1/intent.json",
+      "role": "private-offhost-partial-intent.json",
+      "sha256": "dcad76125371d1c85a9b8622bed54d460ab6297f2044348705196563a77dd26d"
+    },
+    {
+      "bytes": 1017008,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fileAndParentFsyncVerifiedByCapture": true,
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "originalRecordByteHashVerifiedByCapture": true,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-retirement-partial-capture-1/journal.jsonl",
+      "role": "private-offhost-partial-journal.jsonl",
+      "sha256": "eead930154e33ad6ef1554227305d1f03f95c7e957b95e72c66369c088940c51"
+    },
+    {
+      "bytes": 6062829,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-actual-partial-prefix-replay-v1.json",
+      "role": "private-full-original-inventory-and-journal-derived-survivor-replay",
+      "sha256": "1d8a8a7bda2b2bb70de4aa08a15f80e87db189cce58c7c86d260f5d98cb9bd50"
+    },
+    {
+      "bytes": 2095,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-actual-partial-prefix-independent-replay-v1.json",
+      "role": "independent-exact-prefix-proof-pointer",
+      "sha256": "04d91dbb589ff745e382ad7135ec2a43ed22b784329157369f2c01006406f3ad"
+    },
+    {
+      "bytes": 17373446,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-partial-state-1.result.json",
+      "role": "private-full-actual-remaining-state-reconciliation-and-compressed-census",
+      "sha256": "83047959689283da120fd0519c1483e3ad628787cced51d0533e59c0797877ff"
+    },
+    {
+      "bytes": 17373446,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-partial-state-1.stdout",
+      "role": "private-raw-actual-reconciliation-stdout-identical-result",
+      "sha256": "83047959689283da120fd0519c1483e3ad628787cced51d0533e59c0797877ff"
+    },
+    {
+      "bytes": 1599,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-partial-state-1.run.json",
+      "role": "private-source-bound-successful-readonly-reconciliation-execution",
+      "sha256": "2cf8d631cec1043d7536b48522b66028a939190430b448d1301fe8e450864591"
+    },
+    {
+      "bytes": 15152982,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-partial-state-1.request.json",
+      "role": "private-actual-readonly-reconciliation-request",
+      "sha256": "4de85c435719a0b34da057040778f93238b86d2f90fa2a3ee14b485b8020b120"
+    },
+    {
+      "bytes": 1770103,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-partial-state-1.request.zlib",
+      "role": "private-actual-readonly-reconciliation-wire",
+      "sha256": "74b51afb8f7e95e4f197171d33362d9f8ac6f25586441a94cf7da0ae4c6115af"
+    },
+    {
+      "bytes": 2243,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-actual-independent-review-v1.json",
+      "role": "backend-independent-actual-state-review-pointer",
+      "sha256": "8d0d279fa7ae29bdc6294dbc8bca33b2c6c4a47f372f82fefc30aeb2466a5a22"
+    },
+    {
+      "bytes": 4616,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-state-independent-actual-review-v2.json",
+      "role": "wallet-independent-actual-state-review-pointer",
+      "sha256": "f6fe7cc9551ea0015297abb1e6f5ce69994952540ddf652afbdf64dbc6626552"
+    },
+    {
+      "bytes": 5753720,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-tail-exact-deletion-manifest-v1.json",
+      "role": "private-8250-exact-future-tail-allowlist-not-execution-authority",
+      "sha256": "7ba51179bbde27ac28b74405d6d9b5a3413029810e8fee21fe505f438d3d97f8"
+    },
+    {
+      "bytes": 1621,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-tail-proposal-performance-peer-v4.json",
+      "role": "exact-tail-proposal-scope-review-not-execution-go",
+      "sha256": "6d5fc64f657dff0e104e5ee825bfa007ce080e275ec8ab956de60e5ede8df485"
+    },
+    {
+      "bytes": 7815,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-continuation.prepared-v1.md",
+      "role": "preserved-initial-prepared-pending-state-markdown",
+      "sha256": "048b8eea99c4c94a4223e248f89a3932a1c78c004c393bf95edefe7bfc356b5f"
+    },
+    {
+      "bytes": 11349,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-continuation.final-v1.md",
+      "role": "preserved-dated-pending-proposal-markdown",
+      "sha256": "dbf4c70e9a8825de015fc3f165a88d268d4a9480d038d5fff80e25697077bf31"
+    },
+    {
+      "bytes": 3503,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-evidence-append-v5-tests-v2.log",
+      "role": "26-primary-offline-guard-log",
+      "sha256": "bbbdb82db16a13fd2473241e836a18621ae0e5b85912065c0682d84114093e04"
+    },
+    {
+      "bytes": 11140,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-evidence-append-v5-tests-v2.py",
+      "role": "26-primary-offline-guard-source",
+      "sha256": "dfba954806c2ef4ce2e692f480cc5ecd0985d0a9c0cfdc38475bd30066521cbb"
+    },
+    {
+      "bytes": 1236,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-evidence-append-v5-independent-tests-v1.result.json",
+      "role": "26-independent-offline-guard-receipt",
+      "sha256": "7e30356829a81d113a3a42d4e7cf2e8f1bab04ffdfd8ee28a31339c42ad0c556"
+    },
+    {
+      "bytes": 1580,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-evidence-append-v5-tests-v1.result.json",
+      "role": "preserved-test-only-missing-STATUS-failure",
+      "sha256": "20b89302cc136e5af48252d4ec47decf90dea1a464b2831476f6e411dfe98d05"
+    },
+    {
+      "bytes": 6257,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-private-source-evidence-additions-v9.json",
+      "role": "root-creation-only-private-source-custody-additions-v9",
+      "sha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47"
+    },
+    {
+      "bytes": 16531,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-records-capture-v2.py",
+      "role": "private-durable-custody-v9-copy-1",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "37c957aae93bedbf5cd5ecb661ffaa4d52003f80ae9121094c5e1ed0b1b0fa9b"
+    },
+    {
+      "bytes": 1136,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-records-capture-v2-guards-v1.json",
+      "role": "private-durable-custody-v9-copy-2",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "ec39fe84a78a7640c82f0817df9cf04b436adc8868db43ba2ab118d8f8dcef4f"
+    },
+    {
+      "bytes": 2375,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-records-capture-v2-tests-v1.log",
+      "role": "private-durable-custody-v9-copy-3",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "84f1374c0f54dfe7a119cf4f3e7ccedffc0ebab7a075953a54c9872e73c69762"
+    },
+    {
+      "bytes": 19732,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-records-capture-v3.py",
+      "role": "private-durable-custody-v9-copy-4",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "50d0184ae265d3c0971402fda0c9fcd065180cdfc5f8b41b4e1ee41adbe52e22"
+    },
+    {
+      "bytes": 1124,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-records-capture-v3-guards-v1.json",
+      "role": "private-durable-custody-v9-copy-5",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "84abba431d9655a83b97dfdb1b3b9ddf0bb9647411b2d4ccfa3dbf68a4d9d1cc"
+    },
+    {
+      "bytes": 3093,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-records-capture-v3-tests-v1.log",
+      "role": "private-durable-custody-v9-copy-6",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "1ff65764b2917ddf0e2e127f9dfd29a3edc0a15e7b6eaa402bd5b41ae45edaf5"
+    },
+    {
+      "bytes": 1120,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-records-capture-v3-independent-tests-v1.result.json",
+      "role": "private-durable-custody-v9-copy-7",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "f3f096a9a9d0ab0c7ef425375f553e75f7be965db87002010c9c63cb15e8f771"
+    },
+    {
+      "bytes": 3093,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-records-capture-v3-independent-tests-v1.log",
+      "role": "private-durable-custody-v9-copy-8",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "fb938819065970926f41bcca56e21ee705ca773b587542b3ca2efba8ba58eb57"
+    },
+    {
+      "bytes": 1564,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-records-capture-partial-capture-1.result.json",
+      "role": "private-durable-custody-v9-copy-9",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "850ae928fb233aa64a223368aac816e60ed1ab2a2528439da7e3121f084081d2"
+    },
+    {
+      "bytes": 881,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-records-capture-partial-capture-1.run.json",
+      "role": "private-durable-custody-v9-copy-10",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "df751714313374cb075a8d1199bdd3df48853176e5e37363537c6184ac38586b"
+    },
+    {
+      "bytes": 801,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-recovery-hygiene-fix-v1.run.json",
+      "role": "private-durable-custody-v9-copy-11",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "4859c3feb7aea1321f0cd5f8839d437fc368fdfbcd816407d5ccef533ad7108d"
+    },
+    {
+      "bytes": 903,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-recovery-hygiene-check-v1.run.json",
+      "role": "private-durable-custody-v9-copy-12",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "578725c0af9bb9438246a23bc3e465e2bfe8094b72eb2f05e00acce58893e9d1"
+    },
+    {
+      "bytes": 836,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-recovery-local-preview-build-v1.run.json",
+      "role": "private-durable-custody-v9-copy-13",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "d784f3b7798faaa86493e040ab1b90774c1c252b0486f62e5d8a235dc5d9584f"
+    },
+    {
+      "bytes": 1851,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-recovery-local-preview-build-v1.stderr",
+      "role": "private-durable-custody-v9-copy-14",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "1c364de714c019724242b0c6e2d3e7497db4f2ec3a3cedcf132928ff8cfd202c"
+    },
+    {
+      "bytes": 923,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-recovery-local-preview-build-v2.run.json",
+      "role": "private-durable-custody-v9-copy-15",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "7b1f11aa2633b5a6dce2add462d02e3c6af75c08c47a4c8669376ebc938c29d3"
+    },
+    {
+      "bytes": 579,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-recovery-local-preview-provenance-v1.json",
+      "role": "private-durable-custody-v9-copy-16",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "55060ed5f6a1a1fc89289b2e2f01f58f9d3a72c1f5930788c3877cce64b17209"
+    },
+    {
+      "bytes": 824,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-recovery-release-sync-v1.run.json",
+      "role": "private-durable-custody-v9-copy-17",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "2138ecdeb0b4ef05e4b75c28edf89b8d7584652abb65365a7a1a715d4e2a254e"
+    },
+    {
+      "bytes": 804,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-recovery-release-sync-v1.stderr",
+      "role": "private-durable-custody-v9-copy-18",
+      "rootCustodyReceiptSha256": "0eace12ff571f2d92ed8eb438df0000ee9395a5ad7de355d430901dc9b8bae47",
+      "sha256": "17de01b1240a291fe375b202e1a4e1e3c4d3841b4d5bd1a096946e721765074c"
+    },
+    {
+      "bytes": 6834,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-private-source-evidence-additions-v10.json",
+      "role": "root-creation-only-private-source-custody-additions-v10",
+      "sha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b"
+    },
+    {
+      "bytes": 5045,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-prefix-replay-v1.py",
+      "role": "private-durable-custody-v10-copy-1",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "a8e6b1f9dfc67631a0ba134fac4540bdc25819d79df87bfa879970c35e8365c1"
+    },
+    {
+      "bytes": 5102,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-prefix-replay-v1.test.py",
+      "role": "private-durable-custody-v10-copy-2",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "6ef5d159b338cbe41d1cbcee7141cf5ced7a1d59b1cad96e0df1316af415eae6"
+    },
+    {
+      "bytes": 1164,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-prefix-replay-v1-tests-v1.log",
+      "role": "private-durable-custody-v10-copy-3",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "9c12dc4d15e5ec492eb6ea831b18516784095518434e22138fcee6da783fb595"
+    },
+    {
+      "bytes": 6062829,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-actual-partial-prefix-replay-v1.json",
+      "role": "private-durable-custody-v10-copy-4",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "1d8a8a7bda2b2bb70de4aa08a15f80e87db189cce58c7c86d260f5d98cb9bd50"
+    },
+    {
+      "bytes": 77386,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-state-reconcile-v1.py",
+      "role": "private-durable-custody-v10-copy-5",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "d93683e242c67be0662ae498a67e82ec911e5b0021551c663068e49ea150a43e"
+    },
+    {
+      "bytes": 7387,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-state-reconcile-v1.test.py",
+      "role": "private-durable-custody-v10-copy-6",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "0390ea415e8500d3851117787fb2b4988088e5fe8bcd5452f3b3ecfdaa920b29"
+    },
+    {
+      "bytes": 1319,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-state-reconcile-v1-tests-v1.log",
+      "role": "private-durable-custody-v10-copy-7",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "44eb717abaec8f6c261351f17bb3661d0be2fa8f2183d21a11460c13e3b4ebbd"
+    },
+    {
+      "bytes": 12657,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/run-four-root-partial-state-reconcile-v1.py",
+      "role": "private-durable-custody-v10-copy-8",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "b97fbc0057bb666d04474f32dbcf10fc5d6597df9ec241b10e2db52ac6622f90"
+    },
+    {
+      "bytes": 4849,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/run-four-root-partial-state-reconcile-v1.test.py",
+      "role": "private-durable-custody-v10-copy-9",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "0f479f7206cb02b3d51af14ccad10c3fc470ccb5962a28941a363713a73d7e4c"
+    },
+    {
+      "bytes": 1124,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/run-four-root-partial-state-reconcile-v1-tests-host-v1.log",
+      "role": "private-durable-custody-v10-copy-10",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "0372ae7eca8ee5f1709cc939c06002a805c372086cc9d07dc3415c4b528dc9e7"
+    },
+    {
+      "bytes": 1047,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-state-runner-guards-v1.json",
+      "role": "private-durable-custody-v10-copy-11",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "ca11f5b8a8bad585cc13bdf4018b67fe99178da61c1de26d8d0833abe17a3798"
+    },
+    {
+      "bytes": 3153,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/run-four-root-partial-state-reconcile-v1-independent-tests-v1.log",
+      "role": "private-durable-custody-v10-copy-12",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "4254b91506de506abc259c80ee4812e6053b8bfccde73c32866acdf2282836c0"
+    },
+    {
+      "bytes": 1348,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/run-four-root-partial-state-reconcile-v1-independent-tests-v2.log",
+      "role": "private-durable-custody-v10-copy-13",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "a48cdeee43643226df401401ad3177d9686c7c7a9dda3db6a6c7a6e6be732e19"
+    },
+    {
+      "bytes": 1134,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/run-four-root-partial-state-reconcile-v1-independent-tests-v2.result.json",
+      "role": "private-durable-custody-v10-copy-14",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "78bb550a355caa0f07cc82b86b57215cec5a32c8999431910c2e241ae0df2a35"
+    },
+    {
+      "bytes": 292,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-state-pre-read-timer-v1.stdout",
+      "role": "private-durable-custody-v10-copy-15",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "fbbeecdb1f149d9c09b3f759a98de4c4591d972edcc334e5b7ca27bb779e3e15"
+    },
+    {
+      "bytes": 0,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-state-pre-read-timer-v1.stderr",
+      "role": "private-durable-custody-v10-copy-16",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 584,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-state-pre-read-timer-v1.run.json",
+      "role": "private-durable-custody-v10-copy-17",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "e8df0f93d5947d7bc3c7269aa19bfdfa61e7276e4530798c091e70302c47984e"
+    },
+    {
+      "bytes": 413,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-state-pre-read-timer-v2.stdout",
+      "role": "private-durable-custody-v10-copy-18",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "a3d55f37162a8f1767f3f2a0a2c366e35fdca35ba08bef0ac233b9c55bcba2d5"
+    },
+    {
+      "bytes": 0,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-state-pre-read-timer-v2.stderr",
+      "role": "private-durable-custody-v10-copy-19",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 584,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/partial-state-pre-read-timer-v2.run.json",
+      "role": "private-durable-custody-v10-copy-20",
+      "rootCustodyReceiptSha256": "0143c0d34804978a0bac00a1f01e276f8a9003af77d1cd637aac75318fb2045b",
+      "sha256": "4a03d3e6ad5d71e62dfce4899aafd88adc706be7a232ae1a59871208e4142bb8"
+    },
+    {
+      "bytes": 2088,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-private-source-evidence-additions-v11.json",
+      "role": "root-creation-only-private-source-custody-additions-v11",
+      "sha256": "64d2b34ab13c04e6c48ddef509eb12eebf165cedda4f7b9f60a3335ccb12799d"
+    },
+    {
+      "bytes": 17373446,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-state-partial-state-1.result.json",
+      "role": "private-durable-custody-v11-copy-1",
+      "rootCustodyReceiptSha256": "64d2b34ab13c04e6c48ddef509eb12eebf165cedda4f7b9f60a3335ccb12799d",
+      "sha256": "83047959689283da120fd0519c1483e3ad628787cced51d0533e59c0797877ff"
+    },
+    {
+      "bytes": 1599,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-state-partial-state-1.run.json",
+      "role": "private-durable-custody-v11-copy-2",
+      "rootCustodyReceiptSha256": "64d2b34ab13c04e6c48ddef509eb12eebf165cedda4f7b9f60a3335ccb12799d",
+      "sha256": "2cf8d631cec1043d7536b48522b66028a939190430b448d1301fe8e450864591"
+    },
+    {
+      "bytes": 15152982,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-state-partial-state-1.request.json",
+      "role": "private-durable-custody-v11-copy-3",
+      "rootCustodyReceiptSha256": "64d2b34ab13c04e6c48ddef509eb12eebf165cedda4f7b9f60a3335ccb12799d",
+      "sha256": "4de85c435719a0b34da057040778f93238b86d2f90fa2a3ee14b485b8020b120"
+    },
+    {
+      "bytes": 1770103,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-state-partial-state-1.request.zlib",
+      "role": "private-durable-custody-v11-copy-4",
+      "rootCustodyReceiptSha256": "64d2b34ab13c04e6c48ddef509eb12eebf165cedda4f7b9f60a3335ccb12799d",
+      "sha256": "74b51afb8f7e95e4f197171d33362d9f8ac6f25586441a94cf7da0ae4c6115af"
+    },
+    {
+      "bytes": 2243,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-state-actual-independent-review-v1.json",
+      "role": "private-durable-custody-v11-copy-5",
+      "rootCustodyReceiptSha256": "64d2b34ab13c04e6c48ddef509eb12eebf165cedda4f7b9f60a3335ccb12799d",
+      "sha256": "8d0d279fa7ae29bdc6294dbc8bca33b2c6c4a47f372f82fefc30aeb2466a5a22"
+    },
+    {
+      "bytes": 3603,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-private-source-evidence-additions-v12.json",
+      "role": "root-creation-only-private-source-custody-additions-v12",
+      "sha256": "20895b5b34cf2b994c0ddc9dff275e7582b7498ef8dd46669d2d2d2da74e58e5"
+    },
+    {
+      "bytes": 17273,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-tail-recovery-proposal-v1.json",
+      "role": "private-durable-custody-v12-copy-1",
+      "rootCustodyReceiptSha256": "20895b5b34cf2b994c0ddc9dff275e7582b7498ef8dd46669d2d2d2da74e58e5",
+      "sha256": "9ed484c66cc94fd8fb77aafedff28bc8a7e62a9d2a07fe3b3cdf1b95ad087fd3"
+    },
+    {
+      "bytes": 18825,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-tail-recovery-proposal-v2.json",
+      "role": "private-durable-custody-v12-copy-2",
+      "rootCustodyReceiptSha256": "20895b5b34cf2b994c0ddc9dff275e7582b7498ef8dd46669d2d2d2da74e58e5",
+      "sha256": "8ae1650b4940146dd1177b0a533047e91a9dbfd09d1457ca74d105f2c8cece9d"
+    },
+    {
+      "bytes": 20894,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-tail-recovery-proposal-v3.json",
+      "role": "private-durable-custody-v12-copy-3",
+      "rootCustodyReceiptSha256": "20895b5b34cf2b994c0ddc9dff275e7582b7498ef8dd46669d2d2d2da74e58e5",
+      "sha256": "d0ec9658529ea9d89c94398f1cdbf3d3b11bbe744edf423b0bc9b8acd2c76c3d"
+    },
+    {
+      "bytes": 21131,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-tail-recovery-proposal-v4.json",
+      "role": "private-durable-custody-v12-copy-4",
+      "rootCustodyReceiptSha256": "20895b5b34cf2b994c0ddc9dff275e7582b7498ef8dd46669d2d2d2da74e58e5",
+      "sha256": "813eb6da87638b468809c90bcf95f616a4f178be5eeaae8005036e4de4cf282a"
+    },
+    {
+      "bytes": 5753720,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-tail-exact-deletion-manifest-v1.json",
+      "role": "private-durable-custody-v12-copy-5",
+      "rootCustodyReceiptSha256": "20895b5b34cf2b994c0ddc9dff275e7582b7498ef8dd46669d2d2d2da74e58e5",
+      "sha256": "7ba51179bbde27ac28b74405d6d9b5a3413029810e8fee21fe505f438d3d97f8"
+    },
+    {
+      "bytes": 3808,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-tail-proposal-v4-independent-review-v1.json",
+      "role": "private-durable-custody-v12-copy-6",
+      "rootCustodyReceiptSha256": "20895b5b34cf2b994c0ddc9dff275e7582b7498ef8dd46669d2d2d2da74e58e5",
+      "sha256": "01962da13df781830feb47c1ada45392f1b56b0bc548b2c3861709e88b6fc634"
+    },
+    {
+      "bytes": 1621,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-tail-proposal-performance-peer-v4.json",
+      "role": "private-durable-custody-v12-copy-7",
+      "rootCustodyReceiptSha256": "20895b5b34cf2b994c0ddc9dff275e7582b7498ef8dd46669d2d2d2da74e58e5",
+      "sha256": "6d5fc64f657dff0e104e5ee825bfa007ce080e275ec8ab956de60e5ede8df485"
+    },
+    {
+      "bytes": 4616,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-state-independent-actual-review-v2.json",
+      "role": "private-durable-custody-v12-copy-8",
+      "rootCustodyReceiptSha256": "20895b5b34cf2b994c0ddc9dff275e7582b7498ef8dd46669d2d2d2da74e58e5",
+      "sha256": "f6fe7cc9551ea0015297abb1e6f5ce69994952540ddf652afbdf64dbc6626552"
+    },
+    {
+      "bytes": 10207,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "fullByteReadbackByThisSelectionPreparation": false,
+      "path": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots/source-evidence/four-root-partial-remaining-state-public-projection-v1.json",
+      "role": "private-durable-custody-v12-copy-9",
+      "rootCustodyReceiptSha256": "20895b5b34cf2b994c0ddc9dff275e7582b7498ef8dd46669d2d2d2da74e58e5",
+      "sha256": "f60c296940a7cf18926c6ce9c6c13c8499619e40ee34cb0d98bd9c9c7b1f0afd"
+    },
+    {
+      "bytes": 65622,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-selection.final-v1.json",
+      "role": "preserved-final-selection-rejected-before-main-empty-metadata",
+      "sha256": "1f361a088c33d517a149774fc1555d47323f587132cf161e58fa65360cd9e14e"
+    },
+    {
+      "bytes": 13243,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-evidence-append-v6-tests-v1.py",
+      "role": "34-primary-offline-guard-source",
+      "sha256": "ff1bb055121f645205f0d5e1e469d36cff8b817569aaba402d54a06939a75de1"
+    },
+    {
+      "bytes": 4499,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-evidence-append-v6-tests-v1.log",
+      "role": "34-primary-offline-guard-log",
+      "sha256": "8681fba9d9f9f41f832dcc543f1f8b402fd5858696a7f7a831a321ee7bbfa67b"
+    },
+    {
+      "bytes": 1647,
+      "contentEmbedded": false,
+      "encoding": "binary-pointer",
+      "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-evidence-append-v6-independent-tests-v1.result.json",
+      "role": "34-independent-offline-guard-receipt",
+      "sha256": "d54464cd2468f889c2615550a14a6c2b2d7b413a01e7a082e4118896fcc6d674"
+    }
+  ],
+  "restrictedPointerBodiesReadByThisAppend": false,
+  "restrictedRemotePointersOnly": [
+    {
+      "bytes": 2316,
+      "contentEmbedded": false,
+      "observationSourceSha256": "719fd768f82cfdb25bfd3d6eefadfe3d629f7c7546e8c8d778f93b7be16da519",
+      "offhostCustodyReceiptSha256": "850ae928fb233aa64a223368aac816e60ed1ab2a2528439da7e3121f084081d2",
+      "offhostRawCustodyVerified": true,
+      "path": "/var/backups/proofofwork-ui/recovery-evidence/audit32-four-complete-roots-four-roots-retire-1/failure.json",
+      "role": "private-remote-partial-failure.json",
+      "sha256": "fa4234126e27b31c58dd607cca53b0f61ebaa1dcd5af21404df3ac52eff2e2fb"
+    },
+    {
+      "bytes": 2927,
+      "contentEmbedded": false,
+      "observationSourceSha256": "719fd768f82cfdb25bfd3d6eefadfe3d629f7c7546e8c8d778f93b7be16da519",
+      "offhostCustodyReceiptSha256": "850ae928fb233aa64a223368aac816e60ed1ab2a2528439da7e3121f084081d2",
+      "offhostRawCustodyVerified": true,
+      "path": "/var/backups/proofofwork-ui/recovery-evidence/audit32-four-complete-roots-four-roots-retire-1/intent.json",
+      "role": "private-remote-partial-intent.json",
+      "sha256": "dcad76125371d1c85a9b8622bed54d460ab6297f2044348705196563a77dd26d"
+    },
+    {
+      "bytes": 1017008,
+      "contentEmbedded": false,
+      "observationSourceSha256": "719fd768f82cfdb25bfd3d6eefadfe3d629f7c7546e8c8d778f93b7be16da519",
+      "offhostCustodyReceiptSha256": "850ae928fb233aa64a223368aac816e60ed1ab2a2528439da7e3121f084081d2",
+      "offhostRawCustodyVerified": true,
+      "path": "/var/backups/proofofwork-ui/recovery-evidence/audit32-four-complete-roots-four-roots-retire-1/journal.jsonl",
+      "records": 2814,
+      "role": "private-remote-partial-journal.jsonl",
+      "sha256": "eead930154e33ad6ef1554227305d1f03f95c7e957b95e72c66369c088940c51"
+    }
+  ],
+  "scope": "Immutable dated continuation after the approved conditional four-root retirement stopped with durable partial operations; a completed offhost custody proof and bounded held-UI canonical sample do not complete retirement or release.",
+  "selection": {
+    "bytes": 68356,
+    "path": "/tmp/pow-audit32-first-batch/four-root-partial-recovery-selection.final-v2.json",
+    "sha256": "4ad501526c99196fdddf818293421e733420e799ad4ce76570552c91a51fa214"
+  },
+  "sourceOrTrackedAuditLogModified": false,
+  "status": "INCOMPLETE_PARTIAL_RECOVERY_NOT_SHIPPED"
+}

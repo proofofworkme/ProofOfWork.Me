@@ -212,7 +212,14 @@
       "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.ordered-read-only.evidence.json",
       "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.ordered-read-only-artifacts.json.gz",
       "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.computer-performance.evidence.json",
-      "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.computer-performance-artifacts.json.gz"
+      "audits/2026-10-09-production-comprehensive-health-data-integrity-audit-32.computer-performance-artifacts.json.gz",
+      "audits/2026-10-09-audit32-four-rollback-roots-recovery-proposal.json",
+      "audits/2026-10-09-audit32-four-rollback-roots-partial-tail-recovery-proposal.json",
+      "audits/2026-10-09-audit32-four-rollback-roots-partial-tail-release-recovery-proposal.json",
+      "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-artifacts.json.gz",
+      "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery.evidence.json",
+      "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-continuation.md",
+      "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-hygiene-close.evidence.json"
     ],
     "presentation-and-generated-notes": [
       "PROOFOFWORK_GENERAL_DECK.md",

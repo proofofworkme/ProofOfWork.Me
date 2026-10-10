@@ -1,0 +1,458 @@
+{
+  "format": "pow-audit32-four-complete-rollback-roots-recovery-proposal-v4",
+  "createdAt": "2026-10-09T19:46:10.568180+00:00",
+  "status": "PROPOSAL_REQUIRING_SEPARATE_EXPLICIT_APPROVAL",
+  "approved": false,
+  "productionMutation": false,
+  "repositoryCodeChangeProposed": false,
+  "release": {
+    "releaseId": "1a7aebed17db-20261009T190202Z",
+    "commit": "1a7aebed17db8374b02a1b38b3470d1c26f83df0",
+    "tree": "5c925c73656f0490f0c6c5682e3e3a6661122027",
+    "originalPlanSha256": "8c86fdb22458dee9e4b9030603be7b7805776bec5bc3800257f7506a2d8655ea",
+    "liveUiCommitStill": "c7935dde7239836f89be27c1ee29dfbc6a585e78",
+    "nodeScopedBackendAlreadyReleased": true,
+    "releaseSynchronizationComplete": false
+  },
+  "reason": {
+    "nativePublisherRefusedBeforeLiveExchange": true,
+    "nativePublisherDependency": "Every retained complete rollback root must have its manifest-matching canonical local managed release archive, checksum and byte-identical provenance when native verify-rollback runs. Offhost archive bytes alone do not satisfy that operational check.",
+    "sourceReferences": [
+      {
+        "file": "deploy/proofofwork-ui-release-publish.sh",
+        "lines": [
+          828,
+          852
+        ]
+      },
+      {
+        "file": "deploy/proofofwork-ui-release-provenance.sh",
+        "lines": [
+          1625,
+          1641
+        ]
+      }
+    ],
+    "correctionToPriorAudit": "The earlier five-archive retirement qualification verified current and immediately prior releases and preserved historical references, but missed the future native publisher dependency on archives for every retained rollback root. The earlier capacity GO was incomplete for this dependency. Preserve the original qualification, custody, capacity calculation and safe-refusal evidence unchanged; this record appends the operational correction.",
+    "notABackupLoss": "The five original archive byte streams and sidecars are verified in offhost custody; the four complete retained roots remain untouched locally. Complete-root custody has not yet been performed."
+  },
+  "exactProposedRootRetirements": [
+    {
+      "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-06a2baf88d53-20261008T192602Z",
+      "completeRootPin": {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-06a2baf88d53-20261008T192602Z",
+        "manifestSha256": "0c0b6233a7b71bf0a0d9ecc53392c7b2568dc4e2f3b1e68c69a8ad92f5f486c8",
+        "treeSha256": "13469f207ad11712fa7b9c7362d48b476eae99eb2d39bcbf3d60ef25e81d194b",
+        "entries": 2480,
+        "regularBytes": 537225981
+      },
+      "requiredArchiveNowOffhost": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-67253136c0fa-20261008T162533Z.tgz",
+      "requiredArchiveSha256": "64ec735d9f2cb53e267c535cee0cb6c9fa8da6a9192871ce65011c2269b9c9ac",
+      "retainedLocalSidecars": {
+        ".sha256": {
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-67253136c0fa-20261008T162533Z.tgz.sha256",
+          "sha256": "8d091789368fef9e427d4852cf3e45ce000513d91830c95fe6c6940a78ca53da",
+          "bytes": 123
+        },
+        ".provenance": {
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-67253136c0fa-20261008T162533Z.tgz.provenance",
+          "sha256": "0c0b6233a7b71bf0a0d9ecc53392c7b2568dc4e2f3b1e68c69a8ad92f5f486c8",
+          "bytes": 3209
+        }
+      },
+      "rootEntries": 2480,
+      "rootRegularBytesCountingSharedPaths": 537225981
+    },
+    {
+      "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-67253136c0fa-20261008T162533Z",
+      "completeRootPin": {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-67253136c0fa-20261008T162533Z",
+        "manifestSha256": "968531b9a69d46e2a737e4f9a8b4926a12b96e37930f3708524c14ddfd03c402",
+        "treeSha256": "d8b9a786f23e2236ae234f0a402b87ddb46baa344a54f6cf3f200d0bf548a4af",
+        "entries": 2062,
+        "regularBytes": 504827530
+      },
+      "requiredArchiveNowOffhost": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-aba69af9c0ca-20261008T153152Z.tgz",
+      "requiredArchiveSha256": "6c78943888ba511f883fadf5ae74dba52fe83ba6b02525967c371f6229b53713",
+      "retainedLocalSidecars": {
+        ".sha256": {
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-aba69af9c0ca-20261008T153152Z.tgz.sha256",
+          "sha256": "ce4c21652f06e79cfaae6506fbc9490b33c9e09c92b8e2db8496d04f876106d1",
+          "bytes": 123
+        },
+        ".provenance": {
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-aba69af9c0ca-20261008T153152Z.tgz.provenance",
+          "sha256": "968531b9a69d46e2a737e4f9a8b4926a12b96e37930f3708524c14ddfd03c402",
+          "bytes": 3209
+        }
+      },
+      "rootEntries": 2062,
+      "rootRegularBytesCountingSharedPaths": 504827530
+    },
+    {
+      "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-aba69af9c0ca-20261008T153152Z",
+      "completeRootPin": {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-aba69af9c0ca-20261008T153152Z",
+        "manifestSha256": "f32c23024d36ccaea1169e28b0d7acf9ce1860c3a47cc812f89057437aed7511",
+        "treeSha256": "f1383f9654320a6166c625e131f76d2f5ff1a206f9479806f97f47424ff47877",
+        "entries": 2503,
+        "regularBytes": 533761060
+      },
+      "requiredArchiveNowOffhost": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9b56f32ff831-20261008T133400Z.tgz",
+      "requiredArchiveSha256": "1d97f4d1cc2cb64d110a17e531d2d66a245e6fd3f7c64fdd1ef8527b159eebfe",
+      "retainedLocalSidecars": {
+        ".sha256": {
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9b56f32ff831-20261008T133400Z.tgz.sha256",
+          "sha256": "f941ad967af06c49a7f3355d110fa3c5c7800c025886052a5abe825dc1fcace0",
+          "bytes": 123
+        },
+        ".provenance": {
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-9b56f32ff831-20261008T133400Z.tgz.provenance",
+          "sha256": "f32c23024d36ccaea1169e28b0d7acf9ce1860c3a47cc812f89057437aed7511",
+          "bytes": 3209
+        }
+      },
+      "rootEntries": 2503,
+      "rootRegularBytesCountingSharedPaths": 533761060
+    },
+    {
+      "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b40d4f4a0d31-20261009T000001Z",
+      "completeRootPin": {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-b40d4f4a0d31-20261009T000001Z",
+        "manifestSha256": "959c67792a858b731ed663cf2f6ced324d4287a74af03c1a65977a093b0bf496",
+        "treeSha256": "460dcdea784d7c35d0096c8e34d76654ca1ee02caae50718558478e076119c54",
+        "entries": 2612,
+        "regularBytes": 540943013
+      },
+      "requiredArchiveNowOffhost": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-06a2baf88d53-20261008T192602Z.tgz",
+      "requiredArchiveSha256": "7c94ce813801fdd8e8a346994be3f645a04d8b0d45b670431c4dfc0313951146",
+      "retainedLocalSidecars": {
+        ".sha256": {
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-06a2baf88d53-20261008T192602Z.tgz.sha256",
+          "sha256": "0161085ddd08ad6747e992e17361b3d429a599233aabdabe6794389b88b20c36",
+          "bytes": 123
+        },
+        ".provenance": {
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-06a2baf88d53-20261008T192602Z.tgz.provenance",
+          "sha256": "959c67792a858b731ed663cf2f6ced324d4287a74af03c1a65977a093b0bf496",
+          "bytes": 3231
+        }
+      },
+      "rootEntries": 2612,
+      "rootRegularBytesCountingSharedPaths": 540943013
+    }
+  ],
+  "protectedRemainingFiveRoots": [
+    {
+      "completeRootPin": {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-506b1ab0833e-20261008T065838Z",
+        "manifestSha256": "c61aa2a42995a2074ae2d7056bd1ba3d13d5c71117e0776ae2229dd23035ccf7",
+        "treeSha256": "35dd24035304f209a02febca02cd317904c1bb2f3a8a5048cd1391c4331aa3bf",
+        "entries": 2362,
+        "regularBytes": 516600044
+      },
+      "localArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-c243081bb18c-20261008T042348Z.tgz",
+      "localArchiveSha256": "96efe0d267dbffdbacf1bd7eb047de9216f340428031e64b0d63e3e168106fbd",
+      "compressedArchiveHashVerified": true,
+      "checksumAndManifestIdenticalProvenanceVerified": true
+    },
+    {
+      "completeRootPin": {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-9b56f32ff831-20261008T133400Z",
+        "manifestSha256": "69da9ce63677cb06a588adee3bcb39a8bb7b01525d10a0d3a029b4578bef7945",
+        "treeSha256": "bdefc5fea0591ca5ac1dd9918804e657d6410b755381dec7eac75ca900d4d585",
+        "entries": 2195,
+        "regularBytes": 515083856
+      },
+      "localArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-506b1ab0833e-20261008T065838Z.tgz",
+      "localArchiveSha256": "4927e8e763bd48dd22bad964b4d3a047a6f1a82293e2d3b0eb4e01b8b259cf8e",
+      "compressedArchiveHashVerified": true,
+      "checksumAndManifestIdenticalProvenanceVerified": true
+    },
+    {
+      "completeRootPin": {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c243081bb18c-20261008T042348Z",
+        "manifestSha256": "30a6c0e9273b601eff11b4fecb4f2fab5a62ae9d0f076d871363bbea66944c40",
+        "treeSha256": "95b5848158fb5bcc023267d7f45527b1c56565e1141ae74bde19a5b409a1e19b",
+        "entries": 2110,
+        "regularBytes": 498461058
+      },
+      "localArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-fc396c9a9abd-20261007T233244Z.tgz",
+      "localArchiveSha256": "962a790de9060deca5d54f295965f19a3797d39a620609a2bcc194efa6334452",
+      "compressedArchiveHashVerified": true,
+      "checksumAndManifestIdenticalProvenanceVerified": true
+    },
+    {
+      "completeRootPin": {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c7935dde7239-20261009T043549Z",
+        "manifestSha256": "a3659f1997f9a834a13ae9f4a0a7c37309f9cd27fce83ea74407e9d33d9ee719",
+        "treeSha256": "f979231917286e64222875567240426dae0da19cab37d2a0d9fbb2070f818ca9",
+        "entries": 2414,
+        "regularBytes": 534236797
+      },
+      "localArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-b40d4f4a0d31-20261009T000001Z.tgz",
+      "localArchiveSha256": "0d8f59d837964d072e8534151547d624fd351b4e21016e3f74fa3c9e1d32284c",
+      "compressedArchiveHashVerified": true,
+      "checksumAndManifestIdenticalProvenanceVerified": true
+    },
+    {
+      "completeRootPin": {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-fc396c9a9abd-20261007T233244Z",
+        "manifestSha256": "832192886705912b8793cc3d1e5cd9aadb87996648ee87b195192c44c98061ca",
+        "treeSha256": "a6ea770a044780ab1f41176823f6cb17430ca50dd448ac4ee422858c2938dc24",
+        "entries": 1812,
+        "regularBytes": 481876684
+      },
+      "localArchive": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-19cc93a7c97f-20261007T161406Z.tgz",
+      "localArchiveSha256": "99879912ce86548396d817fb72fd5db5f66a34f61bf1ba561c1e126af6eb0801",
+      "compressedArchiveHashVerified": true,
+      "checksumAndManifestIdenticalProvenanceVerified": true
+    }
+  ],
+  "protectedScope": [
+    "Current /var/www c793 complete live root",
+    "Immediately prior release b40d complete root at proofofwork-www-pre-c7935dde7239-20261009T043549Z",
+    "All five other retained complete roots and their local archive/checksum/provenance dependencies",
+    "Ready1a7 candidate, managed archive and checksum, clean detached source, preserved absence of unpublished archive.provenance/newrollback namespaces, and initial stage/source/failed-publication records",
+    "Old2aad seven refusal records and preserved input",
+    "All native helper bytes, deployment limits, retention policies/holds, historical notes, custody, source, databases, ledgers and services"
+  ],
+  "inventoryEvidence": {
+    "localRestrictedPath": "/tmp/pow-audit32-first-batch/recovery-four-roots-inventory.json",
+    "sha256": "5749f80ed3177d8c8029f34ef80cc73edc9a5ae281a49461cc6fd41b44c7fdf0",
+    "bytes": 10198190,
+    "executedCollectorPath": "/tmp/pow-audit32-first-batch/recovery-four-roots-inventory-collector.py",
+    "executedCollectorSha256": "30b790a74b6a40750db934c431c1f5b2a912e39b62464aeda29a033e5966c229",
+    "readOnly": true,
+    "observedAt": "2026-10-09T19:39:23.556753+00:00",
+    "deploymentLock": "Existing exclusive nonblocking native deploy lock",
+    "nativeCompatibleCompleteFingerprintsChecked": 9,
+    "aliasCensusEntries": 204127,
+    "selectedEntries": 9657,
+    "selectedRegularPaths": 9353,
+    "selectedDirectories": 304,
+    "uniqueSelectedRegularInodes": 4269,
+    "crossSelectedHardlinkGroups": 361,
+    "maximumSelectedLinkCount": 44,
+    "externalSurvivingAliasCount": 0,
+    "unlocatedSurvivingLinkGroups": 0,
+    "liveFdMapsAndMountReferencesObserved": [],
+    "processCount": 125,
+    "mountNamespaces": 9,
+    "inspectionErrors": [],
+    "xattrBearingEntries": 0,
+    "originalMetadataObserved": "All9353files0644 and all304directories0755, owner/group0/0; no xattrs",
+    "rawInventoryDistribution": "Keep restricted operational evidence offhost; do not publish10MB raw path/inode inventory as public audit content.",
+    "wholeFilesystemMountAdvisorySupplement": {
+      "path": "/tmp/pow-audit32-first-batch/recovery-four-roots-mount-supplement.json",
+      "sha256": "eade7539c537bb6462a98e48a1213b5b504a123e11c46da4ef21a9194ec6604c",
+      "bytes": 1713,
+      "sourcePath": "/tmp/pow-audit32-first-batch/recovery-four-roots-mount-supplement.py",
+      "sourceSha256": "7d297b7cf39bf99b49282264f0fead9e06dc5462c8c4ed8605f31e67a76ad3c4",
+      "observedAt": "2026-10-09T19:40:52.829814+00:00",
+      "processCount": 126,
+      "namespaceCount": 9,
+      "matches": 0,
+      "inspectionErrors": 0,
+      "scope": "Exact v2 predicate for normal, parent and whole-filesystem bind mount exposure; advisory only, execution requires fresh proof."
+    },
+    "independentPrimaryReviews": [
+      {
+        "path": "/tmp/pow-audit32-first-batch/recovery-four-roots-primary-independent-review-v1.json",
+        "sha256": "ab4450dcc1e2bba7024e3a9909f2d1b990ea2a7131a46403343fb3f36850c435"
+      },
+      {
+        "path": "/tmp/pow-audit32-first-batch/recovery-four-roots-primary-mount-review-append-v1.json",
+        "sha256": "e0bfdcce01a33fefec20979e1e759a47cad624d6c8573b308b0cda8cebac00da"
+      }
+    ],
+    "freshCurrentCompleteRootSupplement": {
+      "path": "/tmp/pow-audit32-first-batch/recovery-blocked-live-root-supplement.json",
+      "sha256": "df1b5fbcd99379331276f351caf096b8373c43e9f10a7942cd49140c3e059979",
+      "bytes": 1020,
+      "sourceSha256": "f0a11d3a4b9bfc7e07d13a3013e980571aa61a22cdc22f8f075a62d20fe509b9",
+      "collectorV2Sha256": "33f852d66c9adcd2f54a0af968b491aba76c88e9093da83a05484f3e303b642d",
+      "nativeCompatibleRoot": "/var/www",
+      "manifestSha256": "ab94507fc9fefa610173be32eb789f76ea702153c1058699420bfd8a39bf5213",
+      "treeSha256": "4e7a3a172326a7a43d9e0ad0400f628f87f6d96bf5702ba4d3b9a831d7186d32",
+      "entries": 2458,
+      "regularBytes": 534540639,
+      "rawResult": {
+        "schema": "pow-audit32-blocked-live-complete-root-recheck-v1",
+        "atUtc": "2026-10-09T19:42:40.877810+00:00",
+        "readOnly": true,
+        "ok": true,
+        "collectorSourceSha256": "33f852d66c9adcd2f54a0af968b491aba76c88e9093da83a05484f3e303b642d",
+        "originalPlanSha256": "8c86fdb22458dee9e4b9030603be7b7805776bec5bc3800257f7506a2d8655ea",
+        "nativeCompatibleFingerprint": {
+          "format": "proofofwork-ui-retained-root-v1",
+          "classification": "retain",
+          "root": "/var/www",
+          "manifestSha256": "ab94507fc9fefa610173be32eb789f76ea702153c1058699420bfd8a39bf5213",
+          "treeSha256": "4e7a3a172326a7a43d9e0ad0400f628f87f6d96bf5702ba4d3b9a831d7186d32",
+          "entries": 2458,
+          "regularBytes": 534540639
+        },
+        "matchesPrePublicationCompleteLiveRoot": true,
+        "nativeFieldsActualOriginalOwnershipVerified": true,
+        "metadataAndMembershipStable": true,
+        "privateFullMetadataCensusSha256": "0e0a29c61636f77a5a266070102857852c20372a4ebd03c427c0401e23d62acc",
+        "regularUniqueInodeCount": 1128,
+        "noProductMutation": true
+      },
+      "collectorAndResultBytesPreserved": true,
+      "fullRawLiveMetadataRowsExported": false,
+      "fullRawLiveMetadataRowsQualification": "The live collector verified every row in memory and exported its digest plus complete native fingerprint; it did not export the full live metadata row census."
+    }
+  },
+  "capacity": {
+    "availableBytesObserved": 11661848576,
+    "availableInodesObserved": 2186278,
+    "uniqueRegularAllocatedReclaimLowerBoundBytes": 1014808576,
+    "directoryReclaimCreditBytes": 0,
+    "uniqueRegularLogicalBytes": 1005285013,
+    "projectedAvailableAfterOnlyQualifiedRootRetirementBytes": 12676657152,
+    "rootReserveBytes": 10737418240,
+    "growthReserveBytes": 67108864,
+    "scratchMaximumBytes": 5368709120,
+    "projectedReserveHeadroomBeforeVerificationPeaksBytes": 1872130048,
+    "finalPublicationCapacityGoGranted": false,
+    "requiredFreshGate": "Before deletion and again before fresh publication, measure actual bytes/inodes/scratch and charge complete-root custody/controller evidence plus every remaining native archive verification/extraction/probe/rollback peak; all native limits/reserves stay unchanged. Reclaim is not credit until measured after qualified retirement.",
+    "noOtherCleanupImplied": true,
+    "restoreAllFourOriginalArchivesAlternative": {
+      "allocatedBytesRequired": 1105989632,
+      "availableAfterCopiesBeforeVerificationBytes": 10555858944,
+      "reserveDeficitBeforeVerificationBytes": 248668160,
+      "go": false,
+      "reason": "Allfour local archive restoration would fall below existing root+growth reserve before verification peaks; unchanged native publisher has no just-in-time offhost mediation support.",
+      "tenGiBReserveDeficitBeforeVerificationBytes": 181559296,
+      "tenGiBPlusGrowthReserveDeficitBeforeVerificationBytes": 248668160,
+      "nativePublisherAdmissionAdditionalBytes": 131072,
+      "publisherAdmissionDeficitBeforeVerificationBytes": 248799232
+    }
+  },
+  "holdAuthority": {
+    "existingPolicyInventory": [
+      {
+        "path": "/etc/proofofwork-retention/audit28-held-review.json",
+        "sha256": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9",
+        "bytes": 1030164,
+        "selectedRootTextMatches": [],
+        "parentScopeTextMatches": [
+          "/var/backups/proofofwork-ui/rollback-roots",
+          "/var/backups/proofofwork-ui"
+        ],
+        "holdFileText": null,
+        "classification": "Existing policy/hold unchanged; explicit exact-root approval required"
+      },
+      {
+        "path": "/etc/proofofwork-retention/audit28.hold",
+        "sha256": "e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4",
+        "bytes": 81,
+        "selectedRootTextMatches": [],
+        "parentScopeTextMatches": [],
+        "holdFileText": "Audit 28 retention hold. Exact deletion manifest and separate approval required.\n",
+        "classification": "Existing policy/hold unchanged; explicit exact-root approval required"
+      },
+      {
+        "path": "/etc/proofofwork-retention/audit29-approved-cleanup.json",
+        "sha256": "9aa090024effa42b31be9d4b4a4d6e072c87b5b3c50919623a418f73d2a92211",
+        "bytes": 36034,
+        "selectedRootTextMatches": [],
+        "parentScopeTextMatches": [
+          "/var/backups/proofofwork-ui/rollback-roots",
+          "/var/backups/proofofwork-ui"
+        ],
+        "holdFileText": null,
+        "classification": "Existing policy/hold unchanged; explicit exact-root approval required"
+      },
+      {
+        "path": "/etc/proofofwork-retention/audit29-completed-retirements.json",
+        "sha256": "2b927bca35216a21f3c92145715d36fbbbd9cb03432780bfc04dc18d17d61057",
+        "bytes": 9807,
+        "selectedRootTextMatches": [],
+        "parentScopeTextMatches": [
+          "/var/backups/proofofwork-ui/rollback-roots",
+          "/var/backups/proofofwork-ui"
+        ],
+        "holdFileText": null,
+        "classification": "Existing policy/hold unchanged; explicit exact-root approval required"
+      }
+    ],
+    "applicableGlobalHold": "Audit28 retention hold: Exact deletion manifest and separate approval required.",
+    "heldParentRootPolicy": "Rollback-root parent gate requires exact content/provenance, recovery equivalence, live dependency proof and separately approved deletion manifest.",
+    "policyFilesRemainUnchanged": true
+  },
+  "offhostCompleteRootCustodyRequirements": [
+    "Copy one complete container for all four exact roots, including passthrough paths omitted by managed-surface release archives, without allocating a compressed copy on production root. Stream to existing durable offhost custody under native deployment lock.",
+    "Bind entire container SHA, complete per-entry content hashes, original uid/gid/mode/mtime metadata, empty/nonempty xattr sets and cross-root hardlink topology to current exact root pins. Preserve existing managed-surface archive custody and all VPS sidecars.",
+    "Independently restore the container offhost with safe path/type/member bounds and verify every actual restored file byte/mode/mtime/xattr and selected-root hardlink group; authenticate original uid/gid from bound headers/inventory and reconstruct original-owner native complete fingerprints.",
+    "Rootless uid1000 restoration must not claim an actual uid0 native-helper run; original dev/inode/ctime cannot be preserved after relocation. Current observations have no outside hardlink survivors; any new survivor at execution stops retirement pending exact proof.",
+    "Record durable offhost archive+restore receipts and independently read/hash them before conditional retirement. A managed-surface archive is insufficient complete-root custody.",
+    "Independently compare the full selected managed-surface bytes and declared surface hashes/counts against each root manifest and its matching already verified offhost release archive, in addition to preserving all nonmanaged passthrough contents. Archive-only copies cannot replace complete-root custody."
+  ],
+  "conditionalRetirementRequirements": [
+    "Separate explicit human approval for exact four roots and scoped held-parent exception; no blanket retention-policy override.",
+    "Fresh continuous exclusive native deploy lock, stable root/file metadata+membership/content+xattrs and exact native-compatible fingerprints, no active unit/worktree/input/container/service/config/process/FD/map/mount reference; any uncertainty stops.",
+    "Use exact inventoried root-relative descriptors and pinned paths, no wildcard cleanup; require full inode nlink equals selected link count. If aliases appear, stop rather than broadening scope.",
+    "Revalidate all protected complete-root/archive/source/receipt/helper/policy pins before and after. Where qualified shared survivors exist in a separately reviewed plan, only exact nlink decrement/ctime changes are allowed; every byte/mode/uid/gid/mtime/xattr remains bound.",
+    "Preserve old audit, capacity-GO, custody, failure records and inputs. Retire no sidecars, policy files, local user state, databases, chain data or other roots.",
+    "Measure actual free bytes/inodes after retirement; record achieved unique reclaim. Custody/controller transfer failures retain all production roots.",
+    "Before any mutation, test and independently review the exact custody/retirement controller against changed paths, content/metadata/xattrs, missing/extra members, archive mismatch, hardlink escape, live references, mount aliases, hold/source drift, inadequate capacity, interrupted transfer/restore and creation-only receipt failures. Native helper bytes and limits remain untouched."
+  ],
+  "publicationContinuationRequirements": [
+    "Use existing clean1a7 product/source/build/candidate/managed archive unchanged, provided independent exact byte and source provenance verification remains successful.",
+    "Read-only fresh preflight and make-plan bind actual remaining five complete roots, unchanged live c793, all native helper hashes, same artifact/source pins and fresh valid unused publication attempt/namespace.",
+    "Run existing publication-only guarded wrapper against fresh five-root plan. No new source commit, rebuild, source/surface transfer, helper modification, archive-path override, testing override or limit relaxation is proposed.",
+    "All canonical native archive/source/probe/retained-root/current-rollback/capacity/lock gates run normally. If any gate refuses, preserve new failure evidence and stop.",
+    "After successful publication verify all22 surfaces, public commit/tree/source provenance, canonical node/data evidence and retained overlays; pass actual release-sync before announcement."
+  ],
+  "rollbackApproach": {
+    "beforeRetirement": "Any custody/restore/reference/capacity mismatch leaves all production roots in place and no publication occurs.",
+    "afterRetirementBeforePublication": "Current/prior/five complete local roots remain; stopped publication keeps live c793. Four retired full roots plus their matching archives remain restorable from authenticated offhost custody, subject to capacity admission and exact metadata/chain of custody verification.",
+    "afterPublication": "Use unchanged native rollback for current/prior complete local releases, with canonical local archive dependencies preserved. Never assume offhost-only root or archive is instant native rollback."
+  },
+  "approvalText": "Approve complete offhost custody and independent restore verification for these exact four historical retained rollback roots, including the scoped exception to the Audit28 rollback-roots parent hold for only these four root paths, followed only upon all custody, dependency, reference, fingerprint and capacity gates passing by conditional retirement of those four roots and the unchanged guarded publication-only continuation of release1a7 using a fresh plan for the five protected remaining roots. Existing policies, holds, sidecars, historical evidence, current/prior releases, artifacts/source, helpers, services and storage limits remain unchanged. No other cleanup or product/source change is authorized. This approval includes the narrowly scoped custody/retirement controller, its meaningful guard tests, and immutable audit receipts; it does not authorize repository or installed-helper edits.",
+  "remainingCoverageGaps": [
+    "Full-root offhost copy/restore and durable custody receipts are not performed or approved yet.",
+    "Current and allnine retained complete-root fingerprints are fresh and plan-matching; source/candidate/archive and failed lifecycle receipt closure is being captured by a separate read-only collector.",
+    "Final remaining publication capacity calculation must include all five retained archive operations, rather than only current/prior."
+  ],
+  "offlineValidation": {
+    "sourceboundCollectorV2": {
+      "path": "/tmp/pow-audit32-first-batch/recovery-four-roots-inventory-collector-v2.py",
+      "sha256": "33f852d66c9adcd2f54a0af968b491aba76c88e9093da83a05484f3e303b642d"
+    },
+    "testPath": "/tmp/pow-audit32-first-batch/recovery-four-roots-inventory-tests-v2.py",
+    "testSha256": "bc9a5e31bcef0e9da5559f8cd06ed836be56336ffa96994c3f8b71b0100f2c9d",
+    "testsPassed": 15,
+    "logPath": "/tmp/pow-audit32-first-batch/recovery-four-roots-inventory-tests-v2-sourcebound.log",
+    "logSha256": "f93097abf34695413c404f075df1a0ae07e68f18622fb7d7e986ebf40a1811f6",
+    "covered": "Native-compatible actual tree/hardlink/xattr hashing; exact dependency roots; unique inode accounting; survivors and open references zero credit; directories zero credit; duplicate/overcount rejection; ordinary, ancestor, subtree and whole-filesystem mount cases; static no production mutation calls."
+  },
+  "supersedesProposal": {
+    "path": "/tmp/pow-audit32-first-batch/recovery-four-complete-roots-proposal-v3.json",
+    "sha256": "82c1f4e6a5a3fb3c376d50daca33e7150d358b51363b2822affdf071b9261d49",
+    "preservedUnchanged": true
+  },
+  "offhostCustodyDestination": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-ui-four-complete-roots",
+  "evidencePrivacy": "Keep full root container, historical passthrough bytes, xattrs and detailed inventories in restricted private offhost custody. Public/repository audit append contains reviewed identities, hashes, counts, status and qualifications only."
+}
