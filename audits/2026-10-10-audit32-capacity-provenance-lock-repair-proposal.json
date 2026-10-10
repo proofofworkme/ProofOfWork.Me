@@ -1,0 +1,883 @@
+{
+  "format": "pow-audit32-capacity-provenance-lock-repair-amendment-v1",
+  "status": "READY_FOR_REVIEW_SEPARATE_APPROVAL_REQUIRED_NOT_EXECUTION_GO",
+  "auditDate": "2026-10-10",
+  "preparedAtUtc": "2026-10-10T04:33:59.674440+00:00",
+  "purpose": "Repair the previously documented native provenance verifier lock-acquisition defect without relaxing exclusive locking, custody, reference, storage or release gates, then finish the already approved capacity recovery and product batch.",
+  "amends": {
+    "proposal": {
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-next-reliability-capacity-recovery-proposal.json",
+      "bytes": 21601,
+      "sha256": "283f84b89825f5ce3847ddf01fc40d689fa5f5314bd8342f6aeb2138cc6c5e22"
+    },
+    "originalDirectHumanApproval": {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/approval-v1.json",
+      "bytes": 1291,
+      "sha256": "ddaf564a85cd1cb6d8b32663deb1816fd3271677b18ba62e2190daf94fcca4fb"
+    },
+    "exceptionTo": "Only preserveAlways[3] and newScopeRequested.temporaryControllerAndReadOnlyEvidenceAdapters prohibition on installed-helper edits, and only for the exact one-helper change below. All remaining original approval limits stay authoritative."
+  },
+  "approvalRequiredBecause": {
+    "repositoryRule": "AGENTS.md: new scope needs a new approval.",
+    "originalProposal": "The original capacity proposal explicitly preserves installed native helpers, services and timers and does not authorize installed helper/guard edits.",
+    "earlierFinding": {
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-continuation.md",
+      "line": 59,
+      "classification": "Previously documented unresolved operational defect reproduced; not a new finding or resolved fix."
+    },
+    "scopeOmission": "This repair should have been included in the original capacity proposal. Existing capacity and product approvals are not being requested again."
+  },
+  "currentFacts": {
+    "currentRelease": {
+      "commit": "d8ae8220d897f876d85b0025db86306dc27e6fe5",
+      "tree": "2983d6047c1e1cb4d56efabaede41c0a39460bbe",
+      "archiveName": "proofofwork-ui-release-d8ae8220d897-20261010T000925Z.tgz",
+      "archiveSha256": "6fe51112efd2b97927cb6aef9b27222d94765fa7ceaf407cacebac5cfd3d0711"
+    },
+    "currentPrimaryBranch": "codex/audit32-capacity-recovery",
+    "currentPrimaryHead": "b044d80a59661d7b035d0b158f2ddd88697a0ee1",
+    "freshNativePreflight": {
+      "observedAt": "2026-10-10T03:58:31Z",
+      "receipt": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/ui-preflight-v2.json",
+        "bytes": 56114,
+        "sha256": "0b55717e8d9d86520a9c64b572b78bfeb14ac6cca5046db9342d313d711aadb5"
+      },
+      "execution": {
+        "path": "/tmp/pow-audit32-next-reliability/capacity-execution-preflight-v2.execution.json",
+        "bytes": 800,
+        "sha256": "87d1d4638af002f3c1c9bbdba500b29cac63f8b5ecf53073272bd39ac8529a89"
+      },
+      "exitCode": 0,
+      "currentLiveAllSixRetainedRootsHelpersOldManagedActiveManifestEqualApprovedBaseline": true,
+      "availableBytes": 11471327232,
+      "availableInodes": 2179264,
+      "nativeChecksPassed": true,
+      "completeDeploymentPhaseAdmissionEstablished": false,
+      "deploymentAuthority": false
+    },
+    "busyTimerCollision": {
+      "timeUtc": "2026-10-10T03:45:10Z",
+      "actualJournalBusyExitCode": 1,
+      "existingLockWasOpenedWithTruncationAndChmodBeforeFlock": true,
+      "observedOriginalLockMetadataDrift": true,
+      "qualifierRefusedInsteadOfRebasing": true,
+      "diagnosticExecution": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-provenance-lock-diagnostic-v1.execution.json",
+        "bytes": 445,
+        "sha256": "573978c5e8640d15cf46dc52efdae4ae0a3bcc87ee3938f0dc354e598d22a501"
+      }
+    },
+    "otherStrictRefusals": [
+      {
+        "attempt": "qualify-v3",
+        "result": "Remote strict lock identity refused at capacity/closing; concurrent E writes also correctly exceeded the owned output reservation and blocked local closing receipt. Preserve both failures; freeze all E writers before the next budget window."
+      },
+      {
+        "attempt": "qualify-v4",
+        "result": "Local budget closing passed; exact process cohort changed during reference proof and refused. No offending process is inferred from the original terse failure. Diagnostic-only successor is tested; no whitelist, ignore, retry or wait added."
+      },
+      {
+        "attempt": "qualify-v5-diagnostic",
+        "result": "Local opening budget census refused a retained focused-test FIFO before SSH. No new remote cohort observation occurred. The fixture and refusal remain preserved; compatible exact-object lstat-only temporary census successors are required before actual custody."
+      },
+      {
+        "attempt": "qualify-v6-diagnostic",
+        "startedAtUtc": "2026-10-10T04:22:34Z",
+        "finishedAtUtc": "2026-10-10T04:23:43Z",
+        "actualProducerExitCode": 1,
+        "actualOuterExitCode": 1,
+        "result": "Local exact-fixture accounting and closing reservation passed. Remote strict reference qualification refused unresolved namespace backing for4026531841. The blank assertion did not identify its backing/member predicate; neither a cohort delta nor lock drift was reported. No complete reference-absence proof or capacity authority was produced. Preserve original namespace and refusal; no whitelist or weakened backing classification.",
+        "localAllocatedBytes": 1172697088,
+        "localApprovedCeilingBytes": 8589934592,
+        "execution": {
+          "path": "/tmp/pow-audit32-next-reliability/capacity-recovery-read-only-qualification-v6-diagnostic.execution.json",
+          "bytes": 1108,
+          "sha256": "d77519576e3fed40e4919696d0ee810ef7618dd1bf23aeeda6d09fbbdb3e36dd"
+        },
+        "producerStderr": {
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-qualify-qualify-v6-diagnostic.stderr",
+          "bytes": 512,
+          "sha256": "77b03b148fb53703e8425a41432e5367b014d6f50b280ec713f00f0b1e3b0640"
+        },
+        "localRun": {
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-qualify-qualify-v6-diagnostic.run.json",
+          "bytes": 2542,
+          "sha256": "bc9f13bf193f870d40256792db428bdee25f3adfa2cdf2454349f11417e9ea0b"
+        }
+      }
+    ],
+    "cleanCandidateBuild": {
+      "receipt": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/complete-ui-build-v1/build-receipt.json",
+        "bytes": 1307,
+        "sha256": "b351245706d540821659e8f2c07796438bba6d654666a7f4b19d038f3f0d3556"
+      },
+      "surfacesBuilt": 22,
+      "sourceCommit": "b044d80a59661d7b035d0b158f2ddd88697a0ee1",
+      "uploadedOrDeployed": false,
+      "successorRequiredAfterNewApprovedSourceCommit": true
+    },
+    "custodyDestinationCreated": false,
+    "firstCustodyClockStarted": false,
+    "actualOriginalOwnerRestorationPerformed": false,
+    "retirementAttemptsUsed": 0,
+    "productionRetirementPerformed": false,
+    "helperInstalled": false,
+    "permissionOverlayInstalled": false,
+    "uiDeploymentPerformed": false,
+    "mainIntegrated": false,
+    "releaseSyncPassedForCandidate": false,
+    "announcementPublished": false
+  },
+  "exactNativeHelperChange": {
+    "productionPath": "/usr/local/sbin/proofofwork-ui-release-provenance",
+    "repositoryPath": "/home/sixer/ProofOfWork.Me/deploy/proofofwork-ui-release-provenance.sh",
+    "oldSource": {
+      "path": "/home/sixer/ProofOfWork.Me/deploy/proofofwork-ui-release-provenance.sh",
+      "bytes": 78064,
+      "sha256": "b9e27a7df46d10be40ffa7d3d36c77a704fbf9f57063c4f3d884d7d4356d40b8"
+    },
+    "newSource": {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/provenance-lock-proposed-v4.sh",
+      "bytes": 83514,
+      "sha256": "822fb461c8a1d6d3174f47e448d8bd2c0ce548134358da409c97e46fde163215"
+    },
+    "patch": {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/provenance-lock-proposed-v4.patch",
+      "bytes": 7039,
+      "sha256": "01b044281374dc6263e68d8e0331a7bb9b0cf96fd116c40c4a3b4bb1daa7ce39"
+    },
+    "reviewablePatchUtf8": "--- a/deploy/proofofwork-ui-release-provenance.sh\n+++ b/deploy/proofofwork-ui-release-provenance.sh\n@@ -110,24 +110,140 @@\n     exit 64\n   fi\n fi\n+# Existing lock contenders must not truncate or chmod the owner's inode.\n+# Python opens without following links; the same process then execs this script\n+# with the admitted descriptor. Inherited callers keep ownership of their FD.\n+ui_provenance_lock_guard() {\n+  local guard_mode=\"$1\"; shift\n+  local -a guard_command=(/usr/bin/python3)\n+  if [[ \"${guard_mode}\" == \"launch\" ]]; then\n+    guard_command=(exec /usr/bin/python3)\n+  fi\n+  \"${guard_command[@]}\" -I -B - \"${deploy_lock}\" \"${guard_mode}\" \"$@\" <<'PY'\n+import fcntl, json, os, stat, sys\n+from pathlib import Path\n+\n+path = Path(sys.argv[1])\n+mode = sys.argv[2]\n+owner, group = os.geteuid(), os.getegid()\n+\n+def identity(value):\n+    return [getattr(value, key) for key in ('st_dev', 'st_ino', 'st_mode', 'st_uid',\n+        'st_gid', 'st_nlink', 'st_size', 'st_blocks', 'st_mtime_ns', 'st_ctime_ns')]\n+\n+def need(condition, message):\n+    if not condition:\n+        raise SystemExit(message)\n+\n+def strict(raw):\n+    need(len(raw) <= 4096, 'UI provenance lock pin exceeds its bound.')\n+    def pairs(rows):\n+        result = {}\n+        for key, value in rows:\n+            need(key not in result, 'Duplicate UI provenance lock pin key.')\n+            result[key] = value\n+        return result\n+    return json.loads(raw, object_pairs_hook=pairs,\n+        parse_constant=lambda value: (_ for _ in ()).throw(ValueError('Nonfinite lock pin')))\n+\n+need(path.is_absolute() and path.resolve() == path, 'UI deployment lock path is not canonical.')\n+parent = path.parent\n+before = parent.lstat()\n+need(parent.resolve() == parent and stat.S_ISDIR(before.st_mode) and\n+    before.st_uid == owner and before.st_gid == group and\n+    stat.S_IMODE(before.st_mode) == 0o700, 'UI deployment lock parent differs.')\n+parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME)\n+parent_core = identity(before)[:5]\n+\n+def fence_parent():\n+    need(identity(os.fstat(parent_fd))[:5] == parent_core == identity(parent.lstat())[:5]\n+        and parent.resolve() == parent, 'UI deployment lock parent changed.')\n+\n+def fence(descriptor, pin):\n+    fence_parent()\n+    current = path.lstat()\n+    need(stat.S_ISREG(current.st_mode) and current.st_uid == owner and\n+        current.st_gid == group and current.st_nlink == 1 and\n+        stat.S_IMODE(current.st_mode) == 0o600, 'UI deployment lock metadata differs.')\n+    need(type(pin) is dict and set(pin) == {'parentCore', 'lockIdentity'} and\n+        isinstance(pin['parentCore'], list) and len(pin['parentCore']) == 5 and\n+        all(type(value) is int and value >= 0 for value in pin['parentCore']) and\n+        pin['parentCore'] == parent_core and\n+        isinstance(pin['lockIdentity'], list) and len(pin['lockIdentity']) == 10 and\n+        all(type(value) is int and value >= 0 for value in pin['lockIdentity']),\n+        'UI deployment lock pin is invalid.')\n+    need(identity(os.fstat(descriptor)) == pin['lockIdentity'] == identity(current) and\n+        os.readlink('/proc/self/fd/' + str(descriptor)) == str(path),\n+        'Original UI deployment lock identity changed.')\n+    fence_parent()\n+\n+fence_parent()\n+if mode == 'launch':\n+    pin = None\n+    # No writes, chmod or timestamp normalization for an existing lock.\n+    try:\n+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK |\n+            os.O_NOATIME, dir_fd=parent_fd)\n+    except FileNotFoundError:\n+        fence_parent()\n+        original_umask = os.umask(0o077)\n+        try:\n+            descriptor = os.open(path.name, os.O_RDWR | os.O_CREAT | os.O_EXCL |\n+                os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOATIME, 0o600, dir_fd=parent_fd)\n+        finally:\n+            os.umask(original_umask)\n+        # The created zero-byte inode remains evidence if this fence refuses.\n+        fence_parent()\n+        pin = {'parentCore': parent_core, 'lockIdentity': identity(os.fstat(descriptor))}\n+        fence(descriptor, pin)\n+        os.fsync(descriptor)\n+        os.fsync(parent_fd)\n+        fence(descriptor, pin)\n+    if pin is None:\n+        pin = {'parentCore': parent_core, 'lockIdentity': identity(os.fstat(descriptor))}\n+    fence(descriptor, pin)\n+    try:\n+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)\n+    except BlockingIOError:\n+        fence(descriptor, pin)\n+        raise SystemExit('Another UI deployment or cleanup operation holds ' + str(path) + '.')\n+    fence(descriptor, pin)\n+    os.set_inheritable(descriptor, True)\n+    environment = dict(os.environ)\n+    environment['POW_UI_DEPLOY_LOCK_FD'] = str(descriptor)\n+    environment['POW_UI_PROVENANCE_LOCK_PIN'] = json.dumps(pin, sort_keys=True, separators=(',', ':'))\n+    os.close(parent_fd)\n+    os.execve('/usr/bin/bash', ['/usr/bin/bash', *sys.argv[3:]], environment)\n+else:\n+    need(mode in ('admit', 'close') and len(sys.argv) == 5,\n+        'Unknown UI provenance lock guard mode.')\n+    label, raw_pin = sys.argv[3:]\n+    need(label.isdecimal() and str(int(label)) == label and int(label) >= 3,\n+        'Inherited UI deployment lock descriptor is invalid.')\n+    descriptor = int(label)\n+    pin = strict(raw_pin) if raw_pin else {\n+        'parentCore': parent_core, 'lockIdentity': identity(os.fstat(descriptor))}\n+    fence(descriptor, pin)\n+    if mode == 'admit':\n+        print(json.dumps(pin, sort_keys=True, separators=(',', ':')), flush=True)\n+    fence(descriptor, pin)\n+    os.close(parent_fd)\n+PY\n+}\n inherited_deploy_lock_fd=\"${POW_UI_DEPLOY_LOCK_FD:-}\"\n if [[ -n \"${inherited_deploy_lock_fd}\" ]]; then\n-  if [[ ! \"${inherited_deploy_lock_fd}\" =~ ^[1-9][0-9]*$ ]] ||\n-    ((inherited_deploy_lock_fd < 3)) ||\n-    [[ ! -f \"/proc/self/fd/${inherited_deploy_lock_fd}\" ]] ||\n-    [[ \"$(realpath -e -- \"/proc/self/fd/${inherited_deploy_lock_fd}\" 2>/dev/null || true)\" != \"${deploy_lock}\" ]]; then\n-    echo \"Inherited UI deployment lock descriptor is invalid.\" >&2\n-    exit 64\n-  fi\n   deploy_lock_fd=\"${inherited_deploy_lock_fd}\"\n+  provenance_lock_pin=\"$(ui_provenance_lock_guard admit \"${deploy_lock_fd}\" \"${POW_UI_PROVENANCE_LOCK_PIN:-}\")\"\n else\n-  exec {deploy_lock_fd}>\"${deploy_lock}\"\n-  chmod 0600 \"${deploy_lock}\"\n+  ui_provenance_lock_guard launch \"$0\" \"${command}\" \"$@\"\n+  exit 70 # Successful launch execs; no fallthrough grants verification authority.\n fi\n if ! flock --exclusive --nonblock \"${deploy_lock_fd}\"; then\n+  ui_provenance_lock_guard close \"${deploy_lock_fd}\" \"${provenance_lock_pin}\"\n   echo \"Another UI deployment or cleanup operation holds ${deploy_lock}.\" >&2\n   exit 1\n fi\n+ui_provenance_lock_guard close \"${deploy_lock_fd}\" \"${provenance_lock_pin}\"\n \n manifest=\"${ui_root}/.proofofwork-ui-release\"\n surfaces=(\n@@ -1873,3 +1989,6 @@\n     exit 64\n     ;;\n esac\n+\n+# Only a successful command reaches the closing original descriptor/path fence.\n+ui_provenance_lock_guard close \"${deploy_lock_fd}\" \"${provenance_lock_pin}\"\n",
+    "originalAndSuccessorOwner": 0,
+    "originalAndSuccessorGroup": 0,
+    "originalAndSuccessorMode": "0755",
+    "behavior": [
+      "Open an existing canonical private lock read-only with no-follow, nonblocking and no-atime flags. A busy contender cannot truncate, chmod, chown, or normalize the held original lock.",
+      "Create an absent lock only by exclusive mode0600 creation; retain its first inode identity across file and parent fsync and restore the caller umask.",
+      "Retain actual exclusive nonblocking flock, same-PID exec and original inherited caller-owned descriptors. Fence original FD/path/full ten stat fields and canonical parent core before/after locking and after successful native commands."
+    ],
+    "nativeBodyUnchanged": "All verifier, record, source/dependency, archive, capacity and rollback bodies outside the exact lock-acquisition patch and final successful closing fence are byte-identical.",
+    "timerAndServicePreserved": [
+      {
+        "path": "/etc/systemd/system/proofofwork-ui-release-provenance.timer",
+        "bytes": 252,
+        "sha256": "fb5da1ec626891ade96917ef4e7826aa7e794295196f5584c3b8f75c1791090d"
+      },
+      {
+        "path": "/etc/systemd/system/proofofwork-ui-release-provenance.service",
+        "bytes": 615,
+        "sha256": "4349d1d6cb9b5166ee484ee6bf4b413d3e53820414d8a86d0bd64e6d36925d97"
+      }
+    ],
+    "noTimerStopMaskRestartRescheduleOrDaemonReload": true
+  },
+  "proposedRepositoryImplementation": {
+    "exactFiles": [
+      {
+        "path": "/home/sixer/ProofOfWork.Me/deploy/proofofwork-ui-release-provenance.sh",
+        "change": "Install exact reviewed V4 source hash822fb461c8a1d6d3174f47e448d8bd2c0ce548134358da409c97e46fde163215."
+      },
+      {
+        "path": "/home/sixer/ProofOfWork.Me/deploy/publish/check-ui-release.test.py",
+        "change": "Integrate focused busy/inherited/first-creation/race/closing-fence regressions and run real existing historical plus attributed current record/verify coverage. Preserve existing tests; add no dependency or bypass."
+      },
+      {
+        "path": "/home/sixer/ProofOfWork.Me/OP_RETURN_INFRASTRUCTURE.md",
+        "change": "Document exact lock behavior, unchanged native gates and dated installed source/overlay provenance only after actual verification."
+      }
+    ],
+    "auditFiles": "This proposal, the existing Audit32 append and scoped authorization/execution/release/hygiene receipts. No unrelated note edits, deletion or duplicate announcement.",
+    "productFeatureScope": "Previously approved Permission catch-up, two browser fixture repairs and Boost/Publish clickable .pow links remain unchanged; this amendment adds only exact infrastructure lock repair plus its tests/documentation/evidence."
+  },
+  "verificationAlreadyCompleted": {
+    "focusedPrimary": {
+      "casesPassed": 38,
+      "exitCode": 0,
+      "log": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/provenance-lock-proposed-v4.primary.log",
+        "bytes": 137,
+        "sha256": "2ff80e1df57ad7f077876db2eaf2065ac69ef82ab4bbb4a846523530b9d6439f"
+      }
+    },
+    "focusedIndependent": {
+      "casesPassed": 38,
+      "exitCode": 0,
+      "receipt": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-proposed-v4-independent-focused-tests-v1.json",
+        "bytes": 2901,
+        "sha256": "efcad7e99d3fec1b125724d1a75c01e581c773b58e2fb9d57dc0808cc09680e1"
+      }
+    },
+    "nativeHistorical": {
+      "families": [
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "successfulActualCommands": 14,
+      "existingHistoricalMethodAstUnmodified": true,
+      "rawLog": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/provenance-lock-proposed-v4.native-regression.log",
+        "bytes": 3187,
+        "sha256": "8df5156794709c372e196fa5202348cd9b045231f878854a9a30d92ca3a888a5"
+      },
+      "qualification": "The mixed first driver exited1 because a naive derivative21 Pages fixture correctly lacked attributed provenance. Its historical14–20 actual commands passed. Do not relabel the combined exit or claim a full independent historical pass."
+    },
+    "nativeCurrent": {
+      "families": [
+        21,
+        22
+      ],
+      "primaryActualCommandsPassed": 4,
+      "primaryDriverExitCode": 0,
+      "independentActualCommandsPassed": 4,
+      "independentDriverExitCode": 0,
+      "receipt": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-proposed-v4-current-native-independent-regression-v1.json",
+        "bytes": 6676,
+        "sha256": "c5d0e9d41e1435204f0c787ab1af31295aea6974a2afa90cf419a0c9e90adb14"
+      },
+      "qualification": "Real attributed detached Git/source/node_modules and archive/sidecar contracts, unstubbed native record/verify bodies, current local UID/GID synthetic fixtures. No production-root execution or capacity GO."
+    },
+    "independentFinalReview": {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-proposed-v4-final-independent-source-peer-v1.json",
+      "bytes": 8537,
+      "sha256": "d6373dadfb6b06c0b6aa518e202e3b7d38bf899e90504d89fb1f78c17815f84e"
+    },
+    "preservedFixtureFailures": [
+      {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-proposed-v2-first-fsync-defect-v1.json",
+        "bytes": 1383,
+        "sha256": "9984f9a55d965f0b721074779776def00f98235e5d8bd5f21d7c895b9e4336c4"
+      },
+      {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-proposed-v4-native-failed-independent-attempt-v1.json",
+        "bytes": 1700,
+        "sha256": "16e798f2e986c46e091b36d370184dc5323353abf6e0a7cf5cdd29130c323dbc"
+      }
+    ],
+    "fieldPerformanceOrFullHistoricalApplicationMathPassClaimed": false,
+    "temporaryExactFixtureAccounting": {
+      "scope": "Only local coordinator budget census; full custody graph is a separate gate.",
+      "source": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-root-capacity-coordinator-fixture-fifo-v1.py",
+        "bytes": 22038,
+        "sha256": "7c5ceebb883da8f968face074d21ee3236ad970783bc71ebd58415a8570408c4"
+      },
+      "primaryCasesPassed": 44,
+      "independentCasesPassed": 44,
+      "primaryReceipt": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-root-capacity-coordinator-fixture-fifo-v1.source-guards.json",
+        "bytes": 3850,
+        "sha256": "9bbf14460df73e8a5bb7f2c6c65df2b985a9608e7b125460a90e91bd67f342a4"
+      },
+      "independentReceipt": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-wallet-coordinator-fixture-fifo-v1-independent-source-peer-v1.json",
+        "bytes": 2648,
+        "sha256": "99d7fc87e445ace32a2bf86c46de058382aac8e60b4da0edc98a7a8ab857bae4"
+      },
+      "actualV6LocalClosingBudgetPassed": true,
+      "noFifoOpenReadChangeOrRemoval": true,
+      "noOtherSpecialObjectAllowed": true
+    },
+    "proposalSourceReconstruction": {
+      "embeddedPatchHunks": 2,
+      "embeddedPatchExactlyReconstructs83514ByteTargetFromB9e27RepositorySource": true,
+      "targetSha256": "822fb461c8a1d6d3174f47e448d8bd2c0ce548134358da409c97e46fde163215",
+      "all36OriginalDraftInputPinsRehashedAndMatched": true,
+      "sourceReview": "Root and Backend reviewed the exact original active-plan bridge, native body preservation, metadata-restoration limits and unchanged original recovery authority."
+    },
+    "compatibleTemporaryCustodyTools": {
+      "restorerBootstrapHumanPrimaryCasesPassed": 220,
+      "restorerBootstrapHumanIndependentCasesPassed": 220,
+      "independentCallablePrimaryCasesPassed": 92,
+      "independentCallablePeerCasesPassed": 92,
+      "sourceGuards": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-preserved-fixture-fifo-compatible-flow-source-guards-v1.json",
+        "bytes": 7380,
+        "sha256": "8b235beea73646cc9638645a696672c86f26603c2f3a9faa6fc78eb98b3ef16c"
+      },
+      "restorerBootstrapHumanPeer": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-performance-preserved-fifo-flow-v1-source-peer-v1.json",
+        "bytes": 3891,
+        "sha256": "5962b2749dfd4eb058ce01528f57d83cc931714b714c6d5a03a353e33878004b"
+      },
+      "independentSourceGuards": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-complete-pair-independent-v2.source-guards.json",
+        "bytes": 3423,
+        "sha256": "44b13bbe87030f5651481fa1f6db1013e61db3a028ee9ae594f4ff263cc1a06b"
+      },
+      "independentPeer": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-wallet-complete-pair-independent-v2-source-peer-v1.json",
+        "bytes": 3080,
+        "sha256": "33ab4616acf589ba808196eddd0a8f096b31ffae3a7055200c9e27e7c61dee26"
+      },
+      "sources": {
+        "bootstrap": {
+          "bytes": 2967,
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-root-bootstrap-v3.py",
+          "sha256": "1c97579b6f3fa9b89ceb12aab4098511dfac869129f55baf70ce9edd4b87c25c"
+        },
+        "humanRunner": {
+          "bytes": 26325,
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-human-root-restore-v2.py",
+          "sha256": "fa72d014184f78fc33cc429eeda08cf3f6d76b8b7b5c491f6b7f35efa5712fbe"
+        },
+        "independentVerifier": {
+          "bytes": 41936,
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-complete-pair-independent-v2.py",
+          "sha256": "78d7141fd501c27c443f0f3ea5069ef53770a10042968b6d83e04cca4419fa14"
+        },
+        "restorer": {
+          "bytes": 59723,
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-complete-pair-restore-v3.py",
+          "sha256": "c87e5bf466f2b4d6b40da7ef1d81018f0547f62736be91c32fd3e78539c765b7"
+        }
+      },
+      "qualification": "Temporary exact-one-FIFO accounting and required filename/literal dependency updates only. Original body/owner/header/topology/native/13-role/TTY/deadline/receipt/window/budget guards unchanged. Actual future controller must bind these exact compatible source pins; diagnostic-only controller retains old custody constants and cannot substitute for full-flow admission. No actual original-owner restore, sudo, custody or namespace authority."
+    },
+    "referenceRefusalLabelsPrepared": {
+      "referenceSource": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/backend-reference-refusal-diagnostic-v1.py",
+        "bytes": 21587,
+        "sha256": "73115eb2a8b1dd09c4f71a434eb414da9d4e2bbc1623bfd08632abf54dd30e14"
+      },
+      "diagnosticOnlyControllerSource": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/backend-capacity-recovery-refusal-diagnostic-v1.py",
+        "bytes": 43902,
+        "sha256": "cb6c60cabb41811361f1f1ba8ba2544c764534244afe209f0522f58928afdb80"
+      },
+      "primaryCasesPassed": 157,
+      "independentCasesPassed": 157,
+      "primarySourceGuards": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/backend-reference-refusal-diagnostic-v1.source-guards.json",
+        "bytes": 5931,
+        "sha256": "817e38df7b43551f13af517cde51598ce7608726a7c7881c22998c621295457b"
+      },
+      "peer": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-backend-reference-refusal-diagnostic-v1-source-peer-v1.json",
+        "bytes": 2990,
+        "sha256": "3bcc0c8109d87a4f2c46e02020e79a9255e8f350401578d1548a3d446e594251"
+      },
+      "actualProductionInvocation": false,
+      "knownNamespaceCauseIdentified": false,
+      "qualification": "Failure-only bounded stage/PID/expected-observed labels; successful schema, ordered inspections, strict predicates and refusal/wait/cohort authority preserved. Prepared diagnostics cannot establish absence or authorize retry."
+    }
+  },
+  "requiredGuardedImplementationAndInstallation": [
+    "Obtain direct approval of this exact amendment. Preserve every original proposal, failure, source, frame, audit and authorization receipt; create a separate authenticated amendment receipt, never overwrite the original approval.",
+    "Apply only the three described repository implementation files plus scoped audits. Run focused and affected complete native/browser/read-containment/protocol tests, review docs/diff, hygiene:fix then hygiene:check, required commit trailers, concurrency fetch/integration review and clean successor source provenance.",
+    "Before any first custody invocation, freeze all E writers and verify the exact new temporary sources, peers and aggregate 8GiB budget including all previous failed outputs, every fixture and both old/new builds. Preserve the exact fault-test FIFO; compatible temporary census successors may account only this one pinned E object using lstat, full original10stat and parentCore5; never open/read/remove it, admit another special object or change production reference qualification.",
+    "Implement, meaningfully fault-test and independently review a temporary one-file atomic installer under the unchanged native deployment lock. Freshly verify old helper bytes/full metadata/canonical parent/source pins, full current and retained release chains and unchanged timer/service/other-helper hashes; preserve original helper bytes and metadata in verified off-server custody. Installer sources and output are creation-only, bounded and pinned. The small original-helper rollback copy is bounded pre-window preparation distinct from original four-pair start-custody; the original single clock begins only at authenticated start-custody firstCustodyInvocationUnixMs and cannot be reset or extended by this amendment.",
+    "Admit the one-helper staging/replacement through the native root/growth/inode/run/scratch gates. Limit total new helper-install production allocation to1MiB and include it in aggregate evidence/capacity accounting. No timer stop, borrowed lock, metadata rebase, reserve reduction, other installed helper, infrastructure or application-data change.",
+    "Continuously fence original native lock FD/path/ten-field identity during creation-only same-directory stage, exact owner0/group0/mode0755/source-hash verification, file fsync, atomic replacement and parent fsync. Refusal before replacement leaves the old helper; refusal after replacement records the actual state, restores only exact previous helper bytes/owner/group/mode/xattrs/mtime under the original lock when qualified, and aborts recovery. Replacement/reversion inode/ctime changes are recorded, never falsely claimed to reproduce original identities.",
+    "Run native current/rollback/archive verification normally and a fresh post-repair preflight; exact proposed helper hash and all other source/helper/unit/hold/live/retained bindings must match. Record installed overlay source commit/hash. Do not claim the helper is installed from a test or clean build.",
+    "The immutable old active plan041cc9c4c21959c1bb3d412131e915617030c7cc6f97ce261a2e4f73fd9cef5c retains original b9e27 helper pin. Build and test an authenticated temporary bridge admitting only this exact old-to-new provenance helper transition under this amendment. Other helper, phase arithmetic, source, payload, live and archive pins remain strict; old plans/receipts are never rebased. A matching updated source commit does not authorize any other helper delta. Bridge authority must bind exact immutable old-plan041cc/sourceb9e27 and freshly verified new-helper822fb bytes/metadata; no broad helper-upgrade inference is permitted.",
+    "Create fresh successor build/contracts/plans with actual new source/tree and helper pins; all22 managed surfaces, exact approved Permission helper bytes and accepted runtime overlays remain within scope. Preserve the completed b044 build and original artifacts. No reuse of an old commit-labelled build for new source.",
+    "Require complete fresh all-process/all-namespace/FD/maps/config/source/reference qualification. Process-cohort or other unknown drift still refuses. This helper repair does not excuse or resolve a separate process-refusal by itself.",
+    "Only after all fresh guards pass, invoke the original approved first custody step and its single4-hour window, qualify complete four-pair off-server custody and independent actual-owner restore, and retire only the minimum qualified oldest-first original prefix. Stop after gates plus256MiB margin pass; zero directory/shared/unknown reclaim credit and all original partial-failure/reconciliation rules remain.",
+    "Recompute native capacity/dependency/survivor plans after each pair and before Permission/UI changes. Finish controlled already approved deployment, canonical and affected surface verification, exact GitHub main/clean primary main/local preview/production source synchronization and actual check:release-sync PASS before the single verified announcement."
+  ],
+  "unchangedRecoveryAuthority": {
+    "maximumConditionalSubjectsOldestFirst": [
+      {
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-fc396c9a9abd-20261007T233244Z",
+        "nativeFingerprint": {
+          "classification": "retain",
+          "entries": 1812,
+          "format": "proofofwork-ui-retained-root-v1",
+          "manifestSha256": "832192886705912b8793cc3d1e5cd9aadb87996648ee87b195192c44c98061ca",
+          "regularBytes": 481876684,
+          "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-fc396c9a9abd-20261007T233244Z",
+          "treeSha256": "a6ea770a044780ab1f41176823f6cb17430ca50dd448ac4ee422858c2938dc24"
+        },
+        "canonicalArchive": {
+          "bytes": 237912381,
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-19cc93a7c97f-20261007T161406Z.tgz",
+          "sha256": "99879912ce86548396d817fb72fd5db5f66a34f61bf1ba561c1e126af6eb0801",
+          "stableRead": true
+        },
+        "preserveChecksumSidecar": {
+          "bytes": 123,
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-19cc93a7c97f-20261007T161406Z.tgz.sha256",
+          "sha256": "ff889e217ce03d2c60b079402d957ab4d790c07d993a92317ef56d6bee0bb004"
+        },
+        "preserveProvenanceSidecar": {
+          "bytes": 2859,
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-19cc93a7c97f-20261007T161406Z.tgz.provenance",
+          "sha256": "832192886705912b8793cc3d1e5cd9aadb87996648ee87b195192c44c98061ca"
+        },
+        "datedRegularOnlyReclaimEstimateBytes": 484560896
+      },
+      {
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c243081bb18c-20261008T042348Z",
+        "nativeFingerprint": {
+          "classification": "retain",
+          "entries": 2110,
+          "format": "proofofwork-ui-retained-root-v1",
+          "manifestSha256": "30a6c0e9273b601eff11b4fecb4f2fab5a62ae9d0f076d871363bbea66944c40",
+          "regularBytes": 498461058,
+          "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c243081bb18c-20261008T042348Z",
+          "treeSha256": "95b5848158fb5bcc023267d7f45527b1c56565e1141ae74bde19a5b409a1e19b"
+        },
+        "canonicalArchive": {
+          "bytes": 251135758,
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-fc396c9a9abd-20261007T233244Z.tgz",
+          "sha256": "962a790de9060deca5d54f295965f19a3797d39a620609a2bcc194efa6334452",
+          "stableRead": true
+        },
+        "preserveChecksumSidecar": {
+          "bytes": 123,
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-fc396c9a9abd-20261007T233244Z.tgz.sha256",
+          "sha256": "a3634d66fa92b630fd34beece12c9c837d2cd9c73588886ba5176564ad86e3b1"
+        },
+        "preserveProvenanceSidecar": {
+          "bytes": 2971,
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-fc396c9a9abd-20261007T233244Z.tgz.provenance",
+          "sha256": "30a6c0e9273b601eff11b4fecb4f2fab5a62ae9d0f076d871363bbea66944c40"
+        },
+        "datedRegularOnlyReclaimEstimateBytes": 500396032
+      },
+      {
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-506b1ab0833e-20261008T065838Z",
+        "nativeFingerprint": {
+          "classification": "retain",
+          "entries": 2362,
+          "format": "proofofwork-ui-retained-root-v1",
+          "manifestSha256": "c61aa2a42995a2074ae2d7056bd1ba3d13d5c71117e0776ae2229dd23035ccf7",
+          "regularBytes": 516600044,
+          "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-506b1ab0833e-20261008T065838Z",
+          "treeSha256": "35dd24035304f209a02febca02cd317904c1bb2f3a8a5048cd1391c4331aa3bf"
+        },
+        "canonicalArchive": {
+          "bytes": 264427806,
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-c243081bb18c-20261008T042348Z.tgz",
+          "sha256": "96efe0d267dbffdbacf1bd7eb047de9216f340428031e64b0d63e3e168106fbd",
+          "stableRead": true
+        },
+        "preserveChecksumSidecar": {
+          "bytes": 123,
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-c243081bb18c-20261008T042348Z.tgz.sha256",
+          "sha256": "dedebc7b21228b6e573dc37e39b490778c36a2634865a1f7e2cedc2de7074e17"
+        },
+        "preserveProvenanceSidecar": {
+          "bytes": 3085,
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-c243081bb18c-20261008T042348Z.tgz.provenance",
+          "sha256": "c61aa2a42995a2074ae2d7056bd1ba3d13d5c71117e0776ae2229dd23035ccf7"
+        },
+        "datedRegularOnlyReclaimEstimateBytes": 518569984
+      },
+      {
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-9b56f32ff831-20261008T133400Z",
+        "nativeFingerprint": {
+          "classification": "retain",
+          "entries": 2195,
+          "format": "proofofwork-ui-retained-root-v1",
+          "manifestSha256": "69da9ce63677cb06a588adee3bcb39a8bb7b01525d10a0d3a029b4578bef7945",
+          "regularBytes": 515083856,
+          "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-9b56f32ff831-20261008T133400Z",
+          "treeSha256": "bdefc5fea0591ca5ac1dd9918804e657d6410b755381dec7eac75ca900d4d585"
+        },
+        "canonicalArchive": {
+          "bytes": 263990164,
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-506b1ab0833e-20261008T065838Z.tgz",
+          "sha256": "4927e8e763bd48dd22bad964b4d3a047a6f1a82293e2d3b0eb4e01b8b259cf8e",
+          "stableRead": true
+        },
+        "preserveChecksumSidecar": {
+          "bytes": 123,
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-506b1ab0833e-20261008T065838Z.tgz.sha256",
+          "sha256": "cfadc8bf86e5dfe1ad36e292721754b70ced2ca0e30e33950e21a6f910d7cc81"
+        },
+        "preserveProvenanceSidecar": {
+          "bytes": 3085,
+          "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-506b1ab0833e-20261008T065838Z.tgz.provenance",
+          "sha256": "69da9ce63677cb06a588adee3bcb39a8bb7b01525d10a0d3a029b4578bef7945"
+        },
+        "datedRegularOnlyReclaimEstimateBytes": 519553024
+      }
+    ],
+    "selectionRule": "Qualify full custody before touching any selected pair; retire only the minimum oldest-first subset of these four exact pairs needed to satisfy every freshly recomputed native phase and an additional 256 MiB operational margin. Never retire an extra pair once all gates meet that margin. Directory/shared/unknown allocations receive zero reclaim credit. If none or all four cannot qualify safely, stop; no other path is authorized.",
+    "protectedNewestTwoRollbackRoots": [
+      {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c7935dde7239-20261009T043549Z",
+        "manifestSha256": "a3659f1997f9a834a13ae9f4a0a7c37309f9cd27fce83ea74407e9d33d9ee719",
+        "treeSha256": "f979231917286e64222875567240426dae0da19cab37d2a0d9fbb2070f818ca9",
+        "entries": 2414,
+        "regularBytes": 534236797
+      },
+      {
+        "format": "proofofwork-ui-retained-root-v1",
+        "classification": "retain",
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d8ae8220d897-20261010T000925Z",
+        "manifestSha256": "ab94507fc9fefa610173be32eb789f76ea702153c1058699420bfd8a39bf5213",
+        "treeSha256": "4e7a3a172326a7a43d9e0ad0400f628f87f6d96bf5702ba4d3b9a831d7186d32",
+        "entries": 2458,
+        "regularBytes": 534540639
+      }
+    ],
+    "resourceCeilings": {
+      "offhostRequiredAvailableBytes": 8589934592,
+      "offhostNewAllocatedBytes": 8589934592,
+      "aggregateAccounting": "Charge all new partial streams, failed attempts, complete containers, original archives, restoration outputs and metadata together. Stop before exceeding any ceiling; no deletion of original or failed evidence to make room.",
+      "productionAdditionalRecoveryEvidenceBytes": 67108864,
+      "completeSelectedRootInventoryEntries": 12000,
+      "selectedRootLogicalBytes": 3221225472,
+      "noCompressedCompleteRootContainerAllocatedOnProduction": true
+    },
+    "newScopeRequestedExceptExactHelperException": {
+      "completeOffhostCustodyAndIndependentRestore": true,
+      "conditionalMinimumExactRootAndArchiveRetirement": true,
+      "scopedRetentionHoldException": "Only the four named root subtrees and four exact canonical .tgz files after qualification. The rollback-roots/releases parent policies and every other hold remain unchanged. Exception ends on final completion, unreconciled refusal or expiration; it cannot be renewed beyond the stated four-hour window under this approval.",
+      "temporaryControllerAndReadOnlyEvidenceAdapters": "Implement/test and independently review temporary custody, classification, retirement, capacity and final-evidence adapters; no installed helper/guard edits or namespace whitelist.",
+      "referenceInvestigation": "Use bounded read-only kernel/process/mount/backing-filesystem identity evidence to establish relevance or absence for every selected path. Preserve all observed flags and strict refusals. Unknown, inaccessible, aliasing or nonmount live references fail closed; no namespace may be skipped.",
+      "boundedAliasWaiting": {
+        "wholeAttemptSeconds": 1800,
+        "maximumSecondsPerExistingFence": 5,
+        "noPreparationOrMutationWhileAliasPresent": true,
+        "strictFreshAbsenceAndAllOtherGuardsRequiredBeforeContinuing": true,
+        "otherReferenceInspectionMetadataSourceOrLockDrift": "Immediate refusal; no whitelist, timer stop or guard bypass."
+      },
+      "maximumNewRetirementAttempts": 2,
+      "wholeScopedExceptionWindowSecondsFromFirstCustodyInvocation": 14400,
+      "auditBookkeepingAndAlreadyApprovedReleaseContinuation": true,
+      "filesystemExpansionReserveReductionOrOtherCleanup": false
+    },
+    "retirementAndFailureRules": [
+      "Creation-only attempt namespace with fsynced intent, prepare/completed journal and final receipts; pinned exact per-operation no-follow directory handles and byte/metadata/link/reference rechecks. Never run generic recursive deletion.",
+      "After each pair, verify protected resources and actual free space and rederive remaining dependency/capacity plans. Reclaim counts only after successful qualified retirement and measured filesystem accounting.",
+      "On refusal or partial failure preserve all original evidence, completed absences and remaining objects. No automatic resume, inferred success, new paths or guard relaxation. A successor within this exact approved set requires full independent journal/remaining-state reconciliation and all fresh gates; unknown or incomplete operation stops for review.",
+      "Before backend overlay, require sufficient UI capacity through every phase with operational margin. Permission plan changes only two reviewed helpers; preserve accepted node overlays and all protected worker/Core/database units under the existing controller.",
+      "Use a fresh plan for exact surviving roots and a fresh successor build if approved audit bookkeeping or integration changes commit provenance. Finish all22 surfaces, live Core-bound Permission convergence, canonical/freshness/read-containment/browser verification, primary-main/preview/GitHub/production sync and announcement only after actual check:release-sync PASS."
+    ],
+    "safetyMarginBytes": 268435456,
+    "nativeRootReserveBytes": 10737418240,
+    "nativeGrowthReserveBytes": 67108864,
+    "nativeScratchCeilingBytes": 5368709120,
+    "exceptionWindowSecondsFromActualFirstCustody": 14400,
+    "maximumRetirementAttempts": 2,
+    "maximumWholeAttemptSeconds": 1800,
+    "maximumAliasWaitSecondsPerExistingFence": 5,
+    "noOtherCleanupInfrastructureDatabaseProtocolLedgerWalletOrTimerChange": true,
+    "strictUnknownAndOriginalLockDriftRefusalsPreserved": true
+  },
+  "actualRestorationOperationalAuthentication": {
+    "alreadyApprovedScope": true,
+    "actualUidGidRequired": 0,
+    "localSudoNoninteractiveUnavailable": true,
+    "requirement": "Once all exact export/restore inputs are ready, the human must authenticate sudo in their local terminal using the tested bounded TTY runner. Never request a password in chat, substitute rootless restoration, or start the window before readiness."
+  },
+  "remainingCoverageAndGoGaps": [
+    "No installed-helper authority exists before this new exact approval.",
+    "Separate process-cohort refusal requires fresh successful qualification; no unknown PID or namespace may be ignored.",
+    "V6 separately refused unresolved namespace backing4026531841; exact failed predicate is not established. Fresh complete positive backing/member/reference proof is mandatory; this amendment does not authorize classification weakening.",
+    "Temporary custody/restore flow remains conditional on compatible exact-source accounting and authenticated fresh pins.",
+    "No actual custody, owner restore, selected retirement, Permission convergence, product deployment, release synchronization or announcement has occurred for this batch."
+  ],
+  "inputPins": [
+    {
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-next-reliability-capacity-recovery-proposal.json",
+      "bytes": 21601,
+      "sha256": "283f84b89825f5ce3847ddf01fc40d689fa5f5314bd8342f6aeb2138cc6c5e22"
+    },
+    {
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-next-reliability-capacity-authorization.evidence.json",
+      "bytes": 4238,
+      "sha256": "3f199076e9e9e677c42c4f6812e810bab2c9fec7799c599b4a20e2b496d4b00b"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/approval-v1.json",
+      "bytes": 1291,
+      "sha256": "ddaf564a85cd1cb6d8b32663deb1816fd3271677b18ba62e2190daf94fcca4fb"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/ui-preflight-v2.json",
+      "bytes": 56114,
+      "sha256": "0b55717e8d9d86520a9c64b572b78bfeb14ac6cca5046db9342d313d711aadb5"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/capacity-execution-preflight-v2.execution.json",
+      "bytes": 800,
+      "sha256": "87d1d4638af002f3c1c9bbdba500b29cac63f8b5ecf53073272bd39ac8529a89"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-provenance-lock-diagnostic-v1.py",
+      "bytes": 2383,
+      "sha256": "88d5e2955736bfd9df9450649c9b69549953f73b38894a75dd54fe4c9e396a7b"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-provenance-lock-diagnostic-v1.stdout",
+      "bytes": 108521,
+      "sha256": "3e5c63ffd97713c09c6460b3cdc9e97ab90d4fcbad0b405006b1b3e02681f1ab"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-provenance-lock-diagnostic-v1.execution.json",
+      "bytes": 445,
+      "sha256": "573978c5e8640d15cf46dc52efdae4ae0a3bcc87ee3938f0dc354e598d22a501"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-qualify-frame-v3.json",
+      "bytes": 803734,
+      "sha256": "d7554061c91c3c4b3f58e80a3b090683a6fd6e60ff71a357a09a7a3b474b15af"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-qualify-qualify-v3.stderr",
+      "bytes": 574,
+      "sha256": "7161a370911305aa38fe7d14fb574163d299f7e2b972d10f469f4b2fdf3c278a"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/capacity-recovery-read-only-qualification-v3.execution.json",
+      "bytes": 1054,
+      "sha256": "97a2d1ea9224a9e7f3d72e9226056820a45991df0a18cadff7cdfd8e82b6abba"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-capacity-coordinator-budget-window-diagnosis-v1.json",
+      "bytes": 5146,
+      "sha256": "5c04a40d338efc837ca3db8ed106a421753142e05f66096eaa655a5e989ca83b"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-qualify-frame-v4.json",
+      "bytes": 803734,
+      "sha256": "c5efd45df01b163a4682ee39448da9a565fc7e9aa5df79cdbc7f894ae51310c9"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-qualify-qualify-v4.run.json",
+      "bytes": 2487,
+      "sha256": "1feb4380fb77ed92b11c8f9577c22fdddcc1085bf1b835d49cb7421c7921ea40"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-qualify-qualify-v4.stderr",
+      "bytes": 504,
+      "sha256": "b6fa01614abc1f271a8ec425f749ebcfec1089e61e898390e037e6c67db4670d"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/capacity-recovery-read-only-qualification-v4.execution.json",
+      "bytes": 1055,
+      "sha256": "1e26eee8ccf87c460689dfe02a76890654b5f109d04965e556287b9aca414499"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-qualify-frame-v5-diagnostic.json",
+      "bytes": 808730,
+      "sha256": "c719aa38a398b4be7db07d3628a08b5671d90ef6a56f3a6cef0f9155346e7aad"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/capacity-recovery-read-only-qualification-v5-diagnostic.execution.json",
+      "bytes": 1087,
+      "sha256": "233a32fb294dce52f1829fc7a20401ec027fefdf824dc5281a8982d065026dda"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/capacity-recovery-read-only-qualification-v5-diagnostic.stderr",
+      "bytes": 1633,
+      "sha256": "9340251ee11e86caebd8427200d24d8b6dfc7830470023efb9a043f9cde5a4d0"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-reference-cohort-diagnostic-v1.source-guards.json",
+      "bytes": 4670,
+      "sha256": "f7157ed2ddafa76e3bd013d476b1ea86f2368335084183e725524912a91673f6"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-wallet-cohort-diagnostic-v1-independent-source-peer-v1.json",
+      "bytes": 2713,
+      "sha256": "206b2b8e8191f0534b4e73057e53f39fe8560763428f7a14f41aeb8a6ce554ff"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/provenance-lock-proposed-v4.source-guards.json",
+      "bytes": 7048,
+      "sha256": "6ca67bdc83a61869312a856de22c7f605962a3ddc73ba37346845fec8997c12e"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-proposed-v4-final-independent-source-peer-v1.json",
+      "bytes": 8537,
+      "sha256": "d6373dadfb6b06c0b6aa518e202e3b7d38bf899e90504d89fb1f78c17815f84e"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-proposed-v4-current-native-independent-regression-v1.json",
+      "bytes": 6676,
+      "sha256": "c5d0e9d41e1435204f0c787ab1af31295aea6974a2afa90cf419a0c9e90adb14"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-proposed-v4-independent-focused-tests-v1.json",
+      "bytes": 2901,
+      "sha256": "efcad7e99d3fec1b125724d1a75c01e581c773b58e2fb9d57dc0808cc09680e1"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/provenance-lock-proposed-v4.test.py",
+      "bytes": 19762,
+      "sha256": "9816a6e64559c0818352e7be1430fd215a9e2b250cb24ba792551aa7031c70e6"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/provenance-lock-proposed-v4.primary.log",
+      "bytes": 137,
+      "sha256": "2ff80e1df57ad7f077876db2eaf2065ac69ef82ab4bbb4a846523530b9d6439f"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/provenance-lock-proposed-v4.native-regression.py",
+      "bytes": 4578,
+      "sha256": "9eed79e0f8f93c002b3a9ace8eed12150a1d7641f87db2c3a1360f88d3d286c2"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/provenance-lock-proposed-v4.native-regression.log",
+      "bytes": 3187,
+      "sha256": "8df5156794709c372e196fa5202348cd9b045231f878854a9a30d92ca3a888a5"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/provenance-lock-proposed-v4.current-native-v2.py",
+      "bytes": 6334,
+      "sha256": "6595e3ac909e1fee59a366184a66a0c272a4cde6ceffcb5795bb0bd29b5a5e5b"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/provenance-lock-proposed-v4.current-native-v2.log",
+      "bytes": 2372,
+      "sha256": "d7e788bc0ad949704453ed5f7287b8f55a1a27c4a0347f492fcbba8c5c220360"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-proposed-v4-native-failed-independent-attempt-v1.json",
+      "bytes": 1700,
+      "sha256": "16e798f2e986c46e091b36d370184dc5323353abf6e0a7cf5cdd29130c323dbc"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-proposed-v2-first-fsync-defect-v1.json",
+      "bytes": 1383,
+      "sha256": "9984f9a55d965f0b721074779776def00f98235e5d8bd5f21d7c895b9e4336c4"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/complete-ui-build-v1/build-receipt.json",
+      "bytes": 1307,
+      "sha256": "b351245706d540821659e8f2c07796438bba6d654666a7f4b19d038f3f0d3556"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/candidate-contract-v2.json",
+      "bytes": 3067,
+      "sha256": "b19ffb38223fc92199396e2bd161784aacffcfee2bd321dfb2b5a57aa490f120"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/reviewed-helper-upgrades-v2.json",
+      "bytes": 1396,
+      "sha256": "7dc1f8d0687e4e049e49d2a5d61a05d23283b5adabd5643c8636fb29b106c239"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-qualify-frame-v6-diagnostic.json",
+      "bytes": 808730,
+      "sha256": "d325267c45de34470acf14bf46b25ccef6f5b951e10420edc77746de6f9c6074"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/capacity-recovery-read-only-qualification-v6-diagnostic.execution.json",
+      "bytes": 1108,
+      "sha256": "d77519576e3fed40e4919696d0ee810ef7618dd1bf23aeeda6d09fbbdb3e36dd"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-qualify-qualify-v6-diagnostic.stderr",
+      "bytes": 512,
+      "sha256": "77b03b148fb53703e8425a41432e5367b014d6f50b280ec713f00f0b1e3b0640"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-qualify-qualify-v6-diagnostic.run.json",
+      "bytes": 2542,
+      "sha256": "bc9f13bf193f870d40256792db428bdee25f3adfa2cdf2454349f11417e9ea0b"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-root-capacity-coordinator-fixture-fifo-v1.py",
+      "bytes": 22038,
+      "sha256": "7c5ceebb883da8f968face074d21ee3236ad970783bc71ebd58415a8570408c4"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-root-capacity-coordinator-fixture-fifo-v1.source-guards.json",
+      "bytes": 3850,
+      "sha256": "9bbf14460df73e8a5bb7f2c6c65df2b985a9608e7b125460a90e91bd67f342a4"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-wallet-coordinator-fixture-fifo-v1-independent-source-peer-v1.json",
+      "bytes": 2648,
+      "sha256": "99d7fc87e445ace32a2bf86c46de058382aac8e60b4da0edc98a7a8ab857bae4"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-provenance-lock-amendment-draft-v1.json",
+      "bytes": 46464,
+      "sha256": "b88f00d88865c2fa9d189461a02287cd0262115a9acb33069d66f179313ced74"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-preserved-fixture-fifo-compatible-flow-source-guards-v1.json",
+      "bytes": 7380,
+      "sha256": "8b235beea73646cc9638645a696672c86f26603c2f3a9faa6fc78eb98b3ef16c"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-performance-preserved-fifo-flow-v1-source-peer-v1.json",
+      "bytes": 3891,
+      "sha256": "5962b2749dfd4eb058ce01528f57d83cc931714b714c6d5a03a353e33878004b"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-complete-pair-independent-v2.source-guards.json",
+      "bytes": 3423,
+      "sha256": "44b13bbe87030f5651481fa1f6db1013e61db3a028ee9ae594f4ff263cc1a06b"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-wallet-complete-pair-independent-v2-source-peer-v1.json",
+      "bytes": 3080,
+      "sha256": "33ab4616acf589ba808196eddd0a8f096b31ffae3a7055200c9e27e7c61dee26"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-backend-reference-refusal-diagnostic-v1-source-peer-v1.json",
+      "bytes": 2990,
+      "sha256": "3bcc0c8109d87a4f2c46e02020e79a9255e8f350401578d1548a3d446e594251"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/backend-reference-refusal-diagnostic-v1.source-guards.json",
+      "bytes": 5931,
+      "sha256": "817e38df7b43551f13af517cde51598ce7608726a7c7881c22998c621295457b"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/backend-reference-refusal-diagnostic-v1.py",
+      "bytes": 21587,
+      "sha256": "73115eb2a8b1dd09c4f71a434eb414da9d4e2bbc1623bfd08632abf54dd30e14"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/backend-capacity-recovery-refusal-diagnostic-v1.py",
+      "bytes": 43902,
+      "sha256": "cb6c60cabb41811361f1f1ba8ba2544c764534244afe209f0522f58928afdb80"
+    },
+    {
+      "bytes": 2967,
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-root-bootstrap-v3.py",
+      "sha256": "1c97579b6f3fa9b89ceb12aab4098511dfac869129f55baf70ce9edd4b87c25c"
+    },
+    {
+      "bytes": 26325,
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-human-root-restore-v2.py",
+      "sha256": "fa72d014184f78fc33cc429eeda08cf3f6d76b8b7b5c491f6b7f35efa5712fbe"
+    },
+    {
+      "bytes": 41936,
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-complete-pair-independent-v2.py",
+      "sha256": "78d7141fd501c27c443f0f3ea5069ef53770a10042968b6d83e04cca4419fa14"
+    },
+    {
+      "bytes": 59723,
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-complete-pair-restore-v3.py",
+      "sha256": "c87e5bf466f2b4d6b40da7ef1d81018f0547f62736be91c32fd3e78539c765b7"
+    }
+  ],
+  "approvalText": "Approved—execute this exact provenance-lock repair amendment, including its one-helper installation, tests, source and pin bookkeeping, documentation, hygiene, fresh successor build, and completion of the already-approved capacity recovery and release. Preserve every original recovery limit, protected resource and native gate. No timer changes, other cleanup or guard weakening is approved.",
+  "bookkeepingReview": {
+    "hygieneFix": {
+      "command": "npm run hygiene:fix",
+      "exitCode": 0,
+      "result": "No allowlisted rebuildable state found."
+    },
+    "hygieneCheck": {
+      "command": "npm run hygiene:check",
+      "exitCode": 0,
+      "result": "Repository state check passed."
+    },
+    "documentation": "SOUL.md and canonical registry/DNS/marketplace/infrastructure/mail/hygiene documents reviewed; no protocol, product source or infrastructure edit implemented. Audit32 received a dated factual append. Future infrastructure documentation is part of this amendment.",
+    "unrelatedWorkPreserved": true,
+    "nativeRepairCodeStagedCommittedPushedInstalledOrDeployed": false,
+    "priorAuditOnlyBranchCommit": "b044d80a59661d7b035d0b158f2ddd88697a0ee1"
+  }
+}

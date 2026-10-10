@@ -590,6 +590,75 @@ class PublishProvenance(unittest.TestCase):
                 self.assertEqual(list(scratch.iterdir()), [])
 
 
+    def test_actual_helper_records_and_verifies_attributed_21_and_22_surface_roots(self):
+        release = safe_module('release.py')
+        provenance = ROOT.parent / 'proofofwork-ui-release-provenance.sh'
+        capacity = ROOT.parent / 'proofofwork-ui-capacity.py'
+        with tempfile.TemporaryDirectory(prefix='pow-publish-attributed-', dir='/tmp') as name:
+            base = Path(name).resolve()
+            def git(source, *args):
+                command = ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c',
+                           'core.fsmonitor=false', '-c', 'user.name=Provenance Test Fixture',
+                           '-c', 'user.email=fixture@invalid', '-C', str(source), *args]
+                result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=15,
+                                        env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0'})
+                return result.stdout.strip()
+            for surfaces in (release.PAGES_SURFACES, release.PERMISSION_SURFACES):
+                family = len(surfaces)
+                with self.subTest(family=family):
+                    case = base / str(family); case.mkdir(mode=0o700)
+                    www, archives, scratch, source = [case / n for n in ('www', 'archives', 'scratch', 'source')]
+                    for target in (www, archives, scratch, source): target.mkdir(mode=0o755)
+                    (source / '.gitignore').write_text('node_modules/\n')
+                    (source / 'README.md').write_text('Authenticated provenance test fixture.\n')
+                    for filename in ('.gitignore', 'README.md'): (source / filename).chmod(0o644)
+                    git(source, 'init', '--template=')
+                    git(source, 'add', '--', '.gitignore', 'README.md')
+                    git(source, 'commit', '-m', 'Create exact detached fixture')
+                    commit = git(source, 'rev-parse', 'HEAD')
+                    git(source, 'checkout', '--detach', commit)
+                    (source / 'node_modules').mkdir(mode=0o755)
+                    dependency = source / 'node_modules/fixture.txt'
+                    dependency.write_bytes(b'bounded exact fixture dependency\n'); dependency.chmod(0o644)
+                    for surface in surfaces:
+                        target = www / ('proofofwork-' + surface); target.mkdir(mode=0o755)
+                        (target / 'assets').mkdir(mode=0o755)
+                        (target / 'index.html').write_bytes(b'<html><script src="/assets/main.js"></script></html>')
+                        (target / 'assets/main.js').write_bytes(b'const current = true;')
+                        for filename in ('index.html', 'assets/main.js'): (target / filename).chmod(0o644)
+                    archive = archives / ('proofofwork-ui-release-current-' + str(family) + '.tgz')
+                    with tarfile.open(archive, 'w:gz') as tar:
+                        for surface in surfaces: tar.add(www / ('proofofwork-' + surface), arcname='surfaces/' + surface)
+                    archive.chmod(0o644)
+                    checksum = Path(str(archive) + '.sha256')
+                    checksum.write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n')
+                    checksum.chmod(0o644)
+                    environment = {**os.environ, 'POW_UI_ALLOW_TEST_ROOTS': '1', 'POW_UI_WWW_ROOT': str(www),
+                        'POW_UI_RELEASE_ARCHIVE_ROOT': str(archives), 'POW_UI_CAPACITY_SCRIPT': str(capacity),
+                        'POW_UI_DEPLOY_LOCK': str(case / 'deploy.lock'), 'TMPDIR': str(scratch),
+                        'GIT_OPTIONAL_LOCKS': '0'}
+                    # Current families cannot be promoted from unattributed historical evidence.
+                    result = subprocess.run(['/usr/bin/bash', str(provenance), 'record-rollback-evidence',
+                        '--archive', str(archive)], env=environment, capture_output=True, text=True, timeout=120)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse((www / '.proofofwork-ui-release').exists())
+                    for command in (['record', '--release-id', 'current-' + str(family), '--commit', commit,
+                                     '--source-checkout', str(source), '--archive', str(archive)], ['verify-rollback']):
+                        result = subprocess.run(['/usr/bin/bash', str(provenance), *command], env=environment,
+                            capture_output=True, text=True, timeout=120)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                    manifest = (www / '.proofofwork-ui-release').read_text()
+                    self.assertIn('format=proofofwork-ui-release-v' + str(4 if family == 21 else 5) + '\n', manifest)
+                    self.assertIn('commit=' + commit + '\n', manifest)
+                    self.assertEqual(sum(line.endswith('.file_count=2') for line in manifest.splitlines()), family)
+                    self.assertEqual(Path(str(archive) + '.provenance').read_bytes(),
+                                     (www / '.proofofwork-ui-release').read_bytes())
+                    self.assertEqual(list(scratch.iterdir()), [])
+                    self.assertEqual(git(source, 'status', '--porcelain'), '')
+                    self.assertEqual(git(source, 'rev-parse', 'HEAD'), commit)
+
+
+
 class PublishCapacity(unittest.TestCase):
     def test_all_20_incoming_roots_are_required_and_links_refused(self):
         capacity = safe_module('phase_capacity.py')
@@ -1904,6 +1973,585 @@ class OuterCapacityResume(unittest.TestCase):
         with patch.object(subprocess, 'check_output', side_effect=state), self.assertRaisesRegex(AssertionError, 'namespace occupied'):
             namespace['validate_capacity_resume'](plan)
 
+
+# Native lock fixtures run only the real lock acquisition/closing block in tiny
+# local Bash bodies. The pre-repair block reproduces the audited busy-lock fault;
+# native historical/current tests below separately run full verifier bodies.
+PROVENANCE_HELPER = ROOT.parent / 'proofofwork-ui-release-provenance.sh'
+PROVENANCE_SOURCE = PROVENANCE_HELPER.read_text()
+PROVENANCE_LOCK_FOOTER = '\n# Only a successful command reaches the closing original descriptor/path fence.\nui_provenance_lock_guard close "${deploy_lock_fd}" "${provenance_lock_pin}"\n'
+PROVENANCE_PRIOR_ACQUISITION = r'''
+inherited_deploy_lock_fd="${POW_UI_DEPLOY_LOCK_FD:-}"
+if [[ -n "${inherited_deploy_lock_fd}" ]]; then
+  if [[ ! "${inherited_deploy_lock_fd}" =~ ^[1-9][0-9]*$ ]] ||
+    ((inherited_deploy_lock_fd < 3)) ||
+    [[ ! -f "/proc/self/fd/${inherited_deploy_lock_fd}" ]] ||
+    [[ "$(realpath -e -- "/proc/self/fd/${inherited_deploy_lock_fd}" 2>/dev/null || true)" != "${deploy_lock}" ]]; then
+    echo "Inherited UI deployment lock descriptor is invalid." >&2
+    exit 64
+  fi
+  deploy_lock_fd="${inherited_deploy_lock_fd}"
+else
+  exec {deploy_lock_fd}>"${deploy_lock}"
+  chmod 0600 "${deploy_lock}"
+fi
+if ! flock --exclusive --nonblock "${deploy_lock_fd}"; then
+  echo "Another UI deployment or cleanup operation holds ${deploy_lock}." >&2
+  exit 1
+fi
+'''.lstrip('\n')
+PROVENANCE_PRIOR_SOURCE = (
+    PROVENANCE_SOURCE[:PROVENANCE_SOURCE.index('# Existing lock contenders')]
+    + PROVENANCE_PRIOR_ACQUISITION
+    + PROVENANCE_SOURCE[PROVENANCE_SOURCE.index('\nmanifest="${ui_root}/.proofofwork-ui-release"'):-len(PROVENANCE_LOCK_FOOTER)]
+)
+PROVENANCE_PRIOR_SHA = 'b9e27a7df46d10be40ffa7d3d36c77a704fbf9f57063c4f3d884d7d4356d40b8'
+PROVENANCE_SOURCE_SHA = '822fb461c8a1d6d3174f47e448d8bd2c0ce548134358da409c97e46fde163215'
+
+def provenance_lock_block(source):
+    return source[source.index('deploy_lock="${POW_UI_DEPLOY_LOCK:'):source.index('\nmanifest="${ui_root}/.proofofwork-ui-release"')]
+
+def provenance_lock_identity(s):
+    return [getattr(s, k) for k in ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink', 'st_size', 'st_blocks', 'st_mtime_ns', 'st_ctime_ns')]
+
+def provenance_lock_pin(path):
+    return {'parentCore': provenance_lock_identity(path.parent.lstat())[:5], 'lockIdentity': provenance_lock_identity(path.lstat())}
+
+PROVENANCE_LOCK_BLOCK = provenance_lock_block(PROVENANCE_SOURCE)
+PROVENANCE_LOCK_PYTHON = PROVENANCE_LOCK_BLOCK.split("<<'PY'\n", 1)[1].split("\nPY\n}", 1)[0]
+
+class ProvenanceLock(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self.tmp.name)
+        self.parent = self.base / 'private'
+        self.parent.mkdir(mode=448)
+        self.lock = self.parent / 'deploy.lock'
+        self.script = self.base / 'fixture.sh'
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def file(self, body=b'lock-body'):
+        self.lock.write_bytes(body)
+        self.lock.chmod(384)
+        return self.lock.lstat()
+
+    def script_for(self, body=None, source=PROVENANCE_SOURCE):
+        if body is None:
+            body = 'printf \'PID:%s\\n\' "$$"\nprintf \'COMMAND:%s\\n\' "$command"\nprintf \'ARG:%s\\n\' "$@"\nprintf \'VERIFIED\\n\'\n'
+        start = '#!/usr/bin/bash\nset -Eeuo pipefail\ncommand="${1:-verify-fixture}"\nif (($# > 0)); then shift; fi\n'
+        self.script.write_text(start + provenance_lock_block(source) + '\n' + body + (PROVENANCE_LOCK_FOOTER if source == PROVENANCE_SOURCE else ''))
+        self.script.chmod(384)
+
+    def run_fixture(self, *args, fd=None, extra=None):
+        env = {'PATH': '/usr/bin:/bin', 'LC_ALL': 'C', 'POW_UI_ALLOW_TEST_ROOTS': '1', 'POW_UI_DEPLOY_LOCK': str(self.lock)}
+        if fd is not None:
+            env['POW_UI_DEPLOY_LOCK_FD'] = str(fd)
+        if extra:
+            env.update(extra)
+        p = subprocess.Popen(['/usr/bin/bash', str(self.script), *(args or ('verify-fixture',))], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, pass_fds=() if fd is None else (fd,), start_new_session=True)
+        out, err = p.communicate(timeout=8)
+        return (p.returncode, out, err, p.pid)
+
+    def test_exact_baseline_and_proposed_source_pins(self):
+        self.assertEqual(hashlib.sha256(PROVENANCE_PRIOR_SOURCE.encode()).hexdigest(), PROVENANCE_PRIOR_SHA)
+        self.assertEqual(hashlib.sha256(PROVENANCE_HELPER.read_bytes()).hexdigest(), PROVENANCE_SOURCE_SHA)
+
+    def test_bash_syntax_full_proposed_source(self):
+        p = subprocess.run(['/usr/bin/bash', '-n', str(PROVENANCE_HELPER)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=8)
+        self.assertEqual((p.returncode, p.stderr), (0, b''))
+
+    def test_all_verifier_record_math_archive_capacity_body_bytes_unchanged(self):
+        first = 'inherited_deploy_lock_fd="${POW_UI_DEPLOY_LOCK_FD:-}"'
+        before = PROVENANCE_PRIOR_SOURCE[:PROVENANCE_PRIOR_SOURCE.index(first)]
+        self.assertTrue(PROVENANCE_SOURCE.startswith(before))
+        after = '\nmanifest="${ui_root}/.proofofwork-ui-release"'
+        self.assertEqual(PROVENANCE_SOURCE[PROVENANCE_SOURCE.index(after):-len(PROVENANCE_LOCK_FOOTER)], PROVENANCE_PRIOR_SOURCE[PROVENANCE_PRIOR_SOURCE.index(after):])
+
+    def test_old_busy_path_reproduces_truncate_and_timestamp_fault(self):
+        before = self.file()
+        fd = os.open(self.lock, os.O_RDONLY)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        self.script_for(source=PROVENANCE_PRIOR_SOURCE)
+        try:
+            code, out, err, pid = self.run_fixture()
+            self.assertNotEqual(code, 0)
+            self.assertNotIn(b'VERIFIED', out)
+            self.assertEqual(self.lock.read_bytes(), b'')
+            self.assertNotEqual(provenance_lock_identity(self.lock.lstat()), provenance_lock_identity(before))
+        finally:
+            os.close(fd)
+
+    def test_busy_original_body_and_all_authority_stat_fields_unchanged(self):
+        before = self.file()
+        fd = os.open(self.lock, os.O_RDONLY)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        self.script_for()
+        try:
+            code, out, err, pid = self.run_fixture()
+            self.assertEqual(code, 1, err)
+            self.assertIn(b'Another UI deployment', err)
+            self.assertNotIn(b'VERIFIED', out)
+            self.assertEqual(self.lock.read_bytes(), b'lock-body')
+            self.assertEqual(provenance_lock_identity(before), provenance_lock_identity(self.lock.lstat()))
+            self.assertEqual(provenance_lock_identity(os.fstat(fd)), provenance_lock_identity(before))
+        finally:
+            os.close(fd)
+
+    def test_existing_success_preserves_body_metadata_and_same_process_pid(self):
+        before = self.file()
+        self.script_for()
+        code, out, err, pid = self.run_fixture()
+        self.assertEqual(code, 0, err)
+        self.assertIn(b'VERIFIED', out)
+        self.assertIn(('PID:' + str(pid) + '\n').encode(), out)
+        self.assertEqual(provenance_lock_identity(before), provenance_lock_identity(self.lock.lstat()))
+        self.assertEqual(self.lock.read_bytes(), b'lock-body')
+
+    def test_first_absent_creation_exclusive_0600_owner_single_link(self):
+        self.script_for()
+        code, out, err, pid = self.run_fixture()
+        self.assertEqual(code, 0, err)
+        s = self.lock.lstat()
+        self.assertEqual(stat.S_IMODE(s.st_mode), 384)
+        self.assertEqual((s.st_uid, s.st_gid, s.st_nlink, s.st_size), (os.geteuid(), os.getegid(), 1, 0))
+        self.assertTrue(stat.S_ISREG(s.st_mode))
+        self.assertIn(b'VERIFIED', out)
+
+    def test_second_run_never_normalizes_first_created_lock(self):
+        self.script_for()
+        self.assertEqual(self.run_fixture()[0], 0)
+        before = self.lock.lstat()
+        self.assertEqual(self.run_fixture()[0], 0)
+        self.assertEqual(provenance_lock_identity(self.lock.lstat()), provenance_lock_identity(before))
+
+    def test_exact_argv_reexec_preserved_including_spaces_and_metacharacters(self):
+        self.file()
+        self.script_for()
+        code, out, err, pid = self.run_fixture('verify-fixture', 'two words', 'literal-$value', 'semi;colon')
+        self.assertEqual(code, 0, err)
+        self.assertIn(b'COMMAND:verify-fixture\nARG:two words\nARG:literal-$value\nARG:semi;colon\n', out)
+
+    def test_inherited_owned_flock_and_descriptor_remain_caller_owned(self):
+        before = self.file()
+        fd = os.open(self.lock, os.O_RDONLY)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        self.script_for()
+        try:
+            code, out, err, pid = self.run_fixture(fd=fd)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(provenance_lock_identity(os.fstat(fd)), provenance_lock_identity(before))
+            other = os.open(self.lock, os.O_RDONLY)
+            try:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                os.close(other)
+        finally:
+            os.close(fd)
+
+    def test_inherited_unlocked_independent_contender_refuses_without_mutation(self):
+        before = self.file()
+        holder = os.open(self.lock, os.O_RDONLY)
+        fd = os.open(self.lock, os.O_RDONLY)
+        fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        self.script_for()
+        try:
+            code, out, err, pid = self.run_fixture(fd=fd)
+            self.assertEqual(code, 1, err)
+            self.assertNotIn(b'VERIFIED', out)
+            self.assertEqual(provenance_lock_identity(self.lock.lstat()), provenance_lock_identity(before))
+            self.assertEqual(provenance_lock_identity(os.fstat(fd)), provenance_lock_identity(before))
+        finally:
+            os.close(holder)
+            os.close(fd)
+
+    def test_missing_inherited_descriptor_never_creates_lock(self):
+        self.script_for()
+        code, out, err, pid = self.run_fixture(extra={'POW_UI_DEPLOY_LOCK_FD': '99999'})
+        self.assertNotEqual(code, 0)
+        self.assertFalse(self.lock.exists())
+        self.assertNotIn(b'VERIFIED', out)
+
+    def test_wrong_inherited_inode_refuses(self):
+        self.file()
+        other = self.base / 'other'
+        other.write_bytes(b'foreign')
+        fd = os.open(other, os.O_RDONLY)
+        self.script_for()
+        try:
+            code, out, err, pid = self.run_fixture(fd=fd)
+            self.assertNotEqual(code, 0)
+            self.assertNotIn(b'VERIFIED', out)
+            self.assertEqual(other.read_bytes(), b'foreign')
+        finally:
+            os.close(fd)
+
+    def test_invalid_descriptor_labels_refuse(self):
+        self.file()
+        self.script_for()
+        for label in ['0', '1', '2', '03', '-3', 'abc', '3.0']:
+            with self.subTest(label=label):
+                code, out, err, pid = self.run_fixture(extra={'POW_UI_DEPLOY_LOCK_FD': label})
+                self.assertNotEqual(code, 0)
+                self.assertNotIn(b'VERIFIED', out)
+
+    def test_symlink_lock_refuses_and_preserves_foreign_target(self):
+        target = self.base / 'target'
+        target.write_bytes(b'foreign')
+        self.lock.symlink_to(target)
+        self.script_for()
+        code, out, err, pid = self.run_fixture()
+        self.assertNotEqual(code, 0)
+        self.assertEqual(target.read_bytes(), b'foreign')
+
+    def test_hardlink_lock_refuses_without_changing_either_name(self):
+        before = self.file()
+        os.link(self.lock, self.base / 'alias')
+        before = self.lock.lstat()
+        self.script_for()
+        code, out, err, pid = self.run_fixture()
+        self.assertNotEqual(code, 0)
+        self.assertEqual(provenance_lock_identity(self.lock.lstat()), provenance_lock_identity(before))
+        self.assertEqual(self.lock.read_bytes(), b'lock-body')
+
+    def test_mode0400_refuses_without_redundant_chmod(self):
+        self.file()
+        self.lock.chmod(256)
+        before = self.lock.lstat()
+        self.script_for()
+        code, out, err, pid = self.run_fixture()
+        self.assertNotEqual(code, 0)
+        self.assertEqual(provenance_lock_identity(self.lock.lstat()), provenance_lock_identity(before))
+        self.assertEqual(stat.S_IMODE(self.lock.lstat().st_mode), 256)
+
+    def test_parent_unsafe_mode_refuses(self):
+        self.file()
+        self.parent.chmod(493)
+        self.script_for()
+        code, out, err, pid = self.run_fixture()
+        self.assertNotEqual(code, 0)
+        self.assertNotIn(b'VERIFIED', out)
+
+    def test_body_timestamp_drift_refuses_at_success_closing_fence(self):
+        self.file()
+        self.script_for('touch -- "$deploy_lock"\nprintf "BODY_RAN\\n"\n')
+        code, out, err, pid = self.run_fixture()
+        self.assertNotEqual(code, 0)
+        self.assertIn(b'BODY_RAN', out)
+        self.assertIn(b'Original UI deployment lock identity changed', err)
+
+    def test_body_path_replacement_refuses_at_success_closing_fence(self):
+        self.file()
+        self.script_for('mv -- "$deploy_lock" "$deploy_lock.saved"\nprintf foreign > "$deploy_lock"\nchmod 0600 "$deploy_lock"\n')
+        code, out, err, pid = self.run_fixture()
+        self.assertNotEqual(code, 0)
+        self.assertEqual(self.lock.read_bytes(), b'foreign')
+        self.assertEqual(Path(str(self.lock) + '.saved').read_bytes(), b'lock-body')
+
+    def test_body_parent_replacement_refuses_at_success_closing_fence(self):
+        self.file()
+        self.script_for('mv -- "$lock_parent" "$lock_parent.saved"\nmkdir -m0700 -- "$lock_parent"\n')
+        code, out, err, pid = self.run_fixture()
+        self.assertNotEqual(code, 0)
+        self.assertTrue(Path(str(self.parent) + '.saved').exists())
+
+    def test_duplicate_pin_and_bool_metadata_refuse(self):
+        self.file()
+        fd = os.open(self.lock, os.O_RDONLY)
+        self.script_for()
+        try:
+            for value in ['{"parentCore":[],"parentCore":[],"lockIdentity":[]}', json.dumps({**provenance_lock_pin(self.lock), 'parentCore': [False, *provenance_lock_pin(self.lock)['parentCore'][1:]]}), json.dumps({**provenance_lock_pin(self.lock), 'lockIdentity': [True, *provenance_lock_pin(self.lock)['lockIdentity'][1:]]})]:
+                with self.subTest(value=value):
+                    code, out, err, pid = self.run_fixture(fd=fd, extra={'POW_UI_PROVENANCE_LOCK_PIN': value})
+                    self.assertNotEqual(code, 0)
+                    self.assertNotIn(b'VERIFIED', out)
+        finally:
+            os.close(fd)
+
+class ProvenanceLockFaults(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self.tmp.name)
+        self.parent = self.base / 'private'
+        self.parent.mkdir(mode=448)
+        self.lock = self.parent / 'deploy.lock'
+        self.real_open = os.open
+        self.opened = []
+
+    def tearDown(self):
+        for fd in reversed(self.opened):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        self.tmp.cleanup()
+
+    def file(self):
+        self.lock.write_bytes(b'original')
+        self.lock.chmod(384)
+
+    def execute(self, hook=None, exec_hook=None):
+
+        def opened(*a, **k):
+            fd = self.real_open(*a, **k)
+            self.opened.append(fd)
+            if hook:
+                hook(fd, *a, **k)
+            return fd
+        argv = ['exact_inline_helper', str(self.lock), 'launch', '/fixture/source.sh', 'verify-fixture']
+        with patch.object(sys, 'argv', argv), patch.object(os, 'open', side_effect=opened), patch.object(os, 'execve', side_effect=exec_hook or RuntimeError('fixture reached exact exec')):
+            exec(compile(PROVENANCE_LOCK_PYTHON, 'exact_source_inline_guard', 'exec'), {})
+
+    def test_after_existing_open_path_replacement_is_preserved_before_flock(self):
+        self.file()
+
+        def hook(fd, path, flags, *a, **k):
+            if path == 'deploy.lock':
+                self.lock.rename(self.parent / 'saved')
+                self.lock.write_bytes(b'foreign')
+                self.lock.chmod(384)
+        with self.assertRaisesRegex(SystemExit, 'identity changed'):
+            self.execute(hook)
+        self.assertEqual(self.lock.read_bytes(), b'foreign')
+        self.assertEqual((self.parent / 'saved').read_bytes(), b'original')
+
+    def test_after_first_creation_parent_replacement_refuses_before_fsync(self):
+        called = []
+        real_fsync = os.fsync
+
+        def hook(fd, path, flags, *a, **k):
+            if flags & os.O_CREAT:
+                self.parent.rename(self.base / 'saved')
+                self.parent.mkdir(mode=448)
+        with patch.object(os, 'fsync', side_effect=lambda fd: (called.append(fd), real_fsync(fd))):
+            with self.assertRaisesRegex(SystemExit, 'parent changed'):
+                self.execute(hook)
+        self.assertEqual(called, [])
+        self.assertEqual((self.base / 'saved' / 'deploy.lock').read_bytes(), b'')
+        self.assertFalse(self.lock.exists())
+
+    def test_after_first_creation_path_replacement_refuses_before_fsync(self):
+        called = []
+
+        def hook(fd, path, flags, *a, **k):
+            if flags & os.O_CREAT:
+                self.lock.rename(self.parent / 'saved')
+                self.lock.write_bytes(b'foreign')
+                self.lock.chmod(384)
+        with patch.object(os, 'fsync', side_effect=lambda fd: called.append(fd)):
+            with self.assertRaisesRegex(SystemExit, 'identity changed'):
+                self.execute(hook)
+        self.assertEqual(called, [])
+        self.assertEqual(self.lock.read_bytes(), b'foreign')
+        self.assertEqual((self.parent / 'saved').read_bytes(), b'')
+
+    def test_first_create_collision_has_no_rebase_or_truncate(self):
+        real = self.real_open
+
+        def collision(path, flags, *a, **k):
+            if flags & os.O_CREAT:
+                self.lock.write_bytes(b'racing')
+                self.lock.chmod(384)
+            fd = real(path, flags, *a, **k)
+            self.opened.append(fd)
+            return fd
+        with patch.object(sys, 'argv', ['exact', str(self.lock), 'launch', '/source.sh', 'verify']), patch.object(os, 'open', side_effect=collision):
+            with self.assertRaises(FileExistsError):
+                exec(compile(PROVENANCE_LOCK_PYTHON, 'exact_source_inline_guard', 'exec'), {})
+        self.assertEqual(self.lock.read_bytes(), b'racing')
+
+    def test_first_created_descriptor_fsync_fault_preserves_zero_inode(self):
+        with patch.object(os, 'fsync', side_effect=OSError('fixture fsync failure')):
+            with self.assertRaises(OSError):
+                self.execute()
+        self.assertTrue(self.lock.exists())
+        self.assertEqual(self.lock.read_bytes(), b'')
+        self.assertEqual(stat.S_IMODE(self.lock.lstat().st_mode), 384)
+
+    def test_first_created_parent_fsync_fault_preserves_zero_inode(self):
+        real = os.fsync
+        count = 0
+
+        def fsync(fd):
+            nonlocal count
+            count += 1
+            if count == 2:
+                raise OSError('fixture parent fsync failure')
+            real(fd)
+        with patch.object(os, 'fsync', side_effect=fsync):
+            with self.assertRaises(OSError):
+                self.execute()
+        self.assertTrue(self.lock.exists())
+        self.assertEqual(self.lock.read_bytes(), b'')
+
+    def test_no_inherited_fd_close_on_guard_failure(self):
+        self.file()
+        fd = os.open(self.lock, os.O_RDONLY)
+        try:
+            value = provenance_lock_pin(self.lock)
+            value['lockIdentity'][1] += 1
+            with patch.object(sys, 'argv', ['exact', str(self.lock), 'admit', str(fd), json.dumps(value)]):
+                with self.assertRaisesRegex(SystemExit, 'identity changed'):
+                    exec(compile(PROVENANCE_LOCK_PYTHON, 'exact_source_inline_guard', 'exec'), {})
+            self.assertEqual(os.fstat(fd).st_ino, self.lock.lstat().st_ino)
+        finally:
+            os.close(fd)
+
+    def test_production_exclusivecreate_and_nonblocking_nofollow_flags_are_actual_code(self):
+        tree = ast.parse(PROVENANCE_LOCK_PYTHON)
+        opens = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and (n.func.attr == 'open')]
+        self.assertEqual(len(opens), 3)
+        launch = [ast.unparse(n) for n in opens if len(n.args) >= 2 and 'path.name' in ast.unparse(n)]
+        self.assertEqual(len(launch), 2)
+        self.assertTrue(any(('O_RDONLY' in n and 'O_NOFOLLOW' in n and ('O_NONBLOCK' in n) and ('O_TRUNC' not in n) for n in launch)))
+        self.assertTrue(any(('O_EXCL' in n and 'O_CREAT' in n and ('O_NOFOLLOW' in n) for n in launch)))
+        calls = [n.func.attr for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
+        self.assertTrue(set(calls).isdisjoint({'chmod', 'fchmod', 'chown', 'fchown'}))
+
+    def test_after_flock_timestamp_change_refuses_before_exec(self):
+        self.file()
+        real = fcntl.flock
+
+        def flock(fd, flags):
+            real(fd, flags)
+            value = self.lock.lstat()
+            os.utime(self.lock, ns=(value.st_atime_ns, value.st_mtime_ns + 1))
+        with patch.object(fcntl, 'flock', side_effect=flock):
+            with self.assertRaisesRegex(SystemExit, 'identity changed'):
+                self.execute()
+
+    def test_after_flock_parent_replacement_refuses_before_exec(self):
+        self.file()
+        real = fcntl.flock
+
+        def flock(fd, flags):
+            real(fd, flags)
+            self.parent.rename(self.base / 'saved')
+            self.parent.mkdir(mode=448)
+        with patch.object(fcntl, 'flock', side_effect=flock):
+            with self.assertRaisesRegex(SystemExit, 'parent changed'):
+                self.execute()
+
+    def test_fifo_metadata_observation_refuses_without_special_fixture(self):
+        self.file()
+        real = Path.lstat
+        before = provenance_lock_identity(self.lock.lstat())
+
+        def lstat(path, *args, **kwargs):
+            value = real(path, *args, **kwargs)
+            if path == self.lock:
+                values = {name: getattr(value, name) for name in ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink', 'st_size', 'st_blocks', 'st_mtime_ns', 'st_ctime_ns')}
+                values['st_mode'] = stat.S_IFIFO | 384
+                return types.SimpleNamespace(**values)
+            return value
+        with patch.object(Path, 'lstat', autospec=True, side_effect=lstat):
+            with self.assertRaisesRegex(SystemExit, 'metadata differs'):
+                self.execute()
+        self.assertEqual(provenance_lock_identity(self.lock.lstat()), before)
+        self.assertEqual(self.lock.read_bytes(), b'original')
+
+    def test_direct_owner_mismatch_refuses_without_file_mutation(self):
+        self.file()
+        real = Path.lstat
+        before = provenance_lock_identity(self.lock.lstat())
+
+        def lstat(path, *a, **k):
+            value = real(path, *a, **k)
+            if path == self.lock:
+                d = {name: getattr(value, name) for name in ['st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink', 'st_size', 'st_blocks', 'st_mtime_ns', 'st_ctime_ns']}
+                d['st_uid'] += 1
+                return types.SimpleNamespace(**d)
+            return value
+        with patch.object(Path, 'lstat', autospec=True, side_effect=lstat):
+            with self.assertRaisesRegex(SystemExit, 'metadata differs'):
+                self.execute()
+        self.assertEqual(provenance_lock_identity(self.lock.lstat()), before)
+        self.assertEqual(self.lock.read_bytes(), b'original')
+
+    def test_new_inode_mtime_drift_during_file_fsync_not_rebased(self):
+        real = os.fsync
+        fired = False
+
+        def fsync(fd):
+            nonlocal fired
+            real(fd)
+            if not fired and stat.S_ISREG(os.fstat(fd).st_mode):
+                fired = True
+                value = self.lock.lstat()
+                os.utime(self.lock, ns=(value.st_atime_ns, value.st_mtime_ns + 1))
+        with patch.object(os, 'fsync', side_effect=fsync):
+            with self.assertRaisesRegex(SystemExit, 'identity changed'):
+                self.execute()
+        self.assertTrue(fired)
+        self.assertTrue(self.lock.exists())
+        self.assertEqual(self.lock.read_bytes(), b'')
+
+    def test_new_inode_body_drift_during_parent_fsync_not_rebased(self):
+        real = os.fsync
+        fired = False
+
+        def fsync(fd):
+            nonlocal fired
+            real(fd)
+            if not fired and stat.S_ISDIR(os.fstat(fd).st_mode):
+                fired = True
+                self.lock.write_bytes(b'foreign-body')
+        with patch.object(os, 'fsync', side_effect=fsync):
+            with self.assertRaisesRegex(SystemExit, 'identity changed'):
+                self.execute()
+        self.assertTrue(fired)
+        self.assertEqual(self.lock.read_bytes(), b'foreign-body')
+
+class ProvenanceLockUmask(unittest.TestCase):
+    setUp = ProvenanceLock.setUp
+    tearDown = ProvenanceLock.tearDown
+    file = ProvenanceLock.file
+    script_for = ProvenanceLock.script_for
+
+    def test_first_and_existing_launch_preserve_caller_umask(self):
+        self.script_for('printf "UMASK:%s\\n" "$(umask)"\n')
+        for mask in ('0022', '0002'):
+            for existing in (False, True):
+                with self.subTest(mask=mask, existing=existing):
+                    if self.lock.exists():
+                        self.lock.unlink()
+                    if existing:
+                        self.file()
+                    env = {'PATH': '/usr/bin:/bin', 'LC_ALL': 'C', 'POW_UI_ALLOW_TEST_ROOTS': '1', 'POW_UI_DEPLOY_LOCK': str(self.lock)}
+                    code = ['/usr/bin/bash', '-c', 'umask "$1"; exec /usr/bin/bash "$2" verify-fixture', 'fixture', mask, str(self.script)]
+                    p = subprocess.run(code, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, timeout=8)
+                    self.assertEqual(p.returncode, 0, p.stderr)
+                    self.assertEqual(p.stdout, ('UMASK:' + mask + '\n').encode())
+                    self.assertEqual(stat.S_IMODE(self.lock.lstat().st_mode), 384)
+
+    def test_launch_create_error_restores_umask_in_exact_inline_function(self):
+        real_open = os.open
+        opened = []
+        original = os.umask(18)
+        try:
+
+            def opened_fn(path, flags, *a, **k):
+                if flags & os.O_CREAT:
+                    raise FileExistsError('fixture first-create collision')
+                fd = real_open(path, flags, *a, **k)
+                opened.append(fd)
+                return fd
+            with patch.object(sys, 'argv', ['exact', str(self.lock), 'launch', '/source.sh', 'verify']), patch.object(os, 'open', side_effect=opened_fn):
+                with self.assertRaises(FileExistsError):
+                    exec(compile(PROVENANCE_LOCK_PYTHON, 'exact_source_inline_guard', 'exec'), {})
+            current = os.umask(18)
+            self.assertEqual(current, 18)
+        finally:
+            os.umask(original)
+            for fd in opened:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

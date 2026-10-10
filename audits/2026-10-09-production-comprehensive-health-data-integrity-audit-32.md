@@ -618,3 +618,157 @@ deployment or release-completion evidence. Temporary source/fault reviews and an
 exact clean successor build precede the first custody invocation and its single
 four-hour clock. Actual closing receipts must distinguish these dated pending
 states from subsequent actions; original evidence is never rewritten as success.
+
+### Capacity recovery continuation: pre-mutation refusals, 2026-10-10 UTC
+
+Scope: execution preparation under the approved capacity proposal, temporary
+controller/custody/restore fault tests, an exact clean successor build, fresh
+native read-only verification, and investigation of strict recovery refusals.
+The current release remains `d8ae8220d897f876d85b0025db86306dc27e6fe5`.
+The clean `b044d80a59661d7b035d0b158f2ddd88697a0ee1` successor built all 22
+managed surfaces. It has not been uploaded or deployed; its product changes are
+the already approved Permission catch-up, browser fixtures and `.pow` links.
+A subsequent approved source change requires a fresh commit-bound build.
+
+At **03:58:31 UTC**, the unchanged native preflight passed full current live,
+all six retained rollback-root, managed-surface/archive dependency and helper
+checks. Their bindings matched the approved preparation baseline exactly. It
+observed **11,471,327,232 available bytes** and **2,179,264 available inodes**.
+Scratch remained **2,869,706,752 bytes** against the unchanged 5 GiB ceiling.
+The unchanged root floor of 10 GiB plus 64 MiB left 666,800,128 bytes of
+headroom. This is a dated health/capacity observation, not admission of every
+receive, staging, publication and archive-extraction phase. The completed
+build, preflight and actual execution receipts remain preserved.
+
+**Previously documented lock defect reproduced, still unresolved:** the native
+provenance verifier opens/truncates/chmods the deployment lock before acquiring
+flock. Its timer invoked it at **03:45:10 UTC** while qualification held the
+original lock; the verifier reported a busy lock and exited 1 after changing
+its metadata. The qualification correctly refused the drift. This is the
+existing issue recorded in the
+[earlier partial-recovery continuation](2026-10-09-audit32-first-batch-four-root-partial-recovery-continuation.md),
+not a duplicate new finding. The same attempt also refused local closing
+accounting after concurrent evidence writes exceeded its owned reservation.
+Both failures remain original failures; all temporary writers must be frozen
+around a coordinated budget window.
+
+The next attempt passed local closing accounting but refused an exact process
+cohort change during reference proof. Its terse failure does not establish
+which process changed. A later diagnostic attempt refused locally before SSH
+because a preserved fault-test FIFO was outside the census's supported types.
+The FIFO was preserved. A temporary coordinator successor accounts only that
+exact object through canonical lstat, original ten-field identity and private
+parent identity, without opening, reading, changing or removing it. All other
+special objects still refuse; the 8 GiB aggregate ceiling remains unchanged.
+Its 44 cases and an independent 44-case rerun passed. Complete custody-flow
+adapters require consistent reviewed successor pins before actual execution.
+
+At **04:22:34–04:23:43 UTC**, that diagnostic qualifier passed local budget
+closing at **1,172,697,088 allocated bytes**, including failed outputs and
+fixtures, then returned actual remote and outer exit 1 for **unresolved
+namespace backing `4026531841`**. No unexpected reference was reported, but an
+empty assertion did not identify the failed backing/member predicate. This
+does not establish reference absence. No cohort delta or lock drift was
+reported in this attempt. Preserve the namespace observation and require fresh
+positive backing/member/reference proof; do not skip the namespace or weaken
+the classifier. This remains a separate qualification gap from the lock defect.
+
+The [one-helper repair amendment](2026-10-10-audit32-capacity-provenance-lock-repair-proposal.json)
+contains the exact proposed source and reconstructable patch. Its existing-lock
+path opens read-only and preserves a busy owner's original bytes and metadata;
+exclusive first creation, original inherited descriptors, caller umask and
+closing identity fences remain mandatory. Native verifier/archive/source/
+dependency/capacity bodies and timer/service configuration are unchanged.
+Thirty-eight focused cases passed and an independent 38-case rerun passed.
+Fourteen actual historical native commands passed for families 14–20; separate
+attributed current record/verify fixtures passed four commands for 21/22,
+including an independent current rerun. The mixed first driver correctly
+refused an unattributed Pages fixture; its exit 1 and an earlier peer logging
+gap remain explicit. Local synthetic current-owner fixtures are not
+production-root restoration or full deployment certification.
+
+**Approval boundary and remaining actions:** installed helper changes were
+explicitly excluded from the approved capacity proposal. The proposed exact
+repair therefore requires separate direct approval under `AGENTS.md` before
+editing its repository implementation files or installing it. That omission
+should have been included in the original proposal. The amendment preserves
+the four original subjects, minimum oldest-first stopping rule, newest two
+rollback pairs, every sidecar/original failure, live data, native reserves,
+bounded hold/attempt/window limits and release gates. It does not excuse the
+separate process/backing refusals or guarantee deployment. Actual original-owner
+restoration also requires local terminal authentication when its exact inputs
+are ready; passwords never enter chat.
+
+No four-pair custody destination, first-custody clock, actual original-owner
+restoration, retirement attempt, production helper/timer/configuration change,
+Permission overlay, UI deployment, main integration or announcement occurred
+in this continuation. Original failure evidence and both old/new build inputs
+remain preserved. Protocol/math, ledger and historical application records were
+unchanged; no new full-history or field-performance pass is claimed. Completion
+still requires qualified custody and restoration, strict references, fresh
+native phase admission, minimum retirement, controlled already approved release,
+actual `check:release-sync` PASS and the verified announcement.
+
+Closing preparation review: compatible temporary restorer/bootstrap/human
+successors passed 220 local cases and an independent 220-case rerun; the
+independent callable passed 83+9 cases and an independent rerun. Their changes
+only account for the exact preserved FIFO and update necessary source/name
+bindings. A failure-label reference adapter passed 157 cases and an independent
+157-case rerun; it adds bounded failure context without changing successful
+ordered inspections or strict predicates. It was not invoked on production and
+does not identify V6's actual cause. Actual flow still requires fresh exact
+controller/authorization/source bindings. `hygiene:fix` found no allowlisted
+rebuildable state; `hygiene:check` passed. The proposed native repair remains
+unapplied; all original sources, failures and unrelated work remain preserved.
+
+### Approved provenance-lock implementation, 2026-10-10 UTC
+
+The human directly approved the exact one-helper amendment, SHA-256
+`c750164c06ac92aca9b8034804d30ed4db45dabfe2d960ff9fc9acd12a399457`.
+Its immutable [authorization receipt](2026-10-10-audit32-provenance-lock-amendment-authorization.evidence.json)
+preserves the original capacity authorization and records this narrow exception.
+All 56 amendment input pins matched before implementation. The repository helper
+now matches the approved 83,514-byte source, SHA-256
+`822fb461c8a1d6d3174f47e448d8bd2c0ce548134358da409c97e46fde163215`.
+Its original source remains verifiable from the immutable `b044d80` Git blob and
+the original installed-source evidence; the approved proposal is not rewritten
+to normalize that intentional old-to-new source transition.
+
+Implementation is limited to the helper, its permanent regression tests,
+infrastructure documentation and scoped audit records. Current preparation
+includes an atomic one-helper installer, authenticated old-plan bridge and
+compatible custody-controller bindings. Tests and independent reviews remain
+execution gates. GitHub `main` remained `d8ae822` at the fresh approval-time fetch;
+unrelated local work remains preserved. The human confirmed availability for
+local terminal authentication when exact original-owner restore inputs are ready.
+This dated entry records preparation, not installation, custody, retirement,
+deployment, release synchronization or an announcement. Those results require
+separate factual closing receipts.
+
+
+Closing source verification: the corrected integration harness completed all
+**107 permanent tests**, with zero failures, errors or skips and actual outer
+exit 0 at **05:15:11 UTC**. All 68 original test methods remain unchanged;
+39 added methods cover the approved lock behavior and attributed current-format
+fixtures. The full run held a writer barrier and independently accounted for
+**1,229,365,248 allocated bytes** at closing, within the unchanged aggregate
+8 GiB ceiling. The earlier full harness attempt remains an explicit failed
+attempt: it recorded 98 successful rows before a concurrent fixture-directory
+removal invalidated its census. Its original log and failure receipt are
+preserved; subsequent fixture directories are retained. The immutable
+[implementation verification receipt](2026-10-10-audit32-provenance-lock-implementation-tests.evidence.json)
+links the full run, independent focused rerun, source review and original failure.
+These are source and controlled-fixture results, not production restoration or
+a full-chain math certificate.
+
+A bounded read-only diagnostic at **05:04:21–05:04:35 UTC** completed with actual
+outer and remote exit 0, but its strict scan retained one inspection failure.
+Namespace `4026531841`, represented by PID 1, had member PID `2247972` (`sshd`)
+whose mountinfo view was empty. Eight other namespace proofs succeeded. The
+member's maps and command-line observations were nonempty; process state,
+parent and root were not captured by this attempt. The cause remains unknown.
+An empty reference list is not reference-absence admission. The frozen scan's
+predicates, original evidence and refusal are preserved; no namespace is skipped
+or classified from speculation. This diagnostic started no custody clock and
+made no production mutation. The helper remains uninstalled, all four original
+pairs remain intact, and no deployment or release announcement has occurred.

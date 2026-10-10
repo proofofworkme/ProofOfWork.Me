@@ -4224,7 +4224,25 @@ lock write path under `ProtectSystem=strict`; the generic release-prune script
 acquires this lock only for its UI retention target, so node retention does not
 depend on a UI runtime path. A transactional deploy may pass its already-held
 descriptor through `POW_UI_DEPLOY_LOCK_FD`; each helper proves that descriptor
-resolves to the exact configured lock before using it. The live `/var/www`
+resolves to the exact configured lock before using it.
+
+The provenance helper opens an existing canonical lock read-only with
+`O_NOFOLLOW`, `O_NONBLOCK`, and `O_NOATIME` before taking an exclusive
+nonblocking flock. A busy invocation preserves the owner's original lock
+bytes, mode, inode, timestamps, and allocation; it never truncates or chmods
+that lock. An absent lock requires exclusive creation with mode `0600`, file
+and parent fsync, and preservation of the first created inode. The caller's
+umask is restored. Same-process exec carries the actual opened descriptor,
+and an inherited deployment descriptor remains the caller's original open
+file description. Acquisition and successful closing checks fence both the
+descriptor and canonical path against all ten original stat fields plus the
+private parent identity. Any drift refuses verification. The verifier,
+archive, source, dependency, rollback, and capacity checks remain unchanged.
+The [Audit 32 lock-repair amendment](audits/2026-10-10-audit32-capacity-provenance-lock-repair-proposal.json)
+authorizes one exact helper replacement, with no timer or service changes;
+its actual installed source provenance belongs in a dated execution receipt.
+
+The live `/var/www`
 parent and every active surface must be owner-controlled and not group/world
 writable. Pre-deploy, previous, rollback, and other
 historical trees remain outside automatic cleanup. Review the exact dry-run

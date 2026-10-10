@@ -1,0 +1,422 @@
+{
+  "format": "pow-audit32-approved-provenance-lock-implementation-verification-v1",
+  "recordedAtUtc": "2026-10-10T05:17:05.993578+00:00",
+  "status": "REPOSITORY_SOURCE_TESTED_PRODUCTION_INSTALLATION_AND_RECOVERY_PENDING",
+  "approvedAmendmentSha256": "c750164c06ac92aca9b8034804d30ed4db45dabfe2d960ff9fc9acd12a399457",
+  "directAuthorizationSha256": "32985df9fef7e12721fe0a78c7b6ada3e5780dcdfdc501e29056d1e96161e493",
+  "originalCapacityProposalSha256": "283f84b89825f5ce3847ddf01fc40d689fa5f5314bd8342f6aeb2138cc6c5e22",
+  "baselineCommit": "b044d80a59661d7b035d0b158f2ddd88697a0ee1",
+  "sourceSha256": "822fb461c8a1d6d3174f47e448d8bd2c0ce548134358da409c97e46fde163215",
+  "sourceBytes": 83514,
+  "permanentTestsSha256": "0beb8dcea09b7facb375ab2172442fe9e08c7aa05de12a4edadde51b5cb8272c",
+  "nativeVerifierArchiveSourceDependencyRollbackAndCapacityBodiesUnchanged": true,
+  "prior68TestMethodAstsUnchanged": true,
+  "addedPermanentTestMethods": 39,
+  "sourceReview": {
+    "pin": {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-permanent-provenance-source-review-v1.json",
+      "bytes": 2476,
+      "sha256": "34f9a6c669fc635827f23aa7a650b8c42ae4e486ed8276ab7308ab4fd0fd68ab"
+    },
+    "record": {
+      "format": "pow-audit32-permanent-provenance-repair-root-source-review-v1",
+      "recordedAtUtc": "2026-10-10T04:53:27.655407+00:00",
+      "directAuthorization": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-provenance-lock-amendment-approval-v1.json",
+        "bytes": 2261,
+        "sha256": "32985df9fef7e12721fe0a78c7b6ada3e5780dcdfdc501e29056d1e96161e493"
+      },
+      "helper": {
+        "path": "/home/sixer/ProofOfWork.Me/deploy/proofofwork-ui-release-provenance.sh",
+        "bytes": 83514,
+        "sha256": "822fb461c8a1d6d3174f47e448d8bd2c0ce548134358da409c97e46fde163215"
+      },
+      "tests": {
+        "path": "/home/sixer/ProofOfWork.Me/deploy/publish/check-ui-release.test.py",
+        "bytes": 167134,
+        "sha256": "0beb8dcea09b7facb375ab2172442fe9e08c7aa05de12a4edadde51b5cb8272c"
+      },
+      "infrastructureDocumentation": {
+        "path": "/home/sixer/ProofOfWork.Me/OP_RETURN_INFRASTRUCTURE.md",
+        "bytes": 474272,
+        "sha256": "2bd2b3c6e53a5afc408dbe8547ae327b3ac118c3b51448d2e498fc2f2b383a25"
+      },
+      "originalHelperGitBlob": {
+        "commit": "b044d80a59661d7b035d0b158f2ddd88697a0ee1",
+        "path": "deploy/proofofwork-ui-release-provenance.sh",
+        "bytes": 78064,
+        "sha256": "b9e27a7df46d10be40ffa7d3d36c77a704fbf9f57063c4f3d884d7d4356d40b8"
+      },
+      "allNativeVerifierRecordSourceDependencyArchiveCapacityRollbackBodyBytesUnchanged": true,
+      "all68PriorTestMethodAstsUnchanged": true,
+      "newTestMethods": 39,
+      "independentIntegratedFocusedTests": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-provenance-lock-integrated-independent-focused-v1.result.json",
+        "bytes": 2432,
+        "sha256": "8fbe05d3a13f7d2aab5396c03bccb8d019f3bb7be13ee379f3e4e061e2fdc35d"
+      },
+      "independentFocusedActualExitCode": 0,
+      "primaryFocusedTests": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integrated-focused-v1.result.json",
+        "bytes": 2418,
+        "sha256": "6a731d8778982ce6a5f7ea28429193160ae848e4c40e35405d9ebceee673f550"
+      },
+      "primaryCompleteNativeSuiteStillPending": true,
+      "semanticReview": "SOUL/README/ID/DNS/marketplace/infrastructure/mail/hygiene reviewed. No protocol/product/fee/arithmetic/source loading change. Infrastructure documents exact lock behavior with installed facts deferred to real receipts. Historical runbooks and original audit/refusals preserved.",
+      "otherCanonicalDocsRequireChange": false,
+      "productionActions": false,
+      "custodyStarted": false,
+      "retirement": false
+    }
+  },
+  "focused38Primary": {
+    "pin": {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integrated-focused-v1.result.json",
+      "bytes": 2418,
+      "sha256": "6a731d8778982ce6a5f7ea28429193160ae848e4c40e35405d9ebceee673f550"
+    },
+    "record": {
+      "format": "pow-approved-provenance-lock-integrated-local-tests-v1",
+      "ok": true,
+      "kind": "focused",
+      "startedAt": "2026-10-10T04:46:26.655432+00:00",
+      "finishedAt": "2026-10-10T04:48:28.890170+00:00",
+      "elapsedSeconds": 122.23471477697603,
+      "testsRun": 38,
+      "expectedTests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "testLog": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integrated-focused-v1.log",
+        "bytes": 6747,
+        "sha256": "a38be67b7d2394ed533a02e641acd9ccd600a0393aa481c06e00e9eace1d62d2"
+      },
+      "inputs": [
+        {
+          "path": "/home/sixer/ProofOfWork.Me/deploy/publish/check-ui-release.test.py",
+          "bytes": 167134,
+          "sha256": "0beb8dcea09b7facb375ab2172442fe9e08c7aa05de12a4edadde51b5cb8272c"
+        },
+        {
+          "path": "/home/sixer/ProofOfWork.Me/deploy/proofofwork-ui-release-provenance.sh",
+          "bytes": 83514,
+          "sha256": "822fb461c8a1d6d3174f47e448d8bd2c0ce548134358da409c97e46fde163215"
+        },
+        {
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-root-capacity-coordinator-fixture-fifo-v1.py",
+          "bytes": 22038,
+          "sha256": "7c5ceebb883da8f968face074d21ee3236ad970783bc71ebd58415a8570408c4"
+        },
+        {
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integration-runner-v1.py",
+          "bytes": 6708,
+          "sha256": "42d36db700d304804d9c15f759ed6044473b25a920d14dcacd0552dea574be39"
+        }
+      ],
+      "openingAllocationCensus": {
+        "allocatedBytes": 1181286400,
+        "uniqueInodes": 17132,
+        "observedPaths": 20972,
+        "includesExecutionAndCustody": true
+      },
+      "closingAllocationCensus": {
+        "allocatedBytes": 1183109120,
+        "uniqueInodes": 17756,
+        "observedPaths": 21901,
+        "includesExecutionAndCustody": true
+      },
+      "ownedFixtureEnvelopeBytes": 268435456,
+      "approvedAggregateAllocatedCeilingBytes": 8589934592,
+      "fixtureRoot": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integrated-focused-fixtures-v1",
+      "allGeneratedTopLevelFixturesPreserved": true,
+      "newRealSpecialFixturesCreated": false,
+      "fifoRefusalCoverage": "Fake lstat metadata only; exact pre-existing retained FIFO is accounted without opening it.",
+      "primaryRepositoryGitMutations": false,
+      "networkCalls": 0,
+      "productionActions": false,
+      "custodyStarted": false,
+      "sourceUnchangedDuringTests": true
+    }
+  },
+  "focused38Independent": {
+    "pin": {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-provenance-lock-integrated-independent-focused-v1.result.json",
+      "bytes": 2432,
+      "sha256": "8fbe05d3a13f7d2aab5396c03bccb8d019f3bb7be13ee379f3e4e061e2fdc35d"
+    },
+    "record": {
+      "format": "pow-approved-provenance-lock-integrated-local-tests-v1",
+      "ok": true,
+      "kind": "focused",
+      "startedAt": "2026-10-10T04:48:58.282711+00:00",
+      "finishedAt": "2026-10-10T04:52:19.677865+00:00",
+      "elapsedSeconds": 201.39516061198083,
+      "testsRun": 38,
+      "expectedTests": 38,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "testLog": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-provenance-lock-integrated-independent-focused-v1.log",
+        "bytes": 6747,
+        "sha256": "2e34b17bf6dca177c939c537ab840ee53bbb5bfe649da9d1c2d18181c1542d3c"
+      },
+      "inputs": [
+        {
+          "path": "/home/sixer/ProofOfWork.Me/deploy/publish/check-ui-release.test.py",
+          "bytes": 167134,
+          "sha256": "0beb8dcea09b7facb375ab2172442fe9e08c7aa05de12a4edadde51b5cb8272c"
+        },
+        {
+          "path": "/home/sixer/ProofOfWork.Me/deploy/proofofwork-ui-release-provenance.sh",
+          "bytes": 83514,
+          "sha256": "822fb461c8a1d6d3174f47e448d8bd2c0ce548134358da409c97e46fde163215"
+        },
+        {
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-root-capacity-coordinator-fixture-fifo-v1.py",
+          "bytes": 22038,
+          "sha256": "7c5ceebb883da8f968face074d21ee3236ad970783bc71ebd58415a8570408c4"
+        },
+        {
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/root-provenance-lock-integrated-independent-runner-v1.py",
+          "bytes": 6723,
+          "sha256": "5b16f967ad298b8afe0989cbf0bbeed602a7ca5ba1172c8501e7cff43c2b974c"
+        }
+      ],
+      "openingAllocationCensus": {
+        "allocatedBytes": 1187098624,
+        "uniqueInodes": 18451,
+        "observedPaths": 22984,
+        "includesExecutionAndCustody": true
+      },
+      "closingAllocationCensus": {
+        "allocatedBytes": 1191780352,
+        "uniqueInodes": 19878,
+        "observedPaths": 25009,
+        "includesExecutionAndCustody": true
+      },
+      "ownedFixtureEnvelopeBytes": 268435456,
+      "approvedAggregateAllocatedCeilingBytes": 8589934592,
+      "fixtureRoot": "/tmp/pow-audit32-next-reliability-capacity-execution/root-provenance-lock-integrated-independent-focused-fixtures-v1",
+      "allGeneratedTopLevelFixturesPreserved": true,
+      "newRealSpecialFixturesCreated": false,
+      "fifoRefusalCoverage": "Fake lstat metadata only; exact pre-existing retained FIFO is accounted without opening it.",
+      "primaryRepositoryGitMutations": false,
+      "networkCalls": 0,
+      "productionActions": false,
+      "custodyStarted": false,
+      "sourceUnchangedDuringTests": true
+    },
+    "actualProcess": {
+      "path": "/tmp/pow-audit32-next-reliability/provenance-amendment-independent-focused-v1.execution.json",
+      "bytes": 797,
+      "sha256": "4b44a19e0d188ee5aa2f7582197cbd203052a97b25fc390211aac23c6e7e3721"
+    },
+    "actualExitCode": 0
+  },
+  "complete107": {
+    "pin": {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integrated-full-v2.result.json",
+      "bytes": 3313,
+      "sha256": "659e089e62c83a0853a85ce6063a00d43e5002aea745f13ccbdd16d757a61639"
+    },
+    "record": {
+      "format": "pow-approved-provenance-lock-integrated-local-tests-v2",
+      "ok": true,
+      "intendedHarnessProcessExitCode": 0,
+      "successfulReceiptRequiresActualProcessExitZero": true,
+      "startedAt": "2026-10-10T05:10:23.889194+00:00",
+      "finishedAt": "2026-10-10T05:15:08.549527+00:00",
+      "elapsedSeconds": 284.66033579802024,
+      "testsRun": 107,
+      "expectedTests": 107,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "harnessError": null,
+      "testLog": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integrated-full-v2.log",
+        "bytes": 20800,
+        "sha256": "1b7e72c0467324c5ad2b5398b5c60632f4c559c9f0a0022f1d69914c307879c0"
+      },
+      "inputs": [
+        {
+          "path": "/home/sixer/ProofOfWork.Me/deploy/publish/check-ui-release.test.py",
+          "bytes": 167134,
+          "sha256": "0beb8dcea09b7facb375ab2172442fe9e08c7aa05de12a4edadde51b5cb8272c"
+        },
+        {
+          "path": "/home/sixer/ProofOfWork.Me/deploy/proofofwork-ui-release-provenance.sh",
+          "bytes": 83514,
+          "sha256": "822fb461c8a1d6d3174f47e448d8bd2c0ce548134358da409c97e46fde163215"
+        },
+        {
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-root-capacity-coordinator-fixture-fifo-v1.py",
+          "bytes": 22038,
+          "sha256": "7c5ceebb883da8f968face074d21ee3236ad970783bc71ebd58415a8570408c4"
+        },
+        {
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integration-runner-v2.py",
+          "bytes": 15405,
+          "sha256": "22bc8d5c63ac4665154f0ab1ec1261d21ac839faed74a655333927b8ed92781d"
+        },
+        {
+          "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integrated-full-v2.opening-barrier.json",
+          "bytes": 424,
+          "sha256": "d56169db35930622211c771e26cc0d9686f8c50d4e5d33404c68aa38bf231601"
+        }
+      ],
+      "openingAllocationCensus": {
+        "allocatedBytes": 1216688128,
+        "uniqueInodes": 22484,
+        "observedPaths": 28942,
+        "includesExecutionAndCustody": true
+      },
+      "closingAllocationCensusBeforeReceipt": {
+        "allocatedBytes": 1229365248,
+        "uniqueInodes": 25278,
+        "observedPaths": 33074,
+        "includesExecutionAndCustody": true
+      },
+      "ownClosingAllocationCensus": {
+        "allocatedBytes": 12677120,
+        "uniqueInodes": 2794,
+        "observedPaths": 2818
+      },
+      "maximumOwnObservedAllocationBytes": 12677120,
+      "ownPerCaseCensusCount": 214,
+      "ownedFixtureEnvelopeBytes": 268435456,
+      "otherWritersReservedGrowthBytes": 268435456,
+      "approvedAggregateAllocatedCeilingBytes": 8589934592,
+      "closingWriterBarrier": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integrated-full-v2.opening-barrier.json",
+        "bytes": 424,
+        "sha256": "d56169db35930622211c771e26cc0d9686f8c50d4e5d33404c68aa38bf231601"
+      },
+      "globalCensusesRequireOtherWritersPausedForWholeRun": true,
+      "noMissingPathIgnored": true,
+      "fixtureRoot": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integrated-full-fixtures-v2",
+      "allGeneratedTopLevelFixturesPreserved": true,
+      "newRealSpecialFixturesCreated": false,
+      "primaryRepositoryGitMutations": false,
+      "networkCalls": 0,
+      "productionActions": false,
+      "custodyStarted": false,
+      "sourceUnchangedDuringTests": true,
+      "priorFullV1RemainsFailed": true
+    },
+    "actualProcess": {
+      "path": "/tmp/pow-audit32-next-reliability/provenance-amendment-full-native-tests-v2.execution.json",
+      "bytes": 974,
+      "sha256": "339fb9ece4b32c88b1023b3f09b8ff8f7d0a708f1934ef74c688fa7ec6fc482b"
+    },
+    "actualExitCode": 0
+  },
+  "preservedEarlierFullHarnessFailure": {
+    "pin": {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integrated-full-v1.failure.result.json",
+      "bytes": 2967,
+      "sha256": "3b4c1e83fed9aea4bc15b90ffb295b55ff5aced72dbbac03970b19a9468ac78f"
+    },
+    "record": {
+      "format": "pow-approved-provenance-lock-integrated-local-test-harness-failure-v1",
+      "ok": false,
+      "recordedAt": "2026-10-10T05:03:26.816211+00:00",
+      "actualHarnessProcessExitCode": 1,
+      "actualExecSessionId": 96118,
+      "expectedTests": 107,
+      "completedSuccessfulLogCases": 98,
+      "remainingCasesWithoutCompletionEvidence": 9,
+      "overall107SuitePassed": false,
+      "unittestSummaryProduced": false,
+      "originalSuccessReceiptCreated": false,
+      "failure": {
+        "type": "FileNotFoundError",
+        "errno": 2,
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/backend-installer-v2-fixture-tksubju7",
+        "location": "BoundedResult.startTest -> strict global allocation census",
+        "qualification": "Concurrent fixture-directory disappearance caused harness refusal; no missing path was ignored. The tool returned an uncaught traceback and actual process exit 1. This receipt is a later faithful record, not a fabricated original stderr file."
+      },
+      "testLog": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integrated-full-v1.log",
+        "bytes": 19056,
+        "sha256": "f37beedbb5b8ee76194d8f80b28be668450a4195497022b67f41825bb46925d0"
+      },
+      "runner": {
+        "path": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integration-runner-v1.py",
+        "bytes": 6708,
+        "sha256": "42d36db700d304804d9c15f759ed6044473b25a920d14dcacd0552dea574be39"
+      },
+      "helper": {
+        "path": "/home/sixer/ProofOfWork.Me/deploy/proofofwork-ui-release-provenance.sh",
+        "bytes": 83514,
+        "sha256": "822fb461c8a1d6d3174f47e448d8bd2c0ce548134358da409c97e46fde163215"
+      },
+      "tests": {
+        "path": "/home/sixer/ProofOfWork.Me/deploy/publish/check-ui-release.test.py",
+        "bytes": 167134,
+        "sha256": "0beb8dcea09b7facb375ab2172442fe9e08c7aa05de12a4edadde51b5cb8272c"
+      },
+      "completedNativeMethodLogRows": [
+        "test_actual_helper_records_and_verifies_all_14_through_20_surface_history (_approved_integrated_release_tests.PublishProvenance.test_actual_helper_records_and_verifies_all_14_through_20_surface_history) ... ok",
+        "test_actual_helper_records_and_verifies_attributed_21_and_22_surface_roots (_approved_integrated_release_tests.PublishProvenance.test_actual_helper_records_and_verifies_attributed_21_and_22_surface_roots) ... ok"
+      ],
+      "completedNativeMethodQualification": "Both full native historical14\u201320 and attributed21/22 methods logged success before harness failure; this does not establish full-suite completion.",
+      "fixtureRoot": "/tmp/pow-audit32-next-reliability-capacity-execution/performance-provenance-lock-integrated-full-fixtures-v1",
+      "preservation": "Runner, partial log, and surviving fixtures preserved without cleanup.",
+      "closingGlobalAllocationCensusCompleted": false,
+      "newRealSpecialFixturesCreated": false,
+      "productionActions": false,
+      "networkCalls": 0,
+      "custodyStarted": false,
+      "repositoryChangesInThisReceiptOperation": false
+    }
+  },
+  "readOnlyReferenceDiagnostic": {
+    "execution": {
+      "path": "/tmp/pow-audit32-next-reliability-capacity-execution/wallet-reference-diagnostic-scan-v1.run.json",
+      "bytes": 2437,
+      "sha256": "c644f86b5ef4d218345b538dec5ab0427c47052afd592c894312bd37c71bac68"
+    },
+    "actualOuterExecution": {
+      "path": "/tmp/pow-audit32-next-reliability/provenance-amendment-reference-diagnostic-v1.execution.json",
+      "bytes": 1119,
+      "sha256": "c38729ac7307fb5ca3e5f9d72448021a341e73d2521afb5b9c2d4fbbdd53264d"
+    },
+    "actualExitCode": 0,
+    "qualifiedForReferenceAbsence": false,
+    "refusal": {
+      "namespace": 4026531841,
+      "memberPid": 2247972,
+      "comm": "sshd",
+      "startTicks": 1342104362,
+      "fullFlags": 4194624,
+      "phase": "namespace-member-mountinfo",
+      "label": "Mountinfo view is empty",
+      "observedBytes": 0
+    },
+    "taskStateAndParentNotCaptured": true,
+    "causeNotYetEstablished": true,
+    "noClassificationChanged": true
+  },
+  "scopeAtRecording": {
+    "repositoryImplementationApplied": true,
+    "productionHelperInstalled": false,
+    "pairCustodyDestinationCreated": false,
+    "custodyClockStarted": false,
+    "actualOriginalOwnerRestore": false,
+    "retirement": false,
+    "permissionOverlay": false,
+    "uiDeployment": false,
+    "mainIntegration": false,
+    "releaseSynchronization": false,
+    "announcement": false,
+    "protocolMathLedgerHistoricalRecordsChanged": false
+  },
+  "coverageLimits": [
+    "Local synthetic/native fixtures are not actual-root restoration or production release certification.",
+    "Reference diagnostic has no full selected-entry inode keys and grants no GO or reference-absence authority.",
+    "No new full-chain math certificate or field-performance result is claimed."
+  ]
+}

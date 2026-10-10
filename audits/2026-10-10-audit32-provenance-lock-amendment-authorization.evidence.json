@@ -1,0 +1,41 @@
+{
+  "format": "pow-audit32-provenance-lock-amendment-direct-authorization-v1",
+  "recordedAtUtc": "2026-10-10T04:40:51.655213+00:00",
+  "authority": "Direct human user approval in current chat",
+  "approvedAmendment": {
+    "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-10-audit32-capacity-provenance-lock-repair-proposal.json",
+    "bytes": 60480,
+    "sha256": "c750164c06ac92aca9b8034804d30ed4db45dabfe2d960ff9fc9acd12a399457"
+  },
+  "approvedOriginalRecovery": {
+    "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-next-reliability-capacity-recovery-proposal.json",
+    "bytes": 21601,
+    "sha256": "283f84b89825f5ce3847ddf01fc40d689fa5f5314bd8342f6aeb2138cc6c5e22"
+  },
+  "originalDirectHumanApproval": {
+    "path": "/tmp/pow-audit32-next-reliability-capacity-execution/approval-v1.json",
+    "bytes": 1291,
+    "sha256": "ddaf564a85cd1cb6d8b32663deb1816fd3271677b18ba62e2190daf94fcca4fb"
+  },
+  "userApproval": "Approved—execute this exact provenance-lock repair amendment, including its one-helper installation, tests, source and pin bookkeeping, documentation, hygiene, fresh successor build, and completion of the already-approved capacity recovery and release. Preserve every original recovery limit, protected resource and native gate. No timer changes, other cleanup or guard weakening is approved.",
+  "sourceBaseline": {
+    "commit": "b044d80a59661d7b035d0b158f2ddd88697a0ee1",
+    "tree": "75ff677dddb91ec731c73b24bbaf89e94b253742"
+  },
+  "exactOldHelper": {
+    "path": "/home/sixer/ProofOfWork.Me/deploy/proofofwork-ui-release-provenance.sh",
+    "bytes": 78064,
+    "sha256": "b9e27a7df46d10be40ffa7d3d36c77a704fbf9f57063c4f3d884d7d4356d40b8"
+  },
+  "exactNewHelper": {
+    "path": "/tmp/pow-audit32-next-reliability-capacity-execution/provenance-lock-proposed-v4.sh",
+    "bytes": 83514,
+    "sha256": "822fb461c8a1d6d3174f47e448d8bd2c0ce548134358da409c97e46fde163215"
+  },
+  "nativeTarget": "/usr/local/sbin/proofofwork-ui-release-provenance",
+  "firstCustodyClockStartedAtRecording": false,
+  "custodyDestinationCreatedAtRecording": false,
+  "retirementAttemptsUsedAtRecording": 0,
+  "helperInstalledAtRecording": false,
+  "status": "APPROVED_IMPLEMENTATION_CONDITIONAL_INSTALLATION_AND_RECOVERY_NOT_EXECUTION_GO"
+}

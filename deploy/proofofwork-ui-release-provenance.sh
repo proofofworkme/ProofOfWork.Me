@@ -110,24 +110,140 @@ if [[ -e "${deploy_lock}" || -L "${deploy_lock}" ]]; then
     exit 64
   fi
 fi
+# Existing lock contenders must not truncate or chmod the owner's inode.
+# Python opens without following links; the same process then execs this script
+# with the admitted descriptor. Inherited callers keep ownership of their FD.
+ui_provenance_lock_guard() {
+  local guard_mode="$1"; shift
+  local -a guard_command=(/usr/bin/python3)
+  if [[ "${guard_mode}" == "launch" ]]; then
+    guard_command=(exec /usr/bin/python3)
+  fi
+  "${guard_command[@]}" -I -B - "${deploy_lock}" "${guard_mode}" "$@" <<'PY'
+import fcntl, json, os, stat, sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+mode = sys.argv[2]
+owner, group = os.geteuid(), os.getegid()
+
+def identity(value):
+    return [getattr(value, key) for key in ('st_dev', 'st_ino', 'st_mode', 'st_uid',
+        'st_gid', 'st_nlink', 'st_size', 'st_blocks', 'st_mtime_ns', 'st_ctime_ns')]
+
+def need(condition, message):
+    if not condition:
+        raise SystemExit(message)
+
+def strict(raw):
+    need(len(raw) <= 4096, 'UI provenance lock pin exceeds its bound.')
+    def pairs(rows):
+        result = {}
+        for key, value in rows:
+            need(key not in result, 'Duplicate UI provenance lock pin key.')
+            result[key] = value
+        return result
+    return json.loads(raw, object_pairs_hook=pairs,
+        parse_constant=lambda value: (_ for _ in ()).throw(ValueError('Nonfinite lock pin')))
+
+need(path.is_absolute() and path.resolve() == path, 'UI deployment lock path is not canonical.')
+parent = path.parent
+before = parent.lstat()
+need(parent.resolve() == parent and stat.S_ISDIR(before.st_mode) and
+    before.st_uid == owner and before.st_gid == group and
+    stat.S_IMODE(before.st_mode) == 0o700, 'UI deployment lock parent differs.')
+parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME)
+parent_core = identity(before)[:5]
+
+def fence_parent():
+    need(identity(os.fstat(parent_fd))[:5] == parent_core == identity(parent.lstat())[:5]
+        and parent.resolve() == parent, 'UI deployment lock parent changed.')
+
+def fence(descriptor, pin):
+    fence_parent()
+    current = path.lstat()
+    need(stat.S_ISREG(current.st_mode) and current.st_uid == owner and
+        current.st_gid == group and current.st_nlink == 1 and
+        stat.S_IMODE(current.st_mode) == 0o600, 'UI deployment lock metadata differs.')
+    need(type(pin) is dict and set(pin) == {'parentCore', 'lockIdentity'} and
+        isinstance(pin['parentCore'], list) and len(pin['parentCore']) == 5 and
+        all(type(value) is int and value >= 0 for value in pin['parentCore']) and
+        pin['parentCore'] == parent_core and
+        isinstance(pin['lockIdentity'], list) and len(pin['lockIdentity']) == 10 and
+        all(type(value) is int and value >= 0 for value in pin['lockIdentity']),
+        'UI deployment lock pin is invalid.')
+    need(identity(os.fstat(descriptor)) == pin['lockIdentity'] == identity(current) and
+        os.readlink('/proc/self/fd/' + str(descriptor)) == str(path),
+        'Original UI deployment lock identity changed.')
+    fence_parent()
+
+fence_parent()
+if mode == 'launch':
+    pin = None
+    # No writes, chmod or timestamp normalization for an existing lock.
+    try:
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK |
+            os.O_NOATIME, dir_fd=parent_fd)
+    except FileNotFoundError:
+        fence_parent()
+        original_umask = os.umask(0o077)
+        try:
+            descriptor = os.open(path.name, os.O_RDWR | os.O_CREAT | os.O_EXCL |
+                os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOATIME, 0o600, dir_fd=parent_fd)
+        finally:
+            os.umask(original_umask)
+        # The created zero-byte inode remains evidence if this fence refuses.
+        fence_parent()
+        pin = {'parentCore': parent_core, 'lockIdentity': identity(os.fstat(descriptor))}
+        fence(descriptor, pin)
+        os.fsync(descriptor)
+        os.fsync(parent_fd)
+        fence(descriptor, pin)
+    if pin is None:
+        pin = {'parentCore': parent_core, 'lockIdentity': identity(os.fstat(descriptor))}
+    fence(descriptor, pin)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fence(descriptor, pin)
+        raise SystemExit('Another UI deployment or cleanup operation holds ' + str(path) + '.')
+    fence(descriptor, pin)
+    os.set_inheritable(descriptor, True)
+    environment = dict(os.environ)
+    environment['POW_UI_DEPLOY_LOCK_FD'] = str(descriptor)
+    environment['POW_UI_PROVENANCE_LOCK_PIN'] = json.dumps(pin, sort_keys=True, separators=(',', ':'))
+    os.close(parent_fd)
+    os.execve('/usr/bin/bash', ['/usr/bin/bash', *sys.argv[3:]], environment)
+else:
+    need(mode in ('admit', 'close') and len(sys.argv) == 5,
+        'Unknown UI provenance lock guard mode.')
+    label, raw_pin = sys.argv[3:]
+    need(label.isdecimal() and str(int(label)) == label and int(label) >= 3,
+        'Inherited UI deployment lock descriptor is invalid.')
+    descriptor = int(label)
+    pin = strict(raw_pin) if raw_pin else {
+        'parentCore': parent_core, 'lockIdentity': identity(os.fstat(descriptor))}
+    fence(descriptor, pin)
+    if mode == 'admit':
+        print(json.dumps(pin, sort_keys=True, separators=(',', ':')), flush=True)
+    fence(descriptor, pin)
+    os.close(parent_fd)
+PY
+}
 inherited_deploy_lock_fd="${POW_UI_DEPLOY_LOCK_FD:-}"
 if [[ -n "${inherited_deploy_lock_fd}" ]]; then
-  if [[ ! "${inherited_deploy_lock_fd}" =~ ^[1-9][0-9]*$ ]] ||
-    ((inherited_deploy_lock_fd < 3)) ||
-    [[ ! -f "/proc/self/fd/${inherited_deploy_lock_fd}" ]] ||
-    [[ "$(realpath -e -- "/proc/self/fd/${inherited_deploy_lock_fd}" 2>/dev/null || true)" != "${deploy_lock}" ]]; then
-    echo "Inherited UI deployment lock descriptor is invalid." >&2
-    exit 64
-  fi
   deploy_lock_fd="${inherited_deploy_lock_fd}"
+  provenance_lock_pin="$(ui_provenance_lock_guard admit "${deploy_lock_fd}" "${POW_UI_PROVENANCE_LOCK_PIN:-}")"
 else
-  exec {deploy_lock_fd}>"${deploy_lock}"
-  chmod 0600 "${deploy_lock}"
+  ui_provenance_lock_guard launch "$0" "${command}" "$@"
+  exit 70 # Successful launch execs; no fallthrough grants verification authority.
 fi
 if ! flock --exclusive --nonblock "${deploy_lock_fd}"; then
+  ui_provenance_lock_guard close "${deploy_lock_fd}" "${provenance_lock_pin}"
   echo "Another UI deployment or cleanup operation holds ${deploy_lock}." >&2
   exit 1
 fi
+ui_provenance_lock_guard close "${deploy_lock_fd}" "${provenance_lock_pin}"
 
 manifest="${ui_root}/.proofofwork-ui-release"
 surfaces=(
@@ -1873,3 +1989,6 @@ case "${command}" in
     exit 64
     ;;
 esac
+
+# Only a successful command reaches the closing original descriptor/path fence.
+ui_provenance_lock_guard close "${deploy_lock_fd}" "${provenance_lock_pin}"
