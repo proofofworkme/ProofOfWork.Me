@@ -82748,34 +82748,34 @@ function scheduleWarmJsonCache(cacheKey, producer, ttlMs, staleMs, delayMs) {
 }
 
 let dnsCoverageWarmInFlight = false;
+let dnsCoverageWarmLane = 0;
 async function warmDnsVerifiedCoverage() {
   if (dnsCoverageWarmInFlight || !BITCOIN_RPC_URL) return;
   dnsCoverageWarmInFlight = true;
-  let nextDelay = 60_000;
   try {
     const checkpoint = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
     if (!checkpoint) throw new Error("DNS warm-up Core checkpoint is unavailable.");
     const lanes = [["subdomains", discoverDnsSubdomains, DNS_SUBDOMAIN_ACTIVATION_HEIGHT],
       ["root-pages", discoverDnsPageLinks, DNS_PAGE_LINK_ACTIVATION_HEIGHT],
-      ["child-pages", discoverDnsSubdomainPageLinks, DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT]];
-    // Each lane shares its in-flight checkpoint read with public callers and
-    // retains only fully verified contiguous progress. No partial warm-up is
-    // namespace authority, and every next slice obtains the current Core tip.
-    for (const [lane, discover, opening] of lanes) {
-      if (!opening || checkpoint.height < opening) continue;
-      try { await discover("livenet", checkpoint, opening); }
-      catch (error) {
-        nextDelay = Math.min(nextDelay, error?.code === "DNS_DISCOVERY_CATCH_UP" ? 2_000 : 15_000);
-        console.log(JSON.stringify({ event: "dns-verified-catch-up", lane, complete: false,
-          progress: discover.progress("livenet", opening), reason: errorSummary(error) }));
-      }
+      ["child-pages", discoverDnsSubdomainPageLinks, DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT]]
+      .filter(([, , opening]) => opening && checkpoint.height >= opening);
+    if (!lanes.length) return;
+    const [lane, discover, opening] = lanes[dnsCoverageWarmLane % lanes.length];
+    dnsCoverageWarmLane = (dnsCoverageWarmLane + 1) % lanes.length;
+    // Warm one lane per turn. The gap after it settles lets foreground reads
+    // and the pending verifier drain before another bounded verification slice.
+    // Public callers still share each lane's original exact-checkpoint read;
+    // only fully verified private progress survives an incomplete warm-up.
+    try { await discover("livenet", checkpoint, opening); }
+    catch (error) {
+      console.log(JSON.stringify({ event: "dns-verified-catch-up", lane, complete: false,
+        progress: discover.progress("livenet", opening), reason: errorSummary(error) }));
     }
   } catch (error) {
-    nextDelay = 15_000;
     console.log(JSON.stringify({ event: "dns-verified-catch-up", complete: false, reason: errorSummary(error) }));
   } finally {
     dnsCoverageWarmInFlight = false;
-    setTimeout(() => { void warmDnsVerifiedCoverage(); }, nextDelay).unref();
+    setTimeout(() => { void warmDnsVerifiedCoverage(); }, 60_000).unref();
   }
 }
 

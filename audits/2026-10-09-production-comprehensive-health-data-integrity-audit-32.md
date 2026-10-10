@@ -1149,3 +1149,17 @@ its recovery is verified. Regression cases exercise the real invoke-to-rollout
 path at the subprocess boundary; the source correction changes no product,
 protocol, database, or installed Node module. Final UI artifacts are rebuilt
 from the corrected commit before publication and release synchronization.
+
+
+After the WORK overlay restarted the API, the worker lost readiness during
+RPC admission pressure. Bounded production samples showed high API CPU use
+while Core had no long-running RPC, and DNS progress logs identified repeated
+three-lane 25-second background catch-up batches separated by only two seconds.
+Search remained a short, low-load unchanged-index job. Permission budget errors
+returned through awaited discovery and released their DB reader transaction;
+no orphaned Permission request was demonstrated. The approved reliability repair
+now warms one DNS lane per turn with a 60-second gap after settlement, preserving
+all existing discovery, exact-checkpoint, private-prefix and authority checks.
+The focused 12-case suite passes and the old scheduler fails six of those cases.
+Live worker recovery and complete Permission readiness remain post-installation
+gates; the scheduling change alone does not claim them passed.

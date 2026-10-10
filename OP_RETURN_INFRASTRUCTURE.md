@@ -5502,6 +5502,11 @@ prefixes; partial progress never authorizes routing, empty namespaces or signing
 Immutable verification caches stay bounded to 128 MiB and projections to 64 MiB.
 Single-flight background warm-up advances the same reads at a fresh Core tip,
 including after a request timeout, while pending hydration stays best effort.
+It selects one eligible lane per turn in round-robin order, then waits 60 seconds
+after that lane settles before scheduling the next turn. The interval also
+applies to catch-up and failed reads, leaving gaps for foreground and pending
+verification. Public callers retain the same exact-checkpoint single flight,
+read budget, verified private prefix, and complete-authority requirements.
 
 [deploy/browser-dns/README.md](deploy/browser-dns/README.md) governs the scoped
 Browser/DNS runtime overlay: four exact existing sources plus three creation-only
