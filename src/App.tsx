@@ -2,6 +2,8 @@ import { ActionTransactionReview, type ActionReview } from "./shared/components/
 import { ActionRecoveryPanel } from "./shared/components/ActionRecoveryPanel";
 import { PagesWorkspace, type PagesPublicationDraft, type PagesDnsLinkRequest } from "./features/pages/PagesWorkspace";
 import { BrowserWindow } from "./features/browser/BrowserWindow";
+import { ComputerControls, ComputerShell } from "./features/computer/ComputerShell";
+import { COMPUTER_LAYOUT_STORAGE_KEY, type ComputerLayout } from "./features/computer/computerNavigation";
 import { AdvancedDns } from "./features/dns/AdvancedDns";
 import { assertDnsSubdomainPageLinkAction, readDnsSubdomainPageLinkSnapshot, type DnsSubdomainPageLinkSnapshot } from "./features/pages/dnsSubdomainPageLinkClient.mjs";
 import { buildDnsSubdomainPageLinkPayload } from "./shared/protocol/dnsSubdomainPages.mjs";
@@ -53,6 +55,7 @@ import {
   Download,
   FilePenLine,
   FileText,
+  FolderOpen,
   GitBranch,
   Globe,
   Inbox,
@@ -21963,6 +21966,28 @@ export default function App() {
       : undefined;
   const activityMode = isActivityRoute();
   const growthMode = isGrowthRoute();
+  const computerShellActive = ![
+    idLaunchMode, dnsLaunchMode, landingMode, desktopRoute, browserRoute,
+    pagesRoute, marketplaceMode, tokenMode, walletMode, workTokenMode,
+    infinityMode, inceptionMode, activityMode, growthMode,
+  ].some(Boolean);
+  const [computerLayout, setComputerLayout] = useState<ComputerLayout>(() => {
+    try {
+      return window.localStorage.getItem(COMPUTER_LAYOUT_STORAGE_KEY) === "desktop" ? "desktop" : "focus";
+    } catch {
+      return "focus";
+    }
+  });
+  const [computerLocalDataOpen, setComputerLocalDataOpen] = useState(false);
+  useEffect(() => {
+    if (!computerShellActive) return;
+    document.body.classList.add("computer-appearance");
+    return () => document.body.classList.remove("computer-appearance");
+  }, [computerShellActive]);
+  function changeComputerLayout(layout: ComputerLayout) {
+    setComputerLayout(layout);
+    try { window.localStorage.setItem(COMPUTER_LAYOUT_STORAGE_KEY, layout); } catch { /* Layout switching also works without browser storage. */ }
+  }
   const mainnetRegistryMode =
     idLaunchMode ||
     dnsLaunchMode ||
@@ -22397,6 +22422,8 @@ export default function App() {
     useState(false);
   const mobileNavigationPanelRef = useRef<HTMLElement>(null);
   const mobileNavigationTriggerRef = useRef<HTMLButtonElement>(null);
+  const computerLocalDataTriggerRef = useRef<HTMLElement | null>(null);
+  const computerNavigationOverlay = compactComputerNavigation || computerLocalDataOpen;
   const [replyParentTxid, setReplyParentTxid] = useState<string | undefined>();
   pagesMailStateRef.current = JSON.stringify([address, network, activeFolder, composeOpen, recipient, ccRecipient, amountSats, messageWorkAmount, feeRate, subject, memo, attachment?.sha256, replyParentTxid, socialMode]);
   const [busy, setBusy] = useState(false);
@@ -22436,7 +22463,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!compactComputerNavigation || !sidebarExpanded) {
+    if (!computerNavigationOverlay || !sidebarExpanded) {
       return;
     }
 
@@ -22453,6 +22480,8 @@ export default function App() {
     });
 
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      // A restore or transaction dialog above this sheet owns keyboard focus.
+      if (document.querySelector("dialog[open]")) return;
       if (event.key === "Escape") {
         event.preventDefault();
         setSidebarExpanded(false);
@@ -22487,13 +22516,16 @@ export default function App() {
       window.cancelAnimationFrame(focusFrame);
       window.removeEventListener("keydown", handleKeyDown);
       document.documentElement.classList.remove("computer-nav-open");
-      if (window.matchMedia("(max-width: 860px)").matches) {
+      if (computerLocalDataOpen || window.matchMedia("(max-width: 860px)").matches) {
         window.requestAnimationFrame(() =>
-          mobileNavigationTriggerRef.current?.focus(),
+          (computerLocalDataOpen ? computerLocalDataTriggerRef.current : mobileNavigationTriggerRef.current)?.focus(),
         );
       }
     };
-  }, [compactComputerNavigation, sidebarExpanded]);
+  }, [computerNavigationOverlay, computerLocalDataOpen, sidebarExpanded]);
+  useEffect(() => {
+    if (!sidebarExpanded) setComputerLocalDataOpen(false);
+  }, [sidebarExpanded]);
   const activeWorkspaceStatusKey = landingMode
     ? "landing"
     : idLaunchMode
@@ -25327,6 +25359,25 @@ export default function App() {
   ) ?? sidebarDirectoryState;
   const sidebarWorkDefinition = sidebarWorkState?.tokens.find((token) => isWorkToken(token));
   const mailAccountReadVerified = Boolean(address) && mailReadScope === `${network}:${address}`;
+  const computerRecentFiles = useMemo(() => {
+    if (!computerShellActive || !mailAccountReadVerified) return [];
+    const recent: FileSurfaceMessage[] = [];
+    const seen = new Set<string>();
+    const candidates = [...allFileMessages].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    for (const message of candidates) {
+      if (!message.attachment || message.systemReference || message.txid === CANONICAL_WELCOME_TXID || message.network !== network) continue;
+      const identity = desktopFileIdentityKey(message);
+      if (seen.has(identity)) continue;
+      try {
+        const bytes = base64UrlDecodeBytes(message.attachment.data);
+        if (bytes.byteLength !== message.attachment.size || sha256Hex(bytes) !== message.attachment.sha256) continue;
+        seen.add(identity);
+        recent.push(message as FileSurfaceMessage);
+        if (recent.length === 3) break;
+      } catch { /* Unverified attachment bytes do not appear in the overview. */ }
+    }
+    return recent;
+  }, [allFileMessages, computerShellActive, mailAccountReadVerified, network]);
   const accountCreditBalancesReady = Boolean(address) &&
     accountTokenLaneStatuses.all.loaded &&
     !accountTokenLaneStatuses.all.loading &&
@@ -37763,10 +37814,66 @@ export default function App() {
     .filter(Boolean)
     .join(" ");
 
+  const computerMailWorkspace = ["inbox", "incoming", "sent", "outbox", "drafts", "favorites", "archive", "custom"].includes(activeFolder);
+  const computerWalletReady = Boolean(address) && accountUtxosLoaded && !accountUtxosError && connectedWalletReservationsReady;
+  const computerWalletState = !address
+    ? "Connect to view balances."
+    : accountUtxosError || connectedWalletReservationsError
+      ? "Wallet data unavailable. Open Wallet for details."
+      : !accountUtxosLoaded
+        ? "Loading wallet data…"
+        : "Verifying wallet reservations…";
+  const computerOverview = (
+    <>
+      <section aria-label="Wallet overview" className="computer-overview-card">
+        <header className="computer-overview-head">
+          <h2><Wallet size={16} aria-hidden="true" />Wallet</h2>
+          <button onClick={() => openFolder("wallet")} type="button">Open Wallet</button>
+        </header>
+        <div className="computer-overview-balance">
+          <strong>{computerWalletReady ? connectedWalletProofAvailability.spendableSats.toLocaleString() : "—"}</strong>
+          <span>Spendable proofs</span>
+        </div>
+        {computerWalletReady ? (
+          <dl className="computer-overview-stat">
+            <dt>{accountChainUtxosLoaded && !accountChainUtxosError ? "Total confirmed" : "Wallet confirmed"}</dt>
+            <dd>{connectedWalletProofFundingContext.confirmedBalanceSats.toLocaleString()} proofs</dd>
+          </dl>
+        ) : <p className="computer-overview-state" role="status">{computerWalletState}</p>}
+        <p className="computer-overview-state">{computerWalletReady && (!accountChainUtxosLoaded || accountChainUtxosError) ? "Full-node total is not verified. " : ""}Balances and transfers stay in Wallet.</p>
+      </section>
+      <section aria-label="Files overview" className="computer-overview-card">
+        <header className="computer-overview-head">
+          <h2><FolderOpen size={16} aria-hidden="true" />Files</h2>
+          <button onClick={() => openFolder("files")} type="button">Open Files</button>
+        </header>
+        {computerRecentFiles.length > 0 ? (
+          <ul className="computer-overview-files">
+            {computerRecentFiles.map((message) => (
+              <li className="computer-overview-file" key={desktopFileIdentityKey(message)}>
+                <FileText size={17} aria-hidden="true" />
+                <span><strong>{message.attachment.name}</strong><small>{formatBytes(message.attachment.size)} · Confirmed</small></span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="computer-overview-state" role="status">
+            {!address ? "Connect to view files." : !mailAccountReadVerified ? refreshInProgress ? "Verifying files…" : "Files not verified. Open Files to refresh account data." : "No verified recent attachments available."}
+          </p>
+        )}
+      </section>
+    </>
+  );
+
   return (
-    <main className="mail-app">
+    <main className="mail-app computer-shell" data-computer-layout={computerLayout} data-computer-theme="system" data-computer-mail={computerMailWorkspace ? "true" : "false"} data-computer-navigation-open={computerNavigationOverlay && sidebarExpanded ? "true" : "false"}>
       <AppHeader
         afterHeader={actionUi}
+        navigationControls={<ComputerControls layout={computerLayout} onLayoutChange={changeComputerLayout} onOpenWorkspace={openFolder} onOpenLocalData={() => {
+          computerLocalDataTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          setComputerLocalDataOpen(true);
+          setSidebarExpanded(true);
+        }} />}
         onDomainNavigate={() => !canLeavePublishWriter()}
         onRefreshRecovery={() => void refreshActionRecovery()}
         accountStats={connectedAccountStats}
@@ -37863,8 +37970,8 @@ export default function App() {
                   : refreshMail(activeFolder));
               }
         }
-        subtitle={`ProofOfWork Computer · ${networkLabel(network)}`}
-        title={folderLabel(activeFolder)}
+        subtitle={networkLabel(network)}
+        title="ProofOfWork Computer"
       />
 
       <AppStatusRow
@@ -37873,8 +37980,9 @@ export default function App() {
         status={status}
       />
 
+      <ComputerShell layout={computerLayout} activeFolder={activeFolder} onOpenWorkspace={openFolder} title={computerMailWorkspace ? "Mail" : folderLabel(activeFolder)} overview={computerOverview}>
       <section className={layoutClassName}>
-        {compactComputerNavigation && sidebarExpanded ? (
+        {computerNavigationOverlay && sidebarExpanded ? (
           <button
             aria-label="Close Computer navigation"
             className="computer-navigation-scrim"
@@ -37885,13 +37993,13 @@ export default function App() {
         <aside
           aria-label="Computer navigation"
           aria-modal={
-            compactComputerNavigation && sidebarExpanded ? true : undefined
+            computerNavigationOverlay && sidebarExpanded ? true : undefined
           }
           className={sidebarExpanded ? "sidebar is-expanded" : "sidebar"}
           id="computer-navigation-panel"
           ref={mobileNavigationPanelRef}
           role={
-            compactComputerNavigation && sidebarExpanded ? "dialog" : undefined
+            computerNavigationOverlay && sidebarExpanded ? "dialog" : undefined
           }
         >
           <button
@@ -38039,6 +38147,7 @@ export default function App() {
                 <FolderPlus size={15} />
               </button>
             </form>
+            <div className="computer-legacy-workspace-links">
             <span className="folder-group-label">Create &amp; files</span>
             <button aria-current={activeFolder === "pages"} onClick={() => openFolder("pages")} type="button">
               <span className="folder-label"><FilePenLine size={17} /><span>Pages</span></span>
@@ -38304,6 +38413,7 @@ export default function App() {
                 </small>
               </div>
             ) : null}
+            </div>
           </nav>
 
           <div className="account-box">
@@ -39180,6 +39290,7 @@ export default function App() {
           </>
         )}
       </section>
+      </ComputerShell>
       <nav className="computer-mobile-nav" aria-label="Primary Computer workspaces">
         <button
           aria-current={

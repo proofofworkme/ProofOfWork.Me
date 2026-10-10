@@ -253,11 +253,11 @@ reviewed parent attestations, but a content-altering merge cannot. Do not use
 
 ### Proof Instrument UI
 
-The shared interface direction retains the existing near-black, parchment,
-brass, and olive identity while making hierarchy, responsive behavior, and
-evidence presentation consistent across every standalone app and embedded
-Computer workspace. Space Grotesk is the display-heading family, Inter
-Variable is the interface/body family, and IBM Plex Mono is reserved for
+The shared public interface direction retains the existing near-black,
+parchment, brass, and olive identity. Common hierarchy, responsive behavior and
+evidence presentation also apply to embedded Computer workspaces; the Computer
+shell refinement is described below. Space Grotesk is the display-heading family,
+Inter Variable is the interface/body family, and IBM Plex Mono is reserved for
 txids, addresses, protocol evidence, and other exact fields. The font assets
 are self-hosted by the application build.
 
@@ -284,6 +284,35 @@ Computer-embedded Boost profile and timeline routes retain the Computer host.
 Public search and generated HTML source have persistent labels; miner-fee
 controls display proofs/vB while protocol/API rate fields remain unchanged.
 The responsive target checks include ordinary links as well as buttons.
+
+### Computer Focus and Desktop layouts
+
+Computer supports two layouts, **Focus** and **Desktop**, with a visible
+switch. The user approved the UI release on 2026-10-10. Focus is the first-visit
+default; the browser remembers a valid choice under `proofofwork-me-computer-layout-v1`. Invalid or
+unavailable appearance storage falls back to Focus and keeps the switch usable.
+This preference is outside the supported organization-backup allowlist.
+
+Both layouts open the same existing workspaces and use the same wallet, network,
+transaction review and signing paths. Changing the layout retains the current
+workspace, shareable route, open drafts, selections and Browser tab state. Focus
+uses an app rail and separate Mail folders; Desktop uses a dock, app launcher and
+one active workspace window, with Wallet and Files overviews from the existing
+account read state. Disconnected, loading and unavailable reads stay explicit;
+overview cards cannot invent balances or file records. Independent movable app
+windows are outside this release scope.
+
+The Computer shell uses quiet neutral surfaces, restrained olive accents, and
+system light/dark appearance. The existing self-hosted fonts,
+exact-value presentation, keyboard focus, 44px controls, and isolated local
+wallet signing remain required. Public standalone apps retain their shared
+Proof Instrument direction. Computer's Desktop layout is distinct from the
+public read-only app at `desktop.proofofwork.me`.
+
+The approved release follows the existing production verification and release
+synchronization workflow. Its completion requires the exact released source
+across GitHub `main`, primary local `main`, local preview and production, with
+`npm run check:release-sync` passing.
 
 Official YouTube:
 

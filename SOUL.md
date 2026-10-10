@@ -494,9 +494,9 @@ authoritative.
 
 ## Interface Direction
 
-Proof Instrument is the approved interface direction for the ProofOfWork
-Computer. Preserve and refine the existing obsidian, parchment, brass, and
-olive identity instead of replacing it with a generic neon or glass-heavy
+Proof Instrument remains the shared public interface direction; the approved
+Computer shell refinement is described below. Preserve and refine the existing
+obsidian, parchment, brass, and olive identity instead of replacing it with a generic neon or glass-heavy
 crypto aesthetic. Use brass selectively for action, selection, and a small
 number of live-value signals; use cool blue for focus and information, not as
 an unstructured second accent.
@@ -518,9 +518,9 @@ like a precise instrument: quiet around evidence, dramatic only where product
 orientation benefits from it.
 
 Shared header and footer navigation use the same four product menus in the
-approved order: UTILITY (COMPUTER, DESKTOP, BROWSER, CODE), ID&SOC (ID, DNS,
-BOOST, PUBLISH), FINANCE (WALLET, AMO, CREDIT, WORK, INFINITY, INCEPTION), and
-INSIGHTS (LOG, GROWTH, SEARCH). Keep every product reachable through these
+approved order: UTILITY (COMPUTER, DESKTOP, BROWSER, PAGES, CODE, JOBS,
+PERMISSION), ID&SOC (ID, DNS, BOOST, PUBLISH), FINANCE (WALLET, AMO, CREDIT,
+WORK, INFINITY, INCEPTION), and INSIGHTS (LOG, GROWTH, SEARCH). Keep every product reachable through these
 menus and Home through the brand. Grouping is product orientation; existing
 routes, Computer workspaces and their authority remain unchanged. ID is the
 menu display label for the existing IDs app.
@@ -530,6 +530,18 @@ sale-ticket lifecycle. They may organize, search, and paginate already
 recognized events, but they do not define new protocol events, fees,
 arithmetic, signing authority, or settlement behavior. The legacy mixed
 `market-log` projection remains compatible.
+
+The user approved the Computer Focus/Desktop UI release on 2026-10-10 after
+reviewing the local upgrade. Both layouts are supported choices over the same
+apps, with a visible switch and browser-local preference. Preserve the active
+workspace, wallet connection, drafts and selections while switching. The Computer
+shell uses calm neutral surfaces, restrained olive accents and system light/dark
+appearance; the shared public Proof Instrument direction remains the existing
+reference. Desktop's Wallet and Files overviews use qualified existing reads,
+never invented balances or records. The appearance preference stays outside the
+organization-backup allowlist. Chain authority, fees, protocols and local signing
+remain unchanged. Release approval does not replace production verification or
+the mandatory source synchronization gate.
 
 ## Voice
 

@@ -2860,11 +2860,12 @@ expect(
     ) &&
     /event\.key === "Escape"[\s\S]*setSidebarExpanded\(false\)/.test(app) &&
     /event\.key !== "Tab"/.test(app) &&
-    /mobileNavigationTriggerRef\.current\?\.focus\(\)/.test(app) &&
-    /aria-modal=\{[\s\S]*compactComputerNavigation && sidebarExpanded/.test(
+    /computerLocalDataOpen \? computerLocalDataTriggerRef\.current : mobileNavigationTriggerRef\.current\)\?\.focus\(\)/.test(app) &&
+    /const computerNavigationOverlay = compactComputerNavigation \|\| computerLocalDataOpen/.test(app) &&
+    /aria-modal=\{[\s\S]*computerNavigationOverlay && sidebarExpanded/.test(
       app,
     ) &&
-    /compactComputerNavigation && sidebarExpanded \? "dialog" : undefined/.test(
+    /computerNavigationOverlay && sidebarExpanded \? "dialog" : undefined/.test(
       app,
     ) &&
     /aria-haspopup="dialog"/.test(app) &&
