@@ -1,3 +1,5 @@
+@layer legacy {
+
 .landing-app {
   --landing-grid-line: color-mix(in srgb, var(--accent) 11%, transparent);
   --landing-glass: color-mix(in srgb, var(--surface-raised) 86%, transparent);
@@ -573,4 +575,45 @@
   .landing-app-card:hover .landing-app-arrow {
     transform: none;
   }
+}
+
+}
+
+@layer interface {
+/* Calm product entry: clear copy, quiet cards and shared application chrome. */
+.landing-app .landing-hero { background: var(--bg); color: var(--text); border-color: var(--border); }
+.landing-app .landing-hero::before, .landing-app .landing-hero::after, .landing-hero-instrument::before, .landing-app-group::before { display: none; }
+.landing-app .landing-kicker { color: var(--text-muted); font-family: var(--font-ui); font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.landing-app .landing-hero h2 { color: var(--text); font-family: var(--font-ui); font-size: clamp(38px, 6.2vw, 88px); font-weight: 500; letter-spacing: -.055em; line-height: 1.05; }
+.landing-app .landing-hero p { color: var(--text-muted); line-height: 1.6; }
+.landing-app .landing-actions :is(.primary, .secondary) { font-weight: 500; box-shadow: none; }
+.landing-app .landing-computer-action { background: var(--surface); backdrop-filter: none; border-color: var(--border); color: var(--text); }
+.landing-app .landing-computer-action:hover { background: var(--hover); border-color: var(--border-strong); }
+.landing-hero-instrument { background: var(--surface); backdrop-filter: none; border-color: var(--border); box-shadow: var(--shadow-sm); }
+.landing-instrument-head, .landing-hero-instrument dl > div { border-color: var(--border); }
+.landing-instrument-head span, .landing-hero-instrument dt, .landing-instrument-foot { font-family: var(--font-ui); font-weight: 400; letter-spacing: 0; text-transform: none; }
+.landing-instrument-head strong { font-weight: 500; letter-spacing: 0; text-transform: none; }
+.landing-instrument-head strong::before { box-shadow: none; }
+.landing-hero-instrument dd { font-weight: 500; }
+.landing-app .landing-stats { background: var(--surface); box-shadow: none; }
+.landing-app .landing-stats strong { font-family: var(--font-ui); font-weight: 500; }
+.landing-app .landing-stats span { font-weight: 400; letter-spacing: 0; text-transform: none; }
+.landing-section-heading h2 { color: var(--text); font-family: var(--font-ui); font-size: clamp(28px, 4vw, 48px); font-weight: 500; line-height: 1.15; }
+.landing-app-group { background: var(--surface); border-color: var(--border); }
+.landing-app-group > header > span { color: var(--text-soft); }
+.landing-app-group h3 { font-family: var(--font-ui); font-weight: 500; }
+.landing-app .landing-app-card { align-items: start; background: var(--surface-soft); border-color: var(--border); box-shadow: none; display: grid; }
+.landing-app-card:hover { background: var(--hover); border-color: var(--border-strong); box-shadow: none; transform: none; }
+.landing-app-icon { background: var(--surface); border-color: var(--border); color: var(--text-muted); }
+.landing-app-icon svg { stroke-width: 1.6; }
+.landing-app-copy strong { font-family: var(--font-ui); font-weight: 500; }
+.landing-app-card:hover .landing-app-arrow { color: var(--text); transform: none; }
+.landing-app :is(.landing-video, .landing-testimonial, .landing-protocol) { background: var(--surface); border-color: var(--border); box-shadow: none; }
+.landing-app .landing-video-frame { box-shadow: var(--shadow-sm); }
+.landing-app .landing-video-load { background: var(--surface-soft); color: var(--text); }
+.landing-app .landing-video-load:hover { background: var(--hover); color: var(--text); }
+.landing-app .landing-testimonial blockquote { font-family: var(--font-ui); font-weight: 400; letter-spacing: -.025em; }
+.landing-app .landing-protocol { border-style: solid; }
+@media (max-width: 720px) { .landing-app .landing-hero h2 { font-size: clamp(32px, 10.2vw, 64px); line-height: 1.12; } }
+
 }

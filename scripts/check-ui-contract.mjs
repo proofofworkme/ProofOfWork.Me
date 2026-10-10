@@ -37,6 +37,7 @@ const files = [
   "src/shared/protocol/idRegistry.ts",
   "src/ui/SegmentedTabs.tsx",
   "src/styles.css",
+  "src/interface.css",
   "deploy/Caddyfile",
   "vite.config.ts",
 ];
@@ -150,9 +151,9 @@ function notContains(path, pattern, label) {
   expect(`${path}: ${label}`, !pattern.test(contents.get(path)));
 }
 
-function cssBlock(selector) {
+function cssBlock(selector, source = css) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return css.match(new RegExp(`${escaped}\\s*\\{([\\s\\S]*?)\\}`))?.[1] ?? "";
+  return source.match(new RegExp(`${escaped}\\s*\\{([\\s\\S]*?)\\}`))?.[1] ?? "";
 }
 
 function cssSelectorBlock(selector, source = css) {
@@ -176,6 +177,8 @@ for (const [path, text] of contents) {
 }
 
 const css = contents.get("src/styles.css");
+const interfaceCss = contents.get("src/interface.css");
+const interfaceThemes = Array.from(interfaceCss.matchAll(/:root\s*\{([^}]+)\}/gu), ([, theme]) => theme);
 const folderButton = css.match(/\.folders button\s*\{([^}]+)\}/u)?.[1] ?? "";
 const appSource = contents.get("src/App.tsx");
 const walletPresence = readFileSync(
@@ -197,9 +200,9 @@ expect(
   !/import\s+workMarketV1RefundSnapshot\s+from/u.test(appSource) &&
     /selectedMarketTokenIsWork[\s\S]*workMarketplaceVersion !== "v1-relic"[\s\S]*import\("\.\.\/WORK_MARKET_V1_REFUNDS_959061\.json"\)/u.test(appSource),
 );
-function cssHexVariable(name) {
+function cssHexVariable(name, source) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return css.match(new RegExp(`${escaped}:\\s*(#[0-9a-f]{6})`, "i"))?.[1] ?? "";
+  return source.match(new RegExp(`${escaped}:\\s*(#[0-9a-f]{6})`, "i"))?.[1] ?? "";
 }
 
 function relativeLuminance(hex) {
@@ -216,29 +219,36 @@ function relativeLuminance(hex) {
 }
 
 function cssContrastRatio(foregroundName, backgroundName) {
-  const foreground = relativeLuminance(cssHexVariable(foregroundName));
-  const background = relativeLuminance(cssHexVariable(backgroundName));
-  const lighter = Math.max(foreground, background);
-  const darker = Math.min(foreground, background);
-  return (lighter + 0.05) / (darker + 0.05);
+  return Math.min(...interfaceThemes.map((theme) => {
+    const foregroundHex = cssHexVariable(foregroundName, theme);
+    const backgroundHex = cssHexVariable(backgroundName, theme);
+    if (!foregroundHex || !backgroundHex) return 0;
+    const foreground = relativeLuminance(foregroundHex);
+    const background = relativeLuminance(backgroundHex);
+    return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+  }));
 }
 
 const max1100Css = cssMediaBlock("max-width: 1100px");
 const max900Css = cssMediaBlock("max-width: 900px");
 const topbarActionsBlock = cssBlock(".topbar-actions");
 const mailSendBlock = cssBlock(".mail-send-button");
-const mailSendReadyBlock = cssBlock('.mail-send-button[data-state="ready"]');
+const mailSendReadyBlock = cssBlock('.mail-send-button[data-state="ready"]', interfaceCss);
 const mailSendReadyHoverBlock = cssBlock(
   '.mail-send-button[data-state="ready"]:hover:not(:disabled)',
+  interfaceCss,
 );
 const mailSendReadyFocusBlock = cssBlock(
   '.mail-send-button[data-state="ready"]:focus-visible',
+  interfaceCss,
 );
 const mailSendDisabledBlock = cssBlock(
   '.mail-send-button[data-state="disabled"]:disabled',
+  interfaceCss,
 );
 const mailSendBusyBlock = cssBlock(
   '.mail-send-button[data-state="busy"]:disabled',
+  interfaceCss,
 );
 expect(
   "Mail Send state colors change without a low-contrast interpolation",
@@ -251,13 +261,13 @@ expect(
 );
 expect(
   "Mail Send ready and hover states use readable primary contrast",
-  /background:\s*var\(--accent\)/.test(mailSendReadyBlock) &&
-    /color:\s*var\(--surface\)/.test(mailSendReadyBlock) &&
+  /background:\s*var\(--action\)/.test(mailSendReadyBlock) &&
+    /color:\s*var\(--text-on-action\)/.test(mailSendReadyBlock) &&
     /opacity:\s*1/.test(mailSendReadyBlock) &&
-    /background:\s*var\(--accent-strong\)/.test(mailSendReadyHoverBlock) &&
-    /color:\s*var\(--surface\)/.test(mailSendReadyHoverBlock) &&
-    cssContrastRatio("--surface", "--accent") >= 4.5 &&
-    cssContrastRatio("--surface", "--accent-strong") >= 4.5,
+    /background:\s*var\(--action\)/.test(mailSendReadyHoverBlock) &&
+    /color:\s*var\(--text-on-action\)/.test(mailSendReadyHoverBlock) &&
+    interfaceThemes.length === 2 &&
+    cssContrastRatio("--text-on-action", "--action") >= 4.5,
 );
 expect(
   "Mail Send disabled state is opaque, neutral, and readable",
@@ -283,7 +293,7 @@ expect(
 );
 expect(
   "Mail Send has a strong keyboard focus indicator",
-  /outline:\s*2px solid var\(--parchment\)/.test(mailSendReadyFocusBlock) &&
+  /outline:\s*2px solid var\(--focus-outline\)/.test(mailSendReadyFocusBlock) &&
     /outline-offset:\s*3px/.test(mailSendReadyFocusBlock) &&
     /box-shadow:\s*var\(--focus\)/.test(mailSendReadyFocusBlock),
 );

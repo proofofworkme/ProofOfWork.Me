@@ -43,8 +43,13 @@ qualification where applicable, and show disconnected, loading or unavailable
 states before claiming balances, file counts or empty collections. They do not
 create independent wallet/app sessions or synthetic file records.
 
-The shell uses neutral surfaces and restrained olive accents, preserves exact
-proof evidence and keyboard focus, and adapts to narrow and short screens.
+The shared product interface applies to the shell, every Computer workspace,
+and every public app. The user approved this full scope on 2026-10-10. It uses
+OpenAI-inspired warm neutral surfaces, restrained olive accents, monochrome
+primary actions, Inter for UI and headings, and system light/dark appearance.
+It preserves exact proof evidence, keyboard focus, and narrow/short-screen
+navigation. The appearance layer does not change read qualification, local
+state keys, transaction review, or signing authority.
 The app launcher contains keyboard focus; Escape returns focus to its opener.
 Computer's Desktop layout remains separate from the public read-only Desktop
 domain and its canonical file rules. The approved release retains the existing
@@ -95,6 +100,10 @@ domains.proofofwork.me      redirect to https://dns.proofofwork.me/
 computer.proofofwork.me     full mailbox/computer app
 desktop.proofofwork.me      public read-only file desktop
 browser.proofofwork.me      public HTML browser by txid
+pages.proofofwork.me        local HTML authoring and reviewed publication
+code.proofofwork.me         public source repositories and verified source history
+jobs.proofofwork.me         public briefs, delivery evidence and direct payments
+permission.proofofwork.me   wallet-bound agent permission grants
 boost.proofofwork.me        public Proof-ranked social feed
 publish.proofofwork.me      text-only articles with shared Boost identity and engagement
 search.proofofwork.me       public metaprotocol and data search

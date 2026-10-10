@@ -251,15 +251,17 @@ policy for pushed commits; a provably mechanical server merge may inherit its
 reviewed parent attestations, but a content-altering merge cannot. Do not use
 `--no-verify` or bypass the hygiene CI without explicit user approval.
 
-### Proof Instrument UI
+### Shared product interface
 
-The shared public interface direction retains the existing near-black,
-parchment, brass, and olive identity. Common hierarchy, responsive behavior and
-evidence presentation also apply to embedded Computer workspaces; the Computer
-shell refinement is described below. Space Grotesk is the display-heading family,
-Inter Variable is the interface/body family, and IBM Plex Mono is reserved for
-txids, addresses, protocol evidence, and other exact fields. The font assets
-are self-hosted by the application build.
+The user approved the full product UI upgrade on 2026-10-10: the shared design
+covers every public app and every embedded Computer workspace. Inspired by
+OpenAI's quiet interface aesthetic, it uses warm neutral surfaces, restrained
+olive accents, monochrome primary actions, and system light/dark appearance.
+Inter Variable is the interface, body, and display-heading family; IBM Plex Mono
+is reserved for txids, addresses, protocol evidence, and other exact fields.
+The font assets are self-hosted by the application build. The shared interface
+layer follows legacy and feature styles so standalone and embedded tools use
+the same hierarchy, controls, and evidence presentation.
 
 Reusable UI primitives include surfaces and toolbars, segmented tabs, status
 chips, and metric-value containers. Shared domain navigation becomes a
@@ -302,12 +304,12 @@ account read state. Disconnected, loading and unavailable reads stay explicit;
 overview cards cannot invent balances or file records. Independent movable app
 windows are outside this release scope.
 
-The Computer shell uses quiet neutral surfaces, restrained olive accents, and
-system light/dark appearance. The existing self-hosted fonts,
-exact-value presentation, keyboard focus, 44px controls, and isolated local
-wallet signing remain required. Public standalone apps retain their shared
-Proof Instrument direction. Computer's Desktop layout is distinct from the
-public read-only app at `desktop.proofofwork.me`.
+The Computer shell and its workspaces use the shared product interface, including
+system light/dark appearance. Self-hosted fonts, exact-value presentation,
+keyboard focus, 44px controls, and isolated local wallet signing remain required.
+Computer's Desktop layout is distinct from the public read-only app at
+`desktop.proofofwork.me`. Home and Growth remain standalone surfaces; the Computer
+launcher retains its existing apps, including Mail, Files, and local Contacts.
 
 The approved release follows the existing production verification and release
 synchronization workflow. Its completion requires the exact released source
@@ -535,6 +537,11 @@ https://dns.proofofwork.me/api/*
 https://computer.proofofwork.me/api/*
 https://desktop.proofofwork.me/api/*
 https://browser.proofofwork.me/api/*
+https://pages.proofofwork.me/api/*
+https://code.proofofwork.me/api/*
+https://jobs.proofofwork.me/api/*
+https://permission.proofofwork.me/api/*
+https://search.proofofwork.me/api/*
 https://boost.proofofwork.me/api/*
 https://publish.proofofwork.me/api/*
 https://amo.proofofwork.me/api/*
@@ -983,6 +990,12 @@ Computer -> /
 Desktop -> /?desktop=1
 Browser -> /?browser=1
 Pages -> /?pages=1
+Code -> /?code=1
+Jobs -> /?jobs=1
+Permission -> /?permission-app=1
+Boost -> /?boost=1
+Publish -> /?publish=1
+Search -> /?search-app=1
 AMO -> /?marketplace=1
 Credit -> /?credit=1
 Wallet -> /?wallet=1
@@ -1035,8 +1048,10 @@ To build the standalone Pages app for production:
 VITE_PAGES_ONLY=1 VITE_POW_API_BASE=https://pages.proofofwork.me npm run build
 ```
 
-The focused build does not provision the hostname or extend the current
-versioned production release-surface contract. See [`PAGES.md`](PAGES.md).
+A focused build alone does not provision a hostname or deploy the app. The
+current v5 release builder includes Pages and Permission with the other public
+apps and the byte-identical NFT Computer alias: 22 managed roots from one source
+commit. See [`PAGES.md`](PAGES.md) and the scoped release controller.
 
 To build the public Boost app for production:
 

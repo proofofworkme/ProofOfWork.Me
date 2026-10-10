@@ -31,6 +31,51 @@ function summary() {
   };
 }
 
+const productValidators = vm.runInNewContext(`${surfaceSource.slice(
+  surfaceSource.indexOf("function assertCondition("),
+  surfaceSource.indexOf("async function fetchText("),
+)}; ({ validateJobs, validateSearch, validateCode, validatePermission })`);
+
+function productSummary(kind) {
+  const hash = "a".repeat(64);
+  const base = { network: "livenet", complete: true, indexedThroughBlock: 970546,
+    indexedThroughBlockHash: hash, snapshot: { id: "surface-fixture", checkpointHeight: 970546, checkpointHash: hash } };
+  if (kind === "jobs") return { ...base, source: "proof-indexer-exact-canonical-jobs-replay",
+    activationHeight: 970404, activationPreviousBlockHash: "00000000000000000000cf98017be585521a2a84e4030e20021565479c6218fe",
+    jobs: [], stats: { jobs: 0, acceptedPayments: 0, paid: 0, paidProofs: "0" } };
+  if (kind === "code") return { ...base, source: "proof-indexer-exact-canonical-code-replay", repositories: [] };
+  if (kind === "permission") return { ...base, source: "proof-indexer-exact-canonical-permission-replay", permissions: [],
+    coverage: { complete: true, indexedThroughBlock: base.indexedThroughBlock, checkpointHash: hash } };
+  if (kind === "search") return { network: "livenet", results: [], coverage: { ready: true, checkpointHeight: base.indexedThroughBlock, checkpointHash: hash } };
+  throw new Error(`Unknown product fixture: ${kind}`);
+}
+
+for (const [kind, name] of [["jobs", "validateJobs"], ["code", "validateCode"], ["permission", "validatePermission"], ["search", "validateSearch"]]) {
+  test(`${kind} surface audit requires qualified canonical coverage`, () => {
+    const validate = productValidators[name];
+    const valid = productSummary(kind);
+    validate(valid);
+    assert.throws(() => validate({ ...valid, network: "testnet4" }));
+    assert.throws(() => validate({ ...valid, error: "Read unavailable" }));
+    if (kind === "search") {
+      assert.throws(() => validate({ ...valid, coverage: { ...valid.coverage, ready: false } }));
+      assert.throws(() => validate({ ...valid, coverage: { ...valid.coverage, checkpointHash: "bad" } }));
+      assert.throws(() => validate({ ...valid, results: null }));
+    } else {
+      assert.throws(() => validate({ ...valid, complete: false }));
+      assert.throws(() => validate({ ...valid, source: "unverified-preview" }));
+      if (kind === "permission") {
+        assert.throws(() => validate({ ...valid, coverage: { ...valid.coverage, complete: false } }));
+        assert.throws(() => validate({ ...valid, coverage: { ...valid.coverage, checkpointHash: "bad" } }));
+        assert.throws(() => validate({ ...valid, permissions: null }));
+      } else {
+        assert.throws(() => validate({ ...valid, snapshot: { ...valid.snapshot, checkpointHash: "b".repeat(64) } }));
+        assert.throws(() => validate({ ...valid, indexedThroughBlockHash: "bad" }));
+      }
+    }
+  });
+}
+
 const malformedIntegers = [null, false, true, "", " ", [], [0], {}, undefined,
   -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "9007199254740992",
   "00", " 1", "1 ", "+1", "1e3", "0x10", "1.0", "-1", 0n];
@@ -187,7 +232,11 @@ async function surfaceRun({ receipt, args = [], now = Date.now(), stopAfterCheck
         ? new URL(redirectApi, parsed).href
         : String(url) === "https://proofofwork.me/" && redirectHome ? redirectHome : String(url);
       return { status: 200, url: observedUrl, headers: { get: () => asset ? "application/javascript" : api ? "application/json" : "text/html" },
-        text: async () => asset ? "export {};" : api ? JSON.stringify(summary()) :
+        text: async () => asset ? "export {};" : api ? JSON.stringify(
+          parsed.pathname === "/api/v1/jobs" ? productSummary("jobs") :
+          parsed.pathname === "/api/v1/code-repositories" ? productSummary("code") :
+          parsed.pathname === "/api/v1/permissions" ? productSummary("permission") :
+          parsed.pathname === "/api/v1/search" ? productSummary("search") : summary()) :
           '<title>ProofOfWork</title><div id="root"></div><script type="module" src="/assets/app.js"></script>',
       };
     },
@@ -215,14 +264,14 @@ test("matching interrupted audit reuses only original successes with explicit pr
   assert.equal(resumed.payload.auditId, interrupted.receipt.auditId);
   assert.equal(resumed.payload.startedAt, interrupted.receipt.startedAt);
   assert.equal(resumed.payload.runStartedAt, new Date(now + 1_000).toISOString());
-  assert.deepEqual(resumed.payload.observations, { currentRun: 14, reused: 1 });
+  assert.deepEqual(resumed.payload.observations, { currentRun: resumed.payload.surfacePlan.length - 1, reused: 1 });
   assert.equal(resumed.payload.results[0].evidence, "reused");
   assert.equal(resumed.payload.results[0].finishedAt, interrupted.receipt.results[0].finishedAt);
   assert.equal(resumed.requests.includes("https://proofofwork.me/"), false);
   const completeResume = await surfaceRun({ receipt: resumed.receipt, now: now + 2_000 });
   assert.equal(completeResume.error, undefined);
   assert.equal(completeResume.requests.length, 0);
-  assert.equal(completeResume.payload.observations.reused, 15);
+  assert.equal(completeResume.payload.observations.reused, completeResume.payload.surfacePlan.length);
   assert.equal(completeResume.payload.currentRunComplete, false);
   assert.equal(completeResume.payload.startedAt, interrupted.receipt.startedAt);
 });

@@ -494,16 +494,16 @@ authoritative.
 
 ## Interface Direction
 
-Proof Instrument remains the shared public interface direction; the approved
-Computer shell refinement is described below. Preserve and refine the existing
-obsidian, parchment, brass, and olive identity instead of replacing it with a generic neon or glass-heavy
-crypto aesthetic. Use brass selectively for action, selection, and a small
-number of live-value signals; use cool blue for focus and information, not as
-an unstructured second accent.
+The user approved the full product interface upgrade on 2026-10-10 after the
+Computer Focus/Desktop review. The shared direction covers every public app and
+every embedded Computer workspace: OpenAI-inspired warm neutral surfaces,
+restrained olive accents, monochrome primary actions, and system light/dark
+appearance. Keep the interface quiet around chain evidence and consistent
+across standalone and embedded tools.
 
-The type system is self-hosted: Space Grotesk for display headings, Inter
-Variable for interface and body text, and IBM Plex Mono for txids, addresses,
-protocol evidence, and other exact fields. Exact values remain fully
+The type system is self-hosted: Inter Variable for interface, body text, and
+display headings, and IBM Plex Mono for txids, addresses, protocol evidence,
+and other exact fields. Exact values remain fully
 inspectable and copyable. Contain long values inside their own component with
 tabular figures and local overflow or deliberate reveal controls; never hide a
 layout failure with document-level clipping or let arbitrary digit breaks
@@ -535,9 +535,8 @@ The user approved the Computer Focus/Desktop UI release on 2026-10-10 after
 reviewing the local upgrade. Both layouts are supported choices over the same
 apps, with a visible switch and browser-local preference. Preserve the active
 workspace, wallet connection, drafts and selections while switching. The Computer
-shell uses calm neutral surfaces, restrained olive accents and system light/dark
-appearance; the shared public Proof Instrument direction remains the existing
-reference. Desktop's Wallet and Files overviews use qualified existing reads,
+shell and all public/embedded apps use the shared neutral interface and system
+light/dark appearance. Desktop's Wallet and Files overviews use qualified existing reads,
 never invented balances or records. The appearance preference stays outside the
 organization-backup allowlist. Chain authority, fees, protocols and local signing
 remain unchanged. Release approval does not replace production verification or

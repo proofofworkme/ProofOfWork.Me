@@ -1,1 +1,16 @@
+@layer legacy {
+
 .dns-advanced{margin-top:24px;padding:24px;background:var(--surface);border:1px solid var(--border);border-radius:12px;min-width:0}.dns-advanced-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}.dns-advanced-head span{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold)}.dns-advanced h2{margin:8px 0}.dns-advanced p,.dns-advanced small{color:var(--muted)}.dns-advanced-search{display:flex;gap:12px;align-items:end;margin:20px 0}.dns-advanced-search label{flex:1}.dns-advanced label{display:flex;flex-direction:column;gap:8px;min-width:0}.dns-advanced input{min-width:0;width:100%}.dns-advanced-table{overflow-x:auto;margin:20px 0}.dns-advanced table{width:100%;border-collapse:collapse;text-align:left}.dns-advanced th,.dns-advanced td{padding:12px 8px;border-bottom:1px solid var(--border)}.dns-advanced code{display:inline-block;max-width:340px;overflow-x:auto;vertical-align:middle;white-space:nowrap}.dns-advanced-name{background:none;border:0;padding:0;min-height:44px;color:var(--gold);text-align:left}.dns-advanced-link{display:grid;gap:16px}.dns-advanced-actions{display:flex;gap:12px;flex-wrap:wrap}.dns-advanced .dns-advanced-error{color:var(--red)}.dns-advanced summary{min-height:44px;cursor:pointer}.dns-advanced li{padding:8px 0;overflow-wrap:anywhere}@media(max-width:640px){.dns-advanced{padding:18px}.dns-advanced-head,.dns-advanced-search{flex-direction:column;align-items:stretch}.dns-advanced code{max-width:210px}}
+
+}
+
+@layer interface {
+.dns-advanced { background: var(--surface); border-color: var(--border); border-radius: var(--radius-lg); box-shadow: none; }
+.dns-advanced-head span { color: var(--text-muted); font-family: var(--font-ui); font-weight: 400; letter-spacing: 0; text-transform: none; }
+.dns-advanced h2 { color: var(--text); font-family: var(--font-ui); font-weight: 500; }
+.dns-advanced th { color: var(--text-muted); font-size: 12px; font-weight: 500; }
+.dns-advanced-name { color: var(--accent); font-weight: 500; }
+.dns-advanced-name:hover { color: var(--accent-strong); }
+.dns-advanced :is(.primary, .secondary) { font-weight: 500; }
+
+}

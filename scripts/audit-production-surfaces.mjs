@@ -41,8 +41,8 @@ Environment:
   POW_SURFACE_AUDIT_TIMEOUT_MS=20000
 
 --surface runs one named surface (for example --surface=computer).
-Pages is prepared locally and is available through --surface=pages for explicit
-launch verification; it is excluded from the default production plan until launch.
+The default plan covers all 21 public products and the NFT Computer alias.
+Focused builds and this audit do not replace source provenance/release-sync checks.
 --resume-file writes completed per-surface results after each surface so an
 interrupted audit can resume without repeating successful surfaces. Receipts
 must match this script, settings and ordered surface plan, and be less than one
@@ -279,9 +279,30 @@ const SURFACES = [
       },
     ],
   },
-];
-
-const PREPARED_SURFACES = [
+  {
+    key: "search",
+    title: "search.proofofwork.me",
+    url: "https://search.proofofwork.me/",
+    probes: [{ label: "Search coverage", url: apiUrl("/api/v1/search?network=livenet&limit=1"), validate: validateSearch }],
+  },
+  {
+    key: "code",
+    title: "code.proofofwork.me",
+    url: "https://code.proofofwork.me/",
+    probes: [{ label: "confirmed Code", url: apiUrl("/api/v1/code-repositories?network=livenet&limit=1"), validate: validateCode }],
+  },
+  {
+    key: "permission",
+    title: "permission.proofofwork.me",
+    url: "https://permission.proofofwork.me/",
+    probes: [{ label: "confirmed Permission", url: apiUrl("/api/v1/permissions?network=livenet&limit=1"), validate: validatePermission }],
+  },
+  {
+    key: "nft",
+    title: "nft.proofofwork.me (Computer alias)",
+    url: "https://nft.proofofwork.me/",
+    probes: [],
+  },
   {
     key: "pages",
     title: "pages.proofofwork.me",
@@ -337,6 +358,36 @@ function validateIndexedJson(json) {
     "tipHeight",
   ]);
   assertCondition(checkpoint !== null, "missing indexed block checkpoint");
+}
+
+function validateSearch(json) {
+  assertCondition(!jsonErrorMessage(json) && json.network === "livenet" &&
+    Array.isArray(json.results) && json.coverage?.ready === true,
+    "Search coverage is unavailable or incomplete");
+  assertCondition(Number.isSafeInteger(json.coverage.checkpointHeight) &&
+    json.coverage.checkpointHeight >= 0 && /^[0-9a-f]{64}$/u.test(json.coverage.checkpointHash ?? ""),
+    "Search checkpoint evidence is malformed");
+}
+
+function validateCode(json) {
+  validateIndexedJson(json);
+  assertCondition(json.network === "livenet" && json.complete === true &&
+    json.source === "proof-indexer-exact-canonical-code-replay" && Array.isArray(json.repositories),
+    "Code replay is incomplete");
+  assertCondition(json.snapshot?.checkpointHeight === json.indexedThroughBlock &&
+    /^[0-9a-f]{64}$/u.test(json.indexedThroughBlockHash ?? "") &&
+    json.snapshot?.checkpointHash === json.indexedThroughBlockHash && json.snapshot?.id,
+    "Code checkpoint evidence disagrees");
+}
+
+function validatePermission(json) {
+  assertCondition(!jsonErrorMessage(json) && json.network === "livenet" && json.complete === true &&
+    json.source === "proof-indexer-exact-canonical-permission-replay" && Array.isArray(json.permissions),
+    "Permission replay is incomplete");
+  assertCondition(json.coverage?.complete === true &&
+    Number.isSafeInteger(json.coverage.indexedThroughBlock) && json.coverage.indexedThroughBlock >= 0 &&
+    /^[0-9a-f]{64}$/u.test(json.coverage.checkpointHash ?? ""),
+    "Permission checkpoint evidence is malformed");
 }
 
 function validateJobs(json) {
@@ -802,7 +853,7 @@ function validateResumeReceipt(prior, surfacePlan, now) {
 
 const runStartedAt = new Date();
 const selectedSurfaces = SELECTED_SURFACE
-  ? [...SURFACES, ...PREPARED_SURFACES].filter(
+  ? SURFACES.filter(
       (surface) => surface.key === SELECTED_SURFACE,
     )
   : SURFACES;

@@ -1,3 +1,5 @@
+@layer legacy {
+
 .search-standalone-app { min-height: 100dvh; display: flex; flex-direction: column; background: var(--bg); color: var(--text); }
 .search-standalone-app .topbar { position: relative; }
 .search-main { width: min(1120px, 100%); margin: 0 auto; padding: 58px 32px 36px; box-sizing: border-box; min-width: 0; }
@@ -161,4 +163,42 @@
   .mail-layout.is-search-workspace { overflow: visible; }
   .mail-layout.is-search-workspace > .search-embedded-app { overflow: visible; }
   .search-main { padding-top: 22px; }
+}
+
+}
+
+@layer interface {
+/* Search uses the same readable surfaces and controls as the Computer. */
+.search-intro h1 { color: var(--text); font-family: var(--font-ui); font-size: clamp(30px, 4.1vw, 48px); font-weight: 500; letter-spacing: -.04em; line-height: 1.15; }
+.search-eyebrow, .search-public-label, .search-bottom-note { font-family: var(--font-ui); font-size: 12px; letter-spacing: 0; text-transform: none; }
+.search-eyebrow { color: var(--text-muted); }
+.search-query-box { background: var(--surface); border-color: var(--border-interactive); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+.search-query-box:focus-within { border-color: var(--focus-outline); box-shadow: var(--focus); }
+.search-query-box > svg { color: var(--text-muted); stroke-width: 1.6; }
+.search-query-box input { background: transparent; border: 0; border-radius: 0; box-shadow: none; font-size: 16px; }
+.search-query-box > button { background: var(--action); border-color: var(--action); border-radius: var(--radius-md); color: var(--text-on-action); font-weight: 500; }
+.search-query-box > button:hover { background: color-mix(in srgb, var(--action) 90%, var(--surface)); border-color: var(--action); }
+.search-query-hint, .search-filters label, .search-result-toolbar { font-size: 12px; }
+.search-query-hint a, .search-result-meta a { min-height: 44px; }
+.search-filters select { background-color: var(--surface); border-color: var(--border-interactive); border-radius: var(--radius-sm); color: var(--text); font-size: 13px; }
+.search-record-badges { font-family: var(--font-ui); font-size: 12px; }
+.search-badge { background: var(--surface-soft); border-color: var(--border); border-radius: var(--radius-pill); font-size: 11px; }
+.search-badge.is-confirmed { background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 35%, var(--border)); color: var(--green); }
+.search-badge.is-invalid, .search-badge.is-dropped, .search-badge.is-orphaned { border-color: color-mix(in srgb, var(--red) 40%, var(--border)); color: var(--red); }
+.search-result h2 button { color: var(--text); }
+.search-main mark { background: var(--accent-soft); color: var(--accent-strong); }
+.search-excerpt { font-size: 14px; line-height: 1.7; }
+.search-notice, .search-coverage { background: var(--surface-soft); border-color: var(--border); border-radius: var(--radius-md); }
+.search-notice.is-error { background: var(--red-soft); border-color: color-mix(in srgb, var(--red) 40%, var(--border)); }
+.search-inspector { background: var(--surface); border-color: var(--border); border-radius: var(--radius-lg); color: var(--text); }
+.search-inspector::backdrop { background: var(--backdrop); }
+.search-inspector h2 { color: var(--text); font-family: var(--font-ui); font-weight: 500; }
+.search-icon-button { border-color: var(--border); border-radius: var(--radius-sm); }
+.search-icon-button:hover { background: var(--hover); }
+.search-inspector-tabs button { color: var(--text-muted); font-size: 13px; }
+.search-inspector-tabs button.is-active { color: var(--text); border-bottom-color: var(--accent); }
+.search-source-code { background: var(--surface-soft); border-color: var(--border); border-radius: var(--radius-sm); color: var(--text); }
+.search-evidence-fields, .search-source-list li { font-size: 12px; }
+@media (max-width: 640px) { .search-intro h1, .search-embedded-app .search-intro h1 { font-size: 30px; } .search-public-label, .search-query-hint, .search-filters label, .search-result-toolbar, .search-record-badges { font-size: 11px; } }
+
 }

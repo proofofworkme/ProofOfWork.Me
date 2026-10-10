@@ -21979,11 +21979,6 @@ export default function App() {
     }
   });
   const [computerLocalDataOpen, setComputerLocalDataOpen] = useState(false);
-  useEffect(() => {
-    if (!computerShellActive) return;
-    document.body.classList.add("computer-appearance");
-    return () => document.body.classList.remove("computer-appearance");
-  }, [computerShellActive]);
   function changeComputerLayout(layout: ComputerLayout) {
     setComputerLayout(layout);
     try { window.localStorage.setItem(COMPUTER_LAYOUT_STORAGE_KEY, layout); } catch { /* Layout switching also works without browser storage. */ }
@@ -26507,10 +26502,6 @@ export default function App() {
                 activeFolder === "log"
             ? busy || refreshInProgress || !registryAddress
             : !address || busy || refreshInProgress;
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = "dark";
-  }, []);
 
   useEffect(() => {
     const nextStatus =
@@ -41198,6 +41189,7 @@ function InfinityApp({
         {!summary ? (
           <section
             className="id-launch-card bond-summary-placeholder"
+            data-read-state={status.tone === "bad" ? "unavailable" : "loading"}
             id="bond-overview"
             role="status"
           >

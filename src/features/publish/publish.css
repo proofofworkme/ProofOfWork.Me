@@ -1,3 +1,5 @@
+@layer legacy {
+
 .publish-public-app { --publish-paper: #11151b; }
 .publish-public-app .boost-composer-strip { padding-block: 22px; }
 .publish-public-app .boost-composer-prompt { font-size: 18px; }
@@ -59,3 +61,28 @@
 .publish-full-post > .boost-avatar { display: none; }
 .publish-full-post .boost-post-head, .publish-full-post .boost-proof-details, .publish-full-post .boost-actions { margin-inline: clamp(20px, 4vw, 46px); }
 .publish-full-post .publish-reading { padding-top: 26px; }
+
+}
+
+@layer interface {
+/* Reading and writing keep an editorial measure within the shared theme. */
+.publish-public-app { --publish-paper: var(--surface); }
+.publish-public-app :is(.publish-reader, .publish-writer-workspace, .publish-reading) { color: var(--text); }
+.publish-article-card h2, .publish-writer-head h1, .publish-reading h1 { color: var(--text); font-family: var(--font-ui); font-weight: 500; letter-spacing: -.035em; line-height: 1.2; }
+.publish-article-card .publish-card-label, .publish-title-label > span, .publish-body-label > span { color: var(--text-muted); font-family: var(--font-ui); font-weight: 400; letter-spacing: 0; text-transform: none; }
+.publish-composer .publish-title-input { background: transparent; border: 0; border-bottom: 1px solid var(--border-interactive); border-radius: 0; color: var(--text); font-family: var(--font-ui); font-size: clamp(26px, 4vw, 38px); font-weight: 500; line-height: 1.25; }
+.publish-composer .publish-body-input { background: transparent; border: 1px solid var(--border-interactive); border-radius: 8px; color: var(--text); font-family: Georgia, "Times New Roman", serif; font-size: 20px; line-height: 1.8; padding: 16px; }
+.publish-article-body { color: var(--text); }
+.publish-budget { color: var(--text-muted); border-color: var(--border); }
+.publish-budget.is-over { color: var(--red); }
+.publish-budget.is-over progress { accent-color: var(--red); }
+.publish-reader-titlebar { background: var(--surface); border-color: var(--border); }
+.publish-reader-titlebar > strong { font-weight: 500; }
+.publish-reader-titlebar > a { flex-basis: 44px; width: 44px; height: 44px; border-radius: var(--radius-sm); }
+.publish-reader-titlebar > a:hover { background: var(--hover); }
+.publish-preview { border-color: var(--border); }
+.publish-public-app .boost-shell-instrument .publish-full-post { background: var(--surface); }
+.publish-public-app .boost-shell-instrument .publish-full-post:hover { background: var(--surface); }
+@media (max-width: 800px) { .publish-composer .publish-body-input { font-size: 18px; } }
+
+}
