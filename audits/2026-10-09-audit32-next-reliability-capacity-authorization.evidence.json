@@ -1,0 +1,75 @@
+{
+  "format": "pow-audit32-next-reliability-capacity-authorization-evidence-v1",
+  "auditDate": "2026-10-09",
+  "recordedAtUtc": "2026-10-10T02:51:26.468106+00:00",
+  "status": "APPROVED_PREPARATION_NOT_CUSTODY_OR_RETIREMENT_GO",
+  "authority": "Direct human user approval in the current chat; no additional product or recovery permission is required within the exact manifest bounds.",
+  "approval": {
+    "format": "pow-audit32-capacity-execution-approval-v1",
+    "recordedAtUtc": "2026-10-10T02:42:55.169634+00:00",
+    "authority": "Direct human user message in current chat",
+    "approvedProposal": {
+      "path": "/home/sixer/ProofOfWork.Me/audits/2026-10-09-audit32-next-reliability-capacity-recovery-proposal.json",
+      "bytes": 21601,
+      "sha256": "283f84b89825f5ce3847ddf01fc40d689fa5f5314bd8342f6aeb2138cc6c5e22"
+    },
+    "userApproval": "Approved\u2014execute the capacity recovery proposal, including verified off-server custody and independent restoration, the bounded retention-hold exception, and implementation/testing of the temporary recovery controller and evidence adapters. Retire only the minimum qualified oldest-first subset of the four specified rollback roots and their original archives required to pass unchanged deployment gates plus the specified safety margin. Preserve the current release, newest two rollback pairs, sidecars, original evidence, infrastructure, and live data. Complete audit bookkeeping, hygiene, the already-approved deployment, release synchronization, verification, and announcement. No other cleanup or weakening of safeguards is approved.",
+    "retirementAttemptsUsed": 0,
+    "custodyClockStarted": false,
+    "productionMutationPerformed": false
+  },
+  "approvalReceipt": {
+    "path": "/tmp/pow-audit32-next-reliability-capacity-execution/approval-v1.json",
+    "bytes": 1291,
+    "sha256": "ddaf564a85cd1cb6d8b32663deb1816fd3271677b18ba62e2190daf94fcca4fb"
+  },
+  "freshUiPreflight": {
+    "path": "/tmp/pow-audit32-next-reliability-capacity-execution/ui-preflight-v1.json",
+    "bytes": 56114,
+    "sha256": "a21b32d00d8384688b1044930e263cd178deac00b928e9b8f43b38704f3359f9"
+  },
+  "protectedBaselineComparisons": {
+    "helpers": true,
+    "retained": true,
+    "live": true,
+    "activeManifest": true,
+    "oldManaged": true
+  },
+  "freshPreflightChecksPassed": true,
+  "currentReleasedCommit": "d8ae8220d897f876d85b0025db86306dc27e6fe5",
+  "currentReleaseId": "d8ae8220d897-20261010T000925Z",
+  "candidateFeatureCommit": "54439f7521e8d58cc4739d32f6f62856028e7cc6",
+  "githubBaselineMain": "d8ae8220d897f876d85b0025db86306dc27e6fe5",
+  "freshGitFetchExecution": {
+    "path": "/tmp/pow-audit32-next-reliability/capacity-execution-fetch-v1.execution.json",
+    "bytes": 690,
+    "sha256": "7cd9bd94198b845d873b541b7e342f5e436f6580883daeda41128e33c9bf7f75"
+  },
+  "custodyParentPrecondition": {
+    "path": "/home/sixer/ProofOfWork-custody",
+    "uid": 1000,
+    "gid": 1000,
+    "mode": "0700",
+    "canonical": true,
+    "availableBytes": 370242789376,
+    "requiredAvailableBytes": 8589934592,
+    "targetAlreadyExists": false
+  },
+  "localAuthentication": {
+    "noninteractiveSudoAvailable": false,
+    "observation": "sudo -n /usr/bin/true and sudo -n -l require a password; actual root-owned independent restoration requires local interactive authentication; no password requested in chat.",
+    "restorationRequirementUnchanged": true
+  },
+  "custodyClockStarted": false,
+  "retirementAttemptsUsed": 0,
+  "productionMutationPerformed": false,
+  "sourceAndFaultTests": "In preparation; must pass and receive independent review before any custody invocation.",
+  "nextGates": [
+    "Reviewed temporary controllers/evidence/restore sources and meaningful fault tests",
+    "Commit audit bookkeeping and build exact clean successor source for all22 managed surfaces",
+    "Fresh custody invocation starts one nonrenewable four-hour exception window",
+    "Complete verified offhost custody and actual original-owner independent restoration",
+    "Minimum qualified retirement with all unchanged native gates and operational margin",
+    "Controlled backend/UI deployment, Core-bound convergence, full release synchronization and one verified announcement"
+  ]
+}

@@ -596,3 +596,25 @@ surface checks, actual GitHub/clean primary-main/local-preview/production
 If capacity refuses, preserve the candidate and original evidence, document a
 concrete additional capacity proposal and obtain separate approval; do not
 upload inputs, restart production or announce an incomplete release.
+
+### Next reliability batch: approved capacity preparation, 2026-10-09
+
+The human subsequently approved the exact additional
+[capacity recovery proposal](2026-10-09-audit32-next-reliability-capacity-recovery-proposal.json).
+Its four named complete rollback roots and four original archives are distinct
+from the previously completed four-root recovery. The approval permits complete
+off-server custody and independent original-owner restoration, a bounded scoped
+hold exception, tested temporary recovery controls, and only the minimum qualified
+oldest-first retirement needed for unchanged native release gates plus the
+specified margin. Current release, newest two rollback pairs, all sidecars,
+original failures, policies, live data and native safeguards remain protected.
+
+The [authorization receipt](2026-10-09-audit32-next-reliability-capacity-authorization.evidence.json)
+records the fresh read-only preflight: all live, six-root, native-helper and
+managed-surface bindings remain identical to the approved baseline. GitHub main
+and the tested feature candidate remain unchanged. The proposal and all fourteen
+input pins were verified. These are preparation facts, not custody, retirement,
+deployment or release-completion evidence. Temporary source/fault reviews and an
+exact clean successor build precede the first custody invocation and its single
+four-hour clock. Actual closing receipts must distinguish these dated pending
+states from subsequent actions; original evidence is never rewritten as success.

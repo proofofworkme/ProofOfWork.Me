@@ -1,0 +1,343 @@
+{
+  "format": "pow-audit32-next-reliability-capacity-recovery-proposal-v1",
+  "status": "READY_FOR_REVIEW_SEPARATE_APPROVAL_REQUIRED_NOT_EXECUTION_GO",
+  "auditDate": "2026-10-09",
+  "preparedAtUtc": "2026-10-10T02:34:24.474331+00:00",
+  "purpose": "Finish the approved Permission catch-up, browser-fixture and .pow-link release without reducing native storage reserves or sacrificing verified rollback custody.",
+  "alreadyApprovedCandidate": {
+    "commit": "54439f7521e8d58cc4739d32f6f62856028e7cc6",
+    "tree": "94d8f1ba99f5a2b3b6265bb36fabb5cdb38f177a",
+    "branch": "codex/audit32-permission-pow-links",
+    "github": "https://github.com/proofofworkme/ProofOfWork.Me/tree/codex/audit32-permission-pow-links"
+  },
+  "currentRelease": {
+    "commit": "d8ae8220d897f876d85b0025db86306dc27e6fe5",
+    "tree": "2983d6047c1e1cb4d56efabaede41c0a39460bbe",
+    "archiveName": "proofofwork-ui-release-d8ae8220d897-20261010T000925Z.tgz",
+    "archiveSha256": "6fe51112efd2b97927cb6aef9b27222d94765fa7ceaf407cacebac5cfd3d0711"
+  },
+  "actualCapacityEvidence": {
+    "freshReadOnlySnapshot": {
+      "path": "/tmp/pow-audit32-next-reliability/ui-capacity-advisory-v1.json",
+      "bytes": 1026206,
+      "sha256": "280da6cd9a16273d0ca976d0d96e4c618be02f531bcaf20ddcd30a78c48ec497"
+    },
+    "offlineModel": {
+      "path": "/tmp/pow-audit32-next-reliability/ui-capacity-full-advisory-v2.json",
+      "bytes": 63295,
+      "sha256": "669c2e7aac3483cec0bce8a0d98a9636bdd4c3965fedcb36f204ed5799ff1b77"
+    },
+    "decision": "NO-GO",
+    "deploymentAuthority": false,
+    "capacityGo": false,
+    "rootFreeBytes": 11528028160,
+    "nativeReservePlusGrowthBytes": 10804527104,
+    "maximumAdvisoryPhaseRequiredFreeBytes": 12693627454,
+    "additionalAdvisoryFreeBytesNeeded": 1165599294,
+    "rigorousLowerBound": {
+      "requiredRootFreeBytes": 11699810117,
+      "actualRootFreeBytes": 11528028160,
+      "deficitBytes": 171781957,
+      "qualification": "Conditional on dense independent receiving and recorded ext4 root filesystem with no compression; excludes received metadata/log growth and later allocations. Native full-live tree bound is freshly measured.",
+      "observedExt4Noncompressed": true
+    },
+    "scratch": {
+      "actualAllocatedBytes": 2869706752,
+      "projectedMaximumBytes": 3495325696,
+      "limitBytes": 5368709120,
+      "marginBytes": 1873383424
+    },
+    "qualification": "Exact body/closure arithmetic and native sizing are distinct from unmeasured receiver-directory envelopes. Specific kernel-thread devtmpfs observations explain the strict covering-root flags; all-path mutation-reference absence remains unproved. This model never grants retirement or deployment authority."
+  },
+  "maximumConditionalSubjectsOldestFirst": [
+    {
+      "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-fc396c9a9abd-20261007T233244Z",
+      "nativeFingerprint": {
+        "classification": "retain",
+        "entries": 1812,
+        "format": "proofofwork-ui-retained-root-v1",
+        "manifestSha256": "832192886705912b8793cc3d1e5cd9aadb87996648ee87b195192c44c98061ca",
+        "regularBytes": 481876684,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-fc396c9a9abd-20261007T233244Z",
+        "treeSha256": "a6ea770a044780ab1f41176823f6cb17430ca50dd448ac4ee422858c2938dc24"
+      },
+      "canonicalArchive": {
+        "bytes": 237912381,
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-19cc93a7c97f-20261007T161406Z.tgz",
+        "sha256": "99879912ce86548396d817fb72fd5db5f66a34f61bf1ba561c1e126af6eb0801",
+        "stableRead": true
+      },
+      "preserveChecksumSidecar": {
+        "bytes": 123,
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-19cc93a7c97f-20261007T161406Z.tgz.sha256",
+        "sha256": "ff889e217ce03d2c60b079402d957ab4d790c07d993a92317ef56d6bee0bb004"
+      },
+      "preserveProvenanceSidecar": {
+        "bytes": 2859,
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-19cc93a7c97f-20261007T161406Z.tgz.provenance",
+        "sha256": "832192886705912b8793cc3d1e5cd9aadb87996648ee87b195192c44c98061ca"
+      },
+      "datedRegularOnlyReclaimEstimateBytes": 484560896
+    },
+    {
+      "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c243081bb18c-20261008T042348Z",
+      "nativeFingerprint": {
+        "classification": "retain",
+        "entries": 2110,
+        "format": "proofofwork-ui-retained-root-v1",
+        "manifestSha256": "30a6c0e9273b601eff11b4fecb4f2fab5a62ae9d0f076d871363bbea66944c40",
+        "regularBytes": 498461058,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c243081bb18c-20261008T042348Z",
+        "treeSha256": "95b5848158fb5bcc023267d7f45527b1c56565e1141ae74bde19a5b409a1e19b"
+      },
+      "canonicalArchive": {
+        "bytes": 251135758,
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-fc396c9a9abd-20261007T233244Z.tgz",
+        "sha256": "962a790de9060deca5d54f295965f19a3797d39a620609a2bcc194efa6334452",
+        "stableRead": true
+      },
+      "preserveChecksumSidecar": {
+        "bytes": 123,
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-fc396c9a9abd-20261007T233244Z.tgz.sha256",
+        "sha256": "a3634d66fa92b630fd34beece12c9c837d2cd9c73588886ba5176564ad86e3b1"
+      },
+      "preserveProvenanceSidecar": {
+        "bytes": 2971,
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-fc396c9a9abd-20261007T233244Z.tgz.provenance",
+        "sha256": "30a6c0e9273b601eff11b4fecb4f2fab5a62ae9d0f076d871363bbea66944c40"
+      },
+      "datedRegularOnlyReclaimEstimateBytes": 500396032
+    },
+    {
+      "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-506b1ab0833e-20261008T065838Z",
+      "nativeFingerprint": {
+        "classification": "retain",
+        "entries": 2362,
+        "format": "proofofwork-ui-retained-root-v1",
+        "manifestSha256": "c61aa2a42995a2074ae2d7056bd1ba3d13d5c71117e0776ae2229dd23035ccf7",
+        "regularBytes": 516600044,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-506b1ab0833e-20261008T065838Z",
+        "treeSha256": "35dd24035304f209a02febca02cd317904c1bb2f3a8a5048cd1391c4331aa3bf"
+      },
+      "canonicalArchive": {
+        "bytes": 264427806,
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-c243081bb18c-20261008T042348Z.tgz",
+        "sha256": "96efe0d267dbffdbacf1bd7eb047de9216f340428031e64b0d63e3e168106fbd",
+        "stableRead": true
+      },
+      "preserveChecksumSidecar": {
+        "bytes": 123,
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-c243081bb18c-20261008T042348Z.tgz.sha256",
+        "sha256": "dedebc7b21228b6e573dc37e39b490778c36a2634865a1f7e2cedc2de7074e17"
+      },
+      "preserveProvenanceSidecar": {
+        "bytes": 3085,
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-c243081bb18c-20261008T042348Z.tgz.provenance",
+        "sha256": "c61aa2a42995a2074ae2d7056bd1ba3d13d5c71117e0776ae2229dd23035ccf7"
+      },
+      "datedRegularOnlyReclaimEstimateBytes": 518569984
+    },
+    {
+      "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-9b56f32ff831-20261008T133400Z",
+      "nativeFingerprint": {
+        "classification": "retain",
+        "entries": 2195,
+        "format": "proofofwork-ui-retained-root-v1",
+        "manifestSha256": "69da9ce63677cb06a588adee3bcb39a8bb7b01525d10a0d3a029b4578bef7945",
+        "regularBytes": 515083856,
+        "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-9b56f32ff831-20261008T133400Z",
+        "treeSha256": "bdefc5fea0591ca5ac1dd9918804e657d6410b755381dec7eac75ca900d4d585"
+      },
+      "canonicalArchive": {
+        "bytes": 263990164,
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-506b1ab0833e-20261008T065838Z.tgz",
+        "sha256": "4927e8e763bd48dd22bad964b4d3a047a6f1a82293e2d3b0eb4e01b8b259cf8e",
+        "stableRead": true
+      },
+      "preserveChecksumSidecar": {
+        "bytes": 123,
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-506b1ab0833e-20261008T065838Z.tgz.sha256",
+        "sha256": "cfadc8bf86e5dfe1ad36e292721754b70ced2ca0e30e33950e21a6f910d7cc81"
+      },
+      "preserveProvenanceSidecar": {
+        "bytes": 3085,
+        "path": "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-506b1ab0833e-20261008T065838Z.tgz.provenance",
+        "sha256": "69da9ce63677cb06a588adee3bcb39a8bb7b01525d10a0d3a029b4578bef7945"
+      },
+      "datedRegularOnlyReclaimEstimateBytes": 519553024
+    }
+  ],
+  "datedMaximumRegularOnlyReclaimEstimateBytes": 2023079936,
+  "datedPlanningScenarios": [
+    {
+      "oldestPairCount": 1,
+      "regularOnlyEstimatedReclaimBytes": 484560896,
+      "marginAfterFullPhaseEnvelopeRecoveryEvidence64MiBAndExtra256MiB": -1016582718,
+      "currentQualificationOrAuthority": false
+    },
+    {
+      "oldestPairCount": 2,
+      "regularOnlyEstimatedReclaimBytes": 984956928,
+      "marginAfterFullPhaseEnvelopeRecoveryEvidence64MiBAndExtra256MiB": -516186686,
+      "currentQualificationOrAuthority": false
+    },
+    {
+      "oldestPairCount": 3,
+      "regularOnlyEstimatedReclaimBytes": 1503526912,
+      "marginAfterFullPhaseEnvelopeRecoveryEvidence64MiBAndExtra256MiB": 2383298,
+      "currentQualificationOrAuthority": false
+    },
+    {
+      "oldestPairCount": 4,
+      "regularOnlyEstimatedReclaimBytes": 2023079936,
+      "marginAfterFullPhaseEnvelopeRecoveryEvidence64MiBAndExtra256MiB": 521936322,
+      "currentQualificationOrAuthority": false
+    }
+  ],
+  "currentReclaimEstablished": false,
+  "completeCustodyAndRestoreEstablished": false,
+  "selectionRule": "Qualify full custody before touching any selected pair; retire only the minimum oldest-first subset of these four exact pairs needed to satisfy every freshly recomputed native phase and an additional 256 MiB operational margin. Never retire an extra pair once all gates meet that margin. Directory/shared/unknown allocations receive zero reclaim credit. If none or all four cannot qualify safely, stop; no other path is authorized.",
+  "protectedNewestTwoRollbackRoots": [
+    {
+      "format": "proofofwork-ui-retained-root-v1",
+      "classification": "retain",
+      "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-c7935dde7239-20261009T043549Z",
+      "manifestSha256": "a3659f1997f9a834a13ae9f4a0a7c37309f9cd27fce83ea74407e9d33d9ee719",
+      "treeSha256": "f979231917286e64222875567240426dae0da19cab37d2a0d9fbb2070f818ca9",
+      "entries": 2414,
+      "regularBytes": 534236797
+    },
+    {
+      "format": "proofofwork-ui-retained-root-v1",
+      "classification": "retain",
+      "root": "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d8ae8220d897-20261010T000925Z",
+      "manifestSha256": "ab94507fc9fefa610173be32eb789f76ea702153c1058699420bfd8a39bf5213",
+      "treeSha256": "4e7a3a172326a7a43d9e0ad0400f628f87f6d96bf5702ba4d3b9a831d7186d32",
+      "entries": 2458,
+      "regularBytes": 534540639
+    }
+  ],
+  "preserveAlways": [
+    "Current full /var/www and d8ae release/source/archive; immediate-prior pre-d8ae/c793 complete local rollback and its c793 archive; pre-c793 root and its b40d archive.",
+    "Every nonselected root/archive, every checksum and provenance sidecar, all policies/holds and original successful/failed recovery evidence, journals, transport inputs, source inputs, receipts and custody.",
+    "Core, Electrs, indexer, PostgreSQL, databases, histories, ledgers, events, balances, wallet authority and local user state.",
+    "Installed native helpers, storage/inode/scratch limits, services, timers, Caddy and other infrastructure configuration."
+  ],
+  "newScopeRequested": {
+    "completeOffhostCustodyAndIndependentRestore": true,
+    "conditionalMinimumExactRootAndArchiveRetirement": true,
+    "scopedRetentionHoldException": "Only the four named root subtrees and four exact canonical .tgz files after qualification. The rollback-roots/releases parent policies and every other hold remain unchanged. Exception ends on final completion, unreconciled refusal or expiration; it cannot be renewed beyond the stated four-hour window under this approval.",
+    "temporaryControllerAndReadOnlyEvidenceAdapters": "Implement/test and independently review temporary custody, classification, retirement, capacity and final-evidence adapters; no installed helper/guard edits or namespace whitelist.",
+    "referenceInvestigation": "Use bounded read-only kernel/process/mount/backing-filesystem identity evidence to establish relevance or absence for every selected path. Preserve all observed flags and strict refusals. Unknown, inaccessible, aliasing or nonmount live references fail closed; no namespace may be skipped.",
+    "boundedAliasWaiting": {
+      "wholeAttemptSeconds": 1800,
+      "maximumSecondsPerExistingFence": 5,
+      "noPreparationOrMutationWhileAliasPresent": true,
+      "strictFreshAbsenceAndAllOtherGuardsRequiredBeforeContinuing": true,
+      "otherReferenceInspectionMetadataSourceOrLockDrift": "Immediate refusal; no whitelist, timer stop or guard bypass."
+    },
+    "maximumNewRetirementAttempts": 2,
+    "wholeScopedExceptionWindowSecondsFromFirstCustodyInvocation": 14400,
+    "auditBookkeepingAndAlreadyApprovedReleaseContinuation": true,
+    "filesystemExpansionReserveReductionOrOtherCleanup": false
+  },
+  "custodyDestination": "/home/sixer/ProofOfWork-custody/2026-10-09-audit32-next-reliability-capacity",
+  "resourceCeilings": {
+    "offhostRequiredAvailableBytes": 8589934592,
+    "offhostNewAllocatedBytes": 8589934592,
+    "aggregateAccounting": "Charge all new partial streams, failed attempts, complete containers, original archives, restoration outputs and metadata together. Stop before exceeding any ceiling; no deletion of original or failed evidence to make room.",
+    "productionAdditionalRecoveryEvidenceBytes": 67108864,
+    "completeSelectedRootInventoryEntries": 12000,
+    "selectedRootLogicalBytes": 3221225472,
+    "noCompressedCompleteRootContainerAllocatedOnProduction": true
+  },
+  "requiredBeforeFirstRetirement": [
+    "Fresh native deployment lock held continuously on its original inode/path; source/plan/helper/current live and all six protected root/archive chains revalidated with complete closing fences.",
+    "Fresh full exact membership/content/UID/GID/mode/nanosecond time/xattr/symlink/type metadata and all hardlink topology, references, mount namespaces/backing filesystems and holds. Bind a private per-entry retirement inventory to the named native fingerprints and original archive hashes.",
+    "Stream a complete custody container offhost including all passthrough files, original headers/topology/xattrs and exact original archive bytes. Never substitute a managed-surface archive for complete-root custody.",
+    "Independently restore to a fresh safe offhost destination and verify every byte/metadata/link group and original-owner logical native fingerprints, plus managed-surface manifests and original archive hashes. Original dev/inode/ctime/atime are authenticated provenance, not reproducible restoration claims.",
+    "No selected archive required by a surviving root or current release; exact dependency closure rechecked. Actual unique allocation/nlink/location and all protected references qualified, with no age-based safety assumption.",
+    "Exact temporary sources receive meaningful fault tests and independent peer review: changed/extra/missing paths, bytes, mode/owners/times/xattrs, hardlink escape, incomplete restore/stream, all namespace/FD/map/config references, holds/source/lock drift, capacity failure and receipt/journal interruption.",
+    "All native root reserve 10 GiB + growth 64 MiB, scratch 5 GiB, inode and separate /run checks remain mandatory. Charge recovery evidence plus complete receive, staging/compatibility, source, archive creation, sequential new-archive extraction and publication peaks."
+  ],
+  "retirementAndFailureRules": [
+    "Creation-only attempt namespace with fsynced intent, prepare/completed journal and final receipts; pinned exact per-operation no-follow directory handles and byte/metadata/link/reference rechecks. Never run generic recursive deletion.",
+    "After each pair, verify protected resources and actual free space and rederive remaining dependency/capacity plans. Reclaim counts only after successful qualified retirement and measured filesystem accounting.",
+    "On refusal or partial failure preserve all original evidence, completed absences and remaining objects. No automatic resume, inferred success, new paths or guard relaxation. A successor within this exact approved set requires full independent journal/remaining-state reconciliation and all fresh gates; unknown or incomplete operation stops for review.",
+    "Before backend overlay, require sufficient UI capacity through every phase with operational margin. Permission plan changes only two reviewed helpers; preserve accepted node overlays and all protected worker/Core/database units under the existing controller.",
+    "Use a fresh plan for exact surviving roots and a fresh successor build if approved audit bookkeeping or integration changes commit provenance. Finish all22 surfaces, live Core-bound Permission convergence, canonical/freshness/read-containment/browser verification, primary-main/preview/GitHub/production sync and announcement only after actual check:release-sync PASS."
+  ],
+  "inputPins": [
+    {
+      "path": "/tmp/pow-audit32-next-reliability/two-oldest-retention-pairs-readonly-facts-v1.json",
+      "bytes": 12907,
+      "sha256": "ac25591fb62df10a6db3cae05399ac7ffa2ff242cc35b5eaa3df1cf18f26edeb"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/next-two-older-retention-pairs-dated-allocation-facts-v1.json",
+      "bytes": 13890,
+      "sha256": "800e35051f39a1bd995a772a3183ae58af44181d4f01587883552131cb7c6edb"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/two-oldest-recovery-scope-independent-review-v1.json",
+      "bytes": 9831,
+      "sha256": "91df33233daf237cdfcafa682a4e59fefda80699d7cb73c8ea45d7a566d31fce"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/complete-ui-build-v1/build-receipt.json",
+      "bytes": 1250,
+      "sha256": "37756d6285d79005882c94b577a2021bc360020a6aac425d886214ea219a781b"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/permission-plan-v2/plan.json",
+      "bytes": 5760511,
+      "sha256": "9bcb731b4b136994f0b21f2aa31c6787e7d001f8eb88547d92d01d6c6ca56aa2"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/ui-plan-v1.json",
+      "bytes": 34090,
+      "sha256": "e564a51983df6bc3191791c62ebabcab2903827f758291236390edb40fdb993a"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/ui-capacity-fresh-v1.execution.json",
+      "bytes": 1555,
+      "sha256": "92d931dd2e3fa58b96f9114903a6d78cf95d1c5942c7086b1999d4dadfb9219a"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/ui-capacity-fresh-v2.execution.json",
+      "bytes": 1556,
+      "sha256": "f81c964c41d830b49db6fb5916cde6b7022937778e1933ee79143369bb5e6d82"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/namespace-characterize-v1.execution.json",
+      "bytes": 696,
+      "sha256": "58c228ed1dd40f0392f8d8b67e3695ae76e8c844d976c6a91cff8974f7bc00cb"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/namespace-characterize-wallet-independent-actual-review-v1.json",
+      "bytes": 2237,
+      "sha256": "8dde8e7ef02e80f8cc789f41b5a4532db78b1a5c706737df7f6c6de3b7ade884"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/next-two-older-retention-pairs-wallet-independent-arithmetic-review-v1.json",
+      "bytes": 2491,
+      "sha256": "42da5ba2010fe27d4e7b0f28b2607dd2af0debad883dd3f045360ad6840e3ccf"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/ui-capacity-full-advisory-v2.execution.json",
+      "bytes": 1939,
+      "sha256": "0dd53e5c10760ac4f6fe4d5ecb4fd53194aefa55addd631291127dbb3f1b9b07"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/ui-capacity-advisory-quantitative-summary-v1.json",
+      "bytes": 20560,
+      "sha256": "9b7a6ad810a18328774fa2d8373608f2e2e0b0018f90abe40aaf7d440c957efc"
+    },
+    {
+      "path": "/tmp/pow-audit32-next-reliability/ui-capacity-actual-model-wallet-independent-arithmetic-v1.json",
+      "bytes": 3682,
+      "sha256": "a93915e45c84e71d6ce68e7532fbf7b007f4d4e3a80e77a79a4df668727bac6e"
+    }
+  ],
+  "approvalText": "Approved\u2014execute this exact capacity recovery proposal: complete verified offhost custody and independent restoration, retire only the minimum qualified oldest-first subset of the four named complete roots and their four exact original archives needed for every unchanged native deployment gate plus 256 MiB margin, apply only their bounded scoped hold exception, and implement/test the temporary controller and evidence adapters with bounded alias waiting. Preserve the current release, newest two rollback pairs, every sidecar and original failure evidence, policies, infrastructure, chain and application data. Complete audit bookkeeping, hygiene, the already approved batch deployment, release synchronization, verification and announcement. No other cleanup, namespace whitelist, native guard weakening, reserve reduction or infrastructure change is approved."
+}
