@@ -98,7 +98,7 @@ function ComputerAppLauncher({ open, onClose, onOpenWorkspace, returnFocus }: Co
             return (
               <li key={app.workspace}>
                 <button aria-label={app.label} className="computer-launcher-app" onClick={() => openWorkspace(app.workspace)} type="button">
-                  <Icon aria-hidden="true" size={21} />
+                  <Icon aria-hidden="true" size={20} />
                   <span className="computer-launcher-app-copy"><strong>{app.label}</strong><small>{app.description}</small></span>
                 </button>
               </li>
@@ -107,7 +107,7 @@ function ComputerAppLauncher({ open, onClose, onOpenWorkspace, returnFocus }: Co
         </ul>
         {apps.length === 0 ? <p className="computer-launcher-empty" role="status">No matching apps.</p> : null}
         <button className="computer-record-search" onClick={() => openWorkspace("search")} type="button">
-          <Search aria-hidden="true" size={17} /><span>Search public records</span>
+          <Search aria-hidden="true" size={18} /><span>Search public records</span>
         </button>
       </div>
     </dialog>
@@ -150,16 +150,16 @@ export function ComputerControls({ layout, onLayoutChange, onOpenWorkspace, onOp
     <div className="computer-controls">
       <div aria-label="Computer layout" className="computer-layout-switch" role="group">
         <button aria-pressed={layout === "focus"} onClick={() => onLayoutChange("focus")} type="button">
-          <PanelLeft aria-hidden="true" size={16} /><span>Focus</span>
+          <PanelLeft aria-hidden="true" size={18} /><span>Focus</span>
         </button>
         <button aria-pressed={layout === "desktop"} onClick={() => onLayoutChange("desktop")} type="button">
-          <Monitor aria-hidden="true" size={16} /><span>Desktop</span>
+          <Monitor aria-hidden="true" size={18} /><span>Desktop</span>
         </button>
       </div>
       <button aria-label="Find an app" aria-haspopup="dialog" className="computer-launcher-button" onClick={launcher.show} type="button">
-        <Search aria-hidden="true" size={17} /><span>Apps</span><kbd>⌘ / Ctrl K</kbd>
+        <Search aria-hidden="true" size={18} /><span>Apps</span><kbd>⌘ / Ctrl K</kbd>
       </button>
-      {onOpenLocalData ? <button className="computer-local-data-button" onClick={onOpenLocalData} type="button"><PanelLeft aria-hidden="true" size={17} /><span>Local data</span></button> : null}
+      {onOpenLocalData ? <button className="computer-local-data-button" onClick={onOpenLocalData} type="button"><PanelLeft aria-hidden="true" size={18} /><span>Local data</span></button> : null}
       <ComputerAppLauncher open={launcher.open} onClose={launcher.close} onOpenWorkspace={onOpenWorkspace} returnFocus={launcher.returnFocus.current} />
     </div>
   );
@@ -178,16 +178,16 @@ export function ComputerShell({ layout, activeFolder, onOpenWorkspace, children,
           <p className="computer-rail-title">Apps</p>
           {COMPUTER_APPS.map((app) => {
             const Icon = app.icon;
-            return <button aria-current={computerAppIsActive(app, activeFolder) ? "page" : undefined} className="computer-rail-app" key={app.workspace} onClick={() => onOpenWorkspace(app.workspace)} title={app.description} type="button"><Icon aria-hidden="true" size={18} /><span>{app.label}</span></button>;
+            return <button aria-current={computerAppIsActive(app, activeFolder) ? "page" : undefined} className="computer-rail-app" key={app.workspace} onClick={() => onOpenWorkspace(app.workspace)} title={app.description} type="button"><Icon aria-hidden="true" size={20} /><span>{app.label}</span></button>;
           })}
-          <button aria-haspopup="dialog" className="computer-rail-app computer-all-apps" onClick={launcher.show} type="button"><Grid2X2 aria-hidden="true" size={18} /><span>All apps</span></button>
+          <button aria-haspopup="dialog" className="computer-rail-app computer-all-apps" onClick={launcher.show} type="button"><Grid2X2 aria-hidden="true" size={20} /><span>All apps</span></button>
           <p className="computer-rail-note">Your desktop stays local.</p>
         </nav>
         <div className="computer-stage">
           <section className="computer-window" aria-label={`${title} workspace`}>
             <header className="computer-windowbar">
               <span className="computer-window-title"><ActiveIcon aria-hidden="true" size={18} /><span>{title}</span></span>
-              <span className="computer-window-meta"><LockKeyhole aria-hidden="true" size={13} /><span>Signing stays local</span></span>
+              <span className="computer-window-meta"><LockKeyhole aria-hidden="true" size={14} /><span>Signing stays local</span></span>
             </header>
             <div className="computer-window-content">{children}</div>
           </section>

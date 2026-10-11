@@ -1,27 +1,11 @@
 import {
   ArrowUpRight,
-  AtSign,
-  Clock,
-  Code2,
-  CheckSquare,
-  FilePenLine,
-  FileText,
-  GitBranch,
-  Globe2,
-  Infinity as InfinityIcon,
-  Mail,
   MessageSquareQuote,
-  Monitor,
-  PanelsTopLeft,
   Play,
   RefreshCw,
-  Search,
-  TrendingUp,
-  Users,
-  Wallet,
-  Zap,
 } from "lucide-react";
 import { useState } from "react";
+import { APP_ICONS } from "../../app/appIcons";
 import {
   BOOST_APP_URL,
   PUBLISH_APP_URL,
@@ -104,7 +88,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Mail, files, contacts, applications, and local-first account state in one sovereign workspace.",
         href: COMPUTER_APP_URL,
-        icon: Mail,
+        icon: APP_ICONS.Computer,
         label: "Computer",
         localHref: LOCAL_COMPUTER_APP_URL,
       },
@@ -112,7 +96,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Search a confirmed ID or address and browse its public, verified files.",
         href: DESKTOP_APP_URL,
-        icon: Monitor,
+        icon: APP_ICONS.Desktop,
         label: "Desktop",
         localHref: LOCAL_DESKTOP_APP_URL,
       },
@@ -120,7 +104,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Render verified HTML messages and attachments from a transaction ID.",
         href: BROWSER_APP_URL,
-        icon: FileText,
+        icon: APP_ICONS.Browser,
         label: "Browser",
         localHref: LOCAL_BROWSER_APP_URL,
       },
@@ -128,7 +112,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Create HTML pages and apps, preview locally, and publish through Files and Mail.",
         href: PAGES_APP_URL,
-        icon: PanelsTopLeft,
+        icon: APP_ICONS.Pages,
         label: "Pages",
         localHref: LOCAL_PAGES_APP_URL,
       },
@@ -136,7 +120,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Follow proof-ranked people and publish permanent social records from Mail.",
         href: BOOST_APP_URL,
-        icon: Zap,
+        icon: APP_ICONS.Boost,
         label: "Boost",
         localHref: LOCAL_BOOST_APP_URL,
       },
@@ -144,27 +128,27 @@ const LANDING_APP_GROUPS = [
         description:
           "Publish complete text articles with a shared PowID and Boost replies, likes, and reboosts.",
         href: PUBLISH_APP_URL,
-        icon: FilePenLine,
+        icon: APP_ICONS.Publish,
         label: "Publish",
         localHref: LOCAL_PUBLISH_APP_URL,
       },
       {
         description: "Search Computer protocols, public content, files, and transaction evidence.",
         href: SEARCH_APP_URL,
-        icon: Search,
+        icon: APP_ICONS.Search,
         label: "Search",
         localHref: LOCAL_SEARCH_APP_URL,
       },
       {
         description: "Publish source files in wallet-owned repositories with verifiable on-chain revision history.",
         href: CODE_APP_URL,
-        icon: Code2,
+        icon: APP_ICONS.Code,
         label: "Code",
         localHref: LOCAL_CODE_APP_URL,
       },
       {
         description: "Commission work, deliver evidence, and pay in proofs with an inspectable public receipt.",
-        href: JOBS_APP_URL, icon: CheckSquare, label: "Jobs", localHref: LOCAL_JOBS_APP_URL,
+        href: JOBS_APP_URL, icon: APP_ICONS.Jobs, label: "Jobs", localHref: LOCAL_JOBS_APP_URL,
       },
     ],
   },
@@ -176,7 +160,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Claim a permanent ProofOfWork ID through the canonical registry.",
         href: ID_APP_URL,
-        icon: AtSign,
+        icon: APP_ICONS.IDs,
         label: "IDs",
         localHref: LOCAL_ID_APP_URL,
       },
@@ -184,7 +168,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Claim and search a permanent .pow DNS name from the canonical registry.",
         href: DNS_APP_URL,
-        icon: Globe2,
+        icon: APP_ICONS.DNS,
         label: "DNS",
         localHref: LOCAL_DNS_APP_URL,
       },
@@ -192,7 +176,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Browse sealed terms and settle ID, credit, WORK, bond, and Boost sale tickets.",
         href: MARKETPLACE_APP_URL,
-        icon: Users,
+        icon: APP_ICONS.AMO,
         label: "AMO",
         localHref: LOCAL_MARKETPLACE_APP_URL,
       },
@@ -200,7 +184,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Create proof-backed credits and mint directly through their owner registries.",
         href: TOKEN_APP_URL,
-        icon: FilePenLine,
+        icon: APP_ICONS.Credit,
         label: "Credits",
         localHref: LOCAL_TOKEN_APP_URL,
       },
@@ -208,7 +192,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Review balances, transfer owned credits and bonds, and manage your sale tickets.",
         href: WALLET_APP_URL,
-        icon: Wallet,
+        icon: APP_ICONS.Wallet,
         label: "Wallet",
         localHref: LOCAL_WALLET_APP_URL,
       },
@@ -222,7 +206,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Inspect WORK supply, holders, network-value floor, AMO units, and confirmed history.",
         href: WORK_TOKEN_APP_URL,
-        icon: TrendingUp,
+        icon: APP_ICONS.WORK,
         label: "WORK",
         localHref: LOCAL_WORK_TOKEN_APP_URL,
       },
@@ -230,7 +214,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Create and inspect POWB Infinity Bonds and their sale-ticket market.",
         href: INFINITY_APP_URL,
-        icon: InfinityIcon,
+        icon: APP_ICONS.Infinity,
         label: "Infinity",
         localHref: LOCAL_INFINITY_APP_URL,
       },
@@ -238,7 +222,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Create and inspect INCB Inception Bonds with frozen confirmation-time value.",
         href: INCEPTION_APP_URL,
-        icon: GitBranch,
+        icon: APP_ICONS.Inception,
         label: "Inception",
         localHref: LOCAL_INCEPTION_APP_URL,
       },
@@ -252,7 +236,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Search the read-only activity ledger for chain-backed Computer events.",
         href: LOG_APP_URL,
-        icon: Clock,
+        icon: APP_ICONS.Log,
         label: "Log",
         localHref: LOCAL_LOG_APP_URL,
       },
@@ -260,7 +244,7 @@ const LANDING_APP_GROUPS = [
         description:
           "Compare canonical modeled value with confirmed network activity in proofs and USD.",
         href: GROWTH_APP_URL,
-        icon: TrendingUp,
+        icon: APP_ICONS.Growth,
         label: "Growth",
         localHref: LOCAL_GROWTH_APP_URL,
       },
@@ -376,7 +360,7 @@ export function LandingApp({
                 href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}
               >
                 <span className="button-content">
-                  <AtSign size={17} />
+                  <APP_ICONS.IDs size={18} strokeWidth={1.75} aria-hidden="true" />
                   <span>Claim an ID</span>
                 </span>
               </a>
@@ -385,7 +369,7 @@ export function LandingApp({
                 href={appHref(DNS_APP_URL, LOCAL_DNS_APP_URL)}
               >
                 <span className="button-content">
-                  <Globe2 size={17} />
+                  <APP_ICONS.DNS size={18} strokeWidth={1.75} aria-hidden="true" />
                   <span>Claim DNS</span>
                 </span>
               </a>
@@ -394,7 +378,7 @@ export function LandingApp({
                 href={appHref(COMPUTER_APP_URL, LOCAL_COMPUTER_APP_URL)}
               >
                 <span className="button-content">
-                  <Mail size={17} />
+                  <APP_ICONS.Computer size={18} strokeWidth={1.75} aria-hidden="true" />
                   <span>Open Computer</span>
                 </span>
               </a>
@@ -502,7 +486,7 @@ export function LandingApp({
                         key={app.label}
                       >
                         <span className="landing-app-icon" aria-hidden="true">
-                          <AppIcon size={20} />
+                          <AppIcon size={20} strokeWidth={1.75} />
                         </span>
                         <span className="landing-app-copy">
                           <strong>{app.label}</strong>

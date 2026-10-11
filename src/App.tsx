@@ -1,5 +1,7 @@
 import { ActionTransactionReview, type ActionReview } from "./shared/components/ActionTransactionReview";
 import { ActionRecoveryPanel } from "./shared/components/ActionRecoveryPanel";
+import { BrandMark } from "./shared/components/BrandMark";
+import { APP_ICONS } from "./app/appIcons";
 import { PagesWorkspace, type PagesPublicationDraft, type PagesDnsLinkRequest } from "./features/pages/PagesWorkspace";
 import { BrowserWindow } from "./features/browser/BrowserWindow";
 import { ComputerControls, ComputerShell } from "./features/computer/ComputerShell";
@@ -38141,7 +38143,7 @@ export default function App() {
             <div className="computer-legacy-workspace-links">
             <span className="folder-group-label">Create &amp; files</span>
             <button aria-current={activeFolder === "pages"} onClick={() => openFolder("pages")} type="button">
-              <span className="folder-label"><FilePenLine size={17} /><span>Pages</span></span>
+              <span className="folder-label"><APP_ICONS.Pages size={18} strokeWidth={1.75} aria-hidden="true" /><span>Pages</span></span>
             </button>
             <button
               aria-current={activeFolder === "files"}
@@ -38149,7 +38151,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <Paperclip size={17} />
+                <APP_ICONS.Files size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>Files</span>
               </span>
               <strong>{mailAccountReadVerified ? allFileMessages.length : "—"}</strong>
@@ -38160,7 +38162,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <Monitor size={17} />
+                <APP_ICONS.Desktop size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>Desktop</span>
               </span>
               <strong>{desktopFileMessages.length}</strong>
@@ -38171,7 +38173,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <FileText size={17} />
+                <APP_ICONS.Browser size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>Browser</span>
               </span>
             </button>
@@ -38181,7 +38183,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <MessageSquareQuote size={17} />
+                <APP_ICONS.Boost size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>Boost</span>
               </span>
             </button>
@@ -38191,7 +38193,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <FileText size={17} />
+                <APP_ICONS.Publish size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>Publish</span>
               </span>
             </button>
@@ -38201,7 +38203,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <Search size={17} />
+                <APP_ICONS.Search size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>Search</span>
               </span>
             </button>
@@ -38211,7 +38213,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <Code2 size={17} />
+                <APP_ICONS.Code size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>Code</span>
               </span>
             </button>
@@ -38220,10 +38222,10 @@ export default function App() {
               onClick={() => openFolder("jobs")}
               type="button"
             >
-              <span className="folder-label"><CheckSquare size={17} /><span>Jobs</span></span>
+              <span className="folder-label"><APP_ICONS.Jobs size={18} strokeWidth={1.75} aria-hidden="true" /><span>Jobs</span></span>
             </button>
             <button aria-current={activeFolder === "permission"} onClick={() => openFolder("permission")} type="button">
-              <span className="folder-label"><CheckSquare size={17} /><span>Permission</span></span>
+              <span className="folder-label"><APP_ICONS.Permission size={18} strokeWidth={1.75} aria-hidden="true" /><span>Permission</span></span>
             </button>
             <span className="folder-group-label">Identity &amp; value</span>
             <button
@@ -38232,7 +38234,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <AtSign size={17} />
+                <APP_ICONS.IDs size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>IDs</span>
               </span>
               <strong>{address && ["ready", "last-verified"].includes(registryReadStatus) ? ownedIdCount + walletPendingIdEvents.length : "—"}</strong>
@@ -38243,7 +38245,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <Globe size={17} />
+                <APP_ICONS.DNS size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>DNS</span>
               </span>
             </button>
@@ -38253,7 +38255,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <Users size={17} />
+                <APP_ICONS.AMO size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>AMO</span>
               </span>
               <strong>{address && ["ready", "last-verified"].includes(registryReadStatus) ? ownerControlledIds.length : "—"}</strong>
@@ -38264,7 +38266,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <FilePenLine size={17} />
+                <APP_ICONS.Credit size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>Credit</span>
               </span>
               <strong>
@@ -38279,7 +38281,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <Wallet size={17} />
+                <APP_ICONS.Wallet size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>Wallet</span>
               </span>
               <strong>
@@ -38294,7 +38296,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <TrendingUp size={17} />
+                <APP_ICONS.WORK size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>WORK</span>
               </span>
               <strong>
@@ -38309,7 +38311,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <TrendingUp size={17} />
+                <APP_ICONS.Infinity size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>Infinity</span>
               </span>
               <strong>
@@ -38326,7 +38328,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <GitBranch size={17} />
+                <APP_ICONS.Inception size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>Inception</span>
               </span>
               <strong>
@@ -38344,7 +38346,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <Clock size={17} />
+                <APP_ICONS.Log size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>Log</span>
               </span>
               <strong>
@@ -38360,7 +38362,7 @@ export default function App() {
               type="button"
             >
               <span className="folder-label">
-                <Users size={17} />
+                <APP_ICONS.Contacts size={18} strokeWidth={1.75} aria-hidden="true" />
                 <span>Contacts</span>
               </span>
               <strong>{contactsForNetwork.length}</strong>
@@ -39296,7 +39298,7 @@ export default function App() {
           onClick={() => openFolder("inbox")}
           type="button"
         >
-          <Mail size={18} aria-hidden="true" />
+          <APP_ICONS.Mail size={20} strokeWidth={1.75} aria-hidden="true" />
           <span>Mail</span>
         </button>
         <button
@@ -39308,7 +39310,7 @@ export default function App() {
           onClick={() => openFolder("files")}
           type="button"
         >
-          <Paperclip size={18} aria-hidden="true" />
+          <APP_ICONS.Files size={20} strokeWidth={1.75} aria-hidden="true" />
           <span>Files</span>
         </button>
         <button
@@ -39316,7 +39318,7 @@ export default function App() {
           onClick={() => openFolder("marketplace")}
           type="button"
         >
-          <Users size={18} aria-hidden="true" />
+          <APP_ICONS.AMO size={20} strokeWidth={1.75} aria-hidden="true" />
           <span>AMO</span>
         </button>
         <button
@@ -39324,7 +39326,7 @@ export default function App() {
           onClick={() => openFolder("wallet")}
           type="button"
         >
-          <Wallet size={18} aria-hidden="true" />
+          <APP_ICONS.Wallet size={20} strokeWidth={1.75} aria-hidden="true" />
           <span>Wallet</span>
         </button>
         <button
@@ -39349,7 +39351,7 @@ export default function App() {
           ref={mobileNavigationTriggerRef}
           type="button"
         >
-          <Menu size={18} aria-hidden="true" />
+          <Menu size={20} strokeWidth={1.75} aria-hidden="true" />
           <span>More</span>
         </button>
       </nav>
@@ -59674,9 +59676,7 @@ function DesktopWorkspace({
       <section className="desktop-workspace desktop-workspace-empty">
         <div className="desktop-screensaver">
           <div className="desktop-screen-card">
-            <div className="brand-mark" aria-hidden="true">
-              PoW
-            </div>
+            <BrandMark />
             <span>ProofOfWork Desktop</span>
             <h2>Open a public ProofOfWork desktop.</h2>
             <form

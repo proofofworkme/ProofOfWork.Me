@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronUp, Menu, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Grid2X2, X } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -10,6 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { APP_LINKS, APP_MENU_GROUPS, type AppLink } from "../../app/appLinks";
+import { APP_ICONS } from "../../app/appIcons";
 import { appHref, isLocalPreviewHost } from "../../app/routeRegistry";
 
 function currentHref() {
@@ -264,9 +265,11 @@ export function DomainNav({ onNavigate, placement = "header" }: DomainNavProps) 
               <div className="domain-menu-products">
                 {group.links.map((link) => {
                   const active = linkIsActive(link, current);
+                  const Icon = APP_ICONS[link.label] ?? Grid2X2;
                   return (
                     <a aria-current={active ? "page" : undefined} href={appHref(link.href, link.localHref)} key={link.href} onClick={(event) => handleNavigate(link.label, event)} role="menuitem">
-                      <span><strong>{link.displayLabel}</strong><small>{link.description}</small></span>
+                      <Icon className="domain-menu-product-icon" size={20} strokeWidth={1.75} aria-hidden="true" />
+                      <span className="domain-menu-product-copy"><strong>{link.displayLabel}</strong><small>{link.description}</small></span>
                       {active ? <Check size={15} aria-hidden="true" /> : null}
                     </a>
                   );
@@ -299,7 +302,7 @@ export function DomainNav({ onNavigate, placement = "header" }: DomainNavProps) 
       </div>
       {placement === "header" ? (
         <button aria-controls={menuId} aria-expanded={openGroup === "all"} aria-haspopup={mobileSheet ? "dialog" : "menu"} aria-label={`${open ? "Close" : "Open"} application menu`} className="app-menu-trigger" onClick={(event) => toggleGroup("all", event.currentTarget)} onKeyDown={(event) => handleTriggerKeyDown(event, "all")} type="button">
-          <span className="app-menu-trigger-icon" aria-hidden="true"><Menu size={15} /></span>
+          <span className="app-menu-trigger-icon" aria-hidden="true"><Grid2X2 size={18} strokeWidth={1.75} /></span>
           <strong>{activeLink.label === "Home" ? "Menus" : activeLink.label === "IDs" ? "ID" : activeLink.label}</strong>
           <ChevronDown size={15} aria-hidden="true" />
         </button>

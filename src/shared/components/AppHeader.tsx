@@ -6,6 +6,7 @@ import { shortAddress } from "../../functions";
 import type { BitcoinNetwork } from "../bitcoin/networks";
 import { UNISAT_DOWNLOAD_URL } from "../wallet/walletLinks";
 import { DomainNav } from "./DomainNav";
+import { BrandMark } from "./BrandMark";
 import { HeaderActionsMenu } from "./HeaderActionsMenu";
 
 export type AppHeaderAccountStat = {
@@ -96,9 +97,7 @@ export function AppHeader({
           href={homeHref}
           aria-label="ProofOfWork.Me home"
         >
-          <div className="brand-mark" aria-hidden="true">
-            PoW
-          </div>
+          <BrandMark />
           <div>
             <h1>{title}</h1>
             {subtitle ? <span>{subtitle}</span> : null}

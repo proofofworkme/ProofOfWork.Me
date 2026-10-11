@@ -496,10 +496,20 @@ authoritative.
 
 The user approved the full product interface upgrade on 2026-10-10 after the
 Computer Focus/Desktop review. The shared direction covers every public app and
-every embedded Computer workspace: OpenAI-inspired warm neutral surfaces,
-restrained olive accents, monochrome primary actions, and system light/dark
-appearance. Keep the interface quiet around chain evidence and consistent
-across standalone and embedded tools.
+every embedded Computer workspace. On 2026-10-11 the user established
+OpenAI/ChatGPT's design philosophy as the continuing product standard:
+neutral surfaces, monochrome identity and primary actions, generous clear space,
+consistent rounded line icons, and system light/dark appearance. Color signals
+meaningful status rather than decorating navigation. Keep the interface quiet
+around chain evidence and consistent across standalone and embedded tools.
+
+The ProofOfWork identity uses its own rounded W mark, with one canonical vector
+at `src/assets/proof-mark.svg`. Header, Desktop, browser favicon, touch icon and
+social assets derive from that shape. Public menus, Computer navigation and
+landing app cards share `src/app/appIcons.ts`; new products extend that catalog.
+Preserve clear space, natural proportions and small-size legibility. Avoid
+textures, gradients, ornamental badges and competing per-app icon definitions.
+The design reference is OpenAI/ChatGPT; the name and mark remain ProofOfWork.Me.
 
 The type system is self-hosted: Inter Variable for interface, body text, and
 display headings, and IBM Plex Mono for txids, addresses, protocol evidence,

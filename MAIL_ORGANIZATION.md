@@ -45,8 +45,11 @@ create independent wallet/app sessions or synthetic file records.
 
 The shared product interface applies to the shell, every Computer workspace,
 and every public app. The user approved this full scope on 2026-10-10. It uses
-OpenAI-inspired warm neutral surfaces, restrained olive accents, monochrome
-primary actions, Inter for UI and headings, and system light/dark appearance.
+the OpenAI/ChatGPT design direction established on 2026-10-11: neutral surfaces,
+monochrome identity, primary actions and navigation, Inter for UI and headings,
+and system light/dark appearance. Semantic status colors remain distinct.
+The shared rounded W vector supplies the brand and favicon; public menus,
+Computer's rail/dock/launcher and landing app cards use one line-icon catalog.
 It preserves exact proof evidence, keyboard focus, and narrow/short-screen
 navigation. The appearance layer does not change read qualification, local
 state keys, transaction review, or signing authority.

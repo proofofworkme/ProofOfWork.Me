@@ -605,7 +605,7 @@
 .landing-app .landing-app-card { align-items: start; background: var(--surface-soft); border-color: var(--border); box-shadow: none; display: grid; }
 .landing-app-card:hover { background: var(--hover); border-color: var(--border-strong); box-shadow: none; transform: none; }
 .landing-app-icon { background: var(--surface); border-color: var(--border); color: var(--text-muted); }
-.landing-app-icon svg { stroke-width: 1.6; }
+.landing-app-icon svg { stroke-width: 1.75; }
 .landing-app-copy strong { font-family: var(--font-ui); font-weight: 500; }
 .landing-app-card:hover .landing-app-arrow { color: var(--text); transform: none; }
 .landing-app :is(.landing-video, .landing-testimonial, .landing-protocol) { background: var(--surface); border-color: var(--border); box-shadow: none; }

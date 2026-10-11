@@ -113,6 +113,18 @@ unchanged. `APP_MENU_GROUPS` in `src/app/appLinks.ts` supplies both shared
 navbars from the canonical `APP_LINKS` destinations and local routes. Public
 social links include X, YouTube, and GitHub.
 
+The product design standard follows OpenAI/ChatGPT's restrained interface
+philosophy: neutral light/dark surfaces, monochrome navigation and primary
+actions, Inter typography, consistent line icons and clear space. Semantic
+success, warning and error colors retain their meaning. ProofOfWork.Me uses
+its own rounded W identity. `src/assets/proof-mark.svg` is the single vector
+source for headers, the Desktop welcome, favicon, touch icon and social assets;
+`src/app/appIcons.ts` is the shared app icon catalog. To regenerate current
+identity assets, run `node scripts/generate-brand-assets.mjs` (installed Chrome
+and Playwright required); an optional output-directory argument allows review
+without changing `public/`. Browser icon and social metadata URLs are versioned
+to refresh previously cached branding.
+
 ### Code v1
 
 Code is available at `code.proofofwork.me`, with a matching workspace inside
@@ -254,9 +266,12 @@ reviewed parent attestations, but a content-altering merge cannot. Do not use
 ### Shared product interface
 
 The user approved the full product UI upgrade on 2026-10-10: the shared design
-covers every public app and every embedded Computer workspace. Inspired by
-OpenAI's quiet interface aesthetic, it uses warm neutral surfaces, restrained
-olive accents, monochrome primary actions, and system light/dark appearance.
+covers every public app and every embedded Computer workspace. The 2026-10-11
+identity update establishes OpenAI/ChatGPT's quiet design philosophy as the
+continuing standard: neutral surfaces, monochrome identity, navigation and
+primary actions, and system light/dark appearance. The project retains its own
+mark; [OpenAI's design guidelines](https://openai.com/brand/) are a reference
+for clarity, consistent proportions and clear space.
 Inter Variable is the interface, body, and display-heading family; IBM Plex Mono
 is reserved for txids, addresses, protocol evidence, and other exact fields.
 The font assets are self-hosted by the application build. The shared interface
