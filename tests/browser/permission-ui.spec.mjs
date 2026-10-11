@@ -44,6 +44,7 @@ async function fixture(page, { unavailable = false, wallet = false, empty = fals
   }, { owner: walletAddress, utxo });
   await page.route("**/api/v1/**", async route => {
     const url = new URL(route.request().url());
+    url.pathname = url.pathname.replace(/^\/test-api(?=\/api\/)/u, "");
     if (route.request().method() !== "GET") return route.abort("blockedbyclient");
     if (url.pathname === "/api/v1/permissions") return route.fulfill(unavailable
       ? { status: 503, json: { error: "Canonical Permission candidate discovery is incomplete", details: { code: "PERMISSION_DISCOVERY_INCOMPLETE" } } }
@@ -78,6 +79,7 @@ for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 }); await fixture(page); await page.goto("/?permission-app=1");
     await page.getByRole("button", { name: grant.label, exact: true }).click();
     await expect(page.getByLabel("Confirmed permission terms", { exact: true })).toContainText("AGENT_DAILY_LIMIT_PROOFS=30000");
+    await expect(page.getByLabel("Confirmed permission terms", { exact: true })).toHaveCSS("font-size", "12px");
     await expect(page.getByText("Autonomous signing is closed", { exact: true })).toBeVisible();
     await expect(page.getByLabel("Controller budget accounting").getByText("Unavailable", { exact: true })).toHaveCount(3);
     await expect(page.getByRole("button", { name: "Replace", exact: true })).toBeDisabled();

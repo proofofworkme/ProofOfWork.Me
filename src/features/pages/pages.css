@@ -97,9 +97,9 @@
 
 @layer interface {
 .pages-workspace :is(h2, h3) { color: var(--text); font-family: var(--font-ui); font-weight: 500; line-height: 1.2; }
-.pages-kicker { color: var(--text-muted); font-family: var(--font-ui); font-size: 12px; letter-spacing: 0; text-transform: none; }
+.pages-kicker { color: var(--text-muted); font-family: var(--font-ui); font-size: var(--text-xs); letter-spacing: 0; text-transform: none; }
 .pages-hero-mark { color: var(--text-muted); }
-.pages-hero-mark span { font-family: var(--font-ui); font-size: 11px; letter-spacing: 0; }
+.pages-hero-mark span { font-family: var(--font-ui); font-size: var(--text-xs); letter-spacing: 0; }
 .pages-workspace :is(.pages-tool-card, .pages-code-card, .pages-publish-card, .pages-dns-card) { background: var(--surface); border-color: var(--border); border-radius: var(--radius-lg); box-shadow: none; }
 .pages-publish-card { background-image: none; }
 .pages-workspace :is(.primary, .secondary) { font-weight: 500; }
@@ -107,7 +107,11 @@
 .pages-status-bad { border-color: color-mix(in srgb, var(--red) 45%, var(--border)); }
 .pages-editor-toolbar { background: var(--surface-soft); border-color: var(--border); }
 .pages-workspace input, .pages-workspace select { background-color: var(--surface); border-color: var(--border-interactive); }
-.pages-workspace .pages-source { background: var(--surface-soft); border: 1px solid var(--border-interactive); border-radius: 0; font: .79rem/1.75 var(--font-mono); }
-.pages-workspace .pages-discard { font-size: 12px; }
+.pages-workspace .pages-source { background: var(--surface-soft); border: 1px solid var(--border-interactive); border-radius: 0; font: var(--text-sm)/1.75 var(--font-mono); }
+.pages-workspace :is(label, .pages-status, .pages-save-error strong, .pages-save-error p, .pages-hero p, .pages-tool-card p, .pages-code-card p, .pages-publish-card p, .pages-dns-card p, .pages-preview-head strong) { font-size: var(--text-sm); }
+.pages-workspace :is(small, .pages-save-state, .pages-editor-foot, .pages-local-foot, .pages-preview-head p, .pages-source-evidence summary > span, .pages-source-evidence dt, .pages-source-evidence dd, .pages-source-evidence p) { font-size: var(--text-xs); }
+.pages-source-evidence summary, .pages-view-tabs button, .pages-workspace .pages-discard { font-size: var(--text-sm); }
+.pages-view-tabs button { border-radius: var(--radius-sm); }
+@media (max-width: 860px) { .pages-workspace .pages-source { font-size: var(--text-md); } }
 
 }

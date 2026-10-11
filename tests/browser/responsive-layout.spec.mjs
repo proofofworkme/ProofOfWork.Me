@@ -37,10 +37,10 @@ const VIEWPORT_WIDTHS = [
 ];
 const MOBILE_VIEWPORT_WIDTHS = VIEWPORT_WIDTHS.filter((width) => width <= 620);
 const PUBLIC_APP_MENUS = [
-  { label: "UTILITY", products: ["COMPUTER", "DESKTOP", "BROWSER", "PAGES", "CODE", "JOBS", "PERMISSION"] },
-  { label: "ID&SOC", products: ["ID", "DNS", "BOOST", "PUBLISH"] },
-  { label: "FINANCE", products: ["WALLET", "AMO", "CREDIT", "WORK", "INFINITY", "INCEPTION"] },
-  { label: "INSIGHTS", products: ["LOG", "GROWTH", "SEARCH"] },
+  { label: "Utility", products: ["Computer", "Desktop", "Browser", "Pages", "Code", "Jobs", "Permission"] },
+  { label: "Identity & social", products: ["ID", "DNS", "Boost", "Publish"] },
+  { label: "Finance", products: ["Wallet", "AMO", "Credit", "WORK", "Infinity", "Inception"] },
+  { label: "Insights", products: ["Log", "Growth", "Search"] },
 ];
 const PUBLIC_APP_COUNT = PUBLIC_APP_MENUS.reduce((sum, group) => sum + group.products.length, 0);
 const VIEWPORT_HEIGHT = 900;
@@ -2416,7 +2416,7 @@ test("public menus close on keyboard exit and restore visible focus after resizi
   const baseUrl = COMPUTER_BASE_URL || MARKETPLACE_BASE_URL;
   await page.setViewportSize({ height: VIEWPORT_HEIGHT, width: 1440 });
   await openFixtureRoute(page, surfaceUrl(baseUrl, "/?landing=1"), "menu keyboard exit");
-  const utility = page.locator(".topbar .domain-nav-groups").getByRole("button", { name: "UTILITY" });
+  const utility = page.locator(".topbar .domain-nav-groups").getByRole("button", { name: "Utility" });
   const popup = page.locator(".grouped-domain-popover:visible");
   await utility.focus();
   await page.keyboard.press("ArrowUp");
@@ -2475,7 +2475,7 @@ test("Boost mobile menus stay above fixed navigation and contain their products"
     await products.first().focus();
     await page.keyboard.press("End");
     const search = products.last();
-    await expect(search.locator("strong")).toHaveText("SEARCH");
+    await expect(search.locator("strong")).toHaveText("Search");
     await expect(search).toBeFocused();
     await assertCenterIsTouchable(search, `Boost Search hit target ${width}px`);
     await assertBackdropCoversDock(`Boost Applications backdrop ${width}px`);
@@ -2488,9 +2488,9 @@ test("Boost mobile menus stay above fixed navigation and contain their products"
     await expect(categories).toHaveCount(4);
     await assertElementContainsItsLayout(footer, `Boost footer ${width}px`);
     await assertLocatorWithinViewport(page, footer.locator(".domain-nav"), `Boost footer menus ${width}px`);
-    const finance = footer.getByRole("button", { name: "FINANCE" });
+    const finance = footer.getByRole("button", { name: "Finance" });
     await finance.click();
-    const dialog = page.getByRole("dialog", { name: "FINANCE" });
+    const dialog = page.getByRole("dialog", { name: "Finance" });
     await expect(dialog).toBeVisible();
     const financeProducts = dialog.getByRole("menuitem");
     await expect(financeProducts).toHaveCount(6);

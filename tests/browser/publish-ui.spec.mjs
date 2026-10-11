@@ -43,6 +43,7 @@ async function fixture(page, { wallet = false, alteredBody = false, recovery = f
   }, { address, utxo: fundingUtxo, recovery, identity: selectedIdentity ? signedIdentity : null, emptyWalletDraft });
   await page.route("**/api/v1/**", async route => {
     const url = new URL(route.request().url());
+    url.pathname = url.pathname.replace(/^\/test-api(?=\/api\/)/u, "");
     if (route.request().method() !== "GET") return route.abort("blockedbyclient");
     if (url.pathname.endsWith("/utxo")) return route.fulfill({ json: [fundingUtxo] });
     if (url.pathname.endsWith("/hex")) return route.fulfill({ json: { hex: funding.toHex() } });
@@ -64,6 +65,7 @@ for (const embedded of [false, true]) {
     const dnsReads = [], profileReads = [];
     page.on("request", request => {
       const url = new URL(request.url());
+      url.pathname = url.pathname.replace(/^\/test-api(?=\/api\/)/u, "");
       if (url.pathname.startsWith("/api/v1/dns/")) dnsReads.push(url.href);
       if (url.pathname === "/api/v1/boost" && url.searchParams.has("profile") && url.searchParams.get("limit") === "1") profileReads.push(url.href);
     });
@@ -160,6 +162,8 @@ for (const width of [390, 1440]) {
     await page.getByRole("tab", { name: "Following", exact: true }).click();
     await page.locator(".publish-article-card").click();
     await expect(page.locator(".publish-article-body")).toHaveText(body);
+    await expect(page.locator(".publish-article-body")).toHaveCSS("font-family", /Inter Variable/);
+    await expect(page.locator(".publish-byline")).toHaveCSS("font-size", "14px");
     await page.locator(".publish-article-body").click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Like, 3 likes", exact: true })).toBeVisible();
@@ -202,6 +206,7 @@ for (const width of [390, 1440]) {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.locator(".boost-modal-backdrop")).toHaveCount(0);
     await expect(page.locator(".boost-feed-panel")).toHaveCount(0);
+    await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveCSS("font-family", /Inter Variable/);
     await page.getByRole("textbox", { name: "Article title", exact: true }).fill(article.title);
     await page.getByRole("textbox", { name: "Article text", exact: true }).fill(body);
     await page.getByRole("button", { name: "Preview", exact: true }).click();

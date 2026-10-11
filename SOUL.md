@@ -494,6 +494,12 @@ authoritative.
 
 ## Interface Direction
 
+[DESIGN.md](DESIGN.md) is the canonical first-party interface policy and required
+reading for UI work. It distinguishes the OpenAI/ChatGPT reference from our own
+tokens, typography, identity, interaction rules, and release acceptance. Keep
+this operating memory aligned with that policy without duplicating a separate
+design specification.
+
 The user approved the full product interface upgrade on 2026-10-10 after the
 Computer Focus/Desktop review. The shared direction covers every public app and
 every embedded Computer workspace. On 2026-10-11 the user established
@@ -532,13 +538,22 @@ focus, and reduced-motion preferences are honored. The interface should feel
 like a precise instrument: quiet around evidence, dramatic only where product
 orientation benefits from it.
 
-Shared header and footer navigation use the same four product menus in the
-approved order: UTILITY (COMPUTER, DESKTOP, BROWSER, PAGES, CODE, JOBS,
-PERMISSION), ID&SOC (ID, DNS, BOOST, PUBLISH), FINANCE (WALLET, AMO, CREDIT,
-WORK, INFINITY, INCEPTION), and INSIGHTS (LOG, GROWTH, SEARCH). Keep every product reachable through these
-menus and Home through the brand. Grouping is product orientation; existing
-routes, Computer workspaces and their authority remain unchanged. ID is the
-menu display label for the existing IDs app.
+Standalone headers and shared footers use the approved menu order: Utility
+(Computer, Desktop, Browser, Pages, Code, Jobs, Permission), Identity & social
+(ID, DNS, Boost, Publish), Finance (Wallet, AMO, Credit, WORK, Infinity,
+Inception), and Insights (Log, Growth, Search). Use sentence case while preserving
+product names and acronyms. Computer's header uses its Apps launcher and
+workspace/layout controls instead of repeating these grouped menus. Keep every
+product reachable through its rail/dock/launcher and grouped footer, and Home
+through the brand. Preserve the full desktop title; compact layout/local-data
+controls may use a deliberate second row. Existing routes, Computer workspaces,
+and their authority remain unchanged. ID is the menu label for the IDs app.
+
+Use readable 12/14/16px text roles and the shared 8/12/16px spacing and radii.
+Publish's first-party article text uses the same sans-serif reading family.
+User content, sandboxed documents, and provider video players retain their own
+presentation and exact bytes. Quiet first-party chrome must never erase proof
+qualification, draft recovery, wallet context, or accessible controls.
 
 AMO Listings, Seals, and Sales are activity projections over the existing
 sale-ticket lifecycle. They may organize, search, and paginate already

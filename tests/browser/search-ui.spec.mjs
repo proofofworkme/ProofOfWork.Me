@@ -23,6 +23,7 @@ function response({ network = "livenet", q = "", results = [record, file], ready
 async function fixture(page, handler) {
   await page.route("**/api/v1/**", async route => {
     const url = new URL(route.request().url());
+    url.pathname = url.pathname.replace(/^\/test-api(?=\/api\/)/u, "");
     if (route.request().method() !== "GET") return route.abort("blockedbyclient");
     if (url.pathname === "/api/v1/search/detail") {
       if (handler && await handler(route, url)) return;
@@ -44,7 +45,7 @@ for (const { width, embedded } of [{ width: 390, embedded: false }, { width: 768
     await page.setViewportSize({ width, height: 900 });
     await fixture(page);
     const requests = [];
-    page.on("request", request => { if (new URL(request.url()).pathname === "/api/v1/search") requests.push(new URL(request.url())); });
+    page.on("request", request => { if (new URL(request.url()).pathname.replace(/^\/test-api(?=\/api\/)/u, "") === "/api/v1/search") requests.push(new URL(request.url())); });
     await page.goto(embedded ? "/?folder=search" : "/?search-app=1");
     await expect(page.getByRole("heading", { name: "Find the record.", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: record.title, exact: true })).toBeVisible();
@@ -52,6 +53,11 @@ for (const { width, embedded } of [{ width: 390, embedded: false }, { width: 768
     expect(requests[0].searchParams.get("status")).toBe("confirmed");
     expect(requests[0].searchParams.get("valid")).toBe("valid");
     await expect(page.locator(".search-proofs").first()).toHaveText("9,007,199,254,740,993 proofs");
+    await expect(page.locator(".search-result-meta").first()).toHaveCSS("font-size", "12px");
+    await expect(page.getByLabel("Protocol", { exact: true })).toHaveCSS("font-size", width <= 860 ? "16px" : "14px");
+    await page.getByRole("searchbox", { name: "Search the Computer" }).focus();
+    await expect(page.locator(".search-query-box")).toHaveCSS("outline-style", "solid");
+    await expect(page.locator(".search-query-box")).toHaveCSS("outline-width", "2px");
     await expect(page.locator(".search-excerpt").nth(1)).toHaveText(hostileText);
     expect(await page.evaluate(() => window.searchInjected)).toBeUndefined();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
@@ -62,6 +68,7 @@ for (const { width, embedded } of [{ width: 390, embedded: false }, { width: 768
     await expect(inspector.getByText("9,007,199,254,740,993", { exact: true })).toBeVisible();
     await inspector.getByRole("button", { name: "Raw payload", exact: true }).click();
     await expect(inspector.locator("pre")).toHaveText(hostileText);
+    await expect(inspector.locator("pre")).toHaveCSS("font-size", "12px");
     expect(await page.evaluate(() => window.searchInjected)).toBeUndefined();
     await page.keyboard.press("Escape");
     await expect(inspector).not.toBeVisible();
@@ -79,7 +86,7 @@ test("query, protocol, action and network filters are shareable and restored by 
   await expect(page.getByLabel("Action", { exact: true }).locator("option[value='dns-subdomain']")).toHaveCount(1);
   await page.getByLabel("Action", { exact: true }).selectOption("dns-subdomain");
   await expect(page).toHaveURL(/kind=dns-subdomain/);
-  const nextRead = page.waitForRequest(request => { const url = new URL(request.url()); return url.pathname === "/api/v1/search" && url.searchParams.get("network") === "testnet4"; });
+  const nextRead = page.waitForRequest(request => { const url = new URL(request.url()); return url.pathname.replace(/^\/test-api(?=\/api\/)/u, "") === "/api/v1/search" && url.searchParams.get("network") === "testnet4"; });
   await page.getByLabel("Network", { exact: true }).selectOption("testnet4");
   await nextRead;
   await expect(page).toHaveURL(/network=testnet4/);

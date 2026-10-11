@@ -40,6 +40,7 @@ const REQUIRED_SAFE_CLEANUP_ROOT_PATTERNS = new Set([
 ]);
 const REQUIRED_DOCUMENTS = new Set([
   "SOUL.md",
+  "DESIGN.md",
   "README.md",
   "PROOFOFWORK_IDS.md",
   "PROOFOFWORK_DNS.md",

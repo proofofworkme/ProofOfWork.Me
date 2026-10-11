@@ -1,27 +1,39 @@
 import { expect, test } from "@playwright/test";
+import * as bitcoin from "bitcoinjs-lib";
+import * as ecc from "@bitcoinerlab/secp256k1";
+import { socialIdentityIntentMessage } from "../../src/features/identity/socialIdentityCore.mjs";
 
-const ADDRESS = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
+bitcoin.initEccLib(ecc);
+// Disposable public test key: establish a valid local preference, never a live wallet.
+const fixtureKey = Buffer.alloc(32, 1);
+const ADDRESS = bitcoin.payments.p2pkh({ pubkey: ecc.pointFromScalar(fixtureKey, true) }).address;
 const ID = "armyofyouth";
 const NOW = "2026-09-05T07:00:00.000Z";
+const identityFields = { address: ADDRESS, id: ID, network: "livenet", createdAt: NOW };
+const message = socialIdentityIntentMessage(identityFields);
+const messageBytes = Buffer.from(message);
+const messageHash = bitcoin.crypto.hash256(Buffer.concat([Buffer.from("\u0018Bitcoin Signed Message:\n"), Buffer.from([messageBytes.length]), messageBytes]));
+const signed = ecc.signRecoverable(messageHash, fixtureKey);
+const identity = { ...identityFields, message, signature: Buffer.concat([Buffer.from([31 + signed.recoveryId]), signed.signature]).toString("base64") };
 async function fixtures(page) {
-  await page.addInitScript(({ address, id, now }) => {
+  await page.addInitScript(({ address, identity }) => {
     const refuseSigning = async () => { throw new Error("Layout fixture cannot sign or broadcast"); };
     window.unisat = { getAccounts: async () => [address], requestAccounts: async () => [address],
       getNetwork: async () => "livenet", on() {}, removeListener() {}, signPsbt: refuseSigning,
       signMessage: refuseSigning, pushPsbt: refuseSigning, pushTx: refuseSigning };
     localStorage.setItem("proofofwork.boost.profileIntent.v1", JSON.stringify({
-      [`livenet:${address.toLowerCase()}`]: { address, id, network: "livenet", createdAt: now,
-        message: "read-only layout fixture", signature: "fixture-not-a-signature" },
+      [`livenet:${address}`]: identity,
     }));
-  }, { address: ADDRESS, id: ID, now: NOW });
+  }, { address: ADDRESS, identity });
   await page.route("**/api/v1/**", async (route) => {
     if (route.request().method() !== "GET") return route.abort("blockedbyclient");
     const url = new URL(route.request().url());
+    url.pathname = url.pathname.replace(/^\/test-api(?=\/api\/)/u, "");
     let json = {};
     const records = [{ id: ID, ownerAddress: ADDRESS, receiveAddress: ADDRESS, confirmed: true, network: "livenet" },
       { id: "boost", ownerAddress: ADDRESS, receiveAddress: ADDRESS, confirmed: true, network: "livenet" }];
     if (url.pathname.includes("registry")) json = { records, listings: [], stats: { total: 2 }, indexedAt: NOW };
-    else if (url.pathname.startsWith("/api/v1/id/")) json = { record: records[1] };
+    else if (url.pathname.startsWith("/api/v1/ids/")) json = { network: "livenet", record: records.find(record => record.id === url.pathname.split("/").pop()) };
     else if (url.pathname === "/api/v1/boost") json = {
       complete: true, items: [], indexedAt: NOW, network: "livenet", snapshotId: "a".repeat(64),
       totalCount: 0, start: 0, end: 0, hasMore: false, nextCursor: "", stats: { total: 0, confirmed: 0, pending: 0 },

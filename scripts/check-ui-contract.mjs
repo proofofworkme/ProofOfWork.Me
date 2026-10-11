@@ -534,10 +534,10 @@ const { APP_LINKS, APP_MENU_GROUPS } = await import(
   `data:text/javascript;base64,${Buffer.from(appLinksRuntimeSource).toString("base64")}`
 );
 const expectedAppMenus = [
-  ["UTILITY", ["COMPUTER", "DESKTOP", "BROWSER", "PAGES", "CODE", "JOBS", "PERMISSION"]],
-  ["ID&SOC", ["ID", "DNS", "BOOST", "PUBLISH"]],
-  ["FINANCE", ["WALLET", "AMO", "CREDIT", "WORK", "INFINITY", "INCEPTION"]],
-  ["INSIGHTS", ["LOG", "GROWTH", "SEARCH"]],
+  ["Utility", ["Computer", "Desktop", "Browser", "Pages", "Code", "Jobs", "Permission"]],
+  ["Identity & social", ["ID", "DNS", "Boost", "Publish"]],
+  ["Finance", ["Wallet", "AMO", "Credit", "WORK", "Infinity", "Inception"]],
+  ["Insights", ["Log", "Growth", "Search"]],
 ];
 const menuLinks = APP_MENU_GROUPS?.flatMap((group) => group.links) ?? [];
 expect(

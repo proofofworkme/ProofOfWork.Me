@@ -50,7 +50,7 @@ export function pageFileName(title) {
   return `${name || "ProofOfWork page"}.html`;
 }
 
-export function pageTemplateHtml(title = "My ProofOfWork Page", app = false) {
+export function pageTemplateHtml(title = "My ProofOfWork page", app = false) {
   const escapedTitle = escapePageHtml(title);
   return `<!doctype html>
 <html lang="en">
@@ -59,16 +59,20 @@ export function pageTemplateHtml(title = "My ProofOfWork Page", app = false) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapedTitle}</title>
   <style>
+    :root { color-scheme: light dark; --bg: #f7f7f5; --surface: #ffffff; --text: #242424; --muted: #626262; --border: #e3e3e0; --action: #242424; --on-action: #ffffff; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #212121; --surface: #2a2a2a; --text: #f1f1ef; --muted: #b5b5b2; --border: #414140; --action: #eeeeec; --on-action: #212121; } }
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 48px 24px; background: #080807; color: #f7f0e2; font: 16px/1.6 system-ui, sans-serif; }
+    body { margin: 0; padding: 48px 24px; background: var(--bg); color: var(--text); font: 16px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif; }
     main { max-width: 720px; margin: auto; }
-    small { color: #d7a84f; letter-spacing: .14em; text-transform: uppercase; }
-    h1 { font-size: clamp(32px, 7vw, 56px); line-height: 1.1; letter-spacing: -.04em; }
-    p { color: #c3b59d; }
-    section { margin-top: 32px; padding: 24px; border: 1px solid #332c22; border-radius: 12px; }
-    button { background: #d7a84f; color: #15130f; border: 0; border-radius: 8px; padding: 12px 20px; font: inherit; cursor: pointer; }
-    output { display: block; font: 48px/1.2 monospace; margin: 20px 0; }
-    a { color: #d7a84f; }
+    small { color: var(--muted); font-size: 12px; }
+    h1 { font-size: clamp(32px, 7vw, 56px); font-weight: 500; line-height: 1.15; letter-spacing: -.035em; }
+    h2 { font-size: 22px; font-weight: 500; line-height: 1.3; }
+    p { color: var(--muted); }
+    section { margin-top: 32px; padding: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+    button { min-height: 44px; background: var(--action); color: var(--on-action); border: 0; border-radius: 8px; padding: 12px 20px; font: inherit; cursor: pointer; }
+    :is(button, a):focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+    output { display: block; font-family: inherit; font-size: 48px; line-height: 1.2; font-variant-numeric: tabular-nums; margin: 20px 0; }
+    a { color: var(--text); text-underline-offset: 3px; }
     code { overflow-wrap: anywhere; }
   </style>
 </head>

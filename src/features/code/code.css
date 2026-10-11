@@ -193,9 +193,10 @@
 .code-filter:focus-within { outline: 2px solid var(--focus-outline); outline-offset: 2px; }
 .code-filter input { background: transparent; border: 0; box-shadow: none; }
 .code-file-tree > button.is-selected { background: var(--accent-soft); border-color: var(--border); }
-.code-app textarea.code-source-editor { background: var(--surface-soft); font: 12px/1.8 var(--font-mono); }
+.code-app textarea.code-source-editor { background: var(--surface-soft); font: var(--text-sm)/1.8 var(--font-mono); }
 .code-head, .code-file-toolbar { background: var(--surface-soft); border-color: var(--border); }
 .code-read-state, .code-pending-records { background: var(--surface-soft); border-color: var(--border); }
 .code-app :is(.primary, .secondary) { font-weight: 500; }
+@media (max-width: 860px) { .code-app textarea.code-source-editor { font-size: var(--text-md); } }
 
 }

@@ -105,9 +105,7 @@ export function AppHeader({
           </div>
         </a>
 
-        <DomainNav onNavigate={onDomainNavigate} />
-
-        {navigationControls}
+        {navigationControls ?? <DomainNav onNavigate={onDomainNavigate} />}
 
         <div className="topbar-actions">
           <AppearanceMenu />

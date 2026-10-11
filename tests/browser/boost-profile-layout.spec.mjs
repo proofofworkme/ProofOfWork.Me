@@ -7,6 +7,7 @@ async function fixtures(page, { displayName = "carbonz@proofofwork.me", unavaila
   await page.route("**/api/v1/**", async (route) => {
     if (route.request().method() !== "GET") return route.abort("blockedbyclient");
     const url = new URL(route.request().url());
+    url.pathname = url.pathname.replace(/^\/test-api(?=\/api\/)/u, "");
     if (url.pathname !== "/api/v1/boost") return route.fulfill({ json: { records: [], listings: [] } });
     queries.push(Object.fromEntries(url.searchParams));
     if (unavailable) return route.fulfill({ status: 503, json: { error: "Profile temporarily unavailable" } });
@@ -41,6 +42,9 @@ for (const [width, embedded] of [[1920, false], [1440, false], [960, false], [76
     await expect(surface.locator(".boost-sidebar .boost-search")).toHaveCount(0);
     await expect(surface.getByRole("textbox", { name: "Search this profile", exact: true })).toHaveCount(0);
     await expect(header).toContainText("35 Boosts");
+    await expect(surface.locator(".boost-profile-title > span")).toHaveCSS("font-size", "12px");
+    const compactLink = page.locator(".boost-compact-nav :is(a, button)").first();
+    if (await compactLink.isVisible()) await expect(compactLink).toHaveCSS("font-size", "12px");
     await expect(surface.locator(".boost-profile-copy h2")).toHaveText("carbonz");
     await expect(surface.locator(".boost-profile-copy > p")).toHaveText("@carbonz");
     await expect(surface.getByLabel("Profile connections")).toHaveText("6 Following22 Followers");
@@ -91,6 +95,7 @@ for (const [width, embedded] of [[1920, false], [1440, false], [960, false], [76
     expect(new URL(page.url()).searchParams.get("q")).toBe("proof");
     const resetRequest = page.waitForRequest(request => {
       const url = new URL(request.url());
+      url.pathname = url.pathname.replace(/^\/test-api(?=\/api\/)/u, "");
       return url.pathname === "/api/v1/boost" && url.searchParams.get("profile") === "carbonz"
         && url.searchParams.get("profileTab") === "likes" && !url.searchParams.has("q");
     });

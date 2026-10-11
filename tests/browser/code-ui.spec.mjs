@@ -40,6 +40,7 @@ async function fixture(page, { unavailable = false, wallet = false, corruptSourc
   }, { owner, utxo });
   await page.route("**/api/v1/**", async route => {
     const url = new URL(route.request().url());
+    url.pathname = url.pathname.replace(/^\/test-api(?=\/api\/)/u, "");
     if (route.request().method() !== "GET") return route.abort("blockedbyclient");
     if (url.pathname === "/api/v1/code-repositories") return route.fulfill(unavailable
       ? { status: 503, json: { error: "Historical Code candidate discovery is incomplete", details: { code: "CODE_DISCOVERY_INCOMPLETE" } } }
@@ -76,7 +77,7 @@ test("unready discovery shows unavailable evidence instead of an empty repositor
 for (const width of [390, 1440]) {
   test(`verified source, history, revisions and ZIP fit ${width}px without executing source`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
-    await fixture(page);
+    await fixture(page, { wallet: true });
     await page.goto("/?code=1");
     await page.getByRole("button", { name: repo.name, exact: true }).click();
     await expect(page.locator(".code-source")).toContainText("window.codeInjected = true");
@@ -101,6 +102,15 @@ for (const width of [390, 1440]) {
     expect(archived.readUInt32LE(0)).toBe(0x04034b50);
     expect(archived.includes(bytes)).toBe(true);
     expect(archived.includes(Buffer.from(empty.path))).toBe(true);
+    await page.getByRole("button", { name: "Connect UniSat", exact: true }).first().click();
+    await page.getByRole("button", { name: "Add file", exact: true }).click();
+    const editor = page.getByRole("textbox", { name: "Source text", exact: true });
+    await expect(editor).toHaveCSS("font-size", width <= 860 ? "16px" : "14px");
+    await expect(editor).toHaveCSS("font-family", /IBM Plex Mono/);
+    const draftSource = "Exact unsent source · café\nTrailing spaces.  \n";
+    await editor.fill(draftSource);
+    await expect(editor).toHaveValue(draftSource);
+    expect(await page.evaluate(() => window.codeSignatureCalls)).toBe(0);
     const dimensions = await page.evaluate(() => ({ document: document.documentElement.scrollWidth, viewport: window.innerWidth }));
     expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport + 1);
   });

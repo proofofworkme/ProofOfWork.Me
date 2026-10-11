@@ -39375,7 +39375,7 @@ function htmlText(value: string) {
 }
 
 function browserTemplateHtml(title: string, kicker: string, body: string) {
-  const pageTitle = title.trim() || "Proof Page";
+  const pageTitle = title.trim() || "Proof page";
   const pageKicker = kicker.trim() || "Published on the ProofOfWork Computer";
   const pageBody =
     body.trim() ||
@@ -39388,22 +39388,22 @@ function browserTemplateHtml(title: string, kicker: string, body: string) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${htmlText(pageTitle)}</title>
   <style>
-    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    :root { color-scheme: light dark; --bg: #f7f7f5; --surface: #ffffff; --text: #242424; --muted: #626262; --border: #e3e3e0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #212121; --surface: #2a2a2a; --text: #f1f1ef; --muted: #b5b5b2; --border: #414140; } }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: #030508; color: #edf2f7; display: grid; place-items: center; padding: 32px; }
-    main { width: min(760px, 100%); border: 1px solid rgba(237,242,247,.16); border-radius: 14px; background: #10151c; padding: 52px; box-shadow: 0 24px 70px rgba(0,0,0,.35); }
-    .kicker { color: #4aa3ff; font-size: 13px; font-weight: 850; letter-spacing: 0; text-transform: uppercase; }
-    h1 { font-size: 4.6rem; letter-spacing: 0; line-height: .92; margin: 10px 0 18px; overflow-wrap: anywhere; }
-    p { color: #a8b3c1; font-size: 1.05rem; line-height: 1.55; margin: 0; }
-    section { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-top: 30px; }
-    div { border: 1px solid rgba(237,242,247,.12); border-radius: 10px; padding: 14px; }
-    span { color: #8b98a8; display: block; font-size: 12px; font-weight: 800; text-transform: uppercase; }
-    strong { display: block; font-size: 1.1rem; margin-top: 4px; }
-    footer { color: #64748b; font-size: 13px; margin-top: 34px; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); display: grid; place-items: center; padding: 32px; }
+    main { width: min(760px, 100%); padding: 48px; }
+    .kicker { color: var(--muted); font-size: 12px; }
+    h1 { font-size: clamp(32px, 7vw, 56px); font-weight: 500; letter-spacing: -.035em; line-height: 1.15; margin: 12px 0 24px; overflow-wrap: anywhere; }
+    p { color: var(--muted); font-size: 16px; line-height: 1.65; margin: 0; }
+    section { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-top: 32px; }
+    div { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+    span { color: var(--muted); display: block; font-size: 12px; }
+    strong { display: block; font-size: 16px; font-weight: 500; margin-top: 8px; }
+    footer { color: var(--muted); font-size: 12px; line-height: 1.6; margin-top: 32px; }
     @media (max-width: 640px) {
-      body { padding: 18px; }
-      main { padding: 28px; }
-      h1 { font-size: 2.7rem; }
+      body { padding: 16px; }
+      main { padding: 24px 0; }
     }
   </style>
 </head>
@@ -40173,7 +40173,7 @@ function BrowserWorkspace({
 }
 
 function BrowserTemplateTools() {
-  const [title, setTitle] = useState("My ProofOfWork Page");
+  const [title, setTitle] = useState("My ProofOfWork page");
   const [kicker, setKicker] = useState("ProofOfWork.Me Browser");
   const [body, setBody] = useState("This page lives as HTML carried by the ProofOfWork Computer.");
   const [copied, setCopied] = useState(false);

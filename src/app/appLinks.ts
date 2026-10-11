@@ -121,43 +121,43 @@ function appMenuLink(
 
 export const APP_MENU_GROUPS: AppMenuGroup[] = [
   {
-    label: "UTILITY",
+    label: "Utility",
     links: [
-      appMenuLink("Computer", "COMPUTER", "Mail, files and workspaces"),
-      appMenuLink("Desktop", "DESKTOP", "Public files by address"),
-      appMenuLink("Browser", "BROWSER", "Verified pages by transaction"),
-      appMenuLink("Pages", "PAGES", "Create HTML pages and apps"),
-      appMenuLink("Code", "CODE", "Public source repositories"),
-      appMenuLink("Jobs", "JOBS", "Commission and deliver work"),
-      appMenuLink("Permission", "PERMISSION", "Wallet-bound agent permissions"),
+      appMenuLink("Computer", "Computer", "Mail, files and workspaces"),
+      appMenuLink("Desktop", "Desktop", "Public files by address"),
+      appMenuLink("Browser", "Browser", "Verified pages by transaction"),
+      appMenuLink("Pages", "Pages", "Create HTML pages and apps"),
+      appMenuLink("Code", "Code", "Public source repositories"),
+      appMenuLink("Jobs", "Jobs", "Commission and deliver work"),
+      appMenuLink("Permission", "Permission", "Wallet-bound agent permissions"),
     ],
   },
   {
-    label: "ID&SOC",
+    label: "Identity & social",
     links: [
       appMenuLink("IDs", "ID", "Claim your ProofOfWork ID"),
       appMenuLink("DNS", "DNS", "Claim and search .pow names"),
-      appMenuLink("Boost", "BOOST", "Proof-ranked posts and people"),
-      appMenuLink("Publish", "PUBLISH", "Write and read articles"),
+      appMenuLink("Boost", "Boost", "Proof-ranked posts and people"),
+      appMenuLink("Publish", "Publish", "Write and read articles"),
     ],
   },
   {
-    label: "FINANCE",
+    label: "Finance",
     links: [
-      appMenuLink("Wallet", "WALLET", "Balances, transfers and history"),
+      appMenuLink("Wallet", "Wallet", "Balances, transfers and history"),
       appMenuLink("AMO", "AMO", "Listings, seals and markets"),
-      appMenuLink("Credit", "CREDIT", "Create and mint credits"),
+      appMenuLink("Credit", "Credit", "Create and mint credits"),
       appMenuLink("WORK", "WORK", "WORK dashboard and floor"),
-      appMenuLink("Infinity", "INFINITY", "Infinity Bonds and POWB"),
-      appMenuLink("Inception", "INCEPTION", "Inception Bonds and INCB"),
+      appMenuLink("Infinity", "Infinity", "Infinity Bonds and POWB"),
+      appMenuLink("Inception", "Inception", "Inception Bonds and INCB"),
     ],
   },
   {
-    label: "INSIGHTS",
+    label: "Insights",
     links: [
-      appMenuLink("Log", "LOG", "Transaction-backed activity"),
-      appMenuLink("Growth", "GROWTH", "Network value and growth"),
-      appMenuLink("Search", "SEARCH", "Find records and content"),
+      appMenuLink("Log", "Log", "Transaction-backed activity"),
+      appMenuLink("Growth", "Growth", "Network value and growth"),
+      appMenuLink("Search", "Search", "Find records and content"),
     ],
   },
 ];

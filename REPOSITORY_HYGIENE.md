@@ -14,8 +14,9 @@ Before final staging or committing:
 
 1. Re-read the staged diff and identify every behavior, protocol, product,
    infrastructure, deployment, and operating-memory consequence.
-2. Reconcile `SOUL.md` and every affected canonical document:
-   `README.md`, `PROOFOFWORK_IDS.md`, `MARKETPLACE.md`,
+2. Reconcile `SOUL.md` and every affected canonical document in
+   `repository-hygiene.json`, including `DESIGN.md` for first-party UI changes,
+   `README.md`, the ID/DNS and product protocol specifications,
    `OP_RETURN_INFRASTRUCTURE.md`, and `MAIL_ORGANIZATION.md`.
 3. Review the classified note inventory in `repository-hygiene.json`. Correct
    contradictory current-state claims, broken local links, abandoned drafts,
@@ -92,6 +93,12 @@ distinguish:
 Classification does not make a note correct forever. It makes its purpose
 explicit so the next update knows whether to reconcile, preserve, regenerate,
 or retire it.
+
+`DESIGN.md` is both canonical and a required document. `AGENTS.md` makes it
+required reading for UI work, inherited by the other agent entrypoints. The
+hygiene configuration and the checker's fixed required-document set must agree;
+removing the document or dropping its required status fails the check. This
+mechanical presence check does not replace design review or rendered UI checks.
 
 Declared deterministic generators are executed in a temporary directory during
 the check. The tracked general deck copies and ProofOfWork Computer model

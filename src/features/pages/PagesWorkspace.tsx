@@ -41,7 +41,7 @@ function createDraft(title: string, html = pageTemplateHtml(title)): PageDraft {
 }
 
 function initialDrafts(key: string) {
-  const draft = createDraft("My ProofOfWork Page");
+  const draft = createDraft("My ProofOfWork page");
   const fallback: PagesDraftStore = { version: 1, activeId: draft.id, drafts: [draft] };
   try {
     const raw = localStorage.getItem(key);
@@ -174,7 +174,7 @@ function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onReso
 
   function newDraft(app: boolean) {
     try {
-      const title = app ? "My ProofOfWork App" : "Untitled page";
+      const title = app ? "My ProofOfWork app" : "Untitled page";
       addDraft(createDraft(title, pageTemplateHtml(title, app)));
       setStatus({ tone: "good", text: app ? "App draft created. Preview is static until you choose Run app." : "Page draft created and saved locally." });
     } catch (error) { setStatus({ tone: "bad", text: message(error, "Could not create a draft.") }); }

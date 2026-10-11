@@ -45,7 +45,9 @@ states before claiming balances, file counts or empty collections. They do not
 create independent wallet/app sessions or synthetic file records.
 
 The shared product interface applies to the shell, every Computer workspace,
-and every public app. The user approved this full scope on 2026-10-10. It uses
+and every public app. [DESIGN.md](DESIGN.md) is the canonical policy and required
+reading for changes to these surfaces. The user approved this full scope on
+2026-10-10. It uses
 the OpenAI/ChatGPT design direction established on 2026-10-11: neutral surfaces,
 monochrome identity, primary actions and navigation, Inter for UI and headings,
 and Light, Dark, or System appearance. Semantic status colors remain distinct.
@@ -75,20 +77,28 @@ lock.
 
 ## Shared product navigation
 
-The public header and footer share the same product menus and order:
+Standalone headers and shared footers use the same product menus and order:
 
 | Menu | Products in order |
 | --- | --- |
-| UTILITY | COMPUTER, DESKTOP, BROWSER, PAGES, CODE, JOBS, PERMISSION |
-| ID&SOC | ID, DNS, BOOST, PUBLISH |
-| FINANCE | WALLET, AMO, CREDIT, WORK, INFINITY, INCEPTION |
-| INSIGHTS | LOG, GROWTH, SEARCH |
+| Utility | Computer, Desktop, Browser, Pages, Code, Jobs, Permission |
+| Identity & social | ID, DNS, Boost, Publish |
+| Finance | Wallet, AMO, Credit, WORK, Infinity, Inception |
+| Insights | Log, Growth, Search |
 
 The brand opens Home. ID is the singular menu label for the existing IDs app;
 its internal label, registry behavior and Computer workspace stay unchanged.
 Category menus organize public app entry points, separate from Computer's
 mailbox folders and workspace controls. Local development keeps the existing
 local app routes; standalone builds keep their production app destinations.
+Computer's header uses its Apps launcher and workspace/layout controls as primary
+navigation, without duplicating the grouped public menus. All products remain
+reachable through the rail/dock/launcher and grouped footer. Keep the full brand
+title readable on desktop; compact layout/local-data controls may reflow to a
+deliberate second row without reducing 44px targets. Menu labels use sentence
+case while product names, acronyms, exact evidence, and user content keep their
+meaning. Navigation refinements must preserve the active workspace, route,
+drafts, selections, and local wallet connection.
 
 ## Current Launch Status
 

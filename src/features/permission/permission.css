@@ -139,11 +139,15 @@
 .permission-controller { background: var(--surface-soft); border-color: var(--border); }
 .permission-controller > svg { color: var(--text-muted); stroke-width: 1.6; }
 .permission-controller strong { font-weight: 500; }
-.permission-pill { border-radius: var(--radius-pill); font-family: var(--font-ui); }
+.permission-pill { border-radius: var(--radius-pill); font-family: var(--font-ui); font-size: var(--text-xs); }
 .permission-pill.is-closed { color: var(--text-muted); border-color: var(--border); }
-.permission-tools input { font: 12px var(--font-mono); }
-.permission-form textarea { font: 12px/1.7 var(--font-mono); }
+.permission-tools input { font: var(--text-sm) var(--font-mono); }
+.permission-form textarea { font: var(--text-sm)/1.7 var(--font-mono); }
 .permission-read-state, .permission-empty { background: var(--surface-soft); border-color: var(--border); }
 .permission-app :is(.primary, .secondary) { font-weight: 500; }
+.permission-app :is(.permission-controller p, .permission-notice, .permission-read-state p, .permission-empty p, .permission-facts dd, .permission-back, .permission-form label, .permission-form legend, .permission-form summary, .permission-setup p, .permission-setup ol) { font-size: var(--text-sm); }
+.permission-app :is(.permission-muted, .permission-card-limits, .permission-facts dt, .permission-code, .permission-code-toolbar, .permission-budget span, .permission-event, .permission-editor-top, .permission-account) { font-size: var(--text-xs); }
+.permission-actions-list code { border-radius: var(--radius-sm); font-size: var(--text-xs); }
+@media (max-width: 860px) { .permission-tools input, .permission-form textarea { font-size: var(--text-md); } }
 
 }

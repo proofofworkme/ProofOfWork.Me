@@ -60,6 +60,34 @@ test("Pages keeps exact edited and imported source across reload and HTML downlo
   await expectNoSignature(page, state);
 });
 
+for (const colorScheme of ["light", "dark"]) {
+  test(`new Pages templates follow ${colorScheme} system appearance without external resources`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme });
+    const state = await fixture(page);
+    await page.goto("/?pages=1");
+    await page.getByRole("button", { name: "Preview", exact: true }).click();
+    const staticFrame = page.frameLocator(".pages-workspace iframe");
+    await expect(staticFrame.getByRole("heading", { name: "My ProofOfWork page", exact: true })).toBeVisible();
+    const background = colorScheme === "dark" ? "rgb(33, 33, 33)" : "rgb(247, 247, 245)";
+    await expect(staticFrame.locator("body")).toHaveCSS("background-color", background);
+    await expect(staticFrame.locator("body")).toHaveCSS("font-family", /system-ui/);
+    await page.getByRole("button", { name: "New app", exact: true }).click();
+    const html = await page.getByLabel("HTML source", { exact: true }).inputValue();
+    await page.getByRole("button", { name: "Preview", exact: true }).click();
+    await page.getByRole("button", { name: "Run app", exact: true }).click();
+    const app = page.frameLocator('iframe[title="Pages app preview"]');
+    await expect(app.locator("body")).toHaveCSS("background-color", background);
+    await expect(app.getByRole("heading", { name: "My ProofOfWork app", exact: true })).toBeVisible();
+    await expect(app.getByRole("button", { name: "Add one", exact: true })).toHaveCSS("min-height", "44px");
+    await app.getByRole("button", { name: "Add one", exact: true }).click();
+    await expect(app.locator("#count")).toHaveText("1");
+    await page.getByRole("button", { name: "Source", exact: true }).click();
+    await expect(page.getByLabel("HTML source", { exact: true })).toHaveValue(html);
+    expect(state.external).toEqual([]);
+    await expectNoSignature(page, state);
+  });
+}
+
 test("Pages local drafts stay separate for disconnected and exact wallet accounts", async ({ page }) => {
   const state = await fixture(page);
   await page.goto("/?pages=1");
@@ -637,13 +665,17 @@ for (const [label, viewport] of [["desktop", { width: 1440, height: 1000 }], ["p
     await expect(page.locator(".sidebar")).toHaveCount(0);
     await expect(page.getByLabel("HTML source", { exact: true })).toBeVisible();
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await expect(page.getByLabel("HTML source", { exact: true })).toHaveCSS("font-size", label === "phone" ? "16px" : "14px");
+    await expect(page.locator(".pages-editor-foot")).toHaveCSS("font-size", "12px");
     await page.screenshot({ path: testInfo.outputPath(`pages-${label}.png`), fullPage: true });
     await page.goto("/?folder=files");
     if (label === "phone") await page.getByRole("button", { name: "More", exact: true }).click();
-    await page.locator(".sidebar").getByRole("button", { name: "Pages", exact: true }).click();
+    const navigation = label === "phone" ? page.getByRole("dialog", { name: "Computer navigation" }) : page.getByRole("navigation", { name: "Computer apps" });
+    await navigation.getByRole("button", { name: "Pages", exact: true }).click();
     await expect(page).toHaveURL(/folder=pages/u);
     await expect(page.getByLabel("HTML source", { exact: true })).toBeVisible();
     if (label === "phone") await expect(page.getByRole("dialog", { name: "Computer navigation" })).toHaveCount(0);
+    await expect(page.getByLabel("HTML source", { exact: true })).toHaveCSS("font-size", label === "phone" ? "16px" : "14px");
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`computer-pages-${label}.png`), fullPage: true });
     await expectNoSignature(page, state);

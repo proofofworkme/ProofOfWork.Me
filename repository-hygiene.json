@@ -84,6 +84,7 @@
     ],
     "canonical": [
       "SOUL.md",
+      "DESIGN.md",
       "README.md",
       "PROOFOFWORK_IDS.md",
       "PROOFOFWORK_DNS.md",
@@ -269,6 +270,7 @@
   ],
   "requiredDocuments": [
     "SOUL.md",
+    "DESIGN.md",
     "README.md",
     "PROOFOFWORK_IDS.md",
     "PROOFOFWORK_DNS.md",

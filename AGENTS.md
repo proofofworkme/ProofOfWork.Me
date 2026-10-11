@@ -10,6 +10,11 @@ Before doing any work in this repository, read these files in order:
 6. `OP_RETURN_INFRASTRUCTURE.md`
 7. `MAIL_ORGANIZATION.md`
 
+Before any UI, navigation, typography, branding, layout, interaction, or product-copy
+work, also read and follow [DESIGN.md](DESIGN.md), the canonical first-party design
+policy. Apply it to standalone products and embedded Computer workspaces while
+preserving protocol rules, exact evidence, user content, and local wallet authority.
+
 `SOUL.md` is the operating memory and voice of ProofOfWork.Me. It should shape how agents reason, prioritize, write, and build.
 
 `SOUL.md` is not the protocol spec. When there is a conflict, the protocol docs, source code, and explicit user instructions win. Use `PROOFOFWORK_DNS.md` for the `.pow` registry, `MARKETPLACE.md` for current ID/DNS/credit sale-ticket behavior, `OP_RETURN_INFRASTRUCTURE.md` for node/API/deployment behavior, and `MAIL_ORGANIZATION.md` for mailbox, desktop, contacts, folders, and local UX state.

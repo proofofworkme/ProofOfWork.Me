@@ -33,6 +33,13 @@ in their existing workspaces.
 - Resolve a confirmed ProofOfWork ID and insert its identity markup into the
   source. The owner and receiver remain distinct fields.
 
+New page and app starters follow [DESIGN.md](DESIGN.md) with neutral light/dark
+surfaces selected by CSS `prefers-color-scheme`, sentence-case labels, readable
+sans-serif system type, and 44px minimum button heights. Their self-contained
+HTML needs no external font requests. These are editable defaults for newly
+created drafts; saved drafts and imported source keep their exact HTML and
+styles. Changing the first-party shell's appearance does not rewrite a document.
+
 Importing a file or first loading a transaction creates a local draft. Loading
 the same unchanged transaction source reselects or refreshes its existing draft.
 Editing the draft never changes the original file or confirmed transaction. Source

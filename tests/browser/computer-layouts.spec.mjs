@@ -132,6 +132,136 @@ async function expectReadOnly(page, state) {
   expect(calls).toBe(0);
 }
 
+async function expectReadableComputerHeader(page, { singleRow }) {
+  const header = page.locator(".computer-shell .topbar");
+  await expect(header.getByRole("heading", { name: "ProofOfWork Computer", exact: true })).toBeVisible();
+  await expect(header.locator(".domain-nav")).toHaveCount(0);
+  for (const name of ["Utility", "Identity & social", "Finance", "Insights"]) {
+    await expect(header.getByRole("button", { name, exact: true })).toHaveCount(0);
+  }
+  await page.evaluate(() => document.fonts.ready);
+  const geometry = await header.evaluate(element => {
+    const title = element.querySelector("h1");
+    const range = document.createRange();
+    range.selectNodeContents(title);
+    const rect = value => ({ left: value.left, top: value.top, right: value.right,
+      bottom: value.bottom, width: value.width, height: value.height });
+    const controls = [...element.querySelectorAll("button, a")]
+      .filter(control => control.getClientRects().length && getComputedStyle(control).visibility !== "hidden")
+      .map(control => ({ name: control.getAttribute("aria-label") || control.textContent.trim(),
+        ...rect(control.getBoundingClientRect()) }));
+    return {
+      viewport: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      header: rect(element.getBoundingClientRect()),
+      title: rect(title.getBoundingClientRect()),
+      titleFont: Number.parseFloat(getComputedStyle(title).fontSize),
+      titleFragments: [...range.getClientRects()].map(rect),
+      groups: [".brand", ".computer-controls", ".topbar-actions"]
+        .map(selector => rect(element.querySelector(selector).getBoundingClientRect())),
+      workspaceControls: [...element.querySelector(".computer-controls").children]
+        .filter(control => control.getClientRects().length)
+        .map(control => rect(control.getBoundingClientRect())),
+      controls,
+    };
+  });
+  expect(geometry.titleFont).toBeGreaterThanOrEqual(14);
+  expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewport + 1);
+  expect(geometry.titleFragments.length).toBeGreaterThan(0);
+  for (const fragment of geometry.titleFragments) {
+    expect(fragment.left).toBeGreaterThanOrEqual(geometry.title.left - 1);
+    expect(fragment.right).toBeLessThanOrEqual(geometry.title.right + 1);
+    expect(fragment.top).toBeGreaterThanOrEqual(geometry.title.top - 1);
+    expect(fragment.bottom).toBeLessThanOrEqual(geometry.title.bottom + 1);
+    expect(fragment.left).toBeGreaterThanOrEqual(0);
+    expect(fragment.right).toBeLessThanOrEqual(geometry.viewport);
+  }
+  for (const control of geometry.controls) {
+    expect(control.width, `${control.name} target width`).toBeGreaterThanOrEqual(44);
+    expect(control.height, `${control.name} target height`).toBeGreaterThanOrEqual(44);
+    expect(control.left, `${control.name} left edge`).toBeGreaterThanOrEqual(0);
+    expect(control.right, `${control.name} right edge`).toBeLessThanOrEqual(geometry.viewport);
+    expect(control.top, `${control.name} header containment`).toBeGreaterThanOrEqual(geometry.header.top);
+    expect(control.bottom, `${control.name} header containment`).toBeLessThanOrEqual(geometry.header.bottom);
+  }
+  if (singleRow) {
+    const centers = geometry.groups.map(group => group.top + group.height / 2);
+    expect(Math.max(...centers) - Math.min(...centers), "Desktop header groups share one row").toBeLessThanOrEqual(1);
+    expect(geometry.titleFragments).toHaveLength(1);
+  }
+  if (geometry.viewport <= 620) {
+    const centers = geometry.workspaceControls.map(control => control.top + control.height / 2);
+    expect(Math.max(...centers) - Math.min(...centers), "Mobile layout, Apps and Local data share the second row")
+      .toBeLessThanOrEqual(1);
+  }
+}
+
+for (const width of [320, 390, 640, 861, 1024, 1181, 1440]) {
+  test(`${width}px Computer header keeps its full title, usable targets and appearance/layout continuity`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 640 ? 360 : 844 });
+    const state = await fixture(page);
+    await page.goto("/?folder=browser");
+    const address = page.getByLabel("Transaction ID or .pow name", { exact: true });
+    await address.fill("retain-this-unsent-entry.pow");
+    for (const mode of ["Focus", "Desktop"]) {
+      await setLayout(page, mode);
+      for (const appearance of ["Light", "Dark"]) {
+        await page.getByRole("button", { name: /^Appearance: /u }).click();
+        await page.getByRole("menuitemradio", { name: appearance, exact: true }).click();
+        await expect(page.locator("html")).toHaveAttribute("data-theme", appearance.toLowerCase());
+        await expect(page.getByRole("button", { name: `Appearance: ${appearance}`, exact: true })).toBeFocused();
+        await expect(layoutButton(page, mode)).toHaveAttribute("aria-pressed", "true");
+        await expect(address).toHaveValue("retain-this-unsent-entry.pow");
+        await expect(page).toHaveURL(/folder=browser/u);
+        await page.screenshot({ path: `/tmp/pow-design-header-${width}-${mode.toLowerCase()}-${appearance.toLowerCase()}.png` });
+        await expectReadableComputerHeader(page, { singleRow: width >= 861 });
+      }
+    }
+    await expectReadOnly(page, state);
+  });
+}
+
+for (const mode of ["Focus", "Desktop"]) {
+  test(`${mode} header Apps keeps every workspace reachable with the keyboard after grouped menus are removed`, async ({ page }) => {
+    const apps = [
+      ["Mail", "inbox"], ["Files", "files"], ["Desktop", "desktop"], ["Browser", "browser"],
+      ["Pages", "pages"], ["Boost", "boost"], ["Publish", "publish"], ["Search", "search"],
+      ["Code", "code"], ["Jobs", "jobs"], ["Permission", "permission"], ["IDs", "ids"],
+      ["DNS", "dns"], ["AMO", "marketplace"], ["Credit", "token"], ["Wallet", "wallet"],
+      ["WORK", "work"], ["Infinity", "infinity"], ["Inception", "inception"],
+      ["Log", "log"], ["Contacts", "contacts"],
+    ];
+    const state = await fixture(page);
+    await page.goto("/?folder=browser");
+    await setLayout(page, mode);
+    const opener = page.getByRole("button", { name: "Find an app", exact: true });
+    await opener.focus();
+    await page.keyboard.press("Control+k");
+    const launcher = page.getByRole("dialog", { name: "Computer apps", exact: true });
+    await expect(launcher.getByLabel("Find an app", { exact: true })).toBeFocused();
+    await expect(launcher.getByRole("list", { name: "Matching apps", exact: true }).getByRole("button"))
+      .toHaveCount(apps.length);
+    for (const [name] of apps) await expect(launcher.getByRole("button", { name, exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(launcher).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    for (const [name, folder] of apps) {
+      await opener.focus();
+      await page.keyboard.press("Enter");
+      const query = launcher.getByLabel("Find an app", { exact: true });
+      await expect(query).toBeFocused();
+      await query.fill(name);
+      await launcher.getByRole("button", { name, exact: true }).focus();
+      await page.keyboard.press("Enter");
+      await expect(launcher).toHaveCount(0);
+      await expect(page.locator(".computer-shell-layout")).toHaveAttribute("data-workspace", folder);
+      await expect.poll(() => new URL(page.url()).searchParams.get("folder") || "inbox").toBe(folder);
+      await expect(layoutButton(page, mode)).toHaveAttribute("aria-pressed", "true");
+    }
+    await expectReadOnly(page, state);
+  });
+}
+
 test("Focus defaults on first visit and Desktop persists through reload without changing workspace", async ({ page }) => {
   const state = await fixture(page);
   await page.goto("/?folder=browser");

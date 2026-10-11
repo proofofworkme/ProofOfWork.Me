@@ -69,10 +69,12 @@
 .publish-public-app { --publish-paper: var(--surface); }
 .publish-public-app :is(.publish-reader, .publish-writer-workspace, .publish-reading) { color: var(--text); }
 .publish-article-card h2, .publish-writer-head h1, .publish-reading h1 { color: var(--text); font-family: var(--font-ui); font-weight: 500; letter-spacing: -.035em; line-height: 1.2; }
-.publish-article-card .publish-card-label, .publish-title-label > span, .publish-body-label > span { color: var(--text-muted); font-family: var(--font-ui); font-weight: 400; letter-spacing: 0; text-transform: none; }
+.publish-article-card .publish-card-label, .publish-title-label > span, .publish-body-label > span { color: var(--text-muted); font-family: var(--font-ui); font-size: var(--text-xs); font-weight: 400; letter-spacing: 0; text-transform: none; }
 .publish-composer .publish-title-input { background: transparent; border: 0; border-bottom: 1px solid var(--border-interactive); border-radius: 0; color: var(--text); font-family: var(--font-ui); font-size: clamp(26px, 4vw, 38px); font-weight: 500; line-height: 1.25; }
-.publish-composer .publish-body-input { background: transparent; border: 1px solid var(--border-interactive); border-radius: 8px; color: var(--text); font-family: Georgia, "Times New Roman", serif; font-size: 20px; line-height: 1.8; padding: 16px; }
-.publish-article-body { color: var(--text); }
+.publish-composer .publish-body-input { background: transparent; border: 1px solid var(--border-interactive); border-radius: var(--radius-sm); color: var(--text); font-family: var(--font-ui); font-size: 20px; line-height: 1.8; padding: 16px; }
+.publish-article-body { color: var(--text); font-family: var(--font-ui); }
+.publish-article-card :is(p, .publish-read-link), .publish-writer-identity, .publish-writer-head > div > span, .publish-editor-toolbar, .publish-budget, .publish-byline { font-size: var(--text-sm); }
+.publish-budget small, .publish-reader-proof, .boost-tip-amount small { font-size: var(--text-xs); }
 .publish-budget { color: var(--text-muted); border-color: var(--border); }
 .publish-budget.is-over { color: var(--red); }
 .publish-budget.is-over progress { accent-color: var(--red); }

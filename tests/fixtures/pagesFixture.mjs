@@ -111,6 +111,7 @@ export async function fixture(page, { mailDraft, chainConfirmed = true } = {}) {
   await page.route("**/api/v1/**", async route => {
     const request = route.request();
     const url = new URL(request.url());
+    url.pathname = url.pathname.replace(/^\/test-api(?=\/api\/)/u, "");
     state.requests.push(url);
     if (request.method() !== "GET") {
       state.writes.push(`${request.method()} ${url.pathname}`);

@@ -34,6 +34,7 @@ const FIXTURE_CONFIG = {
   version: 1,
   requiredDocuments: [
     'SOUL.md',
+    'DESIGN.md',
     'README.md',
     'PROOFOFWORK_IDS.md',
     'PROOFOFWORK_DNS.md',
@@ -52,6 +53,7 @@ const FIXTURE_CONFIG = {
   noteInventory: {
     canonical: [
       'SOUL.md',
+      'DESIGN.md',
       'README.md',
       'PROOFOFWORK_IDS.md',
       'PROOFOFWORK_DNS.md',
@@ -303,6 +305,7 @@ function createFixture(t, { withObsoleteFile = false } = {}) {
     `${JSON.stringify(FIXTURE_CONFIG, null, 2)}\n`,
   );
   write(root, 'SOUL.md', '# Fixture operating memory\n');
+  write(root, 'DESIGN.md', '# Fixture first-party design policy\n');
   write(
     root,
     'README.md',
@@ -1001,6 +1004,33 @@ test('pre-commit rejects a broken relative Markdown link', (t) => {
     cli(root, 'pre-commit'),
     'a staged note with a broken relative link',
   );
+});
+
+test('pre-commit refuses removal of the canonical design policy', (t) => {
+  const root = createFixture(t);
+  git(root, 'rm', '--', 'DESIGN.md');
+
+  const result = cli(root, 'pre-commit');
+  expectFailure(result, 'a staged deletion of the required design policy');
+  assert.match(describeResult(result), /Required document is missing: DESIGN\.md/u);
+});
+
+test('check refuses dropping design policy from required documents', (t) => {
+  const root = createFixture(t);
+  write(
+    root,
+    'repository-hygiene.json',
+    `${JSON.stringify({
+      ...FIXTURE_CONFIG,
+      requiredDocuments: FIXTURE_CONFIG.requiredDocuments.filter(
+        (entry) => entry !== 'DESIGN.md',
+      ),
+    }, null, 2)}\n`,
+  );
+
+  const result = cli(root, 'check', '--ci');
+  expectFailure(result, 'a downgrade of the required design policy');
+  assert.match(describeResult(result), /requiredDocuments must exactly match/u);
 });
 
 test('pre-commit inventories uppercase Markdown extensions', (t) => {

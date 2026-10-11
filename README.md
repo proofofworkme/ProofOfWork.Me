@@ -49,6 +49,7 @@ domains.proofofwork.me -> https://dns.proofofwork.me/
 computer.proofofwork.me
 desktop.proofofwork.me
 browser.proofofwork.me
+pages.proofofwork.me        HTML page/app authoring and reviewed publication
 boost.proofofwork.me
 publish.proofofwork.me
 search.proofofwork.me
@@ -78,6 +79,7 @@ Production app roles:
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `browser.proofofwork.me` is the standalone public HTML renderer for ProofOfWork message bodies or verified file attachments by txid.
+- `pages.proofofwork.me` is HTML page/app authoring with local drafts, isolated preview, and reviewed publication; the same workspace lives at Computer `/?folder=pages`. See [PAGES.md](PAGES.md).
 - `boost.proofofwork.me` is the public Proof-ranked social feed for confirmed Boost posts and profiles.
 - `publish.proofofwork.me` is text-only blogging with a dedicated `/write` page, local drafts, full verified articles and Boost's shared profiles, selected PowIDs and engagement. Mail Compose opens the same writer; self-sent articles appear in Inbox and Sent. See [PUBLISH.md](PUBLISH.md).
 - `search.proofofwork.me` is read-only discovery across Computer metaprotocols, public content, verified readable files and source transaction evidence. The same workspace lives at Computer's `?folder=search`. See [SEARCH.md](SEARCH.md).
@@ -97,22 +99,25 @@ Production app roles:
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their ProofOfWork transactions.
 - The landing page links to the current public YouTube overview video.
 
-Every public app header and footer expose the same product menus, in this
-order:
+Standalone app headers and shared footers expose these product menus, in order:
 
 | Menu | Products in order |
 | --- | --- |
-| UTILITY | COMPUTER, DESKTOP, BROWSER, PAGES, CODE, JOBS, PERMISSION |
-| ID&SOC | ID, DNS, BOOST, PUBLISH |
-| FINANCE | WALLET, AMO, CREDIT, WORK, INFINITY, INCEPTION |
-| INSIGHTS | LOG, GROWTH, SEARCH |
+| Utility | Computer, Desktop, Browser, Pages, Code, Jobs, Permission |
+| Identity & social | ID, DNS, Boost, Publish |
+| Finance | Wallet, AMO, Credit, WORK, Infinity, Inception |
+| Insights | Log, Growth, Search |
 
-The brand links to Home. Menu display labels are uppercase; ID is singular in
-these menus while the existing IDs workspace and internal app label remain
-unchanged. `APP_MENU_GROUPS` in `src/app/appLinks.ts` supplies both shared
-navbars from the canonical `APP_LINKS` destinations and local routes. Public
-social links include X, YouTube, and GitHub.
+The brand links to Home. Menu labels use sentence case while preserving product
+names and acronyms. ID is singular in these menus; the existing IDs workspace
+and internal app label remain unchanged. `APP_MENU_GROUPS` in
+`src/app/appLinks.ts` supplies the grouped menus from canonical `APP_LINKS`
+destinations and local routes. Computer's header uses its Apps launcher and
+workspace/layout controls; its rail/dock/launcher and grouped footer keep
+products reachable without duplicate header menus. Public social links include
+X, YouTube, and GitHub.
 
+[DESIGN.md](DESIGN.md) is the required canonical policy for first-party UI work.
 The product design standard follows OpenAI/ChatGPT's restrained interface
 philosophy: neutral light/dark surfaces, monochrome navigation and primary
 actions, Inter typography, consistent line icons and clear space. Semantic
@@ -273,13 +278,17 @@ covers every public app and every embedded Computer workspace. The 2026-10-11
 identity update establishes OpenAI/ChatGPT's quiet design philosophy as the
 continuing standard: neutral surfaces, monochrome identity, navigation and
 primary actions, and Light, Dark, or System appearance. The project retains its own
-mark; [OpenAI's design guidelines](https://openai.com/brand/) are a reference
-for clarity, consistent proportions and clear space.
+mark; [DESIGN.md](DESIGN.md) distinguishes published OpenAI reference principles
+from our own visual tokens, implementation choices, and acceptance requirements.
 Inter Variable is the interface, body, and display-heading family; IBM Plex Mono
 is reserved for txids, addresses, protocol evidence, and other exact fields.
 The font assets are self-hosted by the application build. The shared interface
 layer follows legacy and feature styles so standalone and embedded tools use
 the same hierarchy, controls, and evidence presentation.
+Use readable 12/14/16px text roles, the shared 8/12/16px spacing and radius
+rhythm, and sentence-case interface labels with preserved acronyms and product
+names. Publish's first-party article reading body uses Inter; user-authored HTML,
+source content, and provider video controls retain their own presentation.
 
 The shared header has an accessible Appearance menu with Light, Dark and System
 choices. The choice is remembered in the browser across public product hosts;
@@ -335,6 +344,11 @@ one active workspace window, with Wallet and Files overviews from the existing
 account read state. Disconnected, loading and unavailable reads stay explicit;
 overview cards cannot invent balances or file records. Independent movable app
 windows are outside this release scope.
+
+Computer's header uses Apps and its workspace/layout controls as primary
+navigation. Standalone grouped menus remain in public headers and the shared
+footer. The desktop header retains a readable full brand title; compact screens
+may use a deliberate second row for layout/local-data controls with 44px targets.
 
 The Computer shell and its workspaces use the shared product interface, including
 Light, Dark, or System appearance. Self-hosted fonts, exact-value presentation,

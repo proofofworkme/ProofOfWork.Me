@@ -59,3 +59,10 @@ test("starter app is self contained and HTML filenames cannot become paths", () 
   assert.ok(!app.includes("<script src="));
   assert.equal(pageFileName(" ../app\\name : "), "..-app-name -.html");
 });
+
+test("restoring an existing page never replaces its styling with the starter template", () => {
+  const html = '<!doctype html>\n<style>body { background: #080807; color: #d7a84f; }</style><p>My saved page</p>\n  ';
+  const store = { version: 1, activeId: "saved", drafts: [{ id: "saved", title: "Saved page", html, updatedAt: 1 }] };
+  assert.equal(validatePagesDrafts(store).drafts[0].html, html);
+  assert.equal(validatePageHtml(html), html);
+});
