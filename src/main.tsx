@@ -7,13 +7,14 @@ import "@fontsource/ibm-plex-mono/latin-600.css";
 import "@fontsource/ibm-plex-mono/latin-700.css";
 import { detectAppSurface } from "./app/routeRegistry";
 import { AppErrorBoundary } from "./shared/components/AppErrorBoundary";
+import { initializeAppearance } from "./shared/appearance";
 import "./styles.css";
 import "./interface.css";
 
 const appSurface = detectAppSurface();
 document.documentElement.dataset.interface = "calm";
 document.documentElement.dataset.appSurface = appSurface;
-document.documentElement.dataset.theme = "system";
+initializeAppearance();
 const RootApp =
   appSurface === "identity-bridge"
     ? lazy(() => import("./features/identity/SocialIdentityBridge"))

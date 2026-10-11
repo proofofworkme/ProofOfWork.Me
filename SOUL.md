@@ -499,9 +499,14 @@ Computer Focus/Desktop review. The shared direction covers every public app and
 every embedded Computer workspace. On 2026-10-11 the user established
 OpenAI/ChatGPT's design philosophy as the continuing product standard:
 neutral surfaces, monochrome identity and primary actions, generous clear space,
-consistent rounded line icons, and system light/dark appearance. Color signals
+consistent rounded line icons, and Light, Dark, or System appearance. Color signals
 meaningful status rather than decorating navigation. Keep the interface quiet
 around chain evidence and consistent across standalone and embedded tools.
+
+People can explicitly choose Light, Dark or System in the shared Appearance
+menu. Remember that browser display preference across product hosts, independently
+of wallet or protocol state. Changing appearance must preserve active drafts,
+workspaces and local wallet connections.
 
 The ProofOfWork identity uses its own rounded W mark, with one canonical vector
 at `src/assets/proof-mark.svg`. Header, Desktop, browser favicon, touch icon and
@@ -545,8 +550,8 @@ The user approved the Computer Focus/Desktop UI release on 2026-10-10 after
 reviewing the local upgrade. Both layouts are supported choices over the same
 apps, with a visible switch and browser-local preference. Preserve the active
 workspace, wallet connection, drafts and selections while switching. The Computer
-shell and all public/embedded apps use the shared neutral interface and system
-light/dark appearance. Desktop's Wallet and Files overviews use qualified existing reads,
+shell and all public/embedded apps use the shared neutral interface and Light, Dark, or System
+appearance. Desktop's Wallet and Files overviews use qualified existing reads,
 never invented balances or records. The appearance preference stays outside the
 organization-backup allowlist. Chain authority, fees, protocols and local signing
 remain unchanged. Release approval does not replace production verification or
@@ -759,3 +764,9 @@ Use canonical message bodies for accounting classification within their
 protocol era. A subject-only detail or missing display tag must not hide new
 confirmed HTML from Browser flow, while frozen legacy baselines retain their
 prior classification. Preserve strict reconciliation and every canonical record.
+
+YouTube cards in Boost and verified Publish articles are external playback
+projections of posted URLs. Preserve the exact source text and article
+commitments. Only confirmed, byte/hash-verified article bodies supply reader
+cards; local previews remain drafts. A playable video is not chain-verified
+media, and an unavailable video does not invalidate its on-chain link.

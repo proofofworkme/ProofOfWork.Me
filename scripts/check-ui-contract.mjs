@@ -178,7 +178,7 @@ for (const [path, text] of contents) {
 
 const css = contents.get("src/styles.css");
 const interfaceCss = contents.get("src/interface.css");
-const interfaceThemes = Array.from(interfaceCss.matchAll(/:root\s*\{([^}]+)\}/gu), ([, theme]) => theme);
+const interfaceThemes = Array.from(interfaceCss.matchAll(/:root(?:\[data-theme="dark"\])?\s*\{([^}]+)\}/gu), ([, theme]) => theme);
 const folderButton = css.match(/\.folders button\s*\{([^}]+)\}/u)?.[1] ?? "";
 const appSource = contents.get("src/App.tsx");
 const walletPresence = readFileSync(

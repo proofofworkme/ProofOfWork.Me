@@ -43,12 +43,32 @@
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 	}
 	@socialIdentityParents {
-		host boost.proofofwork.me publish.proofofwork.me code.proofofwork.me
+		host code.proofofwork.me
 		not path /pages-runner.html
 	}
 	header @socialIdentityParents {
 		defer
 		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.proofofwork.me wss://*.proofofwork.me; frame-src 'self' https://computer.proofofwork.me; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests"
+	}
+	@socialVideoParents {
+		host boost.proofofwork.me publish.proofofwork.me
+		not path /pages-runner.html
+	}
+	header @socialVideoParents {
+		defer
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.proofofwork.me wss://*.proofofwork.me; frame-src 'self' https://computer.proofofwork.me https://www.youtube-nocookie.com; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests"
+	}
+	@computerVideoParent {
+		host computer.proofofwork.me
+		not path /pages-runner.html
+		not {
+			path /
+			expression `{http.request.uri.query} == "social-identity-bridge=1"`
+		}
+	}
+	header @computerVideoParent {
+		defer
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.proofofwork.me wss://*.proofofwork.me; frame-src 'self' https://www.youtube-nocookie.com; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests"
 	}
 	@socialIdentityBridge {
 		host computer.proofofwork.me

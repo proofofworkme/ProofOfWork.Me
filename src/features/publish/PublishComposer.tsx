@@ -3,6 +3,7 @@ import { ArrowLeft, BookOpen, Eye, PenLine, RefreshCw, Send } from "lucide-react
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { FeeRateControl } from "../../shared/components/FeeRateControl";
 import { ActionTransactionReview } from "../../shared/components/ActionTransactionReview";
+import { YouTubeLinkCards } from "../../shared/media/YouTubeLinkCards";
 import { PUBLISH_DATA_CARRIER_LIMIT } from "../../shared/protocol/publishArticle.mjs";
 import { buildPublishPlan, type PreparedPublish, type PublishPlan } from "./publishProtocol";
 import type { BoostIdentityIntent } from "../boost/boostProtocol";
@@ -166,6 +167,7 @@ export function PublishComposer({ address, network, identity, onConnect, onClose
       {preview ? <article className="publish-reading publish-preview"><h1>{draft.title || "Untitled article"}</h1>
         <p className="publish-byline">{identityId ? `${identityId}@proofofwork.me` : "Your address"} · Draft · {Math.max(1, Math.ceil(words / 220))} min read</p>
         <div className="publish-article-body">{draft.body || "Your article text will appear here."}</div>
+        <YouTubeLinkCards text={draft.body} />
       </article> : <>
         <label className="publish-title-label"><span>Title</span><input aria-label="Article title" className="publish-title-input" maxLength={140} placeholder="Give your story a title" value={draft.title} onChange={event => update({ title: event.target.value })} disabled={busy} /></label>
         <label className="publish-body-label"><span>Article</span><textarea aria-label="Article text" className="publish-body-input" placeholder="Start writing…" value={draft.body} onChange={event => update({ body: event.target.value })} disabled={busy} /></label>

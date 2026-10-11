@@ -24,8 +24,9 @@ The user approved the UI release on 2026-10-10. The valid browser preference is
 stored as `focus` or `desktop` under `proofofwork-me-computer-layout-v1`, with Focus as the first-visit
 or unavailable-storage default. Appearance remains browser-local and is outside
 the supported organization-backup allowlist; it is not scoped wallet authority,
-mailbox organization or protocol state. Computer follows the system light/dark
-appearance without adding another backup key.
+mailbox organization or protocol state. The shared header offers Light, Dark and System appearance. The browser remembers
+the display preference independently of the wallet; System follows the device.
+The preference stays outside the organization-backup allowlist.
 
 Focus's app rail and Desktop's dock/launcher reach the same workspaces. Mail
 folders, local Contacts, draft handling, transaction recovery and local-data
@@ -47,12 +48,12 @@ The shared product interface applies to the shell, every Computer workspace,
 and every public app. The user approved this full scope on 2026-10-10. It uses
 the OpenAI/ChatGPT design direction established on 2026-10-11: neutral surfaces,
 monochrome identity, primary actions and navigation, Inter for UI and headings,
-and system light/dark appearance. Semantic status colors remain distinct.
+and Light, Dark, or System appearance. Semantic status colors remain distinct.
 The shared rounded W vector supplies the brand and favicon; public menus,
 Computer's rail/dock/launcher and landing app cards use one line-icon catalog.
 It preserves exact proof evidence, keyboard focus, and narrow/short-screen
-navigation. The appearance layer does not change read qualification, local
-state keys, transaction review, or signing authority.
+navigation. The appearance layer does not change read qualification, wallet-scoped
+state, transaction review, or signing authority.
 The app launcher contains keyboard focus; Escape returns focus to its opener.
 Computer's Desktop layout remains separate from the public read-only Desktop
 domain and its canonical file rules. The approved release retains the existing
@@ -108,7 +109,7 @@ code.proofofwork.me         public source repositories and verified source histo
 jobs.proofofwork.me         public briefs, delivery evidence and direct payments
 permission.proofofwork.me   wallet-bound agent permission grants
 boost.proofofwork.me        public Proof-ranked social feed
-publish.proofofwork.me      text-only articles with shared Boost identity and engagement
+publish.proofofwork.me      text articles with YouTube playback and shared Boost identity
 search.proofofwork.me       public metaprotocol and data search
 amo.proofofwork.me          canonical Autonomous Money Organization
 marketplace.proofofwork.me  compatibility route to AMO
@@ -417,6 +418,13 @@ post supplies the article title and Publish link. Opening the Mail reader also
 checks fresh exact-txid confirmed article evidence before rendering the full
 text. Body bytes, whitespace, attachments and ordinary Mail behavior remain
 subject to their existing rules; social actions are not new Mail event kinds.
+
+YouTube URLs in Boost content and verified Publish bodies have separate
+thumbnail/play cards, including in Computer. A click loads the official YouTube
+player; the card also links to YouTube when embedded playback is unavailable.
+Source text stays exact, and Publish reader cards wait for the existing confirmed
+size/hash verification. Writer previews derive cards from the local draft only.
+These cards create no Mail state, file attachment, transaction or accounting event.
 
 ## Code source repositories
 

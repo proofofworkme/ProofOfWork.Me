@@ -1,6 +1,6 @@
 # ProofOfWork Publish
 
-Publish is the text-only blogging surface at `publish.proofofwork.me` and
+Publish is the text-first blogging surface at `publish.proofofwork.me` and
 Computer's Publish workspace. Writers compose a title and body, retain a private
 browser-local draft for their wallet and network, preview it, review the exact
 transaction, and sign locally. Readers discover articles, follow authors, open
@@ -68,6 +68,15 @@ verifies resolution after navigation and retains its static sandbox. Emails,
 existing URLs, inline/fenced code and invalid names remain literal. Article-body
 tags and mentions stay literal; writer previews and article-card titles retain
 their existing behavior.
+
+After that same verification, supported YouTube URLs produce separate
+thumbnail/play cards beside the exact article text. Their click-to-load embedded
+player supports normal YouTube controls and a direct Open on YouTube fallback.
+URLs inside inline/fenced code do not create cards. External playback is not
+verified article content and does not alter the UTF-8 bytes, size or SHA-256.
+The local writer preview can show draft video cards, but the article feed still
+loads compact metadata only. Failed or pending article verification never loads
+reader video cards.
 
 The article's self-payment and existing Mail envelope also produce normal
 Inbox and Sent records. Their canonical companion Boost post supplies compact

@@ -272,7 +272,7 @@ The user approved the full product UI upgrade on 2026-10-10: the shared design
 covers every public app and every embedded Computer workspace. The 2026-10-11
 identity update establishes OpenAI/ChatGPT's quiet design philosophy as the
 continuing standard: neutral surfaces, monochrome identity, navigation and
-primary actions, and system light/dark appearance. The project retains its own
+primary actions, and Light, Dark, or System appearance. The project retains its own
 mark; [OpenAI's design guidelines](https://openai.com/brand/) are a reference
 for clarity, consistent proportions and clear space.
 Inter Variable is the interface, body, and display-heading family; IBM Plex Mono
@@ -280,6 +280,12 @@ is reserved for txids, addresses, protocol evidence, and other exact fields.
 The font assets are self-hosted by the application build. The shared interface
 layer follows legacy and feature styles so standalone and embedded tools use
 the same hierarchy, controls, and evidence presentation.
+
+The shared header has an accessible Appearance menu with Light, Dark and System
+choices. The choice is remembered in the browser across public product hosts;
+System follows the device. Switching applies immediately without remounting the
+workspace, disconnecting a wallet or losing a draft. This display preference is
+outside the organization-backup allowlist.
 
 Reusable UI primitives include surfaces and toolbars, segmented tabs, status
 chips, and metric-value containers. Shared domain navigation becomes a
@@ -305,6 +311,14 @@ Public search and generated HTML source have persistent labels; miner-fee
 controls display proofs/vB while protocol/API rate fields remain unchanged.
 The responsive target checks include ordinary links as well as buttons.
 
+YouTube video URLs in Boost posts, replies, reboosts, quotes and previews render
+thumbnail/play cards. Publish renders the same cards after its exact article-body
+verification, and in the local writer preview. Cards are separate from the source
+text: original characters and article byte/hash commitments remain unchanged.
+Playback loads YouTube only after activation, with native controls and an Open on
+YouTube fallback. External video availability is separate from confirmed chain
+evidence. Existing posts acquire this display behavior without new transactions.
+
 ### Computer Focus and Desktop layouts
 
 Computer supports two layouts, **Focus** and **Desktop**, with a visible
@@ -323,7 +337,7 @@ overview cards cannot invent balances or file records. Independent movable app
 windows are outside this release scope.
 
 The Computer shell and its workspaces use the shared product interface, including
-system light/dark appearance. Self-hosted fonts, exact-value presentation,
+Light, Dark, or System appearance. Self-hosted fonts, exact-value presentation,
 keyboard focus, 44px controls, and isolated local wallet signing remain required.
 Computer's Desktop layout is distinct from the public read-only app at
 `desktop.proofofwork.me`. Home and Growth remain standalone surfaces; the Computer

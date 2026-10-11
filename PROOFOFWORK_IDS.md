@@ -383,6 +383,12 @@ ambiguous punctuation. Profile previews require an explicit resolved identity
 from confirmed authority or a valid address on the selected network. A pending
 registration, unknown name, or display-name claim cannot establish resolution.
 
+Supported YouTube URLs in Boost text produce separate thumbnail/play cards in
+posts, replies, quotes and reboosts. This is a read-only display projection over
+existing text: it preserves the original bytes, ownership and proof signal, and
+creates no protocol record or payment. Playback is served externally by YouTube;
+it is not verified Files media or confirmed evidence about video availability.
+
 The acquired-assets profile view counts original owned assets from other authors.
 Another author's reply or reboost referencing an owned asset is a social action,
 not an additional acquired asset, and must not inflate that view or its count.

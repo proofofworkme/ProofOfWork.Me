@@ -8,6 +8,7 @@ import { UNISAT_DOWNLOAD_URL } from "../wallet/walletLinks";
 import { DomainNav } from "./DomainNav";
 import { BrandMark } from "./BrandMark";
 import { HeaderActionsMenu } from "./HeaderActionsMenu";
+import { AppearanceMenu } from "./AppearanceMenu";
 
 export type AppHeaderAccountStat = {
   detail?: string;
@@ -109,6 +110,7 @@ export function AppHeader({
         {navigationControls}
 
         <div className="topbar-actions">
+          <AppearanceMenu />
           {onRefresh ? (
             <button
               aria-label={busy ? "Refreshing" : "Refresh"}

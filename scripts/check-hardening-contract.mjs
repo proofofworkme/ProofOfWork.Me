@@ -163,6 +163,51 @@ assert.match(
   caddy,
   /\(landing_headers\)[\s\S]*frame-src 'self' https:\/\/www\.youtube\.com https:\/\/www\.youtube-nocookie\.com/u,
 );
+const commonHeaders = caddy.match(/^\(common_headers\) \{[\s\S]*?^\}/mu)?.[0];
+assert.ok(commonHeaders, "Shared app headers must remain explicit.");
+function headerPolicy(name) {
+  const header = commonHeaders.match(new RegExp(`^\\theader @${name} \\{([\\s\\S]*?)^\\t\\}`, "mu"))?.[1];
+  assert.ok(header, `Missing scoped policy: ${name}.`);
+  return header.match(/Content-Security-Policy "([^"]+)"/u)?.[1];
+}
+function headerMatcher(name) {
+  const matcher = commonHeaders.match(new RegExp(`^\\t@${name} \\{([\\s\\S]*?)^\\t\\}`, "mu"))?.[1];
+  assert.ok(matcher, `Missing scoped matcher: ${name}.`);
+  return matcher.trim().split("\n").map((line) => line.trim());
+}
+const parentPolicy = headerPolicy("parent_document");
+assert.ok(parentPolicy.includes("frame-src 'self';"));
+assert.doesNotMatch(parentPolicy, /youtube/u);
+assert.deepEqual(headerMatcher("socialIdentityParents"), [
+  "host code.proofofwork.me", "not path /pages-runner.html",
+]);
+assert.equal(headerPolicy("socialIdentityParents"), parentPolicy.replace(
+  "frame-src 'self';", "frame-src 'self' https://computer.proofofwork.me;",
+));
+assert.deepEqual(headerMatcher("socialVideoParents"), [
+  "host boost.proofofwork.me publish.proofofwork.me", "not path /pages-runner.html",
+]);
+assert.equal(headerPolicy("socialVideoParents"), parentPolicy.replace(
+  "frame-src 'self';", "frame-src 'self' https://computer.proofofwork.me https://www.youtube-nocookie.com;",
+));
+assert.deepEqual(headerMatcher("computerVideoParent"), [
+  "host computer.proofofwork.me", "not path /pages-runner.html",
+  "not {", "path /",
+  'expression `{http.request.uri.query} == "social-identity-bridge=1"`', "}",
+]);
+assert.equal(headerPolicy("computerVideoParent"), parentPolicy.replace(
+  "frame-src 'self';", "frame-src 'self' https://www.youtube-nocookie.com;",
+));
+assert.deepEqual(headerMatcher("socialIdentityBridge"), [
+  "host computer.proofofwork.me", "path /",
+  'expression `{http.request.uri.query} == "social-identity-bridge=1"`',
+]);
+assert.match(headerPolicy("socialIdentityBridge"), /frame-src 'none';/u);
+assert.doesNotMatch(headerPolicy("socialIdentityBridge"), /youtube|unsafe-inline/u);
+assert.equal(caddy.match(/https:\/\/www\.youtube-nocookie\.com/gu)?.length, 3,
+  "Only the landing, social video and Computer parent policies may frame YouTube.");
+assert.equal(caddy.match(/https:\/\/www\.youtube\.com/gu)?.length, 1,
+  "Only the established landing policy permits the ordinary YouTube origin.");
 const runnerHeaders = caddy.match(/^\(pages_runner_headers\) \{[\s\S]*?^\}/mu)?.[0];
 assert.ok(runnerHeaders, "Pages needs its own HTTP runner policy.");
 assert.doesNotMatch(caddy.replace(runnerHeaders, ""), /browser-sandbox|navigate-to|sandbox allow-scripts/u);

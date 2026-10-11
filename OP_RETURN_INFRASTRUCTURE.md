@@ -1536,10 +1536,12 @@ policy provide independent network and navigation defenses. Explicit Run app
 uses the separate first-party runner with only `allow-scripts`: inline app code
 can maintain in-memory state but external scripts/resources, connections, nested
 frames, workers, forms, persistent storage and wallet/provider bridges remain
-blocked. The runner's HTTP sandbox and the parent `frame-src 'self'` serving
-policy must both verify; script execution permission does not grant external
-document navigation. Only the landing-page header policy grants the separate
-YouTube frame origins used by its public video.
+blocked. The runner's HTTP sandbox and parent serving policy must both verify;
+script execution permission does not grant external document navigation. Browser's
+standalone parent retains `frame-src 'self'`. Landing permits its public overview
+video, while Boost, Publish and ordinary Computer pages have the narrowly scoped
+YouTube card allowance described in Social YouTube playback headers. The runner
+itself continues to deny frames and all external requests.
 
 The worker requires the real production cluster unit
 `postgresql@16-main.service`, is installed under both `multi-user.target` and
@@ -7435,6 +7437,23 @@ storage and accepted Audit31/Code/Pages/Permission overlays. Capture complete
 dependencies and service identities, preserve rollback bytes, and restore Search
 only after verified application or rollback. UI publication retains the current
 complete 22-root V5 contract. All release synchronization checks remain mandatory.
+
+## Social YouTube playback headers
+
+Boost, Publish and ordinary Computer pages allow frames from only the added
+`https://www.youtube-nocookie.com` origin for click-to-load video cards. Boost
+and Publish retain their exact Computer identity-bridge allowance. Code keeps
+its existing bridge policy; other app parents gain no video-frame permission.
+The exact Computer identity bridge and `/pages-runner.html` continue to deny
+video frames. External poster images use the existing HTTPS image policy.
+
+The browser derives cards from allowlisted YouTube video URLs. It downloads no
+video through the ProofOfWork API and requires no API key, indexer migration or
+protocol change. Publish reader cards wait for confirmed exact body verification;
+video loading does not establish chain authority. The player uses the existing
+`strict-origin-when-cross-origin` referrer policy. Deploy the reviewed Caddy-only
+change with the scoped installer after the exact UI release is published, retain
+the previous config, validate before reload and verify the effective headers.
 
 ## Mandatory release synchronization
 

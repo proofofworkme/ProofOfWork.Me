@@ -5,6 +5,7 @@ import { PUBLISH_ARTICLE_VERIFICATION, normalizePublishArticleMetadata, publishA
 import { sha256Hex } from "../../shared/utils/encoding";
 import type { BoostFeedItem } from "../boost/boostProtocol";
 import { BoostText } from "../boost/BoostText";
+import { YouTubeLinkCards } from "../../shared/media/YouTubeLinkCards";
 import { publishHref } from "./publishProtocol";
 
 export function PublishArticleCard({ item, network, embedded = false }: { item: BoostFeedItem; network: BitcoinNetwork; embedded?: boolean }) {
@@ -31,6 +32,7 @@ export function PublishArticleText({ item, network }: { item: BoostFeedItem; net
   return <div className="publish-reading"><h1>{article.title}</h1>
     <p className="publish-byline">{formatDate(item.createdAt)} · {Math.max(1, Math.ceil(words / 220))} min read · Confirmed</p>
     <div className="publish-article-body"><BoostText text={item.articleBody!} dnsOnly network={network} /></div>
+    <YouTubeLinkCards text={item.articleBody!} />
     <details className="publish-reader-proof"><summary>Exact article evidence</summary>
       <p>{article.size.toLocaleString()} UTF-8 bytes · Verified SHA-256</p><code>{article.sha256}</code>
       <code>{item.txid}</code><p><a href={explorerTxUrl(item.txid, network)} target="_blank" rel="noreferrer">View transaction</a></p>

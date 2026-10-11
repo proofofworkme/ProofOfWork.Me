@@ -68,6 +68,7 @@ import { BoostActivity, BoostConnections, type ConnectionTab } from "./BoostSoci
 import { boostMediaUrl } from "./boostMedia";
 import { BoostProfileImages, ProfileImage } from "./BoostProfileImages";
 import { BoostText, BoostTextProvider } from "./BoostText";
+import { YouTubeLinkCards } from "../../shared/media/YouTubeLinkCards";
 import {
   BOOST_WORK_MUTATION_PROOFS,
   BOOST_WORK_REGISTRY_ADDRESS,
@@ -660,6 +661,7 @@ function ReboostedPost({
           </div>
           {post.article ? <PublishArticleCard item={post} network={network} /> :
             post.text ? <p className="boost-post-text"><BoostText text={post.text} /></p> : null}
+          {!post.article && post.text ? <YouTubeLinkCards text={post.text} /> : null}
           {post.media?.mime && /^(?:image|video)\//iu.test(post.media.mime) ? (
             <BoostMedia item={post} network={network} />
           ) : null}
@@ -712,6 +714,7 @@ function QuotedPost({
       </span>
       {post.article ? <PublishArticleCard item={post} network={network} /> :
         post.text ? <p><BoostText text={post.text} /></p> : null}
+      {!post.article && post.text ? <YouTubeLinkCards text={post.text} /> : null}
       <a
         className="boost-proof-frame"
         href={explorerTxUrl(post.txid, network)}
@@ -870,6 +873,7 @@ function BoostPost({
             {item.article ? articleReader ? <PublishArticleText item={item} network={network} /> :
               <PublishArticleCard item={item} network={network} embedded={embedded && window.location.search.includes("folder=publish")} /> :
               item.text ? <p className="boost-post-text"><BoostText text={item.text} /></p> : null}
+            {!item.article && item.text ? <YouTubeLinkCards text={item.text} /> : null}
 
             {item.media?.mime && /^(?:image|video)\//iu.test(item.media.mime) ? (
               <BoostMedia item={item} network={network} />
@@ -3727,6 +3731,7 @@ export default function BoostRoot({
                 <details className="boost-composer-preview">
                   <summary>Preview Boost</summary>
                   <p>{postText || "Attachment-only Boost"}</p>
+                  <YouTubeLinkCards text={postText} />
                   {postAttachment ? <span>{postAttachment.name} · {formatBytes(postAttachment.size)}</span> : null}
                 </details>
                 <p className="field-note">Review and sign in your wallet. Original posts have no Boost registry fee. A WORK transfer adds its existing {BOOST_WORK_MUTATION_PROOFS}-proof mutation fee, plus the miner fee.</p>
