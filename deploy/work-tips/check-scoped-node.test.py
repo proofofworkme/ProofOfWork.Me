@@ -242,4 +242,195 @@ class ControllerTests(unittest.TestCase):
             module.install(self.root,self.backup,self.manifest['sources'],self.metadata,False,'refuse')
         self.assertEqual(file.read_bytes(),b'new audit authority')
 
+
+class WorkerOnlyTests(unittest.TestCase):
+    """Exercise derived activation, real file replacement, and main rollback paths."""
+    def setUp(self):
+        ControllerTests.setUp(self)
+        for index,row in enumerate(self.manifest['sources']):
+            if row['path'] != module.WORKER_SOURCE:
+                raw=(self.root/row['path']).read_bytes()
+                row.update(after=row['before'],base64=base64.b64encode(raw).decode())
+                (self.backup/f'candidate-{index}.mjs').write_bytes(raw)
+
+    def test_scope_is_derived_from_exact_singleton_difference(self):
+        self.assertTrue(module.worker_only(self.manifest))
+        module.fence(self.root,self.manifest,module.validate_manifest(self.manifest))
+        for mode in ('none','api-only','two','invalid-candidate'):
+            m=copy.deepcopy(self.manifest)
+            worker=next(x for x in m['sources'] if x['path']==module.WORKER_SOURCE)
+            api=next(x for x in m['sources'] if x['path']=='server/proof-api.mjs')
+            if mode in ('none','api-only'):worker['after']=worker['before']
+            if mode in ('api-only','two'):api['after']='1'*64
+            if mode=='invalid-candidate':worker['base64']=base64.b64encode(b'wrong').decode()
+            m['activationMode']='worker-only' # Input fields cannot force lighter activation.
+            if mode=='invalid-candidate':
+                with self.assertRaisesRegex(ValueError,'Candidate bytes differ'):module.validate_manifest(m)
+            else:self.assertFalse(module.worker_only(m))
+
+    def test_api_import_and_dependency_drift_refuse(self):
+        api=next(x for x in self.manifest['sources'] if x['path']=='server/proof-api.mjs')
+        raw=b"import '../scripts/backfill-proof-indexer.mjs';\n"
+        (self.root/api['path']).write_bytes(raw)
+        api.update(before=module.sha(raw),after=module.sha(raw),base64=base64.b64encode(raw).decode())
+        self.manifest['dependencies'][api['path']]=module.sha(raw)
+        with self.assertRaisesRegex(ValueError,'loaded by API'):
+            module.fence(self.root,self.manifest,module.validate_manifest(self.manifest))
+        (self.root/'package-lock.json').write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError,'Dependency changed'):
+            module.fence(self.root,self.manifest,module.validate_manifest(self.manifest))
+
+    def test_only_changed_inode_is_replaced_on_install_and_rollback(self):
+        before={p:module.identity((self.root/p).stat()) for p in module.ALLOWED}
+        module.install(self.root,self.backup,self.manifest['sources'],self.metadata,True,'single',changed_only=True)
+        self.assertNotEqual(module.identity((self.root/module.WORKER_SOURCE).stat()),before[module.WORKER_SOURCE])
+        for p in module.ALLOWED-{module.WORKER_SOURCE}:
+            self.assertEqual(module.identity((self.root/p).stat()),before[p])
+        module.install(self.root,self.backup,self.manifest['sources'],self.metadata,False,'single',changed_only=True)
+        for row in self.manifest['sources']:
+            self.assertEqual(module.sha((self.root/row['path']).read_bytes()),row['before'])
+        for p in module.ALLOWED-{module.WORKER_SOURCE}:
+            self.assertEqual(module.identity((self.root/p).stat()),before[p])
+
+    def execute_main(self, failure=None):
+        import contextlib,io,types
+        from contextlib import ExitStack
+        lock=self.root.parent/'ops.lock';lock.write_bytes(b'');lock.chmod(0o600)
+        hold=self.root.parent/'hold';hold.write_text(json.dumps(self.manifest['searchHold']['bindings']));hold.chmod(0o600)
+        self.manifest['searchHold']['markerSha256']=module.sha(hold.read_bytes())
+        unit=b'reviewed-unit';node=b'reviewed-node';unitsha=module.sha(unit)
+        self.manifest['nodeSha256']=module.sha(node)
+        for group in (self.manifest['gateway']['files'],self.manifest['protectedServices']['files'],
+                      self.manifest['searchHold']['bindings']['files']):
+            for k in group:group[k]=unitsha
+        hold.write_text(json.dumps(self.manifest['searchHold']['bindings']));self.manifest['searchHold']['markerSha256']=module.sha(hold.read_bytes())
+        for row in self.manifest['protectedServices']['states'].values():row['WorkingDirectory']=str(self.root)
+        live={u:{'ActiveState':'active','MainPID':'456' if u==module.UNITS[1] else '111',
+            'WorkingDirectory':str(self.root)} for u in module.UNITS}
+        api_extra={'InvocationID':'a'*32,'ExecMainStartTimestampMonotonic':'12345'}
+        gateway={u:{'ActiveState':'active','UnitFileState':self.manifest['gateway']['unitFileStates'][u],
+            'MainPID':'321' if u.endswith('.service') else '0'} for u in module.GATEWAY}
+        authority={u:{'ActiveState':'active','MainPID':'654','WorkingDirectory':''} for u in module.AUTHORITY}
+        search={u:{'ActiveState':'inactive','MainPID':'0','WorkingDirectory':''} for u in module.SEARCH}
+        calls=[];inodes={p:module.identity((self.root/p).stat()) for p in module.ALLOWED}
+        real_read,real_require,real_install=module.safe_read,module.require,module.install
+        installs=0;starts=0
+        def read(path,*args,**kwargs):
+            if str(path).startswith('/etc/systemd/system/'):
+                if failure=='gateway-unit-drift' and installs and path.name in module.GATEWAY:return b'changed-unit'
+                return unit
+            if str(path)=='/opt/node-fixture/bin/node':return node
+            return real_read(path,*args,**kwargs)
+        def require(value,message):
+            # Only the root ownership checks are adapted for this user's real
+            # temporary files; actual source/read/write/identity checks execute.
+            if message in ('Unsafe ops lock','Unsafe Search hold owner/mode'):return
+            return real_require(value,message)
+        def states(units):
+            if units==module.AUTHORITY:return copy.deepcopy(authority)
+            if units==module.SEARCH:return copy.deepcopy(search)
+            return {u:copy.deepcopy(live[u]) for u in units}
+        def ctl(*args):
+            self.assertEqual(args[:2],('show',module.UNITS[0]))
+            row={**live[module.UNITS[0]],**api_extra}
+            return '\n'.join(f'{k}={v}' for k,v in row.items())
+        def run(argv,**kwargs):
+            nonlocal starts
+            if argv[0]=='/opt/node-fixture/bin/node':return subprocess.CompletedProcess(argv,0)
+            self.assertEqual(argv[0],'/usr/bin/systemctl');action,u=argv[1:];calls.append((action,u))
+            self.assertEqual(u,module.UNITS[1],'No API or gateway activation may occur')
+            if action=='stop':live[u].update(ActiveState='inactive',MainPID='0')
+            else:
+                starts+=1
+                if failure=='all-starts-fail' or (failure=='first-start-fails' and starts==1):
+                    raise subprocess.CalledProcessError(1,argv)
+                live[u].update(ActiveState='active',MainPID='789')
+            return subprocess.CompletedProcess(argv,0)
+        def install(*args,**kwargs):
+            nonlocal installs
+            installs+=1;real_install(*args,**kwargs)
+            if installs==1:
+                if failure=='after-install':raise OSError('injected after real installation')
+                if failure=='api-identity-drift':api_extra['InvocationID']='b'*32
+                if failure=='gateway-process-drift':gateway[module.GATEWAY[1]]['MainPID']='999'
+                if failure=='dependency-drift':(self.root/'package-lock.json').write_bytes(b'foreign edit')
+                if failure=='authority-drift':authority[module.AUTHORITY[0]]['MainPID']='999'
+                if failure=='search-drift':search[module.SEARCH[0]]['ActiveState']='active'
+        printed=io.StringIO();error=None
+        with ExitStack() as stack:
+            for name,value in [('ROOT',self.root),('BACKUPS',self.backup),('LOCK',lock),('HOLD',hold),
+                    ('safe_read',read),('require',require),('states',states),('ctl',ctl),
+                    ('gateway_states',lambda:copy.deepcopy(gateway)),('install',install)]:
+                stack.enter_context(patch.object(module,name,value))
+            stack.enter_context(patch.object(module.os,'geteuid',return_value=0))
+            stack.enter_context(patch.object(module.os,'readlink',return_value='/opt/node-fixture/bin/node'))
+            stack.enter_context(patch.object(module.subprocess,'check_output',return_value=self.manifest['baselineHead']+'\n'))
+            stack.enter_context(patch.object(module.subprocess,'run',side_effect=run))
+            stack.enter_context(patch.object(module.sys,'argv',['scoped-node.py']))
+            stack.enter_context(patch.object(module.sys,'stdin',types.SimpleNamespace(buffer=io.BytesIO(json.dumps(self.manifest).encode()))))
+            stack.enter_context(contextlib.redirect_stdout(printed))
+            try:module.main()
+            except BaseException as e:error=e
+        receipts=list(self.backup.glob('work-tips-*/receipt.json'))
+        self.assertEqual(len(receipts),1)
+        receipt=json.loads(receipts[0].read_text())
+        self.assertEqual(json.loads(printed.getvalue()),receipt)
+        self.assertEqual(receipt['activationMode'],'worker-only')
+        for p in module.ALLOWED-{module.WORKER_SOURCE}:
+            self.assertEqual(module.identity((self.root/p).stat()),inodes[p])
+        self.assertEqual(live[module.UNITS[0]]['MainPID'],'111')
+        return receipt,error,calls,installs
+
+    def test_main_preserves_api_and_gateway_during_worker_activation(self):
+        receipt,error,calls,installs=self.execute_main()
+        self.assertIsNone(error);self.assertTrue(receipt['installed']);self.assertFalse(receipt['rolledBack'])
+        self.assertEqual(installs,1)
+        self.assertEqual(calls,[('stop',module.UNITS[1]),('start',module.UNITS[1])])
+        self.assertEqual(receipt['preservedRuntime']['api']['state']['MainPID'],receipt['servicesAfter'][module.UNITS[0]]['MainPID'])
+
+    def test_main_real_write_failure_restores_original_without_api_restart(self):
+        receipt,error,calls,installs=self.execute_main('after-install')
+        self.assertIsInstance(error,OSError);self.assertTrue(receipt['rolledBack']);self.assertEqual(installs,2)
+        self.assertEqual(module.sha((self.root/module.WORKER_SOURCE).read_bytes()),next(x['before'] for x in self.manifest['sources'] if x['path']==module.WORKER_SOURCE))
+        self.assertEqual(calls,[('stop',module.UNITS[1]),('stop',module.UNITS[1]),('start',module.UNITS[1])])
+
+    def test_main_worker_start_failure_uses_same_safe_rollback(self):
+        receipt,error,calls,installs=self.execute_main('first-start-fails')
+        self.assertIsInstance(error,subprocess.CalledProcessError);self.assertTrue(receipt['rolledBack']);self.assertEqual(installs,2)
+        self.assertEqual(calls,[('stop',module.UNITS[1]),('start',module.UNITS[1]),('stop',module.UNITS[1]),('start',module.UNITS[1])])
+
+    def test_main_incomplete_worker_restore_never_claims_rollback(self):
+        receipt,error,calls,installs=self.execute_main('all-starts-fail')
+        self.assertIsInstance(error,subprocess.CalledProcessError);self.assertTrue(receipt['recoveryIncomplete']);self.assertFalse(receipt['rolledBack'])
+
+    def test_main_api_identity_drift_keeps_recovery_incomplete(self):
+        receipt,error,calls,installs=self.execute_main('api-identity-drift')
+        self.assertRegex(str(error),'Preserved API');self.assertTrue(receipt['recoveryIncomplete']);self.assertFalse(receipt['rolledBack'])
+        self.assertEqual(calls,[('stop',module.UNITS[1])])
+
+    def test_main_gateway_drift_keeps_recovery_incomplete(self):
+        for failure in ('gateway-process-drift','gateway-unit-drift'):
+            with self.subTest(failure=failure):
+                case=WorkerOnlyTests('run');case.setUp()
+                try:
+                    receipt,error,calls,installs=case.execute_main(failure)
+                    self.assertRegex(str(error),'Preserved gateway');self.assertTrue(receipt['recoveryIncomplete']);self.assertFalse(receipt['rolledBack'])
+                    self.assertEqual(calls,[('stop',module.UNITS[1])])
+                finally:case.doCleanups()
+
+    def test_main_unrelated_source_drift_is_not_overwritten_or_certified(self):
+        receipt,error,calls,installs=self.execute_main('dependency-drift')
+        self.assertTrue(receipt['recoveryIncomplete']);self.assertFalse(receipt['rolledBack'])
+        self.assertEqual((self.root/'package-lock.json').read_bytes(),b'foreign edit')
+
+    def test_main_authority_or_search_drift_never_claims_rollback(self):
+        for failure in ('authority-drift','search-drift'):
+            with self.subTest(failure=failure):
+                case=WorkerOnlyTests('run');case.setUp()
+                try:
+                    receipt,error,calls,installs=case.execute_main(failure)
+                    self.assertTrue(receipt['recoveryIncomplete']);self.assertFalse(receipt['rolledBack'])
+                    self.assertRegex(str(error),'Unrelated recovery state changed')
+                finally:case.doCleanups()
+
 if __name__ == '__main__': unittest.main()

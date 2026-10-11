@@ -3117,6 +3117,12 @@ readiness checkpoint and requires the published attempt to cover the same
 PostgreSQL postmaster identity with monotonic per-shard epochs. A PostgreSQL
 restart therefore forces a fresh staged atomic publication on the next pending
 cycle instead of reusing the pre-restart witness until its age ceiling expires.
+A change in scan health also requires a new running publication attempt,
+including recovery from one unresolved protocol event to zero when membership,
+confirmed base and readiness epochs remain unchanged. Reusing the old published
+attempt would bind the new verifier stage to the old stage hash and prevent
+recovery until the witness expires or the chain advances. Parent, epoch,
+completeness and locked-attempt checks still apply to the fresh publication.
 
 The heavyweight `indexer:parity` deployment gate separately audits the exact
 semantic contents of `event_participants` and `event_refs` for every event
@@ -7317,6 +7323,14 @@ provenance and rollback preimages remain fenced. The
 existing pinned controller and restores it only after verified application or
 rollback; incomplete recovery retains the hold for supervised resolution.
 Recapture after a concurrent release before preparing the final plan.
+When the validated effective change is exactly the indexer script, the controller
+checks that neither the baseline nor candidate API import closure loads that
+script, preserves the API process and gateway identities, and drains/restarts
+only the worker. It replaces and rolls back only the changed file, retaining
+all source, dependency, Search and authority fences. This preserves verified
+process-local Permission progress. Any other source-change set follows the
+full application drain and restoration path; activation policy cannot be
+selected by a manifest flag.
 
 Local verification includes `npm run check:boost-tips` for codecs, protected WORK
 capacity and canonical tip application, `npm run check:boost-tips:deploy` for the

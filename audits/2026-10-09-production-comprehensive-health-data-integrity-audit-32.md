@@ -1163,3 +1163,46 @@ all existing discovery, exact-checkpoint, private-prefix and authority checks.
 The focused 12-case suite passes and the old scheduler fails six of those cases.
 Live worker recovery and complete Permission readiness remain post-installation
 gates; the scheduling change alone does not claim them passed.
+
+
+### 2026-10-11 UTC pending scan-health recovery correction
+
+The paced post-scheduler Permission catch-up completed after 44 bounded reads.
+At 00:53:39–49 UTC, an independent public request returned 200 in 2.66 seconds,
+with complete authority-verified coverage matching opening and closing Core
+970852, fee-policy readiness, and healthy worker/database/index checks. This is
+a point-in-time readiness result, not an instant cold-start guarantee.
+
+During that catch-up, a separate pre-existing worker defect was reproduced.
+A structurally reusable pending witness with one unresolved global protocol
+event could not publish its recovery to zero: the caller requested a new
+verifier stage while reusing the old published-attempt hash. The persistence
+fence correctly rejected the mismatch, and the next block eventually forced a
+fresh attempt. Captured pre-tipping source contains the same defect. The repair
+creates a running attempt whenever scan health changes, retaining the parent,
+epoch, completeness and locked-attempt safeguards. Seven source-executed
+regressions cover the original failure, recovery and worsening health, unchanged
+reuse, incomplete scans, membership changes and concurrent-state refusal.
+Database/Core dependencies are controlled fixtures; later projection SQL and
+production readiness require their separate checks.
+
+The approved recovery-evidence copy also reconciled the next stopped UI
+retirement: its exact journal contains 575 completed unlinks, no trailing
+prepare and no completed pair. Together with earlier attempts this accounts
+for 957 unlinks and 7,526 remaining original entries. The 60-second retry pocket
+was shorter than three mandatory protected census walks; a 120-second pocket
+with at most three full scans retains the 30-minute global limit and all proof
+checks. Execution, final deployment and release synchronization remain pending
+at this source checkpoint; failed journals and lossless input bundles are
+preserved.
+
+The complete index-recovery harness initially exposed nine missing references
+to the new WORK-tip replay helper and one older supervised-recovery fixture
+that omitted running-attempt creation. The harness now loads the real helper
+and its codec/address dependencies and explicitly verifies the running fence
+before staging; no original assertions were removed. All 552 behavior checks
+pass. The scoped deploy controller derives worker-only activation exclusively
+from an effective singleton indexer change and verifies that the API import
+closures exclude it, preserving API progress and gateway identity. Its 27
+focused tests and 20 existing rollout/hold tests pass; actual installation
+and post-installation readiness remain separate release gates.

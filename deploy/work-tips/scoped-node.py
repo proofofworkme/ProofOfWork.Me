@@ -21,6 +21,9 @@ ALLOWED = frozenset({'server/proof-api.mjs', 'scripts/backfill-proof-indexer.mjs
     'server/boost-projection.mjs', 'server/boost-growth.mjs',
     'src/shared/protocol/boostTip.mjs'})
 NEW = frozenset()
+WORKER_SOURCE = 'scripts/backfill-proof-indexer.mjs'
+API_STATE_FIELDS = ('ActiveState', 'MainPID', 'WorkingDirectory', 'InvocationID',
+    'ExecMainStartTimestampMonotonic')
 ENTRYPOINTS = ('server/proof-api.mjs', 'scripts/backfill-proof-indexer.mjs',
     'scripts/backfill-proof-search.mjs')
 IMPORT = re.compile(r'''(?:\b(?:import|export)\s+[^;]*?\bfrom\s*|\bimport\s*\(?\s*)['"](\.[^'"]+)['"]''')
@@ -73,8 +76,8 @@ def relative_import(parent, target):
         elif part not in ('', '.'): parts.append(part)
     return source_path('/'.join(parts))
 
-def dependency_closure(root, candidates=None):
-    candidates = candidates or {}; seen = set(); pending = list(ENTRYPOINTS)
+def dependency_closure(root, candidates=None, entrypoints=ENTRYPOINTS):
+    candidates = candidates or {}; seen = set(); pending = list(entrypoints)
     while pending:
         path = pending.pop()
         if path in seen: continue
@@ -85,6 +88,33 @@ def dependency_closure(root, candidates=None):
             dependency = relative_import(path, target)
             if dependency.endswith(('.mjs', '.js', '.json')): pending.append(dependency)
     return seen
+
+def worker_only(m):
+    # Derived only from validated candidate bytes and live-before hash fences;
+    # callers cannot select a lighter activation policy in the manifest.
+    return {row['path'] for row in m['sources'] if row['before'] != row['after']} == {WORKER_SOURCE}
+
+def api_preservation():
+    args = ['show', UNITS[0]]
+    for field in API_STATE_FIELDS: args.extend(('-p', field))
+    row = dict(line.split('=', 1) for line in ctl(*args).splitlines())
+    require(set(row) == set(API_STATE_FIELDS) and row['ActiveState'] == 'active' and
+        row['WorkingDirectory'] == str(ROOT) and
+        all(row[key].isdigit() and int(row[key]) > 0
+            for key in ('MainPID', 'ExecMainStartTimestampMonotonic')) and
+        re.fullmatch('[0-9a-f]{32}', row['InvocationID']), 'Invalid preserved API process')
+    return {'unitSha256': sha(safe_read(Path('/etc/systemd/system')/UNITS[0], 65536)),
+        'state': row}
+
+def require_preserved_runtime(m, preserved):
+    require(isinstance(preserved, dict) and set(preserved) == {'api', 'gateway'} and
+        api_preservation() == preserved['api'], 'Preserved API process or unit changed')
+    actual = gateway_states()
+    require(actual == preserved['gateway'], 'Preserved gateway process changed')
+    require_gateway_baseline(actual, m['gateway'])
+    for name, expected in m['gateway']['files'].items():
+        require(sha(safe_read(Path('/etc/systemd/system')/name, 65536)) == expected,
+            'Preserved gateway unit changed')
 
 def validate_manifest(m):
     require(m.get('format') == 'proof-of-work-work-tips-scoped-runtime-v1', 'Wrong manifest')
@@ -146,6 +176,12 @@ def fence(root, m, candidates):
         require(sha(safe_read(root/path)) == expected, 'Dependency changed: '+path)
     required = dependency_closure(root) | dependency_closure(root, candidates)
     require(required <= m['dependencies'].keys() | NEW, 'Unpinned runtime dependency')
+    if worker_only(m):
+        api_paths = dependency_closure(root, entrypoints=(ENTRYPOINTS[0],)) | \
+            dependency_closure(root, candidates, entrypoints=(ENTRYPOINTS[0],))
+        require(WORKER_SOURCE not in api_paths, 'Changed indexer is loaded by API')
+        require(all(row['before'] == row['after'] for row in m['sources'] if row['path'] in api_paths),
+            'Worker-only activation changes API imports')
 
 def ctl(*args):
     return subprocess.check_output(['/usr/bin/systemctl', *args], text=True, timeout=30,
@@ -211,8 +247,25 @@ def restore_apps(gateway_pins):
         for row in states(UNITS).values()), 'Runtime services not restored')
     require_gateway_baseline(gateway_states(), gateway_pins)
 
-def restore_verified_apps(m, authority, search, hold_raw):
-    restore_apps(m['gateway'])
+def require_runtime_drained(m, preserved=None):
+    if worker_only(m):
+        require_protected_services(m['protectedServices'], 'drained')
+        require_preserved_runtime(m, preserved)
+    else: require_apps_drained()
+
+def drain_runtime(m, preserved=None):
+    if worker_only(m):
+        require_preserved_runtime(m, preserved)
+        subprocess.run(['/usr/bin/systemctl', 'stop', UNITS[1]], check=True, timeout=120)
+        require_runtime_drained(m, preserved)
+    else: drain_apps()
+
+def restore_verified_apps(m, authority, search, hold_raw, preserved=None):
+    if worker_only(m):
+        require_preserved_runtime(m, preserved)
+        subprocess.run(['/usr/bin/systemctl', 'start', UNITS[1]], check=True, timeout=60)
+        require_preserved_runtime(m, preserved)
+    else: restore_apps(m['gateway'])
     require_protected_services(m['protectedServices'], 'restored')
     require(states(AUTHORITY)==authority and states(SEARCH)==search
         and safe_read(HOLD,65536)==hold_raw, 'Unrelated recovery state changed')
@@ -227,13 +280,14 @@ def sync(path):
     try: os.fsync(fd)
     finally: os.close(fd)
 
-def install(root, backup, rows, metadata, candidate, stamp):
+def install(root, backup, rows, metadata, candidate, stamp, changed_only=False):
     for row in rows:
         raw = safe_read(root/row['path'], absent=row['path'] in NEW)
         current = sha(raw) if raw is not None else None
         require(current == row['before'] if candidate else current in (row['before'], row['after']),
             'Refuse overwrite of unexpected source: '+row['path'])
     for index, row in enumerate(rows):
+        if changed_only and row['before'] == row['after']: continue
         if not candidate and row['before'] is None: continue
         target = root/row['path']; temp = target.with_name(target.name+'.work-tips-'+('candidate-' if candidate else 'rollback-')+stamp)
         durable(temp, (backup/f'{"candidate" if candidate else "before"}-{index}.mjs').read_bytes())
@@ -275,12 +329,19 @@ def main():
         for row in authority.values()), 'Authority unavailable')
     node = Path(os.readlink('/proc/'+services[UNITS[0]]['MainPID']+'/exe'))
     require(str(node).startswith('/opt/node-') and sha(safe_read(node,200*1024**2)) == m['nodeSha256'], 'Node changed')
+    preserved = {'api':api_preservation(), 'gateway':gateway_states()} if worker_only(m) else None
+    if preserved:
+        require(all(preserved['api']['state'][key] == value
+            for key, value in services[UNITS[0]].items()), 'API changed during baseline capture')
+        require_preserved_runtime(m, preserved)
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     backup = BACKUPS/('work-tips-'+m['releaseId']+'-'+stamp); backup.mkdir(mode=0o700)
     receipt = {'format':m['format'], 'releaseId':m['releaseId'], 'sourceCommit':m['sourceCommit'],
         'baselineHead':head, 'manifestSha256':sha(raw), 'rollbackRoot':str(backup),
         'dependencyCount':len(m['dependencies']), 'authority':authority, 'gateway':m['gateway'],
-        'protectedServices':m['protectedServices'], 'servicesBefore':services, 'installed':False,
+        'protectedServices':m['protectedServices'], 'servicesBefore':services,
+        'activationMode':'worker-only' if worker_only(m) else 'full-runtime',
+        'preservedRuntime':preserved, 'installed':False,
         'rolledBack':False, 'sources':[{k:v for k,v in row.items() if k != 'base64'} for row in m['sources']]}
     def save():
         temp = backup/'receipt.tmp'; durable(temp,(json.dumps(receipt,indent=2)+'\n').encode())
@@ -296,26 +357,27 @@ def main():
     durable(backup/'manifest.json',raw); save(); fence(ROOT,m,candidates)
     try:
         receipt['stopRequested']=True; save()
-        drain_apps()
+        drain_runtime(m, preserved)
         require_protected_services(m['protectedServices'], 'drained')
         require(states(AUTHORITY)==authority
             and states(SEARCH)==search and safe_read(HOLD,65536)==hold_raw,
             'Unrelated state changed'); fence(ROOT,m,candidates)
         receipt['sourceWritesStarted']=True; save()
-        install(ROOT,backup,m['sources'],metadata,True,stamp); receipt['installed']=True; save()
+        install(ROOT,backup,m['sources'],metadata,True,stamp,changed_only=worker_only(m)); receipt['installed']=True; save()
         require(all(sha(safe_read(ROOT/row['path']))==row['after'] for row in m['sources']), 'Installed bytes differ')
         require(all(sha(safe_read(ROOT/path))==expected for path,expected in m['dependencies'].items()
             if path not in ALLOWED), 'Unrelated source changed')
-        require_apps_drained()
-        receipt['servicesAfter']=restore_verified_apps(m, authority, search, hold_raw)
+        require_runtime_drained(m, preserved)
+        receipt['servicesAfter']=restore_verified_apps(m, authority, search, hold_raw, preserved)
         receipt['completedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat(); save(); print(json.dumps(receipt),flush=True)
     except BaseException as error:
         receipt['errorClass']=type(error).__name__
         try:
-            drain_apps()
+            drain_runtime(m, preserved)
             if receipt.get('sourceWritesStarted'):
-                install(ROOT,backup,m['sources'],metadata,False,stamp)
-            receipt['servicesAfterRollback']=restore_verified_apps(m, authority, search, hold_raw)
+                install(ROOT,backup,m['sources'],metadata,False,stamp,changed_only=worker_only(m))
+                if worker_only(m): fence(ROOT,m,candidates)
+            receipt['servicesAfterRollback']=restore_verified_apps(m, authority, search, hold_raw, preserved)
             receipt['rolledBack']=True; receipt['newHelpersRetained']=bool(NEW)
         except BaseException as recovery_error:
             receipt['recoveryIncomplete']=True; receipt['recoveryErrorClass']=type(recovery_error).__name__

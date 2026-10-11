@@ -32261,7 +32261,7 @@ async function backfillMempoolScanSource(client, source) {
         }
       } else {
       const publicationAttempt =
-        stagePlan.requiresAttemptFence || !scanComplete
+        stagePlan.requiresAttemptFence || !scanComplete || !reusableScanHealthMatches
         ? await storeWorkQ16PendingRunningAttempt(
             client,
             workQ16PendingRunningAttempt(

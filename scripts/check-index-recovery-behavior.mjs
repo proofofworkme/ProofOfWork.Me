@@ -1,3 +1,4 @@
+import { parseBoostWorkTip } from "../src/shared/protocol/boostTip.mjs";
 import { canonicalSealTime } from "../server/canonical-seal-time.mjs";
 import { JOBS_ACTIVATION_HEIGHT } from "../src/shared/protocol/jobs.mjs";
 import { JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_META_KEY, advanceJobsCandidateDigest, jobsCandidateParts } from "../server/jobs.mjs";
@@ -1333,6 +1334,8 @@ function isolatedFunction(path, name, globals = {}) {
     TOKEN_CREATION_PRICE_SATS: 546,
     WORK_TOKEN_CREATED_AT: "2026-05-15T02:57:28.000Z",
     WORK_TOKEN_CREATE_DATA_BYTES: 70,
+    parseBoostWorkTip,
+    WORK_TOKEN_REGISTRY_ADDRESS: "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
     WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS:
       "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
     WORK_TOKEN_MINT_AMOUNT: 1_000,
@@ -1913,7 +1916,9 @@ function isolatedFunction(path, name, globals = {}) {
           backfillMempoolScanSource: [
             "canonicalMempoolTxidSnapshot",
           ],
+          preparedProtocolItemsWithCanonicalWorkTipReplay: ["sameCanonicalPaymentAddress"],
           bindPreparedTransactionsToWorkAmoV5Replay: [
+            "preparedProtocolItemsWithCanonicalWorkTipReplay",
             "canonicalReplayParentTime",
             "canonicalProtocolItemForPostgres",
             "workAmoV5RawPayloadForPreparedPosition",
@@ -25467,10 +25472,12 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
   let freshReads = 0;
   let mempoolCalls = 0;
   let published = 0;
+  let runningAttempts = 0;
+  const publicationAttempt = { status: "running", attemptId: "fixture-attempt" };
   let stagedTxids = null;
   let storedScan = null;
   let witnessScan = null;
-  const stageRequest = { fixture: "stage-request" };
+  const stageRequest = { fixture: "stage-request", parentWitnessSha256: "a".repeat(64) };
   const stageResponse = {
     model: "fixture-stage",
     stage: { replayTxids: txids },
@@ -25501,7 +25508,7 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
           [...txids].sort(compareCanonicalUtf8),
           "Q16 stage planning must use a fresh just-in-time mempool snapshot",
         );
-        return { publishEligible: true, request: stageRequest };
+        return { publishEligible: true, requiresAttemptFence: true, request: stageRequest };
       },
       bitcoinRpc: async (method, params) => {
         assert.equal(method, "getrawmempool");
@@ -25564,7 +25571,20 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
         prefix: "pwt1:",
         text: `pwt1:mint:${workTokenId}:1000`,
       }],
+      workQ16PendingRunningAttempt: (request, snapshot) => {
+        assert.equal(request, stageRequest);
+        assert.equal(snapshot.count, 118);
+        return publicationAttempt;
+      },
+      storeWorkQ16PendingRunningAttempt: async (actualClient, attempt, parent) => {
+        assert.equal(actualClient, client);
+        assert.equal(attempt, publicationAttempt);
+        assert.equal(parent, stageRequest.parentWitnessSha256);
+        runningAttempts += 1;
+        return attempt;
+      },
       requestWorkQ16PendingStage: async (request) => {
+        assert.equal(runningAttempts, 1, "Fresh stage requires its running attempt first");
         assert.equal(request, stageRequest);
         return stageResponse;
       },
@@ -25601,6 +25621,8 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
   assert.equal(freshReads, 119);
   assert.equal(mempoolCalls, 2);
   assert.equal(published, 1);
+  assert.equal(runningAttempts, 1);
+  assert.equal(witnessScan.publicationAttempt, publicationAttempt);
   assert.deepEqual(Array.from(stagedTxids), txids);
   assert.equal(storedScan.processedTxids.length, 118);
   assert.equal(witnessScan.stageResponse, stageResponse);
