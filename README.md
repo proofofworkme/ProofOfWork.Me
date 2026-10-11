@@ -122,8 +122,11 @@ source for headers, the Desktop welcome, favicon, touch icon and social assets;
 `src/app/appIcons.ts` is the shared app icon catalog. To regenerate current
 identity assets, run `node scripts/generate-brand-assets.mjs` (installed Chrome
 and Playwright required); an optional output-directory argument allows review
-without changing `public/`. Browser icon and social metadata URLs are versioned
-to refresh previously cached branding.
+without changing `public/`. Current assets live in `public/brand/20261011/`;
+browser icon and social metadata use these versioned paths to refresh cached
+branding. Keep legacy public asset bytes intact for previously loaded HTML.
+Future identity revisions must use a new asset directory so the deployment
+controller can preserve each prior page's complete dependency graph.
 
 ### Code v1
 

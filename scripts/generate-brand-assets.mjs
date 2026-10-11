@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { chromium } from "@playwright/test";
 
 const root = new URL("../", import.meta.url);
-const output = resolve(process.argv[2] || new URL("public/", root).pathname);
+const output = resolve(process.argv[2] || new URL("public/brand/20261011/", root).pathname);
 await mkdir(output, { recursive: true });
 const source = await readFile(new URL("src/assets/proof-mark.svg", root), "utf8");
 const mark = source.match(/<path\b[^>]+\/>/u)?.[0].replace('stroke="#000"', 'stroke="currentColor"');
