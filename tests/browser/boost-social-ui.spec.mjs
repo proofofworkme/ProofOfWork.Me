@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { composerAppearance, composerViewports, expectAlignedFields, expectComposerContained, expectFeePresetsContained } from "../fixtures/composerGeometry.mjs";
 
 const address = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
 const txid = "a".repeat(64);
@@ -58,6 +59,72 @@ for (const width of [320, 390, 960, 1440]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
     await page.screenshot({ path: testInfo.outputPath("profile.png"), fullPage: true });
   });
+}
+
+for (const embedded of [false, true]) for (const theme of ["light", "dark"]) {
+  for (const viewport of composerViewports) {
+    test(`composer alignment: Boost ${embedded ? "Computer" : "standalone"} ${theme} ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
+      await page.setViewportSize(viewport);
+      await composerAppearance(page, theme);
+      await fixture(page);
+      await page.goto(`/?${embedded ? "folder=boost" : "boost=1"}`);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      await page.getByRole("textbox", { name: "Boost text", exact: true }).fill("A private draft.");
+      await page.getByRole("button", { name: "Review Boost", exact: true }).click();
+      for (const quote of [false, true]) {
+        const form = page.getByRole("dialog", { name: quote ? "Add a comment" : "What’s happening?", exact: true });
+        await expect(form).toBeVisible();
+        await form.getByRole("textbox", { name: "Boost text", exact: true }).fill("A private draft.");
+        const proofs = form.getByLabel("Proof signal", { exact: true });
+        const work = form.getByLabel("WORK signal", { exact: true });
+        await proofs.fill("123456789");
+        await work.fill("0.1234567890123456");
+        await expectAlignedFields(proofs, work, { equalWidths: true });
+        const counter = await form.locator(".counter").boundingBox();
+        const signals = await form.locator(".boost-composer-signals").boundingBox();
+        expect(counter.y + counter.height).toBeLessThanOrEqual(signals.y);
+        await expectFeePresetsContained(form);
+        await expectComposerContained(page, form, viewport);
+        await form.getByRole("button", { name: "0.5 proofs/vB", exact: true }).click();
+        await expect(form.getByLabel("Fee proofs/vB", { exact: true })).toHaveValue("0.5");
+        await expect(proofs).toHaveValue("123456789");
+        await expect(work).toHaveValue("0.1234567890123456");
+        await expect(form.getByRole("textbox", { name: "Boost text", exact: true })).toHaveValue("A private draft.");
+        if (embedded && theme === "light" && viewport.width === 320 && !quote) {
+          const filename = `${"exact-long-attachment-name-".repeat(4)}.txt`;
+          await form.locator('input[type="file"]').setInputFiles({ name: filename,
+            mimeType: "text/plain", buffer: Buffer.from("Unsent fixture attachment") });
+          await expect(form.locator(".boost-post-attachment-selected")).toContainText(filename);
+          await expectComposerContained(page, form, viewport);
+          const remove = form.getByRole("button", { name: "Remove Boost attachment", exact: true });
+          await remove.scrollIntoViewIfNeeded();
+          await expect(remove).toBeInViewport();
+          await page.screenshot({ path: testInfo.outputPath("boost-long-attachment.png") });
+          await remove.click();
+          await expect(form.locator(".boost-post-attachment-selected")).toHaveCount(0);
+          await expect(form.getByRole("textbox", { name: "Boost text", exact: true })).toHaveValue("A private draft.");
+          await expect(proofs).toHaveValue("123456789");
+          await expect(work).toHaveValue("0.1234567890123456");
+          expect(await page.evaluate(() => typeof window.unisat)).toBe("undefined");
+        }
+        await proofs.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: testInfo.outputPath(quote ? "quote-fields.png" : "boost-fields.png") });
+        const connect = form.getByRole("button", { name: "Connect to post", exact: true });
+        await connect.scrollIntoViewIfNeeded();
+        await expect(connect).toBeInViewport();
+        await page.screenshot({ path: testInfo.outputPath(quote ? "quote-composer.png" : "boost-composer.png") });
+        await page.keyboard.press("Escape");
+        await expect(form).toHaveCount(0);
+        if (!quote) {
+          const post = page.getByTestId("boost-post");
+          await post.getByRole("button", { name: "Reboost, 1 reboosts", exact: true }).focus();
+          await page.keyboard.press("Enter");
+          await post.getByRole("menuitem", { name: "Quote", exact: true }).focus();
+          await page.keyboard.press("Enter");
+        }
+      }
+    });
+  }
 }
 
 test("owner asset controls still open the tools drawer without signing", async ({ page }) => {

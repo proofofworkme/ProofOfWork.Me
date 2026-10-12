@@ -460,26 +460,6 @@
   resize: vertical;
 }
 
-.boost-modal-form-row {
-  align-items: end;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  justify-content: space-between;
-}
-
-.boost-modal-form-row label {
-  align-items: center;
-  color: var(--text-muted);
-  display: flex;
-  font-size: 0.82rem;
-  gap: 8px;
-}
-
-.boost-modal-form-row input {
-  max-width: 130px;
-}
-
 .boost-modal-action-row {
   display: flex;
   flex-wrap: wrap;
@@ -1398,6 +1378,22 @@
 .boost-modal, .boost-image-dialog, .boost-mention-preview { background: var(--surface); border-color: var(--border); color: var(--text); box-shadow: var(--shadow-lg); }
 .boost-modal-head { background: var(--surface); border-color: var(--border); }
 .boost-modal-head strong { font-family: var(--font-ui); font-weight: 500; }
+.boost-post-composer { container: boost-composer / inline-size; grid-template-columns: minmax(0, 1fr); }
+.boost-post-composer > form { grid-template-columns: minmax(0, 1fr); }
+.boost-post-composer > *, .boost-post-composer > form > * { min-width: 0; }
+.boost-post-composer .boost-quoted-post { display: grid; gap: var(--space-2); overflow-wrap: anywhere; }
+.boost-post-composer .boost-quoted-post-head { display: flex; align-items: center; gap: var(--space-2); color: var(--text-muted); font-size: var(--text-xs); }
+.boost-post-composer .boost-quoted-post-handle { color: var(--text-muted); font-size: var(--text-xs); }
+.boost-post-composer .boost-quoted-post p { margin: 0; white-space: pre-wrap; }
+.boost-composer-meta { display: flex; justify-content: flex-end; min-width: 0; }
+.boost-composer-meta .counter { padding: 0; white-space: nowrap; }
+.boost-composer-signals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: var(--space-3); }
+.boost-composer-signals > label { display: grid; align-content: start; gap: var(--space-2); min-width: 0; font-size: var(--text-sm); line-height: 1.5; }
+.boost-composer-signals input { width: 100%; min-width: 0; }
+.boost-post-composer :is(.boost-post-attachment, .boost-post-attachment-selected) { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); min-width: 0; }
+.boost-post-composer :is(.boost-post-attachment, .boost-post-attachment-selected) > span { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.boost-post-composer .boost-post-attachment-selected > button { flex: 0 0 auto; }
+@container boost-composer (max-width: 400px) { .boost-composer-signals { grid-template-columns: minmax(0, 1fr); } }
 .boost-profile-image-viewer { background: var(--surface); color: var(--text); }
 .boost-modal-backdrop, .boost-tools-backdrop, .boost-image-dialog::backdrop, .boost-profile-image-viewer::backdrop { background: var(--backdrop); }
 .boost-more-actions-panel, .boost-shell-instrument .boost-reboost-menu { background: var(--surface); border-color: var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); }
@@ -1405,7 +1401,7 @@
 .boost-mention-preview-head .boost-avatar-fallback { font-weight: 500; }
 .boost-public-app.mail-app > .app-footer.boost-footer { background: var(--bg); border-color: var(--border); }
 .boost-shell-instrument :is(.boost-quoted-post-head, .boost-quoted-post-handle, .boost-reboosted-label, .boost-reboosted-signal, .boost-proof-frame p, .boost-proof-frame strong, .boost-post-head-actions > strong, .boost-proof-details summary > span, .boost-proof-record, .boost-composer-hint, .boost-network-stats dt, .boost-profile-title > span, .boost-profile-signal, .boost-profile-identity dl, .boost-mobile-filter, .boost-person-meta), .boost-modal-head span, .boost-modal .counter, .boost-detail-replies-head span, .boost-detail-reply > span, .boost-mention-preview-handle, .boost-mention-preview-address, .boost-mention-preview-counts { font-size: var(--text-xs); }
-.boost-shell-instrument :is(.boost-discovery-details > summary, .boost-suggestion-follow, .boost-composer-prompt, .boost-feed-toolbar .network-tabs button, .boost-profile-stats, .boost-person-copy > span, .boost-person-copy details), .boost-modal-form-row label, .boost-mention-preview > p, .boost-footer .boost-footer-apps { font-size: var(--text-sm); }
+.boost-shell-instrument :is(.boost-discovery-details > summary, .boost-suggestion-follow, .boost-composer-prompt, .boost-feed-toolbar .network-tabs button, .boost-profile-stats, .boost-person-copy > span, .boost-person-copy details), .boost-mention-preview > p, .boost-footer .boost-footer-apps { font-size: var(--text-sm); }
 .boost-shell-instrument :is(.boost-author-line > span:not(.boost-author), .boost-signal-row, .boost-reboosted-post-author-line > span, .boost-reboosted-post-missing span, .boost-proof-frame span, .boost-action-panel-head span, .boost-rail-head span, .boost-rail-head a, .boost-rail-stats span, .boost-rail-list > span, .boost-profile-tabs strong) { font-size: var(--text-xs); }
 .boost-shell-instrument :is(.boost-post-head .boost-author, .boost-post-head .button-content, .boost-profile-tabs span, .boost-profile-stats span, .boost-rail-stats strong) { font-size: var(--text-sm); }
 .boost-compact-nav :is(a, button) { font-size: var(--text-xs); }

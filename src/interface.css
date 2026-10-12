@@ -538,6 +538,27 @@
   .mail-send-button[data-state="disabled"]:disabled { background: var(--surface-soft); border-color: var(--border-strong); color: var(--text-muted); cursor: not-allowed; opacity: 1; }
   .mail-send-button[data-state="busy"]:disabled { background: var(--surface-soft); border-color: var(--accent); color: var(--accent-strong); cursor: progress; opacity: 1; }
 
+  .compose-pane { align-content: start; container: mail-composer / inline-size; }
+  .compose-pane label:not(.attachment-picker) { align-content: start; gap: var(--space-2); min-width: 0; font-size: var(--text-sm); line-height: 1.5; }
+  .compose-pane .compose-grid { align-items: start; gap: var(--space-4); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .compose-pane .compose-grid > .field-note { align-self: center; margin: 0; overflow-wrap: anywhere; }
+  .compose-pane .memo-field textarea { min-height: clamp(180px, 28vh, 280px); resize: vertical; }
+  @container mail-composer (max-width: 520px) {
+    .compose-pane .compose-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* Presets follow the space available to their field, including embedded forms. */
+  :is(.compose-pane, .boost-post-composer, .publish-composer) .fee-control { align-content: start; container: composer-fee / inline-size; }
+  :is(.compose-pane, .boost-post-composer, .publish-composer) .fee-control label { align-content: start; gap: var(--space-2); min-width: 0; font-size: var(--text-sm); line-height: 1.5; }
+  :is(.compose-pane, .boost-post-composer, .publish-composer) .fee-presets { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  :is(.compose-pane, .boost-post-composer, .publish-composer) .fee-presets button { min-width: 0; overflow-wrap: anywhere; }
+  @container composer-fee (max-width: 440px) {
+    :is(.compose-pane, .boost-post-composer, .publish-composer) .fee-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @container composer-fee (max-width: 220px) {
+    :is(.compose-pane, .boost-post-composer, .publish-composer) .fee-presets { grid-template-columns: minmax(0, 1fr); }
+  }
+
   /* Transaction and recovery review are part of the product design system. */
   :where(.review-dialog, .local-restore-dialog, .action-dialog, .purchase-dialog) {
     background: var(--surface);

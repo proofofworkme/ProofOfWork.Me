@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
+import { composerAppearance, composerViewports, expectAlignedFields, expectComposerContained, expectFeePresetsContained } from "../fixtures/composerGeometry.mjs";
 
 const NOW = "2026-08-01T12:00:00.000Z";
 const HASH = "1".repeat(64);
@@ -994,6 +995,40 @@ async function openConnectedCompose(page, route = "/") {
   await expect(page.getByRole("heading", { name: "New Message" })).toBeVisible();
   await expect(page.getByLabel("From")).toHaveValue(SENDER);
   await expect(page.getByLabel("WORK each")).toBeVisible();
+}
+
+for (const layout of ["focus", "desktop"]) for (const theme of ["light", "dark"]) {
+  for (const viewport of composerViewports) {
+    test(`composer alignment: Mail ${layout} ${theme} ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
+      await page.setViewportSize(viewport);
+      await composerAppearance(page, theme, layout);
+      await installWallet(page);
+      await installApiFixtures(page);
+      await openConnectedCompose(page);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      const form = page.locator(".compose-pane");
+      const proofs = form.getByLabel("Proofs each", { exact: true });
+      const fee = form.getByLabel("Fee proofs/vB", { exact: true });
+      const message = form.getByRole("textbox", { name: "Message", exact: true });
+      await proofs.fill("123456789");
+      await form.getByLabel("WORK each", { exact: true }).fill("0.1234567890123456");
+      await message.fill("An unsent message with room to write.\nExact trailing spaces stay.  \n");
+      await expectAlignedFields(proofs, fee, { equalWidths: true });
+      expect((await message.boundingBox()).height).toBeGreaterThanOrEqual(180);
+      await expectFeePresetsContained(form);
+      await expectComposerContained(page, form, viewport);
+      await form.getByRole("button", { name: "0.5 proofs/vB", exact: true }).click();
+      await expect(fee).toHaveValue("0.5");
+      await expect(proofs).toHaveValue("123456789");
+      await expect(message).toHaveValue("An unsent message with room to write.\nExact trailing spaces stay.  \n");
+      await form.locator(".compose-grid").first().scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath("mail-fields.png") });
+      await message.scrollIntoViewIfNeeded();
+      await expect(message).toBeInViewport();
+      await page.screenshot({ path: testInfo.outputPath("mail-composer.png") });
+      expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+    });
+  }
 }
 
 async function openConnectedWallet(page) {

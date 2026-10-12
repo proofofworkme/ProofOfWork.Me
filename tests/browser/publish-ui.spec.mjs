@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
 import { socialIdentityIntentMessage } from "../../src/features/identity/socialIdentityCore.mjs";
+import { composerAppearance, composerViewports, expectAlignedFields, expectComposerContained, expectFeePresetsContained } from "../fixtures/composerGeometry.mjs";
 
 bitcoin.initEccLib(ecc);
 // Public disposable fixture identity, never a user wallet.
@@ -176,6 +177,38 @@ for (const width of [390, 1440]) {
     const layout = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, overflow: [...document.querySelectorAll("body *")].filter(element => element.getBoundingClientRect().right > window.innerWidth + 1).map(element => ({ tag: element.tagName, class: element.className, right: element.getBoundingClientRect().right })).slice(0, 16) }));
     expect(layout.width, JSON.stringify(layout.overflow)).toBeLessThanOrEqual(width + 1);
   });
+}
+
+for (const embedded of [false, true]) for (const theme of ["light", "dark"]) {
+  for (const viewport of composerViewports) {
+    test(`composer alignment: Publish ${embedded ? "Computer" : "standalone"} ${theme} ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
+      await page.setViewportSize(viewport);
+      await composerAppearance(page, theme);
+      await fixture(page, { wallet: true });
+      await page.goto(`/?${embedded ? "folder=publish" : "publish=1"}&write=1`);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      const form = page.locator(".publish-composer");
+      await expect(form.getByLabel("Article text", { exact: true })).toBeVisible();
+      await form.getByLabel("Article title", { exact: true }).fill("A draft with aligned publication controls");
+      await form.getByLabel("Article text", { exact: true }).fill("Draft text remains private.  \n");
+      const proofs = form.getByLabel("Article proof signal", { exact: true });
+      const fee = form.getByLabel("Fee proofs/vB", { exact: true });
+      await proofs.fill("123456789");
+      await expectAlignedFields(proofs, fee, { equalWidths: true });
+      await expectFeePresetsContained(form);
+      await expectComposerContained(page, form, viewport);
+      await form.getByRole("button", { name: "0.5 proofs/vB", exact: true }).click();
+      await expect(fee).toHaveValue("0.5");
+      await expect(proofs).toHaveValue("123456789");
+      await expect(form.getByLabel("Article text", { exact: true })).toHaveValue("Draft text remains private.  \n");
+      await form.locator(".publish-publishing-options").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath("publish-fields.png") });
+      await form.getByRole("button", { name: "Save draft and back", exact: true }).scrollIntoViewIfNeeded();
+      await expect(form.getByRole("button", { name: "Save draft and back", exact: true })).toBeInViewport();
+      await page.screenshot({ path: testInfo.outputPath("publish-composer.png") });
+      expect(await page.evaluate(() => window.publishSignatureCalls)).toBe(0);
+    });
+  }
 }
 
 test("full text drafts autosave, preview, and enforce the complete carrier budget", async ({ page }) => {

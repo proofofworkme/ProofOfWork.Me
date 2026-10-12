@@ -139,10 +139,11 @@ H-1 commitment, issuance or frozen marketplace term changes.
 `check:publish` covers body commitments, exact script limits, article filtering,
 raw detail verification and shared engagement. Identity checks cover signed
 selection and trusted bridge routing. UI and deployment checks cover standalone
-and embedded routes, text escaping, transaction preparation, and all eighteen
-managed static surfaces. Release source includes the shared protocol and browser
-signature modules imported by the API/indexer. Previous fourteen-, fifteen-, sixteen- and
-seventeen-surface release evidence remains verifiable.
+and embedded routes, text escaping, transaction preparation, and the current
+managed surface inventory in [OP_RETURN_INFRASTRUCTURE.md](OP_RETURN_INFRASTRUCTURE.md).
+Release source includes the shared protocol and browser signature modules
+imported by the API/indexer. Previous fourteen-, fifteen-, sixteen-, seventeen-,
+and eighteen-surface release evidence remains verifiable.
 
 ## Content tips
 

@@ -3620,7 +3620,7 @@ export default function BoostRoot({
             <section
               aria-labelledby="boost-post-dialog-title"
               aria-modal="true"
-              className="boost-modal"
+              className="boost-modal boost-post-composer"
               role="dialog"
             >
               <div className="boost-modal-head">
@@ -3654,10 +3654,12 @@ export default function BoostRoot({
                   placeholder="Share a proof-backed thought"
                   value={postText}
                 />
-                <div className="boost-modal-form-row">
+                <div className="boost-composer-meta">
                   <span className="counter">
                     {boostPostText(postText).length.toLocaleString()} / 140
                   </span>
+                </div>
+                <div className="boost-composer-signals">
                   <label>
                     Proof signal
                     <input

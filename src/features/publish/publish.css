@@ -30,8 +30,6 @@
 .publish-budget small { width: 100%; color: var(--text-muted); }
 .publish-budget.is-over { color: #f7a6a6; }
 .publish-budget.is-over progress { accent-color: #f7a6a6; }
-.publish-publishing-options { display: flex; flex-wrap: wrap; align-items: end; gap: 20px; }
-.publish-publishing-options > label { display: grid; gap: 8px; flex: 0 1 180px; }
 .publish-editor-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
 .publish-editor-actions button { display: inline-flex; align-items: center; gap: 8px; }
 .publish-reading { box-sizing: border-box; margin: 0 auto; width: 100%; max-width: 760px; min-width: 0; padding: 36px clamp(20px, 4vw, 46px); }
@@ -72,6 +70,11 @@
 .publish-article-card .publish-card-label, .publish-title-label > span, .publish-body-label > span { color: var(--text-muted); font-family: var(--font-ui); font-size: var(--text-xs); font-weight: 400; letter-spacing: 0; text-transform: none; }
 .publish-composer .publish-title-input { background: transparent; border: 0; border-bottom: 1px solid var(--border-interactive); border-radius: 0; color: var(--text); font-family: var(--font-ui); font-size: clamp(26px, 4vw, 38px); font-weight: 500; line-height: 1.25; }
 .publish-composer .publish-body-input { background: transparent; border: 1px solid var(--border-interactive); border-radius: var(--radius-sm); color: var(--text); font-family: var(--font-ui); font-size: 20px; line-height: 1.8; padding: 16px; }
+.publish-composer { container: publish-writer / inline-size; }
+.publish-publishing-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: var(--space-4); }
+.publish-publishing-options > * { min-width: 0; }
+.publish-publishing-options label { display: grid; min-width: 0; gap: var(--space-2); font-size: var(--text-sm); line-height: 1.5; }
+@container publish-writer (max-width: 520px) { .publish-publishing-options { grid-template-columns: minmax(0, 1fr); } }
 .publish-article-body { color: var(--text); font-family: var(--font-ui); }
 .publish-article-card :is(p, .publish-read-link), .publish-writer-identity, .publish-writer-head > div > span, .publish-editor-toolbar, .publish-budget, .publish-byline { font-size: var(--text-sm); }
 .publish-budget small, .publish-reader-proof, .boost-tip-amount small { font-size: var(--text-xs); }
