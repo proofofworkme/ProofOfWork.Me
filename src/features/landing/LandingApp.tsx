@@ -70,8 +70,8 @@ const EMPTY_REGISTRY_COUNTS: LandingRegistryCounts = {
   totalCount: 0,
 };
 
-const LANDING_VIDEO_URL = "https://www.youtube.com/watch?v=vJLBCylKMyc";
-const LANDING_VIDEO_EMBED_URL = "https://www.youtube.com/embed/vJLBCylKMyc";
+const LANDING_VIDEO_URL = "https://www.youtube.com/watch?v=KN2kPGFxcrI";
+const LANDING_VIDEO_EMBED_URL = "https://www.youtube.com/embed/KN2kPGFxcrI";
 const LANDING_TESTIMONIAL_TXID =
   "d9c41aef1e84a51bbc96fe81506f511cd9cead8ceaae8349f9f3f64bb50acd69";
 const LANDING_TESTIMONIAL_TX_URL = explorerTxUrl(

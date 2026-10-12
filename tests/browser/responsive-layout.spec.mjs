@@ -3761,7 +3761,7 @@ test("Home video contacts YouTube only after the accessible load action", async 
   await page.keyboard.press("Enter");
   await expect(page.locator(".landing-video-frame iframe")).toHaveAttribute(
     "src",
-    "https://www.youtube.com/embed/vJLBCylKMyc",
+    "https://www.youtube.com/embed/KN2kPGFxcrI",
   );
   await expect.poll(() => videoRequests.length).toBeGreaterThan(0);
 });
