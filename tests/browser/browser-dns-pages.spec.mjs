@@ -63,7 +63,9 @@ async function fixture(page) {
       signPsbt: async () => { window.__browserDnsFixture.signCalls++; throw new Error("Browser fixture cannot sign"); } };
   });
   await page.route("**/api/v1/**", async route => {
-    const url = new URL(route.request().url()); state.requests.push(url);
+    const url = new URL(route.request().url());
+    url.pathname = url.pathname.replace(/^\/test-api(?=\/api\/)/u, "");
+    state.requests.push(url);
     if (route.request().method() !== "GET") {
       state.writes.push(`${route.request().method()} ${url.pathname}`);
       return route.fulfill({ status: 405, contentType: "application/json", body: '{"error":"Read-only Browser fixture"}' });
@@ -406,13 +408,85 @@ for (const width of [390, 1440]) {
   });
 }
 
-test("Browser full screen belongs to its controls and never grants the app full screen", async ({ page }) => {
-  await fixture(page);
-  await page.goto(`/?browser=1&txid=${PAGE}`);
-  await expectPage(page);
-  await page.getByRole("button", { name: "Full screen", exact: true }).click();
+async function expectFullscreenPageGeometry(page) {
   await expect(page.getByRole("button", { name: "Exit full screen", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.fullscreenElement?.classList.contains("browser-window"))).toBe(true);
-  await page.getByRole("button", { name: "Exit full screen", exact: true }).click();
-  expect(await page.evaluate(() => document.fullscreenElement === null)).toBe(true);
-});
+  const frame = page.locator(".browser-preview-card iframe");
+  await expect.poll(() => frame.evaluate(element => {
+    const root = element.closest(".browser-window").getBoundingClientRect();
+    return Math.abs(root.bottom - element.getBoundingClientRect().bottom);
+  })).toBeLessThanOrEqual(1);
+  const geometry = await frame.evaluate(element => {
+    const root = element.closest(".browser-window");
+    const rect = node => {
+      const { top, right, bottom, left, width, height } = node.getBoundingClientRect();
+      return { top, right, bottom, left, width, height };
+    };
+    const chrome = [...root.querySelectorAll(":scope > .browser-tabs-row, :scope > .browser-toolbar, :scope > .browser-page-toolbar, :scope > .browser-notice, :scope > .browser-run-note")];
+    return { root: rect(root), grid: rect(element.closest(".browser-page-grid")), frame: rect(element),
+      chromeBottom: Math.max(...chrome.map(node => rect(node).bottom)),
+      viewportWidth: innerWidth, viewportHeight: innerHeight,
+      scrollHeight: root.scrollHeight, clientHeight: root.clientHeight };
+  });
+  expect(geometry.root.width).toBeCloseTo(geometry.viewportWidth, 0);
+  expect(geometry.root.height).toBeCloseTo(geometry.viewportHeight, 0);
+  expect(geometry.frame.top).toBeGreaterThanOrEqual(geometry.chromeBottom - 1);
+  expect(geometry.frame.height).toBeGreaterThan(0);
+  for (const edge of ["top", "right", "bottom", "left"]) {
+    expect(Math.abs(geometry.frame[edge] - geometry.grid[edge]), `iframe fills page grid ${edge}`).toBeLessThanOrEqual(1);
+  }
+  expect(Math.abs(geometry.frame.height - (geometry.root.bottom - geometry.chromeBottom))).toBeLessThanOrEqual(1);
+  expect(geometry.scrollHeight).toBeLessThanOrEqual(geometry.clientHeight + 1);
+  if (geometry.viewportHeight >= 1000) expect(geometry.frame.height).toBeGreaterThan(geometry.viewportHeight * .7);
+  await expect(page.locator(".browser-inspectors")).toBeHidden();
+}
+
+for (const route of ["/?browser=1", "/?folder=browser"]) {
+  for (const viewport of [{ width: 1920, height: 1080 }, { width: 390, height: 844 }, { width: 640, height: 360 }]) {
+    test(`Browser fullscreen fills its remaining viewport at ${viewport.width}x${viewport.height} in ${route}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      const state = await fixture(page);
+      const sourceHtml = '<!doctype html><html><head><title>Alice page</title><style>body{margin:0;min-height:200vh}</style></head><body><button id="counter">Count 0</button><h1>Alice page</h1><script>let count=0;document.querySelector("#counter").addEventListener("click",event=>{event.target.textContent="Count "+(++count)})</script></body></html>';
+      state.pageOptions = { sourceHtml };
+      await page.goto(route);
+      await search(page, PAGE);
+      await expectPage(page);
+      const iframe = page.locator(".browser-preview-card iframe");
+      const source = page.locator(".browser-source-card pre");
+      expect(await source.textContent()).toBe(sourceHtml);
+      const initialHeight = (await iframe.boundingBox()).height;
+
+      for (const expanded of [false, true]) {
+        if (expanded) {
+          await page.getByRole("button", { name: "Expand viewport", exact: true }).click();
+          expect((await iframe.boundingBox()).height).toBeGreaterThan(initialHeight);
+        }
+        await page.getByRole("button", { name: "Full screen", exact: true }).click();
+        await expectFullscreenPageGeometry(page);
+        await expect(iframe).toHaveAttribute("sandbox", "");
+        expect(await source.textContent()).toBe(sourceHtml);
+        await page.getByRole("button", { name: "Exit full screen", exact: true }).click();
+        expect(await page.evaluate(() => document.fullscreenElement === null)).toBe(true);
+        await expect(page.getByRole("button", { name: expanded ? "Restore viewport" : "Expand viewport", exact: true }))
+          .toHaveAttribute("aria-pressed", String(expanded));
+      }
+
+      await page.getByRole("button", { name: "Run app", exact: true }).click();
+      const app = page.frameLocator(".browser-preview-card iframe");
+      await app.getByRole("button", { name: "Count 0", exact: true }).click();
+      await expect(app.getByRole("button", { name: "Count 1", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Full screen", exact: true }).click();
+      await expectFullscreenPageGeometry(page);
+      await expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
+      await expect(iframe).toHaveAttribute("allow", /fullscreen 'none'/u);
+      await page.getByRole("button", { name: "Exit full screen", exact: true }).click();
+      await expect(app.getByRole("button", { name: "Count 1", exact: true })).toBeVisible();
+      expect(await source.textContent()).toBe(sourceHtml);
+      await page.getByRole("button", { name: "Stop app", exact: true }).click();
+      await expectPage(page);
+      await page.getByRole("button", { name: "Restore viewport", exact: true }).click();
+      expect((await iframe.boundingBox()).height).toBeCloseTo(initialHeight, 0);
+      expect(await source.textContent()).toBe(sourceHtml);
+    });
+  }
+}

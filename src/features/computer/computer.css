@@ -549,3 +549,19 @@
 }
 
 }
+
+@layer interface {
+  /* Dock labels use the compact navigation role; intrinsic widths keep every
+     label on one line without stretching the whole dock to a wrapped item. */
+  .mail-app.computer-shell .computer-dock-app {
+    flex: 0 0 auto;
+    font-size: var(--text-xs);
+    gap: 6px;
+    line-height: 16px;
+    min-height: 64px;
+    min-width: 64px;
+    padding: 8px 8px 12px;
+    white-space: nowrap;
+  }
+  .mail-app.computer-shell .computer-dock-app > svg { flex-shrink: 0; }
+}

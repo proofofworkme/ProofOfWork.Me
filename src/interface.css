@@ -159,6 +159,34 @@
     min-width: 0;
   }
   :where(input, select):not([type="checkbox"]):not([type="radio"]):not([type="range"]) { min-height: 44px; }
+  /* A painted field boundary needs its own text inset. Legacy borderless
+     controls used zero padding, so keep their grouped exceptions explicit. */
+  :where(input, textarea):not(:where(
+    [type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="hidden"],
+    [type="color"], [type="button"], [type="submit"], [type="reset"], [type="image"],
+    .publish-title-input
+  )) {
+    padding: 10px var(--space-3);
+  }
+  .boost-inline-draft textarea { padding: var(--space-3); line-height: 1.5; }
+  .computer-shell .sort-control select { padding-inline-start: var(--space-2); }
+  :is(.browser-address, .desktop-search) { background: var(--surface); border-color: var(--border-interactive); }
+  :is(.browser-address, .desktop-search, .computer-app-search-field, .code-filter, .jobs-search > label, .search-query-box) input,
+  .boost-shell-instrument .boost-search input {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 10px 0;
+  }
+  .desktop-search .public-search-field input { padding-inline: var(--space-1); }
+  :is(.browser-address, .desktop-search, .computer-app-search-field, .code-filter, .jobs-search > label, .search-query-box) input:is(:focus, :focus-visible),
+  .boost-shell-instrument .boost-search input:is(:focus, :focus-visible) { outline: none; box-shadow: none; }
+  :is(.browser-address, .desktop-search, .computer-app-search-field, .code-filter, .jobs-search > label, .search-query-box, .boost-search):focus-within {
+    border-color: var(--focus-outline);
+    outline: 2px solid var(--focus-outline);
+    outline-offset: 2px;
+  }
   :where(input, textarea)::placeholder { color: var(--text-soft); opacity: 1; }
   :where(input, select, textarea):focus { border-color: var(--focus-outline); }
   :where(label, dt, legend) { color: var(--text-muted); font-weight: 400; letter-spacing: 0; text-transform: none; }

@@ -55,6 +55,14 @@ to fit a crowded layout. Simplify hierarchy, reflow, or disclose secondary detai
 Use sentence case for interface labels while preserving product names, acronyms,
 symbols, user content, and exact protocol identifiers.
 
+Text fields need visible space between their content and boundary. Ordinary
+bordered text inputs and textareas use at least 12px of horizontal inset and 8px
+of vertical inset.
+When an icon, input, and action share a field wrapper, that wrapper owns the
+border and focus treatment; the inner input stays borderless. Do not apply a
+generic control border without reviewing the component's existing padding.
+Checkboxes, radios, sliders, and file controls retain their native geometry.
+
 Appearance is browser display state, shared across the product hosts by the
 existing preference mechanism. It is independent of a wallet and outside the
 organization-backup allowlist. Appearance and Computer layout changes must keep
@@ -96,6 +104,9 @@ on one coherent row where space permits. On phones, a deliberate second row for
 layout and local-data controls is preferable to clipped labels or smaller
 targets. Mail folders, workspace navigation, local-data controls, and transaction
 actions retain their separate purposes.
+Dock icons and labels use consistent alignment and deliberate line height.
+Keep labels, including All apps, on one line; size items for their readable text
+instead of letting one wrapped label stretch the entire dock.
 
 ## Content, evidence, and interaction
 
@@ -145,6 +156,10 @@ surfaces; use the complete surface inventory to avoid omitting a product.
 - Inspect wide desktop, intermediate widths, narrow phones including 320px,
   and short viewports at or below 480px high. Menus, dialogs, long values, and
   primary actions remain reachable without document-level horizontal overflow.
+- Measure text insets and grouped-field boundaries with empty and filled inputs.
+  Verify dock label wrapping and item height. Browser fullscreen must give the
+  rendered page all remaining viewport height below its controls, including
+  narrow and short screens; entering fullscreen alone is not a passing check.
 - Verify keyboard traversal, visible focus, accessible names, Escape and focus
   return, touch targets, and reduced-motion behavior on the affected controls.
 - Inspect disconnected/loading/empty/error/unavailable and populated states,

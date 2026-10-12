@@ -9645,7 +9645,6 @@ html
 }
 .browser-window .browser-preview-card iframe { border: 0; border-radius: 0; display: block; height: 100%; min-height: 0; width: 100%; }
 .browser-window.is-embedded .browser-preview-card { height: max(360px, calc(100dvh - 340px)); }
-.browser-window.is-expanded .browser-preview-card { height: max(440px, calc(100dvh - 150px)); }
 .browser-new-tab { align-items: center; color: var(--muted); display: flex; flex-direction: column; gap: 16px; justify-content: center; min-height: max(340px, calc(100dvh - 280px)); padding: 32px 24px; text-align: center; }
 .browser-new-tab > svg { color: var(--accent); }
 .browser-new-tab h2 { color: var(--text); font-family: var(--font-display); font-size: clamp(1.7rem, 4vw, 2.8rem); line-height: 1.15; }
@@ -9665,10 +9664,6 @@ html
 .browser-window .browser-source-card pre { background: var(--bg); color: var(--text); font: .78rem/1.6 var(--font-mono, monospace); max-height: 420px; overflow: auto; padding: 12px; white-space: pre; }
 .browser-template-disclosure { border-top: 1px solid var(--border); }
 .browser-window .browser-template-card { border: 0; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; }
-.browser-window:fullscreen { background: var(--bg); border: 0; border-radius: 0; height: 100dvh; overflow: auto; width: 100dvw; }
-.browser-window:fullscreen .browser-page-grid { display: flex; flex: 1 1 auto; min-height: 0; }
-.browser-window:fullscreen .browser-preview-card { flex: 1; height: auto; min-height: 0; }
-.browser-window:fullscreen .browser-inspectors, .browser-window:fullscreen .browser-template-disclosure { display: none; }
 @media (max-width: 640px) {
   .browser-public-app .browser-workspace:has(> .browser-window) { padding: 6px; }
   .browser-toolbar { gap: 5px; padding: 6px; }
@@ -9691,5 +9686,12 @@ html
   .browser-window .browser-go { flex: 0 0 44px; min-width: 44px; padding: 0; width: 44px; }
   .browser-window .browser-go span { display: none; }
 }
+
+/* Viewport modes take precedence over embedded and narrow-screen defaults. */
+.browser-window.is-expanded .browser-preview-card { height: max(440px, calc(100dvh - 150px)); }
+.browser-window:fullscreen { background: var(--bg); border: 0; border-radius: 0; height: 100dvh; overflow: auto; width: 100dvw; }
+.browser-window:fullscreen .browser-page-grid { align-items: stretch; display: flex; flex: 1 1 auto; min-height: 0; }
+.browser-window:fullscreen .browser-preview-card { flex: 1; height: auto; min-height: 0; }
+.browser-window:fullscreen .browser-inspectors, .browser-window:fullscreen .browser-template-disclosure { display: none; }
 
 }

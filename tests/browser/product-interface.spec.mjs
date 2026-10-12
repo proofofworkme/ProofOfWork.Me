@@ -188,13 +188,30 @@ async function interfaceEvidence(page, rootSelector) {
         return ratio + 0.02 >= (large ? 3 : 4.5) ? [] : [{ element: description(element), foreground: style.color, background: bg, contrast: ratio }]; });
     // These established fields own one boundary around a borderless input.
     // Ordinary form controls must still distinguish their own boundary/fill.
-    const fieldOwner = element => {
-      const style = getComputedStyle(element);
-      const borderless = parseFloat(style.borderTopWidth) === 0 || style.borderTopStyle === "none";
-      return borderless ? element.closest(".computer-app-search-field, .code-filter, .boost-search, .search-query-box") ?? element : element;
-    };
+    const fieldOwner = element => element instanceof HTMLInputElement
+      ? element.closest(".browser-address, .desktop-search, .computer-app-search-field, .code-filter, .jobs-search > label, .boost-search, .search-query-box") ?? element
+      : element;
     const controls = [...document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select, textarea')]
       .filter(element => visible(element) && !element.matches(":disabled"));
+    const fieldSpacingOffenders = controls.flatMap(element => {
+      const owner = fieldOwner(element); const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect(); const ownerRect = owner.getBoundingClientRect();
+      const border = side => style[`border${side}Style`] !== "none" ? parseFloat(style[`border${side}Width`]) : 0;
+      if (owner !== element) {
+        const ownerStyle = getComputedStyle(owner);
+        const left = rect.left + parseFloat(style.paddingLeft) - ownerRect.left - parseFloat(ownerStyle.borderLeftWidth);
+        const right = ownerRect.right - parseFloat(ownerStyle.borderRightWidth) - rect.right + parseFloat(style.paddingRight);
+        return border("Left") || border("Right") || left < 8 || right < 8
+          ? [{ element: description(element), reason: "grouped field needs one boundary and text inset", left, right, border: style.border }] : [];
+      }
+      const left = parseFloat(style.paddingLeft); const right = parseFloat(style.paddingRight);
+      const minimumInset = element instanceof HTMLSelectElement ? 8 : 12;
+      const cramped = (border("Left") > 0 && left < minimumInset) || (border("Right") > 0 && right < minimumInset);
+      const lineHeight = parseFloat(style.lineHeight);
+      const crampedMultiline = element instanceof HTMLTextAreaElement && border("Top") > 0 &&
+        (parseFloat(style.paddingTop) < 8 || parseFloat(style.paddingBottom) < 8 || !Number.isFinite(lineHeight) || lineHeight < parseFloat(style.fontSize) * 1.4);
+      return cramped || crampedMultiline ? [{ element: description(element), reason: "bordered field needs text inset", padding: style.padding, lineHeight: style.lineHeight }] : [];
+    });
     const controlOffenders = controls.flatMap(element => {
       const owner = fieldOwner(element); const style = getComputedStyle(owner); const edge = color(style.borderTopColor); const outside = background(owner.parentElement);
       const edgeRatio = edge && parseFloat(style.borderTopWidth) > 0 && style.borderTopStyle !== "none" ? contrast(edge, outside) : 0;
@@ -239,7 +256,7 @@ async function interfaceEvidence(page, rootSelector) {
       .flatMap(element => { const rect = element.getBoundingClientRect(); return rect.left >= -1 && rect.right <= innerWidth + 1 ? [] : [{ element: description(element), left: rect.left, right: rect.right }]; });
     return { documentWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth), viewport: innerWidth,
       uiFont: rootStyle.fontFamily, headings, canvas, bgToken: bodyStyle.getPropertyValue("--bg").trim(), actionToken: bodyStyle.getPropertyValue("--action").trim(),
-      actionTextToken: bodyStyle.getPropertyValue("--text-on-action").trim(), targetOffenders, textOffenders, controlOffenders, wrapperFocusOffenders, primaryLinkOffenders, fields, containers,
+      actionTextToken: bodyStyle.getPropertyValue("--text-on-action").trim(), targetOffenders, textOffenders, fieldSpacingOffenders, controlOffenders, wrapperFocusOffenders, primaryLinkOffenders, fields, containers,
       header: headerRect ? { left: headerRect.left, right: headerRect.right, height: headerRect.height } : null };
   }, rootSelector);
 }
@@ -265,6 +282,7 @@ async function checkInterface(page, route, theme, label) {
   expect(evidence.fields, `${label}: persistent form labels`).toEqual([]);
   expect(evidence.targetOffenders, `${label}: 44px operable targets`).toEqual([]);
   expect(evidence.textOffenders, `${label}: actual text contrast`).toEqual([]);
+  expect(evidence.fieldSpacingOffenders, `${label}: readable field insets and single grouped boundaries`).toEqual([]);
   expect(evidence.controlOffenders, `${label}: distinguishable form controls`).toEqual([]);
   expect(evidence.wrapperFocusOffenders, `${label}: grouped field focus indication`).toEqual([]);
   expect(evidence.primaryLinkOffenders, `${label}: monochrome primary links with AA text`).toEqual([]);

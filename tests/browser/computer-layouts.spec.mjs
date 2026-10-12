@@ -221,6 +221,113 @@ for (const width of [320, 390, 640, 861, 1024, 1181, 1440]) {
   });
 }
 
+async function expectCompactDock(page) {
+  const dock = page.getByRole("navigation", { name: "Desktop apps", exact: true });
+  await expect(dock).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const geometry = await dock.evaluate(element => {
+    const rect = value => ({ left: value.left, top: value.top, right: value.right,
+      bottom: value.bottom, width: value.width, height: value.height });
+    return {
+      dock: rect(element.getBoundingClientRect()),
+      viewport: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      items: [...element.querySelectorAll("button")].map(button => {
+        const label = button.querySelector("span");
+        const range = document.createRange();
+        range.selectNodeContents(label);
+        const style = getComputedStyle(button);
+        const indicator = getComputedStyle(button, "::after");
+        return {
+          name: label.textContent,
+          button: rect(button.getBoundingClientRect()),
+          icon: rect(button.querySelector("svg").getBoundingClientRect()),
+          label: rect(label.getBoundingClientRect()),
+          labelLines: [...range.getClientRects()].map(rect),
+          fontSize: Number.parseFloat(style.fontSize),
+          current: button.getAttribute("aria-current") === "page",
+          indicatorPosition: indicator.position,
+        };
+      }),
+    };
+  });
+  expect(geometry.items).toHaveLength(11);
+  expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewport + 1);
+  expect(geometry.dock.height, "Dock remains a compact icon-and-label row").toBeLessThanOrEqual(90);
+  expect(geometry.dock.left).toBeGreaterThanOrEqual(0);
+  expect(geometry.dock.right).toBeLessThanOrEqual(geometry.viewport);
+  for (const item of geometry.items) {
+    expect(item.fontSize, `${item.name} readable compact label`).toBeGreaterThanOrEqual(12);
+    expect(item.button.width, `${item.name} target width`).toBeGreaterThanOrEqual(44);
+    expect(item.button.height, `${item.name} target height`).toBeGreaterThanOrEqual(44);
+    expect(item.button.height, `${item.name} compact target`).toBeLessThanOrEqual(72);
+    expect(item.button.left).toBeGreaterThanOrEqual(geometry.dock.left);
+    expect(item.button.right).toBeLessThanOrEqual(geometry.dock.right);
+    expect(item.labelLines, `${item.name} stays on one line`).toHaveLength(1);
+    expect(item.labelLines[0].left).toBeGreaterThanOrEqual(item.button.left);
+    expect(item.labelLines[0].right).toBeLessThanOrEqual(item.button.right);
+    expect(item.label.top).toBeGreaterThanOrEqual(item.icon.bottom);
+    expect(item.label.bottom).toBeLessThanOrEqual(item.button.bottom - 6);
+    expect(item.icon.width).toBe(22);
+    expect(item.icon.height).toBe(22);
+    if (item.current) expect(item.indicatorPosition).toBe("absolute");
+  }
+  for (const part of ["button", "icon", "label"]) {
+    const tops = geometry.items.map(item => item[part].top);
+    expect(Math.max(...tops) - Math.min(...tops), `Dock ${part} alignment`).toBeLessThanOrEqual(1);
+  }
+  const heights = geometry.items.map(item => item.button.height);
+  expect(Math.max(...heights) - Math.min(...heights), "Uniform dock target heights").toBeLessThanOrEqual(1);
+  return geometry.dock.height;
+}
+
+for (const [width, height] of [[861, 844], [1024, 844], [1440, 900], [1024, 360]]) {
+  test(`${width}x${height} Desktop dock keeps labels on one line and selection height stable`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    const state = await fixture(page);
+    await page.goto("/?folder=browser");
+    await setLayout(page, "Desktop");
+    const dock = page.getByRole("navigation", { name: "Desktop apps", exact: true });
+    for (const appearance of ["Light", "Dark"]) {
+      await page.getByRole("button", { name: /^Appearance: /u }).click();
+      await page.getByRole("menuitemradio", { name: appearance, exact: true }).click();
+      await dock.getByRole("button", { name: "Browser", exact: true }).click();
+      await expect(dock.getByRole("button", { name: "Browser", exact: true })).toHaveAttribute("aria-current", "page");
+      const initialHeight = await expectCompactDock(page);
+      await dock.getByRole("button", { name: "Files", exact: true }).click();
+      await expect(dock.getByRole("button", { name: "Files", exact: true })).toHaveAttribute("aria-current", "page");
+      expect(await expectCompactDock(page)).toBe(initialHeight);
+      await dock.screenshot({ path: `/tmp/pow-dock-${width}x${height}-${appearance.toLowerCase()}.png` });
+    }
+    await expectReadOnly(page, state);
+  });
+}
+
+test("Desktop dock All apps supports keyboard launch, Escape and focus return", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 844 });
+  const state = await fixture(page);
+  await page.goto("/?folder=browser");
+  await setLayout(page, "Desktop");
+  const dock = page.getByRole("navigation", { name: "Desktop apps", exact: true });
+  const opener = dock.getByRole("button", { name: "All apps", exact: true });
+  await opener.focus();
+  await page.keyboard.press("Enter");
+  const launcher = page.getByRole("dialog", { name: "Computer apps", exact: true });
+  await expect(launcher.getByLabel("Find an app", { exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(launcher).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  await page.keyboard.press("Enter");
+  await launcher.getByLabel("Find an app", { exact: true }).fill("Pages");
+  await launcher.getByRole("button", { name: "Pages", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(launcher).toHaveCount(0);
+  await expect(page.locator(".computer-shell-layout")).toHaveAttribute("data-workspace", "pages");
+  await expect(dock.getByRole("button", { name: "Pages", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(opener).toBeFocused();
+  await expectReadOnly(page, state);
+});
+
 for (const mode of ["Focus", "Desktop"]) {
   test(`${mode} header Apps keeps every workspace reachable with the keyboard after grouped menus are removed`, async ({ page }) => {
     const apps = [
