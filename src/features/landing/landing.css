@@ -581,8 +581,44 @@
 
 @layer interface {
 /* Calm product entry: clear copy, quiet cards and shared application chrome. */
-.landing-app .landing-hero { background: var(--bg); color: var(--text); border-color: var(--border); }
+.landing-app .landing-hero { background: var(--bg); color: var(--text); border-bottom: 0; }
 .landing-app .landing-hero::before, .landing-app .landing-hero::after, .landing-hero-instrument::before, .landing-app-group::before { display: none; }
+/* The photograph fades into the current canvas; the supplied pixels stay intact.
+   Responsive sources are downsampled once and encoded with lossless WebP. */
+.landing-hero-art {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+}
+.landing-hero-art img {
+  display: block;
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+  object-position: center;
+  opacity: .38;
+  mask-image: linear-gradient(180deg, transparent, #000 16%, #000 60%, transparent);
+}
+.landing-hero-art::after {
+  background:
+    linear-gradient(90deg, var(--bg), color-mix(in srgb, var(--bg) 94%, transparent) 22%, transparent 68%),
+    linear-gradient(270deg, var(--bg), transparent 16%);
+  content: "";
+  inset: 0;
+  position: absolute;
+}
+:root[data-theme="dark"] .landing-hero-art img { opacity: 1; }
+@media (max-width: 900px) {
+  .landing-hero-art { height: clamp(340px, 55vw, 490px); }
+  .landing-hero-art img { object-position: 70% center; }
+  .landing-app .landing-hero-content { padding-top: 160px; }
+  .landing-hero-art::after {
+    background:
+      linear-gradient(90deg, var(--bg), transparent 65%),
+      linear-gradient(270deg, var(--bg), transparent 20%);
+  }
+}
 .landing-app .landing-kicker { color: var(--text-muted); font-family: var(--font-ui); font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none; }
 .landing-app .landing-hero h2 { color: var(--text); font-family: var(--font-ui); font-size: clamp(38px, 6.2vw, 88px); font-weight: 500; letter-spacing: -.055em; line-height: 1.05; }
 .landing-app .landing-hero p { color: var(--text-muted); line-height: 1.6; }

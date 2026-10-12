@@ -346,6 +346,28 @@ export function LandingApp({
       />
 
       <section className="landing-hero">
+        <picture className="landing-hero-art" aria-hidden="true">
+          <source
+            media="(max-width: 600px)"
+            srcSet="/landing/20261012/hero-640.webp 640w, /landing/20261012/hero-960.webp 960w"
+            sizes="100vw"
+          />
+          <source
+            media="(max-width: 1000px)"
+            srcSet="/landing/20261012/hero-960.webp 960w, /landing/20261012/hero-1440.webp 1440w"
+            sizes="100vw"
+          />
+          <img
+            alt=""
+            src="/landing/20261012/hero-1440.webp"
+            srcSet="/landing/20261012/hero-1440.webp 1440w, /landing/20261012/hero-1920.webp 1920w, /landing/20261012/hero-2560.webp 2560w"
+            sizes="100vw"
+            width="1440"
+            height="741"
+            decoding="async"
+            fetchPriority="high"
+          />
+        </picture>
         <div className="landing-hero-content">
           <div className="landing-hero-copy">
             <span className="landing-kicker">The ProofOfWork Computer</span>
