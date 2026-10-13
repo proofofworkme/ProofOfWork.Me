@@ -3428,10 +3428,17 @@ function canonicalWorkQ16LedgerSnapshotStateWitness(value) {
   };
 }
 
-export function canonicalQ16SummarySnapshotSqlEligibility(snapshotAlias) {
+export function canonicalQ16SummarySnapshotSqlEligibility(
+  snapshotAlias,
+  extractedStateAlias = "",
+) {
   const alias = String(snapshotAlias ?? "");
   if (!/^[a-z_][a-z0-9_]*$/u.test(alias)) {
     throw new Error("Invalid canonical summary snapshot SQL alias.");
+  }
+  const extractedAlias = String(extractedStateAlias);
+  if (extractedAlias && !/^[a-z_][a-z0-9_]*$/u.test(extractedAlias)) {
+    throw new Error("Invalid extracted summary state SQL alias.");
   }
   const rootKeys = CANONICAL_SUMMARY_SNAPSHOT_ROOT_KEYS.map(
     (key) => `'${key}'`,
@@ -3439,7 +3446,7 @@ export function canonicalQ16SummarySnapshotSqlEligibility(snapshotAlias) {
   const stateKeys = WORK_Q16_LEDGER_SNAPSHOT_STATE_KEYS.map(
     (key) => `'${key}'`,
   ).join(", ");
-  return `
+  const eligibility = `
     octet_length(${alias}.payload::text) <= ${CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES}
     AND NOT EXISTS (
       SELECT 1
@@ -3582,6 +3589,14 @@ export function canonicalQ16SummarySnapshotSqlEligibility(snapshotAlias) {
             ->'closingSufficientState'->'tokenStateCommitment'
     )
   `;
+  // Only the explicitly extracted field changes location. Every eligibility
+  // predicate, including root shape, exact witness and canonical block, remains.
+  return extractedAlias
+    ? eligibility.replaceAll(
+        `${alias}.payload->'workSufficientState'`,
+        `${extractedAlias}."workSufficientState"`,
+      )
+    : eligibility;
 }
 
 function workPrecisionStateCommitment(rows, options) {
@@ -25959,7 +25974,7 @@ async function latestProofIndexOperationalMetadata(pool, network) {
   }
   const currentSummaryEligibility =
     workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
-      ? canonicalQ16SummarySnapshotSqlEligibility("snapshot")
+      ? canonicalQ16SummarySnapshotSqlEligibility("snapshot", "readiness_parts")
       : "true";
   const result = await pool.query(
     `
@@ -26014,77 +26029,83 @@ async function latestProofIndexOperationalMetadata(pool, network) {
           jsonb_build_object(
             'growthSummary', jsonb_build_object(
               'parent', jsonb_build_array(
-                payload #> '{summaryPayloads,growthSummary,indexedThroughBlock}',
-                payload #> '{summaryPayloads,growthSummary,metrics,indexedThroughBlock}',
-                payload #> '{summaryPayloads,growthSummary,stats,indexedThroughBlock}'
+                readiness_parts."summaryPayloads" #> '{growthSummary,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{growthSummary,metrics,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{growthSummary,stats,indexedThroughBlock}'
               ),
               'nested', jsonb_build_array(
-                payload #> '{summaryPayloads,growthSummary,workFloor,indexedThroughBlock}',
-                payload #> '{summaryPayloads,growthSummary,workFloor,metrics,indexedThroughBlock}',
-                payload #> '{summaryPayloads,growthSummary,workFloor,stats,indexedThroughBlock}'
+                readiness_parts."summaryPayloads" #> '{growthSummary,workFloor,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{growthSummary,workFloor,metrics,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{growthSummary,workFloor,stats,indexedThroughBlock}'
               )
             ),
             'inceptionSummary', jsonb_build_object(
               'parent', jsonb_build_array(
-                payload #> '{summaryPayloads,inceptionSummary,indexedThroughBlock}',
-                payload #> '{summaryPayloads,inceptionSummary,metrics,indexedThroughBlock}',
-                payload #> '{summaryPayloads,inceptionSummary,stats,indexedThroughBlock}'
+                readiness_parts."summaryPayloads" #> '{inceptionSummary,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{inceptionSummary,metrics,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{inceptionSummary,stats,indexedThroughBlock}'
               )
             ),
             'infinitySummary', jsonb_build_object(
               'parent', jsonb_build_array(
-                payload #> '{summaryPayloads,infinitySummary,indexedThroughBlock}',
-                payload #> '{summaryPayloads,infinitySummary,metrics,indexedThroughBlock}',
-                payload #> '{summaryPayloads,infinitySummary,stats,indexedThroughBlock}'
+                readiness_parts."summaryPayloads" #> '{infinitySummary,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{infinitySummary,metrics,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{infinitySummary,stats,indexedThroughBlock}'
               )
             ),
             'logSummary', jsonb_build_object(
               'parent', jsonb_build_array(
-                payload #> '{summaryPayloads,logSummary,indexedThroughBlock}',
-                payload #> '{summaryPayloads,logSummary,metrics,indexedThroughBlock}',
-                payload #> '{summaryPayloads,logSummary,stats,indexedThroughBlock}'
+                readiness_parts."summaryPayloads" #> '{logSummary,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{logSummary,metrics,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{logSummary,stats,indexedThroughBlock}'
               )
             ),
             'marketplaceSummary', jsonb_build_object(
               'parent', jsonb_build_array(
-                payload #> '{summaryPayloads,marketplaceSummary,indexedThroughBlock}',
-                payload #> '{summaryPayloads,marketplaceSummary,metrics,indexedThroughBlock}',
-                payload #> '{summaryPayloads,marketplaceSummary,stats,indexedThroughBlock}'
+                readiness_parts."summaryPayloads" #> '{marketplaceSummary,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{marketplaceSummary,metrics,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{marketplaceSummary,stats,indexedThroughBlock}'
               ),
               'nested', jsonb_build_array(
-                payload #> '{summaryPayloads,marketplaceSummary,workFloor,indexedThroughBlock}',
-                payload #> '{summaryPayloads,marketplaceSummary,workFloor,metrics,indexedThroughBlock}',
-                payload #> '{summaryPayloads,marketplaceSummary,workFloor,stats,indexedThroughBlock}'
+                readiness_parts."summaryPayloads" #> '{marketplaceSummary,workFloor,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{marketplaceSummary,workFloor,metrics,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{marketplaceSummary,workFloor,stats,indexedThroughBlock}'
               )
             ),
             'tokenSummary', jsonb_build_object(
               'parent', jsonb_build_array(
-                payload #> '{summaryPayloads,tokenSummary,indexedThroughBlock}',
-                payload #> '{summaryPayloads,tokenSummary,metrics,indexedThroughBlock}',
-                payload #> '{summaryPayloads,tokenSummary,stats,indexedThroughBlock}'
+                readiness_parts."summaryPayloads" #> '{tokenSummary,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{tokenSummary,metrics,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{tokenSummary,stats,indexedThroughBlock}'
               )
             ),
             'workFloor', jsonb_build_object(
               'parent', jsonb_build_array(
-                payload #> '{summaryPayloads,workFloor,indexedThroughBlock}',
-                payload #> '{summaryPayloads,workFloor,metrics,indexedThroughBlock}',
-                payload #> '{summaryPayloads,workFloor,stats,indexedThroughBlock}'
+                readiness_parts."summaryPayloads" #> '{workFloor,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{workFloor,metrics,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{workFloor,stats,indexedThroughBlock}'
               )
             ),
             'workSummary', jsonb_build_object(
               'parent', jsonb_build_array(
-                payload #> '{summaryPayloads,workSummary,indexedThroughBlock}',
-                payload #> '{summaryPayloads,workSummary,metrics,indexedThroughBlock}',
-                payload #> '{summaryPayloads,workSummary,stats,indexedThroughBlock}'
+                readiness_parts."summaryPayloads" #> '{workSummary,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{workSummary,metrics,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{workSummary,stats,indexedThroughBlock}'
               ),
               'nested', jsonb_build_array(
-                payload #> '{summaryPayloads,workSummary,floor,indexedThroughBlock}',
-                payload #> '{summaryPayloads,workSummary,floor,metrics,indexedThroughBlock}',
-                payload #> '{summaryPayloads,workSummary,floor,stats,indexedThroughBlock}'
+                readiness_parts."summaryPayloads" #> '{workSummary,floor,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{workSummary,floor,metrics,indexedThroughBlock}',
+                readiness_parts."summaryPayloads" #> '{workSummary,floor,stats,indexedThroughBlock}'
               )
             )
           ) AS summary_coverage
         FROM proof_indexer.ledger_snapshots snapshot
+        -- Extract once: repeated paths otherwise detoast the full multi-MiB
+        -- payload for every field. Keep root/size/witness eligibility unchanged.
+        CROSS JOIN LATERAL jsonb_to_record(
+          CASE WHEN jsonb_typeof(snapshot.payload) = 'object'
+            THEN snapshot.payload ELSE '{}'::jsonb END
+        ) AS readiness_parts("workSufficientState" jsonb, "summaryPayloads" jsonb)
         WHERE network = $1
           AND payload ? 'summaryPayloads'
           AND payload->>'workAmountStorageModel' = $2
@@ -26093,13 +26114,13 @@ async function latestProofIndexOperationalMetadata(pool, network) {
           AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
           AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
           AND source_hashes ? 'canonicalSummary'
-          AND jsonb_typeof(payload->'summaryPayloads') = 'object'
-          AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
-          AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
-          AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
-          AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
-          AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
-          AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+          AND jsonb_typeof(readiness_parts."summaryPayloads") = 'object'
+          AND jsonb_typeof(readiness_parts."summaryPayloads"->'growthSummary') = 'object'
+          AND jsonb_typeof(readiness_parts."summaryPayloads"->'inceptionSummary') = 'object'
+          AND jsonb_typeof(readiness_parts."summaryPayloads"->'infinitySummary') = 'object'
+          AND jsonb_typeof(readiness_parts."summaryPayloads"->'marketplaceSummary') = 'object'
+          AND jsonb_typeof(readiness_parts."summaryPayloads"->'workFloor') = 'object'
+          AND jsonb_typeof(readiness_parts."summaryPayloads"->'workSummary') = 'object'
           AND EXISTS (
             SELECT 1
             FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item

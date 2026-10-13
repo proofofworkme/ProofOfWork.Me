@@ -7543,3 +7543,20 @@ returning 302 to the intended destination. Recursive DNS caches can retain the
 previous forwarding address until expiry. Release this configuration with the complete
 22-root UI build and the mandatory release synchronization check; preserve the
 accepted node runtime overlays unchanged.
+
+### Operational readiness query extraction (2026-10-13 availability follow-up)
+
+Operational metadata extracts `workSufficientState` and `summaryPayloads` once
+with `jsonb_to_record` before projecting readiness fields. This avoids repeatedly
+unpacking the same multi-MiB summary JSON. Scalar and null roots are guarded
+before extraction. The shared canonical Q16 eligibility predicate retains its
+logical byte ceiling, root/state shape, exact Q16 metadata, canonical block,
+complete transition and both commitment checks. Other callers retain the
+original predicate. No persisted records, indexes, readiness thresholds, caches,
+protocol calculations or historical replay rules change.
+
+A repeatable-read, read-only production comparison is required to establish
+returned metadata parity; lower isolated query time alone does not prove that
+Permission/AMO timeouts or new-block convergence failures are resolved. Keep
+those findings open until their corresponding production checks pass.
+Regression check: `node --test scripts/check-readiness-summary-extraction.test.mjs`.
