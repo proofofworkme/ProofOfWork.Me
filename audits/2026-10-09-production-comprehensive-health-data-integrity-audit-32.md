@@ -1206,3 +1206,246 @@ from an effective singleton indexer change and verifies that the API import
 closures exclude it, preserving API progress and gateway identity. Its 27
 focused tests and 20 existing rollout/hold tests pass; actual installation
 and post-installation readiness remain separate release gates.
+
+## Ordered read-only audit continuation — 2026-10-13
+
+### Scope, authority and evidence custody
+
+This continuation records the completed initial read-only audit requested on October 13, 2026. All 20 requested application surfaces were reviewed in the supplied order, with Computer last. Production measurements span approximately 20:46–21:14 UTC (16:46–17:14 America/Toronto); preparation and prior-log review preceded those measurements. This is a bounded audit, not certification that every possible transaction, historical replay, failure mode or private account workflow passed.
+
+The repository operating/protocol documents and prior audit findings were reviewed before the application pass. Later evidence was reconciled with the October 9–11 continuations above, the October 12 node-backup replacement receipts, and the concurrently completed October 13 Computer performance audit (`2026-10-13-computer-performance-data-ui-audit.md`, retained with the separate concurrent work). Existing finding identifiers are retained below. Performance/layout findings already recorded by that concurrent audit are referenced, not opened again.
+
+Core RPC is the chain authority. API/indexer/database/UI agreement alone is not treated as chain verification. Remote collection used read-only Core methods and PostgreSQL repeatable-read, read-only transactions, with statement/lock limits. Public GETs and UI read paths were exercised. No stress test, reorg, restart, restore, signing, transaction, permission grant, contact/folder/mail-state edit, production cleanup, configuration change, deployment, commit, push or announcement was performed. Existing services may naturally log GETs and update their normal caches/index as they run; the auditor did not edit those stores. UniSat account connection was explicitly authorized; no signature was requested. No seed/private key or credential value is retained in the evidence.
+
+Source: primary `main` and public source manifests identify commit `f68c6b4c6c090d9c3c565c325bdece2ad6db0978`, tree `eb3a230fda036119de6105374feeffdee9b17c49`. All 20 requested HTTPS roots and their provenance documents returned 200 with normal certificate validation; every provenance document reported that commit/tree and `trackedDirty:false`. Root latency was approximately 0.42–1.04 seconds in sequential single GETs, not a browser performance percentile. The production manifest identifies release `f68c6b4c6c09-20261013T004809Z`, with 22 managed surfaces. Installed node overlays were inspected by hash and preserved; their source need not equal a bare UI checkout. V8 implementation hash agrees with the locally tested implementation.
+
+The official `npm run check:release-sync` **failed**, before this append, because a concurrent audit added one authorized classification line to `repository-hygiene.json`. That change is not this audit's work and is preserved. A separate diagnostic retaining all other provenance checks reached the local preview check, which failed: `http://127.0.0.1:4175/source-provenance.json` returned **404**. Remote main and production manifest comparisons passed before that failure. The separate diagnostic is not a passed release gate. No preview restart was attempted. The earlier “not listening” observation is now superseded by a responding server with a missing provenance resource; AUD32-05 remains open.
+
+The existing log prefix is preserved byte-for-byte: 159,426 bytes, SHA-256 `3f36d31000ac4999cfcee4caffc5dcd589801bceffa445026e8c45f16f638933`. Structured evidence is saved beside this log as `2026-10-09-production-comprehensive-health-data-integrity-audit-32.2026-10-13-read-only.evidence.json.gz`; its hash and final checks are recorded below. It includes bounded verification receipts, exact numeric inputs/checks, hashes, selected public projection evidence and read-only collectors. Private Mail/article bodies, live credential values, backup/configuration contents and private signing material are excluded.
+
+### Pages and services reviewed, in order
+
+| Order and surface | Observed result and limits |
+| --- | --- |
+| 1 — Home, `proofofwork.me` | Redirected Home loaded. 512 confirmed /19 pending /531 total IDs and 32 confirmed DNS roots agreed with the captured registry/index data. Pending is clearly distinguished. |
+| 2 — ID | Registration-only, as required by current canonical policy; registration fee 1,000 proofs. Management remains in Computer. Counts agreed; no registration submitted. |
+| 3 — DNS | 32 roots, zero pending in the sample; registration 1,000 proofs and self-paid subdomain mutation 546 proofs. Recent transactions are included in the Core-bound delta. No name change submitted. |
+| 4 — Desktop | Public `proofofwork` desktop resolves; zero owned files plus one System Welcome reference. The previous duplicate/system-as-owned-file problem did not recur. |
+| 5 — Browser | Canonical Welcome transaction `8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b` rendered as verified, confirmed static HTML; 1,018 content bytes, 1,025 protocol bytes, 546 proofs. Iframe `sandbox=""`, `referrerpolicy="no-referrer"`; Run app untouched. |
+| 6 — Code | One confirmed Welcome repository; zero files/commits is shown with complete coverage. Repository detail worked. Its event is now present in both Log and Search: AUD32-01 resolved in this sample. |
+| 7 — Jobs | One open Welcome brief; 546 proofs promised, explicitly unfunded, zero proposals/deliveries/payments. No escrow or paid-work claim was inferred from the promise. |
+| 8 — Boost | Initial UI and manual refresh failed a checkpoint/identity readiness gate. A later fresh public feed GET recovered with 200 in 21.858s. Registry summary separately returned 503 in 18.023s with RPC hydration queue timeout. Intermittent availability, not permanent outage. |
+| 9 — Publish | Four confirmed articles and a selected article rendered. Selected UTF-8 body length/hash were inspected; content is not copied into this log. Account connection was in progress; no publishing/social action occurred. |
+| 10 — AMO | Connected DNS tab showed two sealed listings, including the recently indexed `si.pow`; credit inventory remained loading during the bounded standalone observation. Exact complete-book readiness was not certified. |
+| 11 — Credit | 236 mint-first definitions; database total 238 includes two synthetic bond definitions. DRAIN example: 110,000 issued, 110 mints, holders 75,000 +35,000, cap 21 million, 1,000 units per 1,000 proofs; ledger pagination rendered. |
+| 12 — Wallet | Connected WORK balances and reservations matched independent integer reconciliation. Core verified 64 confirmed UTXOs totaling 55,075 proofs for the connected address. UniSat's proof-balance/provider path showed “Network error / Failed to fetch”, code -32603; UI withheld spendable proofs. This provider failure is not a zero balance. 59 listings /118 movements were visible; no signing or spend attempted. |
+| 13 — WORK | 21 million maximum/confirmed supply, 21,000 mints and 392 holders rendered. Exact floor/network values matched the captured math snapshot. Minted-out state and holder pagination rendered. |
+| 14 — Infinity | 630,496,569 POWB and 630,501,483 network proofs rendered. A confirmed, unspent sale ticket changed from Sealed in the summary preview to Waiting for seal in the complete projection. Material continuation of the historical seal-status family; see evidence below. |
+| 15 — Inception | 945,662,401,792,509,469 issued units, exact network backing/dust and 137,212,259.99999999 attached WORK matched the independent checks. 47 accepted mints /46 attachments. Complete current book showed zero listings/history only after coverage completed. |
+| 16 — Log | 26,426 valid confirmed events exactly matched database event IDs and canonical positions. 20 pending were separately represented. Paged total includes the previously documented supplemental item; no new off-by-one finding. Latest page50 response was 1,007,232 bytes /8.507s. |
+| 17 — Growth | Same canonical N/floor, IDs/DNS/event totals; AMO flow 11,335,952 proofs =9,850,286 sales +1,485,666 mutations; 97 sales. Scenarios remain models, not actual guaranteed growth. Quote timestamps can differ across pages. |
+| 18 — Search | 26,426 default valid confirmed coverage; exact Code search returned Code plus companion Mail, consistent with Log. Previous Code omission is not duplicated as a finding. |
+| 19 — Permission | Standalone read returned 503 after 19.245s, “Permission verification exceeded its read budget”; UI retry also failed. Autonomous signing is closed/controller not enabled. No grant/setup action was selected. |
+| 20 — Computer, last | Shell/navigation, IDs, AMO, Wallet, Permission and Browser read paths inspected. IDs isolates registration/receiver/direct transfer from trading. AMO reached 800/1,040 ticket records at971302, then explicitly became unavailable/catching up and resumed loading; complete inventory never certified. Embedded Permission repeated the budget failure. Guest Wallet withheld account-specific values and loaded the 236-credit public directory. A new origin connection was blocked by an already-pending UniSat approval, so connected Computer Mail/Wallet were not certified. Embedded Browser verified the same static Welcome page with the same sandbox; Browser→Wallet→Browser lost the page and returned to New tab (AUD32-11). Create folder measures44×44 (AUD32-10 resolved for this state). No folder was created. |
+
+This pass does not claim exhaustive private Mail interaction, transaction execution, every embedded workspace state, screen-reader/mobile testing, or field performance measurements. The separate October 13 performance audit supplies its own explicitly bounded fixture/layout observations.
+
+### Full-node, indexing, database and event verification
+
+Opening Core/Electrs/index/summary checkpoint: **971298**, hash `0000000000000000000136ebc0f2421e37a9fa283ea69d4dd98d8f44eb92402d`. Closing check at **21:09:21 UTC**: **971302**, hash `00000000000000000001b5adde6b00fce86ae529662c436586681b048a36869e`. Both checks had stable before/after Core fences; blocks=headers, IBD=false, pruned=false, verification progress1, warnings empty. Core txindex/coinstats/basic-filter indexes were synced. Closing Electrs header double-SHA256, index checkpoint and all eight summary coverage heights/hashes matched Core. `/health` returned200, ready=true, lag0; closing summary `5e340fb65e3e0ff7c161c3d9`, payload5,839,484 bytes. API, worker and PostgreSQL were active with NRestarts0 in their current invocations. Worker canonical readiness and observed pending coverage were healthy; no inference of failure was made from an intermediate raw worker boolean alone.
+
+Fresh verification over the confirmed delta since the prior audit checkpoint970633 covered **75 transactions**,31 additional parent transactions,666 indexed block hashes,40 transaction-containing blocks,264 outputs,114 inputs and84 OP_RETURN rows. Raw transaction identity/witness identity, exact values/scripts, fees and canonical positions matched Core with no mismatches. At that capture, all160 database pending transactions were present in both Core/Electrs mempools and79 dropped transactions absent from both. This tests the observed set, not completeness of all network mempool activity. Confirmation is never inferred solely from API/UI labels.
+
+Database read-only invariants: no orphan/duplicate/raw-byte/block-position/mail-parent-status mismatches in the checked queries; zero invalid indexes or unvalidated constraints. 26,066 confirmed transactions;26,777 confirmed protocol events, of which26,426 valid. Opening transition sequence11,678 rows through971298 had zero checked gaps/hash/value/opening-commitment/decreasing-height/incomplete conditions; closing11,682 rows through971302. Database size54,965,672,983 bytes at closing; checksums remain off (existing hardening debt, not evidence of corruption). No large maintenance query, vacuum or rebuild was run.
+
+Complete Log reconciliation at Core971301: **26,426/26,426 valid confirmed events**, identical event IDs and `(height,index,vout,ordinal)` positions, missing0/extra0. All26,426 had miner-fee coverage across25,736 relevant transactions. The Code event missing in AUD32-01 is now included. Public consistency returned200/green; this is supporting API evidence, not a substitute for the Core checks.
+
+Independent Mail checks compared639 confirmed Mail rows against715 confirmed PWM outputs: zero body mismatches and eight attachment byte/SHA checks passed. Bodies are not retained in this audit artifact. Full current semantic ID audit **did not complete**: the installed read-only audit command exited1 after approximately122.4s because its internal coverage endpoint returned503, while Core stayed971301. Existing H24-02 remains an assurance gap; registry counts and raw transaction parity do not prove every historical ownership/receiver transition.
+
+### Exact math, on-chain rules and accounting
+
+The V8 declaration transaction `f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a` is Core-confirmed at960600/index2369, protocolvout3, activating960601. Exact5,593-byte carrier SHA-256 `1ba53b285f95f8d69f0272c8e75c76b09cd3bd26281c68e665749368e7694528` matched the declared source text. Input authority script and pinned registry payment were checked from Core transaction/parent evidence. All1,126 stored V8 listing block hashes and transaction positions across352 distinct heights matched Core. Historical transaction confirmation is not treated as proof that all application-level seller authorizations were independently revalidated.
+
+With integer `S=21000000`, `A=10^16`, `Q=10^8`, `F=25000`, the independently implemented checks used `floor(F*S*A*Q/NbeforeQ8)` for V8 amount and `ceil(amount*NbeforeQ8/(S*A*Q))` for the minimum, preserving compute-then-bond order and frozen historical inputs. Results:
+
+- **19,004 V8 vectors**:19,002 accepted results and two expected rejections;13 malformed/boundary assertions;18,000 exact Q8/Q16 cross-plane/round-trip assertions;5,000 independent rational fee-ceiling vectors passed against actual source functions. Installed V8 SHA-256 `0ea9108b969e91aa92b8782798af5ba845d0640a8cecd1b039d232ed7849bc2f` matches the tested implementation.
+- **23,255/23,255 independent live arithmetic checks** passed over1,126 V8 frozen terms,47 accepted INCB mint records, and the same fresh API snapshot971301 /`a4570b6db4210fd99fb7f43b`. Core independently confirms snapshot hash `000000000000000000003fba6d34f4f1c34c04aba90639bf9f048807f05edb7f`.
+- Exact `NQ8=3001454804787812722129525098`; exact WORK `floorQ8=142926419275610129625`, or **1,429,264,192,756.10129625 proofs/WORK**. Current25,000-proof estimate **174,915,177 subatoms =0.0000000174915177 WORK**. DNS overlay17,092,000,000,000 Q8. Current floor is not substituted into old frozen ticket terms.
+- INCB issued sum945,662,401,792,509,469; exact residual/dust2,246,190,218 Q8; attached WORK1,372,122,599,999,999,900,000,000 subatoms. Eight USD presentation conversions agreed within four binary64 ULP of the captured quote calculations. USD quote source itself was not independently price-certified and approximate presentation is not a ledger integer.
+- All238 credit definitions passed1,428 independent conservation/cap/integer/pending-delta checks.440 balance rows were nonnegative;1,084 active/sealing ticket candidates had1,040 Core-unspent and44 spent outputs; checked reservations never exceeded confirmed balances. This is complete captured reservation accounting, not fresh verification of every seller signature or purchase admissibility.
+- Connected address `18hkqE81wQuq75UEBKhB4JjAuQg47jN7Aa`: WORK confirmed9,999,997,003,878,536; reserved29,889,549,899; spendable9,999,967,114,328,637 subatoms. UI exact decimals0.9999997003878536 /0.0000029889549899 /0.9999967114328637 agree. Core verifies64 UTXOs/55,075 proofs independently of the failed provider display path.
+
+**Limits:** no fresh full-genesis application replay, no independent reconstruction of every original Nbefore or INCB H−1 economic state, and no complete semantic ID verdict. The live arithmetic pass is not a promise that “math can never fail.” Reproducibility still requires versioned raw carrier bytes, canonical position, historical oracle/state inputs, exact unit model, deterministic implementation and full-node chain binding. Preserve those records and add a bounded isolated replay comparison before making universal correctness claims. Existing AUD32-06 frozen/live prose ambiguity remains documentation debt despite passing arithmetic.
+
+### Existing issues, regressions and materially changed conditions
+
+| Existing family / severity | Current disposition and recommended improvement |
+| --- | --- |
+| H24-01 /Audit26-02 /Audit31 readiness; P2, high operational priority | Still recurring. Fresh loopback work-floor/work-summary took29.054/29.512s; several reads returned503 during971300→971301 transition. Same-snapshot retries recovered with200 in2.724–20.224s depending on endpoint (see exact receipts). Boost had RPC hydration queue timeout; Computer AMO failed after800/1,040 records. Attribute queue/checkpoint/discovery/projection costs using bounded phase measurements; optimize the measured bottleneck. Preserve exact completeness/hash/reorg guards and fail-closed behavior. Do not extend TTL or replace unknown with zero to hide this. |
+| AUD32-02 Permission; P2 unresolved recurrence | Prior Oct10 cold read had converged and warm reads were fast. Today standalone, retry and embedded reads exceeded budget. Installed resumable discovery exists, so this is not a claim that the earlier fix never worked. Add same-tip cold/warm/restart/reorg convergence gates and bounded per-phase diagnostics; preserve authority scope and autonomous-signing closure. |
+| Historical Aug23 POWB seal-status family; P2 materially localized | Listing `dcac1665798675b7817a973fa990283bc9de2c77cc374361e8cb956a5f2daa46` at955267/index1971 and seal `720311f99aad3368946de248fd833d1c555ed0e001cbee0931ded5d099146b72` at956536/index2017 are Core-canonical. Ticket vout2,546 proofs remains unspent. Summary has signed `saleAuthorization` and sealed status. Complete display-v2 has `sealConfirmed:true`/correct sealTxid, but unsigned original `saleAuthorization` (empty anchorTxid/signature), while signed terms remain under `actionAuthorization`; buyableCandidateCount0. `tokenListingHasConfirmedSaleTicketSeal` (`src/App.tsx:9849`) requires the former anchor, producing Waiting for seal. Repair the version-aware projection contract and add summary/complete-book parity for this historical ticket; do not relabel it executable merely from confirmation. No cryptographic purchase-admission verdict or transaction was attempted. |
+| Audit31 Priority4 recovery; P2 assurance, worsened current condition | Oct12 logical replacement restore qualified at its saved checkpoint; see below. Separately, current local external recovery health is incomplete/ValueError, WAL receipt stale since Oct9 21:39UTC/EOFError; WAL and health user services failed, base timer inactive. Current usable/physical-qualified/PITR flags allfalse. Restore explicit failure/staleness alerting and qualify a complete independent physical/WAL recovery set before claiming that protection. Do not delete its evidence or restart services under this audit. |
+| Storage trend /retention family; P2 review | UI reserve forecast warning now~4.33days if one-day net growth persists; no current capacity emergency. Node native-object query monitor still raises its known false critical; retained-path discrepancies persist. Treat forecast, policy review and actual corruption as different alert categories; reconcile against signed/approved retirement evidence, never silence missing evidence by deleting inventory entries. |
+| AUD32-01 Code→Log | Resolved in current full valid-event comparison and Code search. |
+| AUD32-03 native-object monitor | Unresolved:18/18 historical objects placed, zero invalid indexes, but16 sanctioned additional objects still trigger critical placement alarm. Update the monitor's expected provenance/closure after approval; do not relocate live tables to satisfy stale expectations. |
+| AUD32-04 idle PostgreSQL Pool | Source gap resolved: current installed/local `postgres.mjs` hash `73a835421ee51f51c87e5b25a4b9614db4e4c06ca3df79a2ca16b2c713c42041` includes sanitized idle error handling. No fault injection or reconnect resilience certification; API NRestarts0 observed. |
+| AUD32-05 preview/release sync | Unresolved, materially changed to HTTP404 at preview provenance; official gate also blocked by concurrent documentation diff. Repair only with approved preview/release scope. No product provenance mismatch inferred from that documentation diff. |
+| AUD32-06 math prose | Unresolved; current exact arithmetic passes. Clarify frozen versus live quantities through a separately approved documentation change. |
+| AUD32-07 note classification | Current read-only hygiene check passes; old four-note failure no longer reproduced. No classification/fixer run by this audit. |
+| AUD32-08 performance harness | Refer to today's separate performance audit: original isolation work improved, but legitimate appearance-script304 causes new warm-cache assertion failure. No duplicate finding or claimed performance-suite pass here. |
+| AUD32-09 receipt dialog | Still source-visible ordinary `role=dialog`/`aria-modal` section; no fresh real purchase or assistive-technology test. Today's separate audit owns the concrete proposed fix. |
+| AUD32-10 folder target | Resolved for current sampled Computer state:44×44. |
+| AUD32-11 Browser continuity | Unresolved, freshly reproduced with a verified loaded page→Wallet→Browser. Keep bounded navigation metadata while destroying active document/runtime authority; reverify on return. |
+| AUD32-12 outspend body deadline | Source gap resolved: JSON body await is inside try and timer cleanup in finally (`src/App.tsx:19869`). No live stalled-body/fault injection performed. |
+| AUD30-01 fee ceiling; AUD28-04 Mail whitespace; H20 Desktop duplicate | Checked fee vectors,639-Mail byte comparison and current Desktop render passed. Historical reorg/provider-cache failure paths were not newly fault-injected and are not globally recertified. |
+| H24-02 full ID semantics | Still unqualified because the read-only semantic audit could not obtain complete coverage. No unsupported “all IDs correct” conclusion. |
+
+No new ledger corruption, negative balance, rounding mismatch or confirmed transaction discrepancy was demonstrated in the checked population. That result coexists with unresolved availability and assurance gaps.
+
+### Storage, backup, operational resilience and hardening
+
+Node `/data`:322,891,751,424 available bytes /1,764,768,071,680 total, roughly82% used; root61,106,393,088 available at storage capture. RAID reports both members healthy `[UU]`; memory/swap/CPU sample did not show acute pressure. Database~54.97GB, API cache174,739,456 bytes, release backups9,985,245,184 bytes, PostgreSQL backup tree~95.59GB, `/tmp`5,020,209,152, `/var/tmp`1,562,558,464, `/var/log`1,277,157,376. Journal~1,014MiB. These are scoped allocations, not amounts approved for reclamation; do not sum overlapping tree sizes.
+
+UI root:16,317,845,504 available bytes /39,973,924,864 total at capture,58% shown by df. UI backup tree14,942,871,552 bytes, including~9.54GB transport evidence,~1.67GB recovery and~2.38GB release artifacts; deployment scratch2,875,150,336; live/staged web roots267,190,272; logs~662MB; cache~128MB; journal313MiB. At20:01:51UTC, reserve model:16,318,402,560 available,10,737,418,240 reserve,5,580,984,320 headroom,1,288,301,513 bytes/day net consumption,374,288 seconds to reserve. **Conditional trend, not an assured exhaustion date.** Investigate growth ownership and retain safety margin before any new large staging/recovery job.
+
+October12 replacement evidence materially improves **same-host logical** recoverability: new `proof_indexer-20261012T184759Z.dumpset`,27,664,961,870 dump bytes, SHA-256 `65ae548d3f708e9328ca29f29c60e5e5d04b4041047044ad46c0cda3133113ca`, restored and checked across30 tables, sequences/roles/ACLs, credit accounting/native archives, amcheck and an offline private page before stopping the private restore. Its checkpoint971126 hash `0000000000000000000064400b574bdff620e4728df35e805650d0d360ba6044` was freshly confirmed against Core here. Paired runtime archive472,995,840 bytes/SHA-256 `741a1a1bb5ed1f8702ffa17ace84701b7517eb25d9ef84d8d419894436b86cf8` is recorded by prior custody evidence; private contents were not copied. Those restore results are **reviewed prior receipts**, not a restore rerun today. Actual catch-up replay and physical WAL/PITR were explicitly unqualified. New dump pin exists with Sep29/Oct3 pins; earlier approved retirements are history, not this audit's cleanup.
+
+Local external recovery retains62,710,411,264 bytes of staging, mostly61,970,337,792 private-restores bytes; notebook free433,386,070,016. This is different from the qualified node logical dump. WAL health remains incomplete/stale, user WAL service failed after4 restarts and health service failed; base timer inactive. No claim that a usable off-host backup or PITR is currently established.
+
+| Storage item requiring review | Current dependency / safe future decision boundary |
+| --- | --- |
+| `/data/proofofwork-incb-final-source-replay-20260925T022000Z` ~89.53GB | **Live diagnostic API dependency on loopback18887. Not disposable.** Preserve until an approved replacement and consumer check exist. |
+| Sep24 replay~32.85GB; Audit31 restore~52.74GB; scoped rehearsal~20.16GB; production-backup evidence~20.26GB | Historical replay/recovery proof, not obsolete merely by age. Bind exact owners, DB/tablespaces, service/open-file consumers, hashes, restore dependencies and replacement receipts before considering any retirement. |
+| Node/UI release backups and transport/recovery scratch | Some may become reclaimable after exact catalogue, custody and rollback qualification. Existing node18/UI11 historical missing-path findings are not new deletions; UI journal lines can truncate full inventories. Preserve masks and retained scratch. No blanket age-based prune. |
+| Local private restores~61.97GB | Not certified usable current recovery, yet necessary failed-recovery evidence. Retain until separate approved recovery reconciliation/retirement; do not infer failed means safe to delete. |
+| Logs/journals and small API/browser/build caches | Potential bounded retention/rebuild candidates only after incident, monitoring and live-use checks. No log vacuum, cache purge, obsolete-note deletion, fixture cleanup or backup removal performed. No high-value reclamation is established from the174.7MB API cache. |
+
+**No proposed deletion is certified non-interfering by this initial inventory alone.** The audit positively identifies live dependencies that must remain. A future cleanup request needs an exact path/inode/bytes manifest, open-file/service/DB dependency check, retained independent recovery evidence and a reviewed rollback/retirement record. Preserve canonical chain/index stores, historical protocols, ledgers/refunds/audits and approved overlays.
+
+Security checks: all roots supplied CSP, HSTS, nosniff, DENY framing, restricted permissions and referrer policy. Core RPC/Electrs/PG and API listeners are loopback/private-network scoped with host firewall rules; API WireGuard access is restricted to the UI host. Public P2P and HTTPS/SSH listeners are intentional. Browser static content retains an empty sandbox with no wallet/runtime activation. Node password authentication is disabled. UI still has the previously noted `PasswordAuthentication yes`, but sampled login accounts are password-locked and root policy is without-password; this is latent hardening debt, not demonstrated password entry. Consider explicitly disabling it under an approved configuration change. No active exploit testing, secret extraction, provider-account quota review or external alert-delivery test was performed. Historic failed service units are not automatically current product outages.
+
+### Recommended approval scopes and completion checks
+
+1. Prioritize **availability attribution and bounded repair** for Permission, registry hydration and complete AMO reads. Measure stable-tip/cold/tip-change behavior separately; keep immutable snapshot identities and unavailable semantics. A green general `/health` is insufficient product-readiness monitoring.
+2. Repair the **historical POWB seal projection contract** using this exact Core-bound listing/seal regression case. Test raw/summary/display/action parity, legacy authorization versions, spent/reorg/pending cases; preserve fresh transaction preflight and signature validation.
+3. Reconcile **external recovery service failure/staleness** and prove an independently usable recovery set; retain the qualified Oct12 logical dump and all necessary incident evidence. Update misleading native-object monitoring without weakening actual corruption/placement checks.
+4. Follow the separately recorded performance audit for complete owner-scoped projections, display paging, smaller decoded payloads, measured lazy loading, reliable benchmark gates and receipt/accessibility fixes. Do not introduce speculative caching or incomplete reservations to improve apparent speed.
+5. Restore the local preview/provenance and rerun the official release-sync gate only in an approved implementation/release scope. Exact math prose and historical note/retention reconciliations need explicit scoped edits.
+
+All fixes, production/configuration changes, service restarts, cleanups, restore/catch-up rehearsals, commits, deployment and publication require separate explicit approval. The user authorized only this completed audit-log append and its evidence. No execution plan was silently applied.
+
+SOUL, canonical protocol/product documents, historical audits, note classification, generated artifacts/cleanup allowlist, tracked status and final audit diff were reviewed for audit impact. No product documentation rewrite is necessary to record these findings. `hygiene:fix` was deliberately **not run** because the explicit read-only instruction forbids cleanup; the existing documented continuation uses the same boundary. Read-only `hygiene:check` passed. This audit does not claim responsibility for the concurrent performance audit's separately authorized hygiene changes/cleanup. Final prefix/hash/diff validation follows.
+
+Evidence validation: compressed companion **414731 bytes**, SHA-256 `0ed6d80f420ac1ee5e6eeaef7452d47e75534071a43c000b095630402cb9a458`; decompressed JSON **5139361 bytes**, SHA-256 `628ccfd986681eda9c03b10d0dff5a1caafceb9182b285140a27c0f2859c7d82`. JSON parses and stored prefix hash matches before append. The artifact preserves exact source/input hashes and expressly qualifies incomplete semantic/recovery checks.
+
+Final validation at 2026-10-13T21:19:06.549129+00:00: the post-append `npm run hygiene:check` and `git diff --check` passed; original159,426-byte log prefix and companion gzip/JSON hashes verified. This audit wrote only this append and its named structured evidence companion. During final validation, concurrent work also modified README, App, ReviewDialog, styles and performance/browser-test files; the earlier repository-hygiene classification and separate performance-audit log hashes remain unchanged. Those edits were not made, reverted or tested as implementation by this audit. Source findings above refer to the captured released source/installed hashes, not a certification of the now-changing local working tree. No release gate pass is claimed.
+
+
+## 2026-10-13 — Approved batch 1, local review before deployment
+
+Scope: diagnose the existing AUD32-02 Permission and H24-01/Audit26-02/Audit31
+AMO availability recurrences; repair the historical POWB seal-projection mismatch.
+This is a continuation of those findings, not a new duplicate issue set. User
+requested tested changes before deployment. Work is isolated from concurrent
+primary-checkout changes at base `f68c6b4c6c090d9c3c565c325bdece2ad6db0978`.
+No production source/configuration/database changes, restarts, signing,
+broadcasts, commits, pushes, or deployments were performed.
+
+### Availability diagnosis and remaining work
+
+- **Permission — P2, unresolved:** two fresh loopback requests returned
+  `PERMISSION_UNAVAILABLE` after 28.355s and 28.046s with the read-budget error.
+  The configured discovery budget is 25s; checks occur between asynchronous
+  operations, so this does not impose cancellation at exactly 25s. Database
+  sampling observed raw-block queries active for up to 0.893s and 0.538s; those
+  samples do not explain the entire request or establish a database root cause.
+  Source review confirms discovery reauthenticates complete raw-block coverage
+  and calls the shared Core verifier, which hydrates all protocol candidates
+  before filtering Permission candidates. This is a plausible optimization
+  target, not a measured attribution of the whole delay. Next: measure queue,
+  prefix/raw SQL, Core block decoding, candidate hydration, and proof-validation
+  time plus verified-prefix progress. Then consider hydrating only Permission
+  candidates while retaining complete raw-block commitments and all canonical
+  checks. Require cold/warm, repeated bounded catch-up, restart and reorg tests.
+  Do not solve availability by accepting incomplete authority or opening signing.
+- **AMO — P2, unresolved latency/readiness recurrence:** during Core
+  971304→971305, summary returned `REGISTRY_AUTHORITY_UNAVAILABLE` with an exact
+  checkpoint mismatch; listings returned `CANONICAL_INDEX_CATCHING_UP`, lag 1.
+  These refusals correctly prevented stale authority. At stable Core/index
+  971309, summary recovered to 200 in **31.235s**, with coherent exact-tip
+  provenance; first listing page recovered to 200 in **5.738s**. Core outpoint
+  admission checked 1,129 listings, excluded 89 spent tickets, and reported
+  1,040 unspent listings. This batch did not certify all cursor pages or browser
+  end-to-end recovery. Next: instrument complete-book and summary phase costs,
+  verify bounded same-snapshot pagination across tip changes, and optimize the
+  measured repeated reads. Preserve exact checkpoint fences, membership hashes,
+  spent-ticket checks, reorg rejection and explicit unavailable states.
+
+### POWB repair and authoritative evidence
+
+The two relational listing readers only promoted matching seal-event terms for
+WORK. The historical non-WORK `pwt-sale-v1` ticket therefore retained unsigned
+`saleAuthorization`, even though the canonical seal event contained signed terms.
+The frontend correctly requires an anchored authorization as well as confirmation;
+this projection difference caused its Waiting for seal label.
+
+Both readers now also project non-WORK v1 seal authorization when the seal is
+confirmed, the canonical joined seal event is confirmed and unique, token and
+authorization versions match, the anchor references the exact listing, a string
+signature is present, and **every immutable term matches exactly**. The existing
+canonical-event SQL joins, post-activation position checks and WORK rules remain.
+Only `anchorTxid` and `anchorSignature` are excluded from immutable-term comparison,
+using the existing comparator. Original `listingAuthorization` is retained.
+Arbitrary `actionAuthorization` is not used as fallback evidence.
+
+Core rechecked at stable height **971309**:
+
+- Listing `dcac1665798675b7817a973fa990283bc9de2c77cc374361e8cb956a5f2daa46`
+  remains canonical at height 955267, transaction index 1971.
+- Seal `720311f99aad3368946de248fd833d1c555ed0e001cbee0931ded5d099146b72`
+  remains canonical at height 956536, transaction index 2017.
+- Listing output 2 remains unspent, with exactly **546 proofs** and the expected
+  seller script. Quantity **2,000,000** and price **2,000,000 proofs** are preserved.
+
+This is a read projection repair, not a new cryptographic purchase-admission
+verdict. Full signature validation, current spendability and transaction preflight
+remain necessary. No arithmetic, precision, fee, balance or ledger code changed.
+
+### Local validation and review boundary
+
+The real public ticket failed the new regression before the fix. The repaired
+regression covers both relational readers, display-v2, original-term retention,
+and the actual frontend confirmed-seal predicate. Altered token/version, quantity,
+price, nonce, parties, registry, ticket fields, public key, wrong anchor, absent or
+malformed signature, pending seal, missing/duplicate event and absent payload
+must not promote the signed authorization. A synthetic INCB variant exercises
+the same v1 projection contract; it is not a claim of a second live-chain audit.
+
+All affected local checks passed:
+
+- `check:index-recovery-behavior`: 552/552 behavior checks and 32 supporting tests;
+  mail-body preservation check also passed.
+- `check:read-projections` and `check:live-data`: passed.
+- `check:fee-rate-precision`: 1,113 rational vectors and 9 unsigned fixtures passed.
+- `check:work-amo-v8`: exact precision/declaration and admission gate checks passed.
+- `check:permission`: all six test-file suites plus 35 wallet-commitment tests passed.
+- `check:server-globals`, `git diff --check`, and `hygiene:check`: passed.
+
+No production UI or end-to-end purchase was exercised with the patched code.
+The new frontend assertion runs the actual source predicate against the repaired
+projection; it is not a browser screenshot or a signature-validation test.
+
+Public receipts: [batch evidence](2026-10-09-audit32-batch1-20261013-review.evidence.json),
+SHA-256 `5bdc8c14b404f2a821cb307df4fdff61ee0f31a27725e721f8e05e2609404374`.
+Historical test input: [POWB fixture](../scripts/fixtures/powb-seal-projection-20261013.json).
+
+Storage review: only the isolated worktree's allowlisted empty
+`node_modules/.vite-temp` directory (0 bytes) was removed by required hygiene.
+Historical audit evidence, primary checkout and production storage were preserved.
+SOUL and canonical protocol/product documents were reviewed; this restores the
+existing contract and requires no protocol or operating-policy amendment.
+
+**Approval boundary:** deployment, service restart, database repair/migration,
+production cleanup, commit/push and any Permission/AMO implementation remain
+outside this local patch. A future release must first reconcile concurrent work
+and complete the standing release synchronization workflow.

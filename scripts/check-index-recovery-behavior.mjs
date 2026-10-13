@@ -84442,6 +84442,83 @@ check("post-V5 seal positions come only from canonical relational seal rows", as
     "the complete credit-listing mapper must preserve immutable listing terms separately",
   );
 
+  // Public pre-V5 POWB ticket: the stored listing has unsigned terms while
+  // its canonical seal event contains the signed sale-ticket authorization.
+  const powbFixture = JSON.parse(readFileSync(new URL(
+    "./fixtures/powb-seal-projection-20261013.json", import.meta.url,
+  )));
+  const powbRow = powbFixture.row;
+  const powbUnsigned = powbRow.payload.listingAuthorization;
+  const powbSigned = powbRow.seal_event_payload.saleAuthorization;
+  const assertBondProjection = async (row, expectedAuthorization) => {
+    completeListingRow = row;
+    const complete = await proofIndexCompleteCreditListingsPayload("livenet", row.token_id);
+    const detail = tokenListingFromCreditListingRow(row, "livenet");
+    for (const item of [complete.items[0], detail]) {
+      assert.deepEqual(item.saleAuthorization, expectedAuthorization,
+        "both listing readers must expose only the matching canonical seal terms");
+      assert.equal(String(item.amount), String(row.amount));
+      assert.equal(String(item.priceSats), String(row.price_sats));
+      assert.equal(item.saleTicketVout, row.sale_ticket_vout);
+      const display = tokenListingDisplayProjection(item, {
+        fullRecordSha256: "a".repeat(64), network: "livenet", projection: "display-v2",
+      });
+      assert.deepEqual(display.saleAuthorization, expectedAuthorization);
+      assert.equal(display.sealConfirmed, item.sealConfirmed);
+    }
+    return [complete.items[0], detail];
+  };
+  const usesSaleTicket = isolatedTypeScriptFunction(APP_PATH,
+    "tokenSaleAuthorizationUsesSaleTicketAnchor", {
+      TOKEN_SALE_AUTH_VERSION: "pwt-sale-v1", TOKEN_SALE_AUTH_VERSION_ATOMS: "pwt-sale-v2",
+      TOKEN_LISTING_ANCHOR_TYPE: "sale-ticket-v1", TOKEN_LISTING_ANCHOR_VOUT: 2,
+      TOKEN_LISTING_ANCHOR_VALUE_SATS: 546, TOKEN_LISTING_ANCHOR_SIGHASH_TYPE: 0x83,
+      validPublicKeyHex: isolatedTypeScriptFunction(APP_PATH, "validPublicKeyHex"),
+      validSignatureHex: isolatedTypeScriptFunction(APP_PATH, "validSignatureHex"),
+      isWorkMarketSaleAuthorizationVersion: version => WORK_MARKET_GOVERNED_AUTH_VERSIONS_FIXTURE.has(version),
+    });
+  const uiHasConfirmedSeal = isolatedTypeScriptFunction(APP_PATH,
+    "tokenListingHasConfirmedSaleTicketSeal", { tokenSaleAuthorizationUsesSaleTicketAnchor: usesSaleTicket });
+  assert.equal(uiHasConfirmedSeal({ sealConfirmed: true, saleAuthorization: powbUnsigned }), false);
+  const projectedPowb = await assertBondProjection(powbRow, powbSigned);
+  for (const item of projectedPowb) {
+    assert.deepEqual(item.listingAuthorization, powbUnsigned);
+    assert.equal(item.sealConfirmed, true);
+    assert.equal(item.sealTxid, powbRow.seal_txid);
+    assert.equal(item.saleAuthorization.anchorTxid, powbRow.listing_id);
+    assert.equal(uiHasConfirmedSeal(item), true, "the actual UI seal predicate must recognize the repaired projection");
+  }
+  for (const [field, mismatch] of [
+    ["tokenId", "f".repeat(64)], ["version", "pwt-sale-v8"],
+    ["amount", "2000001"], ["priceSats", 2000001], ["nonce", "other"],
+    ["sellerAddress", "other"], ["buyerAddress", "other"],
+    ["registryAddress", "other"], ["anchorVout", 3],
+    ["anchorValueSats", 547], ["anchorSigHashType", 1],
+    ["anchorScriptPubKey", "51"], ["sellerPublicKey", "other"],
+    ["anchorTxid", "f".repeat(64)], ["anchorSignature", ""],
+    ["anchorSignature", null], ["anchorSignature", {}],
+  ]) {
+    const row = structuredClone(powbRow);
+    row.seal_event_payload.saleAuthorization[field] = mismatch;
+    await assertBondProjection(row, powbUnsigned);
+  }
+  for (const patch of [
+    { seal_tx_status: "pending" }, { seal_event_status: "pending" },
+    { seal_event_match_count: 0 }, { seal_event_match_count: 2 },
+    { seal_event_payload: {} },
+  ]) await assertBondProjection({ ...powbRow, ...patch }, powbUnsigned);
+  // The same hard-price credit contract applies to INCB; arbitrary unsigned
+  // actionAuthorization in the listing is never a replacement for a seal event.
+  const incbRow = structuredClone(powbRow);
+  incbRow.token_id = INCB_TOKEN_ID;
+  for (const value of [incbRow.payload, incbRow.seal_event_payload,
+    incbRow.payload.saleAuthorization, incbRow.payload.listingAuthorization,
+    incbRow.payload.actionAuthorization, incbRow.seal_event_payload.saleAuthorization]) {
+    value.tokenId = incbRow.token_id; value.ticker = "INCB";
+  }
+  await assertBondProjection(incbRow, incbRow.seal_event_payload.saleAuthorization);
+  completeListingRow = canonicalSealedWorkRow;
+
   for (const [field, mismatch] of [
     ["tokenId", "f".repeat(64)],
     ["version", "pwt-sale-v6"],
