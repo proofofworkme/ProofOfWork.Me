@@ -77,3 +77,8 @@ if ((used_percent >= warn_percent)) ||
   echo "WARNING UI storage runway is narrowing for /." >&2
   exit 1
 fi
+
+# Check fixed retained-evidence budgets as well as percentage/free-space metrics.
+# This is read-only: only custody-qualified retirement may remove evidence.
+/usr/bin/python3 -I -B /usr/local/sbin/proofofwork-ui-capacity check \
+  --path /var/backups/proofofwork-ui --phase scheduled-retention-health

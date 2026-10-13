@@ -47,6 +47,41 @@ class CapacityTests(unittest.TestCase):
             with self.assertRaises(capacity.CapacityError):
                 capacity.check_capacity(Path("/"), invalid, 0, "invalid")
 
+    def test_retained_budget_boundary_failure_and_no_deletion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / "unique-evidence"; evidence.write_bytes(b"preserve")
+            result = SimpleNamespace(stdout=f"100\t{root}\n".encode())
+            with mock.patch.object(capacity.subprocess, "run", return_value=result):
+                self.assertEqual(capacity.retention_budget(root, 107, 7, "exact")["allocatedBytes"], 100)
+                with self.assertRaisesRegex(capacity.CapacityError, "retention budget refused"):
+                    capacity.retention_budget(root, 107, 8, "one-byte-over")
+            with mock.patch.object(capacity.subprocess, "run", side_effect=subprocess.TimeoutExpired("du", 30)):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    capacity.retention_budget(root, 107, 0, "timeout")
+            self.assertEqual(evidence.read_bytes(), b"preserve")
+
+    def test_fixed_retirement_envelope_keeps_reserve_and_cannot_admit_other_paths(self):
+        with mock.patch.object(capacity, "check_capacity", return_value={}) as check:
+            with mock.patch.object(sys, "argv", ["capacity", "check-retirement", "--path", "/var/backups/proofofwork-ui/cleanup-evidence"]), contextlib.redirect_stdout(io.StringIO()):
+                capacity.main()
+            self.assertEqual(check.call_args.args[1:3], (32*1024**2, 128))
+            self.assertEqual(check.call_args.kwargs, {"enforce_retention":False})
+            for path in ("/var/www", "/var/tmp/proofofwork-deploy"):
+                with mock.patch.object(sys, "argv", ["capacity", "check-retirement", "--path", path]), contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit):capacity.main()
+        with mock.patch.object(capacity.os, "statvfs", return_value=space(RESERVE-1)):
+            with self.assertRaises(capacity.CapacityError):
+                capacity.check_capacity(Path("/"),32*1024**2,128,"retirement",enforce_retention=False)
+
+    def test_retention_charges_containing_families_only(self):
+        with mock.patch.object(capacity, "retention_budget", return_value={}) as check:
+            capacity.check_retention(Path("/var/backups/proofofwork-ui/transport-evidence/new"), 123, "copy")
+            self.assertEqual([c.args[2] for c in check.call_args_list], [123, 123])
+            check.reset_mock()
+            capacity.check_retention(Path("/var/tmp/proofofwork-deploy"), 123, "copy")
+            self.assertEqual([c.args[2] for c in check.call_args_list], [0, 0])
+
     def test_scratch_ceiling_refuses_growth_without_removing_evidence(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

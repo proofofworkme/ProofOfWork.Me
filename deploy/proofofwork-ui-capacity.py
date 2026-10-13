@@ -24,6 +24,40 @@ MAX_ARCHIVE_ENTRIES = 10000
 MAX_ARCHIVE_BYTES = 1024**3
 MAX_TREE_ENTRIES = 100000
 MAX_DEPLOY_SCRATCH_BYTES = 5 * 1024**3
+# Retained evidence is never age-pruned. These hard admission budgets stop
+# another allocation until custody-qualified retirement creates room.
+RETENTION_BUDGETS = (
+    (Path("/var/backups/proofofwork-ui"), 14 * 1024**3),
+    (Path("/var/backups/proofofwork-ui/transport-evidence"), 9 * 1024**3),
+)
+
+
+def retention_budget(root: Path, maximum: int, additional: int, phase: str) -> dict:
+    integer(additional, "Additional retained bytes")
+    before = canonical_directory(root)
+    result = subprocess.run(
+        ["/usr/bin/du", "--one-file-system", "--summarize", "--block-size=1", "--", str(root)],
+        capture_output=True, check=True, timeout=30)
+    fields = result.stdout.decode("utf-8", errors="strict").strip().split("\t")
+    if (len(fields) != 2 or fields[1] != str(root) or not fields[0].isascii()
+            or not fields[0].isdecimal() or identity(canonical_directory(root)) != identity(before)):
+        raise CapacityError("Unable to measure stable UI retained allocation")
+    report = {"path": str(root), "allocatedBytes": int(fields[0]),
+              "additionalBytes": additional, "maximumBytes": maximum, "phase": phase,
+              "automaticEvidenceDeletion": False}
+    if report["allocatedBytes"] + additional > maximum:
+        raise CapacityError("UI retention budget refused; verified custody retirement required "
+                            + json.dumps(report, sort_keys=True))
+    return report
+
+
+def check_retention(path: Path, additional: int, phase: str) -> list:
+    # Admission checks both families even when allocation targets scratch/run.
+    # Charge the complete next copy only to the families that contain its path.
+    # Fixed production directories: missing/unsafe measurement fails closed.
+    return [retention_budget(root, limit, additional if path == root or root in path.parents else 0, phase)
+            for root, limit in RETENTION_BUDGETS]
+
 
 
 class CapacityError(RuntimeError):
@@ -64,7 +98,7 @@ def entry_bytes(size: int, block: int, *, xattr_bytes: int = 0) -> int:
     return rounded(size, block) + 4 * block + rounded(xattr_bytes, block)
 
 
-def check_capacity(path: Path, additional_bytes: int, additional_inodes: int, phase: str) -> dict:
+def check_capacity(path: Path, additional_bytes: int, additional_inodes: int, phase: str, *, enforce_retention: bool = True) -> dict:
     integer(additional_bytes, "Additional bytes")
     integer(additional_inodes, "Additional inodes")
     target = canonical_directory(path)
@@ -88,7 +122,12 @@ def check_capacity(path: Path, additional_bytes: int, additional_inodes: int, ph
         checks.append(row)
         if available < required or inodes < required_inodes:
             raise CapacityError("UI capacity refused " + json.dumps({"phase": phase, **row}, sort_keys=True))
-    return {"status": "sufficient", "phase": phase, "allocationPath": str(path),
+    retention = check_retention(path, additional_bytes, phase) if enforce_retention and (
+        path == Path("/") and Path("/var/backups/proofofwork-ui").exists()
+        or any(path == root or root in path.parents for root in
+               (Path("/var/backups/proofofwork-ui"), Path("/var/tmp/proofofwork-deploy"), Path("/var/www"), Path("/run/proofofwork-ui")))
+    ) else []
+    return {"retention": retention, "status": "sufficient", "phase": phase, "allocationPath": str(path),
             "additionalBytes": additional_bytes, "additionalInodes": additional_inodes,
             "rootReserveBytes": ROOT_RESERVE_BYTES, "growthReserveBytes": GROWTH_RESERVE_BYTES,
             "checks": checks}
@@ -220,7 +259,7 @@ def cli_integer(value: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "check-copy", "check-archive", "check-pack", "check-scratch", "budget"))
+    parser.add_argument("command", choices=("check", "check-copy", "check-archive", "check-pack", "check-scratch", "check-retirement", "budget"))
     parser.add_argument("--path", type=Path, required=True)
     parser.add_argument("--source", type=Path)
     parser.add_argument("--archive", type=Path)
@@ -228,7 +267,15 @@ def main() -> int:
     parser.add_argument("--additional-inodes", type=cli_integer, default=0)
     parser.add_argument("--phase", default="ui-allocation")
     args = parser.parse_args()
-    if args.command == "check-scratch":
+    if args.command == "check-retirement":
+        if (args.path != Path("/var/backups/proofofwork-ui/cleanup-evidence")
+                or args.source is not None or args.archive is not None
+                or args.additional_bytes != 0 or args.additional_inodes != 0):
+            parser.error("Retirement admission has one fixed receipt path and allocation envelope")
+        # A full retention budget must not deadlock its own qualified cleanup.
+        # This fixed receipt-only envelope still enforces free bytes and inodes.
+        result = check_capacity(args.path, 32 * 1024**2, 128, "custody-retirement-receipt", enforce_retention=False)
+    elif args.command == "check-scratch":
         result = check_deploy_scratch(args.path, args.additional_bytes, args.phase)
     elif args.command == "budget":
         if args.source is None:

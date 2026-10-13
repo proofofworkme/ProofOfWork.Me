@@ -7464,3 +7464,38 @@ Before integration, fetch `origin` and review changes since the candidate base. 
 Existing accepted node runtime overlays use guarded source-commit and byte-hash provenance, including reviewed native-storage adaptations. Their old runtime Git HEAD is not a reason to reset the node checkout. Verify the scoped installed candidate hashes and preserved infrastructure instead. Release worktrees are implementation custody; they do not replace syncing the user’s primary checkout. Publish the release announcement only after these checks pass.
 
 The final release synchronization check is `npm run check:release-sync`. It verifies actual GitHub `main`, clean primary local `main`, production manifest commit/tree, and clean source provenance from the local preview plus public Pages and Computer. An unavailable or failed check leaves the release incomplete; fix the mismatch before announcing.
+
+### UI retained-storage budgets and custody retirement (2026-10-13)
+
+The UI allocation helper preserves the existing 10 GiB root reserve, 64 MiB
+concurrent-growth reserve, inode headroom and 5 GiB deployment scratch ceiling.
+Production deployment allocations also require the complete UI backup tree to
+remain within 14 GiB and its transport-evidence subtree within 9 GiB, charging
+the full next allocation to each containing budget. Measurements fail closed.
+The existing storage-health timer checks these budgets too. A budget refusal
+requires qualified retirement; it never deletes unique evidence to admit a
+release. These are hard admission ceilings, not targets to fill.
+
+The desired recovery set is the live release and one verified immediate-prior
+rollback, with unique historical evidence in verified independent custody.
+`deploy/ui-retention/custody.py` preserves qualified exact directories off host,
+independently restores their bytes, numeric ownership, modes, timestamps,
+attributes and internal links, then rechecks custody before retirement. Original
+symlink atimes remain archived; readlink may advance a restored link's access
+time. Existing release-root verification remains strict by default; generic
+source custody explicitly opts into missing release manifests and internal
+relative symlinks. Escaping links and special files refuse.
+
+Retirement preserves the current and prior source dependencies, independently
+held paths, existing hold markers and masked broad-pruning timers. It refuses
+live process, configuration, mount and loaded-unit references, takes the shared
+deploy lock, verifies the entire selected inventory, and uses descriptor-relative
+removal with durable intent/action/completion receipts. A partial operation
+requires reconciliation, never a blind retry. No age alone authorizes deletion.
+Future deployments cannot accumulate unlimited retained copies: when the budget
+is reached, preserve/restore/qualify additional retirement before retrying.
+
+A fixed 32 MiB/128-inode cleanup-receipt envelope can pass retention-budget
+exhaustion so qualified retirement is not deadlocked. It is restricted to the
+cleanup-evidence directory and still enforces the full free-space/inode reserve;
+it cannot admit deployment content or arbitrary additional allocation.
