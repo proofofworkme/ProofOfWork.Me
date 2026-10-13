@@ -113,7 +113,7 @@ test("reboost renders the original post instead of the target txid", async ({ pa
   await expect(composer).toBeVisible();
   await expect(composer.getByText("WORK signal", { exact: true })).toBeVisible();
   await expect(composer.getByText("Proof signal", { exact: true })).toBeVisible();
-  await expect(composer.getByText("Attach file")).toBeVisible();
+  await expect(composer.getByText(/^(Attach file|Replace attachment)$/)).toBeVisible();
   await expect(composer).toContainText("Add Proof, WORK, or both.");
   await expect(composer.getByLabel("Proof signal")).toHaveAttribute("min", "0");
   await composer.locator('input[type="file"]').setInputFiles({
@@ -128,7 +128,7 @@ test("reboost renders the original post instead of the target txid", async ({ pa
   await expect(composer).toBeVisible();
   await expect(composer.locator("textarea")).toBeVisible();
   await expect(composer.getByText("WORK signal", { exact: true })).toBeVisible();
-  await expect(composer.getByText("Attach file")).toBeVisible();
+  await expect(composer.getByText(/^(Attach file|Replace attachment)$/)).toBeVisible();
   const composerFeeControl = page.getByRole("dialog", { name: "What’s happening?" }).locator(".fee-control");
   await expect(composerFeeControl.getByText("Fee proofs/vB")).toBeVisible();
   await expect(composerFeeControl.locator('input[type="number"]')).toHaveValue("1");
@@ -243,7 +243,7 @@ test("Computer Boost entry buttons open the shared Proof, WORK, and Files compos
     await expect(composer).toBeVisible();
     await expect(composer.getByLabel("Proof signal")).toHaveAttribute("min", "0");
     await expect(composer.getByText("WORK signal", { exact: true })).toBeVisible();
-    await expect(composer.getByText("Attach file")).toBeVisible();
+    await expect(composer.getByText(/^(Attach file|Replace attachment)$/)).toBeVisible();
     await expect(composer).toContainText("Add Proof, WORK, or both.");
     const bounds = await composer.boundingBox();
     const viewport = page.viewportSize();
@@ -266,7 +266,9 @@ test("Computer Boost entry buttons open the shared Proof, WORK, and Files compos
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "What’s happening?" })).toHaveCount(0);
   composer = await openAndCheck("Review Boost");
-  await expect(composer.getByLabel("Proof signal")).toHaveValue("546");
+  await expect(composer.getByLabel("Proof signal")).toHaveValue("0");
+  await expect(composer.getByLabel("WORK signal")).toHaveValue("1");
+  await expect(composer).toContainText("work-proof.txt");
   await expect(page.locator(".compose-pane")).toHaveCount(0);
 });
 

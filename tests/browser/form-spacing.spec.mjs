@@ -71,10 +71,16 @@ for (const sample of cases) {
   test(`Boost composer and search text have space in ${sample.theme} at ${sample.width}px`, async ({ page }, testInfo) => {
     const writes = await fixture(page, sample);
     await page.goto("/?boost=1");
-    const input = page.locator(".boost-inline-draft textarea");
+    if (sample.width <= 600) await page.getByRole("button", { name: "Create Boost", exact: true }).click();
+    const input = sample.width <= 600
+      ? page.getByRole("dialog", { name: "What’s happening?" }).getByRole("textbox", { name: "Boost text", exact: true })
+      : page.locator(".boost-inline-draft textarea");
     const draft = "A clear first line.\nKeep the next line and trailing spaces.  ";
     await input.fill(draft);
-    await expect(input).toHaveCSS("padding", "12px");
+    if (sample.width > 600) await expect(input).toHaveCSS("padding", "12px");
+    else {
+      expect(await input.evaluate(element => parseFloat(getComputedStyle(element).paddingLeft))).toBeGreaterThanOrEqual(12);
+    }
     await expect(input).toHaveCSS("font-size", sample.width <= 860 ? "16px" : "14px");
     const body = await input.evaluate(element => {
       const style = getComputedStyle(element);
@@ -84,11 +90,13 @@ for (const sample of cases) {
     expect(body.lineHeight).toBeGreaterThanOrEqual(body.fontSize * 1.5);
     expect(body.contentHeight).toBeGreaterThanOrEqual(body.lineHeight * 2);
     await page.screenshot({ path: testInfo.outputPath("boost-filled-composer.png") });
-    await page.getByRole("button", { name: "Review Boost", exact: true }).click();
+    if (sample.width > 600) await page.getByRole("button", { name: "Review Boost", exact: true }).click();
     const composer = page.getByRole("dialog", { name: "What’s happening?" });
     await expect(composer.getByRole("textbox", { name: "Boost text", exact: true })).toHaveValue(draft);
     await expect(composer.getByRole("button", { name: "Post", exact: true })).toBeDisabled();
     await page.keyboard.press("Escape");
+    await expect(composer).toHaveCount(0);
+    if (sample.width <= 600) await page.getByRole("button", { name: "Create Boost", exact: true }).click();
     await expect(input).toHaveValue(draft);
     await page.goto("/?boost=1&mode=search");
     const search = page.getByRole("textbox", { name: "Search Boost", exact: true });

@@ -108,6 +108,17 @@ Dock icons and labels use consistent alignment and deliberate line height.
 Keep labels, including All apps, on one line; size items for their readable text
 instead of letting one wrapped label stretch the entire dock.
 
+On Boost surfaces at or below 600px container width, keep the timeline feed-first:
+no inline composer; a 56px, accessibly named + opens the existing form above the
+bottom navigation and safe area. Period and Sort remain in Tools with a compact
+active-filter summary. The mobile form fills the visible viewport, contains focus
+and scrolling, and returns to the same feed position on close or Back. Dismissal
+preserves the full in-memory draft, including files, signal amounts, fees, and
+quote context; successful publication retains its existing reset behavior.
+Desktop Boost and Publish's separate writer retain their presentation. This is
+local draft continuity while the workspace stays mounted, not a promise of
+persistence across reloads or cross-page navigation.
+
 ## Content, evidence, and interaction
 
 Keep the current task and primary action clear. Secondary details may collapse,
@@ -134,7 +145,11 @@ user-authored content, verified article text and hash commitments, supplied
 media, source code, and sandboxed HTML/app output. Do not impose our typography
 inside user-controlled documents or provider players. YouTube cards use our
 surrounding controls; activated playback retains YouTube's own controls and its
-Open on YouTube fallback. External media availability is separate from chain
+Open on YouTube fallback. Constrain the player to the available card width and
+contain thumbnails without cropping. Below the provider's 200px minimum width,
+offer the external link instead of a clipped iframe. Center short mobile status
+messages and their indicators; multiline statuses align the indicator to the
+first text line while retaining accessible expansion. External media availability is separate from chain
 verification and does not establish a successful local transaction.
 
 New first-party Browser and Pages starter templates use neutral light/dark CSS

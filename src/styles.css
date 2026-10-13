@@ -9065,12 +9065,16 @@ pre {
   }
 
   .status {
-    align-items: start;
+    align-items: center;
     padding-left: 14px;
   }
 
-  .status-dot {
-    margin-top: 7px;
+  .status.is-collapsible {
+    align-items: start;
+  }
+
+  .status.is-collapsible .status-dot {
+    margin-top: max(0px, calc((1lh - 7px) / 2));
   }
 
   .status.is-collapsible:not(.is-expanded) .status-text {

@@ -21,6 +21,18 @@ async function fixture(page) {
   });
 }
 
+async function openDraft(page, text) {
+  await expect(page.locator(".boost-compose-surface")).toBeVisible();
+  const fab = page.getByRole("button", { name: "Create Boost", exact: true });
+  if (await fab.isVisible()) {
+    await fab.click();
+    await page.getByRole("dialog", { name: "What’s happening?" }).getByRole("textbox", { name: "Boost text", exact: true }).fill(text);
+  } else {
+    await page.getByRole("textbox", { name: "Boost text", exact: true }).fill(text);
+    await page.getByRole("button", { name: "Review Boost", exact: true }).click();
+  }
+}
+
 for (const width of [320, 390, 960, 1440]) {
   test(`social feed keeps evidence accessible and fits ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
@@ -45,8 +57,7 @@ for (const width of [320, 390, 960, 1440]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
     if (width < 1120) await expect(page.locator(".boost-discovery-content")).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath("feed.png"), fullPage: true });
-    await page.getByRole("textbox", { name: "Boost text", exact: true }).fill("A draft worth proving.");
-    await page.getByRole("button", { name: "Review Boost", exact: true }).click();
+    await openDraft(page, "A draft worth proving.");
     const composer = page.getByRole("dialog", { name: "What’s happening?" });
     await expect(composer.getByRole("textbox", { name: "Boost text" })).toHaveValue("A draft worth proving.");
     await composer.getByText("Preview Boost", { exact: true }).click();
@@ -69,8 +80,7 @@ for (const embedded of [false, true]) for (const theme of ["light", "dark"]) {
       await fixture(page);
       await page.goto(`/?${embedded ? "folder=boost" : "boost=1"}`);
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-      await page.getByRole("textbox", { name: "Boost text", exact: true }).fill("A private draft.");
-      await page.getByRole("button", { name: "Review Boost", exact: true }).click();
+      await openDraft(page, "A private draft.");
       for (const quote of [false, true]) {
         const form = page.getByRole("dialog", { name: quote ? "Add a comment" : "What’s happening?", exact: true });
         await expect(form).toBeVisible();

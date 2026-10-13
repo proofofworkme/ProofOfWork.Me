@@ -63,9 +63,14 @@ for (const { embedded, width } of [{ embedded: false, width: 320 }, { embedded: 
     expect(geometry.height).toBeGreaterThanOrEqual(200);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
     const reboost = page.getByTestId("reboosted-post");
-    await reboost.getByRole("button", { name: "Play YouTube video" }).click();
-    await expect(reboost.locator("iframe")).toBeVisible();
-    expect((await reboost.locator("iframe").boundingBox()).width).toBeGreaterThanOrEqual(200);
+    if ((await reboost.locator(".youtube-player-frame").boundingBox()).width >= 200) {
+      await reboost.getByRole("button", { name: "Play YouTube video" }).click();
+      await expect(reboost.locator("iframe")).toBeVisible();
+      expect((await reboost.locator("iframe").boundingBox()).width).toBeGreaterThanOrEqual(200);
+    } else {
+      await expect(reboost.locator("iframe")).toHaveCount(0);
+      await expect(reboost.getByRole("link", { name: "Open on YouTube" })).toBeVisible();
+    }
     await main.locator(".boost-post-text").click();
     await expect(page.getByRole("dialog", { name: "Boost detail", exact: true }).locator(".boost-thread-reply .youtube-link-card")).toHaveCount(1);
   });

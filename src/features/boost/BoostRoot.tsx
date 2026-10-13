@@ -2,11 +2,13 @@ import { buildBoostTip, buildBoostWorkTip, boostTipAmount, BOOST_TIP_DEFAULT_SAT
 import {
   FormEvent,
   type KeyboardEvent,
+  type ReactNode,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { Buffer } from "buffer";
 import * as bitcoin from "bitcoinjs-lib";
 import {
@@ -20,6 +22,7 @@ import {
   HandCoins,
   MessageCircle,
   Paperclip,
+  Plus,
   Quote,
   RefreshCw,
   Repeat2,
@@ -1178,6 +1181,15 @@ export default function BoostRoot({
   const [feeRate, setFeeRate] = useState(DEFAULT_FEE_RATE);
   const [toolsOpen, setToolsOpen] = useState(false);
   const boostSurfaceRef = useRef<HTMLDivElement>(null);
+  const compactNavRef = useRef<HTMLElement>(null);
+  const modalBackdropRef = useRef<HTMLDivElement>(null);
+  const composerInvokerRef = useRef<HTMLElement | null>(null);
+  const composerHistoryRef = useRef<string>();
+  const composerHistoryLocation = useRef("");
+  const composerNavigationPending = useRef(false);
+  const composerStateRef = useRef({ open: directPostOpen, busy: false });
+  composerStateRef.current = { open: directPostOpen, busy: Boolean(actionBusy) || publishSigning.current };
+  const [compactBoost, setCompactBoost] = useState(false);
   const toolsPanelRef = useRef<HTMLElement>(null);
   const toolsTriggerRef = useRef<HTMLButtonElement>(null);
   const toolsInvokerRef = useRef<HTMLElement | null>(null);
@@ -2074,7 +2086,7 @@ export default function BoostRoot({
         walletAddress: ready.walletAddress,
       });
       if (sent) {
-        setDirectPostOpen(false);
+        closeBoostComposer(true);
         setQuoteTarget(undefined);
         setPostText("");
         setPostSignalSats(546);
@@ -2577,28 +2589,112 @@ export default function BoostRoot({
   }, [toolsOpen]);
 
   useEffect(() => {
+    if (isPublish) return;
+    const surface = boostSurfaceRef.current;
+    const nav = compactNavRef.current;
+    if (!surface || !nav) return;
+    const measure = () => {
+      setCompactBoost(surface.clientWidth <= 600);
+      surface.style.setProperty("--boost-nav-height", `${nav.getBoundingClientRect().height}px`);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(surface);
+    observer.observe(nav);
+    measure();
+    return () => observer.disconnect();
+  }, [isPublish]);
+
+  useEffect(() => {
+    if (isPublish) return;
+    const restoreComposer = (event: PopStateEvent) => {
+      if (!composerHistoryRef.current) return;
+      const returningToComposer = event.state?.boostComposer === composerHistoryRef.current;
+      if (window.location.href !== composerHistoryLocation.current) {
+        composerNavigationPending.current = false;
+        setDirectPostOpen(false);
+        return;
+      }
+      if (!composerStateRef.current.open && !returningToComposer) return;
+      // This entry represents a local overlay, not a workspace/route change.
+      event.stopImmediatePropagation();
+      composerNavigationPending.current = false;
+      if (composerStateRef.current.open && composerStateRef.current.busy && !returningToComposer) {
+        window.history.pushState({ ...window.history.state, boostComposer: composerHistoryRef.current }, "");
+        return;
+      }
+      setDirectPostOpen(returningToComposer);
+    };
+    window.addEventListener("popstate", restoreComposer, true);
+    return () => window.removeEventListener("popstate", restoreComposer, true);
+  }, [isPublish]);
+
+  useEffect(() => {
+    if (!directPostOpen || !compactBoost) return;
+    if (window.history.state?.boostComposer === composerHistoryRef.current && composerHistoryRef.current) return;
+    composerHistoryRef.current = `boost-${crypto.randomUUID()}`;
+    composerHistoryLocation.current = window.location.href;
+    window.history.pushState({ ...window.history.state, boostComposer: composerHistoryRef.current }, "");
+  }, [directPostOpen, compactBoost]);
+
+  useEffect(() => {
+    if (!directPostOpen || isPublish) return;
+    const backdrop = modalBackdropRef.current;
+    if (!backdrop) return;
+    // The portal escapes Computer's clipping/scroll containers. Inert the rest
+    // of the page, but leave the existing wallet transaction flow untouched.
+    const siblings = Array.from(document.body.children).filter((node): node is HTMLElement =>
+      node instanceof HTMLElement && node !== backdrop);
+    const inert = siblings.map(node => [node, node.inert] as const);
+    inert.forEach(([node]) => { node.inert = true; });
+    const viewport = window.visualViewport;
+    const resize = () => {
+      backdrop.style.setProperty("--boost-viewport-height", `${viewport?.height ?? window.innerHeight}px`);
+      backdrop.style.setProperty("--boost-viewport-top", `${viewport?.offsetTop ?? 0}px`);
+    };
+    viewport?.addEventListener("resize", resize);
+    viewport?.addEventListener("scroll", resize);
+    resize();
+    return () => {
+      inert.forEach(([node, value]) => { node.inert = value; });
+      viewport?.removeEventListener("resize", resize);
+      viewport?.removeEventListener("scroll", resize);
+    };
+  }, [directPostOpen, isPublish]);
+
+  useEffect(() => {
     if (!modalOpen) return;
-    const dialog = boostSurfaceRef.current?.querySelector<HTMLElement>(
+    const dialog = modalBackdropRef.current?.querySelector<HTMLElement>(
       ".boost-modal[role='dialog']",
     );
     const previousOverflow = document.body.style.overflow;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousFocus = directPostOpen ? composerInvokerRef.current :
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const scrollPosition = { x: window.scrollX, y: window.scrollY };
+    const scrollParents: Array<{ node: HTMLElement; overflow: string; top: number; left: number }> = [];
+    if (directPostOpen) {
+      for (let node: HTMLElement | null = boostSurfaceRef.current; node && node !== document.body; node = node.parentElement) {
+        if (/(auto|scroll)/.test(getComputedStyle(node).overflowY)) {
+          scrollParents.push({ node, overflow: node.style.overflow, top: node.scrollTop, left: node.scrollLeft });
+          node.style.overflow = "hidden";
+        }
+      }
+    }
     document.body.style.overflow = "hidden";
     const focusableSelector =
       "button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary";
     const focusFrame = window.requestAnimationFrame(() =>
-      dialog?.querySelector<HTMLElement>(focusableSelector)?.focus(),
+      (directPostOpen ? dialog?.querySelector<HTMLElement>("textarea") : dialog?.querySelector<HTMLElement>(focusableSelector))?.focus({ preventScroll: true }),
     );
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        if (directPostOpen) { closeBoostComposer(); return; }
         if (publishSigning.current) return;
         setDirectPostOpen(false);
         setExpandedItem(undefined);
         setPendingPaidAction(undefined);
         setReplyTarget(undefined);
         setTransferTarget(undefined);
-        setQuoteTarget(undefined);
         setReplyText("");
         return;
       }
@@ -2622,9 +2718,14 @@ export default function BoostRoot({
       window.cancelAnimationFrame(focusFrame);
       window.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousOverflow;
-      if (previousFocus?.isConnected) previousFocus.focus();
+      scrollParents.forEach(({ node, overflow, top, left }) => {
+        node.style.overflow = overflow;
+        node.scrollTo({ top, left, behavior: "instant" });
+      });
+      if (directPostOpen) window.scrollTo({ left: scrollPosition.x, top: scrollPosition.y, behavior: "instant" });
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
     };
-  }, [modalOpen]);
+  }, [modalOpen, directPostOpen]);
 
   useEffect(() => {
     const surface = boostSurfaceRef.current;
@@ -2779,13 +2880,30 @@ export default function BoostRoot({
   }
 
   function openBoostComposer(quote?: BoostFeedItem) {
+    if (composerStateRef.current.busy || composerNavigationPending.current) return;
+    if (!compactBoost) composerHistoryRef.current = undefined;
+    const invoker = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    composerInvokerRef.current = toolsOpen ? toolsTriggerRef.current :
+      invoker?.closest(".boost-reboost-action")?.querySelector<HTMLButtonElement>("button") ?? invoker;
     setToolsOpen(false);
-    setQuoteTarget(quote);
-    if (quote) setPostText("");
-    setPostSignalSats(546);
-    setPostWorkAmount("0");
-    setPostAttachment(undefined);
+    // Dismissal is not discard. Preserve every field and an existing quote on
+    // ordinary reopen; choosing Quote explicitly updates only its target.
+    if (quote) setQuoteTarget(quote);
     setDirectPostOpen(true);
+  }
+
+  function closeBoostComposer(completed = false) {
+    if ((!completed && composerStateRef.current.busy) || composerNavigationPending.current) return;
+    if (composerHistoryRef.current && window.history.state?.boostComposer === composerHistoryRef.current) {
+      composerNavigationPending.current = true;
+      // Success has already passed the existing transaction completion gate.
+      if (completed) composerStateRef.current.busy = false;
+      window.history.back();
+    } else setDirectPostOpen(false);
+  }
+
+  function renderBoostModal(content: ReactNode) {
+    return directPostOpen && !isPublish ? createPortal(content, document.body) : content;
   }
 
   function openPublishComposer() {
@@ -2811,7 +2929,6 @@ export default function BoostRoot({
     setExpandedItem(undefined);
     setPendingPaidAction(undefined);
     setReplyTarget(undefined);
-    setQuoteTarget(undefined);
   }
 
   function closePublishWriter() {
@@ -2928,7 +3045,7 @@ export default function BoostRoot({
         embedded ? "boost-public-app boost-embedded-app" : "mail-app boost-public-app",
         isProfileView ? "boost-profile-surface" : isSearchView ? "boost-search-surface" : "",
         isProfileView && profileSearchActive ? "boost-profile-search-active" : "",
-        isPublish ? "publish-public-app" : "",
+        isPublish ? "publish-public-app" : "boost-compose-surface",
       ].filter(Boolean).join(" ")}
       ref={boostSurfaceRef}
     >
@@ -2993,14 +3110,18 @@ export default function BoostRoot({
             type="button"
           />
         ) : null}
-        <nav className="boost-compact-nav" aria-label={`${surfaceName} navigation`}>
+        <nav className="boost-compact-nav" ref={compactNavRef} aria-label={`${surfaceName} navigation`}>
           <a href={timelineHref} aria-label="Home" title="Home"><Home size={22} /><span>Home</span></a>
           <a href={isPublish ? `${publishHref({ network, embedded })}&mode=search` : boostSearchHref(embedded, network)} aria-label={`Search ${surfaceName}`} title={`Search ${surfaceName}`} aria-current={isSearchView ? "page" : undefined}><Search size={22} /><span>Search</span></a>
           {address ? <a href={myProfileHref} aria-label="My profile" title="My profile"><UserCircle size={22} /><span>Profile</span></a> :
             <button onClick={openTools} type="button" aria-label="Connect profile" title="Connect profile"><UserCircle size={22} /><span>Profile</span></button>}
           <a href={isPublish ? appHref("https://boost.proofofwork.me/", "/?boost=1") : publishHref({ network })} aria-label={isPublish ? "Open Boost" : "Open Publish"} title={isPublish ? "Open Boost" : "Open Publish"}><BookOpen size={22} /><span>{isPublish ? "Boost" : "Publish"}</span></a>
-          <button className="primary" onClick={composeSurface} type="button" aria-label={isPublish ? "Write an article" : "Post a Boost"} title={isPublish ? "Write an article" : "Post a Boost"}><BookOpen size={22} /><span>{isPublish ? "Write" : "Post"}</span></button>
+          <button className="primary boost-nav-compose" onClick={composeSurface} type="button" aria-label={isPublish ? "Write an article" : "Post a Boost"} title={isPublish ? "Write an article" : "Post a Boost"}><BookOpen size={22} /><span>{isPublish ? "Write" : "Post"}</span></button>
         </nav>
+        {!isPublish ? <button
+          hidden={modalOpen || toolsOpen || imageEditorOpen || Boolean(preparedTip)}
+          className="boost-compose-fab" type="button" aria-label="Create Boost" title="Create Boost" disabled={Boolean(actionBusy)}
+          onClick={composeSurface}><Plus size={28} aria-hidden="true" /></button> : null}
         <aside
           aria-label={`${surfaceName} tools`}
           aria-modal={toolsOpen || undefined}
@@ -3070,6 +3191,14 @@ export default function BoostRoot({
             </a>
           ) : null}
 
+          {!isPublish ? <div className="boost-tools-filters">
+            <label>Period<select aria-label="Boost value window" value={valueWindow} onChange={event => setValueWindow(event.target.value as typeof valueWindow)}>
+              {VALUE_WINDOWS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select></label>
+            <label>Sort<select aria-label="Boost sort" value={sortMode} onChange={event => setSortMode(event.target.value as typeof sortMode)}>
+              {SORT_MODES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select></label>
+          </div> : null}
           {renderIdentityControls()}
 
           {address ? <button className="secondary" type="button" disabled={Boolean(actionBusy)} onClick={() => setImageEditorOpen(true)}>Profile images</button> : null}
@@ -3376,6 +3505,7 @@ export default function BoostRoot({
                 <span>Tools</span>
               </span>
             </button>
+            {!isPublish ? <span className="boost-filter-summary">{VALUE_WINDOWS.find(option => option.value === valueWindow)?.label} · {SORT_MODES.find(option => option.value === sortMode)?.label}</span> : null}
             <label className="boost-mobile-filter">Period
               <select aria-label="Boost value window" value={valueWindow} onChange={(event) => setValueWindow(event.target.value as typeof valueWindow)}>
                 {VALUE_WINDOWS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -3601,18 +3731,18 @@ export default function BoostRoot({
       {preparedTip ? <ActionTransactionReview review={preparedTip.review} returnFocus={tipReturnFocus.current}
         onCancel={() => { if (!paidActionInFlight.current) setPreparedTip(undefined); }}
         onApprove={() => void signContentTip()} /> : null}
-      {modalOpen ? (
-        <div className="boost-modal-backdrop">
+      {modalOpen ? renderBoostModal(
+        <div className="boost-modal-backdrop" ref={modalBackdropRef} data-mobile-composer={compactBoost && directPostOpen || undefined}>
           <button
             aria-label="Close Boost dialog"
             className="boost-modal-dismiss"
             onClick={() => {
+              if (directPostOpen) { closeBoostComposer(); return; }
               if (publishSigning.current) return;
               setDirectPostOpen(false);
               setExpandedItem(undefined);
               setPendingPaidAction(undefined);
               setReplyTarget(undefined);
-              setQuoteTarget(undefined);
             }}
             type="button"
           />
@@ -3633,22 +3763,24 @@ export default function BoostRoot({
                 <button
                   aria-label="Close Boost composer"
                   className="secondary small"
-                  onClick={() => {
-                    setDirectPostOpen(false);
-                    setQuoteTarget(undefined);
-                  }}
+                  disabled={Boolean(actionBusy)}
+                  onClick={() => closeBoostComposer()}
                   type="button"
                 >
                   <X size={16} />
                 </button>
               </div>
               {quoteTarget ? (
-                <QuotedPost network={network} post={quoteTarget} />
+                <div className="boost-composer-quote">
+                  <QuotedPost network={network} post={quoteTarget} />
+                  <button className="secondary small" type="button" disabled={Boolean(actionBusy)}
+                    onClick={() => setQuoteTarget(undefined)}>Remove quote</button>
+                </div>
               ) : null}
+              {status.text && (status.tone === "bad" || actionBusy === "post" || status.text === "Boost transaction canceled.") ? <p className={status.tone === "bad" ? "field-note bad" : "field-note"} role="status">{status.text}</p> : null}
               <form onSubmit={publishBoostPost}>
                 <textarea
                   aria-label="Boost text"
-                  autoFocus
                   maxLength={140}
                   onChange={(event) => setPostText(event.target.value)}
                   placeholder="Share a proof-backed thought"

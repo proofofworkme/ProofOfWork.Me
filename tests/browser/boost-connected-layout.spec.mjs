@@ -58,7 +58,7 @@ for (const width of embedded ? [1440, 390] : [1920, 1440, 1024, 960, 768, 390, 3
       if (await tools.isVisible()) await tools.click();
       const rail = page.locator(".boost-sidebar");
       await rail.getByRole("button", { name: "Connect", exact: true }).click();
-      const select = rail.locator("select");
+      const select = rail.getByRole("combobox", { name: "ID", exact: true });
       await expect(select).toHaveValue(ID);
       await expect(rail.locator(".boost-action-panel-head")).toContainText(`${ID}@proofofwork.me`);
       await expect(rail.getByRole("button", { name: "Publish", exact: true })).toBeEnabled();
