@@ -29721,7 +29721,16 @@ function tokenListingFromCreditListingRow(row, network) {
   );
   if (
     sealConfirmed &&
-    governedWorkSeal &&
+    (governedWorkSeal || (
+      tokenId !== WORK_TOKEN_ID &&
+      canonicalSealAuthorizationVersion === "pwt-sale-v1" &&
+      normalizedLowerText(row?.seal_event_status) === "confirmed" &&
+      exactPositionInteger(row?.seal_event_match_count, 0) === 1 &&
+      normalizedLowerText(sealEventSaleAuthorization.anchorTxid) ===
+        normalizedLowerText(row.listing_id ?? payload.listingId) &&
+      typeof sealEventSaleAuthorization.anchorSignature === "string" &&
+      sealEventSaleAuthorization.anchorSignature.trim().length > 0
+    )) &&
     !invalidConfirmedSealEvidence &&
     normalizedLowerText(sealEventSaleAuthorization.tokenId) === tokenId &&
     canonicalSealAuthorizationVersion ===
@@ -43725,7 +43734,16 @@ export async function proofIndexCreditListingsPayload(
       );
       if (
         sealConfirmed &&
-        governedWorkSeal &&
+        (governedWorkSeal || (
+          tokenId !== WORK_TOKEN_ID &&
+          canonicalSealAuthorizationVersion === "pwt-sale-v1" &&
+          normalizedLowerText(row?.seal_event_status) === "confirmed" &&
+          exactLifecycleInteger(row?.seal_event_match_count, 0) === 1 &&
+          normalizedLowerText(sealEventSaleAuthorization.anchorTxid) ===
+            normalizedLowerText(row.listing_id ?? payload.listingId) &&
+          typeof sealEventSaleAuthorization.anchorSignature === "string" &&
+          sealEventSaleAuthorization.anchorSignature.trim().length > 0
+        )) &&
         !invalidConfirmedSealEvidence &&
         normalizedLowerText(sealEventSaleAuthorization.tokenId) === tokenId &&
         canonicalSealAuthorizationVersion ===
