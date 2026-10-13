@@ -242,6 +242,7 @@ function normalizedRawTransaction(tx, confirmed = true) {
 }
 function envelopeRuntime(context, overrides = {}) {
   const runtime = vm.createContext({ Buffer, bitcoin,
+    createDnsVerificationStore: () => null, path: { join: (...parts) => parts.join("/") }, PERSISTED_CACHE_DIR: "/test",
     DNS_SUBDOMAIN_PAGE_LINK_PREFIX: childPages.DNS_SUBDOMAIN_PAGE_LINK_PREFIX,
     dnsSubdomainPageLinkCandidates: adapter.dnsSubdomainPageLinkCandidates, canonicalRawProtocolRecordSetFromTransaction,
     transactionConfirmed: tx => tx.status?.confirmed === true, transactionTxid: tx => tx.txid,
@@ -311,7 +312,8 @@ test("confirmed child Core witness retains signature evidence only at the exact 
     workAmoV5RawBlockDiscoveryEnvelope: raw.workAmoV5RawBlockDiscoveryEnvelope,
     dnsPageLinkCoreBlockWitness,
     canonicalVerifierCurrentBlock: async (...args) => {
-      assert.deepEqual(plain(args), ["livenet", context.blockHeight, context.previousBlockHash, context.blockHash]);
+      assert.deepEqual(plain(args.slice(0, 4)), ["livenet", context.blockHeight, context.previousBlockHash, context.blockHash]);
+      assert.equal(args[4], true);
       return { ...context, transactions: [hydrated] };
     },
   });

@@ -78,3 +78,9 @@ test('foreground and warm-up still join the real exact-checkpoint flight',async(
 test('forged raw coverage is rejected without publishing prefix through scheduled warm-up',async()=>{
   const d=realDiscovery();d.forge();const h=harness({activations:[10,0,0],rpc:()=>d.checkpoint,callbacks:[d.discover]});h.discoveries[0].progress=d.discover.progress;await h.run();assert.equal(d.discover.progress('livenet',10).verifiedThroughBlock,9);assert.equal(h.logs[0].complete,false);assert.match(h.logs[0].reason,/descriptor/);assert.equal(h.timers[0].delay,60000);
 });
+
+test('productive durable catch-up schedules a bounded five-second gap', async()=>{
+  const d=realDiscovery();const h=harness({activations:[10,0,0],rpc:()=>d.checkpoint,callbacks:[d.discover]});
+  h.discoveries[0].progress=d.discover.progress;
+  await h.run();assert.equal(h.timers[0].delay,5000);
+});

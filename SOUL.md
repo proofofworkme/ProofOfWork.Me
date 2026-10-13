@@ -785,3 +785,8 @@ projections of posted URLs. Preserve the exact source text and article
 commitments. Only confirmed, byte/hash-verified article bodies supply reader
 cards; local previews remain drafts. A playable video is not chain-verified
 media, and an unavailable video does not invalidate its on-chain link.
+
+DNS verification survives API restarts through private authenticated verification
+receipts, rebound to the current chain before use. Durable progress is performance
+state; only complete exact-checkpoint coverage authorizes name-to-page routing.
+Never make a slow or unavailable verification look like a missing page link.

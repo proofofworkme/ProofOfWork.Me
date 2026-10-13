@@ -200,60 +200,44 @@ async function finishScheduledTurn(runtime, timerIndex = 0) {
   assert.equal(runtime.timers.length, timerIndex + 2, "one completed retry schedules exactly one successor");
 }
 
-test("actual DNS warmer permits one run and one sequential lane at a time", async () => {
+test("actual DNS warmer serializes one lane per turn and visits every lane", async () => {
   const gate = deferred();
   const runtime = warmRuntime({ lane: async name => { if (name === "subdomains") await gate.promise; } });
   const running = runtime.context.warmDnsVerifiedCoverage();
   await new Promise(resolve => setImmediate(resolve));
   await runtime.context.warmDnsVerifiedCoverage();
-  await runtime.context.warmDnsVerifiedCoverage();
   assert.equal(runtime.coreReads(), 1);
-  assert.deepEqual(runtime.calls.map(call => call.lane), ["subdomains"]);
-  assert.equal(runtime.timers.length, 0, "overlapping calls do not schedule extra timers");
+  assert.equal(runtime.timers.length, 0);
   gate.resolve(); await running;
+  assert.deepEqual(runtime.calls.map(call => call.lane), ["subdomains"]);
+  await finishScheduledTurn(runtime, 0);
+  await finishScheduledTurn(runtime, 1);
   assert.deepEqual(runtime.calls.map(call => call.lane), ["subdomains", "root-pages", "child-pages"]);
   assert.equal(runtime.maxActive(), 1);
-  assert.equal(runtime.timers.length, 1);
-  assert.equal(runtime.timers[0].delay, 60_000);
-  assert.equal(runtime.timers[0].unreferenced, true);
+  assert.ok(runtime.timers.every(timer => timer.delay === 60_000 && timer.unreferenced));
 });
 
-test("catch-up errors continue other lanes, retry at two seconds, and acquire a fresh Core checkpoint", async () => {
+test("no-progress catch-up and ordinary failures back off and use a fresh checkpoint", async () => {
   const first = { height: 100, blockHash: blockHash(100) }, second = { height: 101, blockHash: blockHash(101) };
-  const runtime = warmRuntime({ checkpoints: [first, second], lane: async (name, checkpoint) => {
-    if (checkpoint === first && name === "subdomains") throw Object.assign(new Error("verified prefix catch-up"), { code: "DNS_DISCOVERY_CATCH_UP" });
-    if (checkpoint === first && name === "root-pages") throw new Error("index temporarily unavailable");
+  const runtime = warmRuntime({ checkpoints: [first, second], lane: async name => {
+    if (name === "subdomains") throw Object.assign(new Error("catch-up"), { code: "DNS_DISCOVERY_CATCH_UP" });
+    if (name === "root-pages") throw new Error("index unavailable");
   } });
   await runtime.context.warmDnsVerifiedCoverage();
-  assert.deepEqual(runtime.calls.map(call => call.lane), ["subdomains", "root-pages", "child-pages"]);
-  assert.equal(runtime.timers[0].delay, 2_000, "catch-up chooses the shortest bounded retry");
-  assert.equal(runtime.logs.length, 2);
-  assert.equal(runtime.logs[0].complete, false);
-  assert.equal(runtime.logs[0].lane, "subdomains");
-  assert.equal(runtime.logs[0].progress.verifiedThroughBlock, 10);
-  assert.equal(runtime.logs[1].lane, "root-pages");
+  assert.equal(runtime.timers[0].delay, 60_000);
   await finishScheduledTurn(runtime);
   assert.equal(runtime.coreReads(), 2);
-  assert.deepEqual(runtime.calls.slice(3).map(call => call.checkpoint), [second, second, second]);
+  assert.deepEqual(runtime.calls.map(call => call.checkpoint), [first, second]);
+  assert.deepEqual(runtime.logs.map(log => log.lane), ["subdomains", "root-pages"]);
   assert.equal(runtime.timers[1].delay, 60_000);
-  assert.ok(runtime.timers.every(timer => timer.unreferenced));
 });
 
-test("ordinary DNS lane and Core failures retry without retaining the in-flight flag", async () => {
-  const lane = warmRuntime({ lane: async name => { if (name === "child-pages") throw new Error("raw block unavailable"); } });
-  await lane.context.warmDnsVerifiedCoverage();
-  assert.equal(lane.timers[0].delay, 15_000);
-  await finishScheduledTurn(lane);
-  assert.equal(lane.calls.length, 6);
-  assert.equal(lane.maxActive(), 1);
+test("Core failures release single flight and preserve the retry", async () => {
   const core = warmRuntime({ checkpoints: [null, { height: 100, blockHash: blockHash(100) }] });
   await core.context.warmDnsVerifiedCoverage();
-  assert.equal(core.timers[0].delay, 15_000);
-  assert.equal(core.calls.length, 0);
-  assert.match(core.logs[0].reason, /Core checkpoint/u);
+  assert.equal(core.calls.length, 0); assert.match(core.logs[0].reason, /Core checkpoint/u);
   await finishScheduledTurn(core);
-  assert.equal(core.calls.length, 3);
-  assert.equal(core.timers[1].delay, 60_000);
+  assert.equal(core.calls.length, 1); assert.equal(core.timers[1].delay, 60_000);
 });
 
 test("DNS warmer skips unopened lanes and performs no work without configured Core", async () => {

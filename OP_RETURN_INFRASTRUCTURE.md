@@ -5501,20 +5501,49 @@ verified and must be confirmed for name routing and transaction preparation.
 Pages and Advanced DNS in DNS/Computer use the same chain records and local
 signing preflights, without a second registry or duplicate economic lane.
 
-All three additive DNS discovery lanes retain only independently Core-proven
-contiguous prefix evidence across 25-second bounded read slices. Every retry
-rebinds the prefix hash to Core and a unique canonical index anchor, verifies
-the tail, and requires exact checkpoint/rolling-witness closure before admission.
-Malformed carriers remain complete discovery evidence. Reorgs discard invalid
-prefixes; partial progress never authorizes routing, empty namespaces or signing.
-Immutable verification caches stay bounded to 128 MiB and projections to 64 MiB.
-Single-flight background warm-up advances the same reads at a fresh Core tip,
-including after a request timeout, while pending hydration stays best effort.
-It selects one eligible lane per turn in round-robin order, then waits 60 seconds
-after that lane settles before scheduling the next turn. The interval also
-applies to catch-up and failed reads, leaving gaps for foreground and pending
-verification. Public callers retain the same exact-checkpoint single flight,
-read budget, verified private prefix, and complete-authority requirements.
+All three additive DNS discovery lanes retain independently Core-proven
+contiguous evidence across 25-second bounded read slices. Their service-private,
+HMAC-authenticated block journals live under
+`POW_API_CACHE_DIR/dns-verification-v1`, outside source and release directories.
+Each block receipt includes exact lane events, block/parent hashes, descriptor
+commitments and the rolling witness. A receipt is published by atomic rename
+only after file fsync, then directory fsync; memory advances only after durable
+success. The 0700 directory and 0600 authentication key/receipts belong to the API
+user. This key authenticates this node's prior verification work; it is not a
+wallet key, public proof, or permission to import third-party checkpoint claims.
+
+Restart validates authentication, lane/network/activation/verifier identity,
+contiguous witness history and byte bounds, then rebinds the recovered prefix to
+Core and the unique canonical index anchor. Reorg recovery finds the common
+prefix among retained authenticated block receipts and re-verifies the fork tail.
+Partial progress never authorizes routing, empty namespaces or signing. Every
+successful read still requires exact current checkpoint/rolling-witness closure
+and the API closing Core fence. Pending data remains best effort and is never
+stored as confirmed journal authority. API coverage progress exposes
+`durableVerifiedThroughBlock` alongside target and verified heights.
+
+Journals are bounded to 96 MiB per lane with a 64 MiB projection bound; they are
+replaceable performance state, not canonical ledgers or historical audit files.
+Keep the private key and receipts together across API restarts/deployments.
+Missing keys, authentication failures, unsafe permissions, incompatible verifier
+versions, and failed writes make the lane unavailable; do not silently accept or
+regenerate authority. Preserve failed files for diagnosis before an explicitly
+scoped cold rebuild. Verifier changes that invalidate saved evidence must bump
+`verifierVersion` and deliberately rebuild. Existing cache temp pruning does not
+recurse into this directory. Wallets, database schemas and protocol fees do not
+change.
+
+Single-flight background warm-up serializes each lane across different tips and
+selects one eligible lane per turn in round-robin order. Productive bounded
+catch-up uses a five-second gap; failures, no progress and completed turns retain
+a sixty-second gap. DNS still derives full raw-block coverage and all protocol prevout commitments.
+It requests Core block verbosity 3 to obtain undo prevouts in one bounded block
+read, falling back to ordinary canonical transaction hydration when undo data is
+missing. Unrelated verifier callers retain their original block/hydration path. Deployment must
+complete all three lanes and verify Browser target bytes before release
+completion; a second API restart must retain coverage and avoid a historical
+Core rescan. [deploy/dns-verification/README.md](deploy/dns-verification/README.md)
+defines the scoped durable-verification upgrade.
 
 [deploy/browser-dns/README.md](deploy/browser-dns/README.md) governs the scoped
 Browser/DNS runtime overlay: four exact existing sources plus three creation-only

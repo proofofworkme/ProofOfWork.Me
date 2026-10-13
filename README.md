@@ -1562,3 +1562,9 @@ blocked proxy attempts; application requests must remain entirely local.
 Relative-origin fixture builds differ from deployed absolute-origin builds.
 Fixtures are not full-node authority, mobile viewports are not mobile hardware,
 and these diagnostics do not establish field p75 or INP certification.
+
+DNS verification now retains private authenticated block receipts across API
+restarts, with chain-bound tail catch-up and reorg recovery. Complete current
+coverage remains required for page routing. Operational custody and fail-closed
+recovery are documented in [OP_RETURN_INFRASTRUCTURE.md](OP_RETURN_INFRASTRUCTURE.md)
+and [deploy/dns-verification/README.md](deploy/dns-verification/README.md).

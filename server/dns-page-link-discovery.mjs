@@ -63,11 +63,12 @@ export function dnsPageLinkCandidates(records) {
 
 export function createDnsPageLinkDiscovery({ readIndex, readCoreBlock, readCoreHash, hydratePending,
   maxCacheBytes = 128 * 1024 * 1024, maxProjectionBytes = 64 * 1024 * 1024,
-  readBudgetMs = 25_000, now = () => Date.now(),
+  readBudgetMs = 25_000, now = () => Date.now(), store = null,
 }) {
   const verifiedBlocks = new Map();
   const inFlight = new Map();
   const checkpointReads = new Map();
+  const scopeReads = new Map();
   const verifiedPrefixes = new Map();
   const targets = new Map();
   let cacheBytes = 0;
@@ -77,7 +78,8 @@ export function createDnsPageLinkDiscovery({ readIndex, readCoreBlock, readCoreH
     const prefix = verifiedPrefixes.get(scope);
     return { verifiedThroughBlock: prefix?.height ?? activationHeight - 1,
       verifiedThroughBlockHash: prefix?.blockHash ?? null,
-      targetHeight: targets.get(scope) ?? null };
+      targetHeight: targets.get(scope) ?? null,
+      durableVerifiedThroughBlock: store && prefix ? prefix.height : null };
   }
   async function blockWitness(network, row) {
     const blockKey = `${network}:${row.height}:${row.block_hash}`;
@@ -124,6 +126,10 @@ export function createDnsPageLinkDiscovery({ readIndex, readCoreBlock, readCoreH
       verifiedPrefixes.delete(scope);
       prefix = null;
     }
+    if (!prefix && store) {
+      prefix = await store.restore(network, activationHeight, checkpoint, readCoreHash);
+      if (prefix) verifiedPrefixes.set(scope, prefix);
+    }
     withinBudget();
     const confirmed = prefix ? [...prefix.events] : [];
     let projectionBytes = prefix?.projectionBytes ?? 0;
@@ -159,6 +165,8 @@ export function createDnsPageLinkDiscovery({ readIndex, readCoreBlock, readCoreH
         // bytes and an unbroken hash chain. A retry rebinds its last hash to
         // Core and the unique canonical index anchor before skipping the prefix.
         // Save before the time check so even one slow block makes safe progress.
+        // A failed durable write cannot advertise in-memory-only progress.
+        if (store) await store.append(network, activationHeight, row, pageLinks, witnessSha256);
         const prior = verifiedPrefixes.get(scope);
         if (typeof readCoreHash === "function" && (!prior || prior.height <= Number(row.height))) {
           verifiedPrefixes.set(scope, { height: Number(row.height), blockHash: row.block_hash,
@@ -188,12 +196,22 @@ export function createDnsPageLinkDiscovery({ readIndex, readCoreBlock, readCoreH
     }
     const pageLinkSha256 = createHash("sha256").update(JSON.stringify(confirmed)).digest("hex");
     return { events: [...confirmed, ...pending], coverage: { ...coverage,
-      pendingTxids: undefined, model: "dns-page-link-core-raw-block-coverage-v1", pageLinkSha256 } };
+      progress: progress(network, activationHeight), pendingTxids: undefined, model: "dns-page-link-core-raw-block-coverage-v1", pageLinkSha256 } };
   }
   async function discover(network, checkpoint, activationHeight) {
     const scope = `${network}:${activationHeight}:${checkpoint.height}:${checkpoint.blockHash}`;
-    if (!checkpointReads.has(scope)) checkpointReads.set(scope,
-      read(network, checkpoint, activationHeight).finally(() => checkpointReads.delete(scope)));
+    if (!checkpointReads.has(scope)) {
+      // Different tips share a serial lane too: an older read cannot overwrite
+      // a newer durable journal or race a reorg rollback.
+      const lane = prefixScope(network, activationHeight);
+      const prior = scopeReads.get(lane) ?? Promise.resolve();
+      const task = prior.catch(() => {}).then(() => read(network, checkpoint, activationHeight));
+      scopeReads.set(lane, task);
+      checkpointReads.set(scope, task.finally(() => {
+        checkpointReads.delete(scope);
+        if (scopeReads.get(lane) === task) scopeReads.delete(lane);
+      }));
+    }
     return checkpointReads.get(scope);
   }
   // Operator catch-up progress is not complete namespace or signing authority.

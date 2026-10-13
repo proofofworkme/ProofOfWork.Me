@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createDnsVerificationStore } from "./dns-verification-store.mjs";
 import {
   PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH,
 } from "../src/shared/protocol/permissions.mjs";
@@ -34923,6 +34924,10 @@ function dnsSubdomainEnvelope(record, transaction) {
 }
 
 const discoverDnsSubdomains = createDnsSubdomainDiscovery({
+  store: createDnsVerificationStore({
+    directory: path.join(PERSISTED_CACHE_DIR, "dns-verification-v1"), lane: "subdomains",
+    model: "dns-subdomain-block-witness-chain-v1",
+  }),
   readIndex: proofIndexDnsSubdomainDiscovery,
   async readCoreHash(height) {
     const result = await bitcoinRpc("getblockhash", [height]);
@@ -34932,7 +34937,7 @@ const discoverDnsSubdomains = createDnsSubdomainDiscovery({
   },
   async readCoreBlock(row) {
     const context = await canonicalVerifierCurrentBlock("livenet", Number(row.height),
-      row.previous_block_hash, row.block_hash);
+      row.previous_block_hash, row.block_hash, true);
     const envelope = workAmoV5RawBlockDiscoveryEnvelope({
       blockTransactions: context.blockTransactions,
       blockHeaderHex: context.blockHeaderHex,
@@ -34990,6 +34995,10 @@ function dnsPageLinkEnvelope(record, transaction) {
 }
 
 const discoverDnsPageLinks = createDnsPageLinkDiscovery({
+  store: createDnsVerificationStore({
+    directory: path.join(PERSISTED_CACHE_DIR, "dns-verification-v1"), lane: "root-pages",
+    model: "dns-page-link-block-witness-chain-v1",
+  }),
   readIndex: proofIndexDnsPageLinkDiscovery,
   async readCoreHash(height) {
     const result = await bitcoinRpc("getblockhash", [height]);
@@ -34999,7 +35008,7 @@ const discoverDnsPageLinks = createDnsPageLinkDiscovery({
   },
   async readCoreBlock(row) {
     const context = await canonicalVerifierCurrentBlock("livenet", Number(row.height),
-      row.previous_block_hash, row.block_hash);
+      row.previous_block_hash, row.block_hash, true);
     const envelope = workAmoV5RawBlockDiscoveryEnvelope({
       blockTransactions: context.blockTransactions,
       blockHeaderHex: context.blockHeaderHex,
@@ -35082,6 +35091,10 @@ function dnsSubdomainPageLinkEnvelope(record, transaction) {
 }
 
 const discoverDnsSubdomainPageLinks = createDnsPageLinkDiscovery({
+  store: createDnsVerificationStore({
+    directory: path.join(PERSISTED_CACHE_DIR, "dns-verification-v1"), lane: "child-pages",
+    model: "dns-page-link-block-witness-chain-v1",
+  }),
   readIndex: (network, options) => proofIndexDnsPageLinkDiscovery(network, {
     ...options, protocolPrefix: DNS_SUBDOMAIN_PAGE_LINK_PREFIX,
     activationPreviousBlockHash: DNS_SUBDOMAIN_PAGE_LINK_PREDECESSOR_HASH,
@@ -35093,7 +35106,7 @@ const discoverDnsSubdomainPageLinks = createDnsPageLinkDiscovery({
     return hash;
   },
   async readCoreBlock(row) {
-    const context = await canonicalVerifierCurrentBlock("livenet", Number(row.height), row.previous_block_hash, row.block_hash);
+    const context = await canonicalVerifierCurrentBlock("livenet", Number(row.height), row.previous_block_hash, row.block_hash, true);
     const envelope = workAmoV5RawBlockDiscoveryEnvelope({ blockTransactions: context.blockTransactions,
       blockHeaderHex: context.blockHeaderHex, blockHash: row.block_hash, blockHeight: Number(row.height), previousBlockHash: row.previous_block_hash });
     const transactions = new Map(context.transactions.map(tx => [transactionTxid(tx), tx]));
@@ -66079,11 +66092,31 @@ async function cachedInternalVerifierState(key, loader) {
   }
 }
 
+function canonicalCoreUndoTransaction(raw, block) {
+  const validOutput = output => output && typeof output.value === "number" &&
+    Number.isFinite(output.value) && output.value >= 0 &&
+    Number.isSafeInteger(Math.round(output.value * 100_000_000)) &&
+    typeof output.scriptPubKey?.hex === "string" && /^(?:[0-9a-f]{2})*$/iu.test(output.scriptPubKey.hex);
+  if (!Array.isArray(raw?.vin) || !raw.vin.length || !Array.isArray(raw.vout) || !raw.vout.length ||
+      !raw.vout.every(validOutput) || !raw.vin.every(input => typeof input.coinbase === "string" ||
+        (/^[0-9a-f]{64}$/u.test(input.txid ?? "") && Number.isSafeInteger(input.vout) && input.vout >= 0 &&
+          validOutput(input.prevout)))) return null;
+  return { txid: raw.txid, version: raw.version, locktime: raw.locktime, size: raw.size,
+    hex: raw.hex, _powCanonicalRpcHydration: true,
+    status: { confirmed: true, block_hash: block.hash, block_height: block.height, block_time: block.time },
+    vin: raw.vin.map(input => ({ ...(typeof input.coinbase === "string" ? { coinbase: input.coinbase } : {}),
+      txid: input.txid ?? "", vout: input.vout ?? -1, sequence: input.sequence,
+      scriptsig: input.scriptSig?.hex ?? "", scriptsig_asm: input.scriptSig?.asm ?? "",
+      ...(input.prevout ? { prevout: coreVoutToMempoolVout(input.prevout) } : {}) })),
+    vout: raw.vout.map(coreVoutToMempoolVout) };
+}
+
 async function canonicalVerifierCurrentBlock(
   network,
   requiredBlockHeight,
   expectedPreviousHash,
   expectedBlockHash,
+  useCoreUndo = false,
 ) {
   if (network !== "livenet") {
     throw new Error("Canonical block verification is only configured for livenet.");
@@ -66100,7 +66133,7 @@ async function canonicalVerifierCurrentBlock(
       `Bitcoin Core block ${requiredBlockHeight} does not match the requested canonical hash.`,
     );
   }
-  const blockResponse = await bitcoinRpc("getblock", [blockHash, 2]);
+  const blockResponse = await bitcoinRpc("getblock", [blockHash, useCoreUndo ? 3 : 2]);
   const block = blockResponse?.ok ? blockResponse.result : null;
   const blockTransactions = Array.isArray(block?.tx) ? block.tx : [];
   if (
@@ -66147,9 +66180,10 @@ async function canonicalVerifierCurrentBlock(
     candidates,
     Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
     async ({ blockIndex, txid }) => {
-      const tx = await fetchTransactionFromBitcoinRpc(txid, network, {
-        requireCanonicalPrevouts: true,
-      });
+      // Core undo data supplies all protocol prevouts in the same block RPC.
+      // Missing undo evidence falls back to the existing canonical hydration.
+      const tx = (useCoreUndo ? canonicalCoreUndoTransaction(blockTransactions[blockIndex], block) : null) ??
+        await fetchTransactionFromBitcoinRpc(txid, network, { requireCanonicalPrevouts: true });
       if (
         !tx ||
         !transactionConfirmed(tx) ||
@@ -82752,6 +82786,7 @@ let dnsCoverageWarmLane = 0;
 async function warmDnsVerifiedCoverage() {
   if (dnsCoverageWarmInFlight || !BITCOIN_RPC_URL) return;
   dnsCoverageWarmInFlight = true;
+  let nextDelayMs = 60_000;
   try {
     const checkpoint = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
     if (!checkpoint) throw new Error("DNS warm-up Core checkpoint is unavailable.");
@@ -82765,9 +82800,14 @@ async function warmDnsVerifiedCoverage() {
     // Warm one lane per turn. The gap after it settles lets foreground reads
     // and the pending verifier drain before another bounded verification slice.
     // Public callers still share each lane's original exact-checkpoint read;
-    // only fully verified private progress survives an incomplete warm-up.
+    // only authenticated, fully verified durable progress survives a restart.
+    // Productive catch-up gets a bounded five-second gap; errors/no progress
+    // retain the full minute so a failing dependency cannot create a hot loop.
+    const before = discover.progress("livenet", opening).verifiedThroughBlock;
     try { await discover("livenet", checkpoint, opening); }
     catch (error) {
+      if (error.code === "DNS_DISCOVERY_CATCH_UP" &&
+          discover.progress("livenet", opening).verifiedThroughBlock > before) nextDelayMs = 5_000;
       console.log(JSON.stringify({ event: "dns-verified-catch-up", lane, complete: false,
         progress: discover.progress("livenet", opening), reason: errorSummary(error) }));
     }
@@ -82775,7 +82815,7 @@ async function warmDnsVerifiedCoverage() {
     console.log(JSON.stringify({ event: "dns-verified-catch-up", complete: false, reason: errorSummary(error) }));
   } finally {
     dnsCoverageWarmInFlight = false;
-    setTimeout(() => { void warmDnsVerifiedCoverage(); }, 60_000).unref();
+    setTimeout(() => { void warmDnsVerifiedCoverage(); }, nextDelayMs).unref();
   }
 }
 

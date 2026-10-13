@@ -427,3 +427,15 @@ progress is operator state, never routing, empty-state or signing authority.
 Bounded background warming advances these same shared reads without user actions.
 See [deploy/browser-dns/README.md](deploy/browser-dns/README.md) for the scoped
 runtime controller and accepted-overlay preservation.
+
+### Durable verification recovery
+
+Root page links, child names and child page links retain service-authenticated
+verified block receipts outside the API process. Restarts validate the receipts
+and rebind their checkpoint to Core and the canonical index before verifying
+only the tail. Reorgs rewind to the verified common prefix. Saved progress never
+substitutes for complete exact-checkpoint coverage or establishes an empty link
+set. Corrupt, incompatible or unauthenticated receipts fail closed. The durable
+cache changes no carrier, ownership, self-payment, target-HTML or signing rule.
+See [OP_RETURN_INFRASTRUCTURE.md](OP_RETURN_INFRASTRUCTURE.md) for custody,
+recovery, bounds and deployment verification.
