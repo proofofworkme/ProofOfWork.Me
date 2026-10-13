@@ -7499,3 +7499,18 @@ A fixed 32 MiB/128-inode cleanup-receipt envelope can pass retention-budget
 exhaustion so qualified retirement is not deadlocked. It is restricted to the
 cleanup-evidence directory and still enforces the full free-space/inode reserve;
 it cannot admit deployment content or arbitrary additional allocation.
+
+### Proof Computer temporary domain bridge — 2026-10-13
+
+`proofcomputer.com` and `www.proofcomputer.com` are temporary redirect-only
+hosts in `deploy/Caddyfile`, returning 302 to `https://www.proofofwork.me`.
+They introduce no new application origin, ID suffix or protocol namespace.
+Namecheap DNS must replace URL forwarding for `@` and `www` with an A record
+`@ → 77.42.91.106` and CNAME `www → proofcomputer.com`. Caddy obtains and
+renews certificates once both names resolve to the UI server. On 2026-10-13
+at 21:58 UTC, both authoritative nameservers published the UI address and
+both hosts passed off-host HTTPS certificate validation against the UI server,
+returning 302 to the intended destination. Recursive DNS caches can retain the
+previous forwarding address until expiry. Release this configuration with the complete
+22-root UI build and the mandatory release synchronization check; preserve the
+accepted node runtime overlays unchanged.

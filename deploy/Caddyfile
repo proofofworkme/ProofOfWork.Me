@@ -482,3 +482,8 @@ infinity.proofofwork.me {
 inception.proofofwork.me {
 	import common_inception_app
 }
+
+# Temporary domain bridge; HTTPS certificates require DNS to point to this UI host.
+proofcomputer.com, www.proofcomputer.com {
+	redir https://www.proofofwork.me 302
+}
