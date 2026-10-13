@@ -1924,7 +1924,8 @@ expectAll("credit-listing lifecycle capacity is named, observable, and fail-clos
   /function logTokenListingLifecycleCapacity\([\s\S]*?lifecycleCapacityStatus === "exhausted"[\s\S]*?console\.error\([\s\S]*?lifecycleCapacityStatus === "warning"[\s\S]*?console\.warn\(/,
   /function tokenMarketLifecycleOverlayFromCreditListings\([\s\S]*?lifecycleCapacityCount > capacity\.lifecycleCapacityLimit[\s\S]*?stats: \{[\s\S]*?\.\.\.capacity/,
   /async function indexedTokenMarketSummaryOverlay\([\s\S]*?payload\.stats = \{[\s\S]*?\.\.\.lifecycleCapacity,[\s\S]*?lifecycleTotalCount:/,
-  /async function completeTokenListingHistoryPayload\([\s\S]*?limit: TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT[\s\S]*?declaredTotal > TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT[\s\S]*?tokenListingHistoryUnavailable\(/,
+  /async function completeTokenListingRelationalRead\([\s\S]*?limit: TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT[\s\S]*?requireComplete: true/,
+  /async function completeTokenListingHistoryPayload\([\s\S]*?await completeTokenListingRelationalRead\([\s\S]*?declaredTotal > TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT[\s\S]*?tokenListingHistoryUnavailable\(/,
 ]);
 expectAll(
   "empty livenet token-listing books retain exact stable Core evidence",

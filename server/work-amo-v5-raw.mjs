@@ -4318,13 +4318,13 @@ function exactTransactionOutputScript(output) {
     : null;
 }
 
-function transactionOutputWitness(output, vout) {
+function transactionOutputWitness(output, vout, includeAddress = true) {
   const scriptPubKeyHex = exactTransactionOutputScript(output);
   const amountSats = canonicalTransactionOutputSats(output);
   const declaredVout =
     output?.n === undefined ? vout : exactSafeInteger(output.n);
   const derivedAddress =
-    scriptPubKeyHex
+    includeAddress && scriptPubKeyHex
       ? canonicalScriptAddress(scriptPubKeyHex)
       : "";
   if (
@@ -4344,13 +4344,13 @@ function transactionOutputWitness(output, vout) {
   };
 }
 
-function transactionOutputWitnesses(transaction) {
+function transactionOutputWitnesses(transaction, includeAddress = true) {
   if (!Array.isArray(transaction?.vout)) {
     throw new TypeError(
       "work-amo-v5-raw-transaction-output-witness-invalid",
     );
   }
-  return transaction.vout.map(transactionOutputWitness);
+  return transaction.vout.map((output, vout) => transactionOutputWitness(output, vout, includeAddress));
 }
 
 function transactionInputOutpointWitnesses(transaction) {
@@ -4406,7 +4406,9 @@ function serializedTransactionWitness(transaction) {
     scriptPubKeyHex: Buffer.from(output.script).toString("hex"),
     vout,
   }));
-  const envelopeOutputs = transactionOutputWitnesses(transaction).map(
+  // Serialized parity commits scripts and exact amounts, never presentation
+  // addresses. Avoid deriving an address that this projection discards.
+  const envelopeOutputs = transactionOutputWitnesses(transaction, false).map(
     ({ amountSats, scriptPubKeyHex, vout }) => ({
       amountSats,
       scriptPubKeyHex,
@@ -4756,8 +4758,7 @@ function canonicalFullBlockEnvelope(
         "work-amo-v5-raw-block-transaction-envelope-invalid",
       );
     }
-    transactionOutputWitnesses(transaction);
-    transactionInputOutpointWitnesses(transaction);
+    // serializedTransactionWitness validates the same complete inputs/outputs.
     const {
       parsedTransaction,
       ...serializedWitness

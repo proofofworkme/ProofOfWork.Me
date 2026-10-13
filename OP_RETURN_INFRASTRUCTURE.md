@@ -7560,3 +7560,37 @@ returned metadata parity; lower isolated query time alone does not prove that
 Permission/AMO timeouts or new-block convergence failures are resolved. Keep
 those findings open until their corresponding production checks pass.
 Regression check: `node --test scripts/check-readiness-summary-extraction.test.mjs`.
+
+The follow-up availability rollout uses `deploy/api-availability/release.py`
+with an exact three-file runtime allowlist: `server/proof-api.mjs`,
+`server/db/proof-index-reader.mjs`, and `server/work-amo-v5-raw.mjs`.
+Its capture, reviewed three-way merge, complete dependency/source hashes,
+metadata checks, shared operations lock and verified rollback preserve accepted
+runtime overlays, the durable DNS verifier, Core, Electrs, PostgreSQL and all
+historical records. Only the API and dependent indexer worker are drained and
+restarted; Search is held and restored by its pinned controller. The source base
+is the durable DNS release `2dd7fb7ed1bd1a3c170eafe15ef7f2f051eec36b`.
+Run both `deploy/api-availability/check-*.test.py` suites before rollout.
+
+### Permission and AMO availability follow-up (2026-10-13)
+
+Permission discovery can request Core block verbosity 3 to retain complete
+undo-backed prevouts without individually hydrating unrelated protocol carriers.
+Permission carriers still use the canonical transaction hydrator. Missing undo
+prevouts or unavailable verbosity 3 use the original full hydration path. The
+complete serialized block, header, merkle/witness commitments, raw carriers,
+prevout amounts and fee commitments remain mandatory. Serialized parity avoids
+address derivation only where that address was discarded; economic replay still
+receives its normal address-bearing witnesses. Existing read budgets, resumable
+prefix authentication and final Core checkpoint fences are unchanged.
+
+The separate AMO change shares only overlapping identical complete relational
+listing reads, keyed by network, asset and exact-listing scope. Each consumer
+receives isolated data and independently performs fresh Core outpoint checks,
+canonical witness validation and cursor/checkpoint reconciliation. A settled or
+failed read is removed immediately; this is not an authority cache and does not
+relax freshness or make incomplete history authoritative.
+
+Local full-node fixture parity, CPU measurements and regression results are
+recorded in the 2026-10-13 availability appendix of Audit 32. The user approved both reviewed fixes for the coordinated availability release.
+Production recovery and recurrence results belong in its separate audit evidence.

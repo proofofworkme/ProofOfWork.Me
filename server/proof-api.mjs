@@ -35136,7 +35136,7 @@ const discoverPermissions = createPermissionDiscovery({
     return hash;
   },
   async readCoreBlock(row) {
-    const context = await canonicalVerifierCurrentBlock("livenet", Number(row.height), row.previous_block_hash, row.block_hash);
+    const context = await canonicalVerifierCurrentBlock("livenet", Number(row.height), row.previous_block_hash, row.block_hash, false, { permissionOnly: true });
     const envelope = workAmoV5RawBlockDiscoveryEnvelope({
       blockTransactions: context.blockTransactions, blockHeaderHex: context.blockHeaderHex,
       blockHash: row.block_hash, blockHeight: Number(row.height), previousBlockHash: row.previous_block_hash,
@@ -58819,6 +58819,21 @@ function tokenListingHistoryStableKey(listing) {
   ];
 }
 
+// Share only an overlapping relational read, never a settled authority result.
+// Every caller still performs fresh Core outpoint reconciliation and cursor fences.
+async function completeTokenListingRelationalRead(network, scope, exactListingId) {
+  const payload = await deduplicatedSummaryRead(
+    `amo-listing-rows:${JSON.stringify([network, scope, exactListingId])}`,
+    () => proofIndexCreditListingsPayload(network, scope, {
+      limit: TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT,
+      requireComplete: true,
+      ...(exactListingId ? { listingId: exactListingId } : {}),
+    }),
+  );
+  // Projection/enrichment consumers must not share mutable nested evidence.
+  return structuredClone(payload);
+}
+
 async function completeTokenListingHistoryPayload(
   network,
   tokenScope,
@@ -58853,11 +58868,9 @@ async function completeTokenListingHistoryPayload(
     options.includeAuthorityListingIds === true &&
     network === "livenet" &&
     scope === WORK_TOKEN_ID;
-  const relational = await proofIndexCreditListingsPayload(network, scope, {
-    limit: TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT,
-    requireComplete: true,
-    ...(exactListingReadId ? { listingId: exactListingReadId } : {}),
-  });
+  const relational = await completeTokenListingRelationalRead(
+    network, scope, exactListingReadId,
+  );
   const lifecycleCapacity = tokenListingLifecycleCapacityStats(relational);
   logTokenListingLifecycleCapacity(
     lifecycleCapacity,
@@ -66117,6 +66130,7 @@ async function canonicalVerifierCurrentBlock(
   expectedPreviousHash,
   expectedBlockHash,
   useCoreUndo = false,
+  { permissionOnly = false } = {},
 ) {
   if (network !== "livenet") {
     throw new Error("Canonical block verification is only configured for livenet.");
@@ -66133,7 +66147,12 @@ async function canonicalVerifierCurrentBlock(
       `Bitcoin Core block ${requiredBlockHeight} does not match the requested canonical hash.`,
     );
   }
-  const blockResponse = await bitcoinRpc("getblock", [blockHash, useCoreUndo ? 3 : 2]);
+  // Core verbosity 3 supplies undo-backed prevouts for the complete block.
+  // Older/pruned Core may omit them: those candidates use the original hydrator.
+  let blockResponse = await bitcoinRpc("getblock", [blockHash, useCoreUndo || permissionOnly ? 3 : 2]);
+  if (permissionOnly && !blockResponse?.ok) {
+    blockResponse = await bitcoinRpc("getblock", [blockHash, 2]);
+  }
   const block = blockResponse?.ok ? blockResponse.result : null;
   const blockTransactions = Array.isArray(block?.tx) ? block.tx : [];
   if (
@@ -66171,7 +66190,11 @@ async function canonicalVerifierCurrentBlock(
       const rawRecordSet =
         canonicalRawProtocolRecordSetFromTransaction(raw);
       return /^[0-9a-f]{64}$/u.test(txid) &&
-        rawRecordSet.rawProtocolCandidateCount > 0
+        rawRecordSet.rawProtocolCandidateCount > 0 &&
+        // Permission still commits the complete raw block below. Only its
+        // candidate bodies need prevout hydration; other callers retain full replay.
+        (!permissionOnly || permissionCandidates(rawRecordSet.records).length > 0 ||
+          !Array.isArray(raw.vin) || raw.vin.some(input => !input.coinbase && !input.prevout))
         ? [{ blockIndex, txid }]
         : [];
     },

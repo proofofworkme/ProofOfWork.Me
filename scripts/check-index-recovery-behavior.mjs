@@ -1271,6 +1271,8 @@ function isolatedFunction(path, name, globals = {}) {
       : "";
   };
   const context = vm.createContext({
+    structuredClone,
+    deduplicatedSummaryRead: async (_key, producer) => producer(),
     canonicalSealTime,
     Buffer,
     createHash,
@@ -1707,7 +1709,9 @@ function isolatedFunction(path, name, globals = {}) {
         mergeTokenListingRecord: [
           "tokenListingWithSaleTicketStatus",
         ],
+        completeTokenListingRelationalRead: [],
         completeTokenListingHistoryPayload: [
+          "completeTokenListingRelationalRead",
           "logTokenListingLifecycleCapacity",
           "tokenListingLifecycleCapacityStats",
         ],
