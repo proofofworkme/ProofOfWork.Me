@@ -48,6 +48,7 @@ import { appHref } from "../../app/routeRegistry";
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import { createInFlightRequestPool } from "../../shared/api/inFlightRequestPool";
 import { useUnisatPresence } from "../../shared/wallet/useUnisatPresence";
+import { createWalletConnectionController } from "../../shared/wallet/walletConnection.mjs";
 import { explorerTxUrl } from "../../shared/bitcoin/networks";
 import {
   attachmentFromFile,
@@ -63,7 +64,7 @@ import {
 } from "../../shared/components/AppStatusRow";
 import { FeeRateControl } from "../../shared/components/FeeRateControl";
 import { SocialFooter } from "../../shared/components/SocialFooter";
-import { formatBytes, formatDate, shortAddress } from "../../functions";
+import { errorMessage, formatBytes, formatDate, shortAddress } from "../../functions";
 import { formatExactDecimal } from "../../exactAmount";
 import { boostSignalQ8, formatBoostSignal } from "./boostAmounts";
 import { createBoostReadLifecycle } from "./boostReadLifecycle";
@@ -138,7 +139,7 @@ import { isPublishWriterLocation, publishHref, publishWriteHref, publishWriterHi
   publishWriterReturn as readPublishWriterReturn, requirePublishBudget,
   type PreparedPublish, type PublishPlan } from "../publish/publishProtocol";
 import { normalizeBoostTxid } from "./boostProtocol";
-import { syncSocialIdentityIntent, publishSocialIdentityIntent, subscribeSocialIdentityIntent } from "../identity/socialIdentity";
+import { confirmSocialIdentityOwner, syncSocialIdentityIntent, publishSocialIdentityIntent, subscribeSocialIdentityIntent } from "../identity/socialIdentity";
 import { verifiedSocialIdentityIntent } from "../identity/socialIdentityCore.mjs";
 import "./boost.css";
 import "../publish/publish.css";
@@ -1129,6 +1130,11 @@ export default function BoostRoot({
   const readLifecycle = useRef(createBoostReadLifecycle());
   const [busy, setBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState<BoostActionBusy>("");
+  const walletConnection = useRef(createWalletConnectionController());
+  const walletConnectionGeneration = useRef(0);
+  const walletConnectionFlight = useRef<Promise<string>>();
+  const walletMounted = useRef(true);
+  const lastRefreshWallet = useRef({ address: initialAddress, network: initialNetwork });
   const [hasUnisat, setHasUnisat] = useUnisatPresence();
   const [address, setAddressState] = useState(initialAddress);
   const walletAddressRef = useRef(initialAddress);
@@ -1351,50 +1357,71 @@ export default function BoostRoot({
     return registryReceiveAddress;
   }
 
-  async function connectWallet() {
+  function invalidateWalletConnection() {
+    walletConnectionGeneration.current++;
+    walletConnection.current.invalidate();
+    walletConnectionFlight.current = undefined;
+    setActionBusy(current => current === "connect" ? "" : current);
+  }
+
+  function connectWallet(forActiveAction = false): Promise<string> {
+    if (walletConnectionFlight.current) return walletConnectionFlight.current;
+    if (publishSigning.current || (!forActiveAction && (actionBusy || paidActionInFlight.current))) return Promise.resolve("");
     if (!window.unisat) {
       setHasUnisat(false);
       setStatus({ tone: "bad", text: "UniSat is not installed." });
-      return "";
+      return Promise.resolve("");
     }
-
-    setActionBusy("connect");
+    const wallet = window.unisat;
+    const generation = ++walletConnectionGeneration.current;
+    const current = () => walletMounted.current && generation === walletConnectionGeneration.current && wallet === window.unisat;
+    const ownsBusy = !forActiveAction || (!actionBusy && !paidActionInFlight.current);
+    if (ownsBusy) setActionBusy("connect");
     setStatus({ tone: "idle", text: "Opening UniSat..." });
-    try {
-      const accounts = window.unisat.requestAccounts
-        ? await window.unisat.requestAccounts()
-        : await window.unisat.getAccounts?.();
-      const firstAddress = accounts?.[0] ?? "";
-      if (!firstAddress) {
-        throw new Error("UniSat did not return an address.");
+    let task!: Promise<string>;
+    task = (async () => {
+      try {
+        const connected = await walletConnection.current.connect(wallet, {
+          requiredNetwork: "livenet", sameAddress: sameBoostWalletAddress, isCurrent: current,
+          onStage: ({ message }) => { if (current()) setStatus({ tone: "idle", text: message }); },
+        });
+        if (!current()) return "";
+        setAddress(connected.address);
+        setNetwork(connected.network);
+        const loadingIdentity = "UniSat connected. Loading verified identity data...";
+        setStatus({ tone: "good", text: loadingIdentity });
+        // Wallet authority is established. Identity reads must not hold the
+        // connection controls or replace a newer action's status.
+        void loadBoostRegistryAndIds(connected.address).then(registryAddress => {
+          if (!current()) return;
+          setStatus(previous => previous.text !== loadingIdentity ? previous : {
+            tone: registryAddress ? "good" : "idle",
+            text: registryAddress
+              ? `${shortAddress(connected.address)} connected. ${surfaceName} actions ready.`
+              : `${shortAddress(connected.address)} connected. boost@proofofwork.me is not confirmed yet.`,
+          });
+        }, error => {
+          if (!current()) return;
+          setStatus(previous => previous.text !== loadingIdentity ? previous : {
+            tone: "bad", text: `UniSat is connected. Verified identity data is unavailable. ${errorMessage(error, "Try Refresh again.")}`,
+          });
+        });
+        return connected.address;
+      } catch (error) {
+        if (current()) setStatus({ tone: "bad", text: errorMessage(error, "Could not connect UniSat.") });
+        if (forActiveAction) throw new Error(errorMessage(error, "Could not connect UniSat."));
+        return "";
+      } finally {
+        if (walletConnectionFlight.current === task) walletConnectionFlight.current = undefined;
+        if (current() && ownsBusy) setActionBusy(value => value === "connect" ? "" : value);
       }
-      const verifiedAddress = await ensureWalletNetwork(
-        window.unisat,
-        "livenet",
-        firstAddress,
-      );
-      setAddress(verifiedAddress);
-      setNetwork("livenet");
-      const registryAddress = await loadBoostRegistryAndIds(verifiedAddress);
-      setStatus({
-        tone: registryAddress ? "good" : "idle",
-        text: registryAddress
-          ? `${shortAddress(verifiedAddress)} connected. Boost actions ready.`
-          : `${shortAddress(verifiedAddress)} connected. boost@proofofwork.me is not confirmed yet.`,
-      });
-      return verifiedAddress;
-    } catch (error) {
-      setStatus({
-        tone: "bad",
-        text: error instanceof Error ? error.message : "Could not connect UniSat.",
-      });
-      return "";
-    } finally {
-      setActionBusy("");
-    }
+    })();
+    walletConnectionFlight.current = task;
+    return task;
   }
 
   function disconnectWallet() {
+    invalidateWalletConnection();
     setAddress("");
     setOwnedIds([]);
     setActiveIdentity(undefined);
@@ -1409,7 +1436,7 @@ export default function BoostRoot({
     }
     let writerAddress = address;
     if (!writerAddress) {
-      writerAddress = await connectWallet();
+      writerAddress = await connectWallet(true);
     }
     if (!writerAddress) {
       throw new Error("Connect UniSat before signing Boost actions.");
@@ -1779,11 +1806,9 @@ export default function BoostRoot({
       if (!identity || identity.id !== identityId || !verifiedSocialIdentityIntent(identity, walletAddress, "livenet")) {
         throw new Error("Your selected PowID signature is unavailable or invalid. Select the ID again before publishing.");
       }
-      const latest = await fetchProofApiJson<RegistryApiPayload>(
-        `/api/v1/ids/${encodeURIComponent(identityId)}?current=1&fresh=1`, "livenet");
-      if (latest.record?.confirmed !== true || normalizeBoostId(latest.record.id) !== identityId ||
-          latest.network !== "livenet" || (latest.record.network && latest.record.network !== "livenet") ||
-          !sameBoostWalletAddress(latest.record.ownerAddress, walletAddress)) {
+      // Publication needs fresh confirmed ownership, not new-ID availability.
+      // The shared verifier retains canonical tip and exact owner checks.
+      if (!await confirmSocialIdentityOwner(identity)) {
         throw new Error("Your selected PowID is no longer confirmed as owned by this wallet. Refresh identity before publishing.");
       }
     }
@@ -2310,16 +2335,20 @@ export default function BoostRoot({
 
   const refresh = async (append = false, fresh = false, announce = true) => {
     if (currentReadScope.current !== readScope) return;
+    const connectionGeneration = walletConnectionGeneration.current;
+    const startedDuringConnection = Boolean(walletConnectionFlight.current);
+    const canAnnounce = () => announce && !startedDuringConnection &&
+      connectionGeneration === walletConnectionGeneration.current;
     if (fresh && !append) void checkTipReceipts();
     if (isSearchView && !indexedSearchQuery) {
       setBusy(false);
-      if (announce) setStatus({ tone: "idle", text: "Search Boost by keyword, hashtag, or cashtag." });
+      if (canAnnounce()) setStatus({ tone: "idle", text: "Search Boost by keyword, hashtag, or cashtag." });
       return;
     }
     const request = readLifecycle.current.begin();
     const ownsRequest = () => request.current() && currentReadScope.current === readScope;
     setBusy(true);
-    if (announce) setStatus({ tone: "idle", text: `Refreshing ${surfaceName}...` });
+    if (canAnnounce()) setStatus({ tone: "idle", text: `Refreshing ${surfaceName}...` });
     try {
       const params = new URLSearchParams({
         limit: "50",
@@ -2373,7 +2402,7 @@ export default function BoostRoot({
       const total = Number(
         nextPayload.totalCount ?? nextPayload.items?.length ?? 0,
       );
-      if (announce) {
+      if (canAnnounce()) {
         setStatus({
           tone: "good",
           text: `${surfaceName} indexed ${total.toLocaleString()} record${total === 1 ? "" : "s"}.`,
@@ -2381,7 +2410,7 @@ export default function BoostRoot({
       }
     } catch (error) {
       if (!ownsRequest()) return;
-      if (announce) {
+      if (canAnnounce()) {
         setStatus({
           tone: "bad",
           text: error instanceof Error ? error.message : "Boost refresh failed.",
@@ -2398,7 +2427,9 @@ export default function BoostRoot({
   }, [searchQuery]);
 
   useEffect(() => {
-    void refresh();
+    const walletChanged = lastRefreshWallet.current.address !== address || lastRefreshWallet.current.network !== network;
+    lastRefreshWallet.current = { address, network };
+    void refresh(false, false, !walletChanged);
     return () => readLifecycle.current.cancel();
   }, [
     address,
@@ -2417,62 +2448,75 @@ export default function BoostRoot({
   }, [isSearchView, profileSearchActive]);
 
   useEffect(() => {
+    walletMounted.current = true;
+    return () => {
+      walletMounted.current = false;
+      walletConnectionGeneration.current++;
+      identityReadRequest.current++;
+      walletConnection.current.invalidate();
+      walletConnectionFlight.current = undefined;
+    };
+  }, []);
+
+  useEffect(() => {
     if (previousInitialNetwork.current !== initialNetwork) {
       previousInitialNetwork.current = initialNetwork;
+      invalidateWalletConnection();
       setNetwork(initialNetwork);
     }
   }, [initialNetwork]);
 
   useEffect(() => {
     const nextAddress = initialAddress.trim();
-    if (!nextAddress || nextAddress === address) {
-      return;
+    if (nextAddress !== walletAddressRef.current) {
+      invalidateWalletConnection();
+      setAddress(nextAddress);
     }
-    setAddress(nextAddress);
+    if (!nextAddress || networkRef.current !== "livenet") return;
+    const generation = walletConnectionGeneration.current;
     void loadBoostRegistryAndIds(nextAddress).catch((error) =>
-      setStatus({
+      walletMounted.current && generation === walletConnectionGeneration.current && setStatus({
         tone: "bad",
-        text:
-          error instanceof Error
-            ? error.message
-            : "Boost identity state could not be loaded.",
+        text: errorMessage(error, "Boost identity state could not be loaded."),
       }),
     );
-  }, [initialAddress]);
+  }, [initialAddress, initialNetwork]);
 
   useEffect(() => {
-    if (!window.unisat?.on) {
-      return;
-    }
+    const wallet = window.unisat;
+    if (!wallet?.on) return;
     const syncWallet = () => {
+      // The active controller verifies events raised by its own approval or
+      // network switch. A parallel reader must not supersede that request.
+      if (walletConnection.current.isConnecting) return;
+      invalidateWalletConnection();
+      const generation = walletConnectionGeneration.current;
+      const current = () => walletMounted.current && generation === walletConnectionGeneration.current && wallet === window.unisat;
       void (async () => {
-        const accounts = await window.unisat?.getAccounts?.().catch(() => []);
-        const nextAddress = accounts?.[0] ?? "";
-        setAddress(nextAddress);
-        if (nextAddress) {
-          await loadBoostRegistryAndIds(nextAddress);
-        } else {
-          setOwnedIds([]);
-          setActiveIdentity(undefined);
-          setSelectedIdentityId("");
+        let connected;
+        try {
+          connected = await walletConnection.current.connect(wallet, {
+            authorize: false, sameAddress: sameBoostWalletAddress, isCurrent: current,
+          });
+        } catch (error) {
+          if (current()) { setAddress(""); setStatus({ tone: "bad", text: errorMessage(error, "Wallet state could not be verified.") }); }
+          return;
         }
-      })().catch((error) =>
-        setStatus({
-          tone: "bad",
-          text:
-            error instanceof Error
-              ? error.message
-              : "Wallet state could not be verified.",
-        }),
-      );
+        if (!current()) return;
+        setAddress(connected.address);
+        setNetwork(connected.network);
+        if (connected.network === "livenet") await loadBoostRegistryAndIds(connected.address);
+      })().catch(error => {
+        if (current()) setStatus({ tone: "bad", text: `UniSat is connected. Verified identity data is unavailable. ${errorMessage(error, "Try Refresh again.")}` });
+      });
     };
-    window.unisat.on("accountsChanged", syncWallet);
-    window.unisat.on("networkChanged", syncWallet);
-    window.unisat.on("chainChanged", syncWallet);
+    wallet.on("accountsChanged", syncWallet);
+    wallet.on("networkChanged", syncWallet);
+    wallet.on("chainChanged", syncWallet);
     return () => {
-      window.unisat?.removeListener?.("accountsChanged", syncWallet);
-      window.unisat?.removeListener?.("networkChanged", syncWallet);
-      window.unisat?.removeListener?.("chainChanged", syncWallet);
+      wallet.removeListener?.("accountsChanged", syncWallet);
+      wallet.removeListener?.("networkChanged", syncWallet);
+      wallet.removeListener?.("chainChanged", syncWallet);
     };
   }, [hasUnisat]);
 
@@ -3092,7 +3136,7 @@ export default function BoostRoot({
           disconnectWallet={disconnectWallet}
           hasUnisat={hasUnisat}
           network={network}
-          onNetworkChange={setNetwork}
+          onNetworkChange={value => { invalidateWalletConnection(); setNetwork(value); }}
           onRefresh={() => { void refresh(false, true); if (isPublish) void checkPublishReceipts(); }}
           subtitle={isPublish ? "Stories published on ProofOfWork" : "Proof-ranked social signal"}
           title={surfaceName}
@@ -3113,7 +3157,7 @@ export default function BoostRoot({
         }} onCheck={() => void checkPublishReceipts()} workspaceHref={receipt => publishHref({ txid: receipt.txid, network: receipt.network, embedded })} /> : null}
       {isPublish && publishWriterOpen ? <section className="publish-writer-workspace" aria-label="Article writer" role={embedded ? undefined : "main"}>
         {address ? <details className="publish-writer-identity"><summary>Byline identity · {activeIdentity?.id ? `${activeIdentity.id}@proofofwork.me` : shortAddress(address)}</summary>{renderIdentityControls()}</details> : null}
-        <PublishComposer address={address} network={network} identity={activeIdentity}
+        <PublishComposer address={address} network={network} identity={activeIdentity} connecting={actionBusy === "connect"}
           returnLabel={publishWriterReturn?.returnLabel}
           restoreDraft={publishRestoreDraft && sameBoostWalletAddress(publishRestoreDraft.address, address) && publishRestoreDraft.network === network ? publishRestoreDraft.draft : undefined}
           onConnect={() => void connectWallet()} onClose={closePublishWriter}

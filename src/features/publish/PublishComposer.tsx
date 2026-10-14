@@ -12,8 +12,9 @@ import "./publish.css";
 type Draft = { title: string; body: string; signal: number; feeRate: number };
 const emptyDraft: Draft = { title: "", body: "", signal: 546, feeRate: 1 };
 
-export function PublishComposer({ address, network, identity, onConnect, onClose, onPrepare, onSign, restoreDraft, returnLabel = "Articles", onLeaveGuardChange }: {
+export function PublishComposer({ address, network, identity, connecting = false, onConnect, onClose, onPrepare, onSign, restoreDraft, returnLabel = "Articles", onLeaveGuardChange }: {
   address: string; network: BitcoinNetwork; identity?: BoostIdentityIntent;
+  connecting?: boolean;
   onConnect: () => void; onClose: () => void;
   onPrepare: (plan: PublishPlan, feeRate: number) => Promise<PreparedPublish>;
   onSign: (prepared: PreparedPublish, assertCurrent: () => void) => Promise<string>;
@@ -187,7 +188,7 @@ export function PublishComposer({ address, network, identity, onConnect, onClose
       {error || overBudget ? <p className="field-note bad" role="alert">{error || "This article exceeds the available transaction budget. Shorten it before publishing."}</p> : null}
       {network !== "livenet" ? <p className="field-note">Article publishing uses mainnet. Switch to mainnet to prepare a review.</p> : null}
       <div className="publish-editor-actions"><button className="secondary" onClick={leaveWriter} type="button" disabled={busy}><ArrowLeft size={16} /> Save draft and back</button>
-        {!address ? <button className="primary" onClick={onConnect} type="button"><BookOpen size={16} /> Connect to publish</button> : <button className="primary" type="submit" disabled={busy || !budget.plan || overBudget || network !== "livenet" || loadedKey !== storageKey}>
+        {!address ? <button className="primary" onClick={onConnect} type="button" disabled={connecting}>{connecting ? <RefreshCw className="refresh-spin" size={16} /> : <BookOpen size={16} />} {connecting ? "Connecting…" : "Connect to publish"}</button> : <button className="primary" type="submit" disabled={busy || connecting || !budget.plan || overBudget || network !== "livenet" || loadedKey !== storageKey}>
           {busy ? <RefreshCw className="refresh-spin" size={16} /> : <Send size={16} />} {busy ? "Preparing…" : "Review publication"}</button>}
       </div>
     </form>

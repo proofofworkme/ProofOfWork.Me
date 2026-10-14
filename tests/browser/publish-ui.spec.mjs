@@ -28,8 +28,9 @@ funding.addInput(Buffer.alloc(32, 1), 0);
 funding.addOutput(bitcoin.address.toOutputScript(address), 2_000_000n);
 const fundingUtxo = { txid: funding.getId(), vout: 0, value: 2_000_000, status: { confirmed: true } };
 
-async function fixture(page, { wallet = false, alteredBody = false, recovery = false, selectedIdentity = false, emptyWalletDraft = false,
+async function fixture(page, { wallet = false, alteredBody = false, recovery = false, selectedIdentity = false, emptyWalletDraft = false, availabilityUnavailable = false,
   articleBody = body, articleTitle = article.title, network = "livenet" } = {}) {
+  const identityRead = { ownership: "owned", requests: [] };
   const fixtureArticle = { ...article, title: articleTitle, size: Buffer.byteLength(articleBody), sha256: createHash("sha256").update(articleBody).digest("hex") };
   const fixturePost = { ...post, article: fixtureArticle, text: articleTitle };
   if (wallet) await page.addInitScript(({ address, utxo, recovery, identity, emptyWalletDraft }) => {
@@ -49,12 +50,24 @@ async function fixture(page, { wallet = false, alteredBody = false, recovery = f
     if (url.pathname.endsWith("/utxo")) return route.fulfill({ json: [fundingUtxo] });
     if (url.pathname.endsWith("/hex")) return route.fulfill({ json: { hex: funding.toHex() } });
     if (url.pathname.endsWith("/status")) return route.fulfill({ json: { status: url.pathname.includes("d".repeat(64)) ? "unavailable" : "confirmed" } });
-    if (url.pathname.startsWith("/api/v1/ids/alice")) return route.fulfill({ json: { network: "livenet", record: { id: "alice", confirmed: true, network: "livenet", ownerAddress: address } } });
+    if (url.pathname === "/api/v1/ids/alice") {
+      identityRead.requests.push({ current: url.searchParams.get("current"), fresh: url.searchParams.get("fresh"), ownership: identityRead.ownership });
+      if (availabilityUnavailable && url.searchParams.get("current") === "1") return route.fulfill({ status: 503, json: {
+        error: "ProofOfWork ID availability cannot be proven until the confirmed index reaches the node tip.",
+        details: { code: "ID_AVAILABILITY_UNPROVEN", indexedThroughBlock: 971475, tipHeight: 971475 },
+      } });
+      if (identityRead.ownership === "unavailable") return route.fulfill({ status: 503, json: {
+        error: "Confirmed ID ownership is temporarily unavailable.", details: { code: "CANONICAL_INDEX_UNAVAILABLE" },
+      } });
+      return route.fulfill({ json: { network: "livenet", record: { id: "alice", confirmed: true, network: "livenet",
+        ownerAddress: identityRead.ownership === "owned" ? address : "1BoatSLRHtKNngkdXEeobR76b53LETtpyT" } } });
+    }
     if (url.pathname !== "/api/v1/boost") return route.fulfill({ json: { records: selectedIdentity ? [{ id: "alice", ownerAddress: address, confirmed: true, network: "livenet" }] : [], listings: [] } });
     if (url.searchParams.has("detail")) return route.fulfill({ json: { complete: true, snapshotId: "article-detail", mode: "detail", post: { ...fixturePost, articleBody: alteredBody ? articleBody.slice(0, -2) : articleBody }, items: [], totalCount: 0, hasMore: false, start: 0 } });
     const items = url.searchParams.has("listings") ? [] : [fixturePost];
     return route.fulfill({ json: { complete: true, snapshotId: "articles", items, totalCount: items.length, hasMore: false, start: 0, network, indexedAt: post.createdAt } });
   });
+  return identityRead;
 }
 
 for (const embedded of [false, true]) {
@@ -113,6 +126,36 @@ for (const embedded of [false, true]) {
     await popup.close();
   });
 }
+
+test("Computer Publish restores the selected ID and draft when mounted and reopened with an already connected wallet", async ({ page }) => {
+  const identityRead = await fixture(page, { wallet: true, selectedIdentity: true, availabilityUnavailable: true });
+  await page.goto("/?folder=contacts");
+  await page.getByRole("button", { name: "Connect UniSat", exact: true }).first().click();
+  await expect(page.getByRole("button", { name: "Disconnect UniSat", exact: true }).first()).toBeEnabled();
+  const openApp = async name => {
+    await page.getByRole("button", { name: "Find an app", exact: true }).click();
+    const launcher = page.getByRole("dialog", { name: "Computer apps", exact: true });
+    await launcher.getByLabel("Find an app", { exact: true }).fill(name);
+    await launcher.getByRole("button", { name, exact: true }).click();
+    await expect(launcher).toHaveCount(0);
+  };
+  await openApp("Publish");
+  await page.getByRole("button", { name: "Write your next article" }).click();
+  await expect(page.locator(".publish-editor-toolbar")).toContainText("alice@proofofwork.me");
+  await page.getByRole("textbox", { name: "Article title", exact: true }).fill(article.title);
+  await page.getByRole("textbox", { name: "Article text", exact: true }).fill(body);
+  await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+  await openApp("Mail");
+  await expect(page.getByRole("region", { name: "Publish workspace", exact: true })).toHaveCount(0);
+  await openApp("Publish");
+  await page.getByRole("button", { name: "Write your next article" }).click();
+  await expect(page.locator(".publish-editor-toolbar")).toContainText("alice@proofofwork.me");
+  await expectPreservedUnsignedArticle(page);
+  await page.getByRole("button", { name: "Review publication", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Publish article", exact: true })).toBeVisible();
+  expect(identityRead.requests.every(request => request.fresh === "1" && request.current === null)).toBe(true);
+  expect(await page.evaluate(() => window.publishSignatureCalls)).toBe(0);
+});
 
 test("Publish does not expose DNS links when the article body commitment fails", async ({ page }) => {
   await fixture(page, { alteredBody: true, articleBody: "armyofyouth.pow  \n" });
@@ -378,27 +421,79 @@ test("connecting preserves the active guest article over an existing empty walle
   await expect.poll(() => page.evaluate(address => JSON.parse(localStorage.getItem(`proofofwork.publish.draft.v1:livenet:${address}`)).body, address)).toBe(body);
 });
 
-test("selected confirmed PowID profile shares the article transaction and exact byte review", async ({ page }) => {
-  await fixture(page, { wallet: true, selectedIdentity: true });
-  await page.goto("/?publish=1");
-  await page.getByRole("button", { name: "Connect UniSat", exact: true }).click();
+async function openIdentifiedWriter(page, embedded) {
+  await page.goto(embedded ? "/?folder=publish" : "/?publish=1");
+  await page.getByRole("button", { name: "Connect UniSat", exact: true }).first().click();
+  await expect(page.getByRole("button", { name: "Disconnect UniSat", exact: true }).first()).toBeEnabled();
   await page.getByRole("button", { name: "Write your next article" }).click();
   await expect(page.locator(".publish-editor-toolbar")).toContainText("alice@proofofwork.me");
   await page.getByRole("textbox", { name: "Article title", exact: true }).fill(article.title);
   await page.getByRole("textbox", { name: "Article text", exact: true }).fill(body);
-  await page.getByRole("button", { name: "Review publication", exact: true }).click();
-  const review = page.getByRole("dialog", { name: "Publish article", exact: true });
-  await expect(review).toBeVisible();
-  await review.getByText("Inspect exact transaction evidence").click();
-  const records = await review.locator("pre.review-protocol").allTextContents();
-  expect(records).toHaveLength(3);
-  const profile = JSON.parse(Buffer.from(records[0].slice("pwb1:profile:".length), "base64url"));
-  expect(profile.id).toBe("alice");
-  expect(profile.intent.signature).toBe(signedIdentity.signature);
-  expect(profile.image).toBeUndefined();
-  expect(profile.banner).toBeUndefined();
-  expect(records[2]).toBe(`pwm1:m:${body}`);
-  const bytes = records.reduce((total, record) => total + bitcoin.payments.embed({ data: [Buffer.from(record)] }).output.length, 0);
-  await expect(review).toContainText(`${bytes} / 100000 bytes`);
+}
+
+async function expectPreservedUnsignedArticle(page) {
+  await expect(page.getByRole("dialog", { name: "Publish article", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Article title", exact: true })).toHaveValue(article.title);
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue(body);
+  await expect.poll(() => page.evaluate(address => {
+    const saved = JSON.parse(localStorage.getItem(`proofofwork.publish.draft.v1:livenet:${address}`));
+    return { title: saved?.title, body: saved?.body };
+  }, address)).toEqual({ title: article.title, body });
   expect(await page.evaluate(() => window.publishSignatureCalls)).toBe(0);
-});
+}
+
+for (const embedded of [false, true]) {
+  const surface = embedded ? "Computer Publish" : "standalone Publish";
+
+  test(`${surface}: selected confirmed PowID opens exact publication review while new-ID availability is unavailable`, async ({ page }) => {
+    const identityRead = await fixture(page, { wallet: true, selectedIdentity: true, availabilityUnavailable: true });
+    await openIdentifiedWriter(page, embedded);
+    const readsBeforeReview = identityRead.requests.length;
+    await page.getByRole("button", { name: "Review publication", exact: true }).click();
+    const review = page.getByRole("dialog", { name: "Publish article", exact: true });
+    await expect(review).toBeVisible();
+    expect(identityRead.requests.length).toBeGreaterThan(readsBeforeReview);
+    expect(identityRead.requests.every(request => request.fresh === "1" && request.current === null)).toBe(true);
+    await review.getByText("Inspect exact transaction evidence").click();
+    const records = await review.locator("pre.review-protocol").allTextContents();
+    expect(records).toHaveLength(3);
+    const profile = JSON.parse(Buffer.from(records[0].slice("pwb1:profile:".length), "base64url"));
+    expect(profile.id).toBe("alice");
+    expect(profile.intent.signature).toBe(signedIdentity.signature);
+    expect(profile.image).toBeUndefined();
+    expect(profile.banner).toBeUndefined();
+    expect(records[2]).toBe(`pwm1:m:${body}`);
+    const bytes = records.reduce((total, record) => total + bitcoin.payments.embed({ data: [Buffer.from(record)] }).output.length, 0);
+    await expect(review).toContainText(`${bytes} / 100000 bytes`);
+    expect(await page.evaluate(() => window.publishSignatureCalls)).toBe(0);
+  });
+
+  for (const ownership of ["transferred", "unavailable"]) {
+    test(`${surface}: ${ownership} confirmed ownership blocks publication review and preserves the draft`, async ({ page }) => {
+      const identityRead = await fixture(page, { wallet: true, selectedIdentity: true, availabilityUnavailable: true });
+      await openIdentifiedWriter(page, embedded);
+      identityRead.ownership = ownership;
+      const readsBeforeReview = identityRead.requests.length;
+      await page.getByRole("button", { name: "Review publication", exact: true }).click();
+      await expect(page.locator(".publish-composer [role=alert]")).toContainText(
+        ownership === "transferred" ? /no longer confirmed as owned|not currently owned/u : /ownership.*unavailable/iu,
+      );
+      expect(identityRead.requests.length).toBeGreaterThan(readsBeforeReview);
+      await expectPreservedUnsignedArticle(page);
+    });
+  }
+
+  test(`${surface}: an ID transfer after publication review prevents wallet signing and preserves the draft`, async ({ page }) => {
+    const identityRead = await fixture(page, { wallet: true, selectedIdentity: true, availabilityUnavailable: true });
+    await openIdentifiedWriter(page, embedded);
+    await page.getByRole("button", { name: "Review publication", exact: true }).click();
+    const review = page.getByRole("dialog", { name: "Publish article", exact: true });
+    await expect(review).toBeVisible();
+    identityRead.ownership = "transferred";
+    const readsBeforeApproval = identityRead.requests.length;
+    await review.getByRole("button", { name: "Continue to wallet", exact: true }).click();
+    await expect(page.locator(".publish-composer [role=alert]")).toContainText(/no longer confirmed as owned|not currently owned/u);
+    expect(identityRead.requests.length).toBeGreaterThan(readsBeforeApproval);
+    await expectPreservedUnsignedArticle(page);
+  });
+}

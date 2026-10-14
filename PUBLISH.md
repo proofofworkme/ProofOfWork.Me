@@ -102,6 +102,18 @@ An unavailable ownership lookup is reported separately from a rejected signature
 or a confirmed ownership mismatch. Neither unavailable reads nor pending records
 authorize a selection.
 
+Publication preparation, signing and broadcast use that same fresh confirmed
+ownership check for an existing selected ID. A registration-availability failure
+does not block an otherwise verified owner. Unavailable or changed ownership
+still blocks publication and leaves the local draft intact.
+
+Standalone Boost, Publish and the Computer Publish workspace share the bounded
+UniSat account/network connection controller. Pending authorization is reused on
+retry, obsolete results cannot reconnect a changed or closed workspace, and
+provider messages and codes remain visible. Account approval and network checks
+finish before identity data loads; an identity-read failure keeps the verified
+wallet connected and reports the data problem separately. Signing stays local.
+
 The local choice is preparation state. Public bylines come from confirmed
 `pwb1:profile` records and current registry ownership. Publishing an article
 with a selected ID includes its existing identity-only profile record in the
