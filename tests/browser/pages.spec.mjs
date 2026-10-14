@@ -214,7 +214,7 @@ for (const [label, path] of [["standalone", "/?pages=1"], ["Computer", "/?folder
     const state = await fixture(page);
     await page.goto(path);
     if (label === "Computer") await connect(page);
-    await chooseCodeHtml(page);
+    await chooseCodeHtml(page, label === "Computer" ? CODE_VERSION : "");
     await expect(page.getByLabel("HTML source", { exact: true })).toHaveValue(CODE_HTML);
     await expect(page.getByLabel("Page title", { exact: true })).toHaveValue("index");
     await expect(page.locator(".pages-status")).toContainText("Verified Code HTML imported");
@@ -226,10 +226,22 @@ for (const [label, path] of [["standalone", "/?pages=1"], ["Computer", "/?folder
     expect(reads[1].searchParams.get("snapshot")).toBe("fixture-code-snapshot");
     expect(reads[1].searchParams.get("version")).toBe(CODE_VERSION);
     expect(reads[1].searchParams.get("path")).toBe("site/index.html");
-    const host = new URL(page.url()).hostname;
-    const local = ["localhost", "127.0.0.1", "::1"].includes(host) || host.endsWith(".localhost");
-    const codeHref = `${local ? "/?code=1&" : "https://code.proofofwork.me/?"}network=livenet&repo=${CODE_REPO}&path=site%2Findex.html`;
-    await expect(page.getByRole("link", { name: "Open Code", exact: true })).toHaveAttribute("href", codeHref);
+    if (label === "Computer") {
+      const origin = new URL(page.url()).origin;
+      await page.getByRole("button", { name: "Open Code", exact: true }).click();
+      await expect(page).toHaveURL(url => url.origin === origin && url.searchParams.get("folder") === "code" &&
+        url.searchParams.get("network") === "livenet" && url.searchParams.get("repo") === CODE_REPO &&
+        url.searchParams.get("version") === CODE_VERSION && url.searchParams.get("path") === "site/index.html");
+      await expect(page.locator(".code-source")).toHaveText(CODE_HTML);
+      await page.getByRole("button", { name: "Back to Pages", exact: true }).click();
+      await expect(page.getByLabel("HTML source", { exact: true })).toHaveValue(CODE_HTML);
+      await expect(page.getByLabel("Version txid (optional)", { exact: true })).toHaveValue(CODE_VERSION);
+    } else {
+      const host = new URL(page.url()).hostname;
+      const local = ["localhost", "127.0.0.1", "::1"].includes(host) || host.endsWith(".localhost");
+      const codeHref = `${local ? "/?code=1&" : "https://code.proofofwork.me/?"}network=livenet&repo=${CODE_REPO}&path=site%2Findex.html`;
+      await expect(page.getByRole("link", { name: "Open Code", exact: true })).toHaveAttribute("href", codeHref);
+    }
     await page.getByRole("button", { name: "Preview", exact: true }).click();
     await expect(page.frameLocator(".pages-workspace iframe").getByRole("heading", { name: "Confirmed Code source" })).toBeVisible();
     await expect(page.frameLocator(".pages-workspace iframe").locator("body")).not.toHaveAttribute("data-executed", "yes");
@@ -506,7 +518,7 @@ test("Computer Pages imports confirmed Files HTML and preserves the original sou
   await page.getByRole("button", { name: "Import from Files", exact: true }).click();
   await expect(page.getByLabel("HTML source", { exact: true })).toHaveValue(FILE_HTML);
   await source(page, FILE_HTML.replace("Verified file source", "Local file edit"));
-  await page.locator(".sidebar").getByRole("button", { name: /^Files/ }).click();
+  await page.getByRole("navigation", { name: "Computer apps", exact: true }).getByRole("button", { name: "Files", exact: true }).click();
   await expect(page.locator(".file-tile")).toHaveCount(1);
   await expect(page.locator(".file-inspector")).toContainText("verified-source.html");
   expect(state.writes).toEqual([]);
@@ -535,7 +547,7 @@ for (const [label, path] of [["standalone", "/?pages=1"], ["Computer", "/?folder
     await review.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(review).toHaveCount(0);
     await expect(composer.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(html);
-    if (label === "Computer") await page.locator(".sidebar").getByRole("button", { name: "Pages", exact: true }).click();
+    if (label === "Computer") await page.getByRole("navigation", { name: "Computer apps", exact: true }).getByRole("button", { name: "Pages", exact: true }).click();
     await expect(page.getByLabel("HTML source", { exact: true })).toHaveValue(html);
     await expectNoSignature(page, state);
   });

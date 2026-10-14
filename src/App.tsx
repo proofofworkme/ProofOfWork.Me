@@ -2,10 +2,12 @@ import { ActionTransactionReview, type ActionReview } from "./shared/components/
 import { ActionRecoveryPanel } from "./shared/components/ActionRecoveryPanel";
 import { BrandMark } from "./shared/components/BrandMark";
 import { APP_ICONS } from "./app/appIcons";
-import { PagesWorkspace, type PagesPublicationDraft, type PagesDnsLinkRequest } from "./features/pages/PagesWorkspace";
-import { BrowserWindow } from "./features/browser/BrowserWindow";
+import { PagesWorkspace, type PagesPublicationDraft, type PagesDnsLinkRequest, type PagesViewState, type PagesBrowserTarget } from "./features/pages/PagesWorkspace";
+import type { CodeViewState } from "./features/code/CodeRoot";
+import type { CodeLocation, CodeSourceReference } from "./features/code/codeNavigation";
+import { BrowserWindow, type BrowserSession, type BrowserTemplateDraft } from "./features/browser/BrowserWindow";
 import { ComputerControls, ComputerShell } from "./features/computer/ComputerShell";
-import { COMPUTER_LAYOUT_STORAGE_KEY, type ComputerLayout } from "./features/computer/computerNavigation";
+import { COMPUTER_LAYOUT_STORAGE_KEY, computerAppForWorkspace, type ComputerLayout } from "./features/computer/computerNavigation";
 import { AdvancedDns } from "./features/dns/AdvancedDns";
 import { assertDnsSubdomainPageLinkAction, readDnsSubdomainPageLinkSnapshot, type DnsSubdomainPageLinkSnapshot } from "./features/pages/dnsSubdomainPageLinkClient.mjs";
 import { buildDnsSubdomainPageLinkPayload } from "./shared/protocol/dnsSubdomainPages.mjs";
@@ -22384,6 +22386,29 @@ export default function App() {
   const [fileFilter, setFileFilter] = useState<FileFilter>("all");
   const [selectedKey, setSelectedKey] = useState("");
   const [composeOpen, setComposeOpen] = useState(() => !pagesRoute && computerFolderFromSearch() !== "pages");
+  // Task memory contains local navigation only. Account/network changes create
+  // a fresh scope; tool cleanup may finish writing only to its old memory object.
+  const computerTasks = useMemo(() => ({
+    routes: new Map<Folder, string>([[computerFolderFromSearch() ?? "inbox", window.location.href]]),
+    back: [] as { folder: Folder; href: string }[],
+    mail: new Map<Folder, { selectedKey: string; composeOpen: boolean; sortMode: SortMode; customFolderId: string }>(),
+    lastMailFolder: undefined as Folder | undefined,
+    pages: undefined as PagesViewState | undefined,
+    code: undefined as CodeViewState | undefined,
+    browser: undefined as BrowserSession | undefined,
+  }), [address, network]);
+  const [, setComputerTaskRevision] = useState(0);
+  const [codePageImport, setCodePageImport] = useState<(CodeSourceReference & { requestId: number; scope: string })>();
+  const [browserPageImport, setBrowserPageImport] = useState<{ network: BitcoinNetwork; txid: string; sha256: string; requestId: number; scope: string }>();
+  const computerHandoffId = useRef(0);
+  const computerTaskScope = `${network}:${address}`;
+  useEffect(() => {
+    setCodePageImport(undefined);
+    setBrowserPageImport(undefined);
+  }, [computerTaskScope]);
+  const browserSessionChange = useCallback((session: BrowserSession) => { computerTasks.browser = session; }, [computerTasks]);
+  const pagesViewStateChange = useCallback((state: PagesViewState) => { computerTasks.pages = state; }, [computerTasks]);
+  const codeViewStateChange = useCallback((state: CodeViewState) => { computerTasks.code = state; }, [computerTasks]);
   const [pagesPublicationOpen, setPagesPublicationOpen] = useState(false);
   const [pagesDnsLinkTask, setPagesDnsLinkTask] = useState<(PagesDnsLinkRequest & { scope: string }) | undefined>();
   const [pagesDnsLinkRestoreNonce, setPagesDnsLinkRestoreNonce] = useState(0);
@@ -26538,9 +26563,35 @@ export default function App() {
     }
 
     const restoreComputerLocation = () => {
-      const folder = computerFolderFromSearch() ?? "inbox";
+      const localFolder = window.history.state?.proofOfWorkComputerScope === computerTaskScope
+        ? window.history.state?.proofOfWorkComputerFolder : undefined;
+      const folder: Folder = localFolder === "custom" && computerTasks.mail.has("custom")
+        ? "custom" : computerFolderFromSearch() ?? "inbox";
+      const destination = window.location.href;
       const asset = tokenRouteTarget();
       const mailCompose = window.history.state?.proofOfWorkMailCompose;
+      if (folder !== activeFolder || mailCompose) {
+        // popstate runs after the URL changes. Keep the departing task's own
+        // route, not the destination now visible in window.location.
+        const previous = computerTasks.routes.get(activeFolder);
+        if (!canLeavePublishWriter()) {
+          if (previous) window.history.replaceState(computerHistoryState(activeFolder), "", previous);
+          return;
+        }
+        rememberCurrentComputerTask(previous);
+        let returnIndex = -1;
+        for (let index = computerTasks.back.length - 1; index >= 0; index--) {
+          const task = computerTasks.back[index];
+          if (task.folder === folder && task.href === destination) { returnIndex = index; break; }
+        }
+        if (returnIndex >= 0) computerTasks.back.splice(returnIndex);
+        else if (previous) {
+          computerTasks.back.push({ folder: activeFolder, href: previous });
+          if (computerTasks.back.length > 64) computerTasks.back.shift();
+        }
+        computerTasks.routes.set(folder, destination);
+        setComputerTaskRevision(value => value + 1);
+      }
       if (mailCompose && folder !== "publish") {
         const draft = address ? loadDraft(address, network) : undefined;
         if (draft) {
@@ -26554,10 +26605,15 @@ export default function App() {
         setSidebarExpanded(false);
         return;
       }
-      setActiveFolder(folder);
-      setActiveCustomFolderId("");
-      setComposeOpen(false);
-      setSelectedKey("");
+      if (folder !== activeFolder) {
+        if (!restoreComputerMailTask(folder)) {
+          setActiveCustomFolderId("");
+          setComposeOpen(false);
+          setSelectedKey("");
+        }
+        setActiveFolder(folder);
+        setSidebarExpanded(false);
+      }
       if (folder === "token" || folder === "work") {
         setTokenSelectedId(asset || (folder === "work" ? WORK_TOKEN_ID : ""));
         setTokenDetailTarget(asset || (folder === "work" ? WORK_TOKEN_ID : ""));
@@ -26566,26 +26622,20 @@ export default function App() {
       }
     };
 
+    const preserveMailOnUnload = (event: BeforeUnloadEvent) => {
+      if (isMailTask(activeFolder) && composeOpen && !canLeavePublishWriter()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
     window.addEventListener("popstate", restoreComputerLocation);
-    return () => window.removeEventListener("popstate", restoreComputerLocation);
-  }, [
-    activityMode,
-    browserRoute,
-    pagesRoute,
-    desktopRoute,
-    dnsLaunchMode,
-    growthMode,
-    idLaunchMode,
-    inceptionMode,
-    infinityMode,
-    landingMode,
-    marketplaceMode,
-    tokenMode,
-    walletMode,
-    workTokenMode,
-    address,
-    network,
-  ]);
+    window.addEventListener("beforeunload", preserveMailOnUnload);
+    return () => {
+      window.removeEventListener("popstate", restoreComputerLocation);
+      window.removeEventListener("beforeunload", preserveMailOnUnload);
+    };
+    // Navigation guards and Mail snapshots must see the latest local fields.
+  });
 
   useEffect(() => {
     applyDocumentMetadata(
@@ -27091,8 +27141,13 @@ export default function App() {
       return;
     }
 
-    saveDraft(draft);
-    setSavedDraft(draft);
+    try {
+      saveDraft(draft);
+      if (localStorage.getItem(draftKey(address, network)) !== JSON.stringify(draft)) throw new Error("Draft storage did not retain the complete message.");
+      setSavedDraft(draft);
+    } catch {
+      setStatus({ tone: "bad", text: "Mail could not save this draft. Your current fields are still here. Keep this workspace open and copy your message before leaving." });
+    }
   }, [
     address,
     amountSats,
@@ -28003,6 +28058,8 @@ export default function App() {
       return;
     }
 
+    if (!canLeavePublishWriter()) return;
+    rememberComputerFolder("custom");
     const folder: CustomFolderRecord = {
       createdAt: new Date().toISOString(),
       id: customFolderId(name),
@@ -28152,55 +28209,86 @@ export default function App() {
     });
   }
 
-  function rememberComputerFolder(folder: Folder) {
-    if (typeof window === "undefined" || folder === "custom") {
-      return;
-    }
+  function isMailTask(folder: Folder) {
+    return ["inbox", "incoming", "sent", "outbox", "drafts", "favorites", "archive", "custom"].includes(folder);
+  }
 
-    if (
-      landingMode ||
-      idLaunchMode ||
-      desktopRoute ||
-      browserRoute ||
-      pagesRoute ||
-      marketplaceMode ||
-      tokenMode ||
-      walletMode ||
-      workTokenMode ||
-      infinityMode ||
-      inceptionMode ||
-      activityMode ||
-      growthMode
-    ) {
-      return;
+  function rememberCurrentComputerTask(href = window.location.href) {
+    if (!computerShellActive) return;
+    computerTasks.routes.set(activeFolder, href);
+    if (isMailTask(activeFolder)) {
+      computerTasks.lastMailFolder = activeFolder;
+      computerTasks.mail.set(activeFolder, { selectedKey, composeOpen, sortMode, customFolderId: activeCustomFolderId });
     }
+  }
 
-    const url = new URL(window.location.href);
-    STANDALONE_ROUTE_PARAMS.forEach((param) => url.searchParams.delete(param));
-    ["write", "article", "profile", "profileTab"].forEach(param => url.searchParams.delete(param));
-    if (activeFolder === "jobs" && folder !== "jobs") {
-      ["job", "mode", "q", "status", "cursor"].forEach(param => url.searchParams.delete(param));
+  function computerHistoryState(folder: Folder) {
+    const state = { ...window.history.state, proofOfWorkComputerScope: computerTaskScope, proofOfWorkComputerFolder: folder };
+    delete state.proofOfWorkMailCompose;
+    return state;
+  }
+
+  function rememberComputerFolder(folder: Folder, destination?: { href: string; returning?: boolean }) {
+    if (!computerShellActive) return;
+    const previous = window.location.href;
+    rememberCurrentComputerTask(previous);
+    const retained = ["code", "pages", "browser"].includes(folder) ? computerTasks.routes.get(folder) : undefined;
+    const url = new URL(destination?.href ?? retained ?? previous);
+    if (!destination && !retained) {
+      STANDALONE_ROUTE_PARAMS.forEach((param) => url.searchParams.delete(param));
+      ["write", "article", "profile", "profileTab"].forEach(param => url.searchParams.delete(param));
+      if (activeFolder === "jobs" && folder !== "jobs") {
+        ["job", "mode", "q", "status", "cursor"].forEach(param => url.searchParams.delete(param));
+      }
+      if (activeFolder === "permission" && folder !== "permission") {
+        ["permission", "txid", "mode"].forEach(param => url.searchParams.delete(param));
+      }
+      if (activeFolder === "code" && folder !== "code") {
+        ["repo", "version", "path", "tab"].forEach(param => url.searchParams.delete(param));
+      }
+      if (["pages", "browser"].includes(activeFolder) && folder !== activeFolder) {
+        ["txid", "name"].forEach(param => url.searchParams.delete(param));
+      }
+      if (activeFolder === "search" && folder !== "search") {
+        ["q", "protocol", "kind", "status", "valid", "sort", "record", "cursor"].forEach(param => url.searchParams.delete(param));
+      }
     }
-    if (activeFolder === "permission" && folder !== "permission") {
-      ["permission", "txid", "mode"].forEach(param => url.searchParams.delete(param));
+    if (folder === "inbox" || folder === "custom") url.searchParams.delete("folder");
+    else url.searchParams.set("folder", folder);
+    url.searchParams.set("network", network);
+    if (!destination?.returning && (folder !== activeFolder || destination && url.href !== previous)) {
+      computerTasks.back.push({ folder: activeFolder, href: previous });
+      if (computerTasks.back.length > 64) computerTasks.back.shift();
     }
-    if (activeFolder === "code" && folder !== "code") {
-      ["repo", "version", "path", "tab"].forEach(param => url.searchParams.delete(param));
-    }
-    if (activeFolder === "search" && folder !== "search") {
-      ["q", "protocol", "kind", "status", "valid", "sort", "record", "cursor"].forEach(param => url.searchParams.delete(param));
-      url.searchParams.set("network", network);
-    }
-    if (folder === "inbox") {
-      url.searchParams.delete("folder");
-    } else {
-      url.searchParams.set("folder", folder);
-    }
-    window.history.replaceState(
-      {},
-      "",
-      `${url.pathname}${url.search}${url.hash}`,
-    );
+    window.history.replaceState(computerHistoryState(activeFolder), "", previous);
+    const state = computerHistoryState(folder);
+    if (url.href !== previous && (folder !== activeFolder || destination)) window.history.pushState(state, "", `${url.pathname}${url.search}${url.hash}`);
+    else window.history.replaceState(state, "", `${url.pathname}${url.search}${url.hash}`);
+    computerTasks.routes.set(folder, url.href);
+    setComputerTaskRevision(value => value + 1);
+  }
+
+  function restoreComputerMailTask(folder: Folder) {
+    const task = computerTasks.mail.get(folder);
+    if (!task) return false;
+    setSortMode(task.sortMode);
+    setActiveCustomFolderId(task.customFolderId);
+    setSelectedKey(task.selectedKey);
+    // Read the latest scoped draft, so an old navigation entry cannot resurrect
+    // a discarded or already-sent composition or overwrite a newer draft.
+    const draft = task.composeOpen && address ? loadDraft(address, network) : undefined;
+    if (draft) {
+      setSavedDraft(draft);
+      applyDraft(draft, folder);
+    } else setComposeOpen(false);
+    return true;
+  }
+
+  function returnToComputerTask() {
+    const previous = computerTasks.back[computerTasks.back.length - 1];
+    if (!previous || !canLeavePublishWriter()) return;
+    computerTasks.back.pop();
+    openFolder(previous.folder, { href: previous.href, returning: true });
   }
 
   function rememberComputerWorkspaceAsset(folder: Folder, asset = "") {
@@ -28243,13 +28331,19 @@ export default function App() {
     );
   }
 
-  function openFolder(folder: Folder) {
+  function openFolder(folder: Folder, destination?: { href: string; returning?: boolean }) {
     if (!canLeavePublishWriter()) return;
-    rememberComputerFolder(folder);
+    if (!destination && folder === "inbox" && !isMailTask(activeFolder) && computerTasks.lastMailFolder) folder = computerTasks.lastMailFolder;
+    if (!destination && folder === activeFolder) { setSidebarExpanded(false); return; }
+    rememberComputerFolder(folder, destination);
     if (activeFolder === "publish" && folder === "publish") {
       window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
     }
     setSidebarExpanded(false);
+    if (restoreComputerMailTask(folder)) {
+      setActiveFolder(folder);
+      return;
+    }
 
     if (folder === "drafts") {
       const draft = address ? loadDraft(address, network) : savedDraft;
@@ -28288,9 +28382,58 @@ export default function App() {
         : current,
     );
     setComposeOpen(false);
-    setReplyParentTxid(undefined);
-    setAttachment(undefined);
     setSelectedKey("");
+  }
+
+  function computerHandoffUrl(folder: "code" | "pages" | "browser", values: Record<string, string | undefined> = {}) {
+    const url = new URL(window.location.origin + window.location.pathname);
+    url.searchParams.set("folder", folder);
+    url.searchParams.set("network", network);
+    for (const [key, value] of Object.entries(values)) if (value) url.searchParams.set(key, value);
+    return url.href;
+  }
+
+  function canOpenComputerReference(referenceNetwork: BitcoinNetwork) {
+    if (referenceNetwork !== network) {
+      setStatus({ tone: "bad", text: `This source is on ${networkLabel(referenceNetwork)}. Switch Computer to that network before continuing. Your current task is preserved.` });
+      return false;
+    }
+    return canLeavePublishWriter();
+  }
+
+  function openCodeFromPages(location: CodeLocation) {
+    if (!canOpenComputerReference(location.network)) return;
+    if (location.repo && computerTasks.code) computerTasks.code = { ...computerTasks.code, editor: false };
+    openFolder("code", { href: computerHandoffUrl("code", { repo: location.repo, version: location.version, path: location.path }) });
+  }
+
+  function openPagesFromCode(source: CodeSourceReference) {
+    if (!canOpenComputerReference(source.network)) return;
+    setBrowserPageImport(undefined);
+    setCodePageImport({ ...source, requestId: ++computerHandoffId.current, scope: computerTaskScope });
+    openFolder("pages", { href: computerHandoffUrl("pages") });
+  }
+
+  function openPagesFromBrowser(page?: BrowserResolvedPage) {
+    if (!canOpenComputerReference(page?.network ?? network)) return;
+    setCodePageImport(undefined);
+    setBrowserPageImport(page ? { network: page.network, txid: page.txid, sha256: page.attachment.sha256,
+      requestId: ++computerHandoffId.current, scope: computerTaskScope } : undefined);
+    openFolder("pages", { href: computerHandoffUrl("pages", { txid: page?.txid }) });
+  }
+
+  function openBrowserFromPages(target: PagesBrowserTarget) {
+    if (!canOpenComputerReference(target.network)) return;
+    const value = "txid" in target ? target.txid : target.name;
+    const previous = computerTasks.browser;
+    if (previous && previous.tabs.length >= 12) {
+      setStatus({ tone: "bad", text: "Browser has 12 tabs open. Close a tab before opening another source. Your Pages task is preserved." });
+      return;
+    }
+    const id = previous ? Math.max(...previous.tabs.map(tab => tab.id)) + 1 : 1;
+    computerTasks.browser = { tabs: [...(previous?.tabs ?? []), { id, title: "New tab", entries: [{ target: value, network: target.network }], index: 0 }],
+      activeId: id, query: value, network: target.network, expanded: previous?.expanded ?? false, template: previous?.template };
+    openFolder("browser", { href: computerHandoffUrl("browser", "txid" in target ? { txid: target.txid } : { name: target.name }) });
   }
 
   function openDnsManagement() {
@@ -28360,6 +28503,28 @@ export default function App() {
   }
 
   function canLeavePublishWriter() {
+    if (isMailTask(activeFolder) && composeOpen && address) {
+      if (mailSendBusy && !mailReview) {
+        setStatus({ tone: "idle", text: "Finish the current Mail signing or broadcast before changing apps." });
+        return false;
+      }
+      try {
+        const draft: DraftMessage = { amountSats, attachment, ccRecipient, feeRate, from: address, memo, network,
+          parentTxid: replyParentTxid, recipient, socialMode, subject, updatedAt: new Date().toISOString(),
+          workAmount: messageWorkAmount };
+        if (isDraftContentful(draft)) {
+          saveDraft(draft);
+          if (localStorage.getItem(draftKey(address, network)) !== JSON.stringify(draft)) throw new Error("Draft storage did not retain the complete message.");
+          setSavedDraft(draft);
+        }
+      } catch (error) {
+        setStatus({ tone: "bad", text: `Mail could not save this draft. Keep this workspace open and copy your message before leaving. ${errorMessage(error, "Local storage is unavailable.")}` });
+        return false;
+      }
+    }
+    if (activeFolder === "pages") return window.dispatchEvent(
+      new Event("proofofwork:before-pages-writer-leave", { cancelable: true }),
+    );
     if (activeFolder === "permission") return window.dispatchEvent(
       new Event("proofofwork:before-permission-writer-leave", { cancelable: true }),
     );
@@ -37625,7 +37790,16 @@ export default function App() {
   function pagesWorkspace(embedded: boolean) {
     return (
       <PagesWorkspace
+        key={embedded ? computerTaskScope : "standalone-pages"}
         address={address} network={network} embedded={embedded}
+        initialViewState={embedded ? computerTasks.pages : undefined}
+        onViewStateChange={embedded ? pagesViewStateChange : undefined}
+        onOpenCode={embedded ? openCodeFromPages : undefined}
+        onOpenBrowser={embedded ? openBrowserFromPages : undefined}
+        codeImport={embedded && codePageImport?.scope === computerTaskScope ? codePageImport : undefined}
+        onCodeImportHandled={id => setCodePageImport(current => current?.requestId === id ? undefined : current)}
+        pageImport={embedded && browserPageImport?.scope === computerTaskScope ? browserPageImport : undefined}
+        onPageImportHandled={id => setBrowserPageImport(current => current?.requestId === id ? undefined : current)}
         onPublish={preparePagesPublication} onLoadPage={loadPagesSource} onResolveIdentity={resolvePagesIdentity}
         onLinkPage={linkPagesDns}
         dnsBrowserHref={name => `${appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}${isLocalPreviewHost() ? "&" : "/?"}name=${encodeURIComponent(name)}`}
@@ -37973,7 +38147,9 @@ export default function App() {
         status={status}
       />
 
-      <ComputerShell layout={computerLayout} activeFolder={activeFolder} onOpenWorkspace={openFolder} title={computerMailWorkspace ? "Mail" : folderLabel(activeFolder)} overview={computerOverview}>
+      <ComputerShell layout={computerLayout} activeFolder={activeFolder}
+        backLabel={computerTasks.back.length ? computerAppForWorkspace(computerTasks.back[computerTasks.back.length - 1].folder).label : undefined}
+        onBack={returnToComputerTask} onOpenWorkspace={openFolder} title={computerMailWorkspace ? "Mail" : folderLabel(activeFolder)} overview={computerOverview}>
       <section className={layoutClassName}>
         {computerNavigationOverlay && sidebarExpanded ? (
           <button
@@ -38101,6 +38277,8 @@ export default function App() {
                     activeCustomFolderId === folder.id
                   }
                   onClick={() => {
+                    if (!canLeavePublishWriter()) return;
+                    rememberComputerFolder("custom");
                     setSidebarExpanded(false);
                     setActiveFolder("custom");
                     setActiveCustomFolderId(folder.id);
@@ -38920,7 +39098,9 @@ export default function App() {
         ) : activeFolder === "pages" ? (
           pagesWorkspace(true)
         ) : activeFolder === "browser" ? (
-          <BrowserWorkspace activeNetwork={network} />
+          <BrowserWorkspace key={computerTaskScope} activeNetwork={network}
+            initialSession={computerTasks.browser} onSessionChange={browserSessionChange}
+            onOpenPages={openPagesFromBrowser} />
         ) : activeFolder === "boost" ? (
           <Suspense
             fallback={
@@ -38957,7 +39137,8 @@ export default function App() {
           </Suspense>
         ) : activeFolder === "code" ? (
           <Suspense fallback={<div role="status" aria-busy="true">Loading Code…</div>}>
-            <CodeRoot embedded initialAddress={address} initialNetwork={network} />
+            <CodeRoot key={computerTaskScope} embedded initialAddress={address} initialNetwork={network}
+              initialViewState={computerTasks.code} onViewStateChange={codeViewStateChange} onOpenPages={openPagesFromCode} />
           </Suspense>
         ) : activeFolder === "log" ? (
           <ActivityWorkspace
@@ -40054,11 +40235,27 @@ function BrowserApp({
 
 function BrowserWorkspace({
   activeNetwork,
+  initialSession,
+  onSessionChange,
+  onOpenPages,
 }: {
   activeNetwork: BitcoinNetwork;
+  initialSession?: BrowserSession;
+  onSessionChange?: (session: BrowserSession) => void;
+  onOpenPages?: (page?: BrowserResolvedPage) => void;
 }) {
-  const [network, setNetwork] = useState<BitcoinNetwork>(activeNetwork);
-  const [query, setQuery] = useState("");
+  const sessionRef = useRef(initialSession);
+  const templateRef = useRef(initialSession?.template);
+  const rememberSession = useCallback((session: BrowserSession) => {
+    sessionRef.current = { ...session, template: templateRef.current };
+    onSessionChange?.(sessionRef.current);
+  }, [onSessionChange]);
+  const rememberTemplate = useCallback((template: BrowserTemplateDraft) => {
+    templateRef.current = template;
+    if (sessionRef.current) rememberSession(sessionRef.current);
+  }, [rememberSession]);
+  const [network, setNetwork] = useState<BitcoinNetwork>(initialSession?.network ?? activeNetwork);
+  const [query, setQuery] = useState(() => initialSession?.query ?? txidFromBrowserLocation());
   const [page, setPage] = useState<BrowserResolvedPage | undefined>();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ tone: StatusTone; text: string }>({
@@ -40068,23 +40265,19 @@ function BrowserWorkspace({
   const loadGenerationRef = useRef(0);
   const loadControllerRef = useRef<AbortController>();
   useEffect(() => {
-    loadGenerationRef.current += 1;
-    loadControllerRef.current?.abort();
-    setNetwork(activeNetwork);
-    setPage(undefined);
-    setLoading(false);
-    setStatus({
-      tone: "idle",
-      text: `View Page to load verified HTML on ${networkLabel(activeNetwork)}.`,
-    });
+    const tab = initialSession?.tabs.find(item => item.id === initialSession.activeId);
+    const entry = tab?.entries[tab.index];
+    const target = entry?.target ?? (!initialSession ? normalizeBrowserTarget(query) : "");
+    if (target && (!entry || entry.network === network)) void loadPage(target, network, true);
+    else if (entry && entry.network !== network) setStatus({ tone: "idle", text: `View Page to load verified HTML on ${networkLabel(network)}.` });
     return () => {
       loadGenerationRef.current += 1;
       loadControllerRef.current?.abort();
     };
-  }, [activeNetwork]);
+  }, []);
 
   const loadPage = useCallback(
-    async (target = query, targetNetwork = network) => {
+    async (target = query, targetNetwork = network, retainQuery = false) => {
       const generation = ++loadGenerationRef.current;
       loadControllerRef.current?.abort();
       const controller = new AbortController();
@@ -40108,7 +40301,7 @@ function BrowserWorkspace({
           return;
         }
         setPage(loadedPage);
-        setQuery(txid);
+        if (!retainQuery) setQuery(txid);
         setNetwork(targetNetwork);
         setStatus({
           tone: loadedPage.confirmed ? "good" : "idle",
@@ -40153,6 +40346,7 @@ function BrowserWorkspace({
       <AppStatusRow className="browser-workspace-status" persistent status={status} />
       <BrowserWindow embedded
         page={page} query={query} network={network} loading={loading}
+        initialSession={initialSession} onSessionChange={rememberSession} onOpenPages={onOpenPages}
         normalizeTarget={normalizeBrowserTarget}
         onQueryChange={setQuery} onNetworkChange={changeBrowserWorkspaceNetwork}
         onNavigate={(target, targetNetwork) => loadPage(target, targetNetwork)}
@@ -40166,21 +40360,24 @@ function BrowserWorkspace({
         explorerHref={(currentPage) => explorerTxUrl(currentPage.txid, currentPage.network)}
         editHref={(currentPage) => pagesTxUrl(currentPage.txid, currentPage.network)}
         createHref={appHref(PAGES_APP_URL, LOCAL_PAGES_APP_URL)}
-        templateTools={<BrowserTemplateTools />}
+        templateTools={<BrowserTemplateTools initialDraft={initialSession?.template} onDraftChange={rememberTemplate} onOpenPages={onOpenPages ? () => onOpenPages() : undefined} />}
       />
     </section>
   );
 }
 
-function BrowserTemplateTools() {
-  const [title, setTitle] = useState("My ProofOfWork page");
-  const [kicker, setKicker] = useState("ProofOfWork.Me Browser");
-  const [body, setBody] = useState("This page lives as HTML carried by the ProofOfWork Computer.");
+function BrowserTemplateTools({ onOpenPages, initialDraft, onDraftChange }: {
+  onOpenPages?: () => void; initialDraft?: BrowserTemplateDraft; onDraftChange?: (draft: BrowserTemplateDraft) => void;
+} = {}) {
+  const [title, setTitle] = useState(initialDraft?.title ?? "My ProofOfWork page");
+  const [kicker, setKicker] = useState(initialDraft?.kicker ?? "ProofOfWork.Me Browser");
+  const [body, setBody] = useState(initialDraft?.body ?? "This page lives as HTML carried by the ProofOfWork Computer.");
+  useEffect(() => { onDraftChange?.({ title, kicker, body }); }, [title, kicker, body, onDraftChange]);
   const [copied, setCopied] = useState(false);
   const template = useMemo(() => browserTemplateHtml(title, kicker, body), [title, kicker, body]);
   return <section className="browser-template-card" id="browser-template">
     <div className="browser-card-head"><h3>Computer-native HTML</h3><div className="browser-template-actions">
-      <a className="primary link-button" href={appHref(PAGES_APP_URL, LOCAL_PAGES_APP_URL)}>Create in Pages</a>
+      <a className="primary link-button" href={appHref(PAGES_APP_URL, LOCAL_PAGES_APP_URL)} onClick={event => { if (onOpenPages && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && event.button === 0) { event.preventDefault(); onOpenPages(); } }}>Create in Pages</a>
       <button className="secondary small" type="button" onClick={() => void copyTextToClipboard(template).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1600); })}><Copy size={14} />{copied ? "Copied" : "Copy HTML"}</button>
       <a className="secondary small link-button" download="proof-page.html" href={`data:text/html;charset=utf-8,${encodeURIComponent(template)}`}><Download size={14} />Download</a>
     </div></div>

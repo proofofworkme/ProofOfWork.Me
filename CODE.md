@@ -144,6 +144,22 @@ listings. Accept that contract while rejecting explicitly incomplete listing
 collections, inconsistent listing counts, or missing wallet authority. Check
 the protected anchor union again before signing and broadcast.
 
+## Computer continuity
+
+Computer retains the selected repository, version and exact path, repository
+search fields and editor view when leaving Code. Editor
+content resumes from the existing network/address-scoped local draft; source,
+comparison baseline and signing authority are verified again. Prepared
+transactions and review consent are never retained as navigation state.
+
+For a verified HTML file, **Continue in Pages** passes the exact network,
+repository, confirmed version, path, SHA-256 and byte size. Pages independently
+rechecks the confirmed tree and source before creating a local draft. Code keeps
+source inert; the handoff does not execute it, publish HTML or make a Code txid a
+DNS page target. Pages can return to that Code reference inside Computer. See
+[Computer task continuity](MAIL_ORGANIZATION.md#computer-task-continuity)
+and [Pages](PAGES.md) for draft and execution boundaries.
+
 ## Replay and discovery
 
 Repository creation sets both repository ID and head to the creation txid,

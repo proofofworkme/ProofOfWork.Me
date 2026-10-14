@@ -61,6 +61,64 @@ Computer's Desktop layout remains separate from the public read-only Desktop
 domain and its canonical file rules. The approved release retains the existing
 production verification and source synchronization requirements.
 
+## Computer task continuity
+
+The approved task-continuity update applies to Mail, Code, Pages and Browser
+inside both Computer layouts. Changing Focus/Desktop still keeps the current
+workspace mounted; switching apps unmounts the departing workspace and retains
+only its local task description.
+
+The shell keeps routes and a bounded return stack in memory for the current
+network and exact connected address, with a separate disconnected scope. The
+window's **Back to …** control and native browser history restore a prior task.
+Changing address or Computer network starts fresh navigation memory. These
+snapshots do not survive a reload, join the organization backup, or establish
+chain state; existing Mail, Code and Pages draft storage remains separate.
+
+- Mail retains its folder, sort, custom-folder choice, selected message and
+  composer state. Before leaving a connected draft, it saves and reads back the
+  exact recipients, subject, body, attachment, reply reference, proof and WORK
+  amounts, social mode and fee rate. Returning reads the latest wallet/network
+  draft, so a sent or discarded composition cannot reappear from an old snapshot.
+  Selecting Mail from another app resumes the last Mail folder.
+- Code retains its repository/version/path route, repository search fields and
+  editor/source-or-diff view. An editor resumes from its scoped local draft;
+  source and the comparison baseline must be verified again. Prepared
+  transactions and review consent are not part of the snapshot.
+- Pages retains its source-or-preview view, publication format, import fields,
+  identity input and DNS link fields. Its existing local draft collection owns
+  the active draft and exact HTML. Failed storage that would lose edited source
+  blocks leaving the workspace and offers an HTML download for recovery.
+- Browser retains its tabs, per-tab history, address-bar text, selected reading
+  network, expanded view and unsent template fields. Returning independently
+  reloads and verifies the active target when it matches the selected reading
+  network; an unsubmitted network change stays ready for View Page. Inactive app frames are destroyed; an earlier Run app choice
+  never resumes scripts. Browser reading-network state does not switch the
+  Computer wallet network.
+
+Embedded handoffs keep the task inside Computer. **Continue in Pages** on a
+verified Code HTML file carries the exact network, repository, confirmed
+version, path, SHA-256 and byte size. Pages independently verifies the complete
+confirmed tree and source before creating a local draft; a Code commit is not a
+published page txid. Browser's **Edit in Pages** carries the source network,
+txid and hash and rechecks the bytes on import. Imported transaction provenance
+remains labeled as the source's status at import, including local edits.
+
+Pages can open its Code reference, imported source txid or `.pow` name in the
+matching embedded workspace, preserving the departing task. A Pages-to-Browser
+handoff opens a new local Browser tab; the twelve-tab limit leaves Pages intact
+until a tab is closed. Network-mismatched references are refused with a clear
+status instead of changing the wallet network. Standalone links retain their
+existing destinations and verification.
+
+Unmounted Code, Pages and Browser invalidate unfinished reads and discard
+execution or transaction-review permission. The current signing/broadcast operation and draft-preservation
+checks may block navigation. Existing signed recovery receipts remain available
+under their own rules and require fresh checks; returning never signs, retries
+or broadcasts. Pages publication still uses Mail's existing exact review and
+must not overwrite an unsent Mail draft. No carrier, fee, registry rule, canonical
+record, or accounting contribution changes.
+
 ## Computer navigation on short screens
 
 At viewport heights of 480px or less, Computer uses document scrolling instead

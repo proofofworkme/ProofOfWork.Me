@@ -6,6 +6,9 @@ import { browserAppDocument, browserDocumentTitle } from "./browserAppDocument";
 type Network = "livenet" | "testnet" | "testnet4";
 type Entry = { target: string; network: Network };
 type Tab = { id: number; title: string; entries: Entry[]; index: number };
+export type BrowserTemplateDraft = { title: string; kicker: string; body: string };
+// Local navigation and unsent template fields only; no verified bytes or run permission.
+export type BrowserSession = { tabs: Tab[]; activeId: number; query: string; network: Network; expanded: boolean; template?: BrowserTemplateDraft };
 type Page = {
   txid: string; network: Network; html: string; confirmed: boolean; source: "attachment" | "message";
   sender: string; amountSats: number; protocolBytes: number;
@@ -20,6 +23,9 @@ type Props<T extends Page> = {
   renderStaticPage: (page: T) => ReactNode;
   explorerHref: (page: T) => string; editHref: (page: T) => string;
   createHref: string; templateTools?: ReactNode;
+  initialSession?: BrowserSession;
+  onSessionChange?: (session: BrowserSession) => void;
+  onOpenPages?: (page?: T) => void;
 };
 const networkLabel = (network: Network) => ({ livenet: "Mainnet", testnet: "Testnet", testnet4: "Testnet4" })[network];
 const pageKey = (page: Page) => `${page.network}:${page.txid}:${page.attachment.sha256}`;
@@ -28,14 +34,14 @@ const sameEntry = (a: Entry, b: Entry) => a.target === b.target && a.network ===
 
 export function BrowserWindow<T extends Page>({ page, query, network, loading, embedded = false,
   normalizeTarget, onQueryChange, onNetworkChange, onNavigate, onClear, renderStaticPage,
-  explorerHref, editHref, createHref, templateTools }: Props<T>) {
-  const [tabs, setTabs] = useState<Tab[]>(() => [{ id: 1, title: "New tab", entries: normalizeTarget(query) ? [{ target: normalizeTarget(query), network }] : [], index: normalizeTarget(query) ? 0 : -1 }]);
-  const [activeId, setActiveId] = useState(1);
+  explorerHref, editHref, createHref, templateTools, initialSession, onSessionChange, onOpenPages }: Props<T>) {
+  const [tabs, setTabs] = useState<Tab[]>(() => initialSession?.tabs ?? [{ id: 1, title: "New tab", entries: normalizeTarget(query) ? [{ target: normalizeTarget(query), network }] : [], index: normalizeTarget(query) ? 0 : -1 }]);
+  const [activeId, setActiveId] = useState(initialSession?.activeId ?? 1);
   const [runtime, setRuntime] = useState<{ key: string; html: string; runId: number }>();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initialSession?.expanded ?? false);
   const [fullscreen, setFullscreen] = useState(false);
   const [notice, setNotice] = useState("");
-  const nextTab = useRef(2);
+  const nextTab = useRef(Math.max(...tabs.map(tab => tab.id)) + 1);
   const root = useRef<HTMLElement>(null);
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
@@ -43,6 +49,8 @@ export function BrowserWindow<T extends Page>({ page, query, network, loading, e
   const entry = activeTab.entries[activeTab.index];
   const displayedPage = page && entry && page.network === network && sameEntry(entry, { target: targetOf(page), network: page.network }) ? page : undefined;
   const activeRuntime = displayedPage && runtime?.key === pageKey(displayedPage) ? runtime : undefined;
+  useEffect(() => { onSessionChange?.({ tabs, activeId, query, network, expanded }); },
+    [tabs, activeId, query, network, expanded, onSessionChange]);
 
   // Browser history restores freshly verified pages through the same adapter.
   // No source or run permission is saved in a tab or restored automatically.
@@ -140,7 +148,7 @@ export function BrowserWindow<T extends Page>({ page, query, network, loading, e
     </form>
 
     <div className="browser-page-toolbar"><span className="browser-page-state">{loading ? "Verifying page…" : displayedPage ? `${displayedPage.confirmed ? "Confirmed" : "Pending"} · ${activeRuntime ? "App running" : "Static page"}` : "New tab"}</span>
-      <div className="browser-page-actions">{displayedPage ? <><button type="button" className="secondary small" disabled={loading} onClick={activeRuntime ? () => setRuntime(undefined) : runApp}>{activeRuntime ? <Square size={15} /> : <Play size={15} />}<span>{activeRuntime ? "Stop app" : "Run app"}</span></button><a className="secondary small link-button" href={editHref(displayedPage)}><Code2 size={15} />Edit in Pages</a></> : <a className="secondary small link-button" href={createHref}>Create in Pages<ArrowUpRight size={14} /></a>}
+      <div className="browser-page-actions">{displayedPage ? <><button type="button" className="secondary small" disabled={loading} onClick={activeRuntime ? () => setRuntime(undefined) : runApp}>{activeRuntime ? <Square size={15} /> : <Play size={15} />}<span>{activeRuntime ? "Stop app" : "Run app"}</span></button><a className="secondary small link-button" href={editHref(displayedPage)} onClick={event => { if (onOpenPages && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && event.button === 0) { event.preventDefault(); setRuntime(undefined); onOpenPages(displayedPage); } }}><Code2 size={15} />Edit in Pages</a></> : <a className="secondary small link-button" href={createHref} onClick={event => { if (onOpenPages && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && event.button === 0) { event.preventDefault(); onOpenPages(); } }}>Create in Pages<ArrowUpRight size={14} /></a>}
         <button className="browser-icon-button" type="button" aria-label={expanded ? "Restore viewport" : "Expand viewport"} aria-pressed={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button>
         <button className="browser-icon-button" type="button" aria-label={fullscreen ? "Exit full screen" : "Full screen"} onClick={() => void toggleFullscreen()}><Expand size={17} /></button></div>
     </div>

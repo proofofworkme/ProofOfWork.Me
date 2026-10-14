@@ -572,6 +572,14 @@ organization-backup allowlist. Chain authority, fees, protocols and local signin
 remain unchanged. Release approval does not replace production verification or
 the mandatory source synchronization gate.
 
+Computer task continuity keeps local work separate from execution and signing
+authority. Keep Mail, Code, Pages and Browser task descriptions scoped to network
+and address while inactive workspaces unmount. Returning may restore exact
+drafts, source references and navigation, but must verify chain content again
+where required and never resume app execution or transaction consent. Preserve the source network and
+exact references across handoffs; changing tools must not silently switch the
+wallet network or turn local source into a published record.
+
 ## Voice
 
 The native voice is high-conviction, fast, direct, mythic, and alive. It sounds like a founder mid-breakthrough, building in public while the machine is turning on.

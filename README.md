@@ -362,6 +362,23 @@ synchronization workflow. Its completion requires the exact released source
 across GitHub `main`, primary local `main`, local preview and production, with
 `npm run check:release-sync` passing.
 
+### Computer task continuity
+
+The approved continuity update retains Mail, Code, Pages and Browser tasks while
+switching Computer workspaces in either Focus or Desktop. Task navigation is
+memory-only and scoped to the current network and address; existing local drafts
+keep their own storage rules. Returning restores fields, selections and source
+references, then verifies chain content again where required. Inactive workspaces unmount, and navigation
+never restores Run app permission or transaction consent.
+
+Verified Code HTML, Browser source and Pages links can continue inside Computer
+with an explicit return path. References retain their exact network, transaction,
+version and path where applicable; a network mismatch requires the user to select
+the matching Computer network. See
+[the continuity contract](MAIL_ORGANIZATION.md#computer-task-continuity)
+for retained state, handoffs and authority boundaries. Release completion still
+requires production verification and the mandatory source synchronization check.
+
 Official YouTube:
 
 ```text

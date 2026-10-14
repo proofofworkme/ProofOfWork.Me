@@ -10,6 +10,7 @@ import "./pages.css";
 import { dnsPageLinkNameError, normalizeDnsPageLinkName } from "../../shared/protocol/dnsPages.mjs";
 import { parseDnsSubdomainName } from "../../shared/protocol/dnsSubdomains.mjs";
 import { fetchCodeRepository, codeVersion, verifiedCodeSource } from "../code/codeApi";
+import { assertCodeSourceReference, type CodeLocation, type CodeSourceReference } from "../code/codeNavigation";
 import { validateCodePath } from "../../shared/protocol/codeRepository.mjs";
 import { appHref } from "../../app/routeRegistry";
 
@@ -18,6 +19,9 @@ export type PagesPublicationDraft = PagesPublication;
 export type PagesLoadedPage = { html: string; title: string; txid: string; confirmed: boolean; sender: string; sha256: string };
 export type PagesFileChoice = { key: string; name: string; html: string };
 export type PagesDnsLinkRequest = { name: string; pageTxid: string | null };
+export type PagesBrowserTarget = { network: PagesNetwork; txid: string } | { network: PagesNetwork; name: string };
+export type PagesViewState = { view: "source" | "preview"; mode: "body" | "attachment"; txid: string; identity: string;
+  fileKey: string; codeRepo: string; codePath: string; codeRevision: string; dnsName: string; dnsTxid: string };
 export type PagesWorkspaceProps = {
   embedded?: boolean;
   address?: string;
@@ -28,6 +32,14 @@ export type PagesWorkspaceProps = {
   renderStaticPreview: (html: string) => ReactNode;
   fileChoices?: PagesFileChoice[];
   onOpenFiles?: () => void;
+  onOpenCode?: (location: CodeLocation) => void;
+  onOpenBrowser?: (target: PagesBrowserTarget) => void;
+  codeImport?: CodeSourceReference & { requestId: number };
+  onCodeImportHandled?: (requestId: number) => void;
+  pageImport?: { network: PagesNetwork; txid: string; sha256: string; requestId: number };
+  onPageImportHandled?: (requestId: number) => void;
+  initialViewState?: PagesViewState;
+  onViewStateChange?: (state: PagesViewState) => void;
   browserHref: (txid: string) => string;
   pageHref?: (txid: string) => string;
   onLinkPage?: (request: PagesDnsLinkRequest) => void | Promise<void>;
@@ -75,25 +87,25 @@ export function PagesWorkspace(props: PagesWorkspaceProps) {
   return <PagesEditor key={scopeKey} {...props} scopeKey={scopeKey} />;
 }
 
-function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onResolveIdentity, renderStaticPreview, fileChoices = [], onOpenFiles, browserHref, pageHref, onLinkPage, dnsBrowserHref, dnsLinkFeeControl, dnsLinkRestore, scopeKey }: PagesWorkspaceProps & { scopeKey: string }) {
+function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onResolveIdentity, renderStaticPreview, fileChoices = [], onOpenFiles, onOpenCode, onOpenBrowser, codeImport, onCodeImportHandled, pageImport, onPageImportHandled, initialViewState, onViewStateChange, browserHref, pageHref, onLinkPage, dnsBrowserHref, dnsLinkFeeControl, dnsLinkRestore, scopeKey }: PagesWorkspaceProps & { scopeKey: string }) {
   const [initial] = useState(() => initialDrafts(scopeKey));
   const [store, setStore] = useState(initial.store);
   const [saveError, setSaveError] = useState(initial.error);
   const [savedAt, setSavedAt] = useState<number>();
-  const [view, setView] = useState<"source" | "preview">("source");
+  const [view, setView] = useState<"source" | "preview">(initialViewState?.view === "preview" ? "preview" : "source");
   const [status, setStatus] = useState<{ tone: "idle" | "good" | "bad"; text: string }>({ tone: "idle", text: "Create HTML locally. Preview it, then review publication in Mail." });
-  const [mode, setMode] = useState<"body" | "attachment">("body");
-  const [txid, setTxid] = useState(() => new URLSearchParams(window.location.search).get("txid") || "");
-  const [identity, setIdentity] = useState("");
-  const [fileKey, setFileKey] = useState("");
-  const [codeRepo, setCodeRepo] = useState("");
-  const [codePath, setCodePath] = useState("index.html");
-  const [codeRevision, setCodeRevision] = useState("");
+  const [mode, setMode] = useState<"body" | "attachment">(initialViewState?.mode === "attachment" ? "attachment" : "body");
+  const [txid, setTxid] = useState(() => initialViewState?.txid ?? (new URLSearchParams(window.location.search).get("txid") || ""));
+  const [identity, setIdentity] = useState(initialViewState?.identity ?? "");
+  const [fileKey, setFileKey] = useState(initialViewState?.fileKey ?? "");
+  const [codeRepo, setCodeRepo] = useState(initialViewState?.codeRepo ?? "");
+  const [codePath, setCodePath] = useState(initialViewState?.codePath ?? "index.html");
+  const [codeRevision, setCodeRevision] = useState(initialViewState?.codeRevision ?? "");
   const [busy, setBusy] = useState<"load" | "identity" | "publish" | "import" | "code" | "link" | undefined>();
   const codeInFlight = useRef(false);
   const codeAbort = useRef<AbortController>();
-  const [dnsName, setDnsName] = useState("");
-  const [dnsTxid, setDnsTxid] = useState("");
+  const [dnsName, setDnsName] = useState(initialViewState?.dnsName ?? "");
+  const [dnsTxid, setDnsTxid] = useState(initialViewState?.dnsTxid ?? "");
   const dnsAutofill = useRef("");
   const dnsInFlight = useRef(false);
   const [runtime, setRuntime] = useState<{ draftId: string; source: string; srcDoc: string; runId: number }>();
@@ -102,6 +114,9 @@ function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onReso
   const importInput = useRef<HTMLInputElement>(null);
   const generation = useRef(0);
   const mounted = useRef(true);
+  const lastSavedStore = useRef(JSON.stringify(initial.store));
+  const leaveState = useRef({ store, busy });
+  leaveState.current = { store, busy };
   const draft = store.drafts.find((candidate) => candidate.id === store.activeId)!;
   const bytes = useMemo(() => pageByteLength(draft.html), [draft.html]);
   const activeRuntime = runtime?.draftId === draft.id && runtime.source === draft.html ? runtime : undefined;
@@ -114,7 +129,7 @@ function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onReso
   if (dnsBrowserHref && dnsName.trim() && !dnsNameError) dnsNameHref = dnsBrowserHref(dnsChildName?.name ?? `${normalizeDnsPageLinkName(dnsName)}.pow`);
   const codeParams = new URLSearchParams({ network });
   if (/^[a-f0-9]{64}$/iu.test(codeRepo.trim())) codeParams.set("repo", codeRepo.trim().toLowerCase());
-  if (validateCodePath(codePath.trim())) codeParams.set("path", codePath.trim());
+  if (validateCodePath(codePath)) codeParams.set("path", codePath);
   if (/^[a-f0-9]{64}$/iu.test(codeRevision.trim())) codeParams.set("version", codeRevision.trim().toLowerCase());
   const codeHref = appHref(`https://code.proofofwork.me/?${codeParams}`, `/?code=1&${codeParams}`);
 
@@ -124,19 +139,51 @@ function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onReso
   }, []);
   useEffect(() => {
     const initialTxid = new URLSearchParams(window.location.search).get("txid") || "";
-    if (/^[a-f0-9]{64}$/iu.test(initialTxid)) void loadHtml(true);
+    if (!initialViewState && !codeImport && !pageImport && /^[a-f0-9]{64}$/iu.test(initialTxid)) void loadHtml(true);
   }, []);
+  useEffect(() => {
+    onViewStateChange?.({ view, mode, txid, identity, fileKey, codeRepo, codePath, codeRevision, dnsName, dnsTxid });
+  }, [view, mode, txid, identity, fileKey, codeRepo, codePath, codeRevision, dnsName, dnsTxid, onViewStateChange]);
+  useEffect(() => {
+    if (!codeImport) return;
+    setCodeRepo(codeImport.repo); setCodePath(codeImport.path); setCodeRevision(codeImport.version);
+    void importFromCode(codeImport).then(handled => {
+      if (handled && mounted.current) onCodeImportHandled?.(codeImport.requestId);
+    });
+  }, [codeImport?.requestId]);
+  useEffect(() => {
+    if (!pageImport) return;
+    if (pageImport.network !== network || !/^[a-f0-9]{64}$/u.test(pageImport.sha256)) {
+      setStatus({ tone: "bad", text: "The Browser source reference is incomplete or belongs to another network. Open the verified page again to continue." });
+      onPageImportHandled?.(pageImport.requestId);
+      return;
+    }
+    setTxid(pageImport.txid);
+    void loadHtml(false, pageImport.txid, pageImport.sha256).then(handled => {
+      if (handled && mounted.current) onPageImportHandled?.(pageImport.requestId);
+    });
+  }, [pageImport?.requestId]);
   useEffect(() => {
     if (!initial.writable) return;
     try {
       const checked = validatePagesDrafts(store);
-      localStorage.setItem(scopeKey, JSON.stringify(checked));
+      const encoded = JSON.stringify(checked);
+      localStorage.setItem(scopeKey, encoded);
+      if (localStorage.getItem(scopeKey) !== encoded) throw new Error("Local draft storage did not retain the source.");
+      lastSavedStore.current = encoded;
       setSaveError("");
       setSavedAt(Date.now());
     } catch (error) {
       setSaveError(`${message(error, "Local autosave failed.")} Your current work remains in this session. Download HTML to keep a copy.`);
     }
   }, [initial.writable, scopeKey, store]);
+  useEffect(() => {
+    const leave = (event: Event) => { if (!preserveDrafts()) event.preventDefault(); };
+    const unload = (event: BeforeUnloadEvent) => { if (!preserveDrafts()) { event.preventDefault(); event.returnValue = ""; } };
+    window.addEventListener("proofofwork:before-pages-writer-leave", leave);
+    window.addEventListener("beforeunload", unload);
+    return () => { window.removeEventListener("proofofwork:before-pages-writer-leave", leave); window.removeEventListener("beforeunload", unload); };
+  }, []);
   useEffect(() => {
     const previous = dnsAutofill.current;
     setDnsTxid((current) => !current || current === previous ? suggestedDnsTxid : current);
@@ -149,7 +196,41 @@ function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onReso
     setStatus({ tone: "idle", text: "Saved DNS page-link task restored. Its live owner, epoch, page, and funding are checked again before review." });
   }, [dnsLinkRestore?.nonce]);
 
+  function preserveDrafts() {
+    const current = leaveState.current;
+    if (current.busy === "publish" || current.busy === "link") {
+      setStatus({ tone: "bad", text: "Finish the current publication or page-link task before leaving Pages." });
+      return false;
+    }
+    try {
+      const encoded = JSON.stringify(validatePagesDrafts(current.store));
+      if (encoded === lastSavedStore.current) return true;
+      if (!initial.writable) throw new Error("Saved Pages drafts are unreadable.");
+      localStorage.setItem(scopeKey, encoded);
+      if (localStorage.getItem(scopeKey) !== encoded) throw new Error("Local draft storage did not retain the source.");
+      lastSavedStore.current = encoded;
+      return true;
+    } catch (error) {
+      setSaveError(`${message(error, "Local autosave failed.")} Download HTML to keep a separate copy of this source.`);
+      setStatus({ tone: "bad", text: "Pages could not preserve your edited source. Keep this workspace open and download the HTML before continuing." });
+      return false;
+    }
+  }
+
+  function openCode() {
+    if (!onOpenCode || !preserveDrafts()) return;
+    onOpenCode({ network, repo: codeParams.get("repo") ?? undefined, version: codeParams.get("version") ?? undefined, path: codeParams.get("path") ?? undefined });
+  }
+
+  function openBrowser(target: PagesBrowserTarget) {
+    if (onOpenBrowser && preserveDrafts()) onOpenBrowser(target);
+  }
+
   function invalidate() {
+    // A local edit or draft choice cancels an explicit import immediately, even
+    // if its underlying read has not settled before this workspace is left.
+    if (codeImport) onCodeImportHandled?.(codeImport.requestId);
+    if (pageImport) onPageImportHandled?.(pageImport.requestId);
     generation.current += 1;
     codeAbort.current?.abort();
     setRuntime(undefined);
@@ -215,11 +296,11 @@ function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onReso
     } finally { if (mounted.current && request === generation.current) setBusy(undefined); }
   }
 
-  async function loadHtml(preview = false) {
-    const target = txid.trim().toLowerCase();
+  async function loadHtml(preview = false, targetInput = txid, expectedHash?: string): Promise<boolean> {
+    const target = targetInput.trim().toLowerCase();
     if (!/^[a-f0-9]{64}$/u.test(target)) {
       setStatus({ tone: "bad", text: "Enter a valid 64 character transaction ID." });
-      return;
+      return true;
     }
     const request = ++generation.current;
     setRuntime(undefined);
@@ -227,12 +308,13 @@ function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onReso
     setStatus({ tone: "idle", text: "Verifying HTML through Browser's existing transaction and file checks..." });
     try {
       const loaded = await onLoadPage(target);
-      if (!mounted.current || request !== generation.current) return;
+      if (!mounted.current || request !== generation.current) return false;
       const html = validatePageHtml(loaded.html);
       if (loaded.txid !== target || !/^[a-f0-9]{64}$/u.test(loaded.sha256)
           || typeof loaded.confirmed !== "boolean" || typeof loaded.sender !== "string") {
         throw new Error("The loaded page's source evidence is incomplete.");
       }
+      if (expectedHash && loaded.sha256 !== expectedHash) throw new Error("The verified page differs from the Browser source. Open it in Browser again before continuing.");
       const reusable = store.drafts.find((item) => item.origin?.txid === loaded.txid && !item.origin.modified && item.html === html);
       const imported: PageDraft = { ...(reusable || createDraft(loaded.title.slice(0, 160) || "Imported page", html)), updatedAt: Date.now(), origin: {
         txid: loaded.txid, sha256: loaded.sha256, confirmed: loaded.confirmed, sender: loaded.sender, modified: false,
@@ -244,8 +326,10 @@ function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onReso
       } else addDraft(imported);
       if (preview) setView("preview");
       setStatus({ tone: loaded.confirmed ? "good" : "idle", text: loaded.confirmed ? "Verified confirmed HTML imported as a local draft. Scripts have not run." : "Verified pending HTML imported. Pending visibility is best effort; confirmation is canonical. Scripts have not run." });
+      return true;
     } catch (error) {
       if (mounted.current && request === generation.current) setStatus({ tone: "bad", text: message(error, "Could not load verified HTML.") });
+      return mounted.current && request === generation.current;
     } finally { if (mounted.current && request === generation.current) setBusy(undefined); }
   }
 
@@ -277,18 +361,23 @@ function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onReso
     } catch (error) { setStatus({ tone: "bad", text: message(error, "Could not import from Files.") }); }
   }
 
-  async function importFromCode() {
-    if (codeInFlight.current || dnsInFlight.current) return;
-    const repo = codeRepo.trim().toLowerCase();
-    const path = codePath.trim();
-    const requestedVersion = codeRevision.trim().toLowerCase();
+  async function importFromCode(reference?: CodeSourceReference): Promise<boolean> {
+    if (dnsInFlight.current || codeInFlight.current && !reference) return false;
+    if (reference) codeAbort.current?.abort();
+    const repo = reference?.repo ?? codeRepo.trim().toLowerCase();
+    const path = reference?.path ?? codePath;
+    const requestedVersion = reference?.version ?? codeRevision.trim().toLowerCase();
+    if (reference) {
+      try { assertCodeSourceReference(reference, network); }
+      catch (error) { setStatus({ tone: "bad", text: message(error, "The Code source reference is unavailable.") }); return true; }
+    }
     if (!/^[a-f0-9]{64}$/u.test(repo) || requestedVersion && !/^[a-f0-9]{64}$/u.test(requestedVersion)) {
       setStatus({ tone: "bad", text: "Enter a 64 character repository transaction and, optionally, a confirmed version transaction." });
-      return;
+      return true;
     }
     if (!validateCodePath(path) || !/\.(?:html?|xhtml)$/iu.test(path)) {
       setStatus({ tone: "bad", text: "Choose an HTML file path from the Code repository." });
-      return;
+      return true;
     }
     codeInFlight.current = true;
     const request = ++generation.current;
@@ -299,22 +388,24 @@ function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onReso
     setStatus({ tone: "idle", text: "Verifying the confirmed Code tree, version, and exact HTML bytes..." });
     try {
       const detail = await fetchCodeRepository(network, repo, { version: requestedVersion || undefined, fresh: true, signal: controller.signal });
-      if (!mounted.current || request !== generation.current) return;
+      if (!mounted.current || request !== generation.current) return false;
       const version = codeVersion(detail, requestedVersion);
       if (!/^[a-f0-9]{64}$/u.test(version)) throw new Error("The confirmed Code version is unavailable.");
       const expected = detail.files.find((file) => file.path === path);
       if (!expected) throw new Error("This HTML file is missing from the confirmed Code version.");
+      if (reference) assertCodeSourceReference(reference, network, expected);
       const loaded = await fetchCodeRepository(network, repo, { snapshot: detail.snapshot.id, version, path, signal: controller.signal });
-      if (!mounted.current || request !== generation.current) return;
+      if (!mounted.current || request !== generation.current) return false;
       if (!loaded.file) throw new Error("Verified Code source bytes are unavailable.");
       const html = decodePageFile(verifiedCodeSource(loaded.file, expected).bytes);
       addDraft(createDraft(path.split("/").pop()!.replace(/\.(?:html?|xhtml)$/iu, "").slice(0, 160) || "Code HTML", html));
       setStatus({ tone: "good", text: `Verified Code HTML imported from ${path} at version ${version.slice(0, 12)}. This local draft must be published before DNS linking. Scripts have not run.` });
+      return true;
     } catch (error) {
       if (mounted.current && request === generation.current) setStatus({ tone: "bad", text: message(error, "Could not import verified Code HTML.") });
+      return mounted.current && request === generation.current;
     } finally {
-      codeInFlight.current = false;
-      if (codeAbort.current === controller) codeAbort.current = undefined;
+      if (codeAbort.current === controller) { codeAbort.current = undefined; codeInFlight.current = false; }
       if (mounted.current && request === generation.current) setBusy(undefined);
     }
   }
@@ -402,18 +493,18 @@ function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onReso
       <div className="pages-editor-foot"><span className={bytes > MAX_PAGE_BYTES ? "pages-over-limit" : ""}>{bytes.toLocaleString()} UTF-8 bytes <span>/ {MAX_PAGE_BYTES.toLocaleString()} source limit</span></span><span>Protocol overhead is checked in Mail review.</span></div>
     </div>
 
-    {draft.origin ? <details className="pages-source-evidence" open><summary><CheckCircle2 size={16} /> Imported source evidence <span>Status at import: {draft.origin.confirmed ? "Confirmed" : "Pending"}{draft.origin.modified ? " · edited locally" : " · source unchanged"}</span></summary><dl><div><dt>Transaction ID</dt><dd>{draft.origin.txid}</dd></div><div><dt>Source SHA-256</dt><dd>{draft.origin.sha256}</dd></div><div><dt>Sender</dt><dd>{draft.origin.sender}</dd></div></dl><p>{draft.origin.modified ? "This evidence identifies the source at the time of import. The edited draft is a new local document." : draft.origin.confirmed ? "The source was confirmed when imported. This local draft preserves historical provenance; load the transaction again to check current chain status." : "The source was pending when imported. Pending visibility is best effort; load the transaction again to check current chain status."}</p><div className="pages-actions"><a className="secondary small link-button" href={browserHref(draft.origin.txid)} target="_blank" rel="noreferrer">Open source in Browser <ArrowUpRight size={14} /></a>{pageHref ? <button type="button" className="secondary small" onClick={() => { void navigator.clipboard.writeText(pageHref(draft.origin!.txid)).then(() => { if (mounted.current) setStatus({ tone: "good", text: "Pages source link copied." }); }, () => { if (mounted.current) setStatus({ tone: "bad", text: "Clipboard unavailable. Open the source in Browser to share its transaction ID." }); }); }}><Copy size={14} /> Copy Pages link</button> : null}</div></details> : null}
+    {draft.origin ? <details className="pages-source-evidence" open><summary><CheckCircle2 size={16} /> Imported source evidence <span>Status at import: {draft.origin.confirmed ? "Confirmed" : "Pending"}{draft.origin.modified ? " · edited locally" : " · source unchanged"}</span></summary><dl><div><dt>Transaction ID</dt><dd>{draft.origin.txid}</dd></div><div><dt>Source SHA-256</dt><dd>{draft.origin.sha256}</dd></div><div><dt>Sender</dt><dd>{draft.origin.sender}</dd></div></dl><p>{draft.origin.modified ? "This evidence identifies the source at the time of import. The edited draft is a new local document." : draft.origin.confirmed ? "The source was confirmed when imported. This local draft preserves historical provenance; load the transaction again to check current chain status." : "The source was pending when imported. Pending visibility is best effort; load the transaction again to check current chain status."}</p><div className="pages-actions">{onOpenBrowser ? <button className="secondary small" type="button" onClick={() => openBrowser({ network, txid: draft.origin!.txid })}>Open source in Browser <ArrowUpRight size={14} /></button> : <a className="secondary small link-button" href={browserHref(draft.origin.txid)} target="_blank" rel="noreferrer">Open source in Browser <ArrowUpRight size={14} /></a>}{pageHref ? <button type="button" className="secondary small" onClick={() => { void navigator.clipboard.writeText(pageHref(draft.origin!.txid)).then(() => { if (mounted.current) setStatus({ tone: "good", text: "Pages source link copied." }); }, () => { if (mounted.current) setStatus({ tone: "bad", text: "Clipboard unavailable. Open the source in Browser to share its transaction ID." }); }); }}><Copy size={14} /> Copy Pages link</button> : null}</div></details> : null}
 
     <div className="pages-tools-grid">
       <section className="pages-tool-card"><span className="pages-kicker">Identity</span><h3>Build with confirmed IDs</h3><p>Resolve an existing ID and insert its owner, receiver, and Computer link into the source.</p><form onSubmit={(event) => { event.preventDefault(); void insertIdentity(); }}><label>ProofOfWork ID<input value={identity} onChange={(event) => setIdentity(event.target.value)} placeholder="name@proofofwork.me" autoComplete="off" spellCheck={false} /></label><button type="submit" className="secondary" disabled={Boolean(busy) || !identity.trim()}>{busy === "identity" ? "Resolving..." : "Insert identity"}</button></form><small>Identity card values are a confirmed snapshot at insertion.</small></section>
       <section className="pages-tool-card"><span className="pages-kicker">Browser</span><h3>Continue from chain HTML</h3><p>Load a message body or verified HTML attachment as a new local draft.</p><form onSubmit={(event) => { event.preventDefault(); void loadHtml(); }}><label>Transaction ID<input value={txid} onChange={(event) => setTxid(event.target.value)} placeholder="64 character txid" autoComplete="off" spellCheck={false} /></label><button type="submit" className="secondary" disabled={Boolean(busy) || !txid.trim()}>{busy === "load" ? "Verifying..." : "Load HTML"}</button></form><small>Imported apps stay static until you choose Run app.</small></section>
-      <section className="pages-tool-card"><span className="pages-kicker">Files</span><h3>Use your HTML library</h3><p>Start from confirmed HTML already verified by the Computer's file tools.</p><label>Verified HTML file<select value={fileChoices.some((choice) => choice.key === fileKey) ? fileKey : ""} onChange={(event) => setFileKey(event.target.value)}><option value="">{fileChoices.length ? "Choose a file" : "No verified HTML files available"}</option>{fileChoices.map((choice) => <option key={choice.key} value={choice.key}>{choice.name}</option>)}</select></label><div className="pages-actions"><button type="button" className="secondary" disabled={Boolean(busy) || !fileChoices.some((choice) => choice.key === fileKey)} onClick={importFromFiles}>Import from Files</button>{onOpenFiles ? <button type="button" className="secondary small" onClick={onOpenFiles}><FolderOpen size={15} /> Open Files</button> : null}</div></section>
+      <section className="pages-tool-card"><span className="pages-kicker">Files</span><h3>Use your HTML library</h3><p>Start from confirmed HTML already verified by the Computer's file tools.</p><label>Verified HTML file<select value={fileChoices.some((choice) => choice.key === fileKey) ? fileKey : ""} onChange={(event) => setFileKey(event.target.value)}><option value="">{fileChoices.length ? "Choose a file" : "No verified HTML files available"}</option>{fileChoices.map((choice) => <option key={choice.key} value={choice.key}>{choice.name}</option>)}</select></label><div className="pages-actions"><button type="button" className="secondary" disabled={Boolean(busy) || !fileChoices.some((choice) => choice.key === fileKey)} onClick={importFromFiles}>Import from Files</button>{onOpenFiles ? <button type="button" className="secondary small" onClick={() => { if (preserveDrafts()) onOpenFiles(); }}><FolderOpen size={15} /> Open Files</button> : null}</div></section>
     </div>
 
-    <section className="pages-code-card"><div><span className="pages-kicker">Code</span><h3>Start from confirmed source.</h3><p>Import an HTML file from a public Code repository. Its confirmed version and exact source bytes are verified before a local draft is created.</p><a className="secondary small link-button" href={codeHref} target="_blank" rel="noreferrer">Open Code<ArrowUpRight size={14} /></a></div><form onSubmit={(event) => { event.preventDefault(); void importFromCode(); }}><label className="pages-code-repository">Repository creation txid<input value={codeRepo} disabled={Boolean(busy)} onChange={(event) => setCodeRepo(event.target.value)} placeholder="64 character repository txid" autoComplete="off" spellCheck={false} /></label><label>HTML file path<input value={codePath} disabled={Boolean(busy)} onChange={(event) => setCodePath(event.target.value)} placeholder="index.html" autoComplete="off" spellCheck={false} /></label><label>Version txid (optional)<input value={codeRevision} disabled={Boolean(busy)} onChange={(event) => setCodeRevision(event.target.value)} placeholder="Current confirmed main head" autoComplete="off" spellCheck={false} /></label><button type="submit" className="secondary" disabled={Boolean(busy) || !codeRepo.trim() || !codePath.trim()}>{busy === "code" ? "Verifying Code..." : "Import Code HTML"}</button><small>Imports stay local until publication. A Code commit is source history; DNS linking uses a published HTML page transaction.</small></form></section>
+    <section className="pages-code-card"><div><span className="pages-kicker">Code</span><h3>Start from confirmed source.</h3><p>Import an HTML file from a public Code repository. Its confirmed version and exact source bytes are verified before a local draft is created.</p>{onOpenCode ? <button className="secondary small" type="button" onClick={openCode}>Open Code<ArrowUpRight size={14} /></button> : <a className="secondary small link-button" href={codeHref} target="_blank" rel="noreferrer">Open Code<ArrowUpRight size={14} /></a>}</div><form onSubmit={(event) => { event.preventDefault(); void importFromCode(); }}><label className="pages-code-repository">Repository creation txid<input value={codeRepo} disabled={Boolean(busy)} onChange={(event) => setCodeRepo(event.target.value)} placeholder="64 character repository txid" autoComplete="off" spellCheck={false} /></label><label>HTML file path<input value={codePath} disabled={Boolean(busy)} onChange={(event) => setCodePath(event.target.value)} placeholder="index.html" autoComplete="off" spellCheck={false} /></label><label>Version txid (optional)<input value={codeRevision} disabled={Boolean(busy)} onChange={(event) => setCodeRevision(event.target.value)} placeholder="Current confirmed main head" autoComplete="off" spellCheck={false} /></label><button type="submit" className="secondary" disabled={Boolean(busy) || !codeRepo.trim() || !codePath.trim()}>{busy === "code" ? "Verifying Code..." : "Import Code HTML"}</button><small>Imports stay local until publication. A Code commit is source history; DNS linking uses a published HTML page transaction.</small></form></section>
 
     <section className="pages-publish-card"><div><span className="pages-kicker">Publish through Mail</span><h3>Review before making it permanent.</h3><p>HTML uses the existing message or file carrier. Mail prepares the transaction for your review and local wallet signature. Published pages open statically; Browser can run inline apps when the reader chooses Run app.</p></div><div className="pages-publish-controls"><label>Publication format<select value={mode} onChange={(event) => setMode(event.target.value as "body" | "attachment")} disabled={Boolean(busy)}><option value="body">HTML message body</option><option value="attachment">HTML file attachment</option></select></label><button type="button" className="primary" disabled={Boolean(busy) || !address || !draft.html.trim() || bytes > MAX_PAGE_BYTES} onClick={() => void reviewPublication()}>{busy === "publish" ? "Preparing..." : "Review publication"}<ArrowUpRight size={16} /></button>{!address ? <small>Connect your local wallet to publish. Drafts and previews work without a connection.</small> : null}</div></section>
-    <section className="pages-dns-card" aria-label="DNS page linking"><div><span className="pages-kicker">ProofOfWork DNS</span><h3>Give your page a .pow address.</h3><p>Link a confirmed page transaction to a root name or active subdomain you own. Browser opens <span className="pages-dns-example">alice.pow</span> directly at its linked page. Your name's payment resolver stays the same.</p><small>A link uses published HTML, not this local draft. Only unchanged, confirmed imported source fills the transaction field automatically.</small></div><form onSubmit={(event) => { event.preventDefault(); void reviewDnsLink(false); }}><label>.pow name<input value={dnsName} aria-invalid={Boolean(dnsNameError)} disabled={Boolean(busy)} onChange={(event) => setDnsName(event.target.value)} placeholder="alice.pow or app.alice.pow" autoComplete="off" spellCheck={false} /></label>{dnsNameError ? <small className="pages-dns-error">{dnsNameError}</small> : null}<label>Published page txid<input value={dnsTxid} disabled={Boolean(busy)} onChange={(event) => setDnsTxid(event.target.value)} placeholder="64 character confirmed HTML txid" autoComplete="off" spellCheck={false} /></label>{dnsLinkFeeControl}<div className="pages-actions"><button type="submit" className="primary" disabled={!canReviewDns || !/^[a-f0-9]{64}$/iu.test(dnsTxid.trim())}>{busy === "link" ? "Preparing..." : "Review page link"}</button><button type="button" className="secondary" disabled={!canReviewDns} onClick={() => void reviewDnsLink(true)}>Review clear link</button>{dnsNameHref ? <a className="secondary small link-button" href={dnsNameHref} target="_blank" rel="noreferrer">Open name in Browser<ArrowUpRight size={14} /></a> : null}</div><small>{!address || network !== "livenet" ? "Connect your local Mainnet wallet to review a link or clear action." : "Confirmed ownership and page content are checked before review. The 546-proof payment goes to your owner address; pending links do not change Browser resolution."}</small></form></section>
+    <section className="pages-dns-card" aria-label="DNS page linking"><div><span className="pages-kicker">ProofOfWork DNS</span><h3>Give your page a .pow address.</h3><p>Link a confirmed page transaction to a root name or active subdomain you own. Browser opens <span className="pages-dns-example">alice.pow</span> directly at its linked page. Your name's payment resolver stays the same.</p><small>A link uses published HTML, not this local draft. Only unchanged, confirmed imported source fills the transaction field automatically.</small></div><form onSubmit={(event) => { event.preventDefault(); void reviewDnsLink(false); }}><label>.pow name<input value={dnsName} aria-invalid={Boolean(dnsNameError)} disabled={Boolean(busy)} onChange={(event) => setDnsName(event.target.value)} placeholder="alice.pow or app.alice.pow" autoComplete="off" spellCheck={false} /></label>{dnsNameError ? <small className="pages-dns-error">{dnsNameError}</small> : null}<label>Published page txid<input value={dnsTxid} disabled={Boolean(busy)} onChange={(event) => setDnsTxid(event.target.value)} placeholder="64 character confirmed HTML txid" autoComplete="off" spellCheck={false} /></label>{dnsLinkFeeControl}<div className="pages-actions"><button type="submit" className="primary" disabled={!canReviewDns || !/^[a-f0-9]{64}$/iu.test(dnsTxid.trim())}>{busy === "link" ? "Preparing..." : "Review page link"}</button><button type="button" className="secondary" disabled={!canReviewDns} onClick={() => void reviewDnsLink(true)}>Review clear link</button>{dnsNameHref ? onOpenBrowser ? <button className="secondary small" type="button" onClick={() => openBrowser({ network, name: dnsChildName?.name ?? `${normalizeDnsPageLinkName(dnsName)}.pow` })}>Open name in Browser<ArrowUpRight size={14} /></button> : <a className="secondary small link-button" href={dnsNameHref} target="_blank" rel="noreferrer">Open name in Browser<ArrowUpRight size={14} /></a> : null}</div><small>{!address || network !== "livenet" ? "Connect your local Mainnet wallet to review a link or clear action." : "Confirmed ownership and page content are checked before review. The 546-proof payment goes to your owner address; pending links do not change Browser resolution."}</small></form></section>
     <div className="pages-local-foot"><span>{store.drafts.length} / {MAX_PAGE_DRAFTS} drafts in this browser and network. Download HTML for a portable copy.</span><button type="button" className="pages-discard" disabled={Boolean(busy)} onClick={discardDraft}>{discardArmed ? "Confirm discard of local draft" : "Discard local draft"}</button>{discardArmed ? <button type="button" className="pages-discard" onClick={() => setDiscardArmed(false)}>Cancel</button> : null}</div>
   </section>;
 }

@@ -198,6 +198,27 @@ Pages drafts are separate from Mail drafts and are outside the current
 organization-backup allowlist. Download HTML to carry a source document to
 another browser or device. Wallet keys and seed phrases are never stored.
 
+## Computer continuity
+
+In Computer, switching apps retains the authoring view, publication format and
+import/identity/DNS form fields in network/address-scoped
+memory. The existing draft collection retains the active draft and exact source.
+Unsaveable edited source blocks departure; returning never resumes Run app or
+transaction-review permission. See
+[Computer task continuity](MAIL_ORGANIZATION.md#computer-task-continuity).
+
+Embedded Code's **Continue in Pages** supplies an exact network, repository,
+confirmed version, unmodified path, hash and size reference. Pages rechecks the
+confirmed tree and source bytes before import. These Code fields remain a source
+reference in the task; they do not create a published HTML txid or DNS link.
+Browser's **Edit in Pages** similarly rechecks the supplied txid and source hash,
+then uses the existing transaction-import provenance and local-draft rules.
+
+**Open Code**, **Open source in Browser** and **Open name in Browser** stay inside
+Computer with a return path. Browser content is verified on entry, and a
+network-mismatched handoff requires the matching Computer network to be selected
+explicitly. The standalone authoring surface retains its existing link behavior.
+
 ## Local verification and release preparation
 
 The local model and protocol boundary checks are reproducible with:

@@ -2029,9 +2029,12 @@ expect(
     ) &&
     /generation !== loadGenerationRef\.current/.test(browserWorkspaceBlock) &&
     /generation === loadGenerationRef\.current/.test(browserWorkspaceBlock) &&
-    /loadGenerationRef\.current \+= 1;[\s\S]{0,120}setNetwork\(activeNetwork\)/.test(
+    /loadGenerationRef\.current \+= 1;[\s\S]{0,120}setNetwork\(nextNetwork\)/.test(
       browserWorkspaceBlock,
-    ),
+    ) &&
+    /return \(\) => \{\s*loadGenerationRef\.current \+= 1;\s*loadControllerRef\.current\?\.abort\(\)/.test(browserWorkspaceBlock) &&
+    /<BrowserWorkspace key=\{computerTaskScope\}/.test(app) &&
+    /const computerTaskScope = `\$\{network\}:\$\{address\}`/.test(app),
 );
 expect(
   "Desktop and Files never substitute hardcoded Welcome bytes",

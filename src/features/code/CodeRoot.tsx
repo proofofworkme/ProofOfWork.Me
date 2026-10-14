@@ -18,11 +18,15 @@ import { fetchCodeRepositories, fetchCodeRepository, codeEvents, codeRepoId, cod
 import { buildCodePlan, codeDraftFields, emptyCodeDraft, exactSourceBytes, lineChange, persistCodeDraft, restoredCodeDraft, type CodeDraft } from "./codeProtocol";
 import { prepareCodeTransaction, sameCodeAddress, verifyCodeAuthority, verifyCodeFunding, type PreparedCode } from "./codeWallet";
 import { codeRepositoryZip, downloadCodeBlob } from "./codeArchive";
+import { assertCodeSourceReference, type CodeSourceReference } from "./codeNavigation";
 import "./code.css";
 
-export type CodeRootProps = { embedded?: boolean; initialAddress?: string; initialNetwork?: BitcoinNetwork };
+export type CodeViewState = { filter: string; openRepo: string; editor: boolean; editorPreview: "source" | "diff" };
+export type CodeRootProps = { embedded?: boolean; initialAddress?: string; initialNetwork?: BitcoinNetwork;
+  onOpenPages?: (source: CodeSourceReference) => void;
+  initialViewState?: CodeViewState; onViewStateChange?: (state: CodeViewState) => void };
 type Route = { repo: string; version: string; path: string; tab: "code" | "history" };
-type Source = { file: CodeFile; content: string; bytes: Uint8Array };
+type Source = { file: CodeFile; content: string; bytes: Uint8Array; network: BitcoinNetwork; repo: string; version: string; snapshot: string };
 const hexTx = /^[a-f0-9]{64}$/u;
 function initialRoute(): Route {
   const params = new URLSearchParams(window.location.search);
@@ -53,7 +57,7 @@ function CodeDiff({ before, after }: { before: string; after: string }) {
   </div>;
 }
 
-export default function CodeRoot({ embedded = false, initialAddress = "", initialNetwork: initialNetworkProp }: CodeRootProps = {}) {
+export default function CodeRoot({ embedded = false, initialAddress = "", initialNetwork: initialNetworkProp, onOpenPages, initialViewState, onViewStateChange }: CodeRootProps = {}) {
   const [network, setNetworkState] = useState<BitcoinNetwork>(() => initialNetwork(initialNetworkProp));
   const [address, setAddress] = useState(initialAddress);
   const [hasUnisat] = useUnisatPresence();
@@ -68,18 +72,18 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   const [readError, setReadError] = useState("");
   const [sourceError, setSourceError] = useState("");
   const [attempt, setAttempt] = useState(0);
-  const [filter, setFilter] = useState("");
-  const [openRepo, setOpenRepo] = useState("");
+  const [filter, setFilter] = useState(initialViewState?.filter ?? "");
+  const [openRepo, setOpenRepo] = useState(initialViewState?.openRepo ?? "");
   const [status, setStatus] = useState("");
   const [copied, setCopied] = useState(false);
-  const [editor, setEditor] = useState(false);
+  const [editor, setEditor] = useState(initialViewState?.editor === true);
   const [draft, setDraft] = useState<CodeDraft>({ ...emptyCodeDraft });
   const [draftKeyLoaded, setDraftKeyLoaded] = useState("");
   const [draftError, setDraftError] = useState("");
   const [actionError, setActionError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
   const [prepared, setPrepared] = useState<PreparedCode>();
-  const [editorPreview, setEditorPreview] = useState<"source" | "diff">("source");
+  const [editorPreview, setEditorPreview] = useState<"source" | "diff">(initialViewState?.editorPreview === "diff" ? "diff" : "source");
   const [baseline, setBaseline] = useState("");
   const [baselineReady, setBaselineReady] = useState(true);
   const [baselineError, setBaselineError] = useState("");
@@ -111,12 +115,27 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   const repo = detail?.repository;
   const selectedVersion = detail ? codeVersion(detail, route.version) : "";
   const atHead = Boolean(repo && selectedVersion === repo.headTxid);
+  const canContinueInPages = Boolean(onOpenPages && source && repo && !readBusy && !readError && !sourceBusy && !sourceError &&
+    source.network === network && source.repo === route.repo && source.version === selectedVersion && (!route.version || source.version === route.version) &&
+    source.snapshot === detail?.snapshot.id && source.file.path === route.path && /\.(?:html?|xhtml)$/iu.test(source.file.path));
   const owner = Boolean(repo && sameCodeAddress(repo.ownerAddress, address, network));
   const canWrite = owner && atHead && network === "livenet" && !readBusy && !actionBusy;
   const planResult = useMemo(() => {
     try { return { plan: buildCodePlan(draft), error: "" }; }
     catch (error) { return { plan: undefined, error: errorText(error) }; }
   }, [draft]);
+
+  useEffect(() => { onViewStateChange?.({ filter, openRepo, editor, editorPreview }); }, [filter, openRepo, editor, editorPreview, onViewStateChange]);
+
+  function continueInPages() {
+    if (!canContinueInPages || !onOpenPages || !source || !repo || !preserveDraft()) return;
+    try {
+      const reference: CodeSourceReference = { network, repo: codeRepoId(repo), version: selectedVersion,
+        path: source.file.path, sha256: source.file.sha256, size: source.file.size };
+      assertCodeSourceReference(reference, network);
+      onOpenPages(reference);
+    } catch (error) { setActionError(errorText(error)); }
+  }
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; readSequence.current++; }; }, []);
   useEffect(() => { setAddress(initialAddress); }, [initialAddress]);
@@ -178,7 +197,13 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
           setEditor(false);
           setDraft(candidate);
         }
-      } else setDraft(candidate);
+      } else {
+        setDraft(candidate);
+        if (editorRef.current) {
+          setBaseline(""); setBaselineReady(candidate.kind === "repo");
+          setBaselineError(""); setPathLocked(candidate.kind === "delete");
+        }
+      }
       setDraftKeyLoaded(draftKey);
     } catch (error) { setDraftError(errorText(error)); setDraftKeyLoaded(draftKey); }
   }, [draftKey]);
@@ -232,7 +257,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
     if (!expected) { setSourceError("This path does not exist in the selected confirmed version."); return; }
     setSourceBusy(true);
     void fetchCodeRepository(network, codeRepoId(detail.repository), { snapshot: detail.snapshot.id, version: selectedVersion, path: route.path, signal: controller.signal })
-      .then(value => { if (controller.signal.aborted) return; if (!value.file) throw new Error("Source is unavailable for this confirmed file."); const verified = verifiedCodeSource(value.file, expected); setSource({ file: expected, content: verified.source, bytes: verified.bytes }); })
+      .then(value => { if (controller.signal.aborted) return; if (!value.file) throw new Error("Source is unavailable for this confirmed file."); const verified = verifiedCodeSource(value.file, expected); setSource({ file: expected, content: verified.source, bytes: verified.bytes, network, repo: codeRepoId(detail.repository), version: selectedVersion, snapshot: detail.snapshot.id }); })
       .catch(error => { if (!controller.signal.aborted) setSourceError(errorText(error)); })
       .finally(() => { if (!controller.signal.aborted) setSourceBusy(false); });
     return () => controller.abort();
@@ -495,7 +520,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
           <div className="code-head"><GitCommitHorizontal size={17} /><span>{atHead ? "Confirmed main head" : "Historical confirmed version"}</span><code>{compactTx(selectedVersion)}</code><a href={explorerTxUrl(selectedVersion, network)} target="_blank" rel="noreferrer" aria-label="Inspect version transaction"><ArrowUpRight size={17} /></a>{!atHead && <button type="button" onClick={() => navigate({ ...route, version: "" })}>Return to main head</button>}</div>
           {route.tab === "code" ? <div className="code-browser"><aside className="code-file-tree" aria-label="Source files"><div className="code-tree-title"><Folder size={16} /> Files</div>{treeFiles.map(file => <button type="button" key={file.path} className={file.path === route.path ? "is-selected" : ""} aria-pressed={file.path === route.path} onClick={() => navigate({ ...route, path: file.path })}><FileCode2 size={16} /><span title={file.path}>{file.path}</span><small>{file.size.toLocaleString()} B</small></button>)}{!treeFiles.length && <p className="code-muted">No files in this version.</p>}</aside>
             <div className="code-file-panel">{!treeFiles.length ? <div className="code-empty"><FilePlus2 size={30} /><h3>Your repository starts here</h3><p>Add a README or your first source file. Each commit changes one file.</p>{canWrite && <button type="button" className="primary" onClick={() => beginEditor("put")}>Add the first file</button>}</div> : <>
-              <div className="code-file-toolbar"><strong>{route.path || "Select a source file"}</strong><div>{source && <button type="button" className="secondary" onClick={() => downloadCodeBlob(new Blob([new Uint8Array(source.bytes).buffer], { type: "text/plain;charset=utf-8" }), source.file.path.split("/").pop() || "source.txt")} aria-label="Download exact source"><Download size={16} /> Download</button>}{canWrite && source && <><button type="button" className="secondary" onClick={() => beginEditor("put", source)}>Edit</button><button type="button" className="secondary" onClick={() => beginEditor("delete", source)} aria-label="Delete source file"><Trash2 size={16} /></button></>}</div></div>
+              <div className="code-file-toolbar"><strong>{route.path || "Select a source file"}</strong><div>{source && <button type="button" className="secondary" onClick={() => downloadCodeBlob(new Blob([new Uint8Array(source.bytes).buffer], { type: "text/plain;charset=utf-8" }), source.file.path.split("/").pop() || "source.txt")} aria-label="Download exact source"><Download size={16} /> Download</button>}{canContinueInPages && <button type="button" className="secondary" onClick={continueInPages}>Continue in Pages <ArrowUpRight size={15} /></button>}{canWrite && source && <><button type="button" className="secondary" onClick={() => beginEditor("put", source)}>Edit</button><button type="button" className="secondary" onClick={() => beginEditor("delete", source)} aria-label="Delete source file"><Trash2 size={16} /></button></>}</div></div>
               {sourceBusy && <div className="code-file-loading" role="status">Verifying exact source bytes…</div>}{sourceError && <p className="code-notice is-error" role="alert">{sourceError}</p>}
               {source && <><div className="code-file-evidence"><span>{source.file.size.toLocaleString()} bytes · {(source.content ? source.content.split("\n").length - (source.content.endsWith("\n") ? 1 : 0) : 0).toLocaleString()} lines</span><code title={source.file.sha256}>SHA-256 {compactTx(source.file.sha256)}</code></div><SourceText content={source.content} /><p className="code-source-footnote">{/(?:^|\/)readme(?:\.md|\.txt)?$/iu.test(source.file.path) ? "README shown as exact source text. " : ""}Source is inert text; HTML and scripts never execute in Code.</p></>}
             </>}</div></div> : <div className="code-history">{codeEvents(detail).map(event => <article className="code-history-entry" key={event.txid}><GitCommitHorizontal size={20} /><div><div className="code-history-title"><strong>{event.message || (event.op ? `${event.op === "put" ? "Write" : "Delete"} ${event.path}` : "Create repository")}</strong><span className={`code-pill${eventApplied(event) ? " is-confirmed" : " is-unapplied"}`}>{eventApplied(event) ? "Main history" : event.status === "pending" ? "Pending" : "Unapplied"}</span></div><p>{event.path || repo.name} · {dateText(event)}</p><p className="code-muted">{eventReason(event)}</p><div className="code-history-evidence"><code>{compactTx(event.txid)}</code>{event.parent || event.parentTxid ? <code>Parent {compactTx(event.parent ?? event.parentTxid!)}</code> : null}<a href={explorerTxUrl(event.txid, network)} target="_blank" rel="noreferrer">Inspect transaction <ArrowUpRight size={14} /></a></div><div className="code-history-actions">{eventApplied(event) && <button type="button" className="secondary" onClick={() => navigate({ repo: codeRepoId(repo), version: event.txid, path: event.path ?? "", tab: "code" })}>View version</button>}{event.op && <button type="button" className="secondary" onClick={() => setDiffEvent(event)}>Inspect change</button>}</div></div></article>)}{!codeEvents(detail).length && <p className="code-empty">No commit records in this history page.</p>}{detail.pagination.hasMore && <button type="button" className="secondary code-load-more" disabled={pageBusy} onClick={() => void loadMore()}>{pageBusy ? "Reading more history…" : "Load more history"}</button>}

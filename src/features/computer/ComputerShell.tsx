@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { Grid2X2, LockKeyhole, Monitor, PanelLeft, Search, X } from "lucide-react";
+import { ArrowLeft, Grid2X2, LockKeyhole, Monitor, PanelLeft, Search, X } from "lucide-react";
 import {
   COMPUTER_APPS, COMPUTER_DOCK_APPS, computerAppForWorkspace, computerAppIsActive,
   findComputerApps, type ComputerLayout, type ComputerWorkspace,
@@ -16,6 +16,8 @@ export type ComputerShellProps = ComputerNavigationProps & {
   children: ReactNode;
   overview: ReactNode;
   title: string;
+  backLabel?: string;
+  onBack?: () => void;
 };
 
 type ComputerAppLauncherProps = ComputerNavigationProps & {
@@ -165,7 +167,7 @@ export function ComputerControls({ layout, onLayoutChange, onOpenWorkspace, onOp
   );
 }
 
-export function ComputerShell({ layout, activeFolder, onOpenWorkspace, children, overview, title }: ComputerShellProps) {
+export function ComputerShell({ layout, activeFolder, onOpenWorkspace, children, overview, title, backLabel, onBack }: ComputerShellProps) {
   const launcher = useComputerLauncher();
   const activeApp = computerAppForWorkspace(activeFolder);
   const ActiveIcon = activeApp.icon;
@@ -186,6 +188,7 @@ export function ComputerShell({ layout, activeFolder, onOpenWorkspace, children,
         <div className="computer-stage">
           <section className="computer-window" aria-label={`${title} workspace`}>
             <header className="computer-windowbar">
+              {backLabel && onBack ? <button className="computer-task-back" aria-label={`Back to ${backLabel}`} title={`Back to ${backLabel}`} onClick={onBack} type="button"><ArrowLeft aria-hidden="true" size={18} /><span>Back to {backLabel}</span></button> : null}
               <span className="computer-window-title"><ActiveIcon aria-hidden="true" size={18} /><span>{title}</span></span>
               <span className="computer-window-meta"><LockKeyhole aria-hidden="true" size={14} /><span>Signing stays local</span></span>
             </header>
