@@ -66,7 +66,9 @@ MAXIMUM_TOTAL_BYTES = 512 * 1024 * 1024
 # The October 7 nineteen-root Code release has 1,045 (55 per surface).
 # Count each served path separately and retain a finite ceiling above that
 # measured set alongside the independent byte, edge and candidate limits.
-MAXIMUM_DEPENDENCIES = 1536
+# October 13 measurement of the live 22-surface closure: 1,540 paths.
+# Keep 60 paths of headroom; byte, edge and candidate guards stay independent.
+MAXIMUM_DEPENDENCIES = 1600
 # The sealed October 8 twenty-two-root Permission V5 graph has 4,708 distinct
 # served-root/referrer/target edges. Keep a finite 5,120 ceiling (8.75% above
 # that measured set); served-path, raw-candidate and byte limits are independent.

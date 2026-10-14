@@ -7683,3 +7683,14 @@ the existing guarded gateway/Search workflow. Run
 `node --test scripts/check-declaration-rpc-hydration.test.mjs` and both isolated
 Python controller suites; production completion still requires the Computer
 integration gate and full release synchronization.
+
+### UI compatibility dependency bound (2026-10-13)
+
+The live 22-surface continuity release has 1,540 reachable served asset paths
+(70 per surface), exceeding the former 1,536 compatibility ceiling. The approved
+ceiling is 1,600; paths remain counted separately per served surface. The
+independent limits remain 5,120 reference edges, 1,310,720 reference candidates,
+512 MiB total compatibility bytes and 64 MiB per asset. The measured graph had
+5,060 edges, 1,282,306 candidates and 89,413,841 bytes. Capacity, inode, reserve
+and historical-asset preservation checks remain mandatory. A failed admission
+must preserve its evidence and stop before publication.
