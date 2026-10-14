@@ -69,6 +69,74 @@ class InternalDedupTests(unittest.TestCase):
         self.dedup.add_surface("browser")
         self.assertEqual(self.dedup.linked_files, 1, "revisiting compatibility surfaces must not relink aliases")
 
+    def test_retention_admission_is_bounded_per_surface_with_fresh_link_checks(self):
+        helper = stage.capacity_helper()
+        original = helper.check_capacity
+        with patch.object(helper, "check_capacity", wraps=original) as check:
+            self.dedup.add_surface("activity")
+            self.dedup.add_surface("browser")
+        calls = check.call_args_list
+        self.assertEqual([c.args[3] for c in calls], [
+            "stage-dedup-surface-admit", "stage-dedup-surface-complete",
+            "stage-dedup-surface-admit", "stage-dedup-link", "stage-dedup-surface-complete"])
+        self.assertEqual([c.kwargs["enforce_retention"] for c in calls], [True, True, True, False, True])
+        self.assertGreaterEqual(calls[2].args[1], 3 * helper.entry_bytes(0, helper.allocation_block(self.candidate)))
+        self.assertIsNone(self.dedup.admitted_surface)
+
+    def test_direct_file_calls_keep_full_retention_checks(self):
+        helper = stage.capacity_helper()
+        with patch.object(helper, "check_capacity", wraps=helper.check_capacity) as check:
+            self.dedup.add_file(self.relative(self.a))
+            self.dedup.add_file(self.relative(self.b))
+        self.assertTrue(check.call_args.kwargs["enforce_retention"])
+
+    def test_mid_surface_capacity_failure_preserves_independent_file(self):
+        helper = stage.capacity_helper()
+        original = helper.check_capacity
+        def guard(path, size, inodes, phase, **kwargs):
+            if phase == "stage-dedup-link":
+                raise helper.CapacityError("fresh reserve exhausted")
+            return original(path, size, inodes, phase, **kwargs)
+        self.dedup.add_surface("activity")
+        with patch.object(helper, "check_capacity", side_effect=guard):
+            with self.assertRaisesRegex(stage.StageError, "fresh reserve exhausted"):
+                self.dedup.add_surface("browser")
+        self.assertNotEqual(inode(self.a), inode(self.b))
+        self.assertIsNone(self.dedup.admitted_surface)
+        self.assertEqual(self.dedup.admitted_links_remaining, 0)
+
+    def test_retention_refusal_precedes_any_surface_link(self):
+        helper = stage.capacity_helper()
+        self.dedup.add_surface("activity")
+        with patch.object(helper, "check_capacity", side_effect=helper.CapacityError("retention ceiling")):
+            with self.assertRaisesRegex(stage.StageError, "retention ceiling"):
+                self.dedup.add_surface("browser")
+        self.assertNotEqual(inode(self.a), inode(self.b))
+        self.assertIsNone(self.dedup.admitted_surface)
+
+    def test_exhausted_admission_refuses_before_link(self):
+        self.dedup.add_file(self.relative(self.a))
+        self.dedup.admitted_surface = "proofofwork-browser"
+        self.dedup.admitted_links_remaining = 0
+        with patch.object(stage.os, "link") as link:
+            with self.assertRaisesRegex(stage.StageError, "admitted metadata bound"):
+                self.dedup.add_file(self.relative(self.b))
+        link.assert_not_called()
+        self.assertNotEqual(inode(self.a), inode(self.b))
+
+    def test_completion_retention_failure_prevents_acceptance(self):
+        helper = stage.capacity_helper()
+        original = helper.check_capacity
+        def guard(path, size, inodes, phase, **kwargs):
+            if phase == "stage-dedup-surface-complete":
+                raise helper.CapacityError("final retention ceiling")
+            return original(path, size, inodes, phase, **kwargs)
+        self.dedup.add_surface("activity")
+        with patch.object(helper, "check_capacity", side_effect=guard):
+            with self.assertRaisesRegex(stage.StageError, "final retention ceiling"):
+                self.dedup.add_surface("browser")
+        self.assertIsNone(self.dedup.admitted_surface)
+
     def test_bytes_and_modes_must_match(self):
         others = [write(self.candidate / "proofofwork-browser/assets/different-bytes.js", b"DIFF managed content\n"),
                   write(self.candidate / "proofofwork-browser/assets/different-mode.js", mode=0o444)]

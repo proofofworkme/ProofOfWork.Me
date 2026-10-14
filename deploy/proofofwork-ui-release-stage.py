@@ -123,10 +123,10 @@ def capacity_helper():
     return _capacity_module
 
 
-def capacity_guard(path: Path, additional_bytes: int, additional_inodes: int, phase: str) -> None:
+def capacity_guard(path: Path, additional_bytes: int, additional_inodes: int, phase: str, *, enforce_retention: bool = True) -> None:
     helper = capacity_helper()
     try:
-        helper.check_capacity(path, additional_bytes, additional_inodes, phase)
+        helper.check_capacity(path, additional_bytes, additional_inodes, phase, enforce_retention=enforce_retention)
     except (helper.CapacityError, OSError) as error:
         raise StageError(str(error)) from error
 
@@ -178,6 +178,8 @@ class CandidateManagedDeduplicator:
         self.paths: dict[str, dict] = {}
         self.linked_files = 0
         self.saved_bytes = 0
+        self.admitted_surface = None
+        self.admitted_links_remaining = 0
 
     def close(self) -> None:
         os.close(self.root_fd)
@@ -294,9 +296,14 @@ class CandidateManagedDeduplicator:
                     if (file_identity(os.fstat(descriptor)) != file_identity(expected) or
                             file_identity(os.stat(name, dir_fd=parent, follow_symlinks=False)) != file_identity(expected)):
                         fail("Managed deduplication file changed before linking.")
+                if self.admitted_surface == relative.split("/", 1)[0]:
+                    if self.admitted_links_remaining <= 0:
+                        fail("Deduplication exceeded its admitted metadata bound.")
+                    self.admitted_links_remaining -= 1
                 temporary = f".proofofwork-dedup-{os.urandom(16).hex()}"
                 capacity_guard(self.root, capacity_helper().entry_bytes(0, capacity_helper().allocation_block(self.root)),
-                               1, "stage-dedup-link")
+                               1, "stage-dedup-link",
+                               enforce_retention=self.admitted_surface != relative.split("/", 1)[0])
                 created = False
                 try:
                     os.link(source_name, temporary, src_dir_fd=source_parent,
@@ -348,7 +355,23 @@ class CandidateManagedDeduplicator:
                     else:
                         fail(f"Managed deduplication encountered an unsupported file: {child}")
 
-        walk(relative_root)
+        # Reserve every entry's worst-case metadata growth before the bounded
+        # walk. Link replacements can leave directory allocation behind, so do
+        # not rely on data savings or merely reserve one transient link.
+        if self.admitted_surface is not None:
+            fail("Nested deduplication admission is not allowed.")
+        helper = capacity_helper()
+        bound = helper.tree_bound(self.root / relative_root, self.root)
+        metadata_bytes = bound["additionalInodes"] * helper.entry_bytes(0, helper.allocation_block(self.root))
+        capacity_guard(self.root, metadata_bytes, bound["additionalInodes"], "stage-dedup-surface-admit")
+        self.admitted_surface = relative_root
+        self.admitted_links_remaining = bound["additionalInodes"]
+        try:
+            walk(relative_root)
+        finally:
+            self.admitted_surface = None
+            self.admitted_links_remaining = 0
+        capacity_guard(self.root, 0, 0, "stage-dedup-surface-complete")
         if surface_fingerprint(self.root, surface, self.owner) != before:
             fail(f"Managed deduplication changed a surface byte/metadata fingerprint: {surface}")
 

@@ -259,7 +259,7 @@ class StagerCapacityTests(unittest.TestCase):
             argv.append("--deduplicate-managed-files")
         original = capacity.check_capacity
         self.phases = []
-        def check(path, byte_count, inode_count, phase):
+        def check(path, byte_count, inode_count, phase, **kwargs):
             self.phases.append(phase)
             # Only this test's imported function receives the injected finite
             # observation; no production CLI/environment override exists.
@@ -270,7 +270,7 @@ class StagerCapacityTests(unittest.TestCase):
                     return space(reserve + byte_count - 1)
                 return space(RESERVE + 4 * 1024**3)
             with mock.patch.object(capacity.os, "statvfs", side_effect=observation):
-                return original(path, byte_count, inode_count, phase)
+                return original(path, byte_count, inode_count, phase, **kwargs)
         with mock.patch.dict(os.environ, self.environment), mock.patch.object(sys, "argv", argv), mock.patch.object(capacity, "check_capacity", side_effect=check), contextlib.redirect_stdout(io.StringIO()):
             return stage.main()
 

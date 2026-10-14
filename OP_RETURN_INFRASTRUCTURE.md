@@ -7631,3 +7631,21 @@ The user approved this recovery follow-up. The scoped controller is
 overlays and uses the shared deployment lock, dependency hashes, Search hold,
 API/worker drain, and verified rollback. Run both controller test suites before
 rollout; production and restart results must be recorded separately.
+
+### Bounded UI deduplication admission (2026-10-14)
+
+Per-file deduplication previously repeated both full retention scans. A production
+read-only measurement took 0.60–0.62 seconds per call; repeated calls exhausted the
+900-second staging deadline. Deduplication now reserves the full entry count times
+the conservative metadata-entry bound before each surface, and consumes one unit
+before each link. Full retention checks run before and after the surface. Every
+link still checks fresh filesystem byte/inode reserves, and direct file calls keep
+full retention checks. All copy admissions, retention ceilings, deadlines, exact
+byte/metadata checks and rollback/evidence preservation remain unchanged.
+
+`deploy/publish/install-stager.py` installs only the committed stager under the
+shared deployment lock, requires the exact pre-repair installed hash, preserves
+old/new bytes in a creation-only receipt, and retains normal capacity admission.
+Run `scripts/check-ui-stage-dedup.py`, `scripts/check-ui-capacity.py`, and the
+publication/compatibility regression suites before installation. The user approved
+this additional staging repair; production completion requires final release sync.
