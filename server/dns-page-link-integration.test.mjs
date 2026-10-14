@@ -158,24 +158,25 @@ function deferred() {
   return { promise, resolve };
 }
 function warmRuntime({ checkpoints = [{ height: 100, blockHash: blockHash(100) }],
-  openings = [10, 20, 30], enabled = true, lane = async () => {} } = {}) {
+  openings = [10, 20, 30, 40], enabled = true, lane = async () => {} } = {}) {
   const calls = [], timers = [], logs = [];
   let coreReads = 0, active = 0, maxActive = 0;
   function discovery(name) {
+    let verifiedHeight;
     const discover = async (network, checkpoint, opening) => {
       active += 1; maxActive = Math.max(maxActive, active);
       calls.push({ lane: name, network, checkpoint, opening });
-      try { return await lane(name, checkpoint); }
+      try { const result = await lane(name, checkpoint); verifiedHeight = checkpoint.height; return result; }
       finally { active -= 1; }
     };
-    discover.progress = (network, opening) => ({ verifiedThroughBlock: opening, targetHeight: 100, network });
+    discover.progress = (network, opening) => ({ verifiedThroughBlock: verifiedHeight ?? opening - 1, targetHeight: 100, network });
     return discover;
   }
   const context = vm.createContext({ BITCOIN_RPC_URL: enabled ? "configured" : "",
     DNS_SUBDOMAIN_ACTIVATION_HEIGHT: openings[0], DNS_PAGE_LINK_ACTIVATION_HEIGHT: openings[1],
-    DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT: openings[2],
+    DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT: openings[2], PERMISSION_ACTIVATION_HEIGHT: openings[3] ?? 0,
     discoverDnsSubdomains: discovery("subdomains"), discoverDnsPageLinks: discovery("root-pages"),
-    discoverDnsSubdomainPageLinks: discovery("child-pages"),
+    discoverDnsSubdomainPageLinks: discovery("child-pages"), discoverPermissions: discovery("permissions"),
     bitcoinRpc: async (method, args) => {
       assert.equal(method, "getblockchaininfo"); assert.deepEqual(Array.from(args), []);
       const checkpoint = checkpoints[Math.min(coreReads, checkpoints.length - 1)];
@@ -212,9 +213,11 @@ test("actual DNS warmer serializes one lane per turn and visits every lane", asy
   assert.deepEqual(runtime.calls.map(call => call.lane), ["subdomains"]);
   await finishScheduledTurn(runtime, 0);
   await finishScheduledTurn(runtime, 1);
-  assert.deepEqual(runtime.calls.map(call => call.lane), ["subdomains", "root-pages", "child-pages"]);
+  await finishScheduledTurn(runtime, 2);
+  assert.deepEqual(runtime.calls.map(call => call.lane), ["subdomains", "root-pages", "child-pages", "permissions"]);
   assert.equal(runtime.maxActive(), 1);
-  assert.ok(runtime.timers.every(timer => timer.delay === 60_000 && timer.unreferenced));
+  assert.deepEqual(runtime.timers.map(timer => timer.delay), [5_000, 5_000, 5_000, 60_000]);
+  assert.ok(runtime.timers.every(timer => timer.unreferenced));
 });
 
 test("no-progress catch-up and ordinary failures back off and use a fresh checkpoint", async () => {
@@ -237,7 +240,7 @@ test("Core failures release single flight and preserve the retry", async () => {
   await core.context.warmDnsVerifiedCoverage();
   assert.equal(core.calls.length, 0); assert.match(core.logs[0].reason, /Core checkpoint/u);
   await finishScheduledTurn(core);
-  assert.equal(core.calls.length, 1); assert.equal(core.timers[1].delay, 60_000);
+  assert.equal(core.calls.length, 1); assert.equal(core.timers[1].delay, 5_000);
 });
 
 test("DNS warmer skips unopened lanes and performs no work without configured Core", async () => {
