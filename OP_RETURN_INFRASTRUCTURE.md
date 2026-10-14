@@ -7594,3 +7594,40 @@ relax freshness or make incomplete history authoritative.
 Local full-node fixture parity, CPU measurements and regression results are
 recorded in the 2026-10-13 availability appendix of Audit 32. The user approved both reviewed fixes for the coordinated availability release.
 Production recovery and recurrence results belong in its separate audit evidence.
+
+### Permission restart recovery (2026-10-14; approved for rollout)
+
+The initial availability release at `522376ed987f` improves raw verification and
+coalesces overlapping AMO relational reads, but a cold Permission request can
+still exhaust its 25-second budget while reconstructing the complete history.
+A prepared follow-up adds `server/permission-verification-store.mjs`, a separate
+service-authenticated journal under `permission-verification-v1` in the persisted
+cache directory. It stores only fully verified confirmed Permission transaction
+projections and the compact rows required by both existing witness chains.
+
+The receipt identity binds the verifier version, network, activation parent and
+fee-rate activation parent. A node-local HMAC key authenticates atomically
+published, fsynced receipts in an owner-only directory; it is not wallet signing
+material. Restoring a receipt never grants authority: live Core boundaries,
+common-prefix reorg checks, complete index-prefix reauthentication (including
+native storage commitments), exact checkpoint fencing, and the existing byte
+and request budgets remain mandatory. Pending data is refreshed separately.
+Malformed, tampered, unsafe, incompatible, or missing-key receipts fail closed.
+Do not remove or copy the journal/key independently during cache cleanup; any
+future retention change requires explicit review of restart and recovery impact.
+
+Permission shares the existing serial DNS warm-up rotation rather than starting
+another background verification loop. Productive catch-up, or a successful lane
+with another known backlog, waits five seconds before the next lane. A failed
+turn without verified progress retains the sixty-second backoff. First-ever
+catch-up remains bounded and can take time; incomplete responses remain 503s.
+This section describes tested local code, not production completion or authority.
+
+The user approved this recovery follow-up. The scoped controller is
+`deploy/permission-recovery/release.py`, pinned to source base
+`522376ed987f4bc793bf76258aa7fa7a87b1d3dd`. Its exact runtime scope is
+`server/proof-api.mjs`, `server/permission-discovery.mjs`, and the new
+`server/permission-verification-store.mjs`. It preserves all accepted runtime
+overlays and uses the shared deployment lock, dependency hashes, Search hold,
+API/worker drain, and verified rollback. Run both controller test suites before
+rollout; production and restart results must be recorded separately.

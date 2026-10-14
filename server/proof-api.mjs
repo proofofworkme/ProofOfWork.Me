@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createPermissionVerificationStore } from "./permission-verification-store.mjs";
 import { createDnsVerificationStore } from "./dns-verification-store.mjs";
 import {
   PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH,
@@ -35128,6 +35129,9 @@ const discoverDnsSubdomainPageLinks = createDnsPageLinkDiscovery({
 });
 
 const discoverPermissions = createPermissionDiscovery({
+  store: createPermissionVerificationStore({
+    directory: path.join(PERSISTED_CACHE_DIR, "permission-verification-v1"),
+  }),
   readIndex: proofIndexPermissionDiscovery,
   async readCoreHash(height) {
     const result = await bitcoinRpc("getblockhash", [height]);
@@ -82815,7 +82819,8 @@ async function warmDnsVerifiedCoverage() {
     if (!checkpoint) throw new Error("DNS warm-up Core checkpoint is unavailable.");
     const lanes = [["subdomains", discoverDnsSubdomains, DNS_SUBDOMAIN_ACTIVATION_HEIGHT],
       ["root-pages", discoverDnsPageLinks, DNS_PAGE_LINK_ACTIVATION_HEIGHT],
-      ["child-pages", discoverDnsSubdomainPageLinks, DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT]]
+      ["child-pages", discoverDnsSubdomainPageLinks, DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT],
+      ["permissions", discoverPermissions, PERMISSION_ACTIVATION_HEIGHT]]
       .filter(([, , opening]) => opening && checkpoint.height >= opening);
     if (!lanes.length) return;
     const [lane, discover, opening] = lanes[dnsCoverageWarmLane % lanes.length];
@@ -82826,10 +82831,18 @@ async function warmDnsVerifiedCoverage() {
     // only authenticated, fully verified durable progress survives a restart.
     // Productive catch-up gets a bounded five-second gap; errors/no progress
     // retain the full minute so a failing dependency cannot create a hot loop.
+    // Permission shares this scheduler so its recovery cannot start a competing
+    // background verification loop. Every lane retains its own authority checks.
     const before = discover.progress("livenet", opening).verifiedThroughBlock;
-    try { await discover("livenet", checkpoint, opening); }
+    try {
+      await discover("livenet", checkpoint, opening);
+      // A completed lane must not impose a minute-long gap on another lane's
+      // known backlog. Failed/no-progress turns still retain the full backoff.
+      if (lanes.some(([, candidate, activation]) =>
+        candidate.progress("livenet", activation).verifiedThroughBlock < checkpoint.height)) nextDelayMs = 5_000;
+    }
     catch (error) {
-      if (error.code === "DNS_DISCOVERY_CATCH_UP" &&
+      if ((error.code === "DNS_DISCOVERY_CATCH_UP" || error.permissionCatchUp === true) &&
           discover.progress("livenet", opening).verifiedThroughBlock > before) nextDelayMs = 5_000;
       console.log(JSON.stringify({ event: "dns-verified-catch-up", lane, complete: false,
         progress: discover.progress("livenet", opening), reason: errorSummary(error) }));

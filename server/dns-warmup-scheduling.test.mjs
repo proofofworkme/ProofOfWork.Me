@@ -12,16 +12,16 @@ const end = body.indexOf('\nfunction prewarmExpensiveReadCaches()', start);
 assert.ok(start >= 0 && end > start);
 const source = body.slice(start, end);
 function deferred() { let resolve, reject; const promise = new Promise((yes,no) => {resolve=yes;reject=no;}); return {promise,resolve,reject}; }
-function harness({ activations=[10,20,30], callbacks=[], rpc, enabled=true }={}) {
-  const calls=[],timers=[],logs=[];let tips=0;
+function harness({ activations=[10,20,30,40], callbacks=[], rpc, enabled=true }={}) {
+  const calls=[],timers=[],logs=[];let tips=0;const progress=activations.map((_,index)=>100+index);
   const discoveries=activations.map((_,index)=>Object.assign(async (...args)=> {
-    calls.push({index,args});return callbacks[index]?.(...args);
-  },{progress:()=>({verifiedThroughBlock:100+index})}));
+    calls.push({index,args});const result=await callbacks[index]?.(...args);progress[index]=args[1].height;return result;
+  },{progress:()=>({verifiedThroughBlock:progress[index]})}));
   const context=vm.createContext({BITCOIN_RPC_URL:enabled?'configured':'',
     bitcoinRpc:async(method,args)=>{assert.equal(method,'getblockchaininfo');assert.equal(args.length,0);tips++;return rpc?rpc(tips):{height:100+tips,blockHash:String(tips).padStart(64,'0')};},
     exactCoreTipFromBlockchainInfo:v=>v,
-    discoverDnsSubdomains:discoveries[0],discoverDnsPageLinks:discoveries[1],discoverDnsSubdomainPageLinks:discoveries[2],
-    DNS_SUBDOMAIN_ACTIVATION_HEIGHT:activations[0],DNS_PAGE_LINK_ACTIVATION_HEIGHT:activations[1],DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT:activations[2],
+    discoverDnsSubdomains:discoveries[0],discoverDnsPageLinks:discoveries[1],discoverDnsSubdomainPageLinks:discoveries[2],discoverPermissions:discoveries[3],
+    DNS_SUBDOMAIN_ACTIVATION_HEIGHT:activations[0],DNS_PAGE_LINK_ACTIVATION_HEIGHT:activations[1],DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT:activations[2],PERMISSION_ACTIVATION_HEIGHT:activations[3],
     errorSummary:e=>e.message,
     console:{log:value=>logs.push(JSON.parse(value))},
     setTimeout(fn,delay){const timer={fn,delay,unrefed:false,unref(){this.unrefed=true;}};timers.push(timer);return timer;},
@@ -37,16 +37,16 @@ test('cold catch-up executes one lane and reserves a full quiet minute after it 
   assert.equal(h.logs[0].complete,false);assert.equal(h.logs[0].lane,'subdomains');
 });
 test('round-robin resumes every eligible lane and binds each turn to a fresh Core checkpoint',async()=>{
-  const h=harness({callbacks:[catchup,catchup,catchup]});
-  for(let i=0;i<6;i++)await h.run();
-  assert.deepEqual(h.calls.map(c=>c.index),[0,1,2,0,1,2]);assert.deepEqual(h.calls.map(c=>c.args[1].height),[101,102,103,104,105,106]);
+  const h=harness({callbacks:[catchup,catchup,catchup,catchup]});
+  for(let i=0;i<8;i++)await h.run();
+  assert.deepEqual(h.calls.map(c=>c.index),[0,1,2,3,0,1,2,3]);assert.deepEqual(h.calls.map(c=>c.args[1].height),[101,102,103,104,105,106,107,108]);
   assert.ok(h.timers.every(t=>t.delay===60000));
 });
 test('completed lanes obey the same quiet interval',async()=>{const h=harness();await h.run();assert.equal(h.calls.length,1);assert.equal(h.timers[0].delay,60000);assert.equal(h.logs.length,0);});
 test('ineligible lanes are skipped without suppressing eligible progress',async()=>{const h=harness({activations:[0,20,999999]});await h.run();await h.run();assert.deepEqual(h.calls.map(c=>c.index),[1,1]);});
 test('no eligible lanes creates no discovery authority and remains scheduled',async()=>{const h=harness({activations:[0,999999,999999]});await h.run();assert.equal(h.calls.length,0);assert.equal(h.timers[0].delay,60000);});
 test('concurrent warm triggers cannot duplicate work or scheduled successors',async()=>{const gate=deferred();const h=harness({callbacks:[()=>gate.promise]});const a=h.run();await new Promise(setImmediate);await h.run();assert.equal(h.calls.length,1);assert.equal(h.tips(),1);gate.resolve();await a;assert.equal(h.timers.length,1);});
-test('failed lane is recorded and does not starve another lane',async()=>{const h=harness({callbacks:[()=>{throw new Error('invalid witness');}]});await h.run();await h.run();assert.deepEqual(h.calls.map(c=>c.index),[0,1]);assert.equal(h.logs[0].complete,false);assert.equal(h.logs[0].reason,'invalid witness');assert.ok(h.timers.every(t=>t.delay===60000));});
+test('failed lane is recorded and does not starve another lane',async()=>{const h=harness({callbacks:[()=>{throw new Error('invalid witness');}]});await h.run();await h.run();assert.deepEqual(h.calls.map(c=>c.index),[0,1]);assert.equal(h.logs[0].complete,false);assert.equal(h.logs[0].reason,'invalid witness');assert.equal(h.timers[0].delay,60000);assert.equal(h.timers[1].delay,5000);});
 test('Core failure cannot run discovery, and retries retain the quiet interval',async()=>{const h=harness({rpc:()=>{throw new Error('Core unavailable');}});await h.run();assert.equal(h.calls.length,0);assert.equal(h.logs[0].complete,false);assert.equal(h.timers[0].delay,60000);});
 test('absent Core configuration schedules no unverified work',async()=>{const h=harness({enabled:false});await h.run();assert.equal(h.calls.length,0);assert.equal(h.tips(),0);assert.equal(h.timers.length,0);});
 
@@ -83,4 +83,19 @@ test('productive durable catch-up schedules a bounded five-second gap', async()=
   const d=realDiscovery();const h=harness({activations:[10,0,0],rpc:()=>d.checkpoint,callbacks:[d.discover]});
   h.discoveries[0].progress=d.discover.progress;
   await h.run();assert.equal(h.timers[0].delay,5000);
+});
+
+test('Permission productive catch-up shares the single-flight scheduler and bounded quiet gap',async()=>{
+ let height=40;
+ const h=harness({activations:[0,0,0,40],callbacks:[null,null,null,()=>{height++;const e=new Error('Permission read budget');e.permissionCatchUp=true;throw e;}]});
+ h.discoveries[3].progress=()=>({verifiedThroughBlock:height});await h.run();
+ assert.deepEqual(h.calls.map(c=>c.index),[3]);assert.equal(h.timers[0].delay,5000);assert.equal(h.logs[0].lane,'permissions');assert.equal(h.logs[0].complete,false);
+});
+test('Permission failures without verified progress retain the full backoff',async()=>{
+ const h=harness({activations:[0,0,0,40],callbacks:[null,null,null,()=>{const e=new Error('Permission read budget');e.permissionCatchUp=true;throw e;}]});
+ await h.run();assert.equal(h.timers[0].delay,60000);
+});
+
+test('a completed lane retains the short bounded gap when another lane has known catch-up work',async()=>{
+ const h=harness();h.discoveries[3].progress=()=>({verifiedThroughBlock:40});await h.run();assert.equal(h.timers[0].delay,5000);
 });

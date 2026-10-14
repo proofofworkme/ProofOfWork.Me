@@ -47,7 +47,7 @@ export function assertPermissionRawBlockCoverage(row, core) {
 }
 
 /** Independent complete first-party Core verification; no feed, search or local marker proves authority. */
-export function createPermissionDiscovery({ readIndex, readCoreBlock, readCoreHash, hydratePending,
+export function createPermissionDiscovery({ store = null, readIndex, readCoreBlock, readCoreHash, hydratePending,
   maxCacheBytes = 128 * 1024 * 1024, maxProjectionBytes = 64 * 1024 * 1024, readBudgetMs = 25000, now = () => Date.now(),
   feeRateActivationHeight = PERMISSION_FEE_RATE_ACTIVATION_HEIGHT,
   feeRateActivationPreviousBlockHash = PERMISSION_FEE_RATE_ACTIVATION_PREVIOUS_BLOCK_HASH }) {
@@ -67,7 +67,10 @@ export function createPermissionDiscovery({ readIndex, readCoreBlock, readCoreHa
   async function read(network, checkpoint, activationHeight, parentHash, scope, deadline) {
     if (network !== 'livenet' || !Number.isSafeInteger(activationHeight) || activationHeight < 1 || !TXID.test(parentHash) ||
         !Number.isSafeInteger(checkpoint?.height) || checkpoint.height < activationHeight - 1 || !TXID.test(checkpoint?.blockHash) || typeof readCoreHash !== 'function') throw permissionReadError('Permission discovery requires a pinned first-admission boundary and exact checkpoint.');
-    const budget = () => { if (now() > deadline) throw permissionReadError('Permission verification exceeded its read budget; retry to continue catch-up.'); };
+    const budget = () => { if (now() > deadline) {
+      const error = permissionReadError('Permission verification exceeded its read budget; retry to continue catch-up.');
+      error.permissionCatchUp = true; throw error;
+    } };
     budget();
     if (!Number.isSafeInteger(feeRateActivationHeight) || feeRateActivationHeight < activationHeight || !TXID.test(feeRateActivationPreviousBlockHash ?? '')) throw permissionReadError('Permission fee-rate admission requires its pinned Core parent.');
     async function verifyCoreBoundaries(final = false) {
@@ -95,6 +98,14 @@ export function createPermissionDiscovery({ readIndex, readCoreBlock, readCoreHa
       budget();
       if (observedPrefix !== prefix.blockHash) { prefixes.delete(scope); prefix = null; }
     }
+    const storeScope = { network, activationHeight, activationPreviousBlockHash: parentHash,
+      feeRateActivationHeight, feeRateActivationPreviousBlockHash };
+    if (!prefix && store) {
+      prefix = await store.restore(storeScope, checkpoint, readCoreHash);
+      const newer = prefixes.get(scope);
+      if (prefix && (!newer || newer.height <= prefix.height)) prefixes.set(scope, prefix);
+      budget();
+    }
     const confirmed = prefix ? [...prefix.transactions] : [];
     let bytes = prefix?.projectionBytes ?? 0, next = prefix ? prefix.height + 1 : activationHeight, previousHash = prefix?.blockHash ?? parentHash;
     let witnessSha256 = prefix?.witnessSha256 ?? permissionBlockWitnessSeed(network, activationHeight, parentHash);
@@ -116,6 +127,9 @@ export function createPermissionDiscovery({ readIndex, readCoreBlock, readCoreHa
         const nextBytes = bytes + Buffer.byteLength(JSON.stringify(transactions));
         if (nextBytes > maxProjectionBytes) throw permissionReadError('Permission projection reached its byte budget.');
         budget();
+        // Persist only fully reconstructed Core evidence. Restored receipts still
+        // require the reader's full live index-prefix chain and fresh Core pins.
+        if (store) await store.append(storeScope, row, transactions, nextWitness, nextIndexWitness);
         confirmed.push(...transactions); bytes = nextBytes; previousHash = row.block_hash; next += 1;
         witnessSha256 = nextWitness; indexWitnessSha256 = nextIndexWitness;
         // Private progress is never an authority response. Reuse requires fresh
@@ -153,7 +167,7 @@ export function createPermissionDiscovery({ readIndex, readCoreBlock, readCoreHa
     budget();
     return result;
   }
-  return async function discover(network, checkpoint, activationHeight = PERMISSION_ACTIVATION_HEIGHT, parentHash = PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH) {
+  async function discover(network, checkpoint, activationHeight = PERMISSION_ACTIVATION_HEIGHT, parentHash = PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH) {
     const authorityScope = `${network}:${activationHeight}:${parentHash}:${feeRateActivationHeight}:${feeRateActivationPreviousBlockHash}`;
     const scope = `${authorityScope}:${checkpoint?.height}:${checkpoint?.blockHash}`;
     if (!reads.has(scope)) {
@@ -168,5 +182,12 @@ export function createPermissionDiscovery({ readIndex, readCoreBlock, readCoreHa
       }).catch(() => {});
     }
     return reads.get(scope);
+  }
+  discover.progress = (network, activationHeight = PERMISSION_ACTIVATION_HEIGHT, parentHash = PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH) => {
+    const scope = `${network}:${activationHeight}:${parentHash}:${feeRateActivationHeight}:${feeRateActivationPreviousBlockHash}`;
+    const prefix = prefixes.get(scope);
+    return { activationHeight, verifiedThroughBlock: prefix?.height ?? activationHeight - 1,
+      durableVerifiedThroughBlock: store && prefix ? prefix.height : null };
   };
+  return discover;
 }
