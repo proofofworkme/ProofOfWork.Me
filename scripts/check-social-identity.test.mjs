@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
+import vm from "node:vm";
 import ts from "typescript";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
@@ -19,6 +20,7 @@ import {
   verifiedSocialIdentityIntent,
 } from "../src/features/identity/socialIdentityCore.mjs";
 import { verifyBitcoinMessageSignature, verifyBitcoinIdentityMessageSignature } from "../src/features/identity/bitcoinMessageVerifier.mjs";
+import { exactWorkAmoV8WorkerLastSuccessReadiness } from "../server/work-amo-v8-worker-readiness.mjs";
 
 bitcoin.initEccLib(ecc);
 // Public, disposable deterministic fixture keys. They never come from a wallet.
@@ -123,7 +125,7 @@ test("fresh current ownership rejects a transferred ID and pending or cross-netw
   const intent = fixtureIntent();
   const fresh = { network: "livenet", record: { confirmed: true, ownerAddress: fixtureAddress, id: "alice", network: "livenet" } };
   globalThis.__identityRead = async (path, network, options) => {
-    assert.equal(path, "/api/v1/ids/alice?current=1&fresh=1");
+    assert.equal(path, "/api/v1/ids/alice?fresh=1");
     assert.equal(network, "livenet");
     assert.equal(options.timeoutMs, 15_000);
     return fresh;
@@ -242,4 +244,183 @@ test("client imports only exact bridge source, origin, nonce, account and verifi
   assert.equal(await identity.syncSocialIdentityIntent(fixtureAddress, "livenet", async () => false), undefined, "receiver rejects a signed choice after ownership changes");
   delete globalThis.window;
   delete globalThis.document;
+});
+
+async function publicationFixture(t, { storage = memoryStorage(), bridgeUnavailable = false } = {}) {
+  // Each module owns a separate iframe promise, matching a new browser context.
+  const client = await import(`${identityUrl}#${encodeURIComponent(t.name)}`);
+  const handlers = new Map();
+  const notifications = [];
+  const frame = { remove() {}, contentWindow: {
+    postMessage(request, origin) {
+      for (const handler of handlers.get("message") ?? []) handler({
+        source: frame.contentWindow, origin,
+        data: { ...request, type: SOCIAL_IDENTITY_RESPONSE, intent: undefined },
+      });
+    },
+  } };
+  globalThis.window = {
+    location: { origin: "https://boost.proofofwork.me" }, localStorage: storage,
+    setTimeout, clearTimeout, setInterval, clearInterval,
+    addEventListener(name, handler) {
+      if (!handlers.has(name)) handlers.set(name, new Set());
+      handlers.get(name).add(handler);
+    },
+    removeEventListener: (name, handler) => handlers.get(name)?.delete(handler),
+    dispatchEvent: event => notifications.push(event.type),
+  };
+  globalThis.document = {
+    createElement: () => frame,
+    body: { append() { queueMicrotask(() => bridgeUnavailable ? frame.onerror() : frame.onload()); } },
+  };
+  t.after(() => { delete globalThis.window; delete globalThis.document; });
+  return { client, storage, notifications };
+}
+
+test("publishing distinguishes invalid signature, confirmed owner mismatch and unavailable ownership", async (t) => {
+  const { client, storage, notifications } = await publicationFixture(t);
+  let reads = 0;
+  await assert.rejects(client.publishSocialIdentityIntent({ ...fixtureIntent(), signature: "forged" }, async () => {
+    reads += 1;
+    return true;
+  }), /wallet signature could not be verified/u);
+  assert.equal(reads, 0);
+  await assert.rejects(client.publishSocialIdentityIntent(fixtureIntent(), async () => false), /not currently owned/u);
+  await assert.rejects(client.publishSocialIdentityIntent(fixtureIntent(), async () => {
+    throw new Error("HTTP 503: canonical index unavailable");
+  }), /ownership is temporarily unavailable/u);
+  assert.equal(storage.getItem(SOCIAL_IDENTITY_STORAGE_KEY), null);
+  assert.deepEqual(notifications, []);
+});
+
+test("publishing reports denied browser storage without claiming an ownership failure", async (t) => {
+  const { client } = await publicationFixture(t, { storage: {
+    getItem: () => null, setItem() { throw new Error("Quota exceeded"); },
+  } });
+  await assert.rejects(client.publishSocialIdentityIntent(fixtureIntent(), async () => true), /could not be saved in this browser/u);
+  Object.defineProperty(window, "localStorage", { get() { throw new Error("Storage denied"); } });
+  await assert.rejects(client.publishSocialIdentityIntent(fixtureIntent(), async () => true), /could not be saved in this browser/u);
+});
+
+test("publishing accepts a freshly reverified local selection when the bridge is unavailable", async (t) => {
+  const { client, storage, notifications } = await publicationFixture(t, { bridgeUnavailable: true });
+  const intent = fixtureIntent();
+  let reads = 0;
+  assert.deepEqual(await client.publishSocialIdentityIntent(intent, async () => { reads += 1; return true; }), intent);
+  assert.equal(reads, 2, "bridge failure must not skip the local ownership recheck");
+  assert.deepEqual(readSocialIdentityIntent(storage, fixtureAddress, "livenet"), intent);
+  assert.deepEqual(notifications, ["proofofwork-social-identity-change"]);
+});
+
+for (const unavailable of [false, true]) {
+  test(`publishing fails closed when ownership ${unavailable ? "becomes unavailable" : "changes"} during sync`, async (t) => {
+    const { client, storage, notifications } = await publicationFixture(t);
+    const intent = fixtureIntent();
+    let reads = 0;
+    const confirmOwner = async () => {
+      if (++reads === 1) return true;
+      if (unavailable) throw new Error("Ownership lookup timed out");
+      return false;
+    };
+    await assert.rejects(client.publishSocialIdentityIntent(intent, confirmOwner), unavailable
+      ? /ownership is temporarily unavailable/u : /not currently owned/u);
+    assert.deepEqual(readSocialIdentityIntent(storage, fixtureAddress, "livenet"), intent,
+      "a failed refresh retains signed local evidence without activating it");
+    assert.deepEqual(notifications, []);
+    assert.equal(await client.syncSocialIdentityIntent(fixtureAddress, "livenet", confirmOwner), undefined,
+      "background synchronization remains silent and fail-closed");
+  });
+}
+
+test("fresh ID ownership reads retain the real canonical request gate without unrelated worker readiness", async () => {
+  const source = await readFile(new URL("../server/proof-api.mjs", import.meta.url), "utf8");
+  const parsed = ts.createSourceFile("proof-api.mjs", source, ts.ScriptTarget.Latest, true);
+  const names = ["exactCoreTipFromBlockchainInfo", "canonicalInternalPwtRangeReplayState",
+    "canonicalRebuildTrustState", "summarySnapshotCoversCanonicalReadModels",
+    "proofIndexWorkerExactTipReadiness", "loadCanonicalPublicReadGate", "proveCurrentIdAbsence",
+    "canonicalPublicReadGateApplies", "canonicalSummarySnapshotReadGateApplies",
+    "canonicalFreshReadCanUseLastGood"];
+  const declarations = names.map(name => {
+    const declaration = parsed.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name);
+    assert.ok(declaration, `missing actual API helper ${name}`);
+    return declaration.getText(parsed);
+  });
+  let requestGate;
+  function visit(node) {
+    if (ts.isIfStatement(node) && node.expression.getText(parsed).includes("canonicalPublicReadGateApplies(url.pathname)")) {
+      requestGate = node.getText(parsed);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(parsed);
+  assert.ok(requestGate, "the public request gate must remain inspectable");
+  const hash = "a".repeat(64);
+  const height = 971455;
+  let status;
+  let canonical;
+  let rejection;
+  const reset = () => {
+    status = {
+      network: "livenet", indexedThroughBlock: height,
+      scan: { complete: true, blockHash: hash, tipHeight: height },
+      readModels: { confirmedIds: { count: 500 }, confirmedTransfers: { count: 100 } },
+      worker: { network: "livenet", state: "failed-retrying", ok: false,
+        error: "Unrelated WORK pending witness failure", consecutiveFailures: 1,
+        lastSuccessAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString() },
+    };
+    canonical = { fault: {}, rebuild: { network: "livenet", status: "complete", active: false, complete: true } };
+    rejection = undefined;
+  };
+  const context = vm.createContext({
+    URL, setTimeout, PROOF_INDEX_REQUIRED: true, PROOF_INDEX_HEALTH_MAX_AGE_MS: 120_000,
+    WORK_AMO_V8_ACTIVATION_HEIGHT: 960601, CANONICAL_PUBLIC_READ_GATE_TIP_ATTEMPTS: 1,
+    CANONICAL_PUBLIC_READ_GATE_TIP_RETRY_DELAY_MS: 0, exactWorkAmoV8WorkerLastSuccessReadiness,
+    proofIndexOperationalStatusPayload: async () => status,
+    proofIndexCanonicalStateMetaPayload: async () => canonical,
+    livePendingRegistryPayload: async () => ({ records: [] }),
+    bitcoinRpc: async method => method === "getblockhash" ? { ok: true, result: hash } : {
+      ok: true, result: { chain: "main", blocks: height, headers: height,
+        bestblockhash: hash, initialblockdownload: false, verificationprogress: 1 },
+    },
+    canonicalGateCanUseBoundedLastGood: () => false,
+    errorResponse: (_response, code, _message, details) => { rejection = { code, details }; },
+  });
+  vm.runInContext(`${declarations.join("\n")}\n
+    async function canonicalPublicReadGate(network, options) {
+      if (options.force !== true) throw new Error("ownership must force a fresh gate");
+      return loadCanonicalPublicReadGate(network);
+    }
+    async function ownershipRequestGate() {
+      const network = "livenet", freshRead = true, permissionInspectionRead = false,
+        authenticatedLoopbackRead = false, response = {};
+      const url = new URL("https://boost.proofofwork.me/api/v1/ids/alice?fresh=1");
+      let canonicalReadGate = null, serveFreshLastGood = false;
+      ${requestGate}
+      return canonicalReadGate;
+    }`, context);
+  reset();
+  const accepted = await context.ownershipRequestGate();
+  assert.equal(accepted.atTip, true);
+  assert.equal(accepted.workerFresh, false);
+  assert.equal(accepted.workerOk, false);
+  assert.equal(accepted.ready, false, "worker authority remains closed");
+  assert.equal(rejection, undefined, "confirmed ownership read uses canonical exact-tip authority");
+  await assert.rejects(context.proveCurrentIdAbsence("livenet"), error => {
+    assert.equal(error.statusCode, 503);
+    assert.equal(error.details.code, "ID_AVAILABILITY_UNPROVEN");
+    return true;
+  }, "the same unhealthy worker still closes new-ID availability");
+  for (const [name, change] of [
+    ["index lag", () => { status.indexedThroughBlock -= 1; status.scan.tipHeight -= 1; }],
+    ["hash disagreement", () => { status.scan.blockHash = "b".repeat(64); }],
+    ["canonical fault", () => { canonical.fault.active = true; }],
+    ["incomplete rebuild", () => { canonical.rebuild = { network: "livenet", status: "active", active: true, complete: false }; }],
+    ["incomplete scan", () => { status.scan.complete = false; }],
+    ["missing ID read model", () => { status.readModels.confirmedIds.count = 0; }],
+  ]) {
+    reset();
+    change();
+    assert.equal(await context.ownershipRequestGate(), undefined, name);
+    assert.equal(rejection?.code, 503, name);
+  }
 });

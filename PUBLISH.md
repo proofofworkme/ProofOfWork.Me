@@ -96,6 +96,11 @@ and fresh confirmed ID ownership before saving or accepting it. Account changes,
 transferred IDs and forged origin/source/nonce messages cannot apply another
 wallet's selection. Taproot selections use BIP322 simple signatures for new
 choices; exact address-bound historical ECDSA intents remain readable.
+Selection uses the fresh confirmed-record lookup, whose index must match the
+current node checkpoint, rather than the new-registration availability check.
+An unavailable ownership lookup is reported separately from a rejected signature
+or a confirmed ownership mismatch. Neither unavailable reads nor pending records
+authorize a selection.
 
 The local choice is preparation state. Public bylines come from confirmed
 `pwb1:profile` records and current registry ownership. Publishing an article

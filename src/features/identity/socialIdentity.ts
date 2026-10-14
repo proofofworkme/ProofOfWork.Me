@@ -18,10 +18,12 @@ import {
 export type SocialIdentityOwnerCheck = (intent: BoostIdentityIntent) => Promise<boolean>;
 
 export async function confirmSocialIdentityOwner(intent: BoostIdentityIntent) {
+  // Fresh exact-record reads retain the public canonical tip gate. `current=1`
+  // additionally proves new-ID availability, including pending/worker health.
   const payload = await fetchProofApiJson<{
     network?: BitcoinNetwork;
     record?: { id?: string; confirmed?: boolean; network?: BitcoinNetwork; ownerAddress?: string } | null;
-  }>(`/api/v1/ids/${encodeURIComponent(intent.id)}?current=1&fresh=1`, intent.network, { timeoutMs: 15_000 });
+  }>(`/api/v1/ids/${encodeURIComponent(intent.id)}?fresh=1`, intent.network, { timeoutMs: 15_000 });
   const record = payload.record;
   return Boolean(
     payload.network === intent.network && record?.confirmed === true &&
@@ -138,10 +140,28 @@ export async function publishSocialIdentityIntent(
   confirmOwner: SocialIdentityOwnerCheck = confirmSocialIdentityOwner,
 ): Promise<BoostIdentityIntent | undefined> {
   if (typeof window === "undefined") return undefined;
-  const accepted = await acceptedIntent(intent, intent.address, intent.network, confirmOwner);
-  if (!accepted) return undefined;
-  storeSocialIdentityIntent(window.localStorage, accepted);
-  const selected = await syncSocialIdentityIntent(intent.address, intent.network, confirmOwner);
+  const accepted = verifiedSocialIdentityIntent(intent, intent.address, intent.network);
+  if (!accepted) throw new Error("The wallet signature could not be verified for this ID selection. Try Sign ID again.");
+  let ownerReadError: Error | undefined;
+  const confirmOwnerForPublish: SocialIdentityOwnerCheck = async (candidate) => {
+    try {
+      return await confirmOwner(candidate);
+    } catch {
+      ownerReadError = new Error("Confirmed ID ownership is temporarily unavailable. Try Sign ID again.");
+      throw ownerReadError;
+    }
+  };
+  const ownershipMismatch = () => new Error("This ID is not currently owned by the connected wallet.");
+  if (!await confirmOwnerForPublish(accepted)) throw ownershipMismatch();
+  let stored = false;
+  try {
+    stored = storeSocialIdentityIntent(window.localStorage, accepted);
+  } catch {
+    // Accessing localStorage itself can be denied before the helper runs.
+  }
+  if (!stored) throw new Error("The signed ID selection could not be saved in this browser. Allow local storage and try again.");
+  const selected = await syncSocialIdentityIntent(intent.address, intent.network, confirmOwnerForPublish);
+  if (!selected) throw ownerReadError ?? ownershipMismatch();
   window.dispatchEvent(new Event("proofofwork-social-identity-change"));
   return selected;
 }
