@@ -7649,3 +7649,37 @@ old/new bytes in a creation-only receipt, and retains normal capacity admission.
 Run `scripts/check-ui-stage-dedup.py`, `scripts/check-ui-capacity.py`, and the
 publication/compatibility regression suites before installation. The user approved
 this additional staging repair; production completion requires final release sync.
+
+### Fixed AMO declaration hydration admission (2026-10-13)
+
+The final availability integration gate observed V5/V6 declaration hydration
+queue timeouts while ordinary transaction reads saturated the accepted hydration
+queue. A later fresh API response and independent Core transaction/block-position
+check matched the exact historical V5 declaration. This is an availability
+failure, not permission to alter historical declaration evidence or assertions.
+
+V5/V6 now use a private helper restricted to their two configured declaration
+transaction IDs on livenet. It shares only overlapping identical hydration,
+requires fresh canonical prevouts, disables completed transaction caching for
+these reads, clones evidence for each consumer, and removes both successful and
+rejected promises immediately on settlement. Each metadata caller still checks
+its own canonical block hash, transaction position, tip and evidence validator.
+The private authority symbol cannot be replaced by a generic producer label.
+
+The existing hydration admission remains bounded by four active reads, 64 queued
+reads and a five-second queue deadline. Waiting classes rotate fairly with FIFO
+order inside each class. Two declaration queue entries and eight pending-verifier
+entries are reserved within the existing total; reduced custom caps reduce these
+reservations rather than enlarging the queue. Active reads are never preempted.
+If capacity cannot be released within the deadline, verification still fails
+closed. No protocol math, database, ledger, witness or historical record changes.
+
+The accepted hydration admission/draining implementation is carried forward into
+versioned source before this narrow extension. `deploy/declaration-admission/`
+permits only `server/proof-api.mjs`, binds the exact source/base/runtime hashes,
+preserves all other accepted overlays, and retains exact rollback bytes and file
+metadata. Its deployment stops/starts only the API and dependent worker through
+the existing guarded gateway/Search workflow. Run
+`node --test scripts/check-declaration-rpc-hydration.test.mjs` and both isolated
+Python controller suites; production completion still requires the Computer
+integration gate and full release synchronization.

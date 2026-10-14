@@ -8035,6 +8035,15 @@ const bitcoinRpcGetRawTransactionAdmission = {
   active: 0,
   queue: [],
 };
+const bitcoinRpcHydrationAdmission = {
+  active: 0,
+  activeByProducer: { "transaction-read": 0, "pending-verifier": 0, "declaration-read": 0 },
+  lastGrantedProducer: "transaction-read",
+  queue: [],
+};
+const bitcoinRpcHydrationDiagnostics = { nextLogAt: 0, counts: Object.create(null) };
+const declarationHydrationAuthority = Symbol("fixed-declaration-hydration");
+const declarationHydrationInFlight = new Map();
 const BITCOIN_RPC_BUSY_RETRY_READ_METHODS = new Set([
   "getbestblockhash",
   "getblock",
@@ -8301,6 +8310,155 @@ async function bitcoinRpcOnce(method, params) {
     ok: true,
     result: payload?.result,
   };
+}
+
+function bitcoinRpcHydrationProducer(value) {
+  return value === "pending-verifier" || value === "declaration-read"
+    ? value : "transaction-read";
+}
+
+function bitcoinRpcHydrationAdmissionCause(error) {
+  const code = String(error?.code ?? "");
+  if (![
+    "POW_BITCOIN_RPC_RAW_ADMISSION_UNAVAILABLE",
+    "POW_BITCOIN_RPC_RAW_QUEUE_FULL",
+    "POW_BITCOIN_RPC_RAW_QUEUE_TIMEOUT",
+    "POW_BITCOIN_RPC_HYDRATION_QUEUE_FULL",
+    "POW_BITCOIN_RPC_HYDRATION_QUEUE_TIMEOUT",
+  ].includes(code)) {
+    return null;
+  }
+  return Object.freeze({
+    model: "bitcoin-rpc-hydration-admission-v1",
+    code,
+    phase: code.startsWith("POW_BITCOIN_RPC_HYDRATION_")
+      ? "hydration-admission" : "raw-rpc-admission",
+    producer: bitcoinRpcHydrationProducer(error?.rpcAdmission?.producer),
+  });
+}
+
+function bitcoinRpcHydrationUnavailable(code, producer) {
+  const error = new Error(`Local transaction hydration is temporarily unavailable (${code}).`);
+  error.code = code;
+  error.rpcAdmission = bitcoinRpcHydrationAdmissionCause({
+    code, rpcAdmission: { producer },
+  });
+  // Fixed codes/classes only; at most one private aggregate per five seconds.
+  // Diagnostic failure must never alter admission or exception behavior.
+  try {
+    const state = bitcoinRpcHydrationDiagnostics;
+    const key = `${error.rpcAdmission.producer}:${code}`;
+    state.counts[key] = Math.min(1_000_000_000, (state.counts[key] ?? 0) + 1);
+    const now = Date.now();
+    if (now >= state.nextLogAt) {
+      state.nextLogAt = now + 5_000;
+      console.warn(JSON.stringify({
+        event: "bitcoin-rpc-hydration-unavailable",
+        ...error.rpcAdmission,
+        rawActive: bitcoinRpcGetRawTransactionAdmission.active,
+        rawQueued: bitcoinRpcGetRawTransactionAdmission.queue.length,
+        hydrationActive: bitcoinRpcHydrationAdmission.active,
+        hydrationQueued: bitcoinRpcHydrationAdmission.queue.length,
+        failures: { ...state.counts },
+      }));
+      state.counts = Object.create(null);
+    }
+  } catch { /* private observation only */ }
+  return error;
+}
+
+function bitcoinRpcHydrationRelease(state, producer) {
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    state.activeByProducer[producer] -= 1;
+    // Rotate nonempty classes, preserving FIFO within each class and the cap.
+    const classes = ["transaction-read", "pending-verifier", "declaration-read"];
+    const previous = Math.max(0, classes.indexOf(state.lastGrantedProducer));
+    let index = -1;
+    for (let offset = 1; offset <= classes.length && index < 0; offset += 1) {
+      const producer = classes[(previous + offset) % classes.length];
+      index = state.queue.findIndex((entry) => entry.producer === producer);
+    }
+    if (index < 0) index = 0;
+    const next = state.queue.splice(index, 1)[0];
+    if (next) {
+      clearTimeout(next.timer);
+      state.lastGrantedProducer = next.producer;
+      state.activeByProducer[next.producer] += 1;
+      next.resolve(bitcoinRpcHydrationRelease(state, next.producer));
+    } else {
+      state.active -= 1;
+    }
+  };
+}
+
+async function bitcoinRpcAcquireHydrationSlot(
+  producer,
+  {
+    state = bitcoinRpcHydrationAdmission,
+    maxInFlight = Math.min(4, BITCOIN_RPC_GETRAWTRANSACTION_MAX_IN_FLIGHT),
+    maxQueue = BITCOIN_RPC_GETRAWTRANSACTION_MAX_QUEUE,
+    queueWaitMs = BITCOIN_RPC_GETRAWTRANSACTION_QUEUE_WAIT_MS,
+  } = {},
+) {
+  producer = bitcoinRpcHydrationProducer(producer);
+  if (state.active < maxInFlight) {
+    state.active += 1;
+    state.activeByProducer[producer] += 1;
+    state.lastGrantedProducer = producer;
+    return bitcoinRpcHydrationRelease(state, producer);
+  }
+  // Keep two fixed declarations and one verifier batch inside the same cap.
+  // Reduced test/operator caps reduce reservations, never enlarge total space.
+  const declarationReserve = Math.min(2, maxQueue);
+  const pendingReserve = Math.min(8, Math.max(0, maxQueue - declarationReserve));
+  const ordinaryLimit = Math.max(0, maxQueue - pendingReserve - declarationReserve);
+  const ordinaryQueued = state.queue.filter(e => e.producer === "transaction-read").length;
+  const declarationQueued = state.queue.filter(e => e.producer === "declaration-read").length;
+  const nonDeclarationQueued = state.queue.length - declarationQueued;
+  if (state.queue.length >= maxQueue ||
+      (producer === "transaction-read" && ordinaryQueued >= ordinaryLimit) ||
+      (producer !== "declaration-read" && nonDeclarationQueued >= maxQueue - declarationReserve) ||
+      (producer === "declaration-read" && declarationQueued >= declarationReserve)) {
+    throw bitcoinRpcHydrationUnavailable("POW_BITCOIN_RPC_HYDRATION_QUEUE_FULL", producer);
+  }
+  return new Promise((resolve, reject) => {
+    const entry = { producer, resolve, timer: null };
+    entry.timer = setTimeout(() => {
+      const index = state.queue.indexOf(entry);
+      if (index < 0) return;
+      state.queue.splice(index, 1);
+      reject(bitcoinRpcHydrationUnavailable("POW_BITCOIN_RPC_HYDRATION_QUEUE_TIMEOUT", producer));
+    }, queueWaitMs);
+    state.queue.push(entry);
+  });
+}
+
+async function mapWithConcurrencyStopAndDrain(items, concurrency, mapper) {
+  const results = Array.from({ length: items.length });
+  let nextIndex = 0;
+  let failed = false;
+  let firstError;
+  const worker = async () => {
+    while (!failed && nextIndex < items.length) {
+      const index = nextIndex++;
+      try {
+        results[index] = await mapper(items[index], index);
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          firstError = error;
+        }
+      }
+    }
+  };
+  await Promise.all(Array.from({
+    length: Math.min(Math.max(1, concurrency), items.length),
+  }, worker));
+  if (failed) throw firstError;
+  return results;
 }
 
 async function bitcoinRpc(method, params) {
@@ -8875,6 +9033,34 @@ function workAmoV5Estimates(quoteHead, networkValueBeforeQ8) {
   );
 }
 
+async function fetchFixedAmoDeclarationTransaction(txid, network) {
+  if (network !== "livenet" || !/^[0-9a-f]{64}$/u.test(txid) ||
+      (txid !== WORK_AMO_V5_DECLARATION_TXID && txid !== WORK_AMO_V6_DECLARATION_TXID)) {
+    throw new Error("Unrecognized fixed AMO declaration hydration.");
+  }
+  const key = network + ":" + txid;
+  let pending = declarationHydrationInFlight.get(key);
+  if (!pending) {
+    pending = Promise.resolve().then(() => fetchTransactionFromBitcoinRpc(txid, network, {
+      bypassCache: true,
+      cacheResult: false,
+      includePrevouts: true,
+      includeRawHex: false,
+      requireCanonicalPrevouts: true,
+      [declarationHydrationAuthority]: true,
+    }));
+    declarationHydrationInFlight.set(key, pending);
+  }
+  try {
+    // Consumers retain independent chain fences and cannot mutate shared evidence.
+    return structuredClone(await pending);
+  } finally {
+    if (declarationHydrationInFlight.get(key) === pending) {
+      declarationHydrationInFlight.delete(key);
+    }
+  }
+}
+
 async function workAmoV5Metadata(
   network,
   { force = false, summaryPayload = null } = {},
@@ -8898,14 +9084,7 @@ async function workAmoV5Metadata(
       tipHashResponse,
     ] =
       await Promise.all([
-        fetchTransactionFromBitcoinRpc(
-          WORK_AMO_V5_DECLARATION_TXID,
-          network,
-          {
-            bypassCache: true,
-            requireCanonicalPrevouts: true,
-          },
-        ),
+        fetchFixedAmoDeclarationTransaction(WORK_AMO_V5_DECLARATION_TXID, network),
         bitcoinRpc("getblockhash", [WORK_AMO_V5_DECLARATION_HEIGHT]),
         bitcoinRpc("getblockcount", []),
         bitcoinRpc("getbestblockhash", []),
@@ -9210,14 +9389,7 @@ async function workAmoV6Metadata(
       tipHeightResult,
       tipHashResult,
     ] = await Promise.all([
-      fetchTransactionFromBitcoinRpc(
-        WORK_AMO_V6_DECLARATION_TXID,
-        network,
-        {
-          bypassCache: true,
-          requireCanonicalPrevouts: true,
-        },
-      ),
+      fetchFixedAmoDeclarationTransaction(WORK_AMO_V6_DECLARATION_TXID, network),
       bitcoinRpc("getblockhash", [
         WORK_AMO_V6_DECLARATION_HEIGHT,
       ]),
@@ -14197,227 +14369,247 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
     return cached;
   }
 
-  const response = await bitcoinRpc("getrawtransaction", [normalizedTxid, true]);
-  if (!response) {
-    if (options.strictAvailability === true) {
-      throw transactionLookupUnavailableError(
-        normalizedTxid,
-        network,
-        new Error("Bitcoin Core transaction lookup is not configured."),
-      );
-    }
-    return null;
-  }
-  if (!response.ok || !response.result || typeof response.result !== "object") {
-    if (!response.ok) {
-      console.error(
-        `Bitcoin RPC getrawtransaction failed for ${normalizedTxid}: ${errorSummary(response.error)}`,
-      );
-    }
-    const rpcCode = Number(response?.error?.code);
-    if (
-      options.strictAvailability === true &&
-      !(response && !response.ok && rpcCode === -5)
-    ) {
-      throw transactionLookupUnavailableError(
-        normalizedTxid,
-        network,
-        new Error(
-          `Bitcoin Core returned RPC error ${Number.isFinite(rpcCode) ? rpcCode : "unknown"}.`,
-        ),
-      );
-    }
-    if (options.requireCanonicalPrevouts) {
-      throw new Error(
-        `Bitcoin Core could not resolve canonical transaction ${normalizedTxid}.`,
-      );
-    }
-    return null;
-  }
-
-  const raw = response.result;
-  let rawHex = "";
-  let rawHexTransaction = null;
-  if (options.includeRawHex === true) {
-    rawHex = String(raw.hex ?? "").trim().toLowerCase();
-    let rawHexTxid = "";
-    try {
-      rawHexTransaction = bitcoin.Transaction.fromHex(rawHex);
-      rawHexTxid = rawHexTransaction.getId();
-    } catch {
-      rawHexTxid = "";
-    }
-    if (
-      !/^[0-9a-f]+$/u.test(rawHex) ||
-      rawHex.length % 2 !== 0 ||
-      String(raw.txid ?? "").trim().toLowerCase() !== normalizedTxid ||
-      rawHexTxid !== normalizedTxid
-    ) {
-      throw new Error(
-        `Bitcoin Core returned raw transaction bytes that do not bind to ${normalizedTxid}.`,
-      );
-    }
-  }
-  if (
-    options.requireCanonicalPrevouts &&
-    !(Array.isArray(raw.vout) ? raw.vout : []).every((output) => {
-      const script = output?.scriptPubKey;
-      const scriptHex = script?.hex;
-      return (
-        Number.isFinite(Number(output?.value)) &&
-        Number(output.value) >= 0 &&
-        script &&
-        typeof script === "object" &&
-        typeof scriptHex === "string" &&
-        scriptHex.length % 2 === 0 &&
-        /^[0-9a-f]*$/iu.test(scriptHex)
-      );
-    })
-  ) {
-    throw new Error(
-      `Bitcoin Core returned incomplete canonical outputs for ${normalizedTxid}.`,
-    );
-  }
-  const vout = (Array.isArray(raw.vout) ? raw.vout : []).map(
-    coreVoutToMempoolVout,
-  );
-  const vin = await mapWithConcurrency(
-    Array.isArray(raw.vin) ? raw.vin : [],
-    options.requireCanonicalPrevouts
-      ? Math.min(2, Math.max(1, TX_FETCH_CONCURRENCY))
-      : TX_FETCH_CONCURRENCY,
-    async (input) => {
-      const nextInput = {
-        ...(input?.coinbase ? { coinbase: String(input.coinbase) } : {}),
-        scriptsig: String(input?.scriptSig?.hex ?? ""),
-        scriptsig_asm: String(input?.scriptSig?.asm ?? ""),
-        sequence: Number(input?.sequence ?? 0),
-        txid: String(input?.txid ?? "").toLowerCase(),
-        vout: Number(input?.vout ?? -1),
-      };
-      if (
-        options.includePrevouts !== false &&
-        /^[0-9a-f]{64}$/u.test(nextInput.txid) &&
-        Number.isSafeInteger(nextInput.vout) &&
-        nextInput.vout >= 0
-      ) {
-        const previousRequest = fetchTransactionFromBitcoinRpc(
-          nextInput.txid,
+  const declarationRead = options[declarationHydrationAuthority] === true &&
+    (normalizedTxid === WORK_AMO_V5_DECLARATION_TXID ||
+      normalizedTxid === WORK_AMO_V6_DECLARATION_TXID) &&
+    options.bypassCache === true && options.cacheResult === false &&
+    options.requireCanonicalPrevouts === true && options.includePrevouts === true &&
+    options.includeRawHex === false;
+  const producer = declarationRead ? "declaration-read" :
+    bitcoinRpcHydrationProducer(options.rpcHydrationProducer === "pending-verifier"
+      ? "pending-verifier" : "transaction-read");
+  const releaseHydration = options.includePrevouts === false
+    ? null : await bitcoinRpcAcquireHydrationSlot(producer);
+  try {
+    const response = await bitcoinRpc("getrawtransaction", [normalizedTxid, true]);
+    if (!response) {
+      if (options.strictAvailability === true) {
+        throw transactionLookupUnavailableError(
+          normalizedTxid,
           network,
-          {
-            bypassCache: options.bypassCache === true,
-            cacheResult: options.cacheResult !== false,
-            includePrevouts: false,
-            requireCanonicalPrevouts: options.requireCanonicalPrevouts === true,
-          },
+          new Error("Bitcoin Core transaction lookup is not configured."),
         );
-        const prevTx = options.requireCanonicalPrevouts
-          ? await previousRequest
-          : await previousRequest.catch(() => null);
-        const prevout = prevTx?.vout?.[nextInput.vout];
-        if (prevout) {
-          nextInput.prevout = prevout;
-        } else if (options.requireCanonicalPrevouts) {
-          throw new Error(
-            `Bitcoin Core could not hydrate canonical prevout ${nextInput.txid}:${nextInput.vout}.`,
-          );
-        }
       }
-      return nextInput;
-    },
-  );
-  if (
-    options.includeRawHex === true &&
-    (
-      !rawHexTransaction ||
-      rawHexTransaction.version !== Number(raw.version ?? 0) ||
-      rawHexTransaction.locktime !== Number(raw.locktime ?? 0) ||
-      rawHexTransaction.ins.length !== vin.length ||
-      rawHexTransaction.outs.length !== vout.length ||
-      rawHexTransaction.ins.some((input, index) => {
-        const hydrated = vin[index];
-        return (
-          Buffer.from(input.hash).reverse().toString("hex") !==
-            hydrated?.txid ||
-          Number(input.index) !== hydrated?.vout ||
-          Number(input.sequence) !== hydrated?.sequence ||
-          Buffer.from(input.script).toString("hex") !== hydrated?.scriptsig
+      return null;
+    }
+    if (!response.ok || !response.result || typeof response.result !== "object") {
+      const admission = bitcoinRpcHydrationAdmissionCause(response.error);
+      if (admission) {
+        throw bitcoinRpcHydrationUnavailable(admission.code, producer);
+      }
+      if (!response.ok) {
+        console.error(
+          `Bitcoin RPC getrawtransaction failed for ${normalizedTxid}: ${errorSummary(response.error)}`,
         );
-      }) ||
-      rawHexTransaction.outs.some((output, index) => {
-        const hydrated = vout[index];
+      }
+      const rpcCode = Number(response?.error?.code);
+      if (
+        options.strictAvailability === true &&
+        !(response && !response.ok && rpcCode === -5)
+      ) {
+        throw transactionLookupUnavailableError(
+          normalizedTxid,
+          network,
+          new Error(
+            `Bitcoin Core returned RPC error ${Number.isFinite(rpcCode) ? rpcCode : "unknown"}.`,
+          ),
+        );
+      }
+      if (options.requireCanonicalPrevouts) {
+        throw new Error(
+          `Bitcoin Core could not resolve canonical transaction ${normalizedTxid}.`,
+        );
+      }
+      return null;
+    }
+
+    const raw = response.result;
+    let rawHex = "";
+    let rawHexTransaction = null;
+    if (options.includeRawHex === true) {
+      rawHex = String(raw.hex ?? "").trim().toLowerCase();
+      let rawHexTxid = "";
+      try {
+        rawHexTransaction = bitcoin.Transaction.fromHex(rawHex);
+        rawHexTxid = rawHexTransaction.getId();
+      } catch {
+        rawHexTxid = "";
+      }
+      if (
+        !/^[0-9a-f]+$/u.test(rawHex) ||
+        rawHex.length % 2 !== 0 ||
+        String(raw.txid ?? "").trim().toLowerCase() !== normalizedTxid ||
+        rawHexTxid !== normalizedTxid
+      ) {
+        throw new Error(
+          `Bitcoin Core returned raw transaction bytes that do not bind to ${normalizedTxid}.`,
+        );
+      }
+    }
+    if (
+      options.requireCanonicalPrevouts &&
+      !(Array.isArray(raw.vout) ? raw.vout : []).every((output) => {
+        const script = output?.scriptPubKey;
+        const scriptHex = script?.hex;
         return (
-          Number(output.value) !== hydrated?.value ||
-          Buffer.from(output.script).toString("hex") !==
-            hydrated?.scriptpubkey
+          Number.isFinite(Number(output?.value)) &&
+          Number(output.value) >= 0 &&
+          script &&
+          typeof script === "object" &&
+          typeof scriptHex === "string" &&
+          scriptHex.length % 2 === 0 &&
+          /^[0-9a-f]*$/iu.test(scriptHex)
         );
       })
-    )
-  ) {
-    throw new Error(
-      `Bitcoin Core raw transaction bytes disagree with verbose transaction ${normalizedTxid}.`,
-    );
-  }
-  const confirmations = Number(raw.confirmations ?? 0);
-  const confirmed = confirmations > 0;
-  const mempoolEntry = confirmed
-    ? null
-    : await bitcoinRpc("getmempoolentry", [normalizedTxid]).catch(() => null);
-  const blockTime = Number(raw.blocktime ?? raw.time);
-  const mempoolTime = Number(
-    mempoolEntry?.ok ? mempoolEntry.result?.time : undefined,
-  );
-  const status = {
-    confirmed,
-    ...(String(raw.blockhash ?? "").trim()
-      ? { block_hash: String(raw.blockhash).trim() }
-      : {}),
-    ...(Number(raw.height) > 0
-      ? { block_height: Number(raw.height) }
-      : {}),
-    ...(Number.isFinite(blockTime) && blockTime > 0
-      ? { block_time: blockTime }
-      : {}),
-    ...(Number.isFinite(mempoolTime) && mempoolTime > 0
-      ? { mempool_time: mempoolTime }
-      : {}),
-  };
-  const tx = {
-    ...(options.requireCanonicalPrevouts
-      ? { _powCanonicalRpcHydration: true }
-      : {}),
-    fee: Number.isFinite(Number(raw.fee))
-      ? Math.round(Number(raw.fee) * 100_000_000)
-      : undefined,
-    ...(rawHex ? { hex: rawHex } : {}),
-    locktime: Number(raw.locktime ?? 0),
-    size: Number(raw.size ?? 0),
-    status,
-    txid: String(raw.txid ?? normalizedTxid).toLowerCase(),
-    version: Number(raw.version ?? 0),
-    vin,
-    vout,
-    weight: Number(raw.weight ?? 0),
-  };
-
-  if (
-    options.requireCanonicalPrevouts &&
-    options.includePrevouts !== false &&
-    !transactionHasCompleteCanonicalPrevouts(tx)
-  ) {
-    throw new Error(
-      `Bitcoin Core returned incomplete canonical prevouts for ${normalizedTxid}.`,
-    );
-  }
-
-  if (confirmed && options.cacheResult !== false) {
-    TRANSACTION_CACHE.set(cacheKey, tx);
-    if (TRANSACTION_CACHE.size > MAX_TRANSACTION_CACHE_SIZE) {
-      TRANSACTION_CACHE.delete(TRANSACTION_CACHE.keys().next().value);
+    ) {
+      throw new Error(
+        `Bitcoin Core returned incomplete canonical outputs for ${normalizedTxid}.`,
+      );
     }
-  }
+    const vout = (Array.isArray(raw.vout) ? raw.vout : []).map(
+      coreVoutToMempoolVout,
+    );
+    const vin = await mapWithConcurrencyStopAndDrain(
+      Array.isArray(raw.vin) ? raw.vin : [],
+      options.requireCanonicalPrevouts
+        ? Math.min(2, Math.max(1, TX_FETCH_CONCURRENCY))
+        : TX_FETCH_CONCURRENCY,
+      async (input) => {
+        const nextInput = {
+          ...(input?.coinbase ? { coinbase: String(input.coinbase) } : {}),
+          scriptsig: String(input?.scriptSig?.hex ?? ""),
+          scriptsig_asm: String(input?.scriptSig?.asm ?? ""),
+          sequence: Number(input?.sequence ?? 0),
+          txid: String(input?.txid ?? "").toLowerCase(),
+          vout: Number(input?.vout ?? -1),
+        };
+        if (
+          options.includePrevouts !== false &&
+          /^[0-9a-f]{64}$/u.test(nextInput.txid) &&
+          Number.isSafeInteger(nextInput.vout) &&
+          nextInput.vout >= 0
+        ) {
+          const previousRequest = fetchTransactionFromBitcoinRpc(
+            nextInput.txid,
+            network,
+            {
+              bypassCache: options.bypassCache === true,
+              cacheResult: options.cacheResult !== false,
+              includePrevouts: false,
+              rpcHydrationProducer: producer,
+              requireCanonicalPrevouts: options.requireCanonicalPrevouts === true,
+            },
+          );
+          const prevTx = options.requireCanonicalPrevouts
+            ? await previousRequest
+            : await previousRequest.catch(() => null);
+          const prevout = prevTx?.vout?.[nextInput.vout];
+          if (prevout) {
+            nextInput.prevout = prevout;
+          } else if (options.requireCanonicalPrevouts) {
+            throw new Error(
+              `Bitcoin Core could not hydrate canonical prevout ${nextInput.txid}:${nextInput.vout}.`,
+            );
+          }
+        }
+        return nextInput;
+      },
+    );
+    if (
+      options.includeRawHex === true &&
+      (
+        !rawHexTransaction ||
+        rawHexTransaction.version !== Number(raw.version ?? 0) ||
+        rawHexTransaction.locktime !== Number(raw.locktime ?? 0) ||
+        rawHexTransaction.ins.length !== vin.length ||
+        rawHexTransaction.outs.length !== vout.length ||
+        rawHexTransaction.ins.some((input, index) => {
+          const hydrated = vin[index];
+          return (
+            Buffer.from(input.hash).reverse().toString("hex") !==
+              hydrated?.txid ||
+            Number(input.index) !== hydrated?.vout ||
+            Number(input.sequence) !== hydrated?.sequence ||
+            Buffer.from(input.script).toString("hex") !== hydrated?.scriptsig
+          );
+        }) ||
+        rawHexTransaction.outs.some((output, index) => {
+          const hydrated = vout[index];
+          return (
+            Number(output.value) !== hydrated?.value ||
+            Buffer.from(output.script).toString("hex") !==
+              hydrated?.scriptpubkey
+          );
+        })
+      )
+    ) {
+      throw new Error(
+        `Bitcoin Core raw transaction bytes disagree with verbose transaction ${normalizedTxid}.`,
+      );
+    }
+    const confirmations = Number(raw.confirmations ?? 0);
+    const confirmed = confirmations > 0;
+    const mempoolEntry = confirmed
+      ? null
+      : await bitcoinRpc("getmempoolentry", [normalizedTxid]).catch(() => null);
+    const blockTime = Number(raw.blocktime ?? raw.time);
+    const mempoolTime = Number(
+      mempoolEntry?.ok ? mempoolEntry.result?.time : undefined,
+    );
+    const status = {
+      confirmed,
+      ...(String(raw.blockhash ?? "").trim()
+        ? { block_hash: String(raw.blockhash).trim() }
+        : {}),
+      ...(Number(raw.height) > 0
+        ? { block_height: Number(raw.height) }
+        : {}),
+      ...(Number.isFinite(blockTime) && blockTime > 0
+        ? { block_time: blockTime }
+        : {}),
+      ...(Number.isFinite(mempoolTime) && mempoolTime > 0
+        ? { mempool_time: mempoolTime }
+        : {}),
+    };
+    const tx = {
+      ...(options.requireCanonicalPrevouts
+        ? { _powCanonicalRpcHydration: true }
+        : {}),
+      fee: Number.isFinite(Number(raw.fee))
+        ? Math.round(Number(raw.fee) * 100_000_000)
+        : undefined,
+      ...(rawHex ? { hex: rawHex } : {}),
+      locktime: Number(raw.locktime ?? 0),
+      size: Number(raw.size ?? 0),
+      status,
+      txid: String(raw.txid ?? normalizedTxid).toLowerCase(),
+      version: Number(raw.version ?? 0),
+      vin,
+      vout,
+      weight: Number(raw.weight ?? 0),
+    };
 
-  return tx;
+    if (
+      options.requireCanonicalPrevouts &&
+      options.includePrevouts !== false &&
+      !transactionHasCompleteCanonicalPrevouts(tx)
+    ) {
+      throw new Error(
+        `Bitcoin Core returned incomplete canonical prevouts for ${normalizedTxid}.`,
+      );
+    }
+
+    if (confirmed && options.cacheResult !== false) {
+      TRANSACTION_CACHE.set(cacheKey, tx);
+      if (TRANSACTION_CACHE.size > MAX_TRANSACTION_CACHE_SIZE) {
+        TRANSACTION_CACHE.delete(TRANSACTION_CACHE.keys().next().value);
+      }
+    }
+
+    return tx;
+  } finally {
+    releaseHydration?.();
+  }
 }
 
 async function fetchTransactionHexFromBitcoinRpc(txid, network) {
@@ -73870,7 +74062,7 @@ async function pendingWorkVerifierStagePayload(value) {
       request.network,
       initialTip,
     ),
-    mapWithConcurrency(
+    mapWithConcurrencyStopAndDrain(
       request.replayTxids,
       Math.min(8, Math.max(1, TX_FETCH_CONCURRENCY)),
       async (txid) => {
@@ -73883,13 +74075,18 @@ async function pendingWorkVerifierStagePayload(value) {
               cacheResult: false,
               includeRawHex: true,
               requireCanonicalPrevouts: true,
+              rpcHydrationProducer: "pending-verifier",
             },
           );
         } catch (error) {
+          const admission = bitcoinRpcHydrationAdmissionCause(error);
           throw pendingWorkVerifierStageError(
-            "PENDING_WORK_STAGE_TRANSACTION_HYDRATION_INVALID",
-            "Bitcoin Core could not bind a pending transaction's raw bytes, verbose fields, and canonical prevouts.",
-            { reason: errorSummary(error), txid },
+            admission ? "PENDING_WORK_STAGE_RPC_ADMISSION_UNAVAILABLE" :
+              "PENDING_WORK_STAGE_TRANSACTION_HYDRATION_INVALID",
+            admission ? "Local RPC admission could not complete pending hydration." :
+              "Bitcoin Core could not bind a pending transaction's raw bytes, verbose fields, and canonical prevouts.",
+            admission ? { rpcAdmission: admission, txid } :
+              { reason: errorSummary(error), txid },
           );
         }
       },
