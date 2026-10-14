@@ -1,3 +1,4 @@
+import { ReviewDialog } from "./shared/components/ReviewDialog";
 import { ActionTransactionReview, type ActionReview } from "./shared/components/ActionTransactionReview";
 import { ActionRecoveryPanel } from "./shared/components/ActionRecoveryPanel";
 import { BrandMark } from "./shared/components/BrandMark";
@@ -3104,94 +3105,72 @@ function MarketplacePurchaseReceiptModal({
       : `${receipt.amountLabel} purchase is on ProofOfWork.`;
 
   return (
-    <div
-      className="purchase-receipt-backdrop"
-      onClick={onClose}
-      role="presentation"
-    >
-      <section
-        aria-labelledby="purchase-receipt-title"
-        aria-modal="true"
-        className="purchase-receipt-modal"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-      >
-        <div className="purchase-receipt-head">
-          <div className="empty-icon" aria-hidden="true">
-            <CheckCircle2 size={24} />
-          </div>
-          <div>
-            <h3 id="purchase-receipt-title">{title}</h3>
-            <p>{description}</p>
-          </div>
-          <button
-            aria-label="Close purchase receipt"
-            className="secondary small"
-            onClick={onClose}
-            type="button"
-          >
-            <X size={15} />
-          </button>
+    <ReviewDialog title={title} onCancel={onClose} closeLabel="Close purchase receipt"
+      fallbackFocus={() => document.querySelector<HTMLElement>(".marketplace-summary-read-state summary")
+        ?? Array.from(document.querySelectorAll<HTMLElement>("main button:not(:disabled), main a[href], .topbar-wallet-button"))
+          .find(element => element.getClientRects().length > 0) ?? null}>
+      <p>{description} Confirmation is pending.</p>
+      <dl className="purchase-receipt-fields">
+        <div>
+          <dt>Asset</dt>
+          <dd>{receipt.assetLabel}</dd>
         </div>
-
-        <dl className="purchase-receipt-fields">
-          <div>
-            <dt>Asset</dt>
-            <dd>{receipt.assetLabel}</dd>
-          </div>
-          <div>
-            <dt>Amount</dt>
-            <dd>{receipt.amountLabel}</dd>
-          </div>
-          <div>
-            <dt>Price</dt>
-            <dd>{receipt.priceSats.toLocaleString()} proofs</dd>
-          </div>
-          <div>
-            <dt>Purchase TX</dt>
-            <dd>{shortAddress(receipt.txid)}</dd>
-          </div>
-          <div>
-            <dt>Buyer</dt>
-            <dd>{shortAddress(receipt.buyerAddress)}</dd>
-          </div>
-          <div>
-            <dt>Seller</dt>
-            <dd>{shortAddress(receipt.sellerAddress)}</dd>
-          </div>
-        </dl>
-
-        <div className="id-record-actions purchase-receipt-actions">
-          <a
-            className="primary link-button"
-            href={explorerTxUrl(receipt.txid, receipt.network)}
-            rel="noreferrer"
-            target="_blank"
-          >
-            <ArrowUpRight size={15} />
-            <span>View Purchase TX</span>
-          </a>
-          <a
-            className="secondary link-button"
-            href={explorerTxUrl(receipt.listingId, receipt.network)}
-            rel="noreferrer"
-            target="_blank"
-          >
-            <ArrowUpRight size={15} />
-            <span>View Listing TX</span>
-          </a>
-          <a
-            className="secondary link-button"
-            href={marketplacePurchaseTweetUrl(receipt)}
-            rel="noreferrer"
-            target="_blank"
-          >
-            <Send size={15} />
-            <span>Post on X</span>
-          </a>
+        <div>
+          <dt>Amount</dt>
+          <dd>{receipt.amountLabel}</dd>
         </div>
-      </section>
-    </div>
+        <div>
+          <dt>Price</dt>
+          <dd>{receipt.priceSats.toLocaleString()} proofs</dd>
+        </div>
+        <div>
+          <dt>Purchase TX</dt>
+          <dd><code className="mono">{receipt.txid}</code></dd>
+        </div>
+        <div>
+          <dt>Listing TX</dt>
+          <dd><code className="mono">{receipt.listingId}</code></dd>
+        </div>
+        <div>
+          <dt>Buyer</dt>
+          <dd><code className="mono">{receipt.buyerAddress}</code></dd>
+        </div>
+        <div>
+          <dt>Seller</dt>
+          <dd><code className="mono">{receipt.sellerAddress}</code></dd>
+        </div>
+      </dl>
+
+      <div className="id-record-actions purchase-receipt-actions">
+        <a
+          className="primary link-button"
+          href={explorerTxUrl(receipt.txid, receipt.network)}
+          rel="noreferrer"
+          target="_blank"
+        >
+          <ArrowUpRight size={15} />
+          <span>View Purchase TX</span>
+        </a>
+        <a
+          className="secondary link-button"
+          href={explorerTxUrl(receipt.listingId, receipt.network)}
+          rel="noreferrer"
+          target="_blank"
+        >
+          <ArrowUpRight size={15} />
+          <span>View Listing TX</span>
+        </a>
+        <a
+          className="secondary link-button"
+          href={marketplacePurchaseTweetUrl(receipt)}
+          rel="noreferrer"
+          target="_blank"
+        >
+          <Send size={15} />
+          <span>Post on X</span>
+        </a>
+      </div>
+    </ReviewDialog>
   );
 }
 
@@ -14872,21 +14851,24 @@ function MarketplaceSummaryReadStatus({
       <StatusChip tone={statusTone}>{statusLabel}</StatusChip>
       <div>
         <strong>Canonical AMO summary</strong>
-        <span>
+        <span className="marketplace-summary-message">
           {readState.message}
           {indexedAt}
         </span>
-        {Number.isSafeInteger(snapshotHeight) && snapshotHeight > 0 &&
-        /^[0-9a-f]{64}$/u.test(snapshotHash) ? (
-          <span className="marketplace-snapshot-provenance">
-            Display snapshot: block {snapshotHeight.toLocaleString()} · hash{" "}
-            <code className="mono">{snapshotHash}</code>
-            {snapshotAgeSeconds !== undefined
-              ? ` · ${snapshotAgeSeconds.toLocaleString()}s old`
-              : ""}
-            . Display only; transaction actions require a fresh preflight.
-          </span>
-        ) : null}
+        <details className="marketplace-snapshot-details">
+          <summary>Snapshot evidence</summary>
+          {Number.isSafeInteger(snapshotHeight) && snapshotHeight > 0 &&
+          /^[0-9a-f]{64}$/u.test(snapshotHash) ? (
+            <span className="marketplace-snapshot-provenance">
+              Display snapshot: block {snapshotHeight.toLocaleString()} · hash{" "}
+              <code className="mono">{snapshotHash}</code>
+              {snapshotAgeSeconds !== undefined
+                ? ` · ${snapshotAgeSeconds.toLocaleString()}s old`
+                : ""}
+              . Display only; transaction actions require a fresh preflight.
+            </span>
+          ) : <span>Snapshot evidence is not yet verified.</span>}
+        </details>
       </div>
       {(readState.status === "unavailable" ||
         readState.status === "last-verified") &&
@@ -41657,7 +41639,7 @@ function InfinityApp({
             </div>
             <div>
               <h2>Create Bond</h2>
-              <p>{summary?.registryAddress || bondConfig.registryId}</p>
+              <p className="bond-registry-address mono">{summary?.registryAddress || bondConfig.registryId}</p>
             </div>
           </div>
           <form className="id-form" onSubmit={submitBond}>

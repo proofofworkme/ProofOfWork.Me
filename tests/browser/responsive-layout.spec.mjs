@@ -4084,7 +4084,12 @@ function observePerformance() {
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
         if (key === "cls" && entry.hadRecentInput) continue;
-        if (observations[key].length < 1_000) observations[key].push(entry.toJSON());
+        if (observations[key].length < 1_000) observations[key].push({ ...entry.toJSON(),
+          ...(key === "cls" ? { sources: entry.sources?.map(source => ({
+            selector: source.node instanceof Element ? `${source.node.tagName.toLowerCase()}${source.node.id ? `#${source.node.id}` : ""}${[...source.node.classList].map(name => `.${name}`).join("")}` : "",
+            previousRect: source.previousRect, currentRect: source.currentRect,
+          })) } : {}),
+        });
       }
     }).observe({ type, buffered: true, ...(type === "event" ? { durationThreshold: 16 } : {}) });
   }
@@ -4178,7 +4183,16 @@ async function runCacheAwareMeasurements({ browser, testInfo, viewport, path, fi
             for (const image of sample.diagnostics.images) {
               expect(image.complete && image.naturalWidth > 0, `Invalid image bytes: ${image.src}`).toBe(true);
             }
-            const js = sample.diagnostics.resources.filter((entry) => new URL(entry.name).pathname.endsWith(".js"));
+            const js = sample.diagnostics.resources.filter((entry) => /^\/assets\/[^/]+-[a-zA-Z0-9_-]+\.js$/u.test(new URL(entry.name).pathname));
+            const revalidatedScripts = sample.serverRequests.filter(request =>
+              /^\/appearance\/[^/]+\/theme\.js$/u.test(new URL(request.path, server.origin).pathname));
+            expect(revalidatedScripts).toHaveLength(1);
+            expect(revalidatedScripts[0].status).toBe(phase === "cold-cache" ? 200 : 304);
+            if (phase === "warm-cache") {
+              expect(revalidatedScripts[0].encodedBodyBytes).toBe(0);
+              expect(revalidatedScripts[0].decodedBodyBytes).toBe(0);
+            }
+            expect(sample.diagnostics.clsThroughObservation, "Unexpected layout shifts through readiness and interaction").toBeLessThanOrEqual(0.1);
             expect(js.length).toBeGreaterThan(0);
             if (phase === "cold-cache") expect(js.some((entry) => entry.transferSize > 0)).toBe(true);
             else expect(js.every((entry) => entry.transferSize === 0), "Warm hashed JS assets were downloaded again").toBe(true);
@@ -4286,5 +4300,30 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     await expect(sidebar.getByRole("button", { name: /^Target fixture/u })).toBeVisible();
     await expect(button).toBeFocused();
     await assertNoDocumentOverflow(page, "Create-folder target");
+  });
+}
+
+for (const workspace of ["standalone", "computer"]) for (const theme of ["light", "dark"]) {
+  test(`AMO snapshot disclosure ${workspace} ${theme} keeps exact evidence reachable`, async ({ page }, testInfo) => {
+    await installApiFixtures(page);
+    await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 320, height: 480 });
+    await page.goto(`/?${workspace === "computer" ? "folder=marketplace" : "marketplace=1"}&asset=${WORK_TOKEN_ID}`);
+    const status = page.getByLabel("AMO summary verification");
+    await expect(status).toHaveAttribute("data-state", "ready");
+    const disclosure = status.locator("summary");
+    await expect(disclosure).toHaveText("Snapshot evidence");
+    await disclosure.focus();
+    await page.keyboard.press("Enter");
+    await expect(status.locator("code")).toHaveText(HASH);
+    await expect(status.locator("code")).toBeVisible();
+    await expect(status).toContainText("transaction actions require a fresh preflight");
+    expect((await disclosure.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    expect(await status.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    await assertNoDocumentOverflow(page, "AMO snapshot disclosure");
+    await page.screenshot({ path: testInfo.outputPath("snapshot-evidence.png") });
+    await page.keyboard.press("Enter");
+    await expect(status.locator("code")).not.toBeVisible();
+    await expect(disclosure).toBeFocused();
   });
 }

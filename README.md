@@ -1576,6 +1576,22 @@ per-type transfer bytes, request counts, useful-data readiness, driver
 interaction times, LCP/CLS/event/long-task and DOM/heap diagnostics. Only
 browser-owned connectivity/autofill probes are allowed as explicitly recorded
 blocked proxy attempts; application requests must remain entirely local.
+The warm-cache gate distinguishes immutable hashed JavaScript from the
+versioned appearance script, which revalidates with a bodyless 304. Server byte
+counts represent response bodies actually sent, including zero decoded bytes
+for 304 responses. Layout-shift diagnostics retain source selectors and enforce
+CLS ≤ 0.1 throughout the measured readiness/interaction interval.
+
+AMO keeps verification/progress copy visible in reserved space and places exact
+checkpoint evidence in the keyboard-accessible Snapshot evidence disclosure.
+Loading, unavailable, last-verified and ready retain their distinct meanings;
+display readiness does not authorize spending. Bond creation wraps the complete
+registry address within its card. Purchase broadcast receipts use the shared
+native modal with contained focus, Escape/Close dismissal and focus return
+(or a remaining workspace control when purchase removes its Buy button),
+and show selectable full transaction IDs and buyer/seller addresses. This presentation
+does not change transaction or protocol behavior.
+
 Relative-origin fixture builds differ from deployed absolute-origin builds.
 Fixtures are not full-node authority, mobile viewports are not mobile hardware,
 and these diagnostics do not establish field p75 or INP certification.

@@ -100,7 +100,7 @@ export async function startPerformanceFixtureServer({ buildRoot, apiHandler, max
       const headers = { "Content-Type": contentType, "Cache-Control": cacheControl, "X-Content-Type-Options": "nosniff" };
       if (etag) headers.ETag = etag;
       if (etag && request.headers["if-none-match"] === etag) {
-        record.status = 304; record.encodedBodyBytes = 0;
+        record.status = 304; record.encodedBodyBytes = 0; record.decodedBodyBytes = 0;
         response.writeHead(304, headers); response.end(); return;
       }
       let encoded = bytes;

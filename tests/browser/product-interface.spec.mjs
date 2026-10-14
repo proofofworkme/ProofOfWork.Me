@@ -338,3 +338,47 @@ for (const surface of ["public", "focus", "desktop"]) for (const theme of THEMES
     expect(outline.style).not.toBe("none"); expect(outline.width).toBeGreaterThanOrEqual(2);
   });
 }
+
+for (const label of ["Infinity", "Inception"]) for (const surface of ["public", "focus", "desktop"]) {
+  test(`${surface} ${label}: populated bond registry containment`, async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    const writes = await fixtures(page, surface === "desktop" ? "desktop" : "focus");
+    const registryAddress = "bc1q" + "a".repeat(58);
+    await page.route("**/api/v1/*-summary*", route => {
+      if (!/\/(infinity|inception)-summary$/u.test(new URL(route.request().url()).pathname)) return route.fallback();
+      return route.fulfill({ json: { indexedAt: NOW, registryAddress, actualValue: { floorQ8: "100000000", floorSats: "1" },
+        stats: { confirmedSupply: "9007199254740993", confirmedBondActions: 1 },
+        token: { indexedAt: NOW, tokens: [], holders: [], listings: [], mints: [], transfers: [], sales: [], closedListings: [], invalidEvents: [] } } });
+    });
+    for (const theme of THEMES) for (const viewport of [...VIEWPORTS, { width: 320, height: 480 }]) {
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      await page.setViewportSize(viewport);
+      await page.goto(surface === "public" ? APP_LINKS.find(app => app.label === label).localHref : `/?folder=${label.toLowerCase()}`);
+      const card = page.locator("#bond-create");
+      await expect(card.locator(".bond-registry-address")).toHaveText(registryAddress);
+      await page.evaluate(() => document.fonts.ready);
+      // Reserve a classic scrollbar gutter even on overlay-scrollbar hosts.
+      await page.addStyleTag({ content: "html { overflow-y: scroll; scrollbar-gutter: stable; }" });
+      await card.scrollIntoViewIfNeeded();
+      const geometry = await card.evaluate(node => {
+        const bounds = node.getBoundingClientRect();
+        const elements = [node, ...node.querySelectorAll(".id-card-heading, .bond-registry-address, form, label, input")];
+        return { documentWidth: document.documentElement.clientWidth, documentScroll: document.documentElement.scrollWidth,
+          offenders: elements.filter(element => {
+            const box = element.getBoundingClientRect();
+            return box.left < bounds.left - 1 || box.right > bounds.right + 1 || element.scrollWidth > element.clientWidth + 1;
+          }).map(element => ({ tag: element.tagName, className: element.className })) };
+      });
+      expect(geometry.offenders).toEqual([]);
+      expect(geometry.documentScroll).toBeLessThanOrEqual(geometry.documentWidth + 1);
+      const exact = await card.locator(".bond-registry-address").evaluate(element => {
+        const range = document.createRange(); range.selectNodeContents(element);
+        const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); return selection.toString();
+      });
+      expect(exact).toBe(registryAddress);
+      await page.screenshot({ path: testInfo.outputPath(`${theme}-${viewport.width}-${viewport.height}.png`) });
+    }
+    expect(writes).toEqual([]);
+    expect(await page.evaluate(() => window.interfaceSignatures)).toBe(0);
+  });
+}

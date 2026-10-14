@@ -1,16 +1,20 @@
 import { ReactNode, useEffect, useId, useRef } from "react";
 
 /** Native modal semantics keep the background inert and contain keyboard focus. */
-export function ReviewDialog({ title, children, onCancel, returnFocus }: {
+export function ReviewDialog({ title, children, onCancel, returnFocus, fallbackFocus, closeLabel = "Cancel" }: {
   title: string;
+  closeLabel?: string;
   children: ReactNode;
   onCancel: () => void;
   returnFocus?: HTMLElement | null;
+  fallbackFocus?: () => HTMLElement | null;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const cancelRef = useRef(onCancel);
   cancelRef.current = onCancel;
+  const fallbackFocusRef = useRef(fallbackFocus);
+  fallbackFocusRef.current = fallbackFocus;
   useEffect(() => {
     const dialog = ref.current;
     const previous = returnFocus ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
@@ -34,7 +38,11 @@ export function ReviewDialog({ title, children, onCancel, returnFocus }: {
       dialog?.close();
       // Send can still be busy for one render after dismissal.
       window.requestAnimationFrame(() => {
-        if (previous?.isConnected) previous.focus();
+        if (previous?.isConnected && previous !== document.body) previous.focus();
+        // A purchase can remove its sale-ticket button while this modal is open.
+        if ((!previous?.isConnected || previous === document.body || document.activeElement !== previous) && fallbackFocusRef.current) {
+          fallbackFocusRef.current()?.focus();
+        }
       });
     };
   }, []);
@@ -43,7 +51,7 @@ export function ReviewDialog({ title, children, onCancel, returnFocus }: {
       onCancel={(event) => { event.preventDefault(); cancelRef.current(); }}>
       <div className="review-dialog-head">
         <h2 id={titleId}>{title}</h2>
-        <button className="secondary" type="button" autoFocus onClick={onCancel}>Cancel</button>
+        <button className="secondary" type="button" autoFocus onClick={onCancel}>{closeLabel}</button>
       </div>
       {children}
     </dialog>

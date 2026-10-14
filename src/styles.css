@@ -6088,6 +6088,20 @@ pre {
   padding: 12px 14px;
 }
 
+/* Reserve progress copy space; exact snapshot evidence opens on demand. */
+.marketplace-summary-message { min-height: 3lh; }
+.marketplace-snapshot-details { min-width: 0; overflow-wrap: anywhere; }
+.marketplace-snapshot-details summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
+.marketplace-snapshot-details > span { display: block; color: var(--text-muted); }
+@media (max-width: 620px) {
+  .marketplace-summary-message { min-height: 5lh; }
+}
+
+#bond-create .id-card-heading > div:last-child { min-width: 0; }
+#bond-create .bond-registry-address { overflow-wrap: anywhere; user-select: text; }
+#bond-create .token-form-grid > label { min-width: 0; }
+.purchase-receipt-fields code { user-select: text; font-weight: 400; }
+
 .marketplace-summary-read-state.is-ready {
   border-color: color-mix(in srgb, var(--green) 32%, var(--border));
 }

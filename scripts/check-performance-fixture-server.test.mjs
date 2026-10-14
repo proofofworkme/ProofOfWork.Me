@@ -16,6 +16,8 @@ async function fixture(t) {
   }));
   await writeFile(join(root, "index.html"), "<!doctype html><p>fixture</p>");
   await writeFile(join(root, "assets/app-12345678.js"), "export const fixture = true;");
+  await mkdir(join(root, "appearance/20261011"), { recursive: true });
+  await writeFile(join(root, "appearance/20261011/theme.js"), "window.fixtureTheme = true;");
   const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jUxkAAAAASUVORK5CYII=", "base64");
   await writeFile(join(root, "proof.png"), image);
   const server = await startPerformanceFixtureServer({ buildRoot: root,
@@ -59,6 +61,17 @@ test("fixture preserves gzip/ETag cache behavior and rejects external proxy auth
   assert.equal(gunzipSync(encoded.bytes).toString(), "export const fixture = true;");
   const cached = await rawRequest(server, { path: "/assets/app-12345678.js", headers: { "If-None-Match": encoded.headers.etag } });
   assert.equal(cached.status, 304); assert.equal(cached.bytes.length, 0);
+  const hashedRecord = server.requests.at(-1);
+  assert.equal(hashedRecord.decodedBodyBytes, 0);
+  assert.equal(hashedRecord.encodedBodyBytes, 0);
+  const theme = await rawRequest(server, { path: "/appearance/20261011/theme.js" });
+  assert.equal(theme.status, 200);
+  assert.equal(theme.headers["cache-control"], "no-cache");
+  const themeCached = await rawRequest(server, { path: "/appearance/20261011/theme.js", headers: { "If-None-Match": theme.headers.etag } });
+  assert.equal(themeCached.status, 304);
+  assert.equal(themeCached.bytes.length, 0);
+  assert.equal(server.requests.at(-1).decodedBodyBytes, 0);
+  assert.equal(server.requests.at(-1).encodedBodyBytes, 0);
   const forbidden = await rawRequest(server, { path: "http://external.invalid/api/v1/registry", headers: { Host: "external.invalid" } });
   assert.equal(forbidden.status, 403);
   assert.equal(server.blocked.length, 1);
