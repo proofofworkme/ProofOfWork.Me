@@ -3038,6 +3038,40 @@ export default function BoostRoot({
     );
   }
 
+  function renderTimelineComposer() {
+    return (
+      <div className="boost-composer-strip">
+        <div
+          className="boost-avatar boost-avatar-fallback"
+          aria-hidden="true"
+        >
+          {address ? shortAddress(address).slice(0, 2).toUpperCase() : "Po"}
+        </div>
+        {!onComposeBoost && !isPublish ? <label className="boost-inline-draft">
+          <textarea aria-label="Boost text" maxLength={140} placeholder="Share a proof-backed thought" rows={2} value={postText} onChange={(event) => setPostText(event.target.value)} />
+        </label> : null}
+        {onComposeBoost && !isPublish ? (
+          <button
+            className="boost-composer-prompt"
+            onClick={onComposeBoost}
+            type="button"
+          >
+            Review Boost
+          </button>
+        ) : (
+          <button
+            className="boost-composer-prompt"
+            onClick={composeSurface}
+            type="button"
+          >
+            {isPublish ? "Write your next article" : "Review Boost"}
+          </button>
+        )}
+        <p className="boost-composer-hint">{isPublish ? "Text stories · Shared Boost replies, likes, and reboosts" : "140 characters · Proof / WORK · Files"}</p>
+      </div>
+    );
+  }
+
   return (
     <BoostTextProvider embedded={embedded} network={network} snapshotId={payload?.snapshotId}>
     <div
@@ -3459,35 +3493,7 @@ export default function BoostRoot({
                   </button>
                 ))}
               </div>
-              <div className="boost-composer-strip">
-                <div
-                  className="boost-avatar boost-avatar-fallback"
-                  aria-hidden="true"
-                >
-                  {address ? shortAddress(address).slice(0, 2).toUpperCase() : "Po"}
-                </div>
-                {!onComposeBoost && !isPublish ? <label className="boost-inline-draft">
-                  <textarea aria-label="Boost text" maxLength={140} placeholder="Share a proof-backed thought" rows={2} value={postText} onChange={(event) => setPostText(event.target.value)} />
-                </label> : null}
-                {onComposeBoost && !isPublish ? (
-                  <button
-                    className="boost-composer-prompt"
-                    onClick={onComposeBoost}
-                    type="button"
-                  >
-                    Review Boost
-                  </button>
-                ) : (
-                  <button
-                    className="boost-composer-prompt"
-                    onClick={composeSurface}
-                    type="button"
-                  >
-                    {isPublish ? "Write your next article" : "Review Boost"}
-                  </button>
-                )}
-                <p className="boost-composer-hint">{isPublish ? "Text stories · Shared Boost replies, likes, and reboosts" : "140 characters · Proof / WORK · Files"}</p>
-              </div>
+              {isPublish ? renderTimelineComposer() : null}
             </div>
           ) : null}
           {isProfileView && profileSearchActive ? renderSearchControl() : null}
@@ -3565,6 +3571,7 @@ export default function BoostRoot({
             role={isSearchView ? "region" : "tabpanel"}
             tabIndex={0}
           >
+            {!isPublish && !isProfileView && !isSearchView ? renderTimelineComposer() : null}
             {emptySearch ? (
               <div className="boost-empty">
                 <Search size={28} />

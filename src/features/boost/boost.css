@@ -199,6 +199,10 @@
   padding-block: 16px;
 }
 
+.boost-shell-instrument .boost-feed > .boost-composer-strip {
+  border-bottom: 1px solid var(--border);
+}
+
 .boost-shell-instrument .boost-composer-prompt {
   border: 1px solid var(--border-interactive);
   border-radius: 999px;
