@@ -75463,7 +75463,11 @@ async function idVerifierDeterministicInvalidReason(
   if (messages.length === 0) {
     return "";
   }
-  const parsed = messages.map((message) => parseIdEventPayload(message, network));
+  // Decoded carriers retain the protocol prefix; the shared event parser
+  // accepts only the action payload, just as in ordered registry replay.
+  const parsed = messages.map((message) =>
+    parseIdEventPayload(message.slice(ID_PROTOCOL_PREFIX.length), network),
+  );
   if (parsed.some((item) => !item)) {
     return "Malformed ProofOfWork ID protocol payload.";
   }

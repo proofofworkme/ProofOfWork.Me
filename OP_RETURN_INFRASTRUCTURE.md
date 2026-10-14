@@ -7700,3 +7700,34 @@ The publisher's independent embedded compatibility verifier enforces the same
 fixtures and `node scripts/check-ui-ops-contract.mjs`; testing only the stager
 does not establish publisher compatibility. Installers pin each exact prior
 helper hash and preserve its bytes before replacement.
+
+
+### Pending ID registration recovery
+
+DNS registration uses the shared fresh ID sale-ticket reservation check before
+constructing a transaction. An unavailable ID registry therefore correctly
+blocks preparation even when the requested `.pow` name is available. Do not
+bypass that protection to hide a registry indexing error.
+
+The pending ID verifier parses the action after the exact `pwid1:` prefix.
+Valid raw evidence missing from a cached registry bundle remains unresolved,
+rather than receiving a false malformed-record decision. Pending recovery
+counts current pending projections separately from retained dropped history.
+A restored exact pending observation preserves its recorded event time and
+transaction first-seen time; current Core admission remains separate.
+
+`deploy/id-pending-recovery/release.py` captures and merges exactly
+`server/proof-api.mjs` and `scripts/backfill-proof-indexer.mjs` over the accepted
+runtime. Its base is `a0682707aff87213113f4a432795467c99107656`. The guarded
+controller preserves source/dependency hashes, native storage adaptations,
+Search state, rollback bytes and node Git identity. The release still requires
+the complete 22-surface UI publication and mandatory source synchronization.
+
+The optional `POW_INDEX_MEMPOOL_REVERIFY_ID_TXIDS` recovery allowlist is an
+operator-scoped one-shot revalidation through the normal Core-fenced pending
+verifier. It is not a persistent service setting or permission to clear invalid
+markers by hand. Eligibility requires current mempool presence, a pending
+transaction, retained exact dropped valid ID evidence and no active pending
+event or WORK attempt. Only a newly accepted matching ID event can restore the
+projection. Preserve before-state evidence and verify exact timestamps, fees,
+owner/resolver, carrier position and registry readiness afterward.

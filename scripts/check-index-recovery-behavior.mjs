@@ -24284,7 +24284,8 @@ check("mempool scan prioritizes Core-present rows with missing events", async ()
   );
   assert.match(
     recoverySql,
-    /count\(e\.event_id\)::integer AS event_count/u,
+    /count\(e\.event_id\) FILTER \(WHERE e\.status = 'pending'\)::integer AS event_count/u,
+    "dropped history must not hide a missing current pending projection",
   );
   assert.match(
     recoverySql,
@@ -24748,6 +24749,8 @@ check("Core-present dropped protocol transactions revive through verifier and up
     BACKFILL_PATH,
     "backfillMempoolScanSource",
     {
+      MEMPOOL_REVERIFY_ID_TXIDS: [],
+      pendingIdReverificationTargets: async () => new Map(),
       BITCOIN_RPC_URL: "http://127.0.0.1:8332",
       MEMPOOL_SCAN_BUDGET_MS: 15_000,
       MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: 5,
@@ -25495,6 +25498,8 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
     BACKFILL_PATH,
     "backfillMempoolScanSource",
     {
+      MEMPOOL_REVERIFY_ID_TXIDS: [],
+      pendingIdReverificationTargets: async () => new Map(),
       BITCOIN_RPC_URL: "http://127.0.0.1:8332",
       MEMPOOL_SCAN_BUDGET_MS: 540_000,
       MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: 250,
@@ -25711,6 +25716,8 @@ check("supply-capped mempool mints replace stale valid rows with a pending inval
     BACKFILL_PATH,
     "backfillMempoolScanSource",
     {
+      MEMPOOL_REVERIFY_ID_TXIDS: [],
+      pendingIdReverificationTargets: async () => new Map(),
       BITCOIN_RPC_URL: "http://127.0.0.1:8332",
       MEMPOOL_SCAN_BUDGET_MS: 15_000,
       MEMPOOL_SCAN_MAX_PROTOCOL_TXIDS: 5,
@@ -49642,7 +49649,13 @@ check("canonical API hydration propagates Core uncertainty but accepts addressle
   const previousTxid = "d".repeat(64);
   const blockHash = "e".repeat(64);
   let previousAvailable = false;
-  const mapWithConcurrency = isolatedFunction(API_PATH, "mapWithConcurrency");
+  let hydrationAcquisitions = 0;
+  let hydrationReleases = 0;
+  const bitcoinRpcHydrationProducer = isolatedFunction(API_PATH, "bitcoinRpcHydrationProducer");
+  const bitcoinRpcHydrationAdmissionCause = isolatedFunction(
+    API_PATH, "bitcoinRpcHydrationAdmissionCause", { bitcoinRpcHydrationProducer },
+  );
+  const mapWithConcurrencyStopAndDrain = isolatedFunction(API_PATH, "mapWithConcurrencyStopAndDrain");
   const transactionInputsHavePrevouts = isolatedFunction(
     API_PATH,
     "transactionInputsHavePrevouts",
@@ -49658,6 +49671,13 @@ check("canonical API hydration propagates Core uncertainty but accepts addressle
       MAX_TRANSACTION_CACHE_SIZE: 100,
       TRANSACTION_CACHE: new Map(),
       TX_FETCH_CONCURRENCY: 4,
+      declarationHydrationAuthority: Symbol("declaration-hydration-authority"),
+      bitcoinRpcHydrationProducer,
+      bitcoinRpcHydrationAdmissionCause,
+      bitcoinRpcAcquireHydrationSlot: async () => {
+        hydrationAcquisitions += 1;
+        return () => { hydrationReleases += 1; };
+      },
       bitcoinRpc: async (_method, [requestedTxid]) => {
         if (requestedTxid === previousTxid && !previousAvailable) {
           return { error: { code: -28 }, ok: false };
@@ -49705,7 +49725,7 @@ check("canonical API hydration propagates Core uncertainty but accepts addressle
         value: Math.round(Number(output?.value ?? 0) * 100_000_000),
       }),
       errorSummary: (error) => String(error?.message ?? error?.code ?? error),
-      mapWithConcurrency,
+      mapWithConcurrencyStopAndDrain,
       transactionHasCompleteCanonicalPrevouts,
       transactionInputsHavePrevouts,
     },
@@ -49717,6 +49737,8 @@ check("canonical API hydration propagates Core uncertainty but accepts addressle
     (error) => /could not resolve canonical transaction/u.test(error.message),
     "A transient prevout RPC failure must abort canonical verification",
   );
+  assert.equal(hydrationAcquisitions, 1);
+  assert.equal(hydrationReleases, 1, "Failed hydration must release its admission slot");
   previousAvailable = true;
   const hydrated = await fetchTransactionFromBitcoinRpc(txid, "livenet", {
     requireCanonicalPrevouts: true,
@@ -49724,6 +49746,8 @@ check("canonical API hydration propagates Core uncertainty but accepts addressle
   assert.equal(hydrated.vin[0].prevout.value, 2_000);
   assert.equal(hydrated.vin[0].prevout.scriptpubkey, "51");
   assert.equal(hydrated.vin[0].prevout.scriptpubkey_address, "");
+  assert.equal(hydrationAcquisitions, 2);
+  assert.equal(hydrationReleases, 2, "Successful hydration must release its admission slot");
 });
 
 check("unknown aggregated PWM emits one invalid audit event", () => {

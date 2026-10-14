@@ -582,3 +582,10 @@ historical event rows, and first-confirmed-wins behavior are unchanged. Strict
 parity requires a unique accepted pending event identity and a matching complete
 height/hash checkpoint before and after the bounded lookup. Invalid and dropped
 audit evidence remains visible under its original status.
+
+Pending ID fallback validation strips the exact `pwid1:` prefix before using
+the shared action parser. A valid raw record absent from a cached verifier
+bundle remains unresolved and retryable; absence alone cannot establish a
+terminal-invalid outcome. Reaccepted records must pass current verification
+before a dropped projection returns to pending. Exact retained observation
+times survive that transition, independently of the current Core admission.

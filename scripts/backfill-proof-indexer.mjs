@@ -822,6 +822,17 @@ export const CANONICAL_ID_AMOUNT_PROJECTION_REPAIR_TARGETS = Object.freeze([
     txid: "5afa0de40ddfb8a83b0ed0f653094371deae6f41f6828fb49f316e32f1549a0a",
   }),
 ]);
+function parsePendingIdReverificationTxids(value) {
+  const txids = String(value ?? "").trim().toLowerCase().split(/[,\s]+/u).filter(Boolean);
+  if (txids.length > 16 || new Set(txids).size !== txids.length ||
+      txids.some((txid) => !/^[0-9a-f]{64}$/u.test(txid))) {
+    throw new Error("POW_INDEX_MEMPOOL_REVERIFY_ID_TXIDS requires at most 16 unique complete transaction ids.");
+  }
+  return txids.sort(compareCanonicalUtf8);
+}
+const MEMPOOL_REVERIFY_ID_TXIDS = parsePendingIdReverificationTxids(
+  process.env.POW_INDEX_MEMPOOL_REVERIFY_ID_TXIDS,
+);
 const REPAIR_ID_TXIDS = [
   ...new Set(
     String(process.env.POW_INDEX_REPAIR_ID_TXIDS ?? "")
@@ -1638,6 +1649,9 @@ const PENDING_ONLY_BACKFILL = pendingOnlyBackfillMode({
   storeCanonicalSummarySnapshot: STORE_CANONICAL_SUMMARY_SNAPSHOT,
   storeLedgerSnapshot: STORE_LEDGER_SNAPSHOT,
 });
+if (MEMPOOL_REVERIFY_ID_TXIDS.length > 0 && (!PENDING_ONLY_BACKFILL || !BITCOIN_RPC_URL)) {
+  throw new Error("Scoped pending ID revalidation requires Core RPC and the isolated pending-only mempool source.");
+}
 const CANONICAL_SUMMARY_ONLY_BACKFILL = Boolean(
   STORE_CANONICAL_SUMMARY_SNAPSHOT &&
     !STORE_LEDGER_SNAPSHOT &&
@@ -14670,6 +14684,22 @@ async function upsertEvent(client, sourceLabel, item, { preserveCanonicalTransac
           WHEN proof_indexer.events.status = 'pending'
             AND proof_indexer.events.event_time >= TIMESTAMPTZ '2009-01-03 18:15:05+00'
           THEN proof_indexer.events.event_time
+          WHEN EXCLUDED.status = 'pending'
+            AND EXCLUDED.protocol = 'pwid1'
+            AND EXCLUDED.valid = true
+            AND proof_indexer.events.status = 'dropped'
+            AND proof_indexer.events.valid = true
+            AND proof_indexer.events.txid = EXCLUDED.txid
+            AND proof_indexer.events.protocol = EXCLUDED.protocol
+            AND proof_indexer.events.kind = EXCLUDED.kind
+            AND proof_indexer.events.raw_payload = EXCLUDED.raw_payload
+            AND proof_indexer.events.op_return_vout = EXCLUDED.op_return_vout
+            AND proof_indexer.events.record_ordinal = EXCLUDED.record_ordinal
+            AND proof_indexer.events.block_height IS NULL
+            AND proof_indexer.events.block_time IS NULL
+            AND proof_indexer.events.block_index IS NULL
+            AND proof_indexer.events.event_time >= TIMESTAMPTZ '2009-01-03 18:15:05+00'
+          THEN proof_indexer.events.event_time
           ELSE COALESCE(EXCLUDED.event_time, proof_indexer.events.event_time)
         END,
         raw_payload = EXCLUDED.raw_payload,
@@ -26927,6 +26957,65 @@ function mempoolRecoveryTxidsFromRows(rows, mempool) {
   return [...recoveryTxids];
 }
 
+// This is an explicit one-shot repair allowlist, never a standing retry rule for
+// terminal-invalid transactions. Every row must retain one exact former valid
+// PWID observation and must still need the same narrowly scoped repair.
+async function pendingIdReverificationTargets(client, mempool, txids = MEMPOOL_REVERIFY_ID_TXIDS) {
+  if (txids.length === 0) return new Map();
+  if (txids.some((txid) => !Object.hasOwn(mempool ?? {}, txid))) {
+    throw new Error("A requested pending ID revalidation transaction is absent from the current Core mempool.");
+  }
+  const result = await client.query(`
+    SELECT t.txid, t.status AS transaction_status, t.first_seen_at::text AS first_seen_at, t.raw_tx,
+      t.block_height AS transaction_block_height, t.block_hash AS transaction_block_hash,
+      t.block_index AS transaction_block_index, t.block_time AS transaction_block_time,
+      e.event_id, e.event_key, e.status, e.valid, e.protocol, e.kind, e.raw_payload,
+      e.op_return_vout, e.record_ordinal, e.event_time::text AS event_time, e.block_height, e.block_index, e.block_time
+    FROM proof_indexer.transactions t
+    LEFT JOIN proof_indexer.events e ON e.network = t.network AND e.txid = t.txid
+    WHERE t.network = $1 AND t.txid = ANY($2::text[])
+    ORDER BY t.txid, e.event_id
+  `, [NETWORK, txids]);
+  const targets = new Map();
+  for (const row of result.rows) {
+    const raw = row.raw_tx;
+    const position = [row.op_return_vout, row.record_ordinal];
+    const eventTime = new Date(row.event_time).getTime();
+    if (!txids.includes(row.txid) || targets.has(row.txid) ||
+        row.transaction_status !== "pending" || row.status !== "dropped" ||
+        row.valid !== true || row.protocol !== "pwid1" ||
+        !/^id-(?!.*invalid)/u.test(row.kind) || !String(row.raw_payload ?? "").startsWith("pwid1:") ||
+        position.some((value) => value === null || !Number.isSafeInteger(Number(value)) || Number(value) < 0) ||
+        [row.transaction_block_height, row.transaction_block_hash, row.transaction_block_index,
+          row.transaction_block_time, row.block_height, row.block_index, row.block_time].some((value) => value != null) ||
+        !Number.isFinite(eventTime) || eventTime < Date.UTC(2009, 0, 3, 18, 15, 5) ||
+        (!row.first_seen_at || new Date(row.first_seen_at).getTime() < Date.UTC(2009, 0, 3, 18, 15, 5) ||
+          !Number.isFinite(new Date(row.first_seen_at).getTime())) || !raw ||
+        Object.hasOwn(raw, "canonicalBlockScan") || raw.pendingWorkMintInspectionVersion !== 1 ||
+        raw.pendingWorkMintAttemptCount !== 0 || raw.pendingWorkMintRecoveryNeeded !== false ||
+        raw.pendingWorkMintResolvedInvalid !== false || raw.pendingProtocolResolvedInvalid !== true) {
+      throw new Error(`Pending ID revalidation preconditions differ for ${row.txid || "unknown"}.`);
+    }
+    targets.set(row.txid, row);
+  }
+  if (targets.size !== txids.length) {
+    throw new Error("Pending ID revalidation requires exactly one retained dropped valid PWID event per requested transaction.");
+  }
+  return targets;
+}
+
+function assertPendingIdReverificationItems(target, messages, prepared) {
+  const item = prepared.length === 1 ? (prepared[0]?.item ?? prepared[0]) : null;
+  if (messages.length !== 1 || messages[0]?.prefix !== "pwid1:" ||
+      messages[0]?.text !== target.raw_payload || Number(messages[0]?.voutIndex) !== Number(target.op_return_vout) ||
+      !item || item.valid === false || item.protocol !== "pwid1" || item.kind !== target.kind ||
+      itemTxid(item) !== target.txid || itemStatus(item) !== "pending" ||
+      item.payload !== target.raw_payload || Number(item.protocolVout) !== Number(target.op_return_vout) ||
+      Number(item.recordOrdinal) !== Number(target.record_ordinal)) {
+    throw new Error(`Corrected verifier did not return the exact valid retained PWID event for ${target.txid}.`);
+  }
+}
+
 async function knownMempoolRecoveryTxids(client, mempool) {
   const result = await client.query(
     `
@@ -26947,7 +27036,7 @@ async function knownMempoolRecoveryTxids(client, mempool) {
       SELECT
         t.txid,
         t.status,
-        count(e.event_id)::integer AS event_count,
+        count(e.event_id) FILTER (WHERE e.status = 'pending')::integer AS event_count,
         COALESCE(max(
           CASE
             WHEN t.raw_tx->>'pendingWorkMintInspectionVersion' ~ '^[1-9][0-9]*$'
@@ -31885,6 +31974,7 @@ async function backfillMempoolScanSource(client, source) {
   try {
     mempool = await bitcoinRpc("getrawmempool", [true]);
   } catch (error) {
+    if (MEMPOOL_REVERIFY_ID_TXIDS.length > 0) throw error;
     console.error(
       JSON.stringify({
         error: error?.message ?? String(error),
@@ -31901,8 +31991,10 @@ async function backfillMempoolScanSource(client, source) {
 
   const initialMempoolSnapshot =
     canonicalMempoolTxidSnapshot(mempool);
+  const scopedIdReverification = MEMPOOL_REVERIFY_ID_TXIDS.length > 0;
+  const idReverificationTargets = await pendingIdReverificationTargets(client, mempool);
   const q16PendingActive =
-    WORK_AMO_V8_DECLARATION_PINS_CONFIGURED &&
+    !scopedIdReverification && WORK_AMO_V8_DECLARATION_PINS_CONFIGURED &&
     await currentWorkProjectionState(client, {
       refresh: true,
     }) === WORK_PROJECTION_STATE_Q16;
@@ -31920,8 +32012,12 @@ async function backfillMempoolScanSource(client, source) {
   const seenLimit = Number.isFinite(MEMPOOL_SCAN_SEEN_LIMIT)
     ? Math.max(100, Math.floor(MEMPOOL_SCAN_SEEN_LIMIT))
     : 10_000;
-  const priorityTxids = await knownMempoolRecoveryTxids(client, mempool);
-  const candidates = plannedMempoolScanCandidates(
+  const priorityTxids = scopedIdReverification
+    ? [...idReverificationTargets.keys()]
+    : await knownMempoolRecoveryTxids(client, mempool);
+  const candidates = scopedIdReverification
+    ? priorityTxids.map((txid) => ({ entry: [txid, mempool[txid]], lane: "priority" }))
+    : plannedMempoolScanCandidates(
     entries,
     state,
     priorityTxids,
@@ -32026,6 +32122,10 @@ async function backfillMempoolScanSource(client, source) {
     protocolTxids += 1;
     let transactionOpen = false;
     try {
+      const revalidationTarget = idReverificationTargets.get(txid);
+      if (revalidationTarget && (messages.length !== 1 || messages[0]?.prefix !== "pwid1:")) {
+        throw new Error(`Scoped pending ID revalidation refuses companion protocols for ${txid}.`);
+      }
       const workMintAttemptCount = pendingWorkMintAttemptCount(messages);
       const legacyWorkInspection = q16PendingActive
         ? 0
@@ -32068,6 +32168,9 @@ async function backfillMempoolScanSource(client, source) {
             : {}),
         },
       );
+      if (revalidationTarget) {
+        assertPendingIdReverificationItems(revalidationTarget, messages, rawVerifiedPrepared);
+      }
       const workMintDecisionKind = pendingWorkMintDecision(
         rawVerifiedPrepared,
         workMintAttemptCount,
@@ -32140,6 +32243,19 @@ async function backfillMempoolScanSource(client, source) {
         canonicalDeferred += 1;
         continue;
       }
+      if (revalidationTarget) {
+        await bitcoinRpc("getmempoolentry", [txid]);
+        const lockedTargets = await pendingIdReverificationTargets(client, mempool, [txid]);
+        const locked = lockedTargets.get(txid);
+        for (const key of ["event_id", "event_key", "raw_payload", "kind", "op_return_vout", "record_ordinal"]) {
+          if (locked[key] !== revalidationTarget[key]) throw new Error(`Pending ID revalidation identity changed for ${txid}.`);
+        }
+        for (const key of ["event_time", "first_seen_at"]) {
+          if (locked[key] !== revalidationTarget[key]) {
+            throw new Error(`Pending ID revalidation observation changed for ${txid}.`);
+          }
+        }
+      }
       await storePendingWorkMintInspection(
         client,
         txid,
@@ -32189,6 +32305,25 @@ async function backfillMempoolScanSource(client, source) {
           AND NOT (COALESCE(raw_tx,'{}'::jsonb)?'canonicalBlockScan') RETURNING txid`, [NETWORK, txid, JSON.stringify(hydrated)]);
         if (evidence.rows.length === 1) await persistCanonicalTransactionDetails(client, hydrated, { linkCanonicalSpends: false });
       }
+      if (revalidationTarget) {
+        const restored = await client.query(`
+          SELECT e.event_id FROM proof_indexer.events e
+          JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid
+          WHERE e.network = $1 AND e.txid = $2 AND e.event_id = $3
+            AND e.status = 'pending' AND e.valid = true AND e.protocol = 'pwid1'
+            AND e.kind = $4 AND e.raw_payload = $5 AND e.op_return_vout = $6 AND e.record_ordinal = $7
+            AND e.event_time = $8::timestamptz AND t.first_seen_at = $9::timestamptz
+            AND e.block_height IS NULL AND e.block_time IS NULL AND e.block_index IS NULL
+            AND t.status = 'pending' AND NOT (t.raw_tx ? 'canonicalBlockScan')
+            AND t.raw_tx->'pendingProtocolResolvedInvalid' = 'false'::jsonb
+        `, [NETWORK, txid, revalidationTarget.event_id, revalidationTarget.kind,
+          revalidationTarget.raw_payload, revalidationTarget.op_return_vout, revalidationTarget.record_ordinal,
+          revalidationTarget.event_time, revalidationTarget.first_seen_at]);
+        if (restored.rows.length !== 1 || result.indexed !== 1 || result.skipped !== 0) {
+          throw new Error(`Pending ID revalidation did not preserve the exact retained observation for ${txid}.`);
+        }
+        await bitcoinRpc("getmempoolentry", [txid]);
+      }
       const beforeCommit = await freshRawTransactionFromCore(txid);
       if (!beforeCommit) {
         throw new Error(
@@ -32218,6 +32353,14 @@ async function backfillMempoolScanSource(client, source) {
         }),
       );
     }
+  }
+
+  if (scopedIdReverification) {
+    if (unresolved > 0 || canonicalDeferred > 0 || indexed !== idReverificationTargets.size || stopReason) {
+      throw new Error(`Scoped pending ID revalidation is incomplete: indexed=${indexed}/${idReverificationTargets.size}, unresolved=${unresolved}, confirmed=${canonicalDeferred}, stop=${stopReason}.`);
+    }
+    return { indexed, source: source.label, txids: [...idReverificationTargets.keys()],
+      scopedIdReverification: true, q16PendingRequired: false, unresolved };
   }
 
   const nextProcessed = entries
@@ -38221,6 +38364,7 @@ if (DRY_RUN) {
         migrateWorkAtomsOnly: MIGRATE_WORK_ATOMS_ONLY,
         repairWorkAtomicEventsOnly: REPAIR_WORK_ATOMIC_EVENTS_ONLY,
         pendingOnlyBackfill: PENDING_ONLY_BACKFILL,
+        mempoolReverifyIdTxids: MEMPOOL_REVERIFY_ID_TXIDS,
         pendingOnlyChildTimeoutMs: PENDING_ONLY_CHILD_TIMEOUT_MS,
         pendingOnlyPersistenceHeadroomMs:
           PENDING_ONLY_PERSISTENCE_HEADROOM_MS,
