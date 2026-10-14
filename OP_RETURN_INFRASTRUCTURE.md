@@ -7694,3 +7694,9 @@ independent limits remain 5,120 reference edges, 1,310,720 reference candidates,
 5,060 edges, 1,282,306 candidates and 89,413,841 bytes. Capacity, inode, reserve
 and historical-asset preservation checks remain mandatory. A failed admission
 must preserve its evidence and stop before publication.
+
+The publisher's independent embedded compatibility verifier enforces the same
+1,600-path ceiling. Both consumers must pass the real 1,600/1,601 boundary
+fixtures and `node scripts/check-ui-ops-contract.mjs`; testing only the stager
+does not establish publisher compatibility. Installers pin each exact prior
+helper hash and preserve its bytes before replacement.

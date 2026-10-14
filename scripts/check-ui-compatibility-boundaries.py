@@ -2,6 +2,8 @@
 """Real filesystem compatibility admission boundaries; no production access."""
 import importlib.util
 import os
+import shlex
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -50,6 +52,34 @@ class CompatibilityBoundaries(unittest.TestCase):
             with self.subTest(limit=name), patch.object(stage, name, 1):
                 with self.assertRaises((stage.StageError, ValueError)): self.budget()
                 with self.assertRaises((stage.StageError, ValueError)): self.copy()
+    def test_publisher_actual_1600_accepted_1601_refused(self):
+        self.copy()
+        publisher = (ROOT / 'deploy/proofofwork-ui-release-publish.sh').read_text()
+        function = 'verify_prior_asset_compatibility() {' + publisher.split(
+            'verify_prior_asset_compatibility() {', 1)[1].split(
+            '\n}\n\npassthrough_digest()', 1)[0] + '\n}\n'
+        self.assertIn('maximum_dependencies = 1600', function)
+        self.assertIn('timeout --signal=TERM --kill-after=5s 120s', function)
+        script = ('set -euo pipefail\nwww_root=' + shlex.quote(str(self.live)) +
+                  '\nstage_root=' + shlex.quote(str(self.candidate)) + '\nsurfaces=(' +
+                  ' '.join(stage.SURFACES) + ')\nv3_surfaces=("${surfaces[@]}")\n' +
+                  'pages_surfaces=("${surfaces[@]}" pages)\n' + function +
+                  '\nverify_prior_asset_compatibility\n')
+        def run():
+            return subprocess.run(['/usr/bin/bash'], input=script, text=True,
+                                  capture_output=True, timeout=125)
+        accepted = run()
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertIn('dependencies=1600 bytes=11200', accepted.stdout)
+        for base in (self.live, self.candidate):
+            root = base / ('proofofwork-' + stage.SURFACES[0])
+            (root / 'assets/extra.js').write_bytes(b'x')
+        root = self.live / ('proofofwork-' + stage.SURFACES[0])
+        with (root / 'index.html').open('a') as f:
+            f.write('<script src="/assets/extra.js"></script>')
+        refused = run()
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn('dependency bound exceeded', refused.stderr)
     def test_model_obeys_installed_stager_ceiling(self):
         with patch.object(stage, 'MAXIMUM_DEPENDENCIES', 1536):
             with self.assertRaisesRegex(ValueError, 'dependency bound'): self.budget()

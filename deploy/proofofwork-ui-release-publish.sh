@@ -504,7 +504,7 @@ maximum_total_bytes = 512 * 1024 * 1024
 # October 7 nineteen-root Code release has 1,045 (55 per surface). Keep this
 # served-path ceiling aligned with the canonical stager; byte, reference-edge,
 # candidate and per-file limits remain independent.
-maximum_dependencies = 1536
+maximum_dependencies = 1600
 # The sealed October 8 twenty-two-root Permission V5 graph has 4,708 distinct
 # served-root/referrer/target edges. Align the finite 5,120 ceiling with the
 # stager (8.75% above that measured set); all other limits remain independent.
