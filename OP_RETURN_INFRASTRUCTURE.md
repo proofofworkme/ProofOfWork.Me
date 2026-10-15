@@ -1510,6 +1510,28 @@ socket proxy exposes `10.77.0.2:8081` only on the tunnel, and Caddy proxies
 `/api/*` plus `/health*` to that address. Host firewalls allow the tunnel peer
 and required public web/SSH ports only. The proxy service has an empty capability
 set and `LimitCORE=0`; the socket unit itself does not execute application code.
+
+The approved UI SSH policy is `deploy/ssh/00-proofofwork-key-only.conf`,
+installed as `/etc/ssh/sshd_config.d/00-proofofwork-key-only.conf`. It requires
+public-key authentication, explicitly disables password and keyboard-interactive
+authentication, and preserves PAM account/session checks and root key access.
+Include order and every active Match rule are part of the policy: validate
+`sshd -t` and connection-specific `sshd -T -C` for eligible users and IPv4/IPv6
+before reloading. A successful default configuration check alone is insufficient.
+Keep an established control session and an independently tested timed rollback
+available until two fresh public-key sessions and required external services
+pass. Preserve exact predecessor/candidate bytes and completion receipts. Do
+not replace host keys, authorized keys, accounts, listen addresses or ports.
+
+The UI firewall retains the earlier `OpenSSH` profile rule for TCP 22 in each
+address family. Only its proven-equivalent later explicit `22/tcp` rules may be
+removed; compare packet predicates, actions, ordering and both installed rule
+sets, not display labels alone. Web and peer-restricted WireGuard rules remain
+unchanged. SSH TCP, agent, stream-local and X11 forwarding are reviewed but
+preserved for operator workflows; absence of an observed forwarded session is
+not proof that forwarding is unnecessary. The node's existing key-only policy
+and firewall are independently checked, not overwritten with the UI policy.
+
 Install the Caddy unit hardening drop-in,
 validate the tracked Caddyfile, then verify HSTS, CSP, COOP, immutable hashed
 asset caching, document revalidation, and gzip/zstd responses on every public
@@ -1679,17 +1701,42 @@ a transport optimization: every output still passes the existing exact value,
 script, confirmation and before/after canonical-tip checks. A batch is not an
 atomic mempool snapshot. Failed evidence never becomes an empty or spent result.
 
-Production retention override (2026-09-25): At explicit operator direction,
-keep only `/data/proofofwork-postgres-backups/logical/proof_indexer-20260924T031852Z.dumpset`
-as the PostgreSQL database restore set. If it is unusable, rebuild the derived
-index from the synchronized, unpruned full node. The
-`pg_basebackup@16-main.timer`, `pg_compresswal@16-main.timer`,
-`pg_receivewal@16-main.service`, and
-`proofofwork-postgres-logical-backup.timer` are disabled under this scoped
-policy; do not create another database restore set or re-enable these units
-without a later operator decision. Application release rollback directories
-are retained separately. The standard setup below is superseded by this
-production-specific retention override for this node.
+Current production recovery authority (approved 2026-10-12; runbook corrected
+2026-10-15): the verified current logical recovery pin is
+`/data/proofofwork-postgres-backups/logical/proof_indexer-20261012T184759Z.dumpset`.
+The approved replacement receipt is
+`audits/2026-10-12-node-backup-replacement/result.json` in operator custody,
+SHA-256 `8d736149dbe67616ebbb9c95f9747f5d3fd8fe943c80ec40dab042799d353a44`.
+It records 27,664,963,356 logical bytes and dump SHA-256
+`65ae548d3f708e9328ca29f29c60e5e5d04b4041047044ad46c0cda3133113ca`.
+The restored capture matched all 30 tables and the sequence, roles/ownership/ACLs,
+credit accounting, native transition/archive reconstruction, amcheck and offline
+private-page checks at height 971126, hash
+`0000000000000000000064400b574bdff620e4728df35e805650d0d360ba6044`.
+This is the recorded October restore result, not a new restore certificate or a
+claim of current-tip coverage. Catch-up replay and physical WAL/PITR were not
+certified by that operation. The logical-backup timer was active at completion;
+inspect the current installed pins and timer state before any recovery work.
+The September 29 and October 3 historical snapshot pins, release recovery,
+holds and retained evidence remain separate dependencies. A current recovery
+pin does not authorize deleting those historical snapshots or changing timers.
+
+The September 25 instruction below is preserved as superseded historical
+policy. Do not use its old path or disabled logical-timer statement as current
+recovery authority. The generic physical/WAL setup after it is reference
+procedure, not authorization to enable services on this production node.
+
+> Production retention override (2026-09-25): At explicit operator direction,
+> keep only `/data/proofofwork-postgres-backups/logical/proof_indexer-20260924T031852Z.dumpset`
+> as the PostgreSQL database restore set. If it is unusable, rebuild the derived
+> index from the synchronized, unpruned full node. The
+> `pg_basebackup@16-main.timer`, `pg_compresswal@16-main.timer`,
+> `pg_receivewal@16-main.service`, and
+> `proofofwork-postgres-logical-backup.timer` are disabled under this scoped
+> policy; do not create another database restore set or re-enable these units
+> without a later operator decision. Application release rollback directories
+> are retained separately. The standard setup below is superseded by this
+> production-specific retention override for this node.
 
 PostgreSQL recovery uses two independent layers. Bind
 `/data/proofofwork-postgres-backups/physical` onto
