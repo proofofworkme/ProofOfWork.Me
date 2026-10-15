@@ -36,6 +36,28 @@ def space(available, inodes=100000):
 
 
 class CapacityTests(unittest.TestCase):
+    def test_approved_retention_limits_and_unchanged_safeguards(self):
+        self.assertEqual(capacity.RETENTION_BUDGETS, (
+            (Path("/var/backups/proofofwork-ui"), 16 * 1024**3),
+            (Path("/var/backups/proofofwork-ui/transport-evidence"), 9 * 1024**3),
+        ))
+        self.assertEqual(capacity.ROOT_RESERVE_BYTES, 10 * 1024**3)
+        self.assertEqual(capacity.GROWTH_RESERVE_BYTES, 64 * 1024**2)
+        self.assertEqual(capacity.MAX_DEPLOY_SCRATCH_BYTES, 5 * 1024**3)
+        self.assertEqual(capacity.INODE_RESERVE, 128)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / "unique-evidence"
+            evidence.write_bytes(b"preserve")
+            limit = capacity.RETENTION_BUDGETS[0][1]
+            result = SimpleNamespace(stdout=f"{limit - 7}\t{root}\n".encode())
+            with mock.patch.object(capacity.subprocess, "run", return_value=result):
+                accepted = capacity.retention_budget(root, limit, 7, "approved-limit")
+                self.assertEqual(accepted["allocatedBytes"] + accepted["additionalBytes"], limit)
+                with self.assertRaisesRegex(capacity.CapacityError, "retention budget refused"):
+                    capacity.retention_budget(root, limit, 8, "one-byte-over")
+            self.assertEqual(evidence.read_bytes(), b"preserve")
+
     def test_integer_boundary_and_no_float_rounding(self):
         extra = 2**60 + 7
         with mock.patch.object(capacity.os, "statvfs", return_value=space(RESERVE + extra)):
