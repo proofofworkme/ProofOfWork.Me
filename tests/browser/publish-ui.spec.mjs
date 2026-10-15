@@ -67,6 +67,17 @@ async function fixture(page, { wallet = false, alteredBody = false, recovery = f
     const items = url.searchParams.has("listings") ? [] : [fixturePost];
     return route.fulfill({ json: { complete: true, snapshotId: "articles", items, totalCount: items.length, hasMore: false, start: 0, network, indexedAt: post.createdAt } });
   });
+  // These fixtures exercise the independently verified client reader. The
+  // server renderer has its own exact-document fixtures in publish-server-render.
+  await page.route("**/*", async route => {
+    const url = new URL(route.request().url());
+    if (route.request().isNavigationRequest() && ["localhost", "127.0.0.1"].includes(url.hostname) &&
+        url.searchParams.get("publish") === "1" && url.searchParams.has("article")) {
+      const response = await route.fetch({ url: `${url.origin}/app.html?publish=1` });
+      return route.fulfill({ response });
+    }
+    return route.fallback();
+  });
   return identityRead;
 }
 
@@ -209,7 +220,7 @@ for (const width of [390, 1440]) {
     await expect(page).toHaveTitle(`${article.title} | ProofOfWork Publish`);
     await expect(page.locator('meta[property="og:title"]')).toHaveAttribute("content", `${article.title} | ProofOfWork Publish`);
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", `https://publish.proofofwork.me/?article=${txid}`);
-    await expect(page.locator('script[data-proof-seo="structured-data"]')).toHaveCount(0);
+    await expect(page.locator('script[data-proof-seo="structured-data"]')).toHaveCount(1);
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
     expect(Array.from(await page.locator('meta[name="description"]').getAttribute("content")).length).toBeLessThanOrEqual(160);
     await expect(page.locator(".publish-article-body")).toHaveCSS("font-family", /Inter Variable/);

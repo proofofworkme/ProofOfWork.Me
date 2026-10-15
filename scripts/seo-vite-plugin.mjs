@@ -1,5 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { resolve, sep } from "node:path";
+import { createPublishReader } from "../server/publish-render/reader.mjs";
+import { createPublishDocumentHandler } from "../server/publish-render/handler.mjs";
 import {
   escapeHtml, getSurfaceSeo, renderRobots, renderSeoHead, renderSeoOverview,
   renderSitemap, resolveDocumentVariant, resolveSeoSurface,
@@ -41,17 +43,21 @@ function realFile(root, pathname) {
   try { return statSync(file).isFile(); } catch { return false; }
 }
 
-export function seoPlugin(environment = {}) {
+export function seoPlugin(environment = {}, { publishApiOrigin = "http://127.0.0.1:8081" } = {}) {
   const buildSurface = resolveSeoSurface({ env: environment, hostname: "computer.proofofwork.me" });
   function install(server, preview) {
     const root = preview ? resolve(server.config.root, server.config.build.outDir) : server.config.root;
     const templatePath = resolve(root, "index.html");
+    const publishReader = createPublishReader({ apiOrigin: publishApiOrigin });
+    const publishDocuments = createPublishDocumentHandler({ reader: publishReader,
+      readTemplate: () => renderSeoDocument(readFileSync(templatePath, "utf8"), "publish", "app") });
+    server.httpServer?.once("close", () => publishReader.close());
     server.middlewares.use(async (request, response, next) => {
       if (!["GET", "HEAD"].includes(request.method ?? "GET")) return next();
       let url;
       try { url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`); } catch { return next(); }
       const pathname = url.pathname;
-      if (/^\/(?:api(?:\/|$)|health(?:\/|$))/u.test(pathname)) return next();
+      if (/^\/(?:api(?:\/|$)|test-api(?:\/|$)|health(?:\/|$))/u.test(pathname)) return next();
       if (!preview && /^\/(?:@|src\/|node_modules\/|__vite)/u.test(pathname)) return next();
       if (pathname === "/pages-runner.html") {
         response.setHeader("X-Robots-Tag", "noindex, nofollow");
@@ -61,7 +67,9 @@ export function seoPlugin(environment = {}) {
       try { template = readFileSync(templatePath, "utf8"); } catch { return next(); }
       const compiledSurface = /<!--proof-seo-surface:([a-z-]+)-->/u.exec(template)?.[1];
       const focusedSurface = preview && compiledSurface && compiledSurface !== "computer" ? compiledSurface : null;
-      const surface = focusedSurface ?? resolveSeoSurface({ hostname: url.hostname, env: environment, search: url.search });
+      const localHost = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+      const directoryPath = ["/articles", "/articles/", "/articles-sitemap.xml"].includes(pathname);
+      const surface = focusedSurface ?? (localHost && directoryPath ? "publish" : resolveSeoSurface({ hostname: url.hostname, env: environment, search: url.search }));
       const send = (body, contentType, status = 200) => {
         response.statusCode = status;
         response.setHeader("Content-Type", contentType);
@@ -69,6 +77,22 @@ export function seoPlugin(environment = {}) {
         if (status === 404) response.setHeader("X-Robots-Tag", "noindex, follow");
         response.end(request.method === "HEAD" ? undefined : body);
       };
+      if (surface === "publish") {
+        const renderUrl = new URL(url);
+        if (localHost) renderUrl.searchParams.delete("publish");
+        let rendered;
+        try { rendered = await publishDocuments({ url: renderUrl, method: request.method ?? "GET" }); }
+        catch (error) { return next(error); }
+        if (rendered) {
+          let body = rendered.body;
+          if (!preview && rendered.headers["Content-Type"].startsWith("text/html")) {
+            try { body = await server.transformIndexHtml(request.url ?? "/", body); }
+            catch (error) { return next(error); }
+          }
+          response.writeHead(rendered.status, rendered.headers);
+          return response.end(request.method === "HEAD" ? undefined : body);
+        }
+      }
       if (pathname === "/robots.txt") return send(renderRobots(surface), "text/plain; charset=utf-8");
       if (pathname === "/sitemap.xml") return send(renderSitemap(surface), "application/xml; charset=utf-8");
       const internalDocument = ["/app.html", "/noindex-app.html", "/404.html"].includes(pathname);

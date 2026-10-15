@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 
 type AppErrorBoundaryProps = {
   children: ReactNode;
+  onError?: () => void;
 };
 
 type AppErrorBoundaryState = {
@@ -19,6 +20,7 @@ export class AppErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    this.props.onError?.();
     console.error("ProofOfWork.Me workspace render failed", error, info);
   }
 

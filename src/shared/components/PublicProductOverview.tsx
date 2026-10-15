@@ -12,6 +12,7 @@ export function PublicProductOverview() {
       <div className="product-overview-content">
         <h2>{product.heading}</h2>
         <p>{product.intro}</p>
+        {product.surface === "publish" ? <p><a href={appHref("https://publish.proofofwork.me/articles", "/articles")}>Browse confirmed articles</a>. Read complete articles without JavaScript.</p> : null}
         <nav className="product-directory" aria-label="Explore ProofOfWork apps">
           {APP_MENU_GROUPS.map((group) => (
             <section key={group.label}>

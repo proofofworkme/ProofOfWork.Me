@@ -7498,9 +7498,39 @@ The unversioned Pages runner receives its noindex policy through response header
 its established file bytes stay compatible with previously loaded applications.
 Static shell files remain byte-verifiable release artifacts and do not contain
 user state. API proxies, CSP, sandboxing and accepted node runtime overlays are
-unchanged by this frontend discovery policy. Public detail indexing beyond
-browser-rendered verified metadata requires its own separately reviewed content
-rendering contract.
+unchanged by this frontend discovery policy. Publish's additional content
+rendering contract is described below; other public details retain browser
+verification.
+
+### Publish article rendering service
+
+The UI host runs `proofofwork-publish-render.service` on `127.0.0.1:8084`.
+It uses the pinned Node 24.18.0 runtime and only the existing private Boost API
+at `http://10.77.0.2:8081`. No database, indexer or signing access is added.
+Caddy sends recognized public mainnet article requests, `/articles`,
+`/articles-sitemap.xml` and `/publish-render-provenance.json` to this service;
+private query states keep their noindex shells. The service returns no-store
+responses and bounded verified content as specified in [PUBLISH.md](PUBLISH.md).
+
+`deploy/publish-render/package.py` captures current pins, packages exact committed
+source, transfers admitted evidence and invokes the guarded installer. The
+installer takes the shared UI deployment lock, checks storage admission before
+allocating, verifies the official runtime archive, preserves prior units and
+source, and rolls back the renderer unit if health verification fails. It does
+not alter Caddy, retention, the node API or accepted node runtime overlays.
+Publish the complete UI release first, install and verify the renderer, then
+apply the reviewed Caddy change through its existing scoped installer. All
+three phases retain their own receipts and rollback evidence.
+
+The renderer reads the live Publish `app.html` between matching clean UI
+provenance reads. Its eight runtime module hashes and installed commit are
+reported separately from the UI commit by `/publish-render-provenance.json`.
+`check:release-sync` requires the UI provenance to match released main and
+every renderer module hash to match that same clean source tree. Later releases
+may retain the installed service only when all eight module hashes still
+match; changing any module, including the shared SEO catalog, requires a new
+guarded renderer installation. Static release-file byte verification continues
+unchanged; dynamic discovery paths are separate from `sitemap.xml` and root HTML.
 
 Every deployed product or upgrade must finish with GitHub `main`, the primary local checkout on `main`, the local app preview, and the production UI representing the same released source commit. This is a release completion gate, authorized by the user on 2026-10-08.
 

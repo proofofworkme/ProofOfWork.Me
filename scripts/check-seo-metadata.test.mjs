@@ -59,7 +59,7 @@ test("root metadata has canonical identity, matching social values and parseable
     assert.ok(!JSON.stringify(json).includes('"offers"'));
     const intro = renderSeoOverview(item.surface);
     assert.ok(intro.includes(escapeHtml(item.intro)));
-    assert.equal([...intro.matchAll(/<a href=/gu)].length, PUBLIC_SEO_SURFACES.length);
+    assert.equal([...intro.matchAll(/<a href=/gu)].length, PUBLIC_SEO_SURFACES.length + (item.surface === "publish" ? 1 : 0));
   }
 });
 
@@ -129,14 +129,18 @@ test("verified detail overrides stay bounded, escaped and isolated from private 
   assert.notEqual(resolvePageMetadata("computer", `/?folder=publish&article=${TX}&write=1`, { title: "Private draft" }).title, "Private draft");
 });
 
-test("crawl files contain only the canonical host root without invented update dates", () => {
+test("crawl files contain canonical public discovery pages without invented update dates", () => {
   for (const item of PUBLIC_SEO_SURFACES) {
     assert.match(renderRobots(item.surface), /^User-agent: \*\nAllow: \/\n/u);
     assert.ok(renderRobots(item.surface).includes(`Sitemap: ${item.origin}/sitemap.xml`));
     const xml = renderSitemap(item.surface);
     assert.match(xml, /^<\?xml version="1.0" encoding="UTF-8"\?>/u);
     assert.ok(xml.includes(`<loc>${item.origin}/</loc>`));
-    assert.equal([...xml.matchAll(/<url>/gu)].length, 1);
+    assert.equal([...xml.matchAll(/<url>/gu)].length, item.surface === "publish" ? 2 : 1);
+    if (item.surface === "publish") {
+      assert.ok(xml.includes(`<loc>${item.origin}/articles</loc>`));
+      assert.ok(renderRobots(item.surface).includes(`Sitemap: ${item.origin}/articles-sitemap.xml`));
+    }
     assert.doesNotMatch(xml.slice(xml.indexOf("<urlset")), /lastmod|priority|changefreq|\?/u);
   }
 });

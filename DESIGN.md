@@ -136,6 +136,14 @@ Search metadata and JavaScript-free introductions use the same public product
 catalog, never local drafts, wallet state, invented statistics or hidden text
 written only for crawlers.
 
+Publish's server-rendered article is a complete readable document before
+JavaScript loads. Preserve exact source text and original authorship, with one
+primary title, ordinary discovery links and inspectable proof details. Keep the
+initial document visible through client loading; remove it when the verified
+client reader takes over, navigation changes the article, or verification fails.
+The JavaScript-free directory uses the same quiet typography and accessible
+link targets. Loading external media remains an interactive reader concern.
+
 Keep the current task and primary action clear. Secondary details may collapse,
 but their controls and the underlying evidence remain reachable. Use consistent
 hover, selected, disabled, loading, and keyboard-focus states. Overlay behavior

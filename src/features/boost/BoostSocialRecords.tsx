@@ -129,10 +129,13 @@ export function BoostConnections({ profile, tab, onTab, network, viewer, onBack,
   </section>;
 }
 
-export function BoostActivity({ txid, network, viewer, renderPost }: { txid: string; network: BitcoinNetwork;
-  viewer: string; renderPost: (post: BoostFeedItem) => ReactNode }) {
+export function BoostActivity({ txid, network, viewer, renderPost, onReadState }: { txid: string; network: BitcoinNetwork;
+  viewer: string; renderPost: (post: BoostFeedItem) => ReactNode; onReadState?: (state: "pending" | "ready" | "error", post?: BoostFeedItem) => void }) {
   const [tab, setTab] = useState<ActivityTab>("replies");
   const records = useSocialRecords({ detail: txid, activity: tab, viewer }, network);
+  useEffect(() => {
+    onReadState?.(records.error ? "error" : records.busy ? "pending" : "ready", records.payload?.post);
+  }, [onReadState, records.error, records.busy, records.payload?.post]);
   return <>
     {records.payload?.post ? renderPost(records.payload.post) : null}
     <div className="boost-profile-tabs" role="tablist" aria-label="Boost activity">

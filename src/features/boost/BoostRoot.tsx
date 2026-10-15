@@ -1,4 +1,5 @@
 import { buildBoostTip, buildBoostWorkTip, boostTipAmount, BOOST_TIP_DEFAULT_SATS } from "../../shared/protocol/boostTip.mjs";
+import { failServerArticleRead, finishServerArticleRead } from "../../app/documentMetadata";
 import {
   FormEvent,
   type KeyboardEvent,
@@ -3414,6 +3415,10 @@ export default function BoostRoot({
             <div className="publish-reader-titlebar"><a className="secondary small link-button" href={timelineHref}
               aria-label="Back to articles" title="Back to articles"><ArrowLeft size={20} /></a><strong>Read on ProofOfWork</strong></div>
             {articleTxid ? <BoostActivity key={`${network}:${articleTxid}`} txid={articleTxid} network={network} viewer={address}
+              onReadState={(state, post) => {
+                if (state === "error" || state === "ready" && !post?.article) failServerArticleRead();
+                else if (state === "ready") finishServerArticleRead();
+              }}
               renderPost={post => renderBoostPost(post, post.txid === articleTxid)} /> :
               <div className="publish-read-error" role="alert"><h2>Invalid article transaction</h2><p>Open an article with its full 64-character transaction ID.</p></div>}
           </section> : isProfileView && connectionsTab ? (

@@ -147,6 +147,9 @@
 			rewrite * /noindex-app.html
 			file_server
 		}
+		handle @seo_publish_article {
+			import publish_render_proxy
+		}
 		handle @seo_any_query {
 			rewrite * /app.html
 			file_server
@@ -154,6 +157,19 @@
 		handle {
 			rewrite * {args.0}
 			file_server
+		}
+	}
+}
+
+(publish_render_proxy) {
+	header {
+		defer
+		Cache-Control "no-store"
+	}
+	reverse_proxy http://127.0.0.1:8084 {
+		transport http {
+			dial_timeout 2s
+			response_header_timeout 55s
 		}
 	}
 }
@@ -171,6 +187,15 @@
 		&& !({http.request.host} == "browser.proofofwork.me" && {http.request.uri.query}.matches("(^|&)(?:txid|tx|name)=[^&]*(?:&[^&]*)*&(?:txid|tx|name)="))
 		&& !{http.request.uri.query}.matches("(^|&)(?:network=[^&]*(?:&[^&]*)*&network=|article=[^&]*(?:&[^&]*)*&article=|profile=[^&]*(?:&[^&]*)*&profile=|repo=[^&]*(?:&[^&]*)*&repo=|version=[^&]*(?:&[^&]*)*&version=|path=[^&]*(?:&[^&]*)*&path=|job=[^&]*(?:&[^&]*)*&job=|txid=[^&]*(?:&[^&]*)*&txid=|tx=[^&]*(?:&[^&]*)*&tx=|name=[^&]*(?:&[^&]*)*&name=|asset=[^&]*(?:&[^&]*)*&asset=)")`
 	@seo_any_query expression `{http.request.uri.query} != ""`
+	@seo_publish_article {
+		host publish.proofofwork.me
+		path / /index.html
+		expression `{http.request.uri.query}.matches("(^|&)article=[0-9a-fA-F]{64}(&|$)")`
+	}
+	@seo_publish_reader {
+		host publish.proofofwork.me
+		path /articles /articles/ /articles-sitemap.xml /publish-render-provenance.json
+	}
 	@seo_internal_documents path /app.html /noindex-app.html /404.html
 	@seo_runner path /pages-runner.html
 	@seo_publish_writer {
@@ -184,6 +209,9 @@
 	@seo_root path / /index.html
 	route {
 		header @seo_runner X-Robots-Tag "noindex, nofollow"
+		handle @seo_publish_reader {
+			import publish_render_proxy
+		}
 		handle @seo_internal_documents {
 			header X-Robots-Tag "noindex, nofollow"
 			file_server

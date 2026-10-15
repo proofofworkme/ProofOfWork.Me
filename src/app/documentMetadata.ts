@@ -1,13 +1,50 @@
 import { useLayoutEffect, useSyncExternalStore } from "react";
 import { detectAppSurface } from "./routeRegistry";
 import { NOINDEX_ROBOTS, resolvePageMetadata } from "./seoMetadata.mjs";
+import { PUBLISH_SERVER_CONTENT_ID, PUBLISH_SERVER_METADATA_ID, publishArticleMetadata, publishArticleSeoFacts, type PublishArticleSeoFacts } from "./publishArticleSeo.mjs";
 
 const LOCATION_EVENT = "proofofwork:metadata-location";
-type Metadata = ReturnType<typeof resolvePageMetadata>;
-type VerifiedMetadata = { title: string; description?: string };
+type Metadata = ReturnType<typeof resolvePageMetadata> & { ogType?: string; authorUrl?: string; publishedAt?: string | null };
+type VerifiedMetadata = { title: string; description?: string; article?: PublishArticleSeoFacts };
 let initialized = false;
 let locationRevision = 0;
 let activeView: { owner: symbol; href: string; metadata?: VerifiedMetadata; privateView?: boolean } | undefined;
+let serverArticle: { href: string; facts: PublishArticleSeoFacts } | undefined;
+
+/** Removes presentation-only server content. It is never fed into wallet actions. */
+export function finishServerArticleRead() {
+  serverArticle = undefined;
+  document.getElementById(PUBLISH_SERVER_CONTENT_ID)?.remove();
+  document.getElementById(PUBLISH_SERVER_METADATA_ID)?.remove();
+  document.documentElement.removeAttribute("data-publish-server-pending");
+  if (initialized) refreshDocumentMetadata();
+}
+
+export function failServerArticleRead() {
+  finishServerArticleRead();
+  if (detectAppSurface() === "publish" && new URL(window.location.href).searchParams.has("article")) {
+    activeView = { owner: Symbol("unavailable article"), href: window.location.href, privateView: true };
+    refreshDocumentMetadata();
+  }
+}
+
+function readServerArticle() {
+  const bootstrap = document.getElementById(PUBLISH_SERVER_METADATA_ID);
+  if (!bootstrap || !document.getElementById(PUBLISH_SERVER_CONTENT_ID)) {
+    if (bootstrap || document.documentElement.hasAttribute("data-publish-server-pending")) finishServerArticleRead();
+    return;
+  }
+  try {
+    const facts = publishArticleSeoFacts(JSON.parse(bootstrap.textContent ?? ""));
+    const url = new URL(window.location.href);
+    const policy = resolvePageMetadata(detectAppSurface(), url);
+    if (detectAppSurface() !== "publish" || policy.kind !== "public-detail" ||
+        url.searchParams.get("article")?.toLowerCase() !== facts.txid) throw new Error("Server article route changed.");
+    serverArticle = { href: window.location.href, facts };
+  } catch {
+    finishServerArticleRead();
+  }
+}
 
 function setMeta(attribute: "name" | "property", key: string, content: string) {
   const selector = `meta[${attribute}="${key}"]`;
@@ -25,7 +62,11 @@ function applyMetadata(metadata: Metadata) {
   setMeta("name", "robots", metadata.robots);
   setMeta("property", "og:title", metadata.title);
   setMeta("property", "og:description", metadata.description);
-  setMeta("property", "og:type", "website");
+  setMeta("property", "og:type", metadata.ogType ?? "website");
+  for (const [key, content] of [["article:author", metadata.authorUrl], ["article:published_time", metadata.publishedAt]]) {
+    if (content) setMeta("property", key!, content);
+    else document.head.querySelectorAll(`meta[property="${key}"]`).forEach(item => item.remove());
+  }
   setMeta("property", "og:site_name", metadata.siteName);
   setMeta("property", "og:image", metadata.imageUrl);
   setMeta("property", "og:image:alt", metadata.imageAlt);
@@ -60,7 +101,11 @@ function applyMetadata(metadata: Metadata) {
 function refreshDocumentMetadata() {
   const href = window.location.href;
   const view = activeView?.href === href ? activeView : undefined;
-  const metadata = resolvePageMetadata(detectAppSurface(), href, view?.metadata);
+  let metadata: Metadata = resolvePageMetadata(detectAppSurface(), href, view?.metadata);
+  const facts = view?.metadata?.article ?? (serverArticle?.href === href ? serverArticle.facts : undefined);
+  if (facts && metadata.kind === "public-detail" && metadata.canonicalUrl === publishArticleMetadata(facts).canonicalUrl) {
+    metadata = publishArticleMetadata(facts);
+  }
   if (view?.privateView) {
     metadata.robots = NOINDEX_ROBOTS;
     metadata.canonicalUrl = null;
@@ -72,10 +117,12 @@ function refreshDocumentMetadata() {
 /** Set the correct product before its lazy chunk loads; keep native history intact. */
 export function initializeDocumentMetadata() {
   if (initialized) return;
+  readServerArticle();
   initialized = true;
   const locationChanged = () => {
     // An old record must never describe a newly selected URL while it loads.
     activeView = undefined;
+    finishServerArticleRead();
     refreshDocumentMetadata();
     locationRevision++;
     window.dispatchEvent(new Event(LOCATION_EVENT));
@@ -88,7 +135,9 @@ export function initializeDocumentMetadata() {
     };
   }
   window.addEventListener("popstate", locationChanged);
-  window.addEventListener("pageshow", locationChanged);
+  window.addEventListener("pageshow", event => { if (event.persisted) locationChanged(); });
+  window.addEventListener("error", () => { if (serverArticle) failServerArticleRead(); });
+  window.addEventListener("unhandledrejection", () => { if (serverArticle) failServerArticleRead(); });
   refreshDocumentMetadata();
 }
 
@@ -116,13 +165,15 @@ export function useVerifiedDocumentMetadata({ parameter, id, network, metadata, 
   const href = window.location.href;
   const title = metadata?.title;
   const description = descriptionExcerpt(metadata?.description);
+  const articleKey = metadata?.article ? JSON.stringify(metadata.article) : undefined;
   useLayoutEffect(() => {
     const url = new URL(href);
-    const routeMatches = Boolean(id && url.searchParams.get(parameter) === id &&
+    const routeMatches = Boolean(id && url.searchParams.get(parameter)?.toLowerCase() === id.toLowerCase() &&
       (url.searchParams.get("network") || "livenet") === network);
     const owner = Symbol("document view");
     activeView = { owner, href, privateView,
-      metadata: routeMatches && title && !privateView ? { title, description } : undefined };
+      metadata: routeMatches && title && !privateView ? { title, description,
+        ...(articleKey ? { article: JSON.parse(articleKey) as PublishArticleSeoFacts } : {}) } : undefined };
     refreshDocumentMetadata();
     return () => {
       if (activeView?.owner === owner) {
@@ -130,7 +181,7 @@ export function useVerifiedDocumentMetadata({ parameter, id, network, metadata, 
         refreshDocumentMetadata();
       }
     };
-  }, [revision, href, parameter, id, network, title, description, privateView]);
+  }, [revision, href, parameter, id, network, title, description, privateView, articleKey]);
 }
 
 /** Anchor navigation preserves native new-tab behavior and existing local leave guards. */

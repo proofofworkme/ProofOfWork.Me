@@ -1,0 +1,60 @@
+[Unit]
+Description=Read-only verified ProofOfWork Publish article renderer
+After=network-online.target wg-quick@wg0.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=exec
+DynamicUser=yes
+WorkingDirectory=@SOURCE_ROOT@
+ExecStart=/opt/node-v24.18.0-linux-x64/bin/node --max-old-space-size=128 @SOURCE_ROOT@/server/publish-render/server.mjs
+Environment=NODE_ENV=production
+UnsetEnvironment=NODE_OPTIONS NODE_PATH LD_PRELOAD LD_LIBRARY_PATH HTTP_PROXY HTTPS_PROXY ALL_PROXY
+Environment=POW_PUBLISH_RENDER_ROOT=@SOURCE_ROOT@
+Environment=POW_PUBLISH_RENDER_MANIFEST=@SOURCE_ROOT@/release.json
+Environment=POW_PUBLISH_RENDER_UI_ROOT=/var/www/proofofwork-publish
+Environment=POW_PUBLISH_RENDER_HOST=127.0.0.1
+Environment=POW_PUBLISH_RENDER_PORT=8084
+Environment=POW_PUBLISH_RENDER_API=http://10.77.0.2:8081
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=15
+CPUQuota=50%
+MemoryMax=256M
+TasksMax=32
+LimitNOFILE=128
+LimitCORE=0
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32
+IPAddressAllow=10.77.0.2/32
+ReadOnlyPaths=@SOURCE_ROOT@ /opt/node-v24.18.0-linux-x64 /var/www/proofofwork-publish
+InaccessiblePaths=-/etc/bitcoin -/etc/proofofwork-api.env -/data -/var/backups -/root -/home
+StandardOutput=journal
+StandardError=journal
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=30
+
+[Install]
+WantedBy=multi-user.target

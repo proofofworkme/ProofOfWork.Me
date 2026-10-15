@@ -6,7 +6,7 @@ import "@fontsource/ibm-plex-mono/latin-500.css";
 import "@fontsource/ibm-plex-mono/latin-600.css";
 import "@fontsource/ibm-plex-mono/latin-700.css";
 import { detectAppSurface } from "./app/routeRegistry";
-import { initializeDocumentMetadata } from "./app/documentMetadata";
+import { failServerArticleRead, initializeDocumentMetadata } from "./app/documentMetadata";
 import { AppErrorBoundary } from "./shared/components/AppErrorBoundary";
 import { initializeAppearance } from "./shared/appearance";
 import "./styles.css";
@@ -38,7 +38,7 @@ const RootApp =
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <AppErrorBoundary>
+    <AppErrorBoundary onError={failServerArticleRead}>
       <Suspense fallback={<div role="status">Loading ProofOfWork.Me…</div>}>
         <RootApp />
       </Suspense>

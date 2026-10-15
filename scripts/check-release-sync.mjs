@@ -3,6 +3,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 const args = process.argv.slice(2);
 assert(args.length === 0 || args.length === 2 && args[0] === '--primary', 'Usage: npm run check:release-sync -- [--primary /absolute/primary-checkout]');
 const primary = resolve(args[1] || '/home/sixer/ProofOfWork.Me');
@@ -34,6 +36,25 @@ for (const url of ['http://127.0.0.1:4175/source-provenance.json', 'https://perm
   assert.equal(source.trackedDirty, false, `Bundle built with uncommitted source: ${url}`);
   results.push(url);
 }
+// The read-only renderer may retain an earlier installed commit when its exact
+// modules are unchanged. Its live template must still be this UI release.
+const rendererUrl = 'https://publish.proofofwork.me/publish-render-provenance.json';
+const rendererResponse = await fetch(rendererUrl, { cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(15_000) });
+assert(rendererResponse.ok, 'Publish renderer source provenance is unavailable');
+const renderer = await rendererResponse.json();
+assert.equal(renderer.format, 'proof-of-work-publish-render-source-v1');
+assert.equal(renderer.ok, true);
+assert.match(renderer.commit, /^[a-f0-9]{40}$/u);
+assert.match(renderer.tree, /^[a-f0-9]{40}$/u);
+assert.equal(renderer.ui?.commit, commit, 'Publish renderer uses a stale UI template');
+assert.equal(renderer.ui?.tree, tree);
+assert.equal(renderer.ui?.trackedDirty, false);
+const rendererFiles = ['server/publish-render/reader.mjs', 'server/publish-render/document.mjs',
+  'server/publish-render/handler.mjs', 'server/publish-render/server.mjs', 'src/app/seoMetadata.mjs',
+  'src/app/publishArticleSeo.mjs', 'src/shared/protocol/publishArticle.mjs', 'src/shared/protocol/boostText.mjs'];
+assert.deepEqual(Object.keys(renderer.files ?? {}).sort(), [...rendererFiles].sort(), 'Unexpected renderer source inventory');
+for (const file of rendererFiles) assert.equal(renderer.files[file], createHash('sha256').update(readFileSync(resolve(primary, file))).digest('hex'), `Installed Publish renderer source differs: ${file}`);
+results.push(rendererUrl);
 // Fence concurrent GitHub advancement during verification.
 assert.equal(git('ls-remote', 'origin', 'refs/heads/main').split(/\s+/u)[0], commit, 'GitHub main advanced during verification; reintegrate and redeploy before completion');
-console.log(JSON.stringify({ ok: true, commit, tree, primary, verified: results, productionManifest: fields.release_id }));
+console.log(JSON.stringify({ ok: true, commit, tree, primary, verified: results, productionManifest: fields.release_id, publishRendererCommit: renderer.commit }));

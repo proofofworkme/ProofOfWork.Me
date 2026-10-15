@@ -98,7 +98,9 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
-  plugins: [react(), pagesRunnerHeaders(), seoPlugin({ ...loadEnv(mode, process.cwd(), "VITE_"), ...process.env }), releaseSourceProvenance()],
+  plugins: [react(), pagesRunnerHeaders(), seoPlugin({ ...loadEnv(mode, process.cwd(), "VITE_"), ...process.env }, {
+    publishApiOrigin: mode === "prod-api" ? "https://publish.proofofwork.me" : LOCAL_PROOF_API_ORIGIN,
+  }), releaseSourceProvenance()],
   server: {
     proxy:
       mode === "prod-api"

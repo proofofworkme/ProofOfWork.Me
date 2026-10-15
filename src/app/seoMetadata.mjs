@@ -80,6 +80,13 @@ export function resolveSeoRoute({ surface, url: value }) {
   const params = publicParams(url);
   if (surface === "identity-bridge" || path === "/pages-runner.html" || path === "/app.html" || path === "/noindex-app.html") return route("private");
   if (surface === "publish" && /^\/write\/?$/u.test(path)) return route("private");
+  if (surface === "publish" && /^\/articles\/?$/u.test(path)) {
+    for (const [key, value] of params) {
+      if (TRACKING_QUERY_PATTERN.test(key)) continue;
+      if (key !== "network" || value !== "livenet" || params.getAll(key).length !== 1) return route("private");
+    }
+    return route("public-detail", `${seo.origin}/articles`);
+  }
   const pathTarget = surface === "browser" && path !== "/" && path !== "/index.html" ? browserPathTarget(path) : null;
   if (path !== "/" && path !== "/index.html" && !pathTarget) return route("not-found");
   const allowed = new Set(["network", ...(PUBLIC_QUERY_KEYS[surface] ?? [])]);
@@ -180,10 +187,10 @@ export function renderSeoHead(surface, { variant = "root" } = {}) {
 
 export function renderSeoOverview(surface) {
   const seo = getSurfaceSeo(surface);
-  return `<main class="product-overview"><h1>${escapeHtml(seo.heading)}</h1><p>${escapeHtml(seo.intro)}</p><nav class="product-directory" aria-label="ProofOfWork products">${PUBLIC_SEO_SURFACES.map(item => `<a href="${item.origin}/">${escapeHtml(item.label)}</a>`).join(" ")}</nav><p>Interactive tools require JavaScript. Transaction signing stays in your local wallet.</p></main>`;
+  return `<main class="product-overview"><h1>${escapeHtml(seo.heading)}</h1><p>${escapeHtml(seo.intro)}</p>${surface === "publish" ? '<p><a href="https://publish.proofofwork.me/articles">Browse confirmed articles</a>. Read complete articles without JavaScript.</p>' : ""}<nav class="product-directory" aria-label="ProofOfWork products">${PUBLIC_SEO_SURFACES.map(item => `<a href="${item.origin}/">${escapeHtml(item.label)}</a>`).join(" ")}</nav><p>Interactive tools require JavaScript. Transaction signing stays in your local wallet.</p></main>`;
 }
-export function renderRobots(surface) { const origin = getSurfaceSeo(surface).origin; return `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /health\nSitemap: ${origin}/sitemap.xml\n`; }
-export function renderSitemap(surface) { const origin = getSurfaceSeo(surface).origin; return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${escapeHtml(origin)}/</loc></url></urlset>\n`; }
+export function renderRobots(surface) { const origin = getSurfaceSeo(surface).origin; return `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /health\nSitemap: ${origin}/sitemap.xml\n${surface === "publish" ? `Sitemap: ${origin}/articles-sitemap.xml\n` : ""}`; }
+export function renderSitemap(surface) { const origin = getSurfaceSeo(surface).origin; return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${escapeHtml(origin)}/</loc></url>${surface === "publish" ? `<url><loc>${escapeHtml(origin)}/articles</loc></url>` : ""}</urlset>\n`; }
 export function resolveDocumentVariant(surface, value) {
   const url = pageUrl(value, surface);
   const policy = resolveSeoRoute({ surface, url });

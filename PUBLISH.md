@@ -59,6 +59,43 @@ pagination. `profile=<address-or-id>&profileTab=boosts&format=article` reads an
 author archive. Existing exact-txid detail reads return verified `articleBody`.
 Invalid or unavailable body evidence never becomes rendered article text.
 
+### Public article HTML and discovery
+
+Canonical mainnet `/?article=<txid>` reads return the complete verified article
+in the initial HTML, with its exact title, original author, description,
+canonical URL, social metadata and `Article` structured data. Humans and
+crawlers receive the same document. A separate read-only renderer consumes the
+existing fresh confirmed Boost detail API; it does not establish a second chain
+authority. It requires the complete hash-bound checkpoint and article-verification
+marker, then independently checks the UTF-8 body size and SHA-256. It never uses
+the current asset owner as the author or an indexing timestamp as publication
+time. No publication date is emitted until verified block time is available.
+
+HTML escapes user text, including carriage returns, while retaining exact
+whitespace and source characters. `.pow` links are display-only and perform no
+resolution. The initial reader loads no external media. With JavaScript enabled,
+the server text stays visible until the existing client reader verifies the
+article and takes over; failed revalidation, navigation and rendering errors
+remove the old article body and metadata. Drafts, test networks and writer or
+account state retain their existing noindex application documents.
+
+`/articles` exposes ordinary links and cursor pagination without JavaScript.
+Discovery uses the complete confirmed article feed and links original article
+txids once per page, including originals discovered through reboosts. Counts
+and cursor offsets still refer to upstream events. Cursor pages are noindex,
+follow. The additional `/articles-sitemap.xml`, declared in `robots.txt`,
+deduplicates original txids across a single consistent checkpoint. Enumeration
+is bounded to 50 pages, 5,000 unique articles and 45 seconds; incomplete or
+changing evidence returns 503 rather than a partial successful sitemap. The
+static sitemap links the Publish root and first directory page.
+
+Confirmed missing or non-article records return HTTP 404. Unavailable,
+inconsistent, oversized or invalid evidence returns retryable HTTP 503 and
+noindex metadata; it never becomes a successful empty article. Reads use fixed
+first-party API origins, bounded concurrency, response bytes and timeouts, with
+no completed-response cache. Interactive engagement and local wallet signing
+remain in the existing application.
+
 After exact body verification, bare root `.pow` names and one-level subdomains
 become links to ProofOfWork Browser on the reader's selected network, in a new
 tab. This is a display projection: source characters, whitespace, UTF-8 size and

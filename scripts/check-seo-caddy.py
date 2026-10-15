@@ -8,12 +8,14 @@ API/health proxies are inspected but never called.
 """
 import argparse
 import http.client
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import socket
 import subprocess
 import tempfile
 import time
+import threading
 
 ROOT = Path(__file__).resolve().parents[1]
 HOSTS = {
@@ -27,18 +29,32 @@ HOSTS = {
 TXID = '0123456789abcdef' * 4
 
 
-def rewrite_fixture(value, base):
+def rewrite_fixture(value, base, renderer_port):
     if isinstance(value, dict):
         for key, child in list(value.items()):
             if key == 'root' and isinstance(child, str) and child.startswith('/var/www/proofofwork-'):
                 value[key] = str(base / Path(child).name)
             elif key == 'filename' and child == '/var/log/caddy/access.json':
                 value[key] = str(base / 'access.json')
+            elif key == 'dial' and child == '127.0.0.1:8084':
+                value[key] = f'127.0.0.1:{renderer_port}'
             else:
-                rewrite_fixture(child, base)
+                rewrite_fixture(child, base, renderer_port)
     elif isinstance(value, list):
         for child in value:
-            rewrite_fixture(child, base)
+            rewrite_fixture(child, base, renderer_port)
+
+
+class RendererFixture(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(b'SSR publish')
+
+    def log_message(self, *args):
+        pass
 
 
 def request(port, host, path):
@@ -79,7 +95,9 @@ def main():
             (path / 'assets/test-0123456789.js').write_text('ASSET')
             (path / 'brand').mkdir()
             (path / 'brand/logo.svg').write_text('<svg/>')
-        rewrite_fixture(config, base)
+        renderer = ThreadingHTTPServer(('127.0.0.1', 0), RendererFixture)
+        threading.Thread(target=renderer.serve_forever, daemon=True).start()
+        rewrite_fixture(config, base, renderer.server_address[1])
         config['admin'] = {'disabled': True}
         server = config['apps']['http']['servers']['srv0']
         with socket.socket() as sock:
@@ -165,9 +183,14 @@ def main():
                     ('boost','profile=alice'), ('code','repo='+TXID+'&version='+TXID+'&path=index.html'),
                     ('jobs','job='+TXID), ('browser','txid='+TXID), ('browser','name=child.example.pow'),
                     ('credit','asset='+TXID)]:
-                    check(host, '/?'+query, body='APP '+HOSTS[host])
+                    headers = check(host, '/?'+query, body='SSR publish' if host == 'publish' and query.startswith('article=') else 'APP '+HOSTS[host])
+                    if host == 'publish' and query.startswith('article='):
+                        assert headers['Cache-Control'] == 'no-store'
                     check(host, '/?'+query+'&mode=edit', body='PRIVATE '+HOSTS[host], robots='noindex, nofollow')
                 check('publish', '/?article='+TXID+'&article='+TXID, body='PRIVATE publish', robots='noindex, nofollow')
+                for path in ['/articles', '/articles/', '/articles-sitemap.xml', '/publish-render-provenance.json']:
+                    check('publish', path, body='SSR publish')
+                    check('www', path, status=404)
                 bridge = check('computer', '/?social-identity-bridge=1', body='PRIVATE computer', robots='noindex, nofollow')
                 assert 'X-Frame-Options' not in bridge, bridge
                 assert 'frame-ancestors https://boost.proofofwork.me' in bridge['Content-Security-Policy'], bridge
@@ -220,12 +243,15 @@ process.stdout.write(JSON.stringify(inputs.map(({surface,url}) => resolveDocumen
                         check(host, path, status=404)
                     else:
                         prefix = {'root': 'INDEX ', 'app': 'APP ', 'noindex': 'PRIVATE '}[variant]
-                        check(host, path, body=prefix+HOSTS[host],
+                        expected = 'SSR publish' if host == 'publish' and 'article=' in path and variant == 'app' else prefix+HOSTS[host]
+                        check(host, path, body=expected,
                             robots='noindex, nofollow' if variant == 'noindex' else None)
                 print(f'SEO Caddy integration passed: {checks} HTTP assertions across {len(HOSTS)} public roots; {len(corpus)} catalog parity cases.')
             finally:
                 process.terminate()
                 process.wait(timeout=10)
+                renderer.shutdown()
+                renderer.server_close()
 
 
 if __name__ == '__main__':

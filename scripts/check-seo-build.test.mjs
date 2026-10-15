@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { createServer as createHttpServer } from "node:http";
 import { build, createServer, preview } from "vite";
 import { seoPlugin } from "./seo-vite-plugin.mjs";
 import { getSurfaceSeo, PUBLIC_SEO_SURFACES } from "../src/app/seoMetadata.mjs";
@@ -49,18 +50,25 @@ test("the focused Vite build emits complete SEO artifacts for all 21 production 
 test("Vite dev and preview serve crawl types, valid routes, private headers and real 404s", async () => {
   const root = await fixture();
   const servers = [];
+  const upstream = createHttpServer((request, response) => { response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify({ path: request.url })); });
+  await new Promise(resolve => upstream.listen(0, "127.0.0.1", resolve));
+  const proxy = { "/test-api": { target: `http://127.0.0.1:${upstream.address().port}` } };
   try {
     const env = { VITE_BROWSER_ONLY: "1" };
     const outDir = join(root, "dist");
     await build({ root, configFile: false, logLevel: "silent", plugins: [seoPlugin(env)], build: { outDir, emptyOutDir: true } });
-    const dev = await createServer({ root, configFile: false, logLevel: "silent", plugins: [seoPlugin(env)], server: { host: "127.0.0.1", port: 0, strictPort: true } });
+    const dev = await createServer({ root, configFile: false, logLevel: "silent", plugins: [seoPlugin(env)], server: { host: "127.0.0.1", port: 0, strictPort: true, proxy } });
     servers.push(dev); await dev.listen();
-    const built = await preview({ root, configFile: false, logLevel: "silent", plugins: [seoPlugin({})], build: { outDir }, preview: { host: "127.0.0.1", port: 0, strictPort: true } });
+    const built = await preview({ root, configFile: false, logLevel: "silent", plugins: [seoPlugin({})], build: { outDir }, preview: { host: "127.0.0.1", port: 0, strictPort: true, proxy } });
     servers.push(built);
     for (const server of servers) {
       const address = server.httpServer.address();
       const base = `http://127.0.0.1:${address.port}`;
       const request = async path => { const response = await fetch(`${base}${path}`); return { response, body: await response.text() }; };
+      const api = await request("/test-api/api/v1/boost");
+      assert.equal(api.response.status, 200);
+      assert.match(api.response.headers.get("content-type"), /^application\/json/u);
+      assert.deepEqual(JSON.parse(api.body), { path: "/test-api/api/v1/boost" });
       const home = await request("/");
       assert.equal(home.response.status, 200);
       assert.ok(home.body.includes(getSurfaceSeo("browser").title));
@@ -103,6 +111,7 @@ test("Vite dev and preview serve crawl types, valid routes, private headers and 
       if (server.close) await server.close();
       else await new Promise(resolve => server.httpServer.close(resolve));
     }
+    await new Promise(resolve => upstream.close(resolve));
     await rm(root, { recursive: true, force: true });
   }
 });

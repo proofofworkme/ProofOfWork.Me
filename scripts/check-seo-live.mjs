@@ -53,7 +53,7 @@ async function verifySurface(surface) {
   assert.doesNotMatch(robots.body, /Disallow:\s*\/\s*$/imu, origin);
   const sitemap = await read(`${origin}/sitemap.xml`);
   assert.match(sitemap.headers.get("content-type") ?? "", /(?:application|text)\/xml/iu, origin);
-  assert.deepEqual([...sitemap.body.matchAll(/<loc>([^<]+)<\/loc>/gu)].map(match => match[1]), [`${origin}/`], origin);
+  assert.deepEqual([...sitemap.body.matchAll(/<loc>([^<]+)<\/loc>/gu)].map(match => match[1]), [`${origin}/`, ...(surface.surface === "publish" ? [`${origin}/articles`] : [])], origin);
   await read(`${origin}/__seo_missing_page__.html`, 404);
   const privateView = await read(`${origin}/?network=testnet`);
   assert.match(meta(privateView.body, "robots"), /noindex/iu, origin);
@@ -68,12 +68,15 @@ await Promise.all(Array.from({ length: 3 }, async () => {
   while (queue.length) results.push(await verifySurface(queue.shift()));
 }));
 const sampleId = "1".repeat(64);
-for (const url of [`https://publish.proofofwork.me/?article=${sampleId}&network=livenet`, `https://code.proofofwork.me/?repo=${sampleId}`, `https://jobs.proofofwork.me/?job=${sampleId}`, `https://browser.proofofwork.me/tx/${sampleId}`]) {
+for (const url of [`https://code.proofofwork.me/?repo=${sampleId}`, `https://jobs.proofofwork.me/?job=${sampleId}`, `https://browser.proofofwork.me/tx/${sampleId}`]) {
   const response = await read(url);
   assert.deepEqual(canonicals(response.body), [], `${url}: no incorrect initial product canonical`);
   assert.doesNotMatch(meta(response.body, "robots"), /noindex/iu, url);
   assert.doesNotMatch(response.headers.get("x-robots-tag") ?? "", /noindex/iu, url);
 }
+const missingArticle = await read(`https://publish.proofofwork.me/?article=${sampleId}&network=livenet`, 404);
+assert.match(meta(missingArticle.body, "robots"), /noindex/iu);
+assert.deepEqual(canonicals(missingArticle.body), []);
 for (const url of ["https://publish.proofofwork.me/write", "https://computer.proofofwork.me/?folder=drafts", "https://computer.proofofwork.me/?social-identity-bridge=1"]) {
   const response = await read(url);
   assert.match(meta(response.body, "robots"), /noindex/iu, url);
@@ -81,4 +84,4 @@ for (const url of ["https://publish.proofofwork.me/write", "https://computer.pro
   assert.deepEqual(canonicals(response.body), [], url);
 }
 assert.equal(new Set(results.map(item => item.title)).size, PUBLIC_SEO_SURFACES.length, "All product titles must be distinct");
-console.log(JSON.stringify({ ok: true, checkedAt: new Date().toISOString(), surfaces: results.sort((a, b) => a.surface.localeCompare(b.surface)), publicDetails: 4, privateRoutes: 3 }, null, 2));
+console.log(JSON.stringify({ ok: true, checkedAt: new Date().toISOString(), surfaces: results.sort((a, b) => a.surface.localeCompare(b.surface)), publicDetails: 3, missingArticles: 1, privateRoutes: 3 }, null, 2));

@@ -69,6 +69,8 @@
     "check:boost-tips": "node --test scripts/check-boost-tips.test.mjs scripts/check-boost-tip-work-capacity.test.mjs && node scripts/check-boost-regressions.mjs",
     "check:boost-regressions": "node scripts/check-inflight-request-pool.mjs && node --test scripts/check-boost-regressions.mjs src/shared/media/youtubeLinks.test.mjs",
     "check:publish": "node --test scripts/check-publish-articles.mjs server/mail-article-projection.test.mjs && node scripts/check-social-identity.test.mjs && node scripts/check-publish-recovery.test.mjs",
+    "check:publish:ssr": "node --test server/publish-render/*.test.mjs scripts/check-publish-ssr-live.test.mjs && python3 -I -B deploy/publish-render/check-install.test.py",
+    "check:publish:ssr:live": "node scripts/check-publish-ssr-live.mjs",
     "check:search": "node --test server/search-projection.test.mjs scripts/backfill-proof-search.test.mjs",
     "check:code": "node scripts/check-code-repositories.mjs && node --test scripts/check-code-client.test.mjs server/code-repositories.test.mjs server/db/code-reader.test.mjs",
     "check:code:browser": "playwright test --config playwright.ui.config.mjs code-ui.spec.mjs",

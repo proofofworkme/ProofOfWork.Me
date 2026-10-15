@@ -283,11 +283,15 @@ wallet data and local filenames never supply document metadata.
 Product roots contain a JavaScript-free introduction and real product links.
 The same public explanation and directory remain available through the footer's
 About disclosure, with a visible introduction on Home. Interactive application
-data still uses the existing verified readers. This is not server rendering of
-public articles, profiles or chain state.
+data still uses the existing verified readers. Confirmed mainnet Publish articles
+also arrive as complete server-rendered text, with article-specific metadata and
+the same exact body verification used by the API. Other public detail views
+continue to use their browser readers.
 
-Each canonical host serves its own `robots.txt` and root-only `sitemap.xml`.
-Public detail requests use a separate application document without an incorrect
+Each canonical host serves its own `robots.txt` and `sitemap.xml`. Publish adds
+a JavaScript-free `/articles` directory and `/articles-sitemap.xml`, containing
+confirmed original article URLs from a complete bounded discovery snapshot.
+Other public detail requests use a separate application document without an incorrect
 product-root canonical. Their browser metadata preserves meaningful article,
 repository, revision, file and job references. Writers, account/workspace routes,
 test networks and search/filter states are excluded from indexing and sitemaps.
@@ -299,6 +303,10 @@ available. Search discovery metadata never establishes protocol authority.
 verifies all public product documents, crawl files, missing paths and selected
 public/private route responses. `npm run check:seo:caddy -- --caddy /path/to/caddy`
 checks routing against a supplied production-compatible Caddy binary on loopback.
+`npm run check:publish:ssr` checks the article reader, HTML renderer, HTTP service
+and guarded installer. `npm run check:publish:ssr:live` verifies public article
+HTML, exact text, discovery and missing-article responses. See [PUBLISH.md](PUBLISH.md)
+for the content authority and failure contract.
 Browser coverage also checks navigation, verified
 detail metadata and draft isolation. Release acceptance retains the complete
 22-root build, repository hygiene and mandatory source synchronization gates.

@@ -248,6 +248,7 @@
       "deploy/pages/README.md",
       "deploy/pages/UI_STORAGE.md",
       "deploy/permission/README.md",
+      "deploy/publish-render/README.md",
       "local/permission-controller/README.md",
       "TRADEMARKS.md",
       "test-api/README.md",
