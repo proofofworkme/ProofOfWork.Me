@@ -560,6 +560,16 @@
   .desktop-public-app { background: var(--bg); color: var(--text); }
   :where(.desktop-workspace, .desktop-surface, .desktop-panel, .browser-computer-workspace, .browser-window) { background: var(--surface); color: var(--text); border-color: var(--border); box-shadow: none; }
   :where(.desktop-toolbar, .desktop-windowbar, .browser-toolbar, .browser-tabs, .browser-workspace-status) { background: var(--surface-soft); color: var(--text-muted); border-color: var(--border); }
+  .desktop-workspace-loaded { grid-template-columns: minmax(0, 1fr); }
+  .desktop-empty { min-width: 0; }
+  .desktop-empty p { min-width: 0; overflow-wrap: anywhere; }
+  /* Wrap controls by available workspace width, including embedded Desktop. */
+  .desktop-toolbar { display: flex; flex-wrap: wrap; }
+  .desktop-toolbar > div:first-child { flex: 1 1 220px; max-width: 100%; }
+  .desktop-toolbar h2 { overflow-wrap: anywhere; }
+  .desktop-toolbar > .desktop-search { flex: 1 1 320px; max-width: 100%; padding: var(--space-2) var(--space-3); }
+  .desktop-toolbar > .desktop-search svg { margin-left: 0; }
+  .desktop-toolbar > .sort-control { min-width: 0; }
   :where(.desktop-address-form, .browser-search-form) input { background: var(--surface); color: var(--text); border-color: var(--border-interactive); }
   .desktop-screensaver { background: var(--surface-soft); color: var(--text); }
   .desktop-screensaver::after { display: none; }
@@ -645,6 +655,8 @@
 
   @media (max-width: 860px) {
     :where(input, select, textarea) { font-size: 16px; }
+    .desktop-toolbar { align-items: stretch; flex-direction: column; }
+    .desktop-toolbar > :is(div:first-child, .desktop-search) { flex-basis: auto; }
     .topbar { gap: 10px; padding: 10px 16px; }
     .brand :is(h1, .app-brand-title) { font-size: 14px; }
     .app-footer { padding: 18px 16px; }

@@ -44,6 +44,18 @@ qualification where applicable, and show disconnected, loading or unavailable
 states before claiming balances, file counts or empty collections. They do not
 create independent wallet/app sessions or synthetic file records.
 
+Self-contained Computer workspaces own their loading and result notices. The
+shell suppresses only its tagged passive entry instruction for Browser, Pages,
+Boost, Publish, Search, Code, Jobs and Permission. It also suppresses a tagged
+connection instruction after a current wallet connection exists. Read failures,
+transaction feedback, evidence links and last-verified qualification remain
+visible. Workspaces with their own refresh controls do not expose a shell
+Refresh action that does nothing or refreshes a different workspace.
+
+Pages loads its editor module when the Pages workspace is first opened. The
+local loading boundary preserves the existing wallet scope, draft and task
+continuity rules; opening other workspaces does not eagerly load that editor.
+
 The shared product interface applies to the shell, every Computer workspace,
 and every public app. [DESIGN.md](DESIGN.md) is the canonical policy and required
 reading for changes to these surfaces. The user approved this full scope on

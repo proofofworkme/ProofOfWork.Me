@@ -36,7 +36,7 @@
 }
 
 .landing-app .landing-hero h1 {
-  font-family: var(--font-display, "Space Grotesk Variable", "Space Grotesk", sans-serif);
+  font-family: var(--font-display, "Inter Variable", sans-serif);
   font-size: clamp(3.4rem, 7vw, 6.75rem);
   font-weight: 660;
   letter-spacing: -0.065em;
@@ -197,7 +197,7 @@
 }
 
 .landing-app .landing-stats strong {
-  font-family: var(--font-display, "Space Grotesk Variable", "Space Grotesk", sans-serif);
+  font-family: var(--font-display, "Inter Variable", sans-serif);
   font-variant-numeric: tabular-nums;
 }
 
@@ -220,7 +220,7 @@
 }
 
 .landing-section-heading h2 {
-  font-family: var(--font-display, "Space Grotesk Variable", "Space Grotesk", sans-serif);
+  font-family: var(--font-display, "Inter Variable", sans-serif);
   font-size: clamp(2rem, 5vw, 4rem);
   font-weight: 640;
   letter-spacing: -0.045em;
@@ -283,7 +283,7 @@
 }
 
 .landing-app-group h3 {
-  font-family: var(--font-display, "Space Grotesk Variable", "Space Grotesk", sans-serif);
+  font-family: var(--font-display, "Inter Variable", sans-serif);
   font-size: 1.05rem;
   letter-spacing: -0.015em;
   margin: 0;
@@ -347,7 +347,7 @@
 }
 
 .landing-app-copy strong {
-  font-family: var(--font-display, "Space Grotesk Variable", "Space Grotesk", sans-serif);
+  font-family: var(--font-display, "Inter Variable", sans-serif);
   font-size: 1rem;
   letter-spacing: -0.01em;
 }
@@ -419,7 +419,7 @@
 }
 
 .landing-app .landing-testimonial blockquote {
-  font-family: var(--font-display, "Space Grotesk Variable", "Space Grotesk", sans-serif);
+  font-family: var(--font-display, "Inter Variable", sans-serif);
   font-weight: 560;
   letter-spacing: -0.03em;
   text-wrap: balance;
