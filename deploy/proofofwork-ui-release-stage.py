@@ -988,6 +988,10 @@ def resolve_reference(surface_root: Path, current_path: Path, reference_bytes: b
         safe_relative(relative, "compatibility dependency")
     except StageError:
         return None
+    # Publication replaces these generated root navigation documents. Route
+    # literals are not immutable dependencies; Pages runner and nested HTML stay exact.
+    if relative in ("index.html", "app.html", "noindex-app.html", "404.html"):
+        return None
     live_path = surface_root.joinpath(*relative.split("/"))
     if not os.path.lexists(live_path):
         return None

@@ -516,6 +516,37 @@ class PublishCompatibilityTimeout(unittest.TestCase):
         self.assertTrue(self.after_parser.exists())
         self.assertEqual(self.tree(), before)
 
+    def test_entrypoint_route_literals_preserve_asset_and_unversioned_runner_checks(self):
+        prior_js = (b'if(path!==`/index.html`) route(); if(path!==`/index.html`) fallback();'
+                    b'const app="/app.html", privateApp="/noindex-app.html", missing="/404.html";'
+                    b'import "/pages-page-v1.js"; const runner="/pages-runner.html", template="./index.html";')
+        dependencies = {'assets/prior.js': prior_js, 'pages-page-v1.js': b'exact Pages runner',
+                        'assets/index.html': b'exact nested index asset',
+                        'pages-runner.html': b'exact unversioned Pages runner HTML'}
+        for surface in self.surfaces:
+            for tree in (self.live, self.stage):
+                root = tree / ('proofofwork-' + surface)
+                for relative, content in dependencies.items(): (root / relative).write_bytes(content)
+            for document in ('index.html', 'app.html', 'noindex-app.html', '404.html'):
+                (self.live / ('proofofwork-' + surface) / document).write_bytes(b'<script src="/assets/prior.js"></script>')
+                (self.stage / ('proofofwork-' + surface) / document).write_bytes(b'new release entrypoint')
+        before = self.tree()
+        result = self.run_parser()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(),
+                         f'ui_release_compatibility dependencies={20 * len(dependencies)} bytes={20 * sum(map(len, dependencies.values()))}')
+        self.assertEqual(self.tree(), before)
+        for relative, original in dependencies.items():
+            with self.subTest(real_dependency=relative):
+                target = self.stage / 'proofofwork-activity' / relative
+                target.write_bytes(b'changed dependency')
+                result = self.run_parser()
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn('Staged UI compatibility dependency collision differs from prior bytes:', result.stderr)
+                self.assertFalse(self.after_parser.exists())
+                target.write_bytes(original)
+        self.assertEqual(self.tree(), before)
+
     def test_scaled_timeout_refuses_before_next_step_without_changing_roots(self):
         before = self.tree()
         result = self.run_parser('0.001s')
@@ -879,6 +910,60 @@ class ClosedManagedArchive(unittest.TestCase):
         self.assertEqual(closed['archiveUpperBoundBytes'], result['modeledManagedArchiveUpperBoundBytes'])
         self.assertGreater(result['initialCopyUpperBytes'], 8192+20*4096)
         self.assertEqual(before, {str(path): path.read_bytes() for path in live.rglob('*') if path.is_file()})
+
+    def test_route_entrypoint_literals_keep_new_html_and_exact_prior_asset_graph(self):
+        incoming, live, stage = [self.base / name for name in ('incoming', 'live', 'stage')]
+        for path in (incoming, live, stage): path.mkdir(mode=0o755)
+        new_html = b'<script src="/assets/new.js"></script>'
+        # These two route literals reproduce the released SEO classifier.
+        prior_js = (b'if(path!==`/index.html`) route(); if(path!==`/index.html`) fallback();'
+                    b'const app="/app.html", privateApp="/noindex-app.html", missing="/404.html";'
+                    b'import "/pages-page-v1.js"; const runner="/pages-runner.html", template="./index.html";')
+        prior = {'assets/old.js': prior_js, 'pages-page-v1.js': b'exact unversioned Pages runner',
+                 'assets/index.html': b'exact nested asset, not the surface entrypoint',
+                 'pages-runner.html': b'exact unversioned Pages runner HTML'}
+        for surface in self.order:
+            root = incoming / surface; (root / 'assets').mkdir(parents=True, mode=0o755); root.chmod(0o755)
+            for document in ('index.html', 'app.html', 'noindex-app.html', '404.html'):
+                (root / document).write_bytes(new_html)
+            (root / 'assets/new.js').write_bytes(b'new content')
+            for path in root.rglob('*'): path.chmod(0o755 if path.is_dir() else 0o644)
+            shutil.copytree(root, stage / ('proofofwork-' + surface))
+        for surface in self.phase.SURFACES:
+            root = live / ('proofofwork-' + surface); (root / 'assets').mkdir(parents=True, mode=0o755); root.chmod(0o755)
+            for document in ('index.html', 'app.html', 'noindex-app.html', '404.html'):
+                (root / document).write_bytes(b'<script src="/assets/old.js"></script>')
+            for relative, content in prior.items(): (root / relative).write_bytes(content)
+            for path in root.rglob('*'): path.chmod(0o755 if path.is_dir() else 0o644)
+        model = self.phase.stage_budget(incoming, live, self.stager, owner=self.owner)
+        self.assertEqual(model['compatibilityCounters']['dependencies'], 20 * len(prior))
+        expected = 21 * (4 * len(new_html) + len(b'new content')) + 20 * sum(map(len, prior.values()))
+        self.assertEqual(model['modeledManagedArchive']['logicalBytes'], expected)
+        # Exercise actual copy traversal as well as the capacity graph. Capacity
+        # admission itself is covered separately; this fixture writes only /tmp.
+        with patch.dict(self.stager.copy_prior_asset_compatibility.__globals__, {'capacity_guard': lambda *a, **k: None,
+                                                                                       'copy_capacity_guard': lambda *a, **k: None}):
+            result = self.stager.copy_prior_asset_compatibility(live, stage)
+        self.assertEqual(result, (20 * len(prior), 20 * sum(map(len, prior.values()))))
+        for surface in self.phase.SURFACES:
+            root = stage / ('proofofwork-' + surface)
+            for document in ('index.html', 'app.html', 'noindex-app.html', '404.html'):
+                self.assertEqual((root / document).read_bytes(), new_html)
+            for relative, content in prior.items(): self.assertEqual((root / relative).read_bytes(), content)
+        measured = self.phase.tree_budget(stage, owner=self.owner, managed=True)
+        self.assertEqual(measured['archiveUpperBoundBytes'], model['modeledManagedArchiveUpperBoundBytes'])
+        for relative, original in prior.items():
+            with self.subTest(real_dependency=relative):
+                candidate = stage / 'proofofwork-activity' / relative
+                candidate.write_bytes(b'different immutable dependency')
+                with self.assertRaisesRegex(self.stager.StageError, 'collision differs'):
+                    self.stager.copy_prior_asset_compatibility(live, stage, ('activity',))
+                candidate.write_bytes(original)
+                incoming_collision = incoming / 'activity' / relative
+                incoming_collision.write_bytes(b'different immutable dependency'); incoming_collision.chmod(0o644)
+                with self.assertRaisesRegex(ValueError, 'compatibility capacity collision differs'):
+                    self.phase.stage_budget(incoming, live, self.stager, owner=self.owner)
+                incoming_collision.unlink()
 
     def test_transport_closed_bound_rejects_model_ceiling_or_actual_growth_before_archive(self):
         closed = self.phase.closed_managed_archive_budget(self.minimal_rows(), {}, self.order)

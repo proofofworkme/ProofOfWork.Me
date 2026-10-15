@@ -7726,6 +7726,15 @@ fixtures and `node scripts/check-ui-ops-contract.mjs`; testing only the stager
 does not establish publisher compatibility. Installers pin each exact prior
 helper hash and preserve its bytes before replacement.
 
+The surface-root `index.html`, `app.html`, `noindex-app.html`, and `404.html`
+are generated navigation documents replaced with each release. Both the stager
+and the publisher exclude exactly those four resolved root paths when route
+literals point to them. They still traverse the prior entrypoint's asset graph,
+preserve unversioned `pages-runner.html`, runner scripts and nested
+`assets/index.html`, and reject differing bytes at every real dependency path.
+This permits navigation-document replacement while retaining the independent
+asset, graph and capacity checks.
+
 
 ### Pending ID registration recovery
 
@@ -7772,3 +7781,44 @@ transaction, retained exact dropped valid ID evidence and no active pending
 event or WORK attempt. Only a newly accepted matching ID event can restore the
 projection. Preserve before-state evidence and verify exact timestamps, fees,
 owner/resolver, carrier position and registry readiness afterward.
+
+
+### Compatible node dependency maintenance
+
+`deploy/dependency-maintenance/release.py` provides a fixed-scope promotion for
+NanoID 3.3.20, PostCSS 8.5.30, source-map-js 1.2.2 and Valibot 1.5.0. The local
+candidate comes from registry archives whose SHA-512 integrity matches the
+committed source lock. A read-only capture binds the four installed package
+trees, both existing lockfiles, all other installed dependencies, source and
+historical refund inputs, runtime Node/Git identity, unit bytes and service
+state. The reviewed plan replaces only those four package directories and their
+entries in the root and hidden lockfiles. It preserves the live root manifest,
+font package, accepted source overlays, configuration, authority and history.
+Captured package permissions must match the qualified same-owner 0750 directory
+and 0640/0750 file layout; an unfamiliar installation refuses promotion.
+
+Run `python3 -B deploy/dependency-maintenance/check-controller.test.py` and
+`python3 -B deploy/dependency-maintenance/check-release.test.py` before preparing
+an executable plan. Capture with `release.py capture /absolute/capture.json`,
+then use `release.py plan /absolute/clean-source /absolute/capture.json
+/absolute/registry-archives /absolute/plan.json --commit <exact-commit>`.
+The plan requires a clean committed source tree containing the reviewed helper;
+`--draft` produces a nonexecutable review artifact. Apply only the reviewed plan
+with `release.py apply /absolute/plan.json <exact-sha256>
+/absolute/local-receipt.json`. Final capture, plan and dispatch must fit the
+180-second freshness window, including unchanged protected service PIDs.
+
+The controller holds the shared operations and Search locks, preserves the
+existing Search timer activation, drains gateway/worker/API, and retains exact
+old packages and lock bytes in release-bound custody. Every swap has a durable
+intent; recovery inspects actual package topology, continues through receipt
+write failures and uses independent lock-file temporaries. Source/dependency,
+authority and quiet-Search fences surround installation and recovery. Runtime
+checks bind bitcoinjs-lib's own Valibot resolution, the NanoID executable link,
+and CommonJS/ESM unsigned transaction and schema probes. Restored availability
+is recorded separately from readiness: verify fresh ordinary worker cycles and
+strict public readiness before completing the release. A verified installation
+with a later Search-restoration failure stays installed with its exact recovery
+evidence; an uncertain transport or recovery result requires reconciliation,
+never a blind retry. This scoped maintenance does not reset runtime Git or
+replace accepted overlays to match the UI source checkout.

@@ -21,7 +21,7 @@ def main():
     for name,raw in files.items():
         path='deploy/'+name+'.py'
         assert raw==subprocess.check_output(['git','-C',str(ROOT),'show',commit+':'+path])
-    previous=subprocess.check_output(['git','-C',str(ROOT),'show','ac5ded9102be1c588ed7ba7899c9c0f34ace4749:deploy/proofofwork-ui-release-stage.py'])
+    previous=subprocess.check_output(['git','-C',str(ROOT),'show','5905da2ac47814d2b7c47d004b3598c2f312e98e:deploy/proofofwork-ui-release-stage.py'])
     frame={'expectedPreviousSha256':hashlib.sha256(previous).hexdigest(),'commit':commit,'files':{name:{'base64':base64.b64encode(raw).decode(),'sha256':hashlib.sha256(raw).hexdigest()} for name,raw in files.items()}}
     code='import base64,json,os,stat,hashlib,fcntl,subprocess\nfrom pathlib import Path\nframe=json.loads('+repr(json.dumps(frame))+')\n'+r'''
 assert os.geteuid()==0
