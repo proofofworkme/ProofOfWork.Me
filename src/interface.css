@@ -369,6 +369,37 @@
   .product-directory ul { list-style: none; margin: 0; padding: 0; }
   .app-footer .product-directory a { min-height: 44px; font-size: 14px; font-weight: 400; overflow-wrap: anywhere; }
   .mail-app > .app-footer.compact > .product-overview[open] { flex-basis: 100%; }
+  /* Initial documents and static 404s remain readable before JavaScript starts.
+     Direct-child scoping excludes every mounted application and footer. */
+  :is(#root, #not-found) > main.product-overview {
+    box-sizing: border-box; width: 100%; min-height: 100dvh; margin: 0;
+    padding: clamp(24px, 5vw, 64px) max(16px, calc((100% - 840px) / 2));
+    background: var(--bg); color: var(--text); font-size: 16px;
+  }
+  :is(#root, #not-found) > main.product-overview > h1 {
+    max-width: 30ch; margin: 0 0 24px; font-size: clamp(28px, 3vw, 40px); line-height: 1.2;
+    white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word;
+  }
+  :is(#root, #not-found) > main.product-overview > p {
+    max-width: 76ch; margin: 0 0 24px; font-size: 16px; line-height: 1.7;
+  }
+  :is(#root, #not-found) > main.product-overview > nav.product-directory {
+    display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px;
+    max-width: 76ch; margin: 0 0 24px;
+  }
+  :is(#root, #not-found) > main.product-overview a {
+    box-sizing: border-box; display: inline-flex; align-items: center;
+    min-width: 44px; min-height: 44px; max-width: 100%; padding: 8px 12px;
+    border-radius: var(--radius-sm); color: var(--text); font-size: 16px;
+    line-height: 1.5; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px;
+  }
+  :is(#root, #not-found) > main.product-overview a:hover { background: var(--hover); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) :is(#root, #not-found) > main.product-overview {
+      color-scheme: dark; --bg: #212121; --text: #f1f1ef; --hover: #353534;
+      --focus-outline: #d4d4d0; --focus: 0 0 0 3px #d4d4d035;
+    }
+  }
   .landing-explanation { max-width: 76ch; }
   .landing-explanation h2 { margin: 0 0 12px; font-size: 24px; font-weight: 500; line-height: 1.3; }
   .landing-explanation p { font-size: 16px; line-height: 1.7; margin: 0 0 12px; }

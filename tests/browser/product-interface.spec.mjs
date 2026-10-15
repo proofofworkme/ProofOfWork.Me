@@ -136,7 +136,7 @@ async function fixtures(page, layout) {
 async function populate(page, route) {
   if (route.label === "Code") {
     await page.getByRole("link", { name: repo.name, exact: true }).click();
-    await page.getByRole("button", { name: /^README\.md(?: \d+ B)?$/u }).click();
+    await page.getByRole("link", { name: /^README\.md(?: \d+ B)?$/u }).click();
     await expect(page.getByLabel("Exact source text")).toHaveText(SOURCE);
   } else if (route.label === "Jobs") {
     await page.getByRole("link", { name: job.title, exact: true }).click();
