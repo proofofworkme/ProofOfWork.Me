@@ -69,6 +69,7 @@ async function fixture(page) {
   await page.route("**/api/v1/**", async route => {
     const request = route.request();
     const url = new URL(request.url());
+    url.pathname = url.pathname.replace(/^\/test-api(?=\/api\/)/u, "");
     if (request.method() !== "GET") {
       state.posts.push(url.pathname);
       return route.fulfill({ status: 405, json: { error: "Fixture cannot broadcast" } });
