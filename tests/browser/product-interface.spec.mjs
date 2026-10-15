@@ -135,11 +135,11 @@ async function fixtures(page, layout) {
 
 async function populate(page, route) {
   if (route.label === "Code") {
-    await page.getByRole("button", { name: repo.name, exact: true }).click();
+    await page.getByRole("link", { name: repo.name, exact: true }).click();
     await page.getByRole("button", { name: /^README\.md(?: \d+ B)?$/u }).click();
     await expect(page.getByLabel("Exact source text")).toHaveText(SOURCE);
   } else if (route.label === "Jobs") {
-    await page.getByRole("button", { name: job.title, exact: true }).click();
+    await page.getByRole("link", { name: job.title, exact: true }).click();
     await expect(page.getByText("1,234,567 proofs", { exact: true }).first()).toBeVisible();
   } else if (route.label === "Permission") {
     await page.getByRole("button", { name: grant.label, exact: true }).click();

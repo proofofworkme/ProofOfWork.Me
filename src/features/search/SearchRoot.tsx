@@ -220,7 +220,7 @@ export default function SearchRoot({ embedded = false, initialNetwork = "livenet
   const Main = embedded ? "div" : "main";
 
   return <div className={embedded ? "search-embedded-app" : "search-standalone-app"}>
-    {!embedded && <AppHeader title="ProofOfWork Search" subtitle="The public Computer, searchable." />}
+    {!embedded && <AppHeader title="ProofOfWork Search" titleAs="span" subtitle="The public Computer, searchable." />}
     <Main className="search-main" {...(!embedded ? { id: "main-content" } : {})}>
       <section className="search-intro" aria-labelledby={`${formId}-title`}>
         <div className="search-intro-copy"><span className="search-eyebrow"><Database size={13} /> ProofOfWork Computer</span><h1 id={`${formId}-title`}>Find the record.</h1><p>Search public protocols, words, names, files, and transaction data.</p></div>

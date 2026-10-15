@@ -206,6 +206,12 @@ for (const width of [390, 1440]) {
     await page.getByRole("tab", { name: "Following", exact: true }).click();
     await page.locator(".publish-article-card").click();
     await expect(page.locator(".publish-article-body")).toHaveText(body);
+    await expect(page).toHaveTitle(`${article.title} | ProofOfWork Publish`);
+    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute("content", `${article.title} | ProofOfWork Publish`);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", `https://publish.proofofwork.me/?article=${txid}`);
+    await expect(page.locator('script[data-proof-seo="structured-data"]')).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+    expect(Array.from(await page.locator('meta[name="description"]').getAttribute("content")).length).toBeLessThanOrEqual(160);
     await expect(page.locator(".publish-article-body")).toHaveCSS("font-family", /Inter Variable/);
     await expect(page.locator(".publish-byline")).toHaveCSS("font-size", "14px");
     await page.locator(".publish-article-body").click();
@@ -287,6 +293,10 @@ for (const width of [390, 1440]) {
     await page.getByRole("textbox", { name: "Article text", exact: true }).fill(body);
     await page.getByRole("button", { name: "Preview", exact: true }).click();
     await expect(page.locator(".publish-article-body")).toHaveText(body);
+    await expect(page).toHaveTitle("Write an article | ProofOfWork Publish");
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+    await expect(page.locator('link[rel="canonical"]')).toHaveCount(0);
+    await expect(page.locator('meta[name="description"]')).not.toHaveAttribute("content", /A story with proofs/);
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(page.getByRole("heading", { name: "Preview your article", exact: true })).toBeVisible();
@@ -376,6 +386,8 @@ test("article reader refuses text that does not match its exact on-chain commitm
   await page.goto(`/?publish=1&article=${txid}`);
   await expect(page.getByRole("heading", { name: "Article text unavailable" })).toBeVisible();
   await expect(page.locator(".publish-article-body")).toHaveCount(0);
+  await expect(page).not.toHaveTitle(`${article.title} | ProofOfWork Publish`);
+  await expect(page.locator('meta[name="description"]')).not.toHaveAttribute("content", /A story with proofs/);
 });
 
 test("publication review contains exact transaction evidence and wallet rejection preserves the draft", async ({ page }) => {

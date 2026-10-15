@@ -361,7 +361,7 @@ test("Pages opens an explicit Code source even when Code has a retained unsent e
   await page.getByRole("button", { name: "Open Code", exact: true }).click();
   await expect(page.getByLabel("Exact source text", { exact: true })).toHaveText(CODE_HTML);
   await expect(page.getByRole("region", { name: "Code editor", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "All repositories", exact: true }).click();
+  await page.getByRole("link", { name: "All repositories", exact: true }).click();
   await page.getByRole("button", { name: "Resume draft", exact: true }).click();
   await expect(page.getByLabel("Repository name", { exact: true })).toHaveValue("Preserved alongside source");
   await expectNoSignature(page, state);

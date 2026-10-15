@@ -271,6 +271,38 @@ policy for pushed commits; a provably mechanical server merge may inherit its
 reviewed parent attestations, but a content-altering merge cannot. Do not use
 `--no-verify` or bypass the hygiene CI without explicit user approval.
 
+### Public page discovery
+
+Every public product has its own initial HTML title, description, canonical
+root, social preview metadata and structured description. The shared catalog
+in `src/app/seoMetadata.mjs` supplies both focused builds and browser navigation.
+Computer tabs identify the active workspace; verified article, repository and
+job readers may supply their public title and a bounded description. Drafts,
+wallet data and local filenames never supply document metadata.
+
+Product roots contain a JavaScript-free introduction and real product links.
+The same public explanation and directory remain available through the footer's
+About disclosure, with a visible introduction on Home. Interactive application
+data still uses the existing verified readers. This is not server rendering of
+public articles, profiles or chain state.
+
+Each canonical host serves its own `robots.txt` and root-only `sitemap.xml`.
+Public detail requests use a separate application document without an incorrect
+product-root canonical. Their browser metadata preserves meaningful article,
+repository, revision, file and job references. Writers, account/workspace routes,
+test networks and search/filter states are excluded from indexing and sitemaps.
+Unverified profile names do not establish stable canonical identity. Unsupported
+paths return HTTP 404; existing Browser deep links and Publish `/write` remain
+available. Search discovery metadata never establishes protocol authority.
+
+`npm run check:seo` checks the metadata/build contract; `npm run check:seo:live`
+verifies all public product documents, crawl files, missing paths and selected
+public/private route responses. `npm run check:seo:caddy -- --caddy /path/to/caddy`
+checks routing against a supplied production-compatible Caddy binary on loopback.
+Browser coverage also checks navigation, verified
+detail metadata and draft isolation. Release acceptance retains the complete
+22-root build, repository hygiene and mandatory source synchronization gates.
+
 ### Shared product interface
 
 The user approved the full product UI upgrade on 2026-10-10: the shared design

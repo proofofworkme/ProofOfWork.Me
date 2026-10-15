@@ -12,6 +12,7 @@ import {
   SEARCH_APP_URL,
   CODE_APP_URL,
   JOBS_APP_URL,
+  PERMISSION_APP_URL,
   BROWSER_APP_URL,
   COMPUTER_APP_URL,
   DESKTOP_APP_URL,
@@ -26,6 +27,7 @@ import {
   LOCAL_SEARCH_APP_URL,
   LOCAL_CODE_APP_URL,
   LOCAL_JOBS_APP_URL,
+  LOCAL_PERMISSION_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_DNS_APP_URL,
@@ -47,6 +49,7 @@ import {
   WORK_TOKEN_APP_URL,
 } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
+import { getSurfaceSeo } from "../../app/seoMetadata.mjs";
 import {
   explorerAddressUrl,
   explorerTxUrl,
@@ -149,6 +152,10 @@ const LANDING_APP_GROUPS = [
       {
         description: "Commission work, deliver evidence, and pay in proofs with an inspectable public receipt.",
         href: JOBS_APP_URL, icon: APP_ICONS.Jobs, label: "Jobs", localHref: LOCAL_JOBS_APP_URL,
+      },
+      {
+        description: "Inspect and manage wallet-bound agent permissions with local signing.",
+        href: PERMISSION_APP_URL, icon: APP_ICONS.Permission, label: "Permission", localHref: LOCAL_PERMISSION_APP_URL,
       },
     ],
   },
@@ -309,10 +316,11 @@ export function LandingApp({
     loaded ? value.toLocaleString() : "…";
 
   return (
-    <main className="landing-app">
+    <main className="landing-app" id="main-content">
       <AppHeader
         subtitle="The final network"
         title="ProofOfWork.Me"
+        titleAs="span"
       />
       <AppStatusRow
         persistent
@@ -371,7 +379,7 @@ export function LandingApp({
         <div className="landing-hero-content">
           <div className="landing-hero-copy">
             <span className="landing-kicker">The ProofOfWork Computer</span>
-            <h2>ProofOfWork.Me</h2>
+            <h1>ProofOfWork.Me</h1>
             <p>
               Claim a permanent on-chain ID, then communicate, publish, exchange,
               and verify through one chain-readable computer.
@@ -433,6 +441,17 @@ export function LandingApp({
       </section>
 
       <section className="landing-main" aria-label="ProofOfWork.Me onboarding">
+        <section className="landing-explanation" aria-labelledby="landing-explanation-title">
+          <h2 id="landing-explanation-title">What is the ProofOfWork Computer?</h2>
+          <p>{getSurfaceSeo("landing").intro}</p>
+          <p>
+            Start with <a href={appHref(ID_APP_URL, LOCAL_ID_APP_URL)}>an on-chain ID</a>,
+            publish <a href={appHref(PUBLISH_APP_URL, LOCAL_PUBLISH_APP_URL)}>articles</a> or
+            {" "}<a href={appHref(PAGES_APP_URL, LOCAL_PAGES_APP_URL)}>HTML pages</a>, and
+            {" "}<a href={appHref(SEARCH_APP_URL, LOCAL_SEARCH_APP_URL)}>inspect the public record</a>.
+            Wallet signing stays local; confirmed records remain independently verifiable.
+          </p>
+        </section>
         <section
           className="landing-stats"
           aria-label="ProofOfWork ID and DNS registry stats"

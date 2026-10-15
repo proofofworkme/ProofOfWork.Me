@@ -1,9 +1,10 @@
 import { posix } from "node:path";
 import { execFileSync } from "node:child_process";
 import type { Connect, Plugin, ProxyOptions } from "vite";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { prodProofApiProxy } from "./test-api/prodApiProxy";
+import { seoPlugin } from "./scripts/seo-vite-plugin.mjs";
 
 const LOCAL_PROOF_API_ORIGIN = "http://127.0.0.1:8081";
 
@@ -20,6 +21,7 @@ function pagesRunnerHeaders(): Plugin {
         return;
       }
       if (path === "/pages-runner.html") {
+        response.setHeader("X-Robots-Tag", "noindex, nofollow");
         response.setHeader("Content-Security-Policy", PAGES_RUNNER_CSP);
         response.setHeader("X-Frame-Options", "SAMEORIGIN");
         response.setHeader("X-Content-Type-Options", "nosniff");
@@ -96,7 +98,7 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
-  plugins: [react(), pagesRunnerHeaders(), releaseSourceProvenance()],
+  plugins: [react(), pagesRunnerHeaders(), seoPlugin({ ...loadEnv(mode, process.cwd(), "VITE_"), ...process.env }), releaseSourceProvenance()],
   server: {
     proxy:
       mode === "prod-api"

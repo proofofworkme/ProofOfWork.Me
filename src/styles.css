@@ -912,7 +912,7 @@ code {
   min-width: 0;
 }
 
-.brand h1 {
+.brand :is(h1, .app-brand-title) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -8093,7 +8093,7 @@ pre {
     font-size: 0.72rem;
   }
 
-  .brand h1 {
+  .brand :is(h1, .app-brand-title) {
     font-size: 0.95rem;
   }
 
@@ -8171,7 +8171,7 @@ pre {
     display: none;
   }
 
-  .brand h1 {
+  .brand :is(h1, .app-brand-title) {
     max-width: 52vw;
   }
 
@@ -8290,7 +8290,7 @@ pre {
   font-variant-ligatures: none;
 }
 
-.brand h1,
+.brand :is(h1, .app-brand-title),
 .public-page-header h2,
 .id-card-head h3,
 .section-heading h2,
@@ -8989,7 +8989,7 @@ pre {
     height: 40px;
   }
 
-  .brand h1 {
+  .brand :is(h1, .app-brand-title) {
     max-width: 100%;
   }
 

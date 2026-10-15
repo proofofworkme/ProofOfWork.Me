@@ -79,8 +79,12 @@ for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await fixture(page, { wallet: true });
     await page.goto("/?code=1");
-    await page.getByRole("button", { name: repo.name, exact: true }).click();
+    await page.getByRole("link", { name: repo.name, exact: true }).click();
     await expect(page.locator(".code-source")).toContainText("window.codeInjected = true");
+    await expect(page).toHaveTitle(`${repo.name} | ProofOfWork Code`);
+    await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", repo.description);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", new RegExp(`^https://code\\.proofofwork\\.me/\\?repo=${id(1)}`));
+    await expect(page.locator('.code-file-tree a').first()).toHaveAttribute("href", /[?&]path=/);
     await page.screenshot({ path: `/tmp/proofofwork-code-fixture-repository-${width}.png`, fullPage: true });
     expect(await page.evaluate(() => window.codeInjected)).toBeUndefined();
     const exact = page.waitForEvent("download");
@@ -90,11 +94,11 @@ for (const width of [390, 1440]) {
     await page.getByRole("button", { name: "History", exact: true }).click();
     await expect(page.getByText("Stale competing edit", { exact: true })).toBeVisible();
     await expect(page.getByText("Unapplied", { exact: true })).toBeVisible();
-    await page.locator(".code-history-entry").filter({ hasText: "Add exact README" }).getByRole("button", { name: "View version" }).click();
+    await page.locator(".code-history-entry").filter({ hasText: "Add exact README" }).getByRole("link", { name: "View version" }).click();
     await expect(page.getByText("Historical confirmed version", { exact: true })).toBeVisible();
-    await expect(page.locator(".code-file-tree button")).toHaveCount(1);
-    await page.getByRole("button", { name: "Return to main head", exact: true }).click();
-    await expect(page.locator(".code-file-tree button")).toHaveCount(2);
+    await expect(page.locator(".code-file-tree a")).toHaveCount(1);
+    await page.getByRole("link", { name: "Return to main head", exact: true }).click();
+    await expect(page.locator(".code-file-tree a")).toHaveCount(2);
     const archiveDownload = page.waitForEvent("download");
     await page.getByRole("button", { name: "Download ZIP", exact: true }).click();
     const zip = await archiveDownload;
@@ -104,6 +108,9 @@ for (const width of [390, 1440]) {
     expect(archived.includes(Buffer.from(empty.path))).toBe(true);
     await page.getByRole("button", { name: "Connect UniSat", exact: true }).first().click();
     await page.getByRole("button", { name: "Add file", exact: true }).click();
+    await expect(page).not.toHaveTitle(`${repo.name} | ProofOfWork Code`);
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+    await expect(page.locator('link[rel="canonical"]')).toHaveCount(0);
     const editor = page.getByRole("textbox", { name: "Source text", exact: true });
     await expect(editor).toHaveCSS("font-size", width <= 860 ? "16px" : "14px");
     await expect(editor).toHaveCSS("font-family", /IBM Plex Mono/);
@@ -122,6 +129,23 @@ test("source commitment mismatch never renders or downloads forged source", asyn
   await expect(page.getByText("Source bytes do not match the confirmed file commitment.", { exact: true })).toBeVisible();
   await expect(page.locator(".code-source")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Download exact source" })).toHaveCount(0);
+});
+
+test("repository links and native history restore verified titles without stale metadata", async ({ page }) => {
+  await fixture(page);
+  await page.goto("/?code=1");
+  const repository = page.getByRole("link", { name: repo.name, exact: true });
+  await expect(repository).toHaveAttribute("href", new RegExp(`[?&]repo=${id(1)}`));
+  await repository.click();
+  await expect(page).toHaveTitle(`${repo.name} | ProofOfWork Code`);
+  await page.goBack();
+  await expect(repository).toBeVisible();
+  await expect(page).toHaveTitle("ProofOfWork Code | Public source and verified history");
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://code.proofofwork.me/");
+  await expect(page.locator('script[data-proof-seo="structured-data"]')).toHaveCount(1);
+  await page.goForward();
+  await expect(page).toHaveTitle(`${repo.name} | ProofOfWork Code`);
+  await expect(page.locator('script[data-proof-seo="structured-data"]')).toHaveCount(0);
 });
 
 test("embedded editor preserves drafts and prevents leaving when storage cannot save", async ({ page }) => {

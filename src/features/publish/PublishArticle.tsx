@@ -1,4 +1,6 @@
 import { ArrowUpRight, BookOpen } from "lucide-react";
+import { useEffect } from "react";
+import { useVerifiedDocumentMetadata } from "../../app/documentMetadata";
 import { formatDate } from "../../functions";
 import { explorerTxUrl, type BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { PUBLISH_ARTICLE_VERIFICATION, normalizePublishArticleMetadata, publishArticleBodyBytes } from "../../shared/protocol/publishArticle.mjs";
@@ -19,11 +21,17 @@ export function PublishArticleCard({ item, network, embedded = false }: { item: 
   </a>;
 }
 
-export function PublishArticleText({ item, network }: { item: BoostFeedItem; network: BitcoinNetwork }) {
+export function PublishArticleText({ item, network, onVerified }: { item: BoostFeedItem; network: BitcoinNetwork; onVerified?: (verified: boolean) => void }) {
   const article = normalizePublishArticleMetadata(item.article);
   const bytes = publishArticleBodyBytes(item.articleBody);
   const verified = article && item.confirmed && item.articleVerification === PUBLISH_ARTICLE_VERIFICATION &&
     bytes && bytes.length === article.size && sha256Hex(bytes) === article.sha256;
+  useVerifiedDocumentMetadata({ parameter: "article", id: item.txid, network,
+    metadata: verified ? { title: `${article.title} | ProofOfWork Publish`, description: item.articleBody! } : undefined });
+  useEffect(() => {
+    onVerified?.(Boolean(verified));
+    return () => onVerified?.(false);
+  }, [onVerified, verified]);
   if (!verified) return <div className="publish-read-error" role="alert"><h2>Article text unavailable</h2>
     <p>This transaction has not supplied a confirmed article whose exact text matches its published size and SHA-256.</p>
     <a href={explorerTxUrl(item.txid, network)} target="_blank" rel="noreferrer">Inspect transaction</a>

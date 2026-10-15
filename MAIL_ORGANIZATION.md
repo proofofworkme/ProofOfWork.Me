@@ -135,6 +135,14 @@ lock.
 
 ## Shared product navigation
 
+Browser tab titles identify each standalone product and the active Computer
+workspace, including Mail folders. Public verified article, repository and job
+titles may identify their reader; unsent subjects, private draft text, wallet
+balances and local filenames are never used for document or share metadata.
+Editor, account and Computer workspace URLs remain outside public sitemaps and
+use noindex metadata. This display/indexing policy does not alter task recovery,
+navigation guards, wallet scope or local signing.
+
 Standalone headers and shared footers use the same product menus and order:
 
 | Menu | Products in order |

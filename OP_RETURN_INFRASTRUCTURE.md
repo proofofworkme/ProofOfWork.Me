@@ -7486,6 +7486,20 @@ the previous config, validate before reload and verify the effective headers.
 
 ## Mandatory release synchronization
 
+Public frontend builds generate product-specific `index.html`, a generic
+`app.html` without a product-root canonical, a `noindex-app.html` for internal
+and editor routes, and host-specific `robots.txt`/`sitemap.xml`. Root documents
+include static public introductions and links, not chain snapshots. Caddy serves
+only recognized document paths through these shells; missing resources and
+unsupported paths retain real HTTP 404 responses. Browser transaction/name
+paths and Publish `/write` preserve their existing application behavior.
+Private query states receive a noindex response header as well as HTML metadata.
+Static shell files remain byte-verifiable release artifacts and do not contain
+user state. API proxies, CSP, sandboxing and accepted node runtime overlays are
+unchanged by this frontend discovery policy. Public detail indexing beyond
+browser-rendered verified metadata requires its own separately reviewed content
+rendering contract.
+
 Every deployed product or upgrade must finish with GitHub `main`, the primary local checkout on `main`, the local app preview, and the production UI representing the same released source commit. This is a release completion gate, authorized by the user on 2026-10-08.
 
 Before integration, fetch `origin` and review changes since the candidate base. Preserve local edits and blocking untracked files in recoverable custody; never silently reset or delete them. Integrate and validate the product against current `main`, commit the exact approved scope with the required hygiene trailers, and push that release to `main`. Build production from that exact clean commit. Fast-forward the primary checkout to the same commit, rebuild its local app, restart the preview, and verify the affected local and public products. Record the remote `main` SHA, primary HEAD/branch, local build provenance and deployed manifest/source SHA together. Recheck remote advancement before completion.

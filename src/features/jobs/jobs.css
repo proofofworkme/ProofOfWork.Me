@@ -57,7 +57,7 @@
 .jobs-card-reward small { color: var(--text-soft); font-size: 11px; }
 .jobs-card-footer { border-top: 1px solid var(--border); padding-top: 10px; }
 .jobs-card-footer > span { min-width: 0; overflow-wrap: anywhere; }
-.jobs-card-footer button { display: inline-flex; align-items: center; gap: 8px; color: var(--accent); background: transparent; border: 0; padding: 6px 0; font-size: 12px; }
+.jobs-card-footer a { display: inline-flex; align-items: center; gap: 8px; color: var(--accent); background: transparent; border: 0; padding: 6px 0; font-size: 12px; }
 .jobs-empty { padding: 56px 24px; text-align: center; font-size: 14px; line-height: 1.7; color: var(--text-soft); }
 .jobs-empty > svg { color: var(--accent); }
 .jobs-empty :is(h3,h4) { color: var(--text); font: 500 21px var(--font-display); }
@@ -189,3 +189,5 @@
 .jobs-app :is(.primary, .secondary) { font-weight: 500; }
 
 }
+
+.jobs-app :is(.jobs-back, .jobs-card-title, .jobs-card-footer a), .jobs-embedded-app :is(.jobs-back, .jobs-card-title, .jobs-card-footer a) { min-height: 44px; text-decoration: none; box-sizing: border-box; }

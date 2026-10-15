@@ -115,22 +115,27 @@ for (const surface of ['standalone', 'computer']) {
   test(`${surface} Jobs board, receipt and inert evidence fit ${width}px with exact proofs`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 }); await fixture(page, { paid: true });
     await page.goto(surface === 'computer' ? '/?folder=jobs' : '/?jobs=1');
-    await expect(page.getByRole('button', { name: job.title, exact: true })).toBeVisible({ timeout: 30000 });
+    await expect(page.getByRole('link', { name: job.title, exact: true })).toBeVisible({ timeout: 30000 });
     if (surface === 'computer') {
       const layout = await page.locator('.jobs-embedded-app').evaluate(element => {
         const app = element.getBoundingClientRect(), parent = element.parentElement.getBoundingClientRect();
         return { grid: getComputedStyle(element).gridColumn, overflow: getComputedStyle(element).overflowY,
           right: app.right, left: app.left, parentRight: parent.right, parentLeft: parent.left, width: app.width };
       });
-      expect(layout.grid).toBe(width <= 900 ? '1 / -1' : '2 / -1');
+      // Focus's app rail is outside the workspace grid; its child spans that grid.
+      expect(layout.grid).toBe('1 / -1');
       expect(layout.overflow).toBe('auto');
       expect(Math.abs(layout.right - layout.parentRight)).toBeLessThanOrEqual(1);
-      if (width <= 900) expect(Math.abs(layout.left - layout.parentLeft)).toBeLessThanOrEqual(1);
-      else expect(layout.width).toBeGreaterThan(700);
+      expect(Math.abs(layout.left - layout.parentLeft)).toBeLessThanOrEqual(1);
+      if (width > 900) expect(layout.width).toBeGreaterThan(700);
     }
     await page.screenshot({ path: `/tmp/proofofwork-jobs-fixture-${surface}-board-${width}.png`, fullPage: true });
-    await page.getByRole('button', { name: job.title, exact: true }).click();
+    await page.getByRole('link', { name: job.title, exact: true }).click();
     await expect(page.locator('.jobs-prose').first()).toContainText('window.jobsInjected = true');
+    await expect(page).toHaveTitle(`${job.title} | ProofOfWork Jobs`);
+    await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', job.brief);
+    if (surface === 'computer') await expect(page.locator('link[rel="canonical"]')).toHaveCount(0);
+    else await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `https://jobs.proofofwork.me/?job=${job.txid}`);
     expect(await page.evaluate(() => window.jobsInjected)).toBeUndefined();
     await page.getByRole('button', { name: 'Work receipt', exact: true }).click();
     await expect(page.locator('.jobs-receipt')).toContainText('1,234,567 proofs');
@@ -272,7 +277,7 @@ for (const url of ['/?jobs=1', '/?folder=jobs']) {
     await expect(page.locator('.jobs-card-reward')).toContainText('1.0000000000000001 WORK');
     await expect(page.getByLabel('Confirmed Jobs reward payments')).toContainText('0 proofs');
     await expect(page.getByLabel('Confirmed Jobs reward payments')).toContainText('1.0000000000000001 WORK');
-    await page.getByRole('button', { name: job.title, exact: true }).click();
+    await page.getByRole('link', { name: job.title, exact: true }).click();
     await page.getByRole('button', { name: 'Work receipt', exact: true }).click();
     await expect(page.locator('.jobs-receipt')).toContainText('1.0000000000000001 WORK');
     await expect(page.locator('.jobs-receipt')).toContainText('Acceptance and direct payment');

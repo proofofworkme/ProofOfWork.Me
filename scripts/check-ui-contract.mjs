@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { existsSync, readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
+import { getSurfaceSeo, resolvePageMetadata } from "../src/app/seoMetadata.mjs";
 
 const files = [
   "README.md",
@@ -1885,9 +1886,9 @@ const browserAppBlock = topLevelFunctionSource(app, "BrowserApp");
 const browserWorkspaceBlock = topLevelFunctionSource(app, "BrowserWorkspace");
 expect(
   "standalone Browser route has dedicated metadata and canonical URLs",
+  getSurfaceSeo("browser").title === "ProofOfWork Browser | Read verified pages and apps" &&
+  resolvePageMetadata("browser", "https://browser.proofofwork.me/").canonicalUrl === "https://browser.proofofwork.me/" &&
   [
-  /browserRoute\s*\?\s*\{[\s\S]*title:\s*"ProofOfWork Browser"/,
-  /Render ProofOfWork HTML message bodies and verified HTML attachments by transaction ID\./,
   /function browserRoutePath\(txid:\s*string,\s*network:\s*BitcoinNetwork\)/,
   /params\.set\("browser",\s*"1"\)/,
   /window\.history\.pushState\(null,\s*"",\s*nextPath\)/,

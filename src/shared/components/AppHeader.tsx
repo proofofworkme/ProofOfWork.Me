@@ -34,6 +34,7 @@ export function AppHeader({
   onRefreshRecovery,
   subtitle,
   title,
+  titleAs = "h1",
 }: {
   afterHeader?: ReactNode;
   accountStats?: AppHeaderAccountStat[];
@@ -51,7 +52,9 @@ export function AppHeader({
   onRefreshRecovery?: () => void;
   subtitle?: string;
   title: string;
+  titleAs?: "h1" | "span";
 }) {
+  const Title = titleAs;
   const [expandedStatLabel, setExpandedStatLabel] = useState<string>();
   const accountDetailId = useId();
   const headerStackRef = useRef<HTMLDivElement>(null);
@@ -124,7 +127,7 @@ export function AppHeader({
         >
           <BrandMark />
           <div>
-            <h1>{title}</h1>
+            <Title className="app-brand-title">{title}</Title>
             {subtitle ? <span>{subtitle}</span> : null}
           </div>
         </a>

@@ -2,6 +2,7 @@ import { GitBranch, X } from "lucide-react";
 import { GITHUB_URL, HOME_APP_URL, LOCAL_HOME_APP_URL, X_URL, YOUTUBE_URL } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
 import { DomainNav } from "./DomainNav";
+import { PublicProductOverview } from "./PublicProductOverview";
 
 export function SocialFooter({ compact = false, quiet = false }: { compact?: boolean; quiet?: boolean }) {
   return (
@@ -43,6 +44,7 @@ export function SocialFooter({ compact = false, quiet = false }: { compact?: boo
           </span>
         </a>
       </nav>
+      <PublicProductOverview />
     </footer>
   );
 }

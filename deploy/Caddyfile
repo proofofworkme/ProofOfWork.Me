@@ -136,6 +136,73 @@
 	header @document Cache-Control "no-cache, must-revalidate"
 }
 
+# Only real application documents may use a shell. Missing assets and unknown
+# paths keep file_server's HTTP 404 instead of becoming an indexable SPA page.
+# Public query keys mirror src/app/seoMetadata.mjs; everything else is private
+# or a search/filter state until the application can qualify it.
+(seo_document) {
+	route {
+		handle @seo_private_query {
+			header X-Robots-Tag "noindex, nofollow"
+			rewrite * /noindex-app.html
+			file_server
+		}
+		handle @seo_any_query {
+			rewrite * /app.html
+			file_server
+		}
+		handle {
+			rewrite * {args.0}
+			file_server
+		}
+	}
+}
+
+(seo_static_routes) {
+	@seo_private_query not expression `({http.request.uri.query} == "" ||
+		{http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*)(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*))*$") ||
+		({http.request.host} == "publish.proofofwork.me" && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|article=[0-9a-fA-F]{64}|profile=[^&]{1,1000})(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|article=[0-9a-fA-F]{64}|profile=[^&]{1,1000}))*$")) ||
+		({http.request.host} == "boost.proofofwork.me" && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|profile=[^&]{1,1000})(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|profile=[^&]{1,1000}))*$")) ||
+		({http.request.host} == "code.proofofwork.me" && {http.request.uri.query}.matches("(^|&)repo=[0-9a-fA-F]{64}(&|$)") && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|(?:repo|version)=[0-9a-fA-F]{64}|path=[^&]+)(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|(?:repo|version)=[0-9a-fA-F]{64}|path=[^&]+))*$")) ||
+		({http.request.host} == "jobs.proofofwork.me" && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|job=[0-9a-fA-F]{64})(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|job=[0-9a-fA-F]{64}))*$")) ||
+		({http.request.host} == "browser.proofofwork.me" && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|(?:txid|tx)=[0-9a-fA-F]{64}|name=[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:[.][a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)?[.](?i:pow))(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|(?:txid|tx)=[0-9a-fA-F]{64}|name=[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:[.][a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)?[.](?i:pow)))*$")) ||
+		({http.request.host} == "credit.proofofwork.me" && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|asset=[0-9a-fA-F]{64})(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|asset=[0-9a-fA-F]{64}))*$")))
+		&& !({http.request.host} == "publish.proofofwork.me" && {http.request.uri.query}.matches("(^|&)(?:article|profile)=[^&]*(?:&[^&]*)*&(?:article|profile)="))
+		&& !({http.request.host} == "browser.proofofwork.me" && {http.request.uri.query}.matches("(^|&)(?:txid|tx|name)=[^&]*(?:&[^&]*)*&(?:txid|tx|name)="))
+		&& !{http.request.uri.query}.matches("(^|&)(?:network=[^&]*(?:&[^&]*)*&network=|article=[^&]*(?:&[^&]*)*&article=|profile=[^&]*(?:&[^&]*)*&profile=|repo=[^&]*(?:&[^&]*)*&repo=|version=[^&]*(?:&[^&]*)*&version=|path=[^&]*(?:&[^&]*)*&path=|job=[^&]*(?:&[^&]*)*&job=|txid=[^&]*(?:&[^&]*)*&txid=|tx=[^&]*(?:&[^&]*)*&tx=|name=[^&]*(?:&[^&]*)*&name=|asset=[^&]*(?:&[^&]*)*&asset=)")`
+	@seo_any_query expression `{http.request.uri.query} != ""`
+	@seo_internal_documents path /app.html /noindex-app.html /404.html
+	@seo_runner path /pages-runner.html
+	@seo_publish_writer {
+		host publish.proofofwork.me
+		path /write /write/
+	}
+	@seo_browser_reader {
+		host browser.proofofwork.me
+		path_regexp seo_browser_reader (?i)^/(?:(?:tx/)?[0-9a-f]{64}|(?:name/)?[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:[.][a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)?[.](?i:pow))/?$
+	}
+	@seo_root path / /index.html
+	route {
+		header @seo_runner X-Robots-Tag "noindex, nofollow"
+		handle @seo_internal_documents {
+			header X-Robots-Tag "noindex, nofollow"
+			file_server
+		}
+		handle @seo_publish_writer {
+			header X-Robots-Tag "noindex, nofollow"
+			rewrite * /noindex-app.html
+			file_server
+		}
+		handle @seo_browser_reader {
+			import seo_document /app.html
+		}
+		handle @seo_root {
+			import seo_document /index.html
+		}
+		file_server
+	}
+}
+
 (common_landing_app) {
 	encode zstd gzip
 	import landing_headers
@@ -148,8 +215,7 @@
 	header @document Cache-Control "no-cache, must-revalidate"
 	handle {
 		root * /var/www/proofofwork-landing
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -157,8 +223,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-id
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -166,8 +231,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-dns
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -175,8 +239,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-computer
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -184,8 +247,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-desktop
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -193,8 +255,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-browser
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -202,8 +263,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-pages
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -211,8 +271,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-permission
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -220,8 +279,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-boost
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -229,8 +287,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-publish
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -238,8 +295,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-code
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -247,8 +303,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-jobs
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -256,8 +311,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-search
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -265,8 +319,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-marketplace
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -274,8 +327,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-growth
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -283,8 +335,7 @@
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-activity
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -412,8 +463,7 @@ log.proofofwork.me {
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-token
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -435,8 +485,7 @@ tokens.proofofwork.me {
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-wallet
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -448,8 +497,7 @@ wallet.proofofwork.me {
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-work
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -461,8 +509,7 @@ work.proofofwork.me {
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-infinity
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 
@@ -474,8 +521,7 @@ infinity.proofofwork.me {
 	import common_static_policy
 	handle {
 		root * /var/www/proofofwork-inception
-		try_files {path} /index.html
-		file_server
+		import seo_static_routes
 	}
 }
 

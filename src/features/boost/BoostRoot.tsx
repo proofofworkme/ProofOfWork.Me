@@ -734,6 +734,7 @@ function QuotedPost({
 
 function BoostPost({
   articleReader = false,
+  onArticleVerified,
   publishSurface = false,
   embedded,
   actionBusy,
@@ -756,6 +757,7 @@ function BoostPost({
   profileAddress,
 }: {
   articleReader?: boolean;
+  onArticleVerified?: (verified: boolean) => void;
   publishSurface?: boolean;
   embedded: boolean;
   actionBusy: BoostActionBusy;
@@ -874,7 +876,7 @@ function BoostPost({
           <ReboostedPost embedded={embedded} network={network} onOpenOriginal={onOpenOriginal} post={item.reboostedPost} />
         ) : (
           <>
-            {item.article ? articleReader ? <PublishArticleText item={item} network={network} /> :
+            {item.article ? articleReader ? <PublishArticleText item={item} network={network} onVerified={onArticleVerified} /> :
               <PublishArticleCard item={item} network={network} embedded={embedded && window.location.search.includes("folder=publish")} /> :
               item.text ? <p className="boost-post-text"><BoostText text={item.text} /></p> : null}
             {!item.article && item.text ? <YouTubeLinkCards text={item.text} /> : null}
@@ -1083,6 +1085,7 @@ export default function BoostRoot({
   const surfaceName = isPublish ? "Publish" : "Boost";
   const [articleRoute] = useState(() => isPublish && !isPublishWriterLocation() ? initialSearchParam("article") : "");
   const articleTxid = normalizeBoostTxid(articleRoute);
+  const [verifiedArticleHeading, setVerifiedArticleHeading] = useState(false);
   const [publishWriterOpen, setPublishWriterOpen] = useState(() => isPublish && isPublishWriterLocation());
   const [publishWriterReturn, setPublishWriterReturn] = useState(() => readPublishWriterReturn(window.history.state));
   const publishWriterLeaveGuard = useRef<(() => boolean) | undefined>(undefined);
@@ -3018,6 +3021,7 @@ export default function BoostRoot({
     return (
       <BoostPost
         articleReader={articleReader}
+        onArticleVerified={articleReader ? setVerifiedArticleHeading : undefined}
         publishSurface={isPublish}
         embedded={embedded}
         actionBusy={actionBusy}
@@ -3140,6 +3144,7 @@ export default function BoostRoot({
           onRefresh={() => { void refresh(false, true); if (isPublish) void checkPublishReceipts(); }}
           subtitle={isPublish ? "Stories published on ProofOfWork" : "Proof-ranked social signal"}
           title={surfaceName}
+          titleAs={verifiedArticleHeading ? "span" : "h1"}
         />
       )}
       <AppStatusRow persistent status={status} />

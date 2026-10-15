@@ -494,6 +494,13 @@ authoritative.
 
 ## Interface Direction
 
+Public discovery should explain the Computer accurately before an application
+loads. Give each product its own title, description and canonical identity;
+keep useful public introductions and product links readable without JavaScript.
+Verified reader metadata may describe public records, but local drafts, wallet
+state and unverified names never become search or share metadata. Crawlability
+does not grant protocol authority or change exact source bytes.
+
 [DESIGN.md](DESIGN.md) is the canonical first-party interface policy and required
 reading for UI work. It distinguishes the OpenAI/ChatGPT reference from our own
 tokens, typography, identity, interaction rules, and release acceptance. Keep

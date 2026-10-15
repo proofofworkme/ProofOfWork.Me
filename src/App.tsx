@@ -4856,27 +4856,6 @@ function normalizeSaleAuthorizationId(id: string, version: string) {
     : normalizePowId(id);
 }
 
-function setDocumentMeta(selector: string, content: string) {
-  document
-    .querySelector<HTMLMetaElement>(selector)
-    ?.setAttribute("content", content);
-}
-
-function applyDocumentMetadata({
-  description,
-  title,
-}: {
-  description: string;
-  title: string;
-}) {
-  document.title = title;
-  setDocumentMeta('meta[name="description"]', description);
-  setDocumentMeta('meta[property="og:title"]', title);
-  setDocumentMeta('meta[property="og:description"]', description);
-  setDocumentMeta('meta[name="twitter:title"]', title);
-  setDocumentMeta('meta[name="twitter:description"]', description);
-}
-
 function powIdError(id: string) {
   if (!id) {
     return "Enter an ID.";
@@ -26640,45 +26619,6 @@ export default function App() {
     };
     // Navigation guards and Mail snapshots must see the latest local fields.
   });
-
-  useEffect(() => {
-    applyDocumentMetadata(
-      idLaunchMode
-        ? {
-            description:
-              "Claim a permanent on-chain ProofOfWork ID that resolves to your ProofOfWork receive address.",
-            title: "ProofOfWork IDs",
-          }
-        : dnsLaunchMode
-          ? {
-              description:
-                "Claim a permanent on-chain .pow DNS name that resolves to your ProofOfWork address.",
-              title: "ProofOfWork DNS",
-            }
-        : desktopRoute
-          ? {
-              description:
-                "Search public confirmed ProofOfWork files by address or confirmed ProofOfWork ID.",
-              title: "ProofOfWork Desktop",
-            }
-          : pagesRoute
-            ? {
-                description: "Create, preview, and publish HTML pages and apps on the ProofOfWork Computer.",
-                title: "ProofOfWork Pages",
-              }
-          : browserRoute
-            ? {
-                description:
-                  "Render ProofOfWork HTML message bodies and verified HTML attachments by transaction ID.",
-                title: "ProofOfWork Browser",
-              }
-            : {
-                description:
-                  "ProofOfWork.Me is the ProofOfWork Computer: local-first, on-chain identity, mail, files, pages, markets, credits, logs, and proof.",
-                title: "ProofOfWork.Me",
-              },
-    );
-  }, [browserRoute, pagesRoute, desktopRoute, dnsLaunchMode, idLaunchMode]);
 
   useEffect(() => {
     if (!address) {

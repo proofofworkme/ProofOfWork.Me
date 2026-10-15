@@ -125,6 +125,17 @@ persistence across reloads or cross-page navigation.
 
 ## Content, evidence, and interaction
 
+Give each public document a descriptive browser title and a clear primary
+heading. When the main content owns that heading, render the shared header's
+brand as ordinary text with unchanged styling. Verified user-authored reader
+titles remain exact. The footer's native About disclosure contains a concise
+public product explanation and ordinary links to the product directory; these
+links are present before menu interaction. Its expanded content remains bounded
+and scrollable on short screens. Home also shows its explanation directly.
+Search metadata and JavaScript-free introductions use the same public product
+catalog, never local drafts, wallet state, invented statistics or hidden text
+written only for crawlers.
+
 Keep the current task and primary action clear. Secondary details may collapse,
 but their controls and the underlying evidence remain reachable. Use consistent
 hover, selected, disabled, loading, and keyboard-focus states. Overlay behavior

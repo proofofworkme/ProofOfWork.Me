@@ -35,7 +35,7 @@
   letter-spacing: 0.13em;
 }
 
-.landing-app .landing-hero h2 {
+.landing-app .landing-hero h1 {
   font-family: var(--font-display, "Space Grotesk Variable", "Space Grotesk", sans-serif);
   font-size: clamp(3.4rem, 7vw, 6.75rem);
   font-weight: 660;
@@ -475,7 +475,7 @@
     padding-block: 48px 28px;
   }
 
-  .landing-app .landing-hero h2 {
+  .landing-app .landing-hero h1 {
     font-size: clamp(2.65rem, 13vw, 4.4rem);
     overflow-wrap: normal;
     word-break: normal;
@@ -620,7 +620,7 @@
   }
 }
 .landing-app .landing-kicker { color: var(--text-muted); font-family: var(--font-ui); font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none; }
-.landing-app .landing-hero h2 { color: var(--text); font-family: var(--font-ui); font-size: clamp(38px, 6.2vw, 88px); font-weight: 500; letter-spacing: -.055em; line-height: 1.05; }
+.landing-app .landing-hero h1 { color: var(--text); font-family: var(--font-ui); font-size: clamp(38px, 6.2vw, 88px); font-weight: 500; letter-spacing: -.055em; line-height: 1.05; }
 .landing-app .landing-hero p { color: var(--text-muted); line-height: 1.6; }
 .landing-app .landing-actions :is(.primary, .secondary) { font-weight: 500; box-shadow: none; }
 .landing-app .landing-computer-action { background: var(--surface); backdrop-filter: none; border-color: var(--border); color: var(--text); }
@@ -650,6 +650,6 @@
 .landing-app .landing-video-load:hover { background: var(--hover); color: var(--text); }
 .landing-app .landing-testimonial blockquote { font-family: var(--font-ui); font-weight: 400; letter-spacing: -.025em; }
 .landing-app .landing-protocol { border-style: solid; }
-@media (max-width: 720px) { .landing-app .landing-hero h2 { font-size: clamp(32px, 10.2vw, 64px); line-height: 1.12; } }
+@media (max-width: 720px) { .landing-app .landing-hero h1 { font-size: clamp(32px, 10.2vw, 64px); line-height: 1.12; } }
 
 }
