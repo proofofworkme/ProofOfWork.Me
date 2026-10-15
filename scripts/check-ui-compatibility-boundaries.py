@@ -44,10 +44,10 @@ class CompatibilityBoundaries(unittest.TestCase):
         (root / 'assets/extra.js').write_bytes(b'x')
         with self.assertRaisesRegex(ValueError, 'dependency bound'): self.budget()
         with self.assertRaisesRegex(stage.StageError, 'dependency bound'): self.copy()
-    def test_independent_limits_unchanged_and_enforced(self):
+    def test_independent_limits_explicit_and_enforced(self):
         self.assertEqual((stage.MAXIMUM_REFERENCE_EDGES, stage.MAXIMUM_REFERENCE_CANDIDATES,
                           stage.MAXIMUM_TOTAL_BYTES, stage.MAXIMUM_ASSET_BYTES),
-                         (5120, 1310720, 512 * 1024**2, 64 * 1024**2))
+                         (5632, 1376256, 512 * 1024**2, 64 * 1024**2))
         for name in ('MAXIMUM_REFERENCE_EDGES', 'MAXIMUM_REFERENCE_CANDIDATES', 'MAXIMUM_TOTAL_BYTES', 'MAXIMUM_ASSET_BYTES'):
             with self.subTest(limit=name), patch.object(stage, name, 1):
                 with self.assertRaises((stage.StageError, ValueError)): self.budget()

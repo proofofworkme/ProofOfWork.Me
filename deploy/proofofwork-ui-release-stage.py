@@ -69,15 +69,14 @@ MAXIMUM_TOTAL_BYTES = 512 * 1024 * 1024
 # October 13 measurement of the live 22-surface closure: 1,540 paths.
 # Keep 60 paths of headroom; byte, edge and candidate guards stay independent.
 MAXIMUM_DEPENDENCIES = 1600
-# The sealed October 8 twenty-two-root Permission V5 graph has 4,708 distinct
-# served-root/referrer/target edges. Keep a finite 5,120 ceiling (8.75% above
-# that measured set); served-path, raw-candidate and byte limits are independent.
-MAXIMUM_REFERENCE_EDGES = 5120
-# The historical 15-surface closure produced 527,332 candidates. The October 8
-# twenty-one-root Pages V4 payload produces 1,106,566, exceeding the former
-# 1,048,576 ceiling. Retain a finite 1,310,720 bound (18.45% above that measured
-# graph); dependency/unique-edge/byte/path limits remain independent.
-MAXIMUM_REFERENCE_CANDIDATES = 1310720
+# The October 15 V5 graphs each have 5,346 distinct served-root/referrer/target
+# edges. The finite 5,632 ceiling leaves 286 edges of headroom; independent
+# served-path, raw-candidate and byte limits remain enforced.
+MAXIMUM_REFERENCE_EDGES = 5632
+# The prior 7afc0f95 graph has 1,311,044 raw candidates; the 75948039 article
+# candidate has 1,313,796. Keep a finite 1,376,256 ceiling (62,460 headroom
+# above the larger measured graph); every raw occurrence still counts.
+MAXIMUM_REFERENCE_CANDIDATES = 1376256
 MAXIMUM_PAYLOAD_ENTRIES = 10000
 MAXIMUM_PAYLOAD_BYTES = 1024 * 1024 * 1024
 MANIFEST_NAME = ".proofofwork-ui-release"

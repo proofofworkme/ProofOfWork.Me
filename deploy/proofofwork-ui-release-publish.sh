@@ -505,15 +505,14 @@ maximum_total_bytes = 512 * 1024 * 1024
 # served-path ceiling aligned with the canonical stager; byte, reference-edge,
 # candidate and per-file limits remain independent.
 maximum_dependencies = 1600
-# The sealed October 8 twenty-two-root Permission V5 graph has 4,708 distinct
-# served-root/referrer/target edges. Align the finite 5,120 ceiling with the
-# stager (8.75% above that measured set); all other limits remain independent.
-maximum_reference_edges = 5120
-# The historical 15-surface closure produced 527,332 candidates; the October 8
-# twenty-one-root Pages V4 payload produces 1,106,566. Keep the finite 1,310,720
-# ceiling aligned with the stager (18.45% above that measured graph); all
-# dependency/unique-edge/byte/path limits remain independent.
-maximum_reference_candidates = 1310720
+# The October 15 V5 graphs each have 5,346 distinct served-root/referrer/target
+# edges. Align the finite 5,632 ceiling with the stager; served-path, candidate
+# and byte limits remain independent.
+maximum_reference_edges = 5632
+# The prior 7afc0f95 graph has 1,311,044 raw candidates; the 75948039 article
+# candidate has 1,313,796. Align the finite 1,376,256 ceiling with the stager;
+# every raw occurrence still counts and all independent guards remain enforced.
+maximum_reference_candidates = 1376256
 dependency_count = 0
 reference_edge_count = 0
 reference_candidate_count = 0

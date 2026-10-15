@@ -4422,7 +4422,8 @@ when another surface serves identical bytes. Quoted text, escaped/backslash
 strings, non-ASCII literals, traversal
 candidates, and other strings that do not resolve to an existing regular file
 inside that surface are soft-ignored. Each distinct resolved target from one
-referrer counts once against the 5,120-edge graph limit; another referrer or
+referrer counts once against the finite graph limit (5,632 after the October 15
+measurement below); another referrer or
 served surface contributes its own edges. All raw quoted/CSS matches still
 consume the independent candidate limit. The October 8 sealed twenty-surface
 Jobs release (`fc396c9a9abd`, archive SHA256
@@ -4439,7 +4440,7 @@ October 8 twenty-one-surface Pages V4 payload built from source
 `bcd35df7bf078675d52b06cc4fa86479351692a9bc5b9a288c316f13bf98f965`)
 has 4,074 distinct referrer/target edges, 1,106,566 raw candidates, 1,323
 reachable assets and 73,365,591 dependency bytes. Its candidate count exceeds
-the former 1,048,576 ceiling. Both actual parsers therefore use a finite
+the former 1,048,576 ceiling. That October 8 repair used a finite
 1,310,720-candidate ceiling, 18.45% above that measured graph; the other
 independent limits remained unchanged by that candidate-bound repair.
 
@@ -4452,12 +4453,13 @@ referrers are each parsed once. The independent, read-only census verified all
 22 live surface fingerprints and found every reachable asset in the checked
 successor payload; identical bytes shared by surfaces still count separately.
 The former 4,096-edge ceiling refuses this complete graph at its 4,097th edge.
-Both actual parsers therefore use a finite 5,120-edge ceiling, 412 edges (8.75%)
+The October 8 repair set both parsers to a finite 5,120-edge ceiling, 412 edges (8.75%)
 above that measured set. Counting, path resolution and per-file verification are
 unchanged; the 1,536-dependency, 1,310,720-candidate, 64 MiB per-file, 2 MiB index
 and 512 MiB dependency-byte ceilings remain independent and unchanged. Both
-parsers accept 5,120 distinct edges and refuse 5,121. Fixture-only replay retains
-the historical 4,096/4,097 boundary. The sealed archive, historical limits and
+parsers accepted 5,120 distinct edges and refused 5,121. The October 15
+measurement below supersedes that ceiling; fixture-only replay retains both
+the historical 5,120/5,121 and 4,096/4,097 boundaries. The sealed archive, historical limits and
 refusal evidence remain preserved.
 
 The September 5 read-only follow-up counted
@@ -4467,9 +4469,9 @@ dependency bytes. This exceeded the former 524,288 search ceiling, which had
 covered the 421,994-candidate pre-v3 monolith. That September repair used a
 finite 1,048,576-candidate ceiling, aligned with the then-doubled dependency
 allowance; this remains historical evidence rather than the current scan
-ceiling. Both actual parsers accept the current 1,310,720 boundary and reject
-1,310,721, including repeated references to one target. Fixture-only replay also
-retains the historical 1,048,576/1,048,577 boundary. Dependency, edge, per-file,
+ceiling. The October 15 measurement below supersedes the 1,310,720 boundary.
+Fixture-only replay retains its 1,310,720/1,310,721 and the older
+1,048,576/1,048,577 boundaries, including repeated references to one target. Dependency, edge, per-file,
 total-byte, path and collision limits remain independent. Thus a client that fetched the prior HTML
 immediately before exchange can still fetch its complete old asset graph
 afterward.
@@ -7799,8 +7801,9 @@ integration gate and full release synchronization.
 
 The live 22-surface continuity release has 1,540 reachable served asset paths
 (70 per surface), exceeding the former 1,536 compatibility ceiling. The approved
-ceiling is 1,600; paths remain counted separately per served surface. The
-independent limits remain 5,120 reference edges, 1,310,720 reference candidates,
+ceiling is 1,600; paths remain counted separately per served surface. At that
+October 13 measurement, the independent limits were 5,120 reference edges,
+1,310,720 reference candidates,
 512 MiB total compatibility bytes and 64 MiB per asset. The measured graph had
 5,060 edges, 1,282,306 candidates and 89,413,841 bytes. Capacity, inode, reserve
 and historical-asset preservation checks remain mandatory. A failed admission
@@ -7820,6 +7823,43 @@ preserve unversioned `pages-runner.html`, runner scripts and nested
 `assets/index.html`, and reject differing bytes at every real dependency path.
 This permits navigation-document replacement while retaining the independent
 asset, graph and capacity checks.
+
+
+### UI compatibility graph bounds (2026-10-15)
+
+The sealed 22-root `7afc0f9584a7` release has 1,584 reachable served paths,
+5,346 distinct served-root/referrer/target edges, 1,311,044 raw reference
+candidates and 89,619,673 reachable bytes. Its managed archive SHA-256 is
+`4ff932e4bef0a4147bd30b020c4772bbe76e5cc9c275d4732f60c5a6fff57a15`.
+The verified `759480391baa` article bundle has the same 1,584 paths and 5,346
+edges, with 1,313,796 candidates and 89,709,147 reachable bytes. Its surfaces
+archive SHA-256 is
+`83b12311da6482341202415bd22d1c0b271262eb15ab4d5cf4b8a1e870d31f2b`.
+Both measurements use all 22 served roots; identical bytes across roots still
+count separately, and each reachable referrer is parsed once.
+
+The prior 5,120-edge limit refused staging before any candidate creation or
+publication. The prior 1,310,720-candidate limit also falls below both measured
+graphs. Both actual parsers use finite ceilings of 5,632 distinct edges and
+1,376,256 raw candidates: 286 edges and 62,460 candidates above the larger
+measured set. Repeated literals and overlapping CSS patterns still consume a
+candidate each; distinct targets are deduplicated only within one referrer.
+No path resolution, collision, hashing, copying or graph-closure rule changes.
+The 1,600-path, 2 MiB index, 64 MiB per-file and 512 MiB total compatibility-byte
+limits remain unchanged, as do the 18 GiB retained-evidence, 9 GiB transport,
+5 GiB scratch, 10 GiB free-space and 64 MiB growth reserves and inode checks.
+
+Tests exercise both shipped parsers at the new exact boundaries and one over,
+while retaining the historical 5,120/5,121, 4,096/4,097,
+1,310,720/1,310,721 and 1,048,576/1,048,577 refusal fixtures. Preserve the failed
+`759480391baa-20261015T183854Z` input and all receipts. Its five-record failure
+is not any of the existing scratch/capacity resume shapes: do not fabricate
+those receipts or reuse that failed attempt namespace. A separately approved
+helper promotion must pin both prior helper hashes, preserve both old files,
+preallocate recovery, hold the shared deployment lock and verify exact live,
+retained, configuration and service state. Use a fresh source/build release
+with its additional preserved input included in all capacity projections and
+native admissions; source synchronization remains mandatory.
 
 
 ### Pending ID registration recovery
