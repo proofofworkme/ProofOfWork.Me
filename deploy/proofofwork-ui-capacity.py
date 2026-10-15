@@ -27,7 +27,7 @@ MAX_DEPLOY_SCRATCH_BYTES = 5 * 1024**3
 # Retained evidence is never age-pruned. These hard admission budgets stop
 # another allocation until custody-qualified retirement creates room.
 RETENTION_BUDGETS = (
-    (Path("/var/backups/proofofwork-ui"), 16 * 1024**3),
+    (Path("/var/backups/proofofwork-ui"), 18 * 1024**3),
     (Path("/var/backups/proofofwork-ui/transport-evidence"), 9 * 1024**3),
 )
 

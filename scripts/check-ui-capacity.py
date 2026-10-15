@@ -38,7 +38,7 @@ def space(available, inodes=100000):
 class CapacityTests(unittest.TestCase):
     def test_approved_retention_limits_and_unchanged_safeguards(self):
         self.assertEqual(capacity.RETENTION_BUDGETS, (
-            (Path("/var/backups/proofofwork-ui"), 16 * 1024**3),
+            (Path("/var/backups/proofofwork-ui"), 18 * 1024**3),
             (Path("/var/backups/proofofwork-ui/transport-evidence"), 9 * 1024**3),
         ))
         self.assertEqual(capacity.ROOT_RESERVE_BYTES, 10 * 1024**3)

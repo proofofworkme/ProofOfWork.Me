@@ -7545,7 +7545,7 @@ The final release synchronization check is `npm run check:release-sync`. It veri
 The UI allocation helper preserves the existing 10 GiB root reserve, 64 MiB
 concurrent-growth reserve, inode headroom and 5 GiB deployment scratch ceiling.
 Production deployment allocations also require the complete UI backup tree to
-remain within 16 GiB and its transport-evidence subtree within 9 GiB, charging
+remain within 18 GiB and its transport-evidence subtree within 9 GiB, charging
 the full next allocation to each containing budget. Measurements fail closed.
 The existing storage-health timer checks these budgets too. A budget refusal
 requires qualified retirement; it never deletes unique evidence to admit a
@@ -7559,6 +7559,15 @@ unchanged. The scoped helper promotion retains the prior and candidate bytes,
 approval and admission receipts; subsequent release plans bind the new helper
 hash and source commit. This amendment does not authorize evidence deletion or
 change the custody requirements below.
+
+Later on 2026-10-15, the separately approved server-rendered Publish article
+release required another complete UI release and the isolated renderer. The user
+approved increasing only this retained-backup ceiling from 16 GiB to 18 GiB.
+The measured candidate's conservative retained projection was 17.05 GiB. The
+same root/growth reserves, transport/scratch ceilings, inode checks, custody
+requirements and preservation of all evidence remain mandatory. Promote the
+exact reviewed helper with retained predecessor/candidate/approval receipts and
+bind subsequent release plans to that helper's hash and committed source.
 
 The desired recovery set is the live release and one verified immediate-prior
 rollback, with unique historical evidence in verified independent custody.

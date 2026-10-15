@@ -91,7 +91,7 @@ Installation takes the same shared lock, verifies the complete capture and exact
 22-root publication, then admits the entire extraction/source/receipt envelope
 and the separate retained receipt allocation before creating anything. The
 existing capacity helper retains its 10 GiB root reserve, 64 MiB growth reserve,
-16 GiB total UI retention ceiling, 9 GiB transport ceiling and 5 GiB scratch
+18 GiB total UI retention ceiling, 9 GiB transport ceiling and 5 GiB scratch
 ceiling. No command-line or environment bypass exists. It atomically installs
 versioned runtime/source and unit/active-manifest bytes, enables and starts only
 `proofofwork-publish-render.service`, and verifies `/healthz` against the installed
