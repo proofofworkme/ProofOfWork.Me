@@ -12,7 +12,8 @@ export type WalletConnectionProvider = {
 export class WalletConnectionError extends Error {
   code: string;
   stage?: WalletConnectionStage;
-  constructor(code: string, message: string, stage?: WalletConnectionStage);
+  cause?: unknown;
+  constructor(code: string, message: string, stage?: WalletConnectionStage, options?: { cause?: unknown });
 }
 export type WalletConnectionOptions = {
   authorize?: boolean;

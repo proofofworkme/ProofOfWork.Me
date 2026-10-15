@@ -1553,9 +1553,22 @@ UniSat account approval has a 60-second local deadline; account/network reads
 have 15-second stage deadlines and network switches have 30 seconds. A deadline
 releases the control, not the provider's pending prompt. Finish or close that
 prompt and retry. Retry can recover a granted account even if the authorization
-promise never settles, and never opens a second still-pending approval prompt.
+promise never settles or the page was replaced. Explicit Connect first reads
+already-authorized accounts before requesting access, and reuses an unresolved
+approval owned by the same controller. A specific provider pending-approval
+refusal receives one fresh account read and clear recovery guidance; independent
+tabs do not share an authorization queue. No error message establishes access.
 Final account/network verification precedes connection; application data has
 its separate loading and unavailable state. Signing stays local.
+
+Wallet-derived spendability and protected amounts require successful current
+curated-wallet evidence. A failed read is not zero spendable or proof that the
+full node total is protected. Prior wallet evidence stays explicitly last
+verified; node-confirmed totals retain their separate source. Connected-account
+details are available through keyboard and touch as well as pointer input.
+The display-only curated-output consumer has a 15-second deadline so a stalled
+extension read cannot block a completed node total or subsequent refreshes.
+Transaction preparation and signing retain their separate fresh checks.
 
 ## Cache-aware production-build lab measurements
 

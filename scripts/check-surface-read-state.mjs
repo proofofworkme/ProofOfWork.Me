@@ -265,6 +265,154 @@ function appEffect(marker, bindings) {
   return new Function(...Object.keys(bindings),
     `${transpile(`const actualEffect = ${callback.getText(ast)}`)};return actualEffect`)(...Object.values(bindings));
 }
+function appExpression(name, bindings) {
+  let initializer;
+  function find(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === name) initializer = node.initializer;
+    ts.forEachChild(node, find);
+  }
+  find(ast); assert.ok(initializer, name);
+  return new Function(...Object.keys(bindings), `${transpile(`const value = ${initializer.getText(ast)}`)}; return value`)(...Object.values(bindings));
+}
+// Run the real periodic account read and header derivations. Failed curated reads
+// must never turn a positive node total into protected or currently spendable funds.
+{
+  const state = { accountUtxos: [], accountUtxosLoaded: false, accountUtxosRefreshing: false, accountUtxosError: "",
+    accountChainUtxos: [], accountChainUtxosLoaded: false, accountChainUtxosError: "" };
+  const requests = [], timeouts = new Map();
+  let read, nextTimeout = 0;
+  const visibleLoopSource = await readFile("src/shared/api/useVisibleReadLoop.ts", "utf8");
+  const { consumeDisplayRead } = await import(`data:text/javascript;base64,${Buffer.from(transpile(visibleLoopSource)).toString("base64")}`);
+  const bindings = { address: "wallet-a", network: "livenet", errorMessage: error => error.message,
+    consumeDisplayRead, AbortController, AbortSignal,
+    globalThis: { setTimeout: (callback, ms) => { assert.equal(ms, 15_000); timeouts.set(++nextTimeout, callback); return nextTimeout; }, clearTimeout: id => timeouts.delete(id) },
+    fetchUtxos: (_address, _network, signal) => { const request = { ...readDeferred(), source: "wallet", signal }; requests.push(request); return request.promise; },
+    fetchAddressApiUtxos: (_address, _network, signal) => { const request = { ...readDeferred(), source: "node", signal }; requests.push(request); return request.promise; },
+    createVisibleReadLoop: callback => { read = callback; return () => {}; },
+    ...Object.fromEntries(Object.keys(state).map(key => [`set${key[0].toUpperCase()}${key.slice(1)}`, value => { state[key] = value; }])),
+  };
+  const cleanup = appEffect("const [walletRead, chainRead]", bindings)();
+  const availability = appFunction("accountUtxoAvailability", { DUST_SATS: 546 });
+  const utxos = value => [{ txid: "a".repeat(64), vout: 0, value, status: { confirmed: true } }];
+  function view() {
+    const current = { ...state,
+      address: "wallet-a", connectedWalletReservationsReady: true, connectedWalletReservationsError: "",
+      connectedWalletProofAvailability: availability(state.accountUtxos, []),
+      connectedWalletChainProofAvailability: availability(state.accountChainUtxos, []),
+      allFileMessages: [], accountWalletBalances: [], tokenWalletBalances: [], powbWalletBalances: [], incbWalletBalances: [],
+      walletPendingIdEvents: [], incomingMailAll: [], sentMailAll: [], CANONICAL_WELCOME_TXID: "welcome",
+      accountTokenLaneStatuses: Object.fromEntries(["all", "work", "powb", "incb"].map(lane => [lane, { loaded: true, loading: false, error: "" }])),
+      mergeTokenWalletBalancesByToken: () => [], mailHeaderLifecycleCounts: countMailLifecycle,
+    };
+    current.connectedWalletProofReadReady = appExpression("connectedWalletProofReadReady", current);
+    current.connectedWalletProofFundingContext = appCallback("App", "connectedWalletProofFundingContext", current)();
+    return { ...current, stats: appCallback("App", "connectedAccountStats", current)() };
+  }
+  let pending = read(new AbortController().signal);
+  requests[1].resolve(utxos(38553)); requests[0].reject(new Error("Curated outputs unavailable")); await pending;
+  let result = view();
+  assert.equal(result.connectedWalletProofFundingContext.protectedSats, 0);
+  assert.equal(result.stats.find(stat => stat.label === "wallet proofs").value, "Unavailable");
+  assert.equal(result.stats.find(stat => stat.label === "total confirmed").value, "38,553 proofs");
+  assert.equal(result.stats.some(stat => stat.label === "spendable proofs" || stat.label === "protected proofs"), false);
+  assert.doesNotMatch(result.stats.find(stat => stat.label === "total confirmed").detail, /0 wallet-spendable|protected/u);
+  pending = read(new AbortController().signal);
+  requests[2].resolve(utxos(1000)); requests[3].resolve(utxos(2000)); await pending;
+  result = view();
+  assert.equal(result.stats.find(stat => stat.label === "spendable proofs").value, "1,000 proofs");
+  assert.equal(result.stats.find(stat => stat.label === "protected proofs").value, "1,000 proofs");
+  pending = read(new AbortController().signal);
+  requests[5].resolve(utxos(5000)); await Promise.resolve();
+  assert.equal(state.accountChainUtxos[0].value, 2000, "a new node result waits for its paired wallet result");
+  assert.equal(view().connectedWalletProofFundingContext.protectedSats, 0, "refresh cannot classify older evidence as current");
+  requests[4].reject(new Error("Refresh failed")); await pending;
+  result = view();
+  assert.equal(result.stats.find(stat => stat.label === "wallet proofs").value, "Last verified");
+  assert.match(result.stats.find(stat => stat.label === "wallet proofs").detail, /Last verified curated wallet total: 1,000/u);
+  assert.equal(result.stats.find(stat => stat.label === "total confirmed").value, "5,000 proofs");
+  assert.equal(result.stats.some(stat => stat.label === "spendable proofs" || stat.label === "protected proofs"), false);
+  pending = read(new AbortController().signal);
+  requests[6].resolve(utxos(7000)); requests[7].resolve(utxos(8000)); await pending;
+  assert.equal(view().stats.find(stat => stat.label === "spendable proofs").value, "7,000 proofs");
+  pending = read(new AbortController().signal);
+  requests[9].resolve(utxos(11000));
+  assert.equal(timeouts.size, 1);
+  [...timeouts.values()][0](); // provider request 8 never settles before its display deadline
+  await pending;
+  result = view();
+  assert.equal(result.stats.find(stat => stat.label === "total confirmed").value, "11,000 proofs");
+  assert.match(result.stats.find(stat => stat.label === "wallet proofs").detail, /did not respond within 15 seconds/u);
+  assert.equal(result.connectedWalletProofFundingContext.protectedSats, 0);
+  assert.equal(state.accountUtxosRefreshing, false, "stuck provider cannot hold the visible refresh loop forever");
+  assert.equal(timeouts.size, 0);
+  pending = read(new AbortController().signal); // subsequent display retry remains possible
+  requests[10].resolve(utxos(12000)); requests[11].resolve(utxos(13000)); await pending;
+  requests[8].resolve(utxos(99999)); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(state.accountUtxos[0].value, 12000, "late timed-out provider result cannot overwrite the retry");
+  pending = read(new AbortController().signal);
+  cleanup(); requests[12].resolve(utxos(9000)); requests[13].reject(new Error("obsolete")); await pending;
+  assert.equal(state.accountUtxos[0].value, 12000, "account/network cleanup fences late refreshes");
+  assert.equal(state.accountChainUtxos[0].value, 13000);
+}
+console.log(JSON.stringify({ ok: true, coverage: ["wallet-initial-failure-keeps-node-total", "wallet-refresh-pairing", "wallet-last-verified-evidence-separated", "wallet-no-unverified-protected-or-spendable-claim", "wallet-obsolete-read-fence", "wallet-hung-provider-bounded-display-consumer", "wallet-late-timeout-cannot-overwrite-retry"] }));
+// Render the shared header component with deterministic hooks and exercise its
+// actual handlers. Details are reachable by ordinary buttons, not hover titles.
+{
+  const headerSource = await readFile("src/shared/components/AppHeader.tsx", "utf8");
+  const headerAst = ts.createSourceFile("AppHeader.tsx", headerSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const component = headerAst.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "AppHeader");
+  const compiled = ts.transpileModule(component.getText(headerAst).replace("export function", "function"), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React },
+  }).outputText;
+  const React = await import("react");
+  let expanded, layoutEffect, resizeCallback, observed, disconnected = false;
+  const headerRef = { current: null };
+  const bindings = { React, useId: () => "account-detail-fixture", useState: () => [expanded, value => { expanded = value; }],
+    useRef: () => headerRef, useLayoutEffect: callback => { layoutEffect = callback; },
+    ResizeObserver: class { constructor(callback) { resizeCallback = callback; } observe(element) { observed = element; } disconnect() { disconnected = true; } },
+    HOME_APP_URL: "/", LOCAL_HOME_APP_URL: "/", appHref: value => value,
+    BrandMark: () => null, DomainNav: () => null, AppearanceMenu: () => null,
+    ChevronDown: () => null, RefreshCw: () => null, Wallet: () => null, LogOut: () => null,
+    shortAddress: value => value,
+  };
+  const Header = new Function(...Object.keys(bindings), `${compiled};return AppHeader`)(...Object.values(bindings));
+  const props = { title: "ProofOfWork", accountStats: [{ label: "wallet proofs", value: "Unavailable", detail: "Curated outputs could not be verified." }] };
+  function flatten(element) {
+    if (!element || typeof element !== "object") return [];
+    return [element, ...React.Children.toArray(element.props?.children).flatMap(flatten)];
+  }
+  let nodes = flatten(Header(props));
+  let button = nodes.find(node => node.type === "button" && node.props.className === "account-signal-toggle");
+  assert.equal(button.props.type, "button");
+  assert.equal(button.props["aria-expanded"], false);
+  assert.match(button.props["aria-label"], /wallet proofs: Unavailable/u);
+  assert.equal(button.props["aria-controls"], "account-detail-fixture");
+  assert.equal(nodes.find(node => node.props?.id === "account-detail-fixture").props.hidden, true);
+  button.props.onClick();
+  nodes = flatten(Header(props));
+  button = nodes.find(node => node.type === "button" && node.props.className === "account-signal-toggle");
+  assert.equal(button.props["aria-expanded"], true);
+  const detail = nodes.find(node => node.props?.id === "account-detail-fixture");
+  assert.equal(detail.props.hidden, false);
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  assert.match(renderToStaticMarkup(detail), /Curated outputs could not be verified/u);
+  button.props.onKeyDown({ key: "Escape" });
+  assert.equal(flatten(Header(props)).find(node => node.props?.id === "account-detail-fixture").props.hidden, true);
+  assert.doesNotMatch(headerSource, /title=\{stat\.detail\}/u);
+  const styles = new Map();
+  let height = 114;
+  headerRef.current = { parentElement: { style: { getPropertyValue: key => styles.get(key) ?? "", setProperty: (key, value) => styles.set(key, value), removeProperty: key => styles.delete(key) } },
+    getBoundingClientRect: () => ({ height }) };
+  const stopMeasuring = layoutEffect();
+  assert.equal(observed, headerRef.current);
+  assert.equal(styles.get("--app-header-height"), "114px");
+  height = 306.5; resizeCallback();
+  assert.equal(styles.get("--app-header-height"), "307px", "status offset follows expanded detail and responsive header height");
+  stopMeasuring();
+  assert.equal(disconnected, true);
+  assert.equal(styles.has("--app-header-height"), false);
+}
+console.log(JSON.stringify({ ok: true, coverage: ["account-header-button-disclosure", "account-header-expanded-detail-and-escape", "account-header-resize-owned-sticky-offset"] }));
 function desktopReadHarness() {
   const requests = [], accepted = [], statuses = [], loading = [];
   const bindings = {
@@ -347,6 +495,101 @@ for (const fence of ["network", "workspace", "clear", "empty-target", "cleanup"]
   assert.equal(h.idSignal.aborted, true);
   assert.equal(h.requests.length, 0, "cancelled ID resolution cannot start mail read");
 }
+// Read-only existing-ID callers use exact-tip confirmed ownership, while the
+// unchanged helper default retains strict new-name availability checks.
+{
+  const calls = [];
+  const confirmed = { id: "alice", confirmed: true, network: "livenet", ownerAddress: "owner", receiveAddress: "receiver" };
+  let record = confirmed, refusal;
+  const normalizePowId = appFunction("normalizePowId");
+  const fetchIdRecordState = appFunction("fetchIdRecordState", {
+    normalizePowId, normalizeRegistryApiState: payload => ({ records: payload.record ? [payload.record] : [] }),
+    fetchProofApiJson: async (path, network, options) => {
+      const url = new URL(path, "https://proof.invalid"); calls.push({ url, network, signal: options.signal });
+      assert.equal(url.searchParams.get("fresh"), "1", "confirmed routing still demands a fresh exact-tip server check");
+      if (url.searchParams.has("current")) throw new Error("Pending worker proof unavailable");
+      if (refusal) throw new Error(refusal);
+      return { record };
+    },
+  });
+  const resolveRecipientInput = appFunction("resolveRecipientInput", { normalizePowId, isValidBitcoinAddress: () => false, networkLabel: value => value });
+  const resolvePagesIdentity = appFunction("resolvePagesIdentity", { network: "livenet", registryAddressForNetwork: () => "registry", fetchIdRecordState });
+  const h = desktopReadHarness();
+  Object.assign(h.bindings, { fetchIdRecordState, resolveRecipientInput });
+  const pending = h.load()("alice@proofofwork.me");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.requests[0].address, "receiver");
+  h.requests[0].resolve(emptyMail); await pending;
+  assert.equal(h.accepted.at(-1).resolvedId, "alice");
+  assert.deepEqual(await resolvePagesIdentity("alice"), { id: "alice", ownerAddress: "owner", receiveAddress: "receiver" });
+  assert.equal(calls.every(call => !call.url.searchParams.has("current")), true);
+  await assert.rejects(fetchIdRecordState("livenet", "new-name"), /Pending worker proof/u);
+  for (const unavailable of [null, { ...confirmed, confirmed: false }, { ...confirmed, network: "testnet4" }]) {
+    record = unavailable;
+    const priorReads = h.requests.length, priorAccepted = h.accepted.length;
+    await h.load()("alice");
+    assert.equal(h.requests.length, priorReads, "missing, pending and wrong-network IDs cannot start Desktop reads");
+    assert.equal(h.accepted.length, priorAccepted);
+    await assert.rejects(resolvePagesIdentity("alice"), /no current confirmed registry record/u);
+  }
+  record = confirmed;
+  for (const message of ["Canonical index is behind Core", "Canonical checkpoint hash mismatch", "Confirmed coverage is incomplete"]) {
+    refusal = message;
+    const priorReads = h.requests.length;
+    await h.load()("alice");
+    assert.equal(h.requests.length, priorReads);
+    assert.equal(h.statuses.at(-1).text, message);
+    await assert.rejects(resolvePagesIdentity("alice"), { message });
+  }
+}
+// The real Pages editor invalidates an in-flight identity insertion on changes
+// to its target, draft or mounted account/network scope; no old result edits HTML.
+{
+  const pagesSource = await readFile("src/features/pages/PagesWorkspace.tsx", "utf8");
+  const pagesAst = ts.createSourceFile("PagesWorkspace.tsx", pagesSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  function pagesFunction(name, bindings) {
+    let found;
+    function find(node) { if (ts.isFunctionDeclaration(node) && node.name?.text === name) found = node; ts.forEachChild(node, find); }
+    find(pagesAst); assert.ok(found, name);
+    return new Function(...Object.keys(bindings), `${transpile(found.getText(pagesAst))};return ${name}`)(...Object.values(bindings));
+  }
+  let targetChange;
+  function findTargetChange(node) {
+    if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(pagesAst) === "input" &&
+        node.attributes.properties.some(attr => ts.isJsxAttribute(attr) && attr.name.getText(pagesAst) === "value" && attr.initializer?.getText(pagesAst) === "{identity}")) {
+      targetChange = node.attributes.properties.find(attr => ts.isJsxAttribute(attr) && attr.name.getText(pagesAst) === "onChange").initializer.expression;
+    }
+    ts.forEachChild(node, findTargetChange);
+  }
+  findTargetChange(pagesAst); assert.ok(targetChange);
+  for (const fence of ["target", "draft", "scope-unmount"]) for (const outcome of ["success", "failure"]) {
+    const deferredIdentity = readDeferred(), updates = [], statuses = [], busy = [];
+    const bindings = { identity: "alice", generation: { current: 0 }, mounted: { current: true },
+      editor: { current: null }, draft: { html: "unchanged source" }, codeImport: undefined, pageImport: undefined,
+      codeAbort: { current: undefined }, setRuntime() {}, setDiscardArmed() {},
+      setBusy: value => busy.push(value), setStatus: value => statuses.push(value),
+      onResolveIdentity: () => deferredIdentity.promise, updateDraft: value => updates.push(value),
+      validatePageHtml: value => value, insertPageMarkup: () => "inserted source", identityCardHtml: () => "card", setView() {},
+      message: error => error.message,
+    };
+    const pending = pagesFunction("insertIdentity", bindings)();
+    const invalidate = pagesFunction("invalidate", bindings);
+    if (fence === "target") {
+      let target;
+      new Function("invalidate", "setIdentity", `${transpile(`const change = ${targetChange.getText(pagesAst)}`)};change({target:{value:"bob"}})`)(invalidate, value => { target = value; });
+      assert.equal(target, "bob");
+    } else if (fence === "draft") invalidate();
+    else { bindings.mounted.current = false; bindings.generation.current += 1; }
+    const statusCount = statuses.length, busyCount = busy.length;
+    if (outcome === "success") deferredIdentity.resolve({ id: "alice" });
+    else deferredIdentity.reject(new Error("obsolete identity refusal"));
+    await pending;
+    assert.deepEqual(updates, [], `${fence} ${outcome} cannot insert obsolete identity`);
+    assert.equal(statuses.length, statusCount);
+    assert.equal(busy.length, busyCount);
+  }
+}
+console.log(JSON.stringify({ ok: true, coverage: ["desktop-pages-confirmed-ownership-read-purpose", "registration-default-stays-strict", "pending-missing-wrong-network-ids-unroutable", "canonical-refusals-preserved", "pages-identity-target-draft-scope-fences"] }));
 const mailboxEnvelope = { address: "address-a", network: "livenet", ...emptyMail };
 const readMailPayload = (payload) => appFunction("fetchAddressMail", {
   fetchProofApiJson: async () => payload,
@@ -581,38 +824,81 @@ for (const outcome of ["success", "failure"]) {
   assert.match(h.statuses.at(-1).text, /Verified pending HTML page/);
   assert.deepEqual(h.routes, []);
 }
-{
+// Computer remounts Browser on wallet/network scope changes. Within a scope,
+// Browser keeps its own selected reading network and freshly verifies its return target.
+assert.match(appSource, /<BrowserWorkspace key=\{computerTaskScope\}/u);
+assert.match(appSource, /useState<BitcoinNetwork>\(initialSession\?\.network \?\? activeNetwork\)/u);
+for (const outcome of ["success", "failure"]) {
   const h = browserReadHarness("BrowserWorkspace");
+  h.bindings.initialSession = undefined;
+  h.bindings.query = "";
+  h.bindings.loadPage = h.load();
+  const cleanup = appEffect("initialSession?.tabs.find", h.bindings)();
   const pending = h.load()("a".repeat(64));
-  h.bindings.activeNetwork = "testnet4";
-  appEffect("setNetwork(activeNetwork)", h.bindings)();
+  cleanup(); // App/network scope exit unmounts the old Browser instance.
   assert.equal(h.requests[0].signal.aborted, true);
   const statusCount = h.statuses.length, loadingCount = h.loading.length;
-  h.requests[0].resolve({ txid: "a".repeat(64), network: "livenet", confirmed: true }); await pending;
-  assert.equal(h.state.network, "testnet4");
-  assert.equal(h.state.page, undefined);
+  if (outcome === "success") h.requests[0].resolve({ txid: "a".repeat(64), network: "livenet", confirmed: true });
+  else h.requests[0].reject(new Error("unmounted Computer Browser"));
+  await pending;
+  assert.equal(h.state.page, h.previous);
   assert.equal(h.statuses.length, statusCount);
   assert.equal(h.loading.length, loadingCount);
 }
 {
   const h = browserReadHarness("BrowserWorkspace");
-  const setup = appEffect("setNetwork(activeNetwork)", h.bindings);
+  const target = "a".repeat(64), typedQuery = "unsubmitted edit.pow";
+  Object.assign(h.bindings, { network: "testnet4", activeNetwork: "livenet", query: typedQuery,
+    initialSession: { activeId: 3, tabs: [{ id: 3, index: 0, entries: [{ target, network: "testnet4" }] }] } });
+  h.state.network = "testnet4"; h.state.query = typedQuery;
+  h.bindings.loadPage = h.load();
+  const setup = appEffect("initialSession?.tabs.find", h.bindings);
   const cleanup = setup();
-  cleanup(); setup(); // StrictMode effect replay has no automatic page request.
-  const pending = h.load()("a".repeat(64));
-  const page = { txid: "a".repeat(64), network: "livenet", confirmed: true };
-  h.requests[0].resolve(page); await pending;
+  cleanup(); setup(); // StrictMode must reverify, while cancelling the first mount read.
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests[0].signal.aborted, true);
+  assert.equal(h.requests[1].network, "testnet4", "Browser reading network remains independent of Computer's wallet network");
+  const page = { txid: target, network: "testnet4", confirmed: true };
+  h.requests[1].resolve(page); h.requests[0].resolve({ txid: target, network: "livenet" });
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.state.page, page);
-  const obsolete = h.load()("b".repeat(64));
-  cleanup();
-  assert.equal(h.requests[1].signal.aborted, true);
-  const statusCount = h.statuses.length, loadingCount = h.loading.length;
-  h.requests[1].reject(new Error("unmounted Computer Browser")); await obsolete;
-  assert.equal(h.state.page, page);
-  assert.equal(h.statuses.length, statusCount);
-  assert.equal(h.loading.length, loadingCount);
+  assert.equal(h.state.network, "testnet4");
+  assert.equal(h.state.query, typedQuery, "return verification preserves unsent address-bar text");
+  assert.deepEqual(h.routes, []);
 }
-console.log(JSON.stringify({ ok: true, coverage: ["desktop-latest-target-status-loading", "desktop-network-workspace-clear-cleanup-fences", "desktop-id-cancellation", "mail-scoped-envelope-failure", "mail-node-testnet-compatibility", "mail-complete-indexed-enrichment-warning", "browser-manual-network-cancellation", "browser-root-child-dns-html-cancellation", "browser-proof-url-preservation", "browser-unmount-fence", "computer-browser-manual-global-network-cancellation", "computer-browser-latest-request-and-unmount-fences", "computer-browser-strictmode-replay"] }));
+{
+  const h = browserReadHarness("BrowserWorkspace");
+  Object.assign(h.bindings, { network: "testnet4", activeNetwork: "livenet",
+    initialSession: { activeId: 1, tabs: [{ id: 1, index: 0, entries: [{ target: "a".repeat(64), network: "livenet" }] }] }, loadPage: h.load() });
+  appEffect("initialSession?.tabs.find", h.bindings)();
+  assert.equal(h.requests.length, 0, "an unsubmitted network change does not silently load the old target");
+  assert.match(h.statuses.at(-1).text, /View Page/);
+}
+// Exercise the actual Browser session emission. Even hostile extras in a retained
+// session cannot serialize verified page bytes, script runtime, or review consent.
+{
+  const browserSource = await readFile("src/features/browser/BrowserWindow.tsx", "utf8");
+  const browserAst = ts.createSourceFile("BrowserWindow.tsx", browserSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let sessionEffect, runtimeInitializer;
+  function visitBrowser(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(browserAst) === "useEffect" &&
+        node.arguments[0]?.getText(browserAst).includes("onSessionChange?.")) sessionEffect = node.arguments[0];
+    if (ts.isVariableDeclaration(node) && node.name.getText(browserAst) === "[runtime, setRuntime]") runtimeInitializer = node.initializer;
+    ts.forEachChild(node, visitBrowser);
+  }
+  visitBrowser(browserAst);
+  assert.ok(sessionEffect); assert.ok(runtimeInitializer);
+  const tabs = [{ id: 1, entries: [{ target: "a".repeat(64), network: "livenet" }], index: 0 }];
+  const values = { tabs, activeId: 1, query: "draft.pow", network: "testnet4", expanded: true,
+    runtime: { html: "script", runId: 1 }, page: { html: "unverified" }, consent: true,
+    initialSession: { runtime: { html: "script" }, consent: true },
+    onSessionChange: (session) => { values.emitted = session; } };
+  new Function(...Object.keys(values), `${transpile(`const effect = ${sessionEffect.getText(browserAst)}`)};effect()`)(...Object.values(values));
+  assert.deepEqual(values.emitted, { tabs, activeId: 1, query: "draft.pow", network: "testnet4", expanded: true });
+  const runtime = new Function("useState", "initialSession", `return ${transpile(`const value = ${runtimeInitializer.getText(browserAst)}`).replace(/^const value = /u, "").trim().replace(/;$/u, "")}`)((initial) => initial, values.initialSession);
+  assert.equal(runtime, undefined, "returning Browser never restores app execution consent");
+}
+console.log(JSON.stringify({ ok: true, coverage: ["desktop-latest-target-status-loading", "desktop-network-workspace-clear-cleanup-fences", "desktop-id-cancellation", "mail-scoped-envelope-failure", "mail-node-testnet-compatibility", "mail-complete-indexed-enrichment-warning", "browser-manual-network-cancellation", "browser-root-child-dns-html-cancellation", "browser-proof-url-preservation", "browser-unmount-fence", "computer-browser-independent-reading-network", "computer-browser-latest-request-and-unmount-fences", "computer-browser-strictmode-return-reverification", "computer-browser-no-restored-execution-consent"] }));
 
 const checkpointMatches = appFunction("completeTokenListingHistoryMatchesCheckpoint");
 const stateMatches = appFunction("completeTokenListingHistoryMatchesState", {

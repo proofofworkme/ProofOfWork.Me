@@ -333,6 +333,23 @@
   .account-signal-item { padding-block: 10px; }
   .account-signal-item strong { color: var(--text); font-size: 14px; font-weight: 500; }
   .account-signal-item span { color: var(--text-muted); font-size: var(--text-xs); font-weight: 400; letter-spacing: 0; text-transform: none; }
+  .account-signal-item:has(.account-signal-toggle) { padding: 0; }
+  .account-signal-toggle {
+    align-content: center; background: transparent; border: 0; border-radius: 0;
+    color: inherit; display: grid; gap: 5px; justify-items: start; min-height: 44px;
+    min-width: 44px; padding: 10px 15px; text-align: left; width: 100%;
+  }
+  .account-signal-toggle span { align-items: center; display: flex; gap: 8px; }
+  .account-signal-toggle:focus-visible { outline-offset: -3px; }
+  .account-signal-toggle[aria-expanded="true"] { background: var(--accent-soft); }
+  .account-signal-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+  .account-signal-detail {
+    background: var(--surface-soft); border-bottom: 1px solid var(--border);
+    color: var(--text-muted); font-size: 14px; line-height: 1.5;
+    max-height: 40dvh; overflow: auto; overflow-wrap: anywhere; padding: 12px 16px;
+  }
+  .account-signal-detail strong { color: var(--text); font-weight: 500; }
+
   .status { background: var(--bg); border-color: var(--border); color: var(--text-muted); font-size: 12px; font-weight: 400; }
   .status.good { color: var(--green); }
   .status.bad { color: var(--red); }

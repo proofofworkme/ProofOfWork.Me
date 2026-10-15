@@ -9,11 +9,12 @@ const NETWORK_CHAINS = Object.freeze(Object.fromEntries(
 const NETWORK_LABELS = Object.freeze({ livenet: "Mainnet", testnet: "Testnet3", testnet4: "Testnet4" });
 
 export class WalletConnectionError extends Error {
-  constructor(code, message, stage) {
+  constructor(code, message, stage, options) {
     super(message);
     this.name = "WalletConnectionError";
     this.code = code;
     this.stage = stage;
+    if (options && "cause" in options) this.cause = options.cause;
   }
 }
 
@@ -128,24 +129,52 @@ export function createWalletConnectionController({
     return Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0].trim() : "";
   }
 
+  function isPendingApproval(error) {
+    // -32603 also covers unrelated provider failures. Only this specific UniSat
+    // condition permits the extra read-only recovery probe.
+    return error?.code === -32603 && typeof error.message === "string" &&
+      /^Another approval request is already pending\.?$/u.test(error.message.trim());
+  }
+
+  function pendingApprovalError(cause, accountReadFailed = false) {
+    return new WalletConnectionError(
+      "pending-approval",
+      `${cause.message.trim().replace(/\.$/u, "")} (code ${cause.code}). ${accountReadFailed ? "The current account could not be verified. " : ""}Finish or close that prompt in UniSat, then retry this site's connection. No transaction was requested.`,
+      "accounts",
+      { cause },
+    );
+  }
+
   async function run(attempt) {
     const { wallet, options } = attempt;
     const authorize = options.authorize !== false;
-    const accountMethod = authorize && typeof wallet.requestAccounts === "function" ? "requestAccounts" : "getAccounts";
-    if (typeof wallet[accountMethod] !== "function" || typeof wallet.getAccounts !== "function") {
+    if (typeof wallet.getAccounts !== "function") {
       throw new WalletConnectionError("account-unavailable", "This UniSat provider cannot verify its active account. Update or reopen UniSat, then retry.", "accounts");
     }
-    // A timed-out authorization can remain unresolved even after the extension
-    // has granted access. Retry first probes the already-authorized account;
-    // only an empty probe waits on the original prompt again.
-    let accounts;
+    // A reload loses this controller's prompt map, but the extension may still
+    // have a pending prompt or an already-granted account. Always obtain fresh
+    // origin-scoped evidence before asking for access. Read failure is not an
+    // empty account and must not start another interactive request.
+    // Capture a locally pending prompt before the read: it can settle while an
+    // empty probe is in flight, and retry must still reuse that same result.
     const pendingAuthorization = authorize ? pendingByWallet.get(wallet)?.get("requestAccounts:[]") : undefined;
-    if (pendingAuthorization) {
-      accounts = await call(attempt, "getAccounts", [], "accounts", stageTimeoutMs, "Reading the UniSat account...");
-    }
-    if (!firstAccount(accounts)) {
-      accounts = await call(attempt, accountMethod, [], "accounts", accountMethod === "requestAccounts" ? authorizationTimeoutMs : stageTimeoutMs,
-        accountMethod === "requestAccounts" ? "Waiting for UniSat account approval..." : "Reading the UniSat account...", pendingAuthorization);
+    let accounts = await call(attempt, "getAccounts", [], "accounts", stageTimeoutMs, "Reading the UniSat account...");
+    if (Array.isArray(accounts) && accounts.length === 0 && authorize && typeof wallet.requestAccounts === "function") {
+      try {
+        accounts = await call(attempt, "requestAccounts", [], "accounts", authorizationTimeoutMs, "Waiting for UniSat account approval...", pendingAuthorization);
+      } catch (error) {
+        if (!isPendingApproval(error)) throw error;
+        // The grant may have completed between the probe and the request. One
+        // bounded read can recover it; never repeat the interactive request or
+        // treat the pending error itself as authorization.
+        try {
+          accounts = await call(attempt, "getAccounts", [], "accounts", stageTimeoutMs, "Checking for an approved UniSat account...");
+        } catch {
+          assertCurrent(attempt);
+          throw pendingApprovalError(error, true);
+        }
+        if (!firstAccount(accounts)) throw pendingApprovalError(error);
+      }
     }
     const address = firstAccount(accounts);
     if (!address) throw new WalletConnectionError("no-account", "UniSat did not return an account. Unlock it and approve this site's connection, then retry.", "accounts");

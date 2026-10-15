@@ -7716,6 +7716,22 @@ counts current pending projections separately from retained dropped history.
 A restored exact pending observation preserves its recorded event time and
 transaction first-seen time; current Core admission remains separate.
 
+An omitted pending registration can be classified as a duplicate only from a
+fresh, complete canonical checkpoint and exact Core evidence. The target must
+have a single OP_RETURN carrier containing one paid registration already won
+by a confirmed canonical registration. The verifier binds the raw target and winner transactions to
+their txids, checks the winner's canonical block, and requires the same complete
+checkpoint plus target mempool membership after the reads. Missing evidence,
+pending competitors, mixed actions, new names, index lag or a changing checkpoint
+remain unresolved. The returned invalid decision includes the exact carrier,
+checkpoint and winning registration evidence; the ordinary worker handles that decision.
+Retained dropped history and first-seen times are not manually rewritten.
+
+New-name availability still requires a fresh successful worker proof in addition
+to complete exact-tip confirmed coverage. Its refusal distinguishes incomplete
+coverage, a mismatched canonical checkpoint, and unavailable worker proof.
+Existing confirmed-record reads keep their separate purpose and canonical gate.
+
 `deploy/id-pending-recovery/release.py` captures and merges exactly
 `server/proof-api.mjs` and `scripts/backfill-proof-indexer.mjs` over the accepted
 runtime. Its base is `a0682707aff87213113f4a432795467c99107656`. The guarded

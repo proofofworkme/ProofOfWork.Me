@@ -75490,6 +75490,88 @@ async function idVerifierDeterministicInvalidReason(
   return "";
 }
 
+async function idVerifierPendingDuplicateEvidence(network, txid) {
+  // Missing accepted activity is not invalidity. This independent witness only
+  // rejects registrations already won on the complete confirmed chain; a
+  // pending competitor, incomplete read, or changing checkpoint stays retryable.
+  if (network !== "livenet") return null;
+  try {
+    const firstGate = await canonicalPublicReadGate(network, { force: true });
+    const complete = (gate) => gate?.ok === true && gate.atTip === true &&
+      Number.isSafeInteger(gate.indexedThroughBlock) &&
+      gate.indexedThroughBlock > 0 &&
+      gate.indexedThroughBlock === gate.tipHeight &&
+      /^[0-9a-f]{64}$/u.test(String(gate.canonicalHash ?? "")) &&
+      gate.storedHash === gate.canonicalHash;
+    if (!complete(firstGate)) return null;
+    const target = await fetchTransactionFromBitcoinRpc(txid, network, {
+      bypassCache: true, cacheResult: false, includePrevouts: false,
+      includeRawHex: true,
+    });
+    if (!target || transactionTxid(target) !== txid || transactionConfirmed(target)) return null;
+    const messages = decodedProtocolMessages(target.vout ?? [], ID_PROTOCOL_PREFIX);
+    // The legacy recovery matcher accepts generic invalid kinds. Keep this
+    // repair to a single carrier so it cannot consume another protocol's raw
+    // event; mixed or multiple carriers need their own exact event outcomes.
+    if (messages.length !== 1 ||
+        (target.vout ?? []).filter((output) => output.scriptpubkey_type === "op_return").length !== 1) return null;
+    const events = messages.map((message) =>
+      parseIdEventPayload(message.slice(ID_PROTOCOL_PREFIX.length), network));
+    const registryAddress = registryAddressForNetwork(network);
+    if (events.some((event) => event?.kind !== "register") || !registryAddress ||
+        paymentAmountBeforeIdProtocol(target.vout ?? [], registryAddress) <
+          events.length * ID_REGISTRATION_PRICE_SATS) return null;
+    const winners = [];
+    for (const id of new Set(events.map((event) => event.id))) {
+      const state = await proofIndexIdRecordPayload(network, id);
+      const records = Array.isArray(state?.records) ? state.records : [];
+      const winner = records.length === 1 ? records[0] : null;
+      const winnerTxid = String(winner?.txid ?? "").trim().toLowerCase();
+      const height = winner?.blockHeight;
+      if (winner?.confirmed !== true || winner.network !== network ||
+          normalizePowId(winner.id) !== id || !/^[0-9a-f]{64}$/u.test(winnerTxid) ||
+          winnerTxid === txid || !Number.isSafeInteger(height) || height < 1 ||
+          height > firstGate.indexedThroughBlock ||
+          !/^[0-9a-f]{64}$/u.test(String(winner.blockHash ?? ""))) return null;
+      const confirmed = await fetchTransactionFromBitcoinRpc(winnerTxid, network, {
+        bypassCache: true, cacheResult: false, includePrevouts: false,
+        includeRawHex: true,
+      });
+      if (!confirmed || transactionTxid(confirmed) !== winnerTxid ||
+          !transactionConfirmed(confirmed) ||
+          transactionBlockHash(confirmed) !== winner.blockHash ||
+          await canonicalBlockHashAtHeight(height) !== winner.blockHash) return null;
+      const registrations = decodedProtocolMessages(confirmed.vout ?? [], ID_PROTOCOL_PREFIX)
+        .map((message) => parseIdEventPayload(message.slice(ID_PROTOCOL_PREFIX.length), network));
+      if (!registrations.some((event) => event?.kind === "register" && event.id === id) ||
+          paymentAmountBeforeIdProtocol(confirmed.vout ?? [], registryAddress) <
+            ID_REGISTRATION_PRICE_SATS) return null;
+      winners.push({ id, txid: winnerTxid, blockHeight: height, blockHash: winner.blockHash });
+    }
+    const membership = await bitcoinRpc("getmempoolentry", [txid]);
+    const finalGate = await canonicalPublicReadGate(network, { force: true });
+    if (!membership?.ok || !membership.result || !complete(finalGate) ||
+        finalGate.indexedThroughBlock !== firstGate.indexedThroughBlock ||
+        finalGate.canonicalHash !== firstGate.canonicalHash) return null;
+    return {
+      reason: "ProofOfWork ID registration duplicates an existing confirmed registration.",
+      id: events[0].id,
+      protocol: "pwid1",
+      protocolVout: target.vout.findIndex((output) => output.scriptpubkey_type === "op_return"),
+      recordOrdinal: 0,
+      payload: messages[0],
+      duplicateRegistrationEvidence: {
+        indexedThroughBlock: firstGate.indexedThroughBlock,
+        indexedThroughBlockHash: firstGate.canonicalHash,
+        targetTxid: txid,
+        winners,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function idVerifierPayload(network, txid, options = {}) {
   const normalizedTxid = String(txid ?? "").trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/u.test(normalizedTxid)) {
@@ -75574,12 +75656,16 @@ async function idVerifierPayload(network, txid, options = {}) {
         Number(item?.blockHeight ?? 0) === requiredBlockHeight),
   );
   if (items.length === 0) {
-    const invalidReason = await idVerifierDeterministicInvalidReason(
+    const deterministicReason = await idVerifierDeterministicInvalidReason(
       network,
       bundle,
       normalizedTxid,
       requireConfirmed,
     );
+    const duplicate = !deterministicReason && !requireConfirmed
+      ? await idVerifierPendingDuplicateEvidence(network, normalizedTxid)
+      : null;
+    const invalidReason = deterministicReason || duplicate?.reason || "";
     if (invalidReason) {
       const exactConfirmedItems = requireConfirmed
         ? canonicalConfirmedInvalidVerifierItems(
@@ -75606,6 +75692,7 @@ async function idVerifierPayload(network, txid, options = {}) {
           kind: "id-event-invalid",
           network,
           reason: invalidReason,
+          ...(duplicate ?? {}),
           txid: normalizedTxid,
           valid: false,
         });
@@ -79864,12 +79951,27 @@ async function proveCurrentIdAbsence(network) {
     workerReadiness.ready === true &&
     Number(scan?.readModels?.confirmedIds?.count) > 0;
   if (!current) {
+    const coverageComplete = scan?.scan?.complete === true &&
+      Number(scan?.readModels?.confirmedIds?.count) > 0;
+    const checkpointMatches = Number.isSafeInteger(tipHeight) &&
+      indexedThroughBlock === tipHeight &&
+      String(scan?.scan?.blockHash ?? "").toLowerCase() === tip?.blockHash;
+    const reason = !coverageComplete ? "confirmed-coverage-incomplete"
+      : !checkpointMatches ? "canonical-checkpoint-mismatch"
+      : "worker-proof-unavailable";
     const error = new Error(
-      "ProofOfWork ID availability cannot be proven until the confirmed index reaches the node tip.",
+      reason === "confirmed-coverage-incomplete"
+        ? "ProofOfWork ID availability requires complete confirmed registry coverage."
+        : reason === "canonical-checkpoint-mismatch"
+          ? "ProofOfWork ID availability requires the confirmed index to match the current node tip."
+          : "ProofOfWork ID availability requires a fresh successful worker verification proof.",
     );
     error.statusCode = 503;
     error.details = {
       code: "ID_AVAILABILITY_UNPROVEN",
+      reason,
+      workerFresh: workerReadiness.fresh === true,
+      workerProofReady: workerReadiness.proofReady === true,
       indexedThroughBlock: indexedThroughBlock || null,
       tipHeight: Number.isSafeInteger(tipHeight) ? tipHeight : null,
     };

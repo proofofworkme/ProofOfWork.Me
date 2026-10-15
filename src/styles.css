@@ -1693,13 +1693,13 @@ code {
 .app-header-stack + .app-status-row,
 .app-header-stack + .action-recovery-panel + .app-status-row {
   position: sticky;
-  top: var(--topbar-height);
+  top: var(--app-header-height, var(--topbar-height));
   z-index: var(--sticky-status-z);
 }
 
 .app-header-stack.has-account-stats + .app-status-row,
 .app-header-stack.has-account-stats + .action-recovery-panel + .app-status-row {
-  top: calc(var(--topbar-height) + 44px);
+  top: var(--app-header-height, calc(var(--topbar-height) + 44px));
   z-index: var(--sticky-status-z);
 }
 
@@ -2261,14 +2261,14 @@ select {
 
 .desktop-public-app.has-route-status .app-header-stack + .desktop-route-status {
   position: sticky;
-  top: var(--topbar-height);
+  top: var(--app-header-height, var(--topbar-height));
   z-index: var(--sticky-status-z);
 }
 
 .desktop-public-app.has-route-status
   .app-header-stack.has-account-stats
   + .desktop-route-status {
-  top: calc(var(--topbar-height) + 44px);
+  top: var(--app-header-height, calc(var(--topbar-height) + 44px));
 }
 
 .desktop-public-app .app-footer {

@@ -2601,10 +2601,10 @@ expect(
   /const \[accountChainUtxos,[\s\S]*setAccountChainUtxos\] = useState<MempoolUtxo\[]>/.test(
     app,
   ) &&
-    /fetchAddressApiUtxos\(address,\s*network\)[\s\S]*setAccountChainUtxos\(utxos\)[\s\S]*setAccountChainUtxosLoaded\(true\)/.test(
+    /const \[walletRead, chainRead\] = await Promise\.allSettled\([\s\S]*fetchAddressApiUtxos\(address,\s*network,\s*signal\)[\s\S]*if \(!current\(\)\) return;[\s\S]*setAccountChainUtxos\(chainRead\.value\)[\s\S]*setAccountChainUtxosLoaded\(true\)/.test(
       app,
     ) &&
-    /connectedWalletProofFundingContext[\s\S]*accountChainUtxosLoaded && !accountChainUtxosError[\s\S]*connectedWalletChainProofAvailability\.confirmedBalanceSats[\s\S]*connectedWalletProofAvailability\.spendableSats/.test(
+    /connectedWalletProofFundingContext[\s\S]*accountChainUtxosLoaded && !accountChainUtxosError[\s\S]*connectedWalletChainProofAvailability\.confirmedBalanceSats[\s\S]*protectedSats: connectedWalletProofReadReady && connectedWalletReservationsReady[\s\S]*connectedWalletProofAvailability\.spendableSats/.test(
       app,
     ) &&
     /label: "total confirmed"[\s\S]*label: "spendable proofs"[\s\S]*label: "protected proofs"/.test(
@@ -2886,19 +2886,19 @@ expect(
 );
 expect(
   "route status rows stick under the shared topbar",
-  /\.desktop-public-app\.has-route-status\s+\.app-header-stack\s*\+\s*\.desktop-route-status\s*\{[\s\S]*position:\s*sticky[\s\S]*top:\s*var\(--topbar-height\)[\s\S]*z-index:\s*var\(--sticky-status-z\)/.test(
+  /\.desktop-public-app\.has-route-status\s+\.app-header-stack\s*\+\s*\.desktop-route-status\s*\{[\s\S]*position:\s*sticky[\s\S]*top:\s*var\(--app-header-height, var\(--topbar-height\)\)[\s\S]*z-index:\s*var\(--sticky-status-z\)/.test(
     css,
   ) &&
     [
       ".app-header-stack + .app-status-row",
       ".app-header-stack + .action-recovery-panel + .app-status-row",
     ].every(selector => /position:\s*sticky/.test(cssSelectorBlock(selector)) &&
-      /top:\s*var\(--topbar-height\)/.test(cssSelectorBlock(selector)) &&
+      /top:\s*var\(--app-header-height, var\(--topbar-height\)\)/.test(cssSelectorBlock(selector)) &&
       /z-index:\s*var\(--sticky-status-z\)/.test(cssSelectorBlock(selector))) &&
     [
       ".app-header-stack.has-account-stats + .app-status-row",
       ".app-header-stack.has-account-stats + .action-recovery-panel + .app-status-row",
-    ].every(selector => /top:\s*calc\(var\(--topbar-height\)\s*\+\s*44px\)/.test(cssSelectorBlock(selector)) &&
+    ].every(selector => /top:\s*var\(--app-header-height, calc\(var\(--topbar-height\)\s*\+\s*44px\)\)/.test(cssSelectorBlock(selector)) &&
       /z-index:\s*var\(--sticky-status-z\)/.test(cssSelectorBlock(selector))),
 );
 expect(

@@ -1,5 +1,5 @@
-import { LogOut, RefreshCw, Wallet } from "lucide-react";
-import type { ReactNode } from "react";
+import { ChevronDown, LogOut, RefreshCw, Wallet } from "lucide-react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { HOME_APP_URL, LOCAL_HOME_APP_URL } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
 import { shortAddress } from "../../functions";
@@ -52,9 +52,32 @@ export function AppHeader({
   subtitle?: string;
   title: string;
 }) {
+  const [expandedStatLabel, setExpandedStatLabel] = useState<string>();
+  const accountDetailId = useId();
+  const headerStackRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const header = headerStackRef.current;
+    const parent = header?.parentElement;
+    if (!header || !parent) return;
+    const previousHeight = parent.style.getPropertyValue("--app-header-height");
+    const measure = () => parent.style.setProperty("--app-header-height", `${Math.ceil(header.getBoundingClientRect().height)}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    return () => {
+      observer.disconnect();
+      if (previousHeight) parent.style.setProperty("--app-header-height", previousHeight);
+      else parent.style.removeProperty("--app-header-height");
+    };
+  }, []);
+  const dismissAccountDetail = () => {
+    headerStackRef.current?.querySelector<HTMLButtonElement>('.account-signal-toggle[aria-expanded="true"]')?.focus();
+    setExpandedStatLabel(undefined);
+  };
   const visibleAccountStats = accountStats.filter(
     (stat) => stat.label.trim() && stat.value.trim(),
   );
+  const expandedStat = visibleAccountStats.find((stat) => stat.label === expandedStatLabel && stat.detail);
   const networkOptions = network && onNetworkChange
     ? [
         {
@@ -83,6 +106,7 @@ export function AppHeader({
   return (
     <>
     <div
+      ref={headerStackRef}
       className={
         visibleAccountStats.length
           ? "app-header-stack has-account-stats"
@@ -186,14 +210,32 @@ export function AppHeader({
                   ? `account-signal-item is-${stat.tone}`
                   : "account-signal-item"
               }
-              key={`${stat.label}-${stat.value}`}
+              key={stat.label}
               role="listitem"
-              title={stat.detail}
             >
-              <strong>{stat.value}</strong>
-              <span>{stat.label}</span>
+              {stat.detail ? (
+                <button
+                  className="account-signal-toggle"
+                  type="button"
+                  aria-controls={accountDetailId}
+                  aria-expanded={expandedStat?.label === stat.label}
+                  aria-label={`${stat.label}: ${stat.value}. Details`}
+                  onClick={() => setExpandedStatLabel(expandedStat?.label === stat.label ? undefined : stat.label)}
+                  onKeyDown={(event) => { if (event.key === "Escape") dismissAccountDetail(); }}
+                >
+                  <strong>{stat.value}</strong>
+                  <span>{stat.label}<ChevronDown aria-hidden="true" size={14} /></span>
+                </button>
+              ) : <><strong>{stat.value}</strong><span>{stat.label}</span></>}
             </div>
           ))}
+        </div>
+      ) : null}
+      {visibleAccountStats.length ? (
+        <div className="account-signal-detail" id={accountDetailId} hidden={!expandedStat}
+          role="region" aria-label="Account details" tabIndex={expandedStat ? 0 : undefined}
+          onKeyDown={(event) => { if (event.key === "Escape") dismissAccountDetail(); }}>
+          {expandedStat ? <><strong>{expandedStat.label}: {expandedStat.value}.</strong> {expandedStat.detail}</> : null}
         </div>
       ) : null}
       <span className="skip-target" id="main-content" tabIndex={-1} />

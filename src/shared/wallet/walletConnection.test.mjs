@@ -8,17 +8,27 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-function provider(overrides = {}) {
+function provider(overrides = {}, { connected = true } = {}) {
   const calls = [];
   const wallet = {
     requestAccounts: async () => { calls.push("requestAccounts"); return [ADDRESS]; },
-    getAccounts: async () => { calls.push("getAccounts"); return [ADDRESS]; },
+    getAccounts: async () => { calls.push("getAccounts"); return connected ? [ADDRESS] : []; },
     getChain: async () => { calls.push("getChain"); return { enum: "BITCOIN_MAINNET" }; },
     ...overrides,
   };
+  if (typeof wallet.requestAccounts === "function") {
+    const request = wallet.requestAccounts;
+    wallet.requestAccounts = async () => {
+      const accounts = await request();
+      connected = true;
+      return accounts;
+    };
+  }
   return { wallet, calls };
 }
 const createFast = () => createWalletConnectionController({ authorizationTimeoutMs: 25, stageTimeoutMs: 25, switchTimeoutMs: 25 });
+const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
+const pendingApproval = () => Object.assign(new Error("Another approval request is already pending"), { code: -32603 });
 
 test("connection completes only after fresh account and final network verification", async () => {
   const { wallet, calls } = provider();
@@ -26,7 +36,7 @@ test("connection completes only after fresh account and final network verificati
   const controller = createFast();
   const result = await controller.connect(wallet, { onStage: ({ stage }) => stages.push(stage) });
   assert.deepEqual(result, { address: ADDRESS, network: "livenet" });
-  assert.deepEqual(calls, ["requestAccounts", "getChain", "getAccounts", "getChain"]);
+  assert.deepEqual(calls, ["getAccounts", "getChain", "getAccounts", "getChain"]);
   assert.deepEqual(stages, ["accounts", "network", "verify", "network"]);
   assert.equal(controller.isConnecting, false);
 });
@@ -34,12 +44,12 @@ test("connection completes only after fresh account and final network verificati
 test("simultaneous clicks own one attempt and authorization prompt", async () => {
   const gate = deferred();
   let requests = 0;
-  const { wallet } = provider({ requestAccounts: () => { requests += 1; return gate.promise; } });
+  const { wallet } = provider({ requestAccounts: () => { requests += 1; return gate.promise; } }, { connected: false });
   const controller = createFast();
   const first = controller.connect(wallet);
   const second = controller.connect(wallet);
   assert.equal(first, second);
-  await Promise.resolve(); await Promise.resolve();
+  await nextTurn();
   assert.equal(controller.isConnecting, true);
   assert.equal(requests, 1);
   gate.resolve([ADDRESS]);
@@ -86,23 +96,23 @@ test("late authorization cannot start network calls or publish stages after canc
   const gate = deferred();
   let networks = 0;
   const stages = [];
-  const { wallet } = provider({ requestAccounts: () => gate.promise, getChain: async () => { networks += 1; return { enum: "BITCOIN_MAINNET" }; } });
+  const { wallet } = provider({ requestAccounts: () => gate.promise, getChain: async () => { networks += 1; return { enum: "BITCOIN_MAINNET" }; } }, { connected: false });
   const controller = createFast();
   const old = controller.connect(wallet, { onStage: ({ stage }) => stages.push(stage) });
-  await Promise.resolve(); await Promise.resolve();
+  await nextTurn();
   controller.invalidate();
   await assert.rejects(old, (error) => error.code === "stale");
   gate.resolve([ADDRESS]);
   await Promise.resolve(); await Promise.resolve();
   assert.equal(networks, 0);
-  assert.deepEqual(stages, ["accounts"]);
+  assert.deepEqual(stages, ["accounts", "accounts"]);
   assert.equal(controller.isConnecting, false);
 });
 
 test("a stale completion cannot clear a newer attempt's ownership", async () => {
   const oldGate = deferred(); const newGate = deferred();
-  const oldWallet = provider({ requestAccounts: () => oldGate.promise }).wallet;
-  const newWallet = provider({ requestAccounts: () => newGate.promise }).wallet;
+  const oldWallet = provider({ requestAccounts: () => oldGate.promise }, { connected: false }).wallet;
+  const newWallet = provider({ requestAccounts: () => newGate.promise }, { connected: false }).wallet;
   const controller = createFast();
   const first = controller.connect(oldWallet);
   const failed = assert.rejects(first, (error) => error.code === "stale");
@@ -197,7 +207,8 @@ test("Testnet4 cannot be claimed through the ambiguous legacy switch API", async
 });
 
 test("account changes during network verification fail closed", async () => {
-  const { wallet } = provider({ getAccounts: async () => ["bc1qdifferent"] });
+  let reads = 0;
+  const { wallet } = provider({ getAccounts: async () => [++reads === 1 ? ADDRESS : "bc1qdifferent"] });
   await assert.rejects(createFast().connect(wallet), (error) => error.code === "account-changed");
 });
 
@@ -212,7 +223,7 @@ test("a rejected authorization recovers on a later independent attempt", async (
   const { wallet } = provider({ requestAccounts: async () => {
     if (++requests === 1) throw new Error("User rejected the request.");
     return [ADDRESS];
-  } });
+  } }, { connected: false });
   const controller = createFast();
   await assert.rejects(controller.connect(wallet), /User rejected/u);
   assert.equal(controller.isConnecting, false);
@@ -221,10 +232,10 @@ test("a rejected authorization recovers on a later independent attempt", async (
 
 test("external account/workspace generations fence subsequent reads and results", async () => {
   const gate = deferred(); let current = true; let networks = 0;
-  const { wallet } = provider({ requestAccounts: () => gate.promise, getChain: async () => { networks += 1; return { enum: "BITCOIN_MAINNET" }; } });
+  const { wallet } = provider({ requestAccounts: () => gate.promise, getChain: async () => { networks += 1; return { enum: "BITCOIN_MAINNET" }; } }, { connected: false });
   const controller = createFast();
   const result = controller.connect(wallet, { isCurrent: () => current });
-  await Promise.resolve(); await Promise.resolve();
+  await nextTurn();
   current = false;
   gate.resolve([ADDRESS]);
   await assert.rejects(result, (error) => error.code === "stale");
@@ -238,7 +249,7 @@ test("fresh account verification is required even when authorization returned an
 
 test("late provider rejection after a deadline is contained", async () => {
   const gate = deferred();
-  const { wallet } = provider({ requestAccounts: () => gate.promise });
+  const { wallet } = provider({ requestAccounts: () => gate.promise }, { connected: false });
   const controller = createFast();
   await assert.rejects(controller.connect(wallet), (error) => error.code === "timeout");
   gate.reject(new Error("Late user rejection"));
@@ -248,11 +259,11 @@ test("late provider rejection after a deadline is contained", async () => {
 
 test("replacement immediately settles externally stale ownership instead of waiting for its deadline", async () => {
   const gate = deferred(); let current = true;
-  const { wallet } = provider({ requestAccounts: () => gate.promise });
+  const { wallet } = provider({ requestAccounts: () => gate.promise }, { connected: false });
   const controller = createWalletConnectionController({ authorizationTimeoutMs: 10_000 });
   const obsolete = controller.connect(wallet, { isCurrent: () => current });
   const rejected = assert.rejects(obsolete, (error) => error.code === "stale");
-  await Promise.resolve(); await Promise.resolve();
+  await nextTurn();
   current = false;
   const freshWallet = provider().wallet;
   const replacement = controller.connect(freshWallet);
@@ -264,11 +275,200 @@ test("replacement immediately settles externally stale ownership instead of wait
 
 test("provider rejection is converted to stale after an external generation change", async () => {
   const gate = deferred(); let current = true;
-  const { wallet } = provider({ requestAccounts: () => gate.promise });
+  const { wallet } = provider({ requestAccounts: () => gate.promise }, { connected: false });
   const controller = createFast();
   const obsolete = controller.connect(wallet, { isCurrent: () => current });
-  await Promise.resolve(); await Promise.resolve();
+  await nextTurn();
   current = false;
   gate.reject(new Error("Old account failure"));
   await assert.rejects(obsolete, (error) => error.code === "stale");
+});
+
+test("a fresh controller recovers existing authorization without entering an external pending prompt", async () => {
+  let requests = 0;
+  const { wallet, calls } = provider({ requestAccounts: async () => { requests += 1; throw pendingApproval(); } });
+  assert.deepEqual(await createFast().connect(wallet), { address: ADDRESS, network: "livenet" });
+  assert.equal(requests, 0);
+  assert.deepEqual(calls, ["getAccounts", "getChain", "getAccounts", "getChain"]);
+});
+
+test("an empty fresh account read requests access and verifies the resulting account independently", async () => {
+  const { wallet, calls } = provider({}, { connected: false });
+  assert.deepEqual(await createFast().connect(wallet), { address: ADDRESS, network: "livenet" });
+  assert.deepEqual(calls, ["getAccounts", "requestAccounts", "getChain", "getAccounts", "getChain"]);
+});
+
+test("a pending approval without a granted account reports recovery detail after one bounded probe", async () => {
+  const pending = pendingApproval(); let requests = 0;
+  const { wallet, calls } = provider({ requestAccounts: async () => { requests += 1; throw pending; } }, { connected: false });
+  const controller = createFast();
+  await assert.rejects(controller.connect(wallet), (error) => {
+    assert.equal(error.code, "pending-approval");
+    assert.equal(error.stage, "accounts");
+    assert.equal(error.cause, pending);
+    assert.match(error.message, /Another approval request is already pending \(code -32603\)/u);
+    assert.match(error.message, /Finish or close that prompt in UniSat, then retry this site's connection/u);
+    return true;
+  });
+  assert.equal(requests, 1);
+  assert.deepEqual(calls, ["getAccounts", "getAccounts"]);
+  assert.equal(controller.isConnecting, false);
+});
+
+test("an approval granted between the initial read and the pending rejection can recover", async () => {
+  let authorized = false; let reads = 0; let requests = 0;
+  const { wallet } = provider({
+    getAccounts: async () => { reads += 1; return authorized ? [ADDRESS] : []; },
+    requestAccounts: async () => { requests += 1; authorized = true; throw pendingApproval(); },
+  });
+  assert.deepEqual(await createFast().connect(wallet), { address: ADDRESS, network: "livenet" });
+  assert.equal(reads, 3); // initial, recovery, independent final verification
+  assert.equal(requests, 1);
+});
+
+test("generic internal errors and other provider errors never trigger pending-approval recovery", async () => {
+  for (const original of [
+    Object.assign(new Error("Network error: Failed to fetch"), { code: -32603 }),
+    Object.assign(new Error("Another approval request is already pending"), { code: 4001 }),
+    Object.assign(new Error("A different error mentions Another approval request is already pending"), { code: -32603 }),
+  ]) {
+    const { wallet, calls } = provider({ requestAccounts: async () => { throw original; } }, { connected: false });
+    await assert.rejects(createFast().connect(wallet), (error) => error === original);
+    assert.deepEqual(calls, ["getAccounts"]);
+  }
+});
+
+test("a failed or malformed initial account read cannot authorize an interactive request", async () => {
+  const failure = new Error("Account transport unavailable");
+  for (const getAccounts of [
+    async () => { throw failure; },
+    async () => undefined,
+    async () => null,
+    async () => [""],
+    async () => "not an account array",
+  ]) {
+    let requests = 0;
+    const { wallet } = provider({ getAccounts, requestAccounts: async () => { requests += 1; return [ADDRESS]; } });
+    await assert.rejects(createFast().connect(wallet), (error) => error === failure || error.code === "no-account");
+    assert.equal(requests, 0);
+  }
+});
+
+test("the initial account probe is bounded and a retry performs a fresh read", async () => {
+  const gate = deferred(); let reads = 0; let requests = 0;
+  const { wallet } = provider({
+    getAccounts: async () => ++reads === 1 ? gate.promise : [ADDRESS],
+    requestAccounts: async () => { requests += 1; return [ADDRESS]; },
+  });
+  const controller = createFast();
+  await assert.rejects(controller.connect(wallet), (error) => error.code === "timeout" && error.stage === "accounts");
+  assert.equal(controller.isConnecting, false);
+  assert.deepEqual(await controller.connect(wallet), { address: ADDRESS, network: "livenet" });
+  assert.equal(requests, 0);
+  gate.resolve(["bc1qobsolete"]);
+  await nextTurn();
+  assert.equal(controller.isConnecting, false);
+});
+
+test("an unresolved pending-approval recovery probe releases local busy state without another prompt", async () => {
+  const gate = deferred(); const pending = pendingApproval(); let reads = 0; let requests = 0;
+  const { wallet } = provider({
+    getAccounts: async () => ++reads === 1 ? [] : gate.promise,
+    requestAccounts: async () => { requests += 1; throw pending; },
+  });
+  const controller = createFast();
+  await assert.rejects(controller.connect(wallet), (error) => error.code === "pending-approval" && error.cause === pending && /could not be verified/u.test(error.message));
+  assert.equal(reads, 2);
+  assert.equal(requests, 1);
+  assert.equal(controller.isConnecting, false);
+  gate.resolve([ADDRESS]);
+  await nextTurn();
+  assert.equal(controller.isConnecting, false);
+});
+
+test("pending-approval recovery still rejects a changed final account", async () => {
+  let reads = 0;
+  const { wallet } = provider({
+    getAccounts: async () => ++reads === 1 ? [] : [reads === 2 ? ADDRESS : "bc1qdifferent"],
+    requestAccounts: async () => { throw pendingApproval(); },
+  });
+  await assert.rejects(createFast().connect(wallet), (error) => error.code === "account-changed");
+});
+
+test("pending-approval recovery preserves required-network and final-network checks", async () => {
+  let reads = 0;
+  const required = provider({
+    getAccounts: async () => ++reads === 1 ? [] : [ADDRESS],
+    requestAccounts: async () => { throw pendingApproval(); },
+    getChain: async () => ({ enum: "BITCOIN_TESTNET" }),
+    switchChain: async () => undefined,
+  }).wallet;
+  await assert.rejects(createFast().connect(required, { requiredNetwork: "livenet" }), (error) => error.code === "network-mismatch");
+
+  let accountReads = 0; let networks = 0;
+  const changed = provider({
+    getAccounts: async () => ++accountReads === 1 ? [] : [ADDRESS],
+    requestAccounts: async () => { throw pendingApproval(); },
+    getChain: async () => ({ enum: ++networks === 1 ? "BITCOIN_MAINNET" : "BITCOIN_TESTNET" }),
+  }).wallet;
+  await assert.rejects(createFast().connect(changed), (error) => error.code === "network-changed");
+});
+
+test("passive empty-account synchronization never opens an approval prompt", async () => {
+  const { wallet, calls } = provider({}, { connected: false });
+  await assert.rejects(createFast().connect(wallet, { authorize: false }), (error) => error.code === "no-account");
+  assert.deepEqual(calls, ["getAccounts"]);
+});
+
+test("independent controllers verify existing authorization without issuing duplicate prompts", async () => {
+  let requests = 0;
+  const { wallet } = provider({ requestAccounts: async () => { requests += 1; throw pendingApproval(); } });
+  assert.deepEqual(await Promise.all([createFast().connect(wallet), createFast().connect(wallet)]), [
+    { address: ADDRESS, network: "livenet" },
+    { address: ADDRESS, network: "livenet" },
+  ]);
+  assert.equal(requests, 0);
+});
+
+test("independent controllers cannot assume a shared prompt grants access, then recover its fresh grant", async () => {
+  const gate = deferred(); let authorized = false; let requests = 0;
+  const { wallet } = provider({
+    getAccounts: async () => authorized ? [ADDRESS] : [],
+    requestAccounts: () => { requests += 1; return requests === 1 ? gate.promise : Promise.reject(pendingApproval()); },
+  });
+  const firstController = createFast(); const secondController = createFast();
+  const firstFailure = assert.rejects(firstController.connect(wallet), (error) => error.code === "timeout");
+  await nextTurn();
+  await assert.rejects(secondController.connect(wallet), (error) => error.code === "pending-approval");
+  await firstFailure;
+  assert.equal(requests, 2); // independent controllers have no shared extension semaphore
+  authorized = true;
+  assert.deepEqual(await secondController.connect(wallet), { address: ADDRESS, network: "livenet" });
+  assert.equal(requests, 2);
+  gate.reject(new Error("The old prompt was dismissed"));
+  await nextTurn();
+  assert.equal(firstController.isConnecting, false);
+  assert.equal(secondController.isConnecting, false);
+});
+
+test("cancelling a pending-approval recovery probe fences late reads and stages", async () => {
+  const gate = deferred(); let reads = 0; let networks = 0;
+  const stages = [];
+  const { wallet } = provider({
+    getAccounts: async () => ++reads === 1 ? [] : gate.promise,
+    requestAccounts: async () => { throw pendingApproval(); },
+    getChain: async () => { networks += 1; return { enum: "BITCOIN_MAINNET" }; },
+  });
+  const controller = createFast();
+  const attempt = controller.connect(wallet, { onStage: ({ message }) => stages.push(message) });
+  const stale = assert.rejects(attempt, (error) => error.code === "stale");
+  await nextTurn();
+  assert.equal(reads, 2);
+  controller.invalidate();
+  await stale;
+  const stageCount = stages.length;
+  gate.resolve([ADDRESS]);
+  await nextTurn();
+  assert.equal(networks, 0);
+  assert.equal(stages.length, stageCount);
 });

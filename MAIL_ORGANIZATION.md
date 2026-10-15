@@ -981,6 +981,15 @@ Jobs at `jobs.proofofwork.me` and Computer `/?folder=jobs` connects public work 
 ### Display-read lifecycle and connection recovery
 
 Account displays retain their verified values during refresh or unavailability.
+Current spendable/protected proof classifications require a successful curated
+wallet read and the relevant reservation evidence. A failed refresh cannot mix
+old spendability with a new node total or present unknown funds as protected.
+Prior wallet amounts remain explicitly last verified, separate from node total
+evidence. Connected-account summaries disclose exact values, source and failure
+details through keyboard- and touch-accessible controls.
+The curated-output display consumer stops waiting after 15 seconds; a stalled
+extension read cannot indefinitely hold a completed node read or the next
+display refresh. This deadline does not replace transaction admission.
 Their automatic UTXO, full ID reservation and separate credit/WORK/POWB/INCB
 lanes pause while hidden and catch up once on return. A workspace/account/network
 change cancels obsolete display work. Identical display HTTP reads can share
@@ -993,7 +1002,11 @@ already serving another consumer retain their existing deadline and validity.
 UniSat connection reports bounded account/network stages and releases its busy
 control before API hydration. Retry owns one local attempt, ignores obsolete
 completion, rechecks active account/network, and can recover already-granted
-access from an unresolved authorization prompt. A local timeout cannot close an
+access from an unresolved authorization prompt or a replaced page. Explicit
+Connect first probes authorized accounts; a specific pending-approval refusal
+permits one fresh account probe, never repeated approval attempts or inferred
+authority. Unresolved approvals are reused only within their owning controller.
+A local timeout cannot close an
 extension prompt. Connection and cached display data do not authorize spending;
 existing fresh admission, reservation and local signing checks remain required.
 Drafts, contacts, folders, backups and local recovery evidence are unchanged.

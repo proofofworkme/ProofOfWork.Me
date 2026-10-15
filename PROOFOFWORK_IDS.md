@@ -276,6 +276,7 @@ Rules:
 - Pending `u`, `t`, `list5`, `seal5`, `delist5`, and `buy5` events should be exposed separately from confirmed records. The sender/current owner sees outgoing events; the new owner or new receiver sees incoming events; marketplace participants see listing, sealing, delisting, and purchase events that touch their wallet.
 - The compose flow must not route mail to a pending ID. IDs are sendable only after a confirmed registry record resolves to a receive address.
 - Public Desktop search follows the same confirmed-only ID resolver rule.
+- Desktop and Pages resolve existing confirmed records with the confirmed-ownership read purpose. They do not request proof that a new name is available. Exact canonical checkpoint checks still apply; missing names require strict absence proof, and pending names never become routable. New registration retains its separate full availability and worker-readiness requirements.
 - Duplicate confirmed registrations are ignored by the resolver.
 - Registry scans must paginate full confirmed address history and merge mempool transactions before applying first-confirmed-wins. Reading only the first mempool.space address page can hide older confirmed winners and make duplicates look available or pending.
 - Production registry reads should go through the ProofOfWork OP_RETURN API. Stable confirmed registry records, activity, listings, and sales can read from the proof index database, with canonical node/API fallback for fresh reads, pending visibility, rechecks before broadcast, and edge verification.

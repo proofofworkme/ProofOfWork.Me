@@ -47,6 +47,11 @@ provenance describes the imported record; it does not make later local edits
 chain-confirmed. Unavailable or pending identity records cannot become resolved
 identity markup.
 
+Existing identity resolution uses the confirmed-record read purpose, preserving
+the canonical checkpoint checks without asking for new-name availability.
+Missing or pending records remain unavailable for insertion. Registration and
+transaction admission retain their independent stricter checks.
+
 Pages uses the first-party API readers already used by Computer, Files, IDs,
 and Browser. HTML publication introduces no registration, identity mutation,
 registry fee, or new external content carrier. The separately gated DNS link

@@ -22699,6 +22699,7 @@ export default function App() {
   }, [activeWalletActionScopeKey, address, setStatusForWorkspace]);
   const [accountUtxos, setAccountUtxos] = useState<MempoolUtxo[]>([]);
   const [accountUtxosLoaded, setAccountUtxosLoaded] = useState(false);
+  const [accountUtxosRefreshing, setAccountUtxosRefreshing] = useState(false);
   const [accountUtxosError, setAccountUtxosError] = useState("");
   const [accountChainUtxos, setAccountChainUtxos] = useState<MempoolUtxo[]>(
     [],
@@ -25528,6 +25529,9 @@ export default function App() {
     connectedWalletReservedOutpoints,
   ]);
 
+  const connectedWalletProofReadReady =
+    accountUtxosLoaded && !accountUtxosError && !accountUtxosRefreshing;
+
   const connectedWalletProofFundingContext = useMemo(() => {
     const chainTotalReady =
       accountChainUtxosLoaded && !accountChainUtxosError;
@@ -25536,15 +25540,17 @@ export default function App() {
       : connectedWalletProofAvailability.confirmedBalanceSats;
     return {
       confirmedBalanceSats,
-      protectedSats: Math.max(
-        0,
-        confirmedBalanceSats - connectedWalletProofAvailability.spendableSats,
-      ),
+      // Unavailable or older curated evidence cannot classify a newer node total.
+      protectedSats: connectedWalletProofReadReady && connectedWalletReservationsReady
+        ? Math.max(0, confirmedBalanceSats - connectedWalletProofAvailability.spendableSats)
+        : 0,
       spendableSats: connectedWalletProofAvailability.spendableSats,
     };
   }, [
     accountChainUtxosError,
     accountChainUtxosLoaded,
+    connectedWalletProofReadReady,
+    connectedWalletReservationsReady,
     connectedWalletChainProofAvailability.confirmedBalanceSats,
     connectedWalletProofAvailability.confirmedBalanceSats,
     connectedWalletProofAvailability.spendableSats,
@@ -25559,9 +25565,11 @@ export default function App() {
       reservedListingUtxos,
       spendableSats,
       spendableUtxos,
-      unconfirmedSats,
-      unconfirmedUtxos,
+      unconfirmedSats: walletUnconfirmedSats,
+      unconfirmedUtxos: walletUnconfirmedUtxos,
     } = connectedWalletProofAvailability;
+    const unconfirmedSats = connectedWalletProofReadReady ? walletUnconfirmedSats : 0;
+    const unconfirmedUtxos = connectedWalletProofReadReady ? walletUnconfirmedUtxos : [];
     const chainTotalReady =
       accountChainUtxosLoaded && !accountChainUtxosError;
     const confirmedBalanceSats =
@@ -25638,18 +25646,21 @@ export default function App() {
       pendingCreditEvents;
     const stats: AppHeaderAccountStat[] = [];
 
-    if (!accountUtxosLoaded || accountUtxosError) {
+    if (!connectedWalletProofReadReady) {
       stats.push({
-        detail:
-          accountUtxosError ||
-          "Waiting for the first-party node to verify wallet UTXOs.",
+        detail: [
+          accountUtxosError || "Waiting for UniSat-curated outputs and the first-party node to verify wallet UTXOs.",
+          accountUtxosLoaded
+            ? `Last verified curated wallet total: ${connectedWalletProofAvailability.confirmedBalanceSats.toLocaleString()} confirmed proofs. Current spendability and protected value are not verified.`
+            : "Current spendability and protected value are not verified.",
+        ].join(" "),
         label: "wallet proofs",
         tone: "pending",
         value: accountUtxosError
           ? accountUtxosLoaded
             ? "Last verified"
             : "Unavailable"
-          : "Loading",
+          : accountUtxosLoaded ? "Refreshing" : "Loading",
       });
     }
 
@@ -25707,13 +25718,15 @@ export default function App() {
       });
     }
 
-    if (confirmedBalanceSats > 0) {
+    if (confirmedBalanceSats > 0 && (chainTotalReady || connectedWalletProofReadReady)) {
       stats.push({
         detail: chainTotalReady
-          ? connectedWalletReservationsReady && protectedSats > 0
+          ? connectedWalletProofReadReady && connectedWalletReservationsReady && protectedSats > 0
             ? `${spendableSats.toLocaleString()} wallet-spendable proofs; ${protectedSats.toLocaleString()} confirmed proofs are protected or unavailable in UniSat.`
             : "Full-node confirmed UTXO value for the connected address."
-          : "Confirmed UniSat wallet UTXO value. Full-node total is still loading.",
+          : accountChainUtxosError
+            ? `Confirmed UniSat wallet UTXO value. Full-node total is unavailable: ${accountChainUtxosError}`
+            : "Confirmed UniSat wallet UTXO value. Full-node total is still loading.",
         label: "total confirmed",
         tone: "strong",
         value: `${confirmedBalanceSats.toLocaleString()} proofs`,
@@ -25723,7 +25736,7 @@ export default function App() {
     if (!connectedWalletReservationsReady) {
       stats.push({ label: "spendable proofs", value: connectedWalletReservationsError ? "Unavailable" : "Verifying reservations", tone: "pending", detail: connectedWalletReservationsError || "Waiting for complete ID and credit sale-ticket reservations." });
     }
-    if (connectedWalletReservationsReady && spendableUtxos.length > 0) {
+    if (connectedWalletProofReadReady && connectedWalletReservationsReady && spendableUtxos.length > 0) {
       stats.push({
         detail: `${spendableUtxos.length.toLocaleString()} UniSat-signable confirmed UTXO${spendableUtxos.length === 1 ? "" : "s"}.${reservedListingUtxos.length > 0 ? ` ${reservedListingUtxos.length.toLocaleString()} active listing anchor${reservedListingUtxos.length === 1 ? " is" : "s are"} reserved.` : ""}`,
         label: "spendable proofs",
@@ -25731,7 +25744,7 @@ export default function App() {
       });
     }
 
-    if (connectedWalletReservationsReady && protectedSats > 0) {
+    if (connectedWalletProofReadReady && connectedWalletReservationsReady && protectedSats > 0) {
       stats.push({
         detail:
           "Confirmed by the node, but not selected for signing because UniSat marks the output unavailable or ProofOfWork has reserved it.",
@@ -25915,6 +25928,7 @@ export default function App() {
     accountTokenLaneStatuses,
     accountUtxosError,
     accountUtxosLoaded,
+    connectedWalletProofReadReady,
     accountWalletBalances,
     address,
     allFileMessages,
@@ -26670,6 +26684,7 @@ export default function App() {
     if (!address) {
       setAccountUtxos([]);
       setAccountUtxosLoaded(false);
+      setAccountUtxosRefreshing(false);
       setAccountUtxosError("");
       setAccountChainUtxos([]);
       setAccountChainUtxosLoaded(false);
@@ -26682,30 +26697,38 @@ export default function App() {
     const loadAccountUtxos = async (signal: AbortSignal) => {
       const currentRequestId = ++requestId;
       const current = () => !cancelled && !signal.aborted && currentRequestId === requestId;
-      await Promise.all([
-        fetchUtxos(address, network, signal)
-          .then((utxos) => {
-            if (current()) {
-              setAccountUtxos(utxos);
-              setAccountUtxosLoaded(true);
-              setAccountUtxosError("");
-            }
-          })
-          .catch((error) => {
-            if (current()) setAccountUtxosError(errorMessage(error, "Wallet UTXOs are unavailable."));
-          }),
-        fetchAddressApiUtxos(address, network, signal)
-          .then((utxos) => {
-            if (current()) {
-              setAccountChainUtxos(utxos);
-              setAccountChainUtxosLoaded(true);
-              setAccountChainUtxosError("");
-            }
-          })
-          .catch((error) => {
-            if (current()) setAccountChainUtxosError(errorMessage(error, "Full-node wallet UTXOs are unavailable."));
-          }),
+      setAccountUtxosRefreshing(true);
+      // Bound only this display consumer. A stuck extension RPC must not hold
+      // the node total or the next refresh forever; signing reads stay separate.
+      const walletController = new AbortController();
+      const walletSignal = AbortSignal.any([signal, walletController.signal]);
+      const walletTimeout = globalThis.setTimeout(() => {
+        walletController.abort(new Error("UniSat wallet outputs did not respond within 15 seconds. Current spendability is unavailable."));
+      }, 15_000);
+      const walletReadPromise = consumeDisplayRead(fetchUtxos(address, network, walletSignal), walletSignal)
+        .finally(() => globalThis.clearTimeout(walletTimeout));
+      const [walletRead, chainRead] = await Promise.allSettled([
+        walletReadPromise,
+        fetchAddressApiUtxos(address, network, signal),
       ]);
+      if (!current()) return;
+      // Keep independent last-good evidence, but publish the completed read pair
+      // together so an old curated read cannot classify a newly loaded node total.
+      if (walletRead.status === "fulfilled") {
+        setAccountUtxos(walletRead.value);
+        setAccountUtxosLoaded(true);
+        setAccountUtxosError("");
+      } else {
+        setAccountUtxosError(errorMessage(walletRead.reason, "Wallet UTXOs are unavailable."));
+      }
+      if (chainRead.status === "fulfilled") {
+        setAccountChainUtxos(chainRead.value);
+        setAccountChainUtxosLoaded(true);
+        setAccountChainUtxosError("");
+      } else {
+        setAccountChainUtxosError(errorMessage(chainRead.reason, "Full-node wallet UTXOs are unavailable."));
+      }
+      setAccountUtxosRefreshing(false);
     };
     setAccountUtxos([]);
     setAccountUtxosLoaded(false);
@@ -28619,7 +28642,7 @@ export default function App() {
 
   async function resolvePagesIdentity(id: string) {
     if (!registryAddressForNetwork(network)) throw new Error("Confirmed ProofOfWork IDs are unavailable on this network.");
-    const state = await fetchIdRecordState(network, id);
+    const state = await fetchIdRecordState(network, id, undefined, "confirmed-ownership");
     const record = state.record;
     if (!record?.confirmed || record.network !== network) {
       throw new Error("This ID has no current confirmed registry record. Pending IDs cannot establish identity.");
@@ -28977,7 +29000,7 @@ export default function App() {
         registryAddress,
       );
       if (resolved.isId || resolved.error) {
-        const state = await fetchIdRecordState(requestNetwork, query, controller.signal);
+        const state = await fetchIdRecordState(requestNetwork, query, controller.signal, "confirmed-ownership");
         if (!requestIsActive()) return;
         resolved = resolveRecipientInput(
           query,
@@ -37510,7 +37533,7 @@ export default function App() {
         prepareTransferUtxos={prepareTokenTransferUtxos}
         preparingTransferUtxos={tokenAction === "split-transfer"}
         proofBalanceError={accountUtxosError || connectedWalletReservationsError}
-        proofBalanceLoaded={accountUtxosLoaded && connectedWalletReservationsReady}
+        proofBalanceLoaded={connectedWalletProofReadReady && connectedWalletReservationsReady}
         creditBalancesReady={Boolean(address) && accountAllTokenLaneClean}
         creditBalancesError={accountTokenLaneStatuses.all.error}
         proofBalanceSats={connectedWalletProofFundingContext.confirmedBalanceSats}
@@ -37947,14 +37970,16 @@ export default function App() {
     .join(" ");
 
   const computerMailWorkspace = ["inbox", "incoming", "sent", "outbox", "drafts", "favorites", "archive", "custom"].includes(activeFolder);
-  const computerWalletReady = Boolean(address) && accountUtxosLoaded && !accountUtxosError && connectedWalletReservationsReady;
+  const computerWalletReady = Boolean(address) && connectedWalletProofReadReady && connectedWalletReservationsReady;
   const computerWalletState = !address
     ? "Connect to view balances."
     : accountUtxosError || connectedWalletReservationsError
       ? "Wallet data unavailable. Open Wallet for details."
       : !accountUtxosLoaded
         ? "Loading wallet data…"
-        : "Verifying wallet reservations…";
+        : accountUtxosRefreshing
+          ? "Refreshing wallet data…"
+          : "Verifying wallet reservations…";
   const computerOverview = (
     <>
       <section aria-label="Wallet overview" className="computer-overview-card">
@@ -38813,7 +38838,7 @@ export default function App() {
             prepareTransferUtxos={prepareTokenTransferUtxos}
             preparingTransferUtxos={tokenAction === "split-transfer"}
             proofBalanceError={accountUtxosError || connectedWalletReservationsError}
-            proofBalanceLoaded={accountUtxosLoaded && connectedWalletReservationsReady}
+            proofBalanceLoaded={connectedWalletProofReadReady && connectedWalletReservationsReady}
         creditBalancesReady={Boolean(address) && accountAllTokenLaneClean}
         creditBalancesError={accountTokenLaneStatuses.all.error}
             proofBalanceSats={
@@ -42953,6 +42978,7 @@ function TokenWalletWorkspace({
         </div>
         {showProofBalance &&
         proofBalanceLoaded &&
+        !proofBalanceError &&
         proofBalanceSats !== proofSpendableSats ? (
           <p className="field-note">
             {proofBalanceSats.toLocaleString()} total confirmed proofs.{" "}

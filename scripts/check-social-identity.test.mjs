@@ -408,6 +408,8 @@ test("fresh ID ownership reads retain the real canonical request gate without un
   await assert.rejects(context.proveCurrentIdAbsence("livenet"), error => {
     assert.equal(error.statusCode, 503);
     assert.equal(error.details.code, "ID_AVAILABILITY_UNPROVEN");
+    assert.equal(error.details.reason, "worker-proof-unavailable");
+    assert.match(error.message, /fresh successful worker verification proof/u);
     return true;
   }, "the same unhealthy worker still closes new-ID availability");
   for (const [name, change] of [
@@ -422,5 +424,13 @@ test("fresh ID ownership reads retain the real canonical request gate without un
     change();
     assert.equal(await context.ownershipRequestGate(), undefined, name);
     assert.equal(rejection?.code, 503, name);
+    if (["index lag", "hash disagreement", "incomplete scan", "missing ID read model"].includes(name)) {
+      await assert.rejects(context.proveCurrentIdAbsence("livenet"), error => {
+        assert.equal(error.statusCode, 503);
+        assert.equal(error.details.reason, ["incomplete scan", "missing ID read model"].includes(name)
+          ? "confirmed-coverage-incomplete" : "canonical-checkpoint-mismatch");
+        return true;
+      }, name);
+    }
   }
 });
