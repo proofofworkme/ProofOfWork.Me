@@ -2764,14 +2764,17 @@ expectAll("exact ID route fails closed before declaring a name available", exact
 ]);
 
 expectAll("ID registration performs a fresh exact preflight", fetchIdRecordStateSource + registerIdSource, [
+  /purpose: IdRecordReadPurpose = "availability"/,
   /new URLSearchParams\(\{ current: "1", fresh: "1" \}\)/,
+  /if \(purpose === "confirmed-ownership"\) params\.delete\("current"\)/,
   /\/api\/v1\/ids\/\$\{encodeURIComponent\(normalizedId\)\}\?\$\{params\.toString\(\)\}/,
   /const latestState = await fetchIdRecordState\(network,\s*normalizedIdName\)/,
 ]);
-expectAll("ID owner and sale actions require current exact coverage", fetchIdRecordStateSource + broadcastIdMutationSource + idSalePreflightSource, [
+expectAll("ID owner and sale actions preserve purpose-specific fresh exact coverage", fetchIdRecordStateSource + broadcastIdMutationSource + idSalePreflightSource, [
   /new URLSearchParams\(\{ current: "1", fresh: "1" \}\)/,
-  /fetchIdRecordState\(network,\s*id\)/,
-  /fetchIdRecordState\(network,\s*managedIdRecord\.id\)/,
+  /readPurpose = "availability"/,
+  /fetchIdRecordState\(network,\s*id,\s*undefined,\s*readPurpose\)/,
+  /fetchIdRecordState\(network,\s*managedIdRecord\.id,\s*undefined,\s*"confirmed-ownership"\)/,
 ]);
 expectAll("ID launch does not declare cache misses available", idLaunchAppSource, [
   /needs a live check/,

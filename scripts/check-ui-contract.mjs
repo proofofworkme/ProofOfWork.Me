@@ -1859,8 +1859,8 @@ expect(
     !/busy\s*\?\s*"Buying"/.test(idMarketplaceCardBlock),
 );
 expect(
-  "ID marketplace publish uses narrow ID record verification",
-  /fetchIdRecordState\(network,\s*managedIdRecord\.id\)/.test(
+  "ID marketplace publish uses narrow confirmed ownership verification",
+  /fetchIdRecordState\(network,\s*managedIdRecord\.id,\s*undefined,\s*"confirmed-ownership"\)/.test(
     prepareIdSaleAuthorizationBlock,
   ) &&
     !/fetchIdRegistryState\(network,\s*true\)/.test(

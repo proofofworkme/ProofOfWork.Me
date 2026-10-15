@@ -44,6 +44,14 @@ Confirmed listing terms, ownership where applicable, exact ticket transaction
 identity, and unspent status are checked again before signing and broadcasting.
 Missing or changed evidence stops the action. Historical owner-funded ID listings
 without a ticket retain their existing delisting path and ownership checks.
+ID listing, sealing, delisting and purchase preparation and revalidation use
+fresh confirmed-ownership reads, including historical owner-funded delistings.
+These reads require the complete canonical index at the exact Core height and
+hash; unrelated pending-worker readiness must not block an already confirmed
+owner. New-ID availability retains its separate pending and worker checks.
+Ownership reads do not establish pending absence or clear retained pending
+display evidence; full registry refresh owns that view. DNS checks, ticket
+validation, wallet-wide reservations, fees and local signing remain unchanged.
 WORK listing quantities are estimates until confirmation freezes them; later
 reviews inspect frozen quantities and payments without repricing them. USD remains
 display-only. Unknown broadcast receipts block further actions until a verified

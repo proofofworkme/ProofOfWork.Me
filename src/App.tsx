@@ -16168,10 +16168,13 @@ async function fetchIdRegistryState(
   };
 }
 
+type IdRecordReadPurpose = "availability" | "confirmed-ownership";
+
 async function fetchIdRecordState(
   targetNetwork: BitcoinNetwork,
   id: string,
   signal?: AbortSignal,
+  purpose: IdRecordReadPurpose = "availability",
 ): Promise<PowRegistryState & { record?: PowIdRecord | null }> {
   const normalizedId = normalizePowId(id);
   if (!normalizedId) {
@@ -16179,6 +16182,9 @@ async function fetchIdRecordState(
   }
 
   const params = new URLSearchParams({ current: "1", fresh: "1" });
+  // Existing-ID ownership still requires the canonical exact-tip fresh gate.
+  // New-name availability additionally requires pending/worker readiness.
+  if (purpose === "confirmed-ownership") params.delete("current");
   const payload = await fetchProofApiJson<PowRegistryApiResponse>(
     `/api/v1/ids/${encodeURIComponent(normalizedId)}?${params.toString()}`,
     targetNetwork,
@@ -24236,9 +24242,11 @@ export default function App() {
       }
     }};
   }
-  async function fetchActionRegistryRecord(kind: "ids" | "dns", id: string) {
+  async function fetchActionRegistryRecord(kind: "ids" | "dns", id: string, purpose: IdRecordReadPurpose = "availability") {
+    const params = new URLSearchParams({ current: "1", fresh: "1" });
+    if (kind === "ids" && purpose === "confirmed-ownership") params.delete("current");
     const payload = await fetchProofApiJson<PowRegistryApiResponse>(
-      `/api/v1/${kind}/${encodeURIComponent(id)}?current=1&fresh=1`, network);
+      `/api/v1/${kind}/${encodeURIComponent(id)}?${params.toString()}`, network);
     if (!payload || !Array.isArray(payload.records) || !Array.isArray(payload.pendingEvents) ||
       !Array.isArray(payload.listings) || !Array.isArray(payload.sales)) {
       throw new Error("Current registry evidence is incomplete. Retry the read before signing.");
@@ -24364,7 +24372,7 @@ export default function App() {
       current = (await fetchFreshWalletTokenListingsForAnchors(listing.sellerAddress, listing.tokenId))
         .find(item => item.listingId === listing.listingId);
     } else if ("id" in listing) {
-      const state = await fetchActionRegistryRecord(kind === "dns" ? "dns" : "ids", listing.id);
+      const state = await fetchActionRegistryRecord(kind === "dns" ? "dns" : "ids", listing.id, "confirmed-ownership");
       current = state.listings.find(item => item.listingId === listing.listingId);
       const owner = state.record?.confirmed ? state.record : state.records.find(item => item.id === listing.id && item.confirmed);
       if (!owner || owner.ownerAddress !== listing.sellerAddress) throw new Error("Confirmed registry ownership changed. Refresh and review again.");
@@ -31893,6 +31901,7 @@ export default function App() {
     reviewFields,
     revalidateDestination,
     capturedContext,
+    readPurpose = "availability",
   }: {
     expectedOwner: string;
     id: string;
@@ -31901,6 +31910,7 @@ export default function App() {
     capturedContext?: ReturnType<typeof captureActionContext>;
     reviewFields?: [string, string][];
     revalidateDestination?: () => Promise<void>;
+    readPurpose?: IdRecordReadPurpose;
   }) {
     if (!window.unisat) {
       setStatus({ tone: "bad", text: "Connect UniSat first." });
@@ -31947,14 +31957,14 @@ export default function App() {
     });
 
     try {
-      const latestState = await fetchIdRecordState(network, id);
+      const latestState = await fetchIdRecordState(network, id, undefined, readPurpose);
       setIdRegistry((current) =>
         replaceExactPowIdStateItems(current, latestState.records, id, network),
       );
       setIdListings((current) =>
         replaceExactPowIdStateItems(current, latestState.listings, id, network),
       );
-      setIdPendingEvents((current) =>
+      if (readPurpose === "availability") setIdPendingEvents((current) =>
         replaceExactPowIdStateItems(
           current,
           latestState.pendingEvents,
@@ -32015,7 +32025,7 @@ export default function App() {
           payload, registry: registryAddress, registryProofs: ID_MUTATION_PRICE_SATS,
           key: "id-mutation:" + id, context: reviewContext,
           revalidate: async () => {
-            const latest = await fetchActionRegistryRecord("ids", id);
+            const latest = await fetchActionRegistryRecord("ids", id, readPurpose);
             const record = latest.record?.confirmed ? latest.record : latest.records.find(item => item.id === id && item.confirmed);
             if (!record || record.ownerAddress !== latestRecord.ownerAddress || record.receiveAddress !== latestRecord.receiveAddress) {
               throw new Error("Confirmed ID state changed. Refresh and review again.");
@@ -32096,7 +32106,7 @@ export default function App() {
       );
     }
 
-    const latestState = await fetchIdRecordState(network, managedIdRecord.id);
+    const latestState = await fetchIdRecordState(network, managedIdRecord.id, undefined, "confirmed-ownership");
     setIdRegistry((current) =>
       replaceExactPowIdStateItems(
         current,
@@ -32113,14 +32123,7 @@ export default function App() {
         network,
       ),
     );
-    setIdPendingEvents((current) =>
-      replaceExactPowIdStateItems(
-        current,
-        latestState.pendingEvents,
-        managedIdRecord.id,
-        network,
-      ),
-    );
+    // Ownership reads do not prove pending absence; full refresh owns that view.
     setIdSales((current) =>
       replaceExactPowIdStateItems(
         current,
@@ -32261,7 +32264,7 @@ export default function App() {
       const txid = await reviewAndSendMarketplace({
         prepared: paymentPsbt, title: "Review marketplace listing intent", fields: [["Asset", authorization.id], ["Seller", address], ["Buyer lock", authorization.buyerAddress || "Any eligible buyer"], ["Seller price", String(authorization.priceSats) + " proofs"], ["Receiver lock", authorization.receiveAddress || "Buyer chooses"]],
         payload, registry: registryAddress, context: marketContext, kind: "ids",
-        payments: [{address: registryAddress, amountSats: 546}, {address, amountSats: 546}], labels: ["Registry payment", "Seller-controlled ticket locked until purchase or delisting"], revalidate: async () => { const fresh = await fetchActionRegistryRecord("ids", authorization.id); const owner = fresh.record?.confirmed ? fresh.record : fresh.records.find(item => item.id === authorization.id && item.confirmed); if (owner?.ownerAddress !== address) throw new Error("Confirmed ownership changed. Refresh and review again."); },
+        payments: [{address: registryAddress, amountSats: 546}, {address, amountSats: 546}], labels: ["Registry payment", "Seller-controlled ticket locked until purchase or delisting"], revalidate: async () => { const fresh = await fetchActionRegistryRecord("ids", authorization.id, "confirmed-ownership"); const owner = fresh.record?.confirmed ? fresh.record : fresh.records.find(item => item.id === authorization.id && item.confirmed); if (owner?.ownerAddress !== address) throw new Error("Confirmed ownership changed. Refresh and review again."); },
       });
 
       setIdSaleAuthorization(JSON.stringify(authorization, null, 2));
@@ -32335,7 +32338,7 @@ export default function App() {
     });
 
     try {
-      const latestState = await fetchIdRecordState(network, listing.id);
+      const latestState = await fetchIdRecordState(network, listing.id, undefined, "confirmed-ownership");
       setIdRegistry((current) =>
         replaceExactPowIdStateItems(
           current,
@@ -32352,14 +32355,7 @@ export default function App() {
           network,
         ),
       );
-      setIdPendingEvents((current) =>
-        replaceExactPowIdStateItems(
-          current,
-          latestState.pendingEvents,
-          listing.id,
-          network,
-        ),
-      );
+      // Ownership reads do not prove pending absence; full refresh owns that view.
       setIdSales((current) =>
         replaceExactPowIdStateItems(
           current,
@@ -32523,7 +32519,7 @@ export default function App() {
       });
 
       try {
-        const latestState = await fetchIdRecordState(network, listing.id);
+        const latestState = await fetchIdRecordState(network, listing.id, undefined, "confirmed-ownership");
         setIdRegistry((current) =>
           replaceExactPowIdStateItems(
             current,
@@ -32540,14 +32536,7 @@ export default function App() {
             network,
           ),
         );
-        setIdPendingEvents((current) =>
-          replaceExactPowIdStateItems(
-            current,
-            latestState.pendingEvents,
-            listing.id,
-            network,
-          ),
-        );
+        // Ownership reads do not prove pending absence; full refresh owns that view.
         setIdSales((current) =>
           replaceExactPowIdStateItems(
             current,
@@ -32651,6 +32640,7 @@ export default function App() {
       successText: `Delisting for ${listing.id}@proofofwork.me`,
       reviewFields: marketplaceFields(listing),
       revalidateDestination: () => revalidateMarketplaceListing(listing, "ids"),
+      readPurpose: "confirmed-ownership",
     });
   }
 
@@ -32776,7 +32766,7 @@ export default function App() {
     });
 
     try {
-      const latestState = await fetchIdRecordState(network, authorization.id);
+      const latestState = await fetchIdRecordState(network, authorization.id, undefined, "confirmed-ownership");
       setIdRegistry((current) =>
         replaceExactPowIdStateItems(
           current,
@@ -32793,14 +32783,7 @@ export default function App() {
           network,
         ),
       );
-      setIdPendingEvents((current) =>
-        replaceExactPowIdStateItems(
-          current,
-          latestState.pendingEvents,
-          authorization.id,
-          network,
-        ),
-      );
+      // Ownership reads do not prove pending absence; full refresh owns that view.
       setIdSales((current) =>
         replaceExactPowIdStateItems(
           current,
