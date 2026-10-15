@@ -14,7 +14,7 @@ const fixture = async () => {
   await writeFile(join(root, "entry.js"), 'document.documentElement.dataset.test = "loaded";');
   await mkdir(join(root, "public"));
   await writeFile(join(root, "public", "real.txt"), "real asset\n");
-  await writeFile(join(root, "public", "pages-runner.html"), '<!doctype html><meta name="robots" content="noindex, nofollow"><title>Isolated preview</title>');
+  await writeFile(join(root, "public", "pages-runner.html"), await readFile(new URL("../public/pages-runner.html", import.meta.url)));
   return root;
 };
 

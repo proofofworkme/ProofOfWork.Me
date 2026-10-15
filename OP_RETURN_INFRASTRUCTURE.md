@@ -7494,6 +7494,8 @@ only recognized document paths through these shells; missing resources and
 unsupported paths retain real HTTP 404 responses. Browser transaction/name
 paths and Publish `/write` preserve their existing application behavior.
 Private query states receive a noindex response header as well as HTML metadata.
+The unversioned Pages runner receives its noindex policy through response headers;
+its established file bytes stay compatible with previously loaded applications.
 Static shell files remain byte-verifiable release artifacts and do not contain
 user state. API proxies, CSP, sandboxing and accepted node runtime overlays are
 unchanged by this frontend discovery policy. Public detail indexing beyond
