@@ -325,6 +325,11 @@ is reserved for txids, addresses, protocol evidence, and other exact fields.
 The font assets are self-hosted by the application build. The shared interface
 layer follows legacy and feature styles so standalone and embedded tools use
 the same hierarchy, controls, and evidence presentation.
+The unused Space Grotesk package and legacy family references have been removed.
+Pages loads its editor on entry, with a local loading boundary that keeps
+Computer navigation available. Other workspaces no longer eagerly load the
+Pages editor or its styles. This changes loading only; draft storage, protocol
+verification and local wallet authority retain their existing rules.
 Use readable 12/14/16px text roles, the shared 8/12/16px spacing and radius
 rhythm, and sentence-case interface labels with preserved acronyms and product
 names. Publish's first-party article reading body uses Inter; user-authored HTML,

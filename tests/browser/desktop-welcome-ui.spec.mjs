@@ -78,3 +78,49 @@ test('Desktop toast counts owned publications after welcome and self-send dedupl
  await expect(page.locator('.file-tile').filter({ hasText: 'System reference' })).toHaveCount(1);
  await expect(page.locator('.file-inspector')).toContainText('Inbox · Sent');
 });
+
+for (const embedded of [false, true]) {
+ for (const viewport of [{ width: 320, height: 480 }, { width: 1024, height: 768 }]) {
+  test(`long confirmed ID stays readable beside Desktop search: ${embedded ? 'Computer' : 'standalone'} ${viewport.width}px`, async ({ page }) => {
+   const id = 'longconfirmedidentityabcdefghijklmnopqrstuvwxyz0123456789abcdef';
+   const recipient = `${id}@proofofwork.me`;
+   const record = { id, ownerAddress: address, receiveAddress: address, network: 'livenet',
+    confirmed: true, txid: 'd'.repeat(64), amountSats: 1000, createdAt: '2026-10-15T10:00:00Z' };
+   await page.setViewportSize(viewport);
+   await page.route('**/api/v1/**', async route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace(/^\/test-api(?=\/api\/)/u, '');
+    if (request.method() !== 'GET') return route.abort('blockedbyclient');
+    if (path === `/api/v1/tx/${txid}`) return route.fulfill({ status: 404, json: { error: 'Fixture has no verified welcome reference' } });
+    if (path === `/api/v1/ids/${id}`) return route.fulfill({ json: {
+     network: 'livenet', record, records: [record], listings: [], sales: [], activity: [], pendingEvents: [],
+    } });
+    return route.fulfill({ json: { address, network: 'livenet', inboxMessages: [], sentMessages: [], records: [], listings: [] } });
+   });
+   await page.goto(embedded ? '/?folder=desktop' : '/?desktop=1');
+   await page.getByPlaceholder('address or user@proofofwork.me').fill(recipient);
+   await page.getByRole('button', { name: 'Open', exact: true }).click();
+   const toolbar = page.locator('.desktop-toolbar');
+   await expect(toolbar.getByRole('heading')).toHaveText(`${recipient} Desktop`);
+   await expect(page.locator('.desktop-empty p')).toHaveText(`${recipient} has no confirmed ProofOfWork.Me files on this network.`);
+   const search = toolbar.getByRole('textbox');
+   await search.focus();
+   await expect(search).toBeFocused();
+   await expect(search).toHaveValue(recipient);
+   const geometry = await page.locator('.desktop-workspace-loaded').evaluate(workspace => {
+    const selectors = ['.desktop-toolbar', '.desktop-toolbar h2', '.desktop-toolbar > .desktop-search', '.desktop-empty', '.desktop-empty p'];
+    const nodes = selectors.map(selector => workspace.querySelector(selector));
+    const bounds = nodes.map(node => { const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, clientWidth: node.clientWidth, scrollWidth: node.scrollWidth }; });
+    return { viewport: document.documentElement.clientWidth, documentWidth: document.documentElement.scrollWidth, bounds };
+   });
+   expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewport + 1);
+   for (const rect of geometry.bounds) {
+    expect(rect.left).toBeGreaterThanOrEqual(-1);
+    expect(rect.right).toBeLessThanOrEqual(geometry.viewport + 1);
+    expect(rect.scrollWidth).toBeLessThanOrEqual(rect.clientWidth + 1);
+   }
+   const heading = geometry.bounds[1], field = geometry.bounds[2];
+   expect(heading.right <= field.left + 1 || field.right <= heading.left + 1 || heading.bottom <= field.top + 1 || field.bottom <= heading.top + 1).toBe(true);
+  });
+ }
+}

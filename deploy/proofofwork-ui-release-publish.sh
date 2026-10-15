@@ -601,6 +601,10 @@ def resolve_reference(surface_root, current_path, reference_bytes):
         or any(ord(character) < 32 or ord(character) == 127 for character in relative)
     ):
         return None
+    # Publication replaces these generated root navigation documents. Route
+    # literals are not immutable dependencies; Pages runner and nested HTML stay exact.
+    if relative in ("index.html", "app.html", "noindex-app.html", "404.html"):
+        return None
     live_path = os.path.join(surface_root, *relative.split("/"))
     if not os.path.lexists(live_path):
         return None

@@ -3,11 +3,12 @@ import { ActionTransactionReview, type ActionReview } from "./shared/components/
 import { ActionRecoveryPanel } from "./shared/components/ActionRecoveryPanel";
 import { BrandMark } from "./shared/components/BrandMark";
 import { APP_ICONS } from "./app/appIcons";
-import { PagesWorkspace, type PagesPublicationDraft, type PagesDnsLinkRequest, type PagesViewState, type PagesBrowserTarget } from "./features/pages/PagesWorkspace";
+import type { PagesPublicationDraft, PagesDnsLinkRequest, PagesViewState, PagesBrowserTarget } from "./features/pages/PagesWorkspace";
 import type { CodeViewState } from "./features/code/CodeRoot";
 import type { CodeLocation, CodeSourceReference } from "./features/code/codeNavigation";
 import { BrowserWindow, type BrowserSession, type BrowserTemplateDraft } from "./features/browser/BrowserWindow";
 import { ComputerControls, ComputerShell } from "./features/computer/ComputerShell";
+import { computerShellStatus, type ComputerWorkspaceStatus } from "./features/computer/computerStatus.mjs";
 import { COMPUTER_LAYOUT_STORAGE_KEY, computerAppForWorkspace, type ComputerLayout } from "./features/computer/computerNavigation";
 import { AdvancedDns } from "./features/dns/AdvancedDns";
 import { assertDnsSubdomainPageLinkAction, readDnsSubdomainPageLinkSnapshot, type DnsSubdomainPageLinkSnapshot } from "./features/pages/dnsSubdomainPageLinkClient.mjs";
@@ -301,6 +302,7 @@ import {
 import { publishHref, publishWriteHref, publishWriterHistoryState } from "./features/publish/publishProtocol";
 import { mailArticleFromTransaction, verifiedMailArticle, type MailArticleEvidence } from "./features/publish/publishMail";
 
+const PagesWorkspace = lazy(() => import("./features/pages/PagesWorkspace").then(module => ({ default: module.PagesWorkspace })));
 const BoostRoot = lazy(() => import("./features/boost/BoostRoot"));
 const PublishRoot = lazy(() => import("./features/publish/PublishRoot"));
 const SearchRoot = lazy(() => import("./features/search/SearchRoot"));
@@ -330,7 +332,7 @@ type LegacyBitcoinNetwork = "livenet" | "testnet";
 type UniSatChain = "BITCOIN_MAINNET" | "BITCOIN_TESTNET" | "BITCOIN_TESTNET4";
 type UniSatEvent = "accountsChanged" | "networkChanged" | "chainChanged";
 type StatusTone = AppStatusTone;
-type WorkspaceStatus = AppStatusState;
+type WorkspaceStatus = ComputerWorkspaceStatus;
 type TokenAction =
   | ""
   | "buy"
@@ -343,6 +345,7 @@ type TokenAction =
   | "split-transfer"
   | "transfer";
 const INITIAL_COMPUTER_STATUS: WorkspaceStatus = {
+  presentation: "entry",
   tone: "idle",
   text: "Verifying public ProofOfWork data. Confirmed records are canonical; pending visibility is best effort.",
 };
@@ -26492,7 +26495,9 @@ export default function App() {
     !busy;
   const refreshInProgress = refreshing || checkingBroadcasts;
   const refreshDisabled =
-    activeFolder === "code" || activeFolder === "jobs" || activeFolder === "permission"
+    ["browser", "pages", "boost", "publish", "search"].includes(activeFolder)
+      ? true
+    : activeFolder === "code" || activeFolder === "jobs" || activeFolder === "permission"
       ? busy || refreshInProgress
     : activeFolder === "contacts"
       ? busy || refreshInProgress || !registryAddress
@@ -26517,6 +26522,7 @@ export default function App() {
     const nextStatus =
       workspaceStatusesRef.current.get(activeWorkspaceStatusKey) ??
       ({
+        presentation: "entry",
         tone: "idle",
         text: "Workspace selected. Refresh to load verified ProofOfWork data.",
       } satisfies WorkspaceStatus);
@@ -34893,7 +34899,7 @@ export default function App() {
 
   async function refreshMail(nextFolder: Folder = activeFolder) {
     if (!address) {
-      setStatus({ tone: "bad", text: "Connect UniSat first." });
+      setStatus({ tone: "bad", text: "Connect UniSat first.", presentation: "connection-required" });
       return;
     }
 
@@ -37717,6 +37723,7 @@ export default function App() {
 
   function pagesWorkspace(embedded: boolean) {
     return (
+      <Suspense fallback={<div role="status" aria-busy="true">Loading Pages…</div>}>
       <PagesWorkspace
         key={embedded ? computerTaskScope : "standalone-pages"}
         address={address} network={network} embedded={embedded}
@@ -37742,6 +37749,7 @@ export default function App() {
         pageHref={(txid) => pagesTxUrl(txid, network)}
         renderStaticPreview={(html) => <iframe referrerPolicy="no-referrer" sandbox="" srcDoc={browserStaticDocument(html)} title="Static page preview" />}
       />
+      </Suspense>
     );
   }
 
@@ -37910,6 +37918,12 @@ export default function App() {
     .join(" ");
 
   const computerMailWorkspace = ["inbox", "incoming", "sent", "outbox", "drafts", "favorites", "archive", "custom"].includes(activeFolder);
+  const computerStatus = computerShellStatus({
+    workspace: activeFolder,
+    status,
+    connected: Boolean(address) && hasUnisat,
+    secondaryStatus: degradedReadStatus,
+  });
   const computerWalletReady = Boolean(address) && connectedWalletProofReadReady && connectedWalletReservationsReady;
   const computerWalletState = !address
     ? "Connect to view balances."
@@ -38071,11 +38085,11 @@ export default function App() {
         title="ProofOfWork Computer"
       />
 
-      <AppStatusRow
+      {computerStatus ? <AppStatusRow
         persistent
-        secondaryStatus={degradedReadStatus}
-        status={status}
-      />
+        secondaryStatus={computerStatus.secondary}
+        status={computerStatus.primary}
+      /> : null}
 
       <ComputerShell layout={computerLayout} activeFolder={activeFolder}
         backLabel={computerTasks.back.length ? computerAppForWorkspace(computerTasks.back[computerTasks.back.length - 1].folder).label : undefined}
