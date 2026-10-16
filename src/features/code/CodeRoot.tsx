@@ -14,8 +14,8 @@ import { ensureWalletNetwork, getWalletNetwork, signAndBroadcastBoostPsbt } from
 import { syncSocialIdentityIntent, subscribeSocialIdentityIntent } from "../identity/socialIdentity";
 import type { BoostIdentityIntent } from "../boost/boostProtocol";
 import { shortAddress } from "../../functions";
-import { fetchCodeRepositories, fetchCodeRepository, codeEvents, codeRepoId, codeVersion, verifiedCodeSource,
-  type CodeDetail, type CodeEvent, type CodeFile, type CodeList } from "./codeApi";
+import { fetchCodeRepositories, fetchCodeRepository, fetchCodePageSource, codeEvents, codeRepoId, codeVersion, verifiedCodeSource,
+  type CodeDetail, type CodeEvent, type CodeFile, type CodeList, type CodePageEvidence, type CodePageSource } from "./codeApi";
 import { buildCodePlan, codeDraftFields, emptyCodeDraft, exactSourceBytes, lineChange, persistCodeDraft, restoredCodeDraft, type CodeDraft } from "./codeProtocol";
 import { prepareCodeTransaction, sameCodeAddress, verifyCodeAuthority, verifyCodeFunding, type PreparedCode } from "./codeWallet";
 import { codeRepositoryZip, downloadCodeBlob } from "./codeArchive";
@@ -102,6 +102,9 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   const [recoveryError, setRecoveryError] = useState("");
   const [checking, setChecking] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [pageSource, setPageSource] = useState<CodePageEvidence>();
+  const [pageSourceBusy, setPageSourceBusy] = useState(false);
+  const pageSourceSequence = useRef(0);
   const [diffEvent, setDiffEvent] = useState<CodeEvent>();
   const [historyDiff, setHistoryDiff] = useState<{ before: string; after: string }>();
   const [diffError, setDiffError] = useState("");
@@ -157,6 +160,11 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   useEffect(() => { if (initialNetworkProp) setNetworkState(initialNetworkProp); }, [initialNetworkProp]);
   useEffect(() => { setPrepared(undefined); setIdentity(undefined); }, [address, network]);
   useEffect(() => { setPrepared(undefined); }, [scope]);
+  useEffect(() => { pageSourceSequence.current++; setPageSource(undefined); setPageSourceBusy(false); }, [address, network, draft.sourceTxid]);
+  const selectedPageSource = pageSource && pageSource.sourceTxid === draft.sourceTxid
+    ? pageSource.sources.find(item => item.kind === draft.sourceKind && item.vout === draft.sourceVout && item.content === draft.content)
+    : undefined;
+  const referenceReady = draft.kind !== "reference" || Boolean(selectedPageSource);
 
   function preserveDraft() {
     if (flight.current) { setActionError("Wait for the current wallet operation before leaving the Code editor."); return false; }
@@ -202,8 +210,14 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
       const raw = localStorage.getItem(draftKey);
       const loaded: unknown = raw ? JSON.parse(raw) : { ...emptyCodeDraft };
       const candidate = loaded as CodeDraft;
-      if (!candidate || !["repo", "put", "delete"].includes(candidate.kind) ||
+      if (!candidate || !["repo", "put", "delete", "reference"].includes(candidate.kind) ||
         [candidate.name, candidate.description, candidate.repo, candidate.parent, candidate.path, candidate.message, candidate.content].some(value => typeof value !== "string") || !Number.isFinite(candidate.feeRate)) throw new Error("Saved Code draft is unreadable. Preserve local storage before repairing it.");
+      if (candidate.kind === "reference" &&
+          ((candidate.sourceTxid !== undefined && typeof candidate.sourceTxid !== "string") ||
+           (candidate.sourceKind !== undefined && !["body", "attachment"].includes(candidate.sourceKind)) ||
+           (candidate.sourceVout !== undefined && (!Number.isSafeInteger(candidate.sourceVout) || candidate.sourceVout < 0)))) {
+        throw new Error("Saved Page reference is unreadable. Preserve local storage before repairing it.");
+      }
       // The disconnected draft is retained. Connecting carries the in-progress
       // editor to the new wallet without overwriting that wallet's saved draft.
       if (editorRef.current && draftKeyLoaded.endsWith(":disconnected") && address) {
@@ -286,6 +300,9 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   }, [diffEvent, detail, network]);
 
   useEffect(() => {
+    if (editor && draft.kind === "reference") { setBaseline(""); setBaselineReady(false); setBaselineError(""); }
+  }, [editor, draft.kind, draft.repo, draft.parent, draft.path]);
+  useEffect(() => {
     const controller = new AbortController();
     if (!editor || baselineReady || draft.kind === "repo" || !draft.repo || !draft.parent || !draft.path) return;
     setBaselineError("");
@@ -293,7 +310,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
       .then(value => {
         if (controller.signal.aborted) return;
         setBaseline(value.file ? verifiedCodeSource(value.file).source : "");
-        setPathLocked(Boolean(value.file)); setBaselineReady(true);
+        setPathLocked(draft.kind === "reference" ? false : Boolean(value.file)); setBaselineReady(true);
       }).catch(error => { if (!controller.signal.aborted) setBaselineError(errorText(error)); });
     return () => controller.abort();
   }, [editor, baselineReady, draft.kind, draft.repo, draft.parent, draft.path, network]);
@@ -319,7 +336,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   function beginEditor(kind: CodeDraft["kind"], file?: Source) {
     if (flight.current || !preserveDraft()) return;
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setActionError(""); setPrepared(undefined); setEditorPreview("source"); setBaselineReady(true); setBaselineError(""); setPathLocked(Boolean(file));
+    setActionError(""); setPrepared(undefined); setPageSource(undefined); setEditorPreview("source"); setBaselineReady(true); setBaselineError(""); setPathLocked(Boolean(file));
     if (kind === "repo") { setDraft({ ...emptyCodeDraft, feeRate: draft.feeRate }); setBaseline(""); }
     else if (repo) {
       setDraft({ ...emptyCodeDraft, kind, repo: codeRepoId(repo), parent: repo.headTxid, path: file?.file.path ?? "", content: file?.content ?? "", feeRate: draft.feeRate });
@@ -354,7 +371,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   function retainReceipt(receipt: ActionReceipt) { setReceipts(saveActionReceipt(localStorage, receipt).filter(item => item.key.startsWith("code:"))); }
   async function prepare(event: FormEvent) {
     event.preventDefault();
-    if (flight.current || !planResult.plan || draftError || draftKeyLoaded !== draftKey) return;
+    if (flight.current || pageSourceBusy || !referenceReady || !planResult.plan || draftError || draftKeyLoaded !== draftKey) return;
     const expected = scope;
     const assertCurrent = () => { if (!alive.current || currentScope.current !== expected) throw new Error("Source, wallet, network, or identity changed. Prepare a new Code review."); };
     flight.current = true; setActionBusy(true); setActionError("");
@@ -452,6 +469,28 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
     } catch (error) { setActionError(errorText(error)); }
     finally { setArchiveBusy(false); }
   }
+  function selectPageSource(item: CodePageSource) {
+    updateDraft({ sourceKind: item.kind, sourceVout: item.vout, content: item.content,
+      ...(draft.path ? {} : { path: "index.html" }) });
+  }
+  async function verifyPageSource() {
+    if (flight.current || pageSourceBusy) return;
+    const expected = scope;
+    const sequence = ++pageSourceSequence.current;
+    setPageSourceBusy(true); setPageSource(undefined); setPrepared(undefined); setActionError("");
+    try {
+      const result = await fetchCodePageSource(network, draft.sourceTxid ?? "");
+      if (!alive.current || sequence !== pageSourceSequence.current || currentScope.current !== expected) return;
+      setPageSource(result);
+      const retained = result.sources.find(item => item.kind === draft.sourceKind && item.vout === draft.sourceVout);
+      if (retained || result.sources.length === 1) selectPageSource(retained ?? result.sources[0]);
+      else updateDraft({ sourceKind: undefined, sourceVout: undefined, content: "" });
+    } catch (error) {
+      if (alive.current && sequence === pageSourceSequence.current && currentScope.current === expected) setActionError(errorText(error));
+    } finally {
+      if (alive.current && sequence === pageSourceSequence.current) setPageSourceBusy(false);
+    }
+  }
   async function uploadSource(file: File | undefined) {
     if (!file || actionBusy) return;
     try {
@@ -475,8 +514,8 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
       busy={readBusy || actionBusy} connectWallet={() => void connect()} disconnectWallet={() => { if (preserveDraft()) setAddress(""); }}
       onNetworkChange={changeNetwork} onDomainNavigate={() => !preserveDraft()} onRefresh={() => setAttempt(value => value + 1)} onRefreshRecovery={() => void checkReceipts()} />}
     <main className="code-workspace" aria-label="ProofOfWork Code workspace">
-      <div className="code-workspace-heading"><div><span className="code-eyebrow"><Code2 size={17} /> Code on ProofOfWork</span><h2>{editor ? draft.kind === "repo" ? "New repository" : draft.kind === "delete" ? "Delete a file" : "Commit a source file" : repo ? repo.name : "Repositories"}</h2>
-        <p>{editor ? draft.kind === "repo" ? "Public source. A wallet-owned main history." : "One file. One reviewed transaction. Exact source bytes." : repo ? repo.description || "A public repository with verifiable source history." : "Small repositories, source files, and a main history you can verify from the chain."}</p></div>
+      <div className="code-workspace-heading"><div><span className="code-eyebrow"><Code2 size={17} /> Code on ProofOfWork</span><h2>{editor ? draft.kind === "repo" ? "New repository" : draft.kind === "delete" ? "Delete a file" : draft.kind === "reference" ? "Add an existing page" : "Commit a source file" : repo ? repo.name : "Repositories"}</h2>
+        <p>{editor ? draft.kind === "repo" ? "Public source. A wallet-owned main history." : draft.kind === "reference" ? "Add confirmed HTML by transaction ID. Keep its source on chain." : "One file. One reviewed transaction. Exact source bytes." : repo ? repo.description || "A public repository with verifiable source history." : "Small repositories, source files, and a main history you can verify from the chain."}</p></div>
         {!editor && <button className="primary" type="button" onClick={() => beginEditor("repo")} disabled={actionBusy || network !== "livenet"}><Plus size={17} /> New repository</button>}
         {editor && <button type="button" className="secondary" disabled={actionBusy} onClick={() => { if (preserveDraft()) { setEditor(false); setPrepared(undefined); returnFocus.current?.focus(); } }}><ArrowLeft size={16} /> Save draft and back</button>}
       </div>
@@ -490,7 +529,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
         <div className="code-editor-owner"><ShieldCheck size={17} /><span>Creating wallet · {identity ? `${identity.id}@proofofwork.me` : address ? shortAddress(address) : "Connect to publish"}</span></div>
         {draft.kind === "repo" ? <div className="code-form-grid"><label>Repository name<input required maxLength={200} value={draft.name} onChange={event => updateDraft({ name: event.target.value })} disabled={actionBusy} placeholder="my-first-repository" autoComplete="off" /></label><label>Description<textarea maxLength={1000} rows={3} value={draft.description} onChange={event => updateDraft({ description: event.target.value })} disabled={actionBusy} placeholder="What does this repository contain?" /></label><p className="code-muted">Public, with one main history. The creating wallet owns this repository permanently. Names are display labels; the creation transaction is its unique address.</p></div> : <>
           <div className="code-editor-reference"><span>Repository <code>{draft.repo}</code></span><span>Parent <code>{draft.parent}</code></span></div>
-          <label>Exact file path<input required value={draft.path} onChange={event => updateDraft({ path: event.target.value })} disabled={actionBusy || draft.kind === "delete" || pathLocked} placeholder="src/main.ts" autoComplete="off" /></label>
+          <label>Exact file path<input required value={draft.path} onChange={event => updateDraft({ path: event.target.value })} disabled={actionBusy || draft.kind === "delete" || pathLocked} placeholder={draft.kind === "reference" ? "index.html" : "src/main.ts"} autoComplete="off" /></label>
           {draft.kind === "put" && <><div className="code-editor-toolbar"><div className="code-tabs"><button type="button" aria-pressed={editorPreview === "source"} onClick={() => setEditorPreview("source")}>Source</button><button type="button" aria-pressed={editorPreview === "diff"} onClick={() => setEditorPreview("diff")}>Changes</button></div><label className="code-upload">Upload UTF-8 file<input type="file" disabled={actionBusy} onChange={event => { void uploadSource(event.target.files?.[0]); event.target.value = ""; }} /></label></div>
             {editorPreview === "source" ? <label className="code-source-label"><span className="sr-only">Source text</span><textarea className="code-source-editor" spellCheck={false} value={draft.content} onChange={event => {
               const value = event.target.value;
@@ -500,6 +539,16 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
             <div className={`code-byte-budget${new TextEncoder().encode(draft.content).length > 60000 ? " is-over" : ""}`}><span>{new TextEncoder().encode(draft.content).length.toLocaleString()} / 60,000 UTF-8 bytes</span><progress max={60000} value={Math.min(60000, new TextEncoder().encode(draft.content).length)} aria-label="Source byte budget" /></div>
             <p className="code-muted">Uploads retain exact bytes and newlines. An unchanged loaded file retains its exact source. Edits preserve uniform CRLF; editing mixed line endings writes the editor's LF line endings. Empty files are supported.</p>
           </>}
+          {draft.kind === "reference" && <div className="code-page-reference">
+            <label>Published page TXID<input value={draft.sourceTxid ?? ""} disabled={actionBusy} onChange={event => updateDraft({ sourceTxid: event.target.value.trim().toLowerCase(), sourceKind: undefined, sourceVout: undefined, content: "" })} placeholder="64 character confirmed page transaction ID" autoComplete="off" spellCheck={false} /></label>
+            <button type="button" className="secondary" disabled={actionBusy || pageSourceBusy || !hexTx.test(draft.sourceTxid ?? "")} onClick={() => void verifyPageSource()}>{pageSourceBusy ? "Verifying page…" : "Verify page"}</button>
+            <p className="code-muted">Choose a repository path such as index.html. The commit references the published HTML without uploading its source again. Pages up to 60,000 UTF-8 bytes are supported.</p>
+            {pageSource && <><p className="code-muted">Confirmed in block {pageSource.blockHeight.toLocaleString()}. {pageSource.sources.length > 1 ? "Choose the HTML source to reference." : "Exact HTML source verified."}</p>
+              {pageSource.sources.length > 1 && <label>HTML source<select value={selectedPageSource ? `${selectedPageSource.kind}:${selectedPageSource.vout}` : ""} disabled={actionBusy} onChange={event => { const item = pageSource.sources.find(value => `${value.kind}:${value.vout}` === event.target.value); if (item) selectPageSource(item); }}><option value="" disabled>Select an HTML source</option>{pageSource.sources.map(item => <option key={`${item.kind}:${item.vout}`} value={`${item.kind}:${item.vout}`}>{item.kind === "body" ? "Message body" : item.name} · output {item.vout} · {item.size.toLocaleString()} bytes</option>)}</select></label>}
+              {selectedPageSource && <><div className="code-editor-reference"><span>Source SHA-256 <code>{selectedPageSource.sha256}</code></span><span>{selectedPageSource.size.toLocaleString()} UTF-8 bytes · {selectedPageSource.kind === "body" ? "HTML message body" : "HTML attachment"} · output {selectedPageSource.vout}</span></div><div className="code-tabs"><button type="button" aria-pressed={editorPreview === "source"} onClick={() => setEditorPreview("source")}>Source</button><button type="button" aria-pressed={editorPreview === "diff"} onClick={() => setEditorPreview("diff")}>Changes</button></div>{editorPreview === "source" ? <SourceText content={selectedPageSource.content} /> : baselineReady ? <CodeDiff before={baseline} after={selectedPageSource.content} /> : <p role="status">{baselineError || "Verifying the previous source…"}</p>}</>}
+            </>}
+            {!referenceReady && !pageSourceBusy && <p className="code-muted">Verify the page and select its source before reviewing this commit.</p>}
+          </div>}
           {draft.kind === "delete" && <p className="code-notice is-warning">The next main version removes this path. Earlier source remains in confirmed history.</p>}
           <label>Commit message<input required maxLength={500} value={draft.message} onChange={event => updateDraft({ message: event.target.value })} disabled={actionBusy} placeholder={draft.kind === "delete" ? "Remove unused source" : "Describe this change"} autoComplete="off" /></label>
         </>}
@@ -508,7 +557,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
         {network !== "livenet" && <p className="code-notice is-warning">Code publishing uses mainnet. Switch to mainnet to prepare a transaction.</p>}
         {!planResult.plan && Boolean(draft.name || draft.description || draft.path || draft.message || draft.content) && <p className="code-muted">{planResult.error}</p>}
         <div className="code-editor-actions"><span className="code-muted">{draftError ? "Draft autosave unavailable" : draftKeyLoaded !== draftKey ? "Loading local draft…" : "Draft saved in this browser"}{planResult.plan ? ` · ${planResult.plan.carrierBytes.toLocaleString()} record bytes` : ""}</span>
-          {!address ? <button type="button" className="primary" disabled={actionBusy} onClick={() => void connect()}>Connect to review</button> : <button type="submit" className="primary" disabled={actionBusy || !planResult.plan || Boolean(draftError) || draftKeyLoaded !== draftKey || network !== "livenet"}>{actionBusy ? <RefreshCw className="refresh-spin" size={17} /> : <GitCommitHorizontal size={17} />}{actionBusy ? "Preparing wallet action…" : draft.kind === "repo" ? "Review repository" : "Review commit"}</button>}
+          {!address ? <button type="button" className="primary" disabled={actionBusy} onClick={() => void connect()}>Connect to review</button> : <button type="submit" className="primary" disabled={actionBusy || pageSourceBusy || !referenceReady || !planResult.plan || Boolean(draftError) || draftKeyLoaded !== draftKey || network !== "livenet"}>{actionBusy ? <RefreshCw className="refresh-spin" size={17} /> : <GitCommitHorizontal size={17} />}{actionBusy ? "Preparing wallet action…" : draft.kind === "repo" ? "Review repository" : "Review commit"}</button>}
         </div>
       </form></section> : <>
         {route.repo && <a className="code-back" href={routeHref({ repo: "", version: "", path: "", tab: "code" })} onClick={event => followInternalLink(event, () => navigate({ repo: "", version: "", path: "", tab: "code" }))}><ArrowLeft size={16} /> All repositories</a>}
@@ -525,15 +574,15 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
         </>}
         {detail && repo && <section className="code-repository" aria-label="Repository">
           <div className="code-repository-meta"><span><ShieldCheck size={16} /> Owner <code title={repo.ownerAddress}>{repo.ownerId ? `${repo.ownerId}@proofofwork.me` : shortAddress(repo.ownerAddress)}</code>{owner && <span className="code-pill">Your wallet</span>}</span><span className="code-pill">Public</span><span className="code-pill">main</span><span>{treeFiles.length.toLocaleString()} files</span><span>{repo.commitCount.toLocaleString()} commits</span></div>
-          <div className="code-repository-tools"><div className="code-tabs" aria-label="Repository views"><button type="button" aria-pressed={route.tab === "code"} onClick={() => navigate({ ...route, tab: "code" })}><Code2 size={16} /> Code</button><button type="button" aria-pressed={route.tab === "history"} onClick={() => navigate({ ...route, tab: "history" })}><History size={16} /> History</button></div><div className="code-actions"><button type="button" className="secondary" onClick={() => { void navigator.clipboard.writeText(window.location.href).then(() => setCopied(true)).catch(() => setActionError("Clipboard unavailable. Copy this page's URL from the browser.")); }}><Copy size={15} /> {copied ? "Copied" : "Copy link"}</button><button type="button" className="secondary" disabled={archiveBusy} onClick={() => void downloadRepository()}><Download size={16} /> {archiveBusy ? "Verifying files…" : "Download ZIP"}</button>{canWrite && <button type="button" className="primary" onClick={() => beginEditor("put")}><FilePlus2 size={16} /> Add file</button>}</div></div>
+          <div className="code-repository-tools"><div className="code-tabs" aria-label="Repository views"><button type="button" aria-pressed={route.tab === "code"} onClick={() => navigate({ ...route, tab: "code" })}><Code2 size={16} /> Code</button><button type="button" aria-pressed={route.tab === "history"} onClick={() => navigate({ ...route, tab: "history" })}><History size={16} /> History</button></div><div className="code-actions"><button type="button" className="secondary" onClick={() => { void navigator.clipboard.writeText(window.location.href).then(() => setCopied(true)).catch(() => setActionError("Clipboard unavailable. Copy this page's URL from the browser.")); }}><Copy size={15} /> {copied ? "Copied" : "Copy link"}</button><button type="button" className="secondary" disabled={archiveBusy} onClick={() => void downloadRepository()}><Download size={16} /> {archiveBusy ? "Verifying files…" : "Download ZIP"}</button>{canWrite && <><button type="button" className="secondary" onClick={() => beginEditor("reference")}>Add existing page</button><button type="button" className="primary" onClick={() => beginEditor("put")}><FilePlus2 size={16} /> Add file</button></>}</div></div>
           <div className="code-head"><GitCommitHorizontal size={17} /><span>{atHead ? "Confirmed main head" : "Historical confirmed version"}</span><code>{compactTx(selectedVersion)}</code><a href={explorerTxUrl(selectedVersion, network)} target="_blank" rel="noreferrer" aria-label="Inspect version transaction"><ArrowUpRight size={17} /></a>{!atHead && <a className="code-return-head" href={routeHref({ ...route, version: "" })} onClick={event => followInternalLink(event, () => navigate({ ...route, version: "" }))}>Return to main head</a>}</div>
           {route.tab === "code" ? <div className="code-browser"><aside className="code-file-tree" aria-label="Source files"><div className="code-tree-title"><Folder size={16} /> Files</div>{treeFiles.map(file => <a key={file.path} href={routeHref({ ...route, path: file.path })} className={file.path === route.path ? "is-selected" : ""} aria-current={file.path === route.path ? "page" : undefined} onClick={event => followInternalLink(event, () => navigate({ ...route, path: file.path }))}><FileCode2 size={16} /><span title={file.path}>{file.path}</span><small>{file.size.toLocaleString()} B</small></a>)}{!treeFiles.length && <p className="code-muted">No files in this version.</p>}</aside>
             <div className="code-file-panel">{!treeFiles.length ? <div className="code-empty"><FilePlus2 size={30} /><h3>Your repository starts here</h3><p>Add a README or your first source file. Each commit changes one file.</p>{canWrite && <button type="button" className="primary" onClick={() => beginEditor("put")}>Add the first file</button>}</div> : <>
               <div className="code-file-toolbar"><strong>{route.path || "Select a source file"}</strong><div>{source && <button type="button" className="secondary" onClick={() => downloadCodeBlob(new Blob([new Uint8Array(source.bytes).buffer], { type: "text/plain;charset=utf-8" }), source.file.path.split("/").pop() || "source.txt")} aria-label="Download exact source"><Download size={16} /> Download</button>}{canContinueInPages && <button type="button" className="secondary" onClick={continueInPages}>Continue in Pages <ArrowUpRight size={15} /></button>}{canWrite && source && <><button type="button" className="secondary" onClick={() => beginEditor("put", source)}>Edit</button><button type="button" className="secondary" onClick={() => beginEditor("delete", source)} aria-label="Delete source file"><Trash2 size={16} /></button></>}</div></div>
               {sourceBusy && <div className="code-file-loading" role="status">Verifying exact source bytes…</div>}{sourceError && <p className="code-notice is-error" role="alert">{sourceError}</p>}
-              {source && <><div className="code-file-evidence"><span>{source.file.size.toLocaleString()} bytes · {(source.content ? source.content.split("\n").length - (source.content.endsWith("\n") ? 1 : 0) : 0).toLocaleString()} lines</span><code title={source.file.sha256}>SHA-256 {compactTx(source.file.sha256)}</code></div><SourceText content={source.content} /><p className="code-source-footnote">{/(?:^|\/)readme(?:\.md|\.txt)?$/iu.test(source.file.path) ? "README shown as exact source text. " : ""}Source is inert text; HTML and scripts never execute in Code.</p></>}
-            </>}</div></div> : <div className="code-history">{codeEvents(detail).map(event => <article className="code-history-entry" key={event.txid}><GitCommitHorizontal size={20} /><div><div className="code-history-title"><strong>{event.message || (event.op ? `${event.op === "put" ? "Write" : "Delete"} ${event.path}` : "Create repository")}</strong><span className={`code-pill${eventApplied(event) ? " is-confirmed" : " is-unapplied"}`}>{eventApplied(event) ? "Main history" : event.status === "pending" ? "Pending" : "Unapplied"}</span></div><p>{event.path || repo.name} · {dateText(event)}</p><p className="code-muted">{eventReason(event)}</p><div className="code-history-evidence"><code>{compactTx(event.txid)}</code>{event.parent || event.parentTxid ? <code>Parent {compactTx(event.parent ?? event.parentTxid!)}</code> : null}<a href={explorerTxUrl(event.txid, network)} target="_blank" rel="noreferrer">Inspect transaction <ArrowUpRight size={14} /></a></div><div className="code-history-actions">{eventApplied(event) && <a className="secondary" href={routeHref({ repo: codeRepoId(repo), version: event.txid, path: event.path ?? "", tab: "code" })} onClick={click => followInternalLink(click, () => navigate({ repo: codeRepoId(repo), version: event.txid, path: event.path ?? "", tab: "code" }))}>View version</a>}{event.op && <button type="button" className="secondary" onClick={() => setDiffEvent(event)}>Inspect change</button>}</div></div></article>)}{!codeEvents(detail).length && <p className="code-empty">No commit records in this history page.</p>}{detail.pagination.hasMore && <button type="button" className="secondary code-load-more" disabled={pageBusy} onClick={() => void loadMore()}>{pageBusy ? "Reading more history…" : "Load more history"}</button>}
-              {diffEvent && <section className="code-history-inspector" aria-label="Commit inspection"><div className="code-file-toolbar"><strong>{diffEvent.path}</strong><button type="button" className="secondary" onClick={() => setDiffEvent(undefined)} aria-label="Close commit inspection"><X size={17} /></button></div><p>{eventReason(diffEvent)}</p><dl><dt>Commit</dt><dd><code>{diffEvent.txid}</code></dd><dt>Parent</dt><dd><code>{diffEvent.parent ?? diffEvent.parentTxid ?? "Unavailable"}</code></dd>{diffEvent.sha256 && <><dt>Source SHA-256</dt><dd><code>{diffEvent.sha256}</code></dd></>}</dl>{diffError && <p className="code-notice is-error" role="alert">{diffError}</p>}{eventApplied(diffEvent) && !historyDiff && !diffError && <p role="status">Verifying source changes against the same snapshot…</p>}{historyDiff && <CodeDiff before={historyDiff.before} after={historyDiff.after} />}</section>}
+              {source && <><div className="code-file-evidence"><span>{source.file.size.toLocaleString()} bytes · {(source.content ? source.content.split("\n").length - (source.content.endsWith("\n") ? 1 : 0) : 0).toLocaleString()} lines</span><code title={source.file.sha256}>SHA-256 {compactTx(source.file.sha256)}</code></div><SourceText content={source.content} />{source.file.sourceTxid && <div className="code-editor-reference"><span>Referenced page <code>{source.file.sourceTxid}</code><a href={explorerTxUrl(source.file.sourceTxid, network)} target="_blank" rel="noreferrer">Inspect page transaction <ArrowUpRight size={14} /></a></span><span>Repository commit <code>{source.file.txid}</code><span>{source.file.sourceKind === "body" ? "HTML message body" : "HTML attachment"} · output {source.file.sourceVout}</span></span></div>}<p className="code-source-footnote">{/(?:^|\/)readme(?:\.md|\.txt)?$/iu.test(source.file.path) ? "README shown as exact source text. " : ""}Source is inert text; HTML and scripts never execute in Code.</p></>}
+            </>}</div></div> : <div className="code-history">{codeEvents(detail).map(event => <article className="code-history-entry" key={event.txid}><GitCommitHorizontal size={20} /><div><div className="code-history-title"><strong>{event.message || (event.op ? `${event.op === "reference" ? "Reference" : event.op === "put" ? "Write" : "Delete"} ${event.path}` : "Create repository")}</strong><span className={`code-pill${eventApplied(event) ? " is-confirmed" : " is-unapplied"}`}>{eventApplied(event) ? "Main history" : event.status === "pending" ? "Pending" : "Unapplied"}</span></div><p>{event.path || repo.name} · {dateText(event)}</p><p className="code-muted">{eventReason(event)}</p><div className="code-history-evidence"><code>{compactTx(event.txid)}</code>{event.parent || event.parentTxid ? <code>Parent {compactTx(event.parent ?? event.parentTxid!)}</code> : null}<a href={explorerTxUrl(event.txid, network)} target="_blank" rel="noreferrer">Inspect transaction <ArrowUpRight size={14} /></a></div><div className="code-history-actions">{eventApplied(event) && <a className="secondary" href={routeHref({ repo: codeRepoId(repo), version: event.txid, path: event.path ?? "", tab: "code" })} onClick={click => followInternalLink(click, () => navigate({ repo: codeRepoId(repo), version: event.txid, path: event.path ?? "", tab: "code" }))}>View version</a>}{event.op && <button type="button" className="secondary" onClick={() => setDiffEvent(event)}>Inspect change</button>}</div></div></article>)}{!codeEvents(detail).length && <p className="code-empty">No commit records in this history page.</p>}{detail.pagination.hasMore && <button type="button" className="secondary code-load-more" disabled={pageBusy} onClick={() => void loadMore()}>{pageBusy ? "Reading more history…" : "Load more history"}</button>}
+              {diffEvent && <section className="code-history-inspector" aria-label="Commit inspection"><div className="code-file-toolbar"><strong>{diffEvent.path}</strong><button type="button" className="secondary" onClick={() => setDiffEvent(undefined)} aria-label="Close commit inspection"><X size={17} /></button></div><p>{eventReason(diffEvent)}</p><dl><dt>Commit</dt><dd><code>{diffEvent.txid}</code></dd><dt>Parent</dt><dd><code>{diffEvent.parent ?? diffEvent.parentTxid ?? "Unavailable"}</code></dd>{diffEvent.sourceTxid && <><dt>Referenced page</dt><dd><code>{diffEvent.sourceTxid}</code> · {diffEvent.sourceKind} · output {diffEvent.sourceVout}</dd></>}{diffEvent.sha256 && <><dt>Source SHA-256</dt><dd><code>{diffEvent.sha256}</code></dd></>}</dl>{diffError && <p className="code-notice is-error" role="alert">{diffError}</p>}{eventApplied(diffEvent) && !historyDiff && !diffError && <p role="status">Verifying source changes against the same snapshot…</p>}{historyDiff && <CodeDiff before={historyDiff.before} after={historyDiff.after} />}</section>}
             </div>}
           {!owner && <p className="code-source-footnote">Only the creating wallet can commit source. Wallet ownership is independent of its displayed PowID.</p>}
         </section>}

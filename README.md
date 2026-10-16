@@ -142,12 +142,12 @@ Local standalone preview uses `/?code=1`; Computer uses `/?folder=code`.
 `VITE_CODE_ONLY=1` selects its dedicated build. Navigation and release maps
 include Code alongside the existing products.
 
-Code creates public repositories and a linear history of one-file puts and
-deletes. Creation txid is repository identity and initial head; every input's
+Code creates public repositories and a linear history of one-file puts,
+Page references and deletes. Creation txid is repository identity and initial head; every input's
 hydrated prevout establishes the immutable address owner. Exact-parent commits
 advance only confirmed state. Paths preserve Unicode/case, source preserves
 UTF-8 whitespace/newlines, and invalid/stale attempts remain inspectable.
-Nonempty source reuses one verified `source.txt` / `text/plain` Files attachment
+Nonempty uploaded source reuses one verified `source.txt` / `text/plain` Files attachment
 up to 60,000 raw bytes. Empty files use an explicit zero-byte Code hash
 commitment without an attachment. The aggregate 100,000-byte OP_RETURN script
 limit includes all carrier overhead. Each transaction self-pays at least
@@ -156,8 +156,14 @@ adds the separately reviewed miner fee. There is no extra Code registry fee,
 Git transport, private repository, branch, merge, ownership transfer or code
 execution in v1. [CODE.md](CODE.md) defines the exact wire rules.
 
-The first-party reads are `/api/v1/code-repositories` and
-`/api/v1/code-repository`; repository-list responses include complete Code
+**Add existing page** accepts a confirmed Page TXID and repository path, verifies
+the exact HTML body or attachment, and signs an additive `pwc1:commit2` reference.
+The source remains in its original transaction; a new commit pins its exact
+selector, size and hash without republishing HTML. The 60,000-byte limit remains.
+Version-one history is unchanged, and source stays inert in Code.
+
+The first-party reads are `/api/v1/code-repositories`,
+`/api/v1/code-repository` and `/api/v1/code-page-source`; repository-list responses include complete Code
 activity statistics. They remain unavailable
 until complete authenticated Core discovery covers earlier uses of the `pwc1:`
 marker, including malformed records, canonical positions and source inputs at

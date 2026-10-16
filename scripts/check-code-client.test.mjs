@@ -24,7 +24,7 @@ async function loadClient(path, imports = {}, globals = {}) {
   return exports;
 }
 const api = await loadClient("src/features/code/codeApi.ts", {
-  "../../shared/api/proofApiClient": { fetchProofApiJson: async (...args) => { lastRequest = args; return structuredClone(response); } },
+  "../../shared/api/proofApiClient": { fetchProofApiJson: async (...args) => { lastRequest = args; return structuredClone(typeof response === "function" ? await response(...args) : response); } },
   "../../shared/utils/encoding": { sha256Hex: hash },
   "../../shared/protocol/codeRepository.mjs": codeProtocol,
 });
@@ -221,6 +221,64 @@ test("writer empty put and delete need no attachment; source bounds count exact 
   assert.throws(() => plan.buildCodePlan({ ...plan.emptyCodeDraft, name: "界".repeat(67) }), /200 UTF-8/i);
 });
 
+const pageHtml = "\ufeff<!doctype html>\r\n<html><script>window.referenceExecuted=true</script><body>Exact  </body></html>\r\n";
+const pageBytes = Buffer.from(pageHtml);
+const pageHash = hash(pageBytes);
+const pageSource = { kind: "body", vout: 2, name: "message-body.html", size: pageBytes.length, sha256: pageHash,
+  content: pageHtml, contentBase64: pageBytes.toString("base64") };
+const pageEvidence = { network: "livenet", complete: true, referenceEnabled: true, snapshot,
+  sourceTxid: id(99), blockHeight: 90, blockHash: id(90), blockTransactionIndex: 1, sources: [pageSource] };
+const referenceDraft = { ...plan.emptyCodeDraft, kind: "reference", repo: id(1), parent: id(2), path: "index.html",
+  message: "Add existing page", content: pageHtml, sourceTxid: id(99), sourceKind: "body", sourceVout: 2 };
+
+test("reference plans commit the exact page identity without carrying the source again and retain recovery fields", () => {
+  const reference = plan.buildCodePlan(referenceDraft);
+  assert.equal(reference.payloads.length, 2);
+  assert.ok(reference.payloads[1].startsWith("pwc1:commit2:"));
+  assert.ok(reference.payloads.every(payload => !payload.startsWith("pwm1:a:") && !payload.includes(pageHtml)));
+  const decoded = codeProtocol.parseCodePayload(reference.payloads[1]);
+  assert.equal(decoded.metadata.sourceTxid, id(99));
+  assert.equal(decoded.metadata.sourceVout, 2);
+  assert.equal(decoded.metadata.sha256, pageHash);
+  assert.equal(decoded.metadata.size, pageBytes.length);
+  assert.deepEqual({ ...plan.restoredCodeDraft(plan.codeDraftFields(reference.draft)) }, referenceDraft);
+  for (const change of [{ sourceTxid: undefined }, { sourceKind: "auto" }, { sourceVout: -1 }, { sourceVout: 0.5 }, { content: "" }]) {
+    assert.throws(() => plan.buildCodePlan({ ...referenceDraft, ...change }), /Verify|reference/i);
+  }
+  for (const field of ["Page transaction", "Page source kind", "Page source output"]) {
+    assert.equal(plan.restoredCodeDraft(plan.codeDraftFields(reference.draft).filter(([key]) => key !== field)), undefined);
+  }
+});
+
+test("page source reads require exact confirmed evidence and independently verify every candidate byte", async () => {
+  response = pageEvidence;
+  assert.equal((await api.fetchCodePageSource("livenet", id(99))).sources[0].content, pageHtml);
+  assert.match(lastRequest[0], /code-page-source\?txid=.*&fresh=1/);
+  const badChanges = [{ network: "testnet" }, { complete: false }, { referenceEnabled: false }, { sourceTxid: id(98) },
+    { blockHeight: 101 }, { blockHeight: 0 }, { blockHash: "" }, { blockTransactionIndex: -1 }, { sources: [] },
+    { snapshot: { ...snapshot, checkpointHash: "" } }, { sources: [pageSource, pageSource] },
+    ...[{ content: pageHtml.slice(1) }, { sha256: id(1) }, { size: pageBytes.length + 1 }, { vout: -1 }, { kind: "automatic" },
+      { contentBase64: pageSource.contentBase64 + "=" }].map(change => ({ sources: [{ ...pageSource, ...change }] }))];
+  for (const change of badChanges) {
+    response = { ...pageEvidence, ...change };
+    await assert.rejects(api.fetchCodePageSource("livenet", id(99)), /evidence|selection|source|encoding|commitment/i);
+  }
+});
+
+test("reference tree identity binds source selection separately from the repository commit", async () => {
+  const referenced = { ...file, sourceTxid: id(99), sourceKind: "attachment", sourceVout: 3 };
+  response = { ...detail, files: [referenced], file: { ...fullFile, ...referenced } };
+  const selected = await api.fetchCodeRepository("livenet", id(1), { path: file.path });
+  assert.equal(selected.file.txid, id(2));
+  assert.equal(selected.file.sourceTxid, id(99));
+  assert.equal(api.verifiedCodeSource(selected.file, referenced).source, content);
+  for (const change of [{ sourceTxid: id(98) }, { sourceKind: "body" }, { sourceVout: 4 }, { sourceTxid: undefined }]) {
+    response = { ...detail, files: [referenced], file: { ...fullFile, ...referenced, ...change } };
+    await assert.rejects(api.fetchCodeRepository("livenet", id(1), { path: file.path }), /evidence/i);
+    assert.throws(() => api.verifiedCodeSource(response.file, referenced), /commitment/);
+  }
+});
+
 test("funding reservations accept authoritative complete books and reject truncated or summary evidence", () => {
   const registry = { records: [], listings: [], coverage: { complete: true } };
   assert.doesNotThrow(() => reservations.assertCodeRegistryReservations(registry));
@@ -350,4 +408,39 @@ test("Code preparation and funding remain closed when a wallet reservation lane 
     assert.equal(fixture.builds.length, priorBuilds);
     await assert.rejects(fixture.wallet.verifyCodeFunding(prepared), /reservations/i);
   }
+});
+
+test("reference wallet review rechecks exact Page evidence before funding, signing and broadcast", async () => {
+  const fixture = await codeWalletFixture();
+  let reads = 0;
+  let sourceAvailable = true;
+  let changedSource = false;
+  response = path => {
+    if (path.startsWith("/api/v1/code-page-source?")) {
+      reads++;
+      if (!sourceAvailable) throw new Error("Page is no longer confirmed at the current checkpoint");
+      if (changedSource) {
+        const html = pageHtml + " ";
+        return { ...pageEvidence, sources: [{ ...pageSource, content: html, contentBase64: Buffer.from(html).toString("base64"), sha256: hash(Buffer.from(html)), size: Buffer.byteLength(html) }] };
+      }
+      return pageEvidence;
+    }
+    return { ...detail, repository: { ...repo, ownerAddress: creatingWallet } };
+  };
+  const value = plan.buildCodePlan(referenceDraft);
+  const prepared = await fixture.wallet.prepareCodeTransaction(value, creatingWallet, "livenet", () => {});
+  assert.equal(prepared.review.title, "Add existing page to repository");
+  assert.ok(reads >= 2);
+  assert.equal(prepared.review.evidence.records.length, 2);
+  assert.ok(prepared.review.evidence.records.every(record => !record.startsWith("pwm1:a:")));
+  const before = reads;
+  await fixture.wallet.verifyCodeAuthority(value, creatingWallet, "livenet", () => {});
+  assert.equal(reads, before + 1);
+  changedSource = true;
+  await assert.rejects(fixture.wallet.verifyCodeAuthority(value, creatingWallet, "livenet", () => {}), /differs/);
+  changedSource = false; sourceAvailable = false;
+  await assert.rejects(fixture.wallet.verifyCodeAuthority(value, creatingWallet, "livenet", () => {}), /confirmed/);
+  const builds = fixture.builds.length;
+  await assert.rejects(fixture.wallet.prepareCodeTransaction(value, creatingWallet, "livenet", () => {}), /confirmed/);
+  assert.equal(fixture.builds.length, builds);
 });

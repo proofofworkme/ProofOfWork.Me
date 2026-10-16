@@ -1,6 +1,6 @@
 # ProofOfWork Code
 
-Code v1 is a public source repository surface for `code.proofofwork.me` and
+Code is a public source repository surface for `code.proofofwork.me` and
 Computer's Code workspace. It creates a repository, commits one exact UTF-8
 file at a time, removes files, and exposes the confirmed tree and transaction
 history. Readers inspect source as inert text and verify its transaction, size
@@ -91,6 +91,61 @@ a file also serve as a directory. For example, `src` and `src/main.ts` cannot
 coexist. A delete must match an existing file exactly. Trees sort paths by
 unsigned UTF-8 bytes, never locale, case folding or display order.
 
+## Existing Page references
+
+The additive `pwc1:commit2:` carrier commits an existing confirmed Page as a
+repository file without publishing its HTML bytes again. Its version-two JSON
+has this exact canonical key order:
+
+```json
+{"v":2,"repo":"<creation-txid>","parent":"<current-head-txid>","op":"reference","path":"index.html","message":"Add existing page","sourceTxid":"<published-page-txid>","sourceKind":"body","sourceVout":2,"sha256":"<exact-html-sha256>","size":123}
+```
+
+Mainnet activation begins at height **971652**, bound to canonical parent
+**971651** / `0000000000000000000057f291a6c81728bbdeb52c0db842115ab6d009db870f`.
+Readers verify the parent against the first-party node. Other networks remain
+closed. Earlier `commit2` records retain their former invalid interpretation;
+the version-one repository, put and delete codecs and history are unchanged.
+
+`sourceKind` is exactly `body` or `attachment`. For a body, `sourceVout` identifies
+the first physical `pwm1:m:` output; source bytes concatenate all body parts in
+output order with no separator or normalization. For an attachment it identifies
+the output carrying chunk zero; the complete single attachment must have exact,
+consistent metadata, every chunk once, and matching size and SHA-256. If both
+forms contain HTML, the author explicitly selects one. Browser's display
+preference cannot choose protocol source. A reference cannot target another Code
+transaction. The existing 60,000-byte source limit and UTF-8/NUL rules apply.
+
+The selected source transaction must be on the same network and confirmed in an
+earlier block than the reference commit. Raw transaction identity, exact outputs,
+canonical block membership and checkpoint coverage are verified independently.
+Referenced Pages are read from authenticated Core even when absent from the
+derived database. A missing database row never establishes absence. Repeated
+Core not-found and mempool-absence results require an unpruned, synchronized
+mainnet node and fully synchronized transaction index at an unchanged sampled
+tip, with checkpoint fences, before producing a negative witness. Transient
+missing evidence makes the authoritative read unavailable; a complete,
+checkpoint-bound negative result may establish that a source was not eligible.
+Referenced Page transactions are dependencies, never extra Code-discovery
+candidates. Current and historical replay receive the same verified dependency
+evidence and recheck it after reorganizations.
+
+The repository owner signs the new reference commit. It carries a normal Mail
+envelope and the existing owner self-payment, but no source attachment. The
+original Page's payment is not counted again. The file's `txid` remains the Code
+commit identity; `sourceTxid`, `sourceKind` and `sourceVout` identify its original
+HTML. Source views, diffs, downloads, ZIP exports and Continue in Pages use the
+same verified exact bytes. A later edit can use an ordinary put, or a new
+reference can select a different published version. Neither changes the old
+Page transaction or its DNS link.
+
+In standalone Code and Computer, **Add existing page** accepts a Page TXID and
+repository path. **Verify page** checks the source before review. Restored local
+drafts require verification again. Transaction preparation, signing and broadcast
+each recheck the reference through `/api/v1/code-page-source`; signed recovery
+receipts retain the exact reference and existing duplicate protection. Source
+previews remain inert text and wallet signing stays local.
+
 ## Transaction authority and Mail accounting
 
 Authority comes from every input's hydrated previous-output address. All
@@ -166,7 +221,7 @@ Repository creation sets both repository ID and head to the creation txid,
 with an empty tree and the address inferred from its inputs. A confirmed
 commit applies only when its repository exists, its author matches that
 immutable owner, its `parent` equals the current confirmed head, and its tree
-operation is valid. Successful puts/deletes advance the head to their own
+operation is valid. Successful puts, references and deletes advance the head to their own
 txid. Stale parents, foreign owners, missing files and prefix collisions remain
 inspectable events with explicit validation errors and `applied:false`; they
 do not advance the head. Authors must review a new commit against the refreshed

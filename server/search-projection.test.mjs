@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  buildSearchDocument, exactProofs, searchSha256, searchAttachmentFromCarriers,
+  SEARCH_INDEX_VERSION, buildSearchDocument, exactProofs, searchSha256, searchAttachmentFromCarriers,
   verifiedSearchAttachment, verifiedSearchFileText, sameCanonicalSearchWitness,
   verifySearchCheckpoint, readSearchSources,
 } from './search-projection.mjs';
@@ -136,4 +136,18 @@ test('pruned generations return an expired cursor conflict rather than a false b
 });
 test('unconfigured or disconnected databases report Search unavailable',async()=>{
   await assert.rejects(()=>searchPayload('livenet',new URLSearchParams(),{pool:{connect:async()=>{throw new Error('private connection diagnostics');}}}),error=>error.statusCode===503&&!error.message.includes('private'));
+});
+
+test('Page references index source identity without treating supplied text as verified bytes', () => {
+  const metadata = { v: 2, repo: TXID, parent: TXID, op: 'reference', path: 'index.html', message: 'Existing page',
+    sourceTxid: HASH, sourceKind: 'body', sourceVout: 2, sha256: HASH, size: 20 };
+  const doc = buildSearchDocument(source({ protocol: 'pwc1', kind: 'code-commit', amountSats: '0',
+    payload: { metadata, path: 'index.html', source: { content: 'unverified injected words', data: 'untrusted' } } }), HASH);
+  assert.equal(doc.record.valid, true); assert.equal(doc.record.file, undefined);
+  assert.equal(SEARCH_INDEX_VERSION, 'proof-search-v4-code-page-references');
+  assert.equal(doc.evidence.indexVersion, SEARCH_INDEX_VERSION);
+  assert.deepEqual(doc.record.sourceReference, { txid: HASH, kind: 'body', vout: 2, sha256: HASH, size: 20, verified: false });
+  assert.equal(doc.record.codeAuthority.requiresRepositoryReplay, true);
+  assert.ok(!doc.searchText.includes('unverified injected words'));
+  assert.ok(doc.searchText.includes(HASH));
 });

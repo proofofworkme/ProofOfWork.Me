@@ -9,7 +9,7 @@ import {
   PUBLIC_LOG_EVENT_KINDS, normalizeHistoryEventItem,
 } from "../server/db/proof-index-reader.mjs";
 import {
-  encodeCodeRepository, verifyCodeTransaction,
+  encodeCodeRepository, encodeCodeReferenceCommit, CODE_REFERENCE_ACTIVATION_HEIGHT, verifyCodeTransaction,
 } from "../src/shared/protocol/codeRepository.mjs";
 
 function isolatedFunction(path, name, dependencies) {
@@ -150,4 +150,37 @@ test("Actual Code ingestion preserves the carrier payment separately and adds ze
   assert.equal(items[0].amountSats, "0");
   assert.equal(items[0].selfPaymentSats, "546");
   assert.equal(items[0].dataBytes, 0);
+});
+
+
+test("Reference ingestion and sealed observations remain structural with zero new economics", () => {
+  const owner = "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e";
+  const carrier = encodeCodeReferenceCommit({ v: 2, repo: txid, parent: txid, op: "reference", path: "index.html", message: "Existing page",
+    sourceTxid: "b".repeat(64), sourceKind: "body", sourceVout: 1, sha256: "c".repeat(64), size: 20 });
+  const opReturn = text => ({ value: 0, scriptpubkey: Buffer.from(bitcoin.script.compile([
+    bitcoin.opcodes.OP_RETURN, Buffer.from(text),
+  ])).toString("hex") });
+  const payment = { value: 546, scriptpubkey: Buffer.from(bitcoin.address.toOutputScript(owner)).toString("hex") };
+  const tx = { txid, vin: [{ prevout: payment }], vout: [payment, opReturn("pwm1:m:Reference"), opReturn(carrier)] };
+  const activePosition = { ...position, blockHeight: CODE_REFERENCE_ACTIVATION_HEIGHT, blockTransactionIndex: 1 };
+  const run = isolatedFunction("../scripts/backfill-proof-indexer.mjs", "protocolItemsFromTx", {
+    bitcoin, NETWORK: "livenet", createHash, verifyCodeTransaction,
+    exactCodeOutputProofs: item => String(item.value),
+    baseProtocolItem: () => ({ ...activePosition, confirmed: true, txid }),
+  });
+  const [item] = run(tx, { prefix: "pwc1:", text: carrier, voutIndex: 2 });
+  assert.equal(item.valid, true); assert.equal(item.structuralValid, true);
+  assert.equal(item.sourceVerification, "deferred"); assert.equal(item.applied, false);
+  assert.equal(item.amountSats, "0"); assert.equal(item.dataBytes, 0); assert.equal(item.selfPaymentSats, "546");
+  const observe = isolatedFunction("../server/work-amo-v5-raw.mjs", "evaluatePwc", {
+    createHash, verifyCodeTransaction, exactCodeOutputProofs: item => String(item.value),
+    exactTransactionOutputScript: item => item.scriptpubkey,
+    outputAddress: item => { try { return bitcoin.address.fromOutputScript(Buffer.from(item.scriptpubkey, "hex")); } catch { return ""; } },
+    emptyStateDelta: () => ({}), invalidOutcome: reasonCode => ({ valid: false, reasonCode }),
+  });
+  const observed = observe({ txid, position: activePosition, tx });
+  assert.equal(observed.valid, true); assert.equal(observed.output.sourceVerification, "deferred");
+  assert.equal(observed.output.applied, false); assert.equal(observed.output.amountSats, "0");
+  assert.equal(observed.output.dataBytes, 0); assert.equal(observed.chargesTransactionFee, false);
+  assert.equal(JSON.stringify(observed.stateDelta), "{}");
 });

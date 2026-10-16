@@ -1,12 +1,13 @@
-import { encodeCodeRepository, encodeCodeCommit, validateCodePath, codeSourceBytes } from "../../shared/protocol/codeRepository.mjs";
+import { encodeCodeRepository, encodeCodeCommit, encodeCodeReferenceCommit, validateCodePath, codeSourceBytes } from "../../shared/protocol/codeRepository.mjs";
 import { base64UrlEncodeBytes, sha256Hex } from "../../shared/utils/encoding";
 import { buildAttachmentPayloads } from "../../shared/protocol/mailAttachment";
 import { dataCarrierBytesForPayload } from "../boost/boostWallet";
 
 export type CodeDraft = {
-  kind: "repo" | "put" | "delete";
+  kind: "repo" | "put" | "delete" | "reference";
   name: string; description: string; repo: string; parent: string;
   path: string; message: string; content: string; feeRate: number;
+  sourceTxid?: string; sourceKind?: "body" | "attachment"; sourceVout?: number;
 };
 export const emptyCodeDraft: CodeDraft = {
   kind: "repo", name: "", description: "", repo: "", parent: "", path: "", message: "", content: "", feeRate: 1,
@@ -41,18 +42,25 @@ export function buildCodePlan(draft: CodeDraft): CodePlan {
     const message = codeSourceBytes(draft.message);
     if (!message || message.length > 500) throw new Error("Commit messages may contain at most 500 UTF-8 bytes without NUL characters.");
     if (!validateCodePath(draft.path)) throw new Error("Enter a relative file path with no empty segments, traversal, backslashes, or control characters.");
-    if (draft.kind === "put") {
+    if (draft.kind === "put" || draft.kind === "reference") {
       const bytes = exactSourceBytes(draft.content);
       if (bytes.length > 60_000) throw new Error("One source file may contain at most 60,000 UTF-8 bytes.");
       size = bytes.length;
       sha256 = sha256Hex(bytes);
       // Empty sources have the standard empty hash and deliberately no Files attachment.
-      if (bytes.length) attachments = buildAttachmentPayloads({ name: "source.txt", mime: "text/plain", size, sha256, data: base64UrlEncodeBytes(bytes) });
+      if (bytes.length && draft.kind === "put") attachments = buildAttachmentPayloads({ name: "source.txt", mime: "text/plain", size, sha256, data: base64UrlEncodeBytes(bytes) });
     }
-    payload = draft.kind === "put"
+    if (draft.kind === "reference") {
+      if (!/^[a-f0-9]{64}$/u.test(draft.sourceTxid ?? "") || !["body", "attachment"].includes(draft.sourceKind ?? "") || !Number.isSafeInteger(draft.sourceVout) || draft.sourceVout! < 0 || !size) {
+        throw new Error("Verify an existing page and select its HTML source before reviewing the reference.");
+      }
+      payload = encodeCodeReferenceCommit({ v: 2, repo: draft.repo, parent: draft.parent, op: "reference", path: draft.path, message: draft.message,
+        sourceTxid: draft.sourceTxid!, sourceKind: draft.sourceKind!, sourceVout: draft.sourceVout!, sha256: sha256!, size: size! });
+    } else payload = draft.kind === "put"
       ? encodeCodeCommit({ v: 1, repo: draft.repo, parent: draft.parent, op: "put", path: draft.path, message: draft.message, size: size!, sha256: sha256! })
       : encodeCodeCommit({ v: 1, repo: draft.repo, parent: draft.parent, op: "delete", path: draft.path, message: draft.message });
-    fields.push(["Repository", draft.repo], ["Confirmed parent", draft.parent], ["Operation", draft.kind === "put" ? "Write one source file" : "Delete one source file"], ["Exact path", draft.path], ["Commit message", draft.message]);
+    fields.push(["Repository", draft.repo], ["Confirmed parent", draft.parent], ["Operation", draft.kind === "reference" ? "Reference an existing page" : draft.kind === "put" ? "Write one source file" : "Delete one source file"], ["Exact path", draft.path], ["Commit message", draft.message]);
+    if (draft.kind === "reference") fields.push(["Published page transaction", draft.sourceTxid!], ["Page source", `${draft.sourceKind === "body" ? "HTML message body" : "HTML attachment"} · output ${draft.sourceVout}`], ["Source storage", "Existing transaction; HTML bytes are not republished"]);
     if (size !== undefined && sha256) fields.push(["Source size", `${size} UTF-8 bytes`], ["SHA-256", sha256]);
   }
   const memo = draft.kind === "repo" ? `Code repository: ${draft.name}` : `Code commit: ${draft.message}`;
@@ -69,12 +77,15 @@ export function persistCodeDraft(storage: Storage, key: string, draft: CodeDraft
   if (storage.getItem(key) !== encoded) throw new Error("Draft autosave could not be verified. Copy your source before leaving this editor.");
 }
 export function codeDraftFields(draft: CodeDraft): [string, string][] {
-  return [["Kind", draft.kind], ["Name", draft.name], ["Description", draft.description], ["Repository", draft.repo], ["Parent", draft.parent], ["Path", draft.path], ["Message", draft.message], ["Source", draft.content], ["Fee rate", String(draft.feeRate)]];
+  return [["Kind", draft.kind], ["Name", draft.name], ["Description", draft.description], ["Repository", draft.repo], ["Parent", draft.parent], ["Path", draft.path], ["Message", draft.message], ["Source", draft.content], ["Fee rate", String(draft.feeRate)],
+    ...(draft.kind === "reference" ? [["Page transaction", draft.sourceTxid ?? ""], ["Page source kind", draft.sourceKind ?? ""], ["Page source output", String(draft.sourceVout ?? "")]] as [string, string][] : [])];
 }
 export function restoredCodeDraft(fields: [string, string][]): CodeDraft | undefined {
   const values = Object.fromEntries(fields);
-  if (!["repo", "put", "delete"].includes(values.Kind) || !Number.isFinite(Number(values["Fee rate"]))) return;
-  return { kind: values.Kind as CodeDraft["kind"], name: values.Name ?? "", description: values.Description ?? "", repo: values.Repository ?? "", parent: values.Parent ?? "", path: values.Path ?? "", message: values.Message ?? "", content: values.Source ?? "", feeRate: Number(values["Fee rate"]) };
+  if (!["repo", "put", "delete", "reference"].includes(values.Kind) || !Number.isFinite(Number(values["Fee rate"]))) return;
+  if (values.Kind === "reference" && (!/^[a-f0-9]{64}$/u.test(values["Page transaction"] ?? "") || !["body", "attachment"].includes(values["Page source kind"]) || !/^(0|[1-9]\d*)$/u.test(values["Page source output"] ?? "") || !Number.isSafeInteger(Number(values["Page source output"])))) return;
+  return { kind: values.Kind as CodeDraft["kind"], name: values.Name ?? "", description: values.Description ?? "", repo: values.Repository ?? "", parent: values.Parent ?? "", path: values.Path ?? "", message: values.Message ?? "", content: values.Source ?? "", feeRate: Number(values["Fee rate"]),
+    ...(values.Kind === "reference" ? { sourceTxid: values["Page transaction"], sourceKind: values["Page source kind"] as "body" | "attachment", sourceVout: Number(values["Page source output"]) } : {}) };
 }
 export function lineChange(before: string, after: string) {
   const oldLines = before.split("\n");

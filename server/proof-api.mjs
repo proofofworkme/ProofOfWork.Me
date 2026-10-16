@@ -336,6 +336,7 @@ import {
 } from "./incb-range-replay-witness.mjs";
 import { searchPayload, searchDetailPayload } from "./db/search-reader.mjs";
 import { CODE_SNAPSHOT_MODEL, qualifyCodeLogPayload } from "./code-repositories.mjs";
+import { codeReferenceSourceFromCore } from "./db/code-reader.mjs";
 import { JOBS_SNAPSHOT_MODEL, jobsLogPayloadHasCandidates, qualifyJobsLogPayload } from "./jobs.mjs";
 import {
   compareProofIndexHistoryPayloads,
@@ -35696,7 +35697,8 @@ async function logPayloadWithDnsSubdomainAuthority(payload, network) {
       params.set("snapshot", Buffer.from(JSON.stringify({ model: CODE_SNAPSHOT_MODEL, network, checkpointHeight, checkpointHash })).toString("base64url"));
     }
     try {
-      const state = await proofIndexCodePayload(network, params, { events: true, verifyCheckpoint: async height => {
+      const state = await proofIndexCodePayload(network, params, { events: true,
+        resolveReferenceSource: request => codeReferenceSourceFromCore(request, bitcoinRpc), verifyCheckpoint: async height => {
         const result = await bitcoinRpc("getblockhash", [height]); return result?.ok ? result.result : null;
       } });
       payload = qualifyCodeLogPayload(payload, [...state.events, ...state.pendingEvents], state.snapshot);
@@ -81753,9 +81755,11 @@ async function handleRequest(request, response) {
       return;
     }
 
-    if (url.pathname === "/api/v1/code-repositories" || url.pathname === "/api/v1/code-repository") {
+    if (url.pathname === "/api/v1/code-repositories" || url.pathname === "/api/v1/code-repository" || url.pathname === "/api/v1/code-page-source") {
       const payload = await proofIndexCodePayload(network, url.searchParams, {
         detail: url.pathname === "/api/v1/code-repository",
+        pageSource: url.pathname === "/api/v1/code-page-source",
+        resolveReferenceSource: request => codeReferenceSourceFromCore(request, bitcoinRpc),
         verifyCheckpoint: async height => {
           const result = await bitcoinRpc("getblockhash", [height]);
           return result?.ok ? result.result : null;
@@ -81764,8 +81768,8 @@ async function handleRequest(request, response) {
       if (freshRead && !url.searchParams.has("snapshot") && !url.searchParams.has("cursor")) {
         const codeReadGate = canonicalReadGate ?? await canonicalPublicReadGate(network, { force: true });
         if (codeReadGate?.available !== true || codeReadGate?.atTip !== true ||
-            payload.indexedThroughBlock !== Number(codeReadGate.indexedThroughBlock) ||
-            payload.indexedThroughBlockHash !== codeReadGate.canonicalHash) {
+            (payload.indexedThroughBlock ?? payload.snapshot?.checkpointHeight) !== Number(codeReadGate.indexedThroughBlock) ||
+            (payload.indexedThroughBlockHash ?? payload.snapshot?.checkpointHash) !== codeReadGate.canonicalHash) {
           throw freshDataUnavailableError("Code discovery has not reached the exact canonical checkpoint.");
         }
       }

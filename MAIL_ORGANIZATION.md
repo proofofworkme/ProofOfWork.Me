@@ -522,13 +522,21 @@ address owner and one confirmed head. Code drafts are browser-local preparation
 state; they do not change ownership, repository history or mailbox organization.
 [CODE.md](CODE.md) defines exact paths, canonical replay and source verification.
 
-Nonempty source commits reuse one same-transaction verified Files attachment
+Nonempty uploaded-source commits reuse one same-transaction verified Files attachment
 named `source.txt` with MIME `text/plain`, up to 60,000 raw bytes. Repository
 path stays separate exact Code metadata, so Mail filename normalization cannot
 rewrite it. The normal self-send appears through existing Inbox/Sent and Files
 projections; that Mail/Files payment contributes once. Code history and Search
 do not add another payment or new Mail event kind. Empty files use a Code
 zero-byte hash commitment with no attachment, preserving existing Files rules.
+
+**Add existing page** commits a reference to a confirmed HTML message body or
+attachment by Page TXID and exact repository path. The additive `commit2` record
+pins the source selector, SHA-256 and size; it does not republish a Files
+attachment or count the earlier Page payment again. Its new Mail self-send owns
+only its existing payment lane. Local drafts and recovery receipts preserve the
+reference; fresh verification is required before review, signing and broadcast.
+The repository commit and original Page retain separate transaction identities.
 
 The Code reader displays source as inert text, never as wallet-capable HTML or
 executable code. Confirmed trees require complete hash-bound Code discovery;

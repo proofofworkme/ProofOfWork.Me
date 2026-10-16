@@ -10,7 +10,7 @@ import {
 } from "../../src/shared/protocol/publishArticle.mjs";
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
-import { readCodeSnapshot } from "./code-reader.mjs";
+import { readCodeSnapshot, readCodePageSource } from "./code-reader.mjs";
 import { readJobsSnapshot } from "./jobs-reader.mjs";
 import { createPermissionIndexDiscovery } from "./permission-reader.mjs";
 import { jobsReadError, jobsPayload, jobPayload } from "../jobs.mjs";
@@ -44748,6 +44748,11 @@ export async function proofIndexCodePayload(network, searchParams, options = {})
   const client = await pool.connect();
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    if (options.pageSource) {
+      const result = await readCodePageSource(client, network, searchParams, options);
+      await client.query("COMMIT");
+      return result;
+    }
     const state = await readCodeSnapshot(client, network, searchParams, options);
     const result = options.events ? { events: state.events, pendingEvents: state.pendingEvents, snapshot: state.snapshot }
       : options.detail ? codeRepositoryPayload(state, searchParams) : codeRepositoriesPayload(state, searchParams);

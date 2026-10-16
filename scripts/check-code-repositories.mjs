@@ -5,6 +5,7 @@ import * as bitcoin from "bitcoinjs-lib";
 import {
   CODE_EMPTY_SHA256, CODE_MAX_SOURCE_BYTES, codeSourceBytes, encodeCodeRepository,
   encodeCodeCommit, parseCodePayload, validateCodePath, verifyCodeTransaction, replayCodeTransactions,
+  encodeCodeReferenceCommit, enumerateCodePageSources, CODE_REFERENCE_ACTIVATION_HEIGHT,
 } from "../src/shared/protocol/codeRepository.mjs";
 
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
@@ -219,4 +220,159 @@ test("missing positions, duplicate evidence and competing block hashes cannot ma
   assert.throws(() => replayCodeTransactions([repository(), repository()], options), /duplicate transaction/);
   assert.throws(() => replayCodeTransactions([repository(), put(2, 1, "a", "x", { blockTransactionIndex: 1 })], options), /ambiguous canonical/);
   assert.throws(() => replayCodeTransactions([repository(), put(2, 1, "a", "x", { status: { confirmed: true, block_height: 100, block_hash: "b".repeat(64) } })], options), /mixes canonical block hashes/);
+});
+
+const referencePosition = { status: { confirmed: true, block_height: CODE_REFERENCE_ACTIVATION_HEIGHT, block_hash: blockHash } };
+function page(id = 90, content = "\ufeff<!doctype html>\r\n<p>Exact café 東京</p>\r\n \t", payloads) {
+  return transaction(id, payloads ?? [`pwm1:m:${content}`], { network: "livenet",
+    status: { confirmed: true, block_height: CODE_REFERENCE_ACTIVATION_HEIGHT - 1, block_hash: "b".repeat(64) } });
+}
+function reference(id = 2, parent = 1, source = page(), changes = {}) {
+  const candidate = enumerateCodePageSources(source, options)[0];
+  const metadata = { v: 2, repo: txid(1), parent: txid(parent), op: "reference", path: "index.html",
+    message: "Reference existing Page", sourceTxid: source.txid, sourceKind: candidate.kind,
+    sourceVout: candidate.vout, sha256: candidate.sha256, size: candidate.size, ...changes };
+  return transaction(id, ["pwm1:m:Code reference", encodeCodeReferenceCommit(metadata)], referencePosition);
+}
+function referenceOptions(source = page()) {
+  return { ...options, network: "livenet", referenceSources: new Map([[source.txid, source]]) };
+}
+
+test("reference codec is additive, closed, and cannot reinterpret a v1 put", () => {
+  const tx = reference();
+  const text = verifyCodeTransaction(tx, { ...referenceOptions(), structuralOnly: true }).rawPayload;
+  const parsed = parseCodePayload(text);
+  assert.equal(parsed.kind, "commit2");
+  assert.equal(parsed.metadata.v, 2);
+  assert.equal(encodeCodeReferenceCommit(parsed.metadata), text);
+  assert.equal(parseCodePayload(text.replace("pwc1:commit2:", "pwc1:commit:")), null);
+  assert.throws(() => encodeCodeCommit(parsed.metadata));
+  for (const change of [{ v: 1 }, { op: "put" }, { sourceTxid: "F".repeat(64) }, { sourceKind: "auto" },
+    { sourceVout: -1 }, { sourceVout: 1.1 }, { sourceVout: 2 ** 32 }, { size: 0 }, { size: 60001 }, { sourceUrl: "https://example.org" }]) {
+    assert.throws(() => encodeCodeReferenceCommit({ ...parsed.metadata, ...change }));
+  }
+  assert.equal(parseCodePayload(`pwc1:commit2:${encode({ ...parsed.metadata, extra: true })}`), null);
+});
+
+test("reference activation is fenced without changing legacy commits", () => {
+  const ref = reference();
+  const historical = verifyCodeTransaction({ ...ref, status: { ...ref.status, block_height: CODE_REFERENCE_ACTIVATION_HEIGHT - 1 } }, referenceOptions());
+  errorIncludes(historical, "code-metadata-invalid");
+  assert.equal(historical.metadata, null);
+  assert.equal(historical.repoTxid, "");
+  assert.equal(historical.sourceVerification, undefined);
+  errorIncludes(verifyCodeTransaction(ref, { ...referenceOptions(), network: "testnet4" }), "code-reference-network-unsupported");
+  errorIncludes(verifyCodeTransaction(ref, options), "code-reference-network-unsupported");
+  assert.equal(verifyCodeTransaction(ref, referenceOptions()).valid, true);
+  assert.equal(verifyCodeTransaction(put(2, 1, "old.html", "<p>Legacy</p>"), options).valid, true);
+});
+
+test("Page candidates bind complete exact body and chunk-zero attachment selectors", () => {
+  const body = "\ufeff<!doctype html>\r\n<p>Body</p>\r\n \t";
+  const content = "\ufeff<html>\r\n<p>Attachment café</p>\n</html>\t";
+  const bytes = Buffer.from(content), data = bytes.toString("base64url");
+  const prefix = attachment(bytes, { mime: "text/html", name: "Original.html" }).split(":").slice(0, 6).join(":");
+  const source = page(90, body, [`pwm1:m:${body.slice(0, 20)}`, `${prefix}:1/2:${data.slice(8)}`,
+    `pwm1:m:${body.slice(20)}`, `${prefix}:0/2:${data.slice(0, 8)}`]);
+  const candidates = enumerateCodePageSources(source, options);
+  assert.deepEqual(candidates.map(item => [item.kind, item.vout]), [["body", 1], ["attachment", 4]]);
+  assert.equal(candidates[0].content, body);
+  assert.equal(candidates[1].content, content);
+  assert.equal(Buffer.from(candidates[1].data, "base64url").toString(), content);
+  const selected = candidates[1];
+  const ref = reference(2, 1, source, { sourceKind: "attachment", sourceVout: selected.vout, sha256: selected.sha256, size: selected.size });
+  assert.equal(verifyCodeTransaction(ref, referenceOptions(source)).source.content, content);
+  const wrongSelector = reference(2, 1, source, { sourceKind: "attachment", sourceVout: 2, sha256: selected.sha256, size: selected.size });
+  errorIncludes(verifyCodeTransaction(wrongSelector, referenceOptions(source)), "code-reference-source-commitment-mismatch");
+  const duplicate = structuredClone(source); duplicate.vout.push(duplicate.vout[4]);
+  assert.throws(() => enumerateCodePageSources(duplicate, options), /ambiguous/);
+  const missing = structuredClone(source); missing.vout.splice(2, 1);
+  assert.throws(() => enumerateCodePageSources(missing, options), /incomplete/);
+});
+
+test("references retain commit identity, resolve source separately, and preserve history", () => {
+  const source = page(), opts = referenceOptions(source), ref = reference(2, 1, source);
+  assert.equal(ref.vout.length, 3, "the reference publishes no source attachment");
+  const state = replayCodeTransactions([repository(), ref], opts);
+  const file = state.repositories[0].files[0];
+  assert.equal(file.txid, ref.txid);
+  assert.equal(file.sourceTxid, source.txid);
+  assert.equal(file.sourceKind, "body");
+  assert.equal(file.sourceVout, 1);
+  assert.equal(file.content, enumerateCodePageSources(source, options)[0].content);
+  assert.equal(state.repositories[0].headTxid, ref.txid);
+  assert.equal(state.events[1].sourceVerification, "verified");
+  const update = put(3, 2, "index.html", "<p>Edited</p>", referencePosition);
+  const after = replayCodeTransactions([repository(), ref, update], opts);
+  assert.equal(after.repositories[0].files[0].content, "<p>Edited</p>");
+  assert.equal(after.repositories[0].commits[1].source.sourceTxid, source.txid);
+  assert.equal(after.repositories[0].commits[1].source.content, file.content);
+});
+
+test("missing Page evidence fails authoritative replay while structural observations stay explicit", () => {
+  const ref = reference(), opts = { ...options, network: "livenet" };
+  const observed = verifyCodeTransaction(ref, { ...opts, structuralOnly: true });
+  assert.equal(observed.valid, true);
+  assert.equal(observed.applied, false);
+  assert.equal(observed.sourceVerification, "deferred");
+  assert.equal(observed.source, undefined);
+  assert.throws(() => verifyCodeTransaction(ref, opts), { code: "CODE_REFERENCE_SOURCE_UNAVAILABLE" });
+  assert.throws(() => replayCodeTransactions([repository(), ref], { ...opts, structuralOnly: true }), { code: "CODE_REFERENCE_SOURCE_UNAVAILABLE" });
+});
+
+test("proven absent Page is invalid at its exact checkpoint without blocking other repositories", () => {
+  const ref = reference(), source = page();
+  const checkpoint = { checkpointHeight: CODE_REFERENCE_ACTIVATION_HEIGHT, checkpointHash: blockHash };
+  const absent = { txid: source.txid, network: "livenet", status: "unavailable-at-checkpoint", referenceAbsent: true, ...checkpoint };
+  const opts = { ...options, network: "livenet", ...checkpoint, referenceSources: new Map([[source.txid, absent]]) };
+  const state = replayCodeTransactions([repository(), ref, repository(20)], opts);
+  assert.equal(state.repositories.length, 2);
+  assert.equal(state.repositories.find(repo => repo.txid === txid(1)).headTxid, txid(1));
+  assert.equal(state.repositories.find(repo => repo.txid === txid(20)).headTxid, txid(20));
+  errorIncludes(state.events.find(event => event.txid === ref.txid), "code-reference-source-absent");
+  for (const changed of [{ checkpointHash: "c".repeat(64) }, { checkpointHeight: CODE_REFERENCE_ACTIVATION_HEIGHT + 1 }, { status: "unknown" }, { extra: true }]) {
+    assert.throws(() => replayCodeTransactions([repository(), ref], { ...opts, referenceSources: new Map([[source.txid, { ...absent, ...changed }]]) }),
+      { code: "CODE_REFERENCE_SOURCE_UNAVAILABLE" });
+  }
+  assert.throws(() => replayCodeTransactions([repository(), ref], { ...opts, checkpointHeight: undefined }), { code: "CODE_REFERENCE_SOURCE_UNAVAILABLE" });
+});
+
+test("provably invalid reference paths reject before requesting unavailable dependencies", () => {
+  const file = put(2, 1, "src", "plain file"), collision = reference(3, 2, page(), { path: "src/index.html" });
+  const state = replayCodeTransactions([repository(), file, collision], { ...options, network: "livenet" });
+  assert.equal(state.repositories[0].headTxid, txid(2));
+  errorIncludes(state.events.find(event => event.txid === txid(3)), "code-path-prefix-collision");
+});
+
+test("reference validity requires same-network older canonical Page bytes and rejects recursion", () => {
+  const source = page(), ref = reference(), opts = referenceOptions(source);
+  for (const [change, reason] of [[{ network: "testnet4" }, "code-reference-source-identity-mismatch"],
+    [{ status: "pending" }, "code-reference-source-unconfirmed"], [{ status: "orphaned" }, "code-reference-source-unconfirmed"],
+    [{ status: { ...source.status, block_height: CODE_REFERENCE_ACTIVATION_HEIGHT } }, "code-reference-source-not-earlier"],
+    [{ status: { ...source.status, block_height: CODE_REFERENCE_ACTIVATION_HEIGHT + 1 } }, "code-reference-source-not-earlier"]]) {
+    errorIncludes(verifyCodeTransaction(ref, { ...opts, referenceSources: new Map([[source.txid, { ...source, ...change }]]) }), reason);
+  }
+  const different = page(90, "<p>Substituted bytes</p>");
+  errorIncludes(verifyCodeTransaction(ref, referenceOptions(different)), "code-reference-source-commitment-mismatch");
+  const recursive = { ...source, vout: [...source.vout, ref.vout.at(-1)] };
+  assert.deepEqual(enumerateCodePageSources(recursive, options), []);
+  errorIncludes(verifyCodeTransaction(ref, referenceOptions(recursive)), "code-reference-source-commitment-mismatch");
+  const orphaned = { ...source, status: "orphaned" };
+  const descendant = put(3, 2, "index.html", "<p>Descendant</p>", referencePosition);
+  const state = replayCodeTransactions([repository(), ref, descendant], referenceOptions(orphaned));
+  assert.equal(state.repositories[0].headTxid, txid(1));
+  errorIncludes(state.events.find(event => event.txid === txid(3)), "code-parent-stale");
+});
+
+test("Page source limits and malformed bytes never silently become referenced HTML", () => {
+  const maximum = "<p>" + "x".repeat(CODE_MAX_SOURCE_BYTES - 7) + "</p>";
+  assert.equal(enumerateCodePageSources(page(90, maximum), options)[0].size, CODE_MAX_SOURCE_BYTES);
+  assert.deepEqual(enumerateCodePageSources(page(90, maximum + "x"), options), []);
+  assert.deepEqual(enumerateCodePageSources(page(90, "Ordinary text"), options), []);
+  const invalid = page(90, "", [Buffer.concat([Buffer.from("pwm1:m:<p>"), Buffer.from([0xff])])]);
+  assert.throws(() => enumerateCodePageSources(invalid, options), /malformed/);
+  const badHash = page(90, "", [attachment(Buffer.from("<p>Valid UTF-8</p>"), { mime: "text/html", sha256: "f".repeat(64) })]);
+  assert.throws(() => enumerateCodePageSources(badHash, options), /commitment/);
+  const nul = page(90, "", [attachment(Buffer.from("<p>\u0000</p>"), { mime: "text/html" })]);
+  assert.throws(() => enumerateCodePageSources(nul, options), /invalid source/);
 });

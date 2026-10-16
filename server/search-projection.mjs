@@ -3,7 +3,7 @@ import { TextDecoder } from 'node:util';
 import { decodeCanonicalOpReturnOutput, CANONICAL_PROTOCOL_PREFIXES } from './canonical-op-return.mjs';
 import { CODE_EMPTY_SHA256 } from '../src/shared/protocol/codeRepository.mjs';
 
-export const SEARCH_INDEX_VERSION = 'proof-search-v2-code';
+export const SEARCH_INDEX_VERSION = 'proof-search-v4-code-page-references';
 export const SEARCH_MAX_DETAIL_BYTES = 2_000_000;
 export const SEARCH_PROTOCOLS = Object.freeze([...CANONICAL_PROTOCOL_PREFIXES.map(prefix=>prefix.slice(0,-1)),'unknown','transaction']);
 const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -83,19 +83,20 @@ export function buildSearchDocument(source, sourceHash) {
   if (!source || typeof source !== 'object' || !string(source.id) || !/^[0-9a-f]{64}$/u.test(string(source.txid))) throw searchError('Search source has no exact identity.');
   const payload = source.payload && typeof source.payload === 'object' ? source.payload : {};
   const contentBytes = typeof source.contentBase64 === 'string' ? Buffer.from(source.contentBase64, 'base64') : null;
-  const declaredAttachment = payload.attachment ?? (source.protocol === 'pwc1' ? payload.source : null) ?? source.file;
+  const codeReference = source.protocol === 'pwc1' && payload.metadata?.v === 2 && payload.metadata?.op === 'reference';
+  const declaredAttachment = codeReference ? null : payload.attachment ?? (source.protocol === 'pwc1' ? payload.source : null) ?? source.file;
   const carrierAttachment=searchAttachmentFromCarriers(rawCarriers(source));
   const declaredCarrierMatch=!declaredAttachment || (carrierAttachment &&
     String(declaredAttachment.sha256).toLowerCase()===carrierAttachment.file.sha256 &&
     numeric(declaredAttachment.size??declaredAttachment.size_bytes)===carrierAttachment.file.size &&
     string(declaredAttachment.name)===carrierAttachment.file.name &&
     string(declaredAttachment.mime??declaredAttachment.mimeType??declaredAttachment.mime_type)===carrierAttachment.file.mimeType);
-  const verified = source.protocol === 'pwc1'
+  const verified = codeReference ? null : source.protocol === 'pwc1'
     ? (declaredAttachment?.size === 0 && declaredAttachment.sha256 === CODE_EMPTY_SHA256 &&
         payload.metadata?.size === 0 && payload.metadata.sha256 === CODE_EMPTY_SHA256 && !carrierAttachment
       ? verifiedSearchAttachment(declaredAttachment, Buffer.alloc(0)) : declaredCarrierMatch ? carrierAttachment : null)
     : verifiedSearchAttachment(declaredAttachment, contentBytes) ?? (declaredCarrierMatch?carrierAttachment:null);
-  const file = verified?.file ?? (source.file ? { name: string(source.file.name), mimeType: string(source.file.mimeType ?? source.file.mime_type), size: numeric(source.file.size), sha256: string(source.file.sha256) } : undefined);
+  const file = verified?.file ?? (!codeReference && source.file ? { name: string(source.file.name), mimeType: string(source.file.mimeType ?? source.file.mime_type), size: numeric(source.file.size), sha256: string(source.file.sha256) } : undefined);
   const fileText = verifiedSearchFileText(verified);
   const attachmentInvalid = Boolean(declaredAttachment && !verified);
   const record = {
@@ -109,7 +110,10 @@ export function buildSearchDocument(source, sourceHash) {
     participants: Array.isArray(source.participants) ? source.participants : [], refs: Array.isArray(source.refs) ? source.refs : [],
     source: { vout: numeric(source.vout), ordinal: numeric(source.ordinal), type: string(source.sourceClass) },
     ...(source.protocol === 'pwc1' ? { codeAuthority: { model: 'exact-code-transaction-observation', applied: null,
-      requiresRepositoryReplay: true } } : {}),
+      requiresRepositoryReplay: true }, ...(codeReference ? { sourceReference: {
+        txid: string(payload.metadata.sourceTxid), kind: string(payload.metadata.sourceKind),
+        vout: numeric(payload.metadata.sourceVout), sha256: string(payload.metadata.sha256),
+        size: numeric(payload.metadata.size), verified: false } } : {}) } : {}),
     ...(file ? { file: { ...file, verified: Boolean(verified), textIndexed: Boolean(fileText) } } : {}),
   };
   const rawPayload = string(source.rawPayload);

@@ -4109,7 +4109,7 @@ function evaluatePwc(record) {
     ...record.position,
     vin: (record.tx.vin ?? []).map(input => ({ ...input, prevout: output(input.prevout) })),
     vout: (record.tx.vout ?? []).map(output),
-  }, { sha256: bytes => createHash("sha256").update(bytes).digest("hex") });
+  }, { network: "livenet", structuralOnly: true, sha256: bytes => createHash("sha256").update(bytes).digest("hex") });
   if (!event?.valid) return invalidOutcome(event?.validationErrors?.[0] ?? "code-record-invalid", event?.metadata ?? null, event?.kind ?? "code-commit");
   const { source, ...observation } = event;
   return { derived: [], output: { ...observation, amountSats: "0", dataBytes: 0 }, parsed: event.metadata,

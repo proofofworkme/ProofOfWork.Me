@@ -7,7 +7,7 @@ import type { ActionReview } from "../../shared/components/ActionTransactionRevi
 import { assertActiveWalletAddress, buildBoostPaymentPsbt, ensureWalletNetwork, fetchReservedAmoAnchorOutpoints,
   scriptForAddress, type BoostPaymentPsbt, type BoostSpentOutpoint } from "../boost/boostWallet";
 import { boostListingAnchorOutpoints, type BoostFeedPayload } from "../boost/boostProtocol";
-import { fetchCodeRepository } from "./codeApi";
+import { fetchCodeRepository, fetchCodePageSource } from "./codeApi";
 import type { CodePlan } from "./codeProtocol";
 import { assertCodeRegistryReservations, assertCodeCreditReservations, type CodeReservationPayload } from "./codeReservations";
 
@@ -65,8 +65,15 @@ export async function verifyCodeAuthority(plan: CodePlan, address: string, netwo
     if (latest.repository.headTxid !== plan.draft.parent) throw new Error("The confirmed main head changed. Refresh, inspect the latest source, and prepare a new commit.");
     const existing = latest.files.find(file => file.path === plan.draft.path);
     if (plan.draft.kind === "delete" && !existing) throw new Error("This source file no longer exists at the confirmed main head.");
-    if (plan.draft.kind === "put" && latest.files.some(file => file.path !== plan.draft.path && (file.path.startsWith(`${plan.draft.path}/`) || plan.draft.path.startsWith(`${file.path}/`)))) {
+    if (["put", "reference"].includes(plan.draft.kind) && latest.files.some(file => file.path !== plan.draft.path && (file.path.startsWith(`${plan.draft.path}/`) || plan.draft.path.startsWith(`${file.path}/`)))) {
       throw new Error("This path conflicts with an existing file or directory. Choose a different path.");
+    }
+    if (plan.draft.kind === "reference") {
+      const page = await fetchCodePageSource(network, plan.draft.sourceTxid!);
+      const source = page.sources.find(item => item.kind === plan.draft.sourceKind && item.vout === plan.draft.sourceVout);
+      if (!source || source.sha256 !== plan.sha256 || source.size !== plan.size || source.content !== plan.draft.content) {
+        throw new Error("The confirmed page differs from this reference. Verify its source and prepare a new review.");
+      }
     }
   }
   assertCurrent();
@@ -82,10 +89,10 @@ export async function prepareCodeTransaction(plan: CodePlan, address: string, ne
     paymentCount: 1, registryPaymentCount: 0, feeSats: payment.feeSats, changeSats: payment.changeSats });
   if (JSON.stringify(evidence.records) !== JSON.stringify(plan.payloads)) throw new Error("Prepared source records differ from the reviewed source.");
   await verifyCodeAuthority(plan, address, network, assertCurrent);
-  const review: ActionReview = { title: plan.draft.kind === "repo" ? "Create public repository" : "Publish source commit", networkLabel: "Mainnet",
+  const review: ActionReview = { title: plan.draft.kind === "repo" ? "Create public repository" : plan.draft.kind === "reference" ? "Add existing page to repository" : "Publish source commit", networkLabel: "Mainnet",
     fields: [["Creating wallet", address], ...plan.fields], evidence, feeRate: String(plan.draft.feeRate), dustFeeProofs: String(payment.dustFeeSats),
     paymentLabels: ["546 proofs returned to your wallet"], walletSpendProofs: evidence.feeProofs,
-    explanation: "The repository and exact source are public and permanent. The 546-proof self-payment is the ordinary Mail envelope and is counted once. Only the miner fee is spent. Confirmed main history follows signed parent references; competing edits remain inspectable." };
+    explanation: `${plan.draft.kind === "reference" ? "This commit pins the selected published page at the exact repository path. Its HTML remains in the original transaction. " : "The repository and exact source are public and permanent. "}The 546-proof self-payment is the ordinary Mail envelope and is counted once. Only the miner fee is spent. Confirmed main history follows signed parent references; competing edits remain inspectable.` };
   return { plan, address, network, payment, review } satisfies PreparedCode;
 }
 export async function verifyCodeFunding(prepared: PreparedCode) {

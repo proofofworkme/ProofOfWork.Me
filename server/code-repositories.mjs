@@ -190,13 +190,14 @@ function repositorySummary(repo) {
   const { files, commits, ...rest } = repo;
   return { ...rest, fileCount: files.length, commitCount: commits.filter(event => event.kind === 'code-commit' && event.applied).length };
 }
-export function createCodeSnapshot({ network, checkpointHeight, checkpointHash, transactions, generatedAt }, replay = replayCodeTransactions) {
+export function createCodeSnapshot({ network, checkpointHeight, checkpointHash, transactions, generatedAt, referenceSources = new Map(), referencePolicy }, replay = replayCodeTransactions) {
   if (!Number.isSafeInteger(checkpointHeight) || checkpointHeight < 1 || !TXID.test(checkpointHash)) throw codeReadError('Code has no exact canonical checkpoint.');
   const snapshot = { model: CODE_SNAPSHOT_MODEL, network, checkpointHeight, checkpointHash };
   const confirmed = transactions.filter(tx => tx.status?.confirmed === true).sort((a, b) =>
     a.status.block_height - b.status.block_height || a.blockTransactionIndex - b.blockTransactionIndex);
-  const result = replay(confirmed, { sha256 });
-  const observed = replay(transactions, { sha256 });
+  const replayOptions = { sha256, network, referenceSources, referencePolicy, checkpointHeight, checkpointHash };
+  const result = replay(confirmed, replayOptions);
+  const observed = replay(transactions, replayOptions);
   const byTxid = new Map(confirmed.map(tx => [tx.txid, tx]));
   for (const event of result.events) {
     const tx = byTxid.get(event.txid);
@@ -209,7 +210,7 @@ export function createCodeSnapshot({ network, checkpointHeight, checkpointHash, 
       blockTransactionIndex: tx.blockTransactionIndex };
   }
   return { ...result, pendingEvents: observed.events.filter(event => !event.confirmed),
-    transactions: byTxid,
+    transactions: byTxid, referenceSources, referencePolicy,
     snapshot: { ...snapshot, id: token(snapshot) }, generatedAt };
 }
 function page(items, params, state, scope) {
@@ -278,7 +279,9 @@ export function codeRepositoryPayload(state, params = new URLSearchParams()) {
   const versionTransactions = [...state.transactions.values()];
   const versionIndex = versionTransactions.findIndex(tx => tx.txid === version);
   if (versionIndex < 0) throw codeReadError('Revision raw transaction is unavailable.');
-  const historical = replayCodeTransactions(versionTransactions.slice(0, versionIndex + 1), { sha256 })
+  const historical = replayCodeTransactions(versionTransactions.slice(0, versionIndex + 1), { sha256, network: state.snapshot.network,
+    referenceSources: state.referenceSources, referencePolicy: state.referencePolicy,
+    checkpointHeight: state.snapshot.checkpointHeight, checkpointHash: state.snapshot.checkpointHash })
     .repositories.find(item => item.txid === repoTxid);
   if (!historical) throw codeReadError('Revision cannot be verified against raw evidence.');
   const history = state.events.filter(item => item.repoTxid === repoTxid).map(eventSummary);
@@ -292,13 +295,15 @@ export function codeRepositoryPayload(state, params = new URLSearchParams()) {
     const file = historical.files.find(item => item.path === path);
     if (!file) return { ...result, file: null };
     const tx = state.transactions.get(file.txid);
+    const sourceTx = file.sourceTxid ? state.referenceSources?.get(file.sourceTxid) : tx;
     const bytes = Buffer.from(file.data ?? '', 'base64url');
-    if (!tx || bytes.length !== file.size || sha256(bytes) !== file.sha256 ||
+    if (!tx || !sourceTx || bytes.length !== file.size || sha256(bytes) !== file.sha256 ||
         new TextDecoder('utf8', { fatal: true, ignoreBOM: true }).decode(bytes) !== file.content) throw codeReadError('Source bytes do not match their chain evidence.');
+    const evidence = transaction => ({ txid: transaction.txid, blockHeight: transaction.status.block_height,
+      blockHash: transaction.status.block_hash, blockTransactionIndex: transaction.blockTransactionIndex,
+      outputs: transaction.vout.map((output, vout) => ({ vout, ...decodeCanonicalOpReturnOutput(output) })) });
     result.file = { ...file, contentBase64: bytes.toString('base64'), verified: true,
-      evidence: { txid: tx.txid, blockHeight: tx.status.block_height, blockHash: tx.status.block_hash,
-        blockTransactionIndex: tx.blockTransactionIndex,
-        outputs: tx.vout.map((output, vout) => ({ vout, ...decodeCanonicalOpReturnOutput(output) })) } };
+      evidence: evidence(tx), ...(file.sourceTxid ? { sourceEvidence: evidence(sourceTx) } : {}) };
   }
   return result;
 }

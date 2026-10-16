@@ -65,6 +65,38 @@ or economic migration is part of this repair.
 
 ## Code v1 production surface and discovery gate
 
+### Additive Code Page references
+
+The `pwc1:commit2` Page-reference form is defined in [CODE.md](CODE.md#existing-page-references).
+Mainnet activation is 971652, with parent 971651 pinned to
+`0000000000000000000057f291a6c81728bbdeb52c0db842115ab6d009db870f`.
+`/api/v1/code-page-source?txid=...` returns verified exact HTML candidates only
+after the activation pin and complete Code checkpoint are verified. It exposes
+the original transaction's canonical block position and explicit body/attachment
+selectors. Wallet preparation, pre-sign and pre-broadcast checks read it again.
+
+Reference dependency hydration stays separate from the sealed Code candidate
+count/digest. Source identity, raw outputs and canonical block membership are
+bound to the requested checkpoint; a missing derived row cannot establish
+absence. Complete first-party evidence distinguishes a terminal ineligible
+source from temporary unavailability. Both current and historical replay retain
+that distinction and the separate source/commit identities. Ingestion records
+structural validity with deferred reference-source verification; only complete
+Code replay can establish an applied reference. Historical v1 events and economic
+seals are not rewritten. Search indexes reference metadata and source TXIDs under
+its versioned projection; the original Mail event remains the source-text and
+payment observation, with no duplicate economics.
+
+`deploy/code-reference/` supplies the scoped release controller for this change.
+Its fixed runtime-source allowlist, exact base commit and before/after hashes
+preserve accepted runtime overlays through reviewed three-way merges. Runtime
+dependencies, metadata, protected services, Search holds and rollback custody are
+fenced before mutation. It does not replace node Git state, databases, canonical
+seals, authority services or production configuration. A Search projection
+version change requires its supervised rebuild and verified coverage. The UI
+uses the existing complete 22-root publication workflow; release completion still
+requires primary/local-preview/GitHub/production synchronization.
+
 Code v1 is available at `code.proofofwork.me` and
 Computer's `/?folder=code`, with standalone preview `/?code=1` and build flag
 `VITE_CODE_ONLY=1`. [CODE.md](CODE.md) specifies additive `pwc1:repo` and

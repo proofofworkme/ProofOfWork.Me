@@ -202,3 +202,8 @@
 }
 
 .code-app :is(.code-back, .code-repository-name, .code-file-tree a, .code-return-head, .code-history-actions a) { min-height: 44px; text-decoration: none; box-sizing: border-box; }
+.code-page-reference { display: grid; gap: 16px; min-width: 0; }
+.code-page-reference > button { justify-self: start; }
+.code-page-reference select { background: var(--surface-soft); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font: inherit; min-height: 44px; padding: 8px 12px; width: 100%; }
+.code-page-reference .code-source { max-height: 420px; }
+.code-page-reference .code-tabs { justify-self: start; }

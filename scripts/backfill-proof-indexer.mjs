@@ -5352,7 +5352,7 @@ function protocolItemsFromTx(tx, message) {
       blockHeight: base.blockHeight, blockHash: base.blockHash, blockTransactionIndex: base.blockIndex,
       vin: (tx.vin ?? []).map(input => ({ ...input, ...(input.prevout ? { prevout: output(input.prevout) } : {}) })),
       vout: (tx.vout ?? []).map(output),
-    }, { sha256: bytes => createHash("sha256").update(bytes).digest("hex") });
+    }, { network: NETWORK, structuralOnly: true, sha256: bytes => createHash("sha256").update(bytes).digest("hex") });
     return [{ ...base, ...event, protocolVout: message.voutIndex, recordOrdinal: 0,
       amountSats: "0", dataBytes: 0, selfPaymentSats: event?.amountSats ?? "0",
       title: event?.metadata?.name ?? event?.path ?? "Code candidate",

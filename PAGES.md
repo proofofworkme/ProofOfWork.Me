@@ -219,6 +219,14 @@ reference in the task; they do not create a published HTML txid or DNS link.
 Browser's **Edit in Pages** similarly rechecks the supplied txid and source hash,
 then uses the existing transaction-import provenance and local-draft rules.
 
+Code's **Add existing page** can pin a confirmed Page as a repository file by
+TXID, using a new reference commit without uploading the HTML again. Both HTML
+message bodies and verified attachments are supported within Code's 60,000-byte
+limit. The repository path and exact source selector/hash/size are committed;
+the original Page and its DNS links remain independent. Source imported back
+through Code is verified from that original transaction. See
+[Code Page references](CODE.md#existing-page-references).
+
 **Open Code**, **Open source in Browser** and **Open name in Browser** stay inside
 Computer with a return path. Browser content is verified on entry, and a
 network-mismatched handoff requires the matching Computer network to be selected

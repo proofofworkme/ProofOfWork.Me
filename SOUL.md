@@ -69,6 +69,13 @@ release was verified on **2026-10-07**; its discovery,
 source, UI and unexercised transaction boundaries are recorded in
 [audits/2026-10-07-code-v1-production-release.md](audits/2026-10-07-code-v1-production-release.md).
 
+Code can pin an existing confirmed Page by TXID through an additive reference
+commit. Verify the exact HTML body or attachment, its hash and size, and its
+earlier canonical block before accepting the repository update. Keep the Code
+commit and original Page identities distinct. Source bytes stay in their
+original transaction; its payment is never counted again. Preserve v1 history,
+inert source, local signing and exact-checkpoint dependency evidence.
+
 1. The source of truth is the chain.
 2. Confirmed records are canonical. Pending mempool visibility is useful gossip.
 3. Wallet signing stays local. The app must never hold seed phrases or private keys.

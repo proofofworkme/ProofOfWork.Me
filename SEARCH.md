@@ -74,22 +74,31 @@ has already been indexed.
 `npm run search:index -- --batch-size=200 --max-batches=20 --budget-ms=30000`
 performs one bounded cycle. The job uses an advisory lock, saves a source
 cursor after each committed batch and resumes incomplete generations. A
-verified prior generation may supply unchanged confirmed history when its
-earlier source witness still agrees. Reorgs and changed historical semantics
-require a fresh verified projection.
+verified prior generation of the same index version may supply unchanged
+confirmed history when its earlier source witness still agrees. Reorgs and
+changed historical semantics require a fresh verified projection.
 
-Reusing confirmed history copies at most the configured batch size per
-statement (200 records by default). Its separate copy cursor commits with each
-batch and resumes after interruption; it never advances the source cursor or
-the count of newly projected sources. Copy work shares the thirty-second job
-budget and stops after at most 1,000 bounded batches per cycle. The existing
-ready generation remains available while its replacement builds. This avoids
-a whole-corpus copy exceeding the fifteen-second statement limit. Projection
-or codec changes must increment the index version to rebuild derived documents.
+The accepted shared-confirmed runtime records a verified confirmed base through
+`copy_from_run_id` and `copy_cursor='@shared-confirmed-v1'`. Readers and completion
+counts use the effective union of that confirmed base and the current generation's
+volatile records. The base's canonical checkpoint is independently verified
+against Core; sharing cannot substitute for the source witness or read admission.
 
-Only the newest two ready generations and one building generation are retained.
-Removing superseded Search copies preserves every underlying transaction,
-event, file and canonical economic record. Expired cursors return a conflict.
+The existing bounded-copy compatibility path remains available. It copies at
+most the configured batch size per statement (200 records by default). Its
+separate copy cursor commits with each batch and resumes after interruption;
+it never advances the source cursor or the count of newly projected sources.
+Copy work shares the thirty-second job budget and stops after at most 1,000
+bounded batches per cycle. A ready generation of the current index version
+remains available while its replacement builds. Projection or codec changes
+must increment the index version and rebuild derived documents before the new
+version can serve verified coverage.
+
+Pruning applies only to the current index version. It retains the newest two
+ready generations and one building generation, and recursively protects every
+confirmed base those generations still reference. Earlier versions retain their
+own evidence. Removing superseded Search copies preserves every underlying
+transaction, event, file and canonical economic record. Expired cursors return a conflict.
 The separate `proofofwork-search-index.timer` refreshes the projection every
 thirty seconds; its service is limited to one database connection, fifteen-second
 statements, 512 MiB memory and a forty-five-second runtime. Its failures leave
@@ -118,8 +127,8 @@ is reconstructed from its explicit zero-byte Code commitment. Code metadata,
 Mail and raw carriers may each be searchable evidence without representing
 additional payments. Source remains inert text.
 
-The Code-capable Search projection uses `proof-search-v3-code-shared-confirmed`.
-Its production integration was verified on **2026-10-07**, as recorded in
+The preceding Code-capable Search projection is `proof-search-v3-code-shared-confirmed`.
+The original Code production integration was verified on **2026-10-07**, as recorded in
 [audits/2026-10-07-code-v1-production-release.md](audits/2026-10-07-code-v1-production-release.md).
 Earlier ready generations retain their original version and evidence; versioned
 derived-corpus rebuilds and the separate bounded Search job preserve all source
@@ -128,3 +137,32 @@ complete raw candidate discovery and canonical replay. Search results cannot
 prove that discovery or establish a commit was accepted into the repository
 head. Code observations retain structural record evidence; malformed and stale
 attempts remain inspectable under their distinct validation and replay results.
+
+
+## Existing Page references
+
+The Page-reference projection uses `proof-search-v4-code-page-references`,
+succeeding `proof-search-v3-code-shared-confirmed`. The separate Search job
+must build and verify this new version before its coverage can be reported as
+ready. A prior version is never relabeled or silently reused as evidence of the
+new projection. The accepted shared-confirmed runtime and its source witnesses,
+checkpoint checks, bounded work, and independent job lifecycle remain intact;
+this update changes reference projection semantics, not Search storage authority.
+
+A Code `pwc1:commit2` observation indexes its repository, parent, exact path,
+Page transaction ID, body or attachment selector, source output, byte size and
+SHA-256. Its `sourceReference.verified:false` and
+`codeAuthority.requiresRepositoryReplay:true` distinguish committed reference
+metadata from verified source bytes and an accepted repository head. Search
+never fetches, executes or trusts source text supplied with that observation.
+The original Page's Mail or Files record retains its existing searchable source
+evidence. Reference metadata adds no attachment copy, payment, network value or
+Growth contribution.
+
+Code independently verifies each referenced Page against raw first-party Core
+transaction bytes, exact canonical block membership and its repository snapshot.
+Search cannot replace that verification. Malformed, stale and rejected
+references remain inspectable observations; a Search result never establishes
+that the reference advanced a repository head. Earlier Code versions and
+Search generations retain their original forms and evidence throughout the
+versioned rebuild.
