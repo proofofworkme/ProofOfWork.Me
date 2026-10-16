@@ -1,0 +1,237 @@
+{
+  "schema": "proof-of-work-ui-durable-retention-repair-proposal-v1",
+  "status": "proposal-only-no-implementation-or-production-authorization",
+  "preparedAtUtc": "2026-10-16T03:45:13.535357+00:00",
+  "source": {
+    "root": "/home/sixer/ProofOfWork.Me",
+    "commit": "2dca4504c366b8f6d5dfc5e7afe7dfdef1dac818",
+    "tree": "4e8fcfddfede81b40a8d43f392268877700326b2",
+    "bindings": [
+      {
+        "path": "deploy/audit30/ui-release-policy.py",
+        "sha256": "6b805f2095374640140be23031bbefb7f9e2d05223eb67f0494b1fa12a8d741b"
+      },
+      {
+        "path": "deploy/audit30/ui-storage.py",
+        "sha256": "f292da5dcda23393208d05e1cffaea0b50b9a9cc915b81a5b9d55fdd0aa81319"
+      },
+      {
+        "path": "deploy/audit30/STORAGE.md",
+        "sha256": "6e7f2acdcce43ec975802a8ff106b55145624b4d427fcc6ece3d00596f388e10"
+      },
+      {
+        "path": "deploy/publish/preflight.py",
+        "sha256": "d57d1853e20b7c715362e8e84d7e2b97bf8c220fde5068731e95477386448a91"
+      },
+      {
+        "path": "deploy/publish/release.py",
+        "sha256": "e58c74f28d808c5402b79d1f9c80700c60f55de1ec62f83817e6ae9089870254"
+      },
+      {
+        "path": "deploy/publish/publish.py",
+        "sha256": "4ff9aa74c36af8ba4a63907717d47bbcf36c9aff1e5efc2bccd66ee9c7a58f48"
+      },
+      {
+        "path": "deploy/publish/remote_transport.py",
+        "sha256": "ee31ae855851ccce6b358e8ea82f71859292f4d7bc23e71109f32cd2e350292f"
+      },
+      {
+        "path": "deploy/publish/phase_capacity.py",
+        "sha256": "e9da5163c5d1f640a3dba6f0c452c36d487758c44919f4aae883afd73df13cc0"
+      },
+      {
+        "path": "deploy/proofofwork-ui-release-publish.sh",
+        "sha256": "09bcbd217c204f1b68afb359e644a5a0a3bcded2d047403c9da009ef4649f60d"
+      },
+      {
+        "path": "deploy/proofofwork-ui-verified-retention.py",
+        "sha256": "d7578a6d5d867c12489c10e48b9c4986f0bb97e88255dbadf698d8b55bdbd8ac"
+      },
+      {
+        "path": "deploy/proofofwork-ui-capacity.py",
+        "sha256": "8d7313d75a436b79e2df069ce94d6d603200141c26867a44daa284f3fc52153a"
+      },
+      {
+        "path": "deploy/ui-retention/custody.py",
+        "sha256": "259ce5bc3f29307bbe276cd481419482ba53f2c0eeb989860b5039012c450121"
+      },
+      {
+        "path": "deploy/ui-retention/inventory.py",
+        "sha256": "3c1379bea8cb37b35bf46e2e1a705cba826be3b686d7199b203d6add3d334611"
+      },
+      {
+        "path": "deploy/ui-retention/removal.py",
+        "sha256": "1a42fb4e59b2a233d3f5e24c4bbf10c1efaf57064f01d76bbfe829631322c4f3"
+      },
+      {
+        "path": "OP_RETURN_INFRASTRUCTURE.md",
+        "sha256": "e3f700dd15eee030d60e3dfe68018eca5bbf5d8cd1c5235f111f9372eecbf2dc"
+      },
+      {
+        "path": "audits/2026-10-02-audit30-first-batch-approval.json",
+        "sha256": "d99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373"
+      }
+    ]
+  },
+  "objective": "Keep the UI VPS within existing budgets by completing an explicit verified-publication retention cycle: current release plus one verified immediate-prior rollback and their required dependencies, with unique older evidence in independently verified durable custody. Fail closed before new uploads when the full release cannot fit.",
+  "rootCause": [
+    {
+      "evidence": "deploy/publish/publish.py:61-65; deploy/publish/release.py:393,419; deploy/proofofwork-ui-release-publish.sh:23-24,1175-1176",
+      "finding": "The active publication route always defers retention and retains previous roots; the generic publisher also defers under the persistent hold. No corresponding admission/retirement lifecycle is integrated."
+    },
+    {
+      "evidence": "deploy/audit30/ui-storage.py:170-180; deploy/audit30/ui-release-policy.py:46,139; deploy/audit30/STORAGE.md:72-85",
+      "finding": "The separately approved opt-in lifecycle requires immutable admission lineage, but its verifier still accepts only v3/16 surfaces. The last documented index describes an October 2 pair; fresh inspection must determine actual current lineage. Missing admissions cannot be invented."
+    },
+    {
+      "evidence": "deploy/audit30/STORAGE.md:37,84-85; deploy/ui-retention/custody.py:53-70; deploy/publish/release.py:421-423",
+      "finding": "Ordinary retention excludes source/input/transport evidence. Custody supports specific old source/root/stage directories but not arbitrary managed archive files or each preserved surfaces upload; these copies continue accumulating."
+    }
+  ],
+  "unchangedConstraints": {
+    "backupBudgetBytes": 19327352832,
+    "transportBudgetBytes": 9663676416,
+    "scratchBudgetBytes": 5368709120,
+    "rootReserveBytes": 10737418240,
+    "growthReserveBytes": 67108864,
+    "inodeReserve": 128,
+    "noCapIncrease": true,
+    "noAgeOnlyDeletion": true,
+    "noGenericPrunerUnmasking": true,
+    "noHoldRemoval": true,
+    "preserveCanonicalChainAndDatabaseEvidence": true,
+    "preserveCurrentAndImmediatePriorDependencies": true,
+    "scope": "UI release artifacts only; node runtime overlays, canonical data, database backups and unrelated evidence remain excluded.",
+    "boundedMeaning": "Bound large recoverable copies on the UI VPS. Unique audit evidence still needs durable independently budgeted custody; neither compact-receipt growth nor off-host storage is magically bounded by this policy."
+  },
+  "authority": {
+    "existingOrdinaryPolicy": "audits/2026-10-02-audit30-first-batch-approval.json:21 authorizes guarded current-plus-one-prior ordinary release retention with exact manifests and historical exclusions. Its protected list excludes source/transport evidence from that ordinary policy.",
+    "existingCustodyCleanup": "The October 13 authorization recorded in deploy/ui-retention/custody.py:233 covers safe qualified UI cleanup and bounded retention while keeping the last verified rollback and unique audit evidence. Existing exact qualify/preserve/restore/retire remains usable for its present allowlisted, unheld candidates.",
+    "completedImmediateCleanup": {
+      "plan": "/tmp/code-reference-retention-selected-three-sources.json",
+      "planSha256": "b1cfab5d92dd99858df97b1e6e1e3034256e35c3800e4c7898209bb056efb0c8",
+      "result": "/tmp/code-reference-retention-retired-result.json",
+      "scope": "Exactly three old source copies; all archived and independently restored before retirement. This is not the durable lifecycle repair."
+    },
+    "requiresConcreteReviewedScopeBeforeMutation": [
+      "Installing revised verifier/controller and adding its exact source/hash to the accepted controller history.",
+      "A migration/reconciliation record if current admitted lineage cannot be reconstructed from existing immutable evidence; never fake a normal admission or rewrite old receipts.",
+      "Any added source/input/transport artifact class, exact path grammar and custody qualification. Ordinary Audit30 approval cannot be silently expanded to cover these.",
+      "Any candidate under a held ancestor that lacks an existing explicit managed-container exception. Keep it blocked until exact hold/policy authority is reviewed; never drop the ancestor check.",
+      "Any changed custody retention/deletion policy. Preserved evidence remains retained; this proposal authorizes no deletion from custody."
+    ],
+    "notRequiredForExistingQualifiedScope": "Do not ask again merely to use an already-authorized, unchanged custody mechanism on exact qualified candidates; all gates still have to pass."
+  },
+  "repairSteps": [
+    {
+      "id": "format-verifier",
+      "files": [
+        "deploy/audit30/ui-storage.py",
+        "deploy/audit30/ui-release-policy.py",
+        "deploy/audit30/check-ui-storage.test.py"
+      ],
+      "change": "Make complete release verification format-aware using exact declared v3 historical families, v4/21 and v5/22 families consistent with the current verified-retention verifier. Update manifest, archive, managed-row and passthrough derivations together; reject undeclared/missing/extra surfaces. Preserve historical receipt parsing and hashes; append only the reviewed new controller hash, never reinterpret sealed old records.",
+      "evidence": "ui-storage.py:176-180,238-250; proofofwork-ui-verified-retention.py:53,63-68"
+    },
+    {
+      "id": "reconcile-lineage",
+      "files": [
+        "deploy/audit30/ui-release-policy.py",
+        "deploy/audit30/STORAGE.md"
+      ],
+      "change": "Under the deploy lock, inspect installed policy/index/receipt hashes and reconstruct only substantiated admissions and completed retirements. Reconcile the actual fresh current/prior pair. If there is a gap, create a separately reviewed append-only migration/anchor record that binds prior index, every known missing or retired object and exact new pair; exclude older unadmitted assets by default. Keep historical indices and failure receipts. Resume normal per-release admission only after this record is accepted.",
+      "evidence": "ui-release-policy.py:39-50,57-140; STORAGE.md:39-64"
+    },
+    {
+      "id": "ordinary-cycle",
+      "files": [
+        "deploy/publish/release.py",
+        "deploy/publish/publish.py",
+        "deploy/audit30/ui-release-policy.py"
+      ],
+      "change": "Retain generic deferral and masked timers. Add an explicit opt-in, source/hash-bound retention phase after successful publication, HTTPS smoke and complete current/prior verification. Record exact admission and index, produce/review qualified plan, verify and apply only authorized ordinary roots/archives/sidecars, then append completed receipt to a new immutable index. Do not mark the release lifecycle complete until it reaches the allowed retained set or reports exact blocked objects. A failed cleanup must not roll back a healthy publication or be reported as successful retention.",
+      "evidence": "publish.py:61-65; release.py:393,419; ui-release-policy.py:166-190"
+    },
+    {
+      "id": "remaining-copy-qualification",
+      "files": [
+        "deploy/ui-retention/custody.py",
+        "deploy/ui-retention/inventory.py",
+        "deploy/ui-retention/removal.py",
+        "deploy/publish/remote_transport.py"
+      ],
+      "change": "Keep ordinary admitted archive handling separate. Add only explicitly reviewed artifact grammars for superseded preserved surface-upload directories and, if needed, unadmitted old managed archive+checksum+provenance groups. Bind release ID, receiver/incoming receipt, archive hash, full inventory and dependency graph. Retain current/prior sources and all artifacts still needed by recovery/rebuild/resume or live references. Do not retire entire release evidence directories: retain intent/action/completion/incident records and any other unique children. Archives and sidecars must be a closed verified group; never select files by age or generic glob.",
+      "evidence": "custody.py:53-70; remote_transport.py:420-432,575-580,630-658; release.py:421-423"
+    },
+    {
+      "id": "custody-and-held-boundary",
+      "files": [
+        "deploy/ui-retention/custody.py",
+        "deploy/ui-retention/inventory.py",
+        "deploy/ui-retention/removal.py",
+        "deploy/audit30/ui-storage.py"
+      ],
+      "change": "Before VPS retirement, export full exact bytes/metadata, fsync archive/receipt, independently restore and verify, then rehash/reverify custody at retirement. Bind plan, inventory, archive, source identity and durable custody location. A duplicate may reuse existing custody only with exact inventory/metadata equality and fresh complete restoration; shared filename/release ID or content hash alone is insufficient. No last unique evidence deletion, external hardlink ambiguity, escaping symlink or live reference. Preserve held ancestor/equal/descendant blocking; use only already-explicit ordinary managed-container exceptions with their exact authority, never inherit them into source/transport classes. Partial operations require journal reconciliation.",
+      "evidence": "custody.py:66-83,135-173,195-237; ui-storage.py:252-281"
+    },
+    {
+      "id": "whole-sequence-capacity",
+      "files": [
+        "deploy/publish/phase_capacity.py",
+        "deploy/publish/release.py",
+        "deploy/publish/remote_transport.py",
+        "deploy/publish/publish.py",
+        "deploy/proofofwork-ui-capacity.py"
+      ],
+      "change": "Before the first upload, model every peak and final allocation: incoming surfaces, preserved input, source checkout/dependencies, stage/candidate, bounded managed archive+sidecars, old live root entering rollback budget, compatibility links, directories and receipts. Account separately for physical unique-inode growth and pool membership when renames move existing bytes into transport/backups. A rename may allocate almost no root bytes yet add its entire tree to a retention pool. Do not subtract promised retirement until its completed receipt and fresh measurement exist. Refuse early with exact deficit and eligible custody scope; perform qualified cleanup then regenerate preflight and plan. Recheck each phase. Keep all existing numeric caps/reserves unchanged.",
+      "evidence": "remote_transport.py:570-579,626-652; proofofwork-ui-release-publish.sh:1161; proofofwork-ui-capacity.py:20-31,35-59"
+    },
+    {
+      "id": "operational-proof",
+      "files": [
+        "deploy/audit30/STORAGE.md",
+        "OP_RETURN_INFRASTRUCTURE.md",
+        "REPOSITORY_HYGIENE.md",
+        "repository-hygiene.json"
+      ],
+      "change": "Document installed controller provenance, active index, custody location, protected pair, explicit blocked objects and whether lifecycle automation actually ran. Preserve historical statements as dated evidence and qualify superseded behavior. Run required hygiene and release synchronization for the future approved repair. Demonstrate one reviewed real cycle before claiming the lifecycle repaired; repeated fixture cycles must show bounded bulk artifact count with no cap increase."
+    }
+  ],
+  "acceptanceTests": [
+    "Historical valid v3 manifests/receipts remain readable; valid v4/21 and v5/22 complete root+archive pairs pass; malformed or extra/missing surfaces and passthrough loss refuse.",
+    "Migration preserves prior index bytes and exact lineage. Missing/forged/reordered admissions, unapproved controller hash, stale current/prior pair and reappeared retired objects refuse before mutation.",
+    "Sequential A->B->C->D fixture publications leave current+one verified prior and required source/archive dependencies; prior remains restorable after every cycle.",
+    "Ordinary retention never admits historical/source/transport objects implicitly. Newly supported artifact classes require their exact approved grammar, complete inventory and immutable source receipts.",
+    "Current/prior dependencies, held candidate, held descendant and unapproved held ancestor all refuse. Existing ordinary container exception cannot authorize transport/source cleanup.",
+    "Archive corruption, missing sidecar, wrong custody source/plan/inventory, metadata mismatch, absent restore, changed xattr/mode/ownership and external hardlink all refuse.",
+    "No retirement when unique evidence is absent from verified durable custody. Parent evidence directory, independent receipts and unrelated children survive selective upload-copy retirement.",
+    "Injected process/config/mount/unit reference and incomplete/limited reference scans refuse; changed evidence after planning refuses.",
+    "Crash/timeout after each mutation preserves durable intent/action trail, refuses blind retries and requires exact reconciliation; no partial receipt advances admission index.",
+    "Full-sequence admission includes input rename and live-to-rollback pool charges; 1-byte-over fails before first upload while exact-fit passes under all reserves.",
+    "Projected retirement creates no headroom until completed and remeasured; concurrent allocation and unchanged-copy hardlinks are modeled conservatively without double-counting physical bytes.",
+    "Capacity constants remain 18GiB backups,9GiB transport,5GiB scratch,10GiB root+64MiB growth and128 reserve inodes; holds and masks byte/identity census remain unchanged.",
+    "Post-publication retention failure reports publication healthy/retention incomplete, preserves recovery pair and blocks next insufficient-space release; no automatic cap raise.",
+    "Three or more complete fixture cycles show bounded on-VPS bulk artifacts; unique custody evidence is independently capacity-accounted and never auto-pruned."
+  ],
+  "existingTestEntryPoints": [
+    "python3 -I -B deploy/audit30/check-ui-storage.test.py",
+    "python3 -I -B scripts/check-ui-custody-retention.py",
+    "python3 -I -B scripts/check-ui-verified-retention.py",
+    "python3 -I -B scripts/check-ui-permission-release.py",
+    "python3 -I -B scripts/check-ui-capacity.py",
+    "python3 -I -B scripts/check-ui-preserved-paths.py",
+    "python3 -I -B scripts/check-ui-stage-dedup.py",
+    "npm run hygiene:fix",
+    "npm run hygiene:check",
+    "npm run check:release-sync"
+  ],
+  "freshProductionInputsRequiredBeforeImplementation": [
+    "Installed helper/controller SHA and source provenance",
+    "Actual current/prior complete manifests, archives and dependency fingerprints",
+    "Latest immutable admission index and all referenced receipts",
+    "Hold/mask/held-path census and exact managed-container authority",
+    "Source/input/archive inventory plus process/config/mount/loaded-unit references",
+    "Whole-sequence capacities and durable off-host custody capacity"
+  ],
+  "executionPerformed": "Read-only source review and creation of this /tmp proposal only. No repository edits, deployments, policy/config/hold/timer changes, uploads, deletions or new approvals."
+}

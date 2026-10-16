@@ -8,6 +8,7 @@ import argparse
 import ast
 import base64
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import types
 from pathlib import PurePosixPath
 
 ROOT = Path(__file__).resolve().parent
@@ -353,21 +355,34 @@ def load_plan(path):
     return p, hashlib.sha256(raw).hexdigest(), raw
 
 def preflight(args):
+    lifecycle = lifecycle_module().status(require_complete=True)
     script = (ROOT / 'preflight.py').read_bytes(); ast.parse(script)
+    sequence = (ROOT / 'sequence_capacity.py').read_bytes(); ast.parse(sequence)
+    script = ('import base64\nSEQUENCE_SOURCE=base64.b64decode(' +
+              repr(base64.b64encode(sequence).decode()) + ')\n').encode() + script
     result = remote(['/usr/bin/python3', '-I', '-B', '-'], data=script,
                     stdout=subprocess.PIPE, timeout=600)
     p = json.loads(result.stdout)
     assert all(item['exitCode'] == 0 for item in p['checks'])
     assert p['retentionDeferred'] is True
-    create(args.output, result.stdout)
+    assert lifecycle['pair']['current'] == p['activeManifest']['release_id']
+    p['retentionLifecycle'] = lifecycle['binding']
+    create(args.output, (json.dumps(p, indent=2)+'\n').encode())
     print(json.dumps({'status': 'preflight-recorded', 'output': args.output,
                       'sha256': digest(args.output), 'activeManifest': p['activeManifest'],
                       'rollbackRoots': len(p['retained'])}))
 
+
+def lifecycle_module():
+    path = ROOT.parent/'ui-retention/lifecycle.py'
+    spec = importlib.util.spec_from_file_location('ui_lifecycle', path)
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    return module
+
 def committed_wrapper_sources():
     """Bind local orchestration bytes to the exact release source tree."""
     names = ('build.py', 'release.py', 'preflight.py', 'remote_transport.py', 'transport_preserve.py',
-             'publish.py', 'collect_verify.py', 'https_smoke.py', 'phase_capacity.py')
+             'publish.py', 'collect_verify.py', 'https_smoke.py', 'phase_capacity.py', 'sequence_capacity.py')
     result = {}
     for name in names:
         path = ROOT / name
@@ -394,6 +409,11 @@ def make_plan(args):
     assert all(item['exitCode'] == 0 for item in p['checks'])
     tooling_binding = artifact_tooling_binding(b['commit'], b['tree'])
     wrapper_sources = committed_wrapper_sources()
+    retention_sources = {}
+    for name in lifecycle_module().LOCAL_SOURCES:
+        raw = (REPO/name).read_bytes()
+        assert raw == subprocess.check_output(['git', '-C', str(REPO), 'show', 'HEAD:'+name]), 'Retention source is uncommitted: '+name
+        retention_sources[name] = hashlib.sha256(raw).hexdigest()
     assert 0 < b['sourceAllocatedBytes'] <= 1024**3
     assert len(p['retained']) <= 16
     pub = ROOT / 'publish.py'; ast.parse(pub.read_bytes())
@@ -417,6 +437,8 @@ def make_plan(args):
          'phaseCapacity': {'sha256': digest(ROOT / 'phase_capacity.py'),
                            'source': (ROOT / 'phase_capacity.py').read_text()},
          'retentionDeferred': True, 'frontendOnly': True,
+         'retentionLifecycle': p['retentionLifecycle'],
+         'retentionLocalSources': retention_sources,
          **tooling_binding,
          'inputStorage': 'release-evidence-v1',
          'preservedSourceCheckout': '/var/backups/proofofwork-ui/transport-evidence/' + b['releaseId'] + '/proofofwork-ui-source-' + b['releaseId'],
@@ -458,6 +480,20 @@ def make_plan(args):
     c['allocationDerivation'] = {'oldManaged': old, 'newLogicalBytes': logical, 'newEntries': entries,
         'receiveMetadataBytesPerEntry': 4096, 'receiveFixedMarginBytes': 16*1024**2,
         'archiveFixedMarginBytes': 32*1024**2, 'archivePaddingBytesPerEntry': 2048}
+    sequence_source = (ROOT / 'sequence_capacity.py').read_bytes()
+    namespace = {'__name__': '_whole_release_capacity'}
+    exec(compile(sequence_source, 'sequence_capacity.py', 'exec'), namespace)
+    sequence = types.SimpleNamespace(**namespace)
+    c['sequenceCapacity'] = {'source': sequence_source.decode(),
+                             'sha256': hashlib.sha256(sequence_source).hexdigest()}
+    if any(k in c for k in ('resumeSurfaces', 'preservedStageResume', 'preservedCapacityResume')):
+        # Preserve the existing exact historical refusal reconciliation route.
+        # A resumed phase is never represented as a new whole-release admission.
+        c['wholeSequenceAdmission'] = {'ok': False, 'historicalReconciliation': True,
+                                       'phaseCapacityGuardsRequired': True}
+    else:
+        c['wholeSequenceAdmission'] = sequence.admit(
+            sequence.requirements(c, p['wholeSequenceCensus']), p['wholeSequenceCensus'])
     raw = (json.dumps(c, indent=2)+'\n').encode(); assert len(raw) <= 65536
     create(args.output, raw)
     print(json.dumps({'status': 'plan-created', 'output': args.output, 'sha256': digest(args.output),

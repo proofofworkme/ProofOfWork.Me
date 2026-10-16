@@ -7666,13 +7666,75 @@ live process, configuration, mount and loaded-unit references, takes the shared
 deploy lock, verifies the entire selected inventory, and uses descriptor-relative
 removal with durable intent/action/completion receipts. A partial operation
 requires reconciliation, never a blind retry. No age alone authorizes deletion.
-Future deployments cannot accumulate unlimited retained copies: when the budget
-is reached, preserve/restore/qualify additional retirement before retrying.
+Future deployments cannot accumulate unlimited retained copies. The approved
+2026-10-16 lifecycle below runs qualified retirement after public verification
+and refuses the next release while that cycle is incomplete.
 
 A fixed 32 MiB/128-inode cleanup-receipt envelope can pass retention-budget
 exhaustion so qualified retirement is not deadlocked. It is restricted to the
 cleanup-evidence directory and still enforces the full free-space/inode reserve;
 it cannot admit deployment content or arbitrary additional allocation.
+
+### Automatic UI release retention repair (2026-10-16)
+
+The user approved the exact [retention proposal](audits/2026-10-16-ui-retention-repair-proposal.json)
+and [implementation/deployment authority](audits/2026-10-16-ui-retention-repair-approval.json).
+This repair keeps the 18 GiB backup, 9 GiB transport, 5 GiB scratch, 10 GiB root
+reserve, 64 MiB growth reserve and inode limits unchanged. Existing storage
+monitor overlays, holds, historical packages and masked broad-pruning timers
+remain intact. Source code and passing fixtures alone do not establish that
+the production installation and initial cycle have completed.
+
+`deploy/ui-retention/install_lifecycle.py` installs an immutable package bound
+to a clean source commit and exact file hashes, plus
+`/etc/proofofwork-retention/ui-lifecycle.json`. It fences existing installed
+helpers and guards. `lifecycle_remote.py` owns a compare-and-swap state at
+`/var/lib/proofofwork-ui-retention/state.json`; each phase retains its prior state,
+intent, exact current/prior pair, admission index and completion receipt.
+The version-2 migration preserves the old index and historical obligations,
+records the present verified pair, and explicitly admits only the reviewed
+ordinary roots and complete archive groups. Missing historical objects are
+reported, never retroactively treated as authorized deletions.
+
+The release preflight requires completed retention for the current pair.
+`deploy/publish/sequence_capacity.py` budgets the entire sequence before upload:
+received and preserved inputs, candidate and provenance-verification copies,
+archive/sidecars, receipts, and movement of the old live root into the backup
+pool. It measures existing allocations by inode, gives no credit for promised
+cleanup or future hardlinks, and repeats admission under the deployment lock
+before the first payload byte. Existing phase-specific checks remain mandatory.
+
+After exact HTTPS verification, `deploy/publish/collect_verify.py` automatically
+runs `deploy/ui-retention/lifecycle.py`. The operator host preserves each
+qualified obsolete ordinary root/archive group in
+`/home/sixer/ProofOfWork.Me.release-custody-ui-retention`, independently restores
+it, and rechecks every byte, inode identity, owner, mode, timestamp, xattr and
+internal hardlink binding. The ordinary policy consumes an exact custody proof
+before removing those on-host copies and advancing the append-only index.
+A fresh qualification then preserves and retires eligible obsolete source and
+surface-upload copies through the existing descriptor-relative custody writer.
+Archive groups select exactly the archive and its two sidecars, preserving the
+containing evidence directory and unrelated children.
+
+Deduplicated ordinary roots may share inodes with the protected pair. Their
+export requires a complete authenticated alias inventory across the verified
+live, prior and admitted ordinary roots. Every alias and total link count must
+be accounted for and unchanged. Custody retains that original graph and restores
+each root's internal links; unknown aliases still refuse. This exception applies
+only to ordinary root export, never to generic source/upload retirement.
+Off-host custody admission separately budgets uncompressed archive and restored
+copies on each actual filesystem, preserving free bytes and inodes before export.
+
+Completion requires a verified live release and immediate rollback, no remaining
+eligible copies, unchanged holds/masks, complete retirement journals and all
+fixed budgets. Incomplete archive groups, independently held evidence,
+unresolved history, and failed releases with possible recovery dependencies
+remain explicit protected obligations. A process crash or uncertain deletion
+does not silently advance state or allow a blind retry; publication health and
+retention completion are separate results. The next upload remains blocked
+until the exact incomplete operation is reconciled. Automatic cleanup is part
+of a verified release on the custody-capable operator host; it is not an
+unattended age-based pruning timer.
 
 ### Proof Computer temporary domain bridge — 2026-10-13
 

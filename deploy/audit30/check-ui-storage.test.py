@@ -42,16 +42,17 @@ class StorageTests(unittest.TestCase):
         self.source_patch.stop();self.capacity_patch.stop();S.HELD_SHA=self.old_held;S.HOLD_SHA=self.old_hold;self.tmp.cleanup();os.umask(self.old_umask)
     def write_review(self):self.l.held.write_text(json.dumps(self.review,sort_keys=True))
     def update_held(self):S.HELD_SHA=hashlib.sha256(self.l.held.read_bytes()).hexdigest()
-    def release(self,root,rid):
-        root.mkdir(exist_ok=True);fields=dict(format='proofofwork-ui-release-v3',release_id=rid,commit=rid.split('-')[0]+'0'*28,source_tree='1'*40,archive_name='proofofwork-ui-release-'+rid+'.tgz')
-        for name in S.SURFACES:
+    def release(self,root,rid,surfaces=None,release_format='proofofwork-ui-release-v3'):
+        surfaces=S.SURFACES if surfaces is None else sorted(surfaces)
+        root.mkdir(exist_ok=True);fields=dict(format=release_format,release_id=rid,commit=rid.split('-')[0]+'0'*28,source_tree='1'*40,archive_name='proofofwork-ui-release-'+rid+'.tgz')
+        for name in surfaces:
             p=root/('proofofwork-'+name);p.mkdir(mode=0o755);p.chmod(0o755);f=p/'index.html';f.write_text('surface '+name);f.chmod(0o644);h=hashlib.sha256();h.update(b'index.html\x00644\x00'+hashlib.sha256(f.read_bytes()).hexdigest().encode()+b'\n');fields['surface.'+name+'.sha256']=h.hexdigest();fields['surface.'+name+'.file_count']='1'
         archive=self.l.archives/fields['archive_name']
         # Do not overwrite a retained archive when another root contains that release.
         if not archive.exists():
             with tarfile.open(archive,'w:gz') as t:
                 info=tarfile.TarInfo('surfaces');info.type=tarfile.DIRTYPE;info.mode=0o700;info.uid=os.getuid();info.gid=os.getgid();t.addfile(info)
-                for name in S.SURFACES:t.add(root/('proofofwork-'+name),arcname='surfaces/'+name)
+                for name in surfaces:t.add(root/('proofofwork-'+name),arcname='surfaces/'+name)
             fields['archive_sha256']=hashlib.sha256(archive.read_bytes()).hexdigest()
             mb=''.join(k+'='+v+'\n' for k,v in fields.items()).encode();Path(str(archive)+'.sha256').write_text(fields['archive_sha256']+'  '+archive.name+'\n');Path(str(archive)+'.provenance').write_bytes(mb)
         else:
@@ -385,11 +386,277 @@ finally:t.tearDown()
             rows.append(dict(path=str(p),sha256=S.hash_read(p,S.MAX_JSON)[0]))
         value=dict(schema='pow-audit30-ui-admission-index-v1',scopeApprovalSha256=self.auth,admissions=rows,completedRetirements=retirements or [])
         p=self.l.evidence/('audit30-policy-index-'+str(len(list(self.l.evidence.glob('audit30-policy-index-*'))))+'.json');S.durable(p,value);return dict(path=str(p),sha256=S.hash_read(p,S.MAX_JSON)[0])
-    def publish_policy_fixture(self,rid):
-        os.rename(self.l.live,self.l.roots/('proofofwork-www-pre-'+rid));self.release(self.l.live,rid);source=self.l.scratch/('proofofwork-ui-source-'+rid);source.mkdir();(source/'.git').mkdir();(source/'source').write_text('new immutable source');(source/'node_modules').mkdir();(source/'node_modules'/'dep').write_text('new verified runtime');self.dependency_provenance(self.l.live,rid)
+    def publish_policy_fixture(self,rid,surfaces=None,release_format='proofofwork-ui-release-v3'):
+        os.rename(self.l.live,self.l.roots/('proofofwork-www-pre-'+rid));self.release(self.l.live,rid,surfaces,release_format);source=self.l.scratch/('proofofwork-ui-source-'+rid);source.mkdir();(source/'.git').mkdir();(source/'source').write_text('new immutable source');(source/'node_modules').mkdir();(source/'node_modules'/'dep').write_text('new verified runtime');self.dependency_provenance(self.l.live,rid)
     def future_completion_fixture(self):
         pp=patch.object(P,'S',S);pp.start();self.addCleanup(pp.stop)
         bootstrap=P.admission(self.l,self.auth,True);index=self.policy_index([bootstrap]);self.publish_policy_fixture('abcdef123456-20261002T220000Z');added=P.admission(self.l,self.auth,False,index);index=self.policy_index([bootstrap,added]);scope=P.policy_scope(index,self.l,self.auth);plan=S.create_plan(self.l,'future-retention',self.auth,scope);out=S.execute(plan,S.digest(plan),self.l,True);done=json.loads(Path(out['receiptPath']).read_bytes());intent=json.loads(Path(done['intentPath']).read_bytes());return [bootstrap,added],index,plan,out,done,intent
+
+    def policy_record(self,prefix,value):
+        p=self.l.evidence/(prefix+str(len(list(self.l.evidence.iterdir())))+'.json');S.durable(p,value)
+        return dict(path=str(p),sha256=S.hash_read(p,S.MAX_JSON)[0])
+
+    def migration_fixture(self,legacy=True,missing=False,shared=False,xattrs=False):
+        pp=patch.object(P,'S',S);pp.start();self.addCleanup(pp.stop)
+        old=patch.object(S,'APPROVAL_SHA',self.auth);old.start();self.addCleanup(old.stop)
+        prior=self.policy_index([P.admission(self.l,self.auth,True)])
+        first='aaaaaa000001-20261016T010000Z';second='aaaaaa000002-20261016T020000Z'
+        self.publish_policy_fixture(first,S.V4_SURFACES,'proofofwork-ui-release-v4')
+        self.publish_policy_fixture(second,S.V5_SURFACES,'proofofwork-ui-release-v5')
+        # Production now retains these exact dependencies inside release evidence.
+        for rid in (first,second):
+            old_path,new_path=S.source_locations(self.l,rid);new_path.parent.mkdir(parents=True);os.rename(old_path,new_path)
+        paths=[]
+        if legacy:
+            paths=[dict(path=str(self.l.roots/('proofofwork-www-pre-'+rid)),kind='rollback-root') for rid in (self.current,first)]
+            paths += [dict(path=str(self.l.archives/('proofofwork-ui-release-'+rid+'.tgz'))+suffix,kind=kind) for rid in (self.current,self.previous) for suffix,kind in (('','managed-release-archive'),('.sha256','archive-sidecar'),('.provenance','archive-sidecar'))]
+            paths.sort(key=lambda r:(r['kind']!='rollback-root',r['path']))
+        if missing:(self.l.archives/('proofofwork-ui-release-'+self.current+'.tgz')).unlink()
+        if shared:
+            left=self.l.roots/('proofofwork-www-pre-'+self.current)/'proofofwork-work/index.html'
+            right=self.l.roots/('proofofwork-www-pre-'+first)/'proofofwork-work/index.html'
+            left.unlink();os.link(right,left)
+        if xattrs:
+            os.setxattr(self.l.roots/('proofofwork-www-pre-'+self.current)/'proofofwork-work/index.html','user.custody-test',b'\x00\xffbinary attributes')
+            os.setxattr(self.l.archives/('proofofwork-ui-release-'+self.current+'.tgz'),'user.custody-test',b'\x00\xffarchive attributes')
+        review=P.migration_review(self.l,S.REPAIR_APPROVAL_SHA,prior,paths)
+        review_binding=self.policy_record('audit30-policy-migration-review-',review)
+        migration=P.migration_admission(self.l,S.REPAIR_APPROVAL_SHA,review_binding)
+        migration_binding=self.policy_record('audit30-policy-migration-',migration)
+        anchor_binding=self.policy_record('audit30-policy-admission-migration-',migration['anchor'])
+        value=dict(schema=P.INDEX_V2,scopeApprovalSha256=S.REPAIR_APPROVAL_SHA,migration=migration_binding,admissions=[anchor_binding],completedRetirements=[])
+        index=self.policy_record('audit30-policy-admission-index-v2-',value)
+        return prior,review,migration,value,index
+
+    def test_complete_format_aware_roots_archives_and_undeclared_surfaces(self):
+        families=[('proofofwork-ui-release-v3',v) for v in sorted(S.V3_SURFACE_FAMILIES,key=len)]+[('proofofwork-ui-release-v4',S.V4_SURFACES),('proofofwork-ui-release-v5',S.V5_SURFACES)]
+        for number,(fmt,surfaces) in enumerate(families,1):
+            rid=f'{number:012x}-20261016T000000Z';root=self.base/('format-'+str(number));self.release(root,rid,surfaces,fmt)
+            proof=S.release_proof(root,self.l,{})
+            self.assertEqual(S.declared_surfaces(proof['fields']),surfaces)
+            self.assertEqual(S.standalone_archive_proof(self.l.archives/proof['fields']['archive_name'])['payloadSha256'],S.archive_proof(self.l.archives/proof['fields']['archive_name'],proof['fields'],(root/'.proofofwork-ui-release').read_bytes())['payloadSha256'])
+        root=self.base/'format-8';(root/'proofofwork-permission').mkdir()
+        with self.assertRaisesRegex(ValueError,'Undeclared'):S.release_proof(root,self.l,{})
+
+    def test_format_specific_missing_counts_and_missing_archive_content_refuse(self):
+        rid='bbbbbb000001-20261016T000000Z';root=self.base/'v5';self.release(root,rid,S.V5_SURFACES,'proofofwork-ui-release-v5')
+        fields,_,raw=S.manifest(root)
+        for change in ({'surface.permission.file_count':None},{'surface.permission.sha256':'f'*63},{'format':'proofofwork-ui-release-v4'},{'surface.fake.sha256':'f'*64}):
+            bad=dict(fields)
+            for key,value in change.items():
+                if value is None:bad.pop(key)
+                else:bad[key]=value
+            with self.assertRaises(ValueError):S.declared_surfaces(bad)
+        (root/'proofofwork-permission'/'index.html').unlink()
+        with self.assertRaisesRegex(ValueError,'content/count'):S.release_proof(root,self.l,{})
+
+    def test_migration_admits_exact_old_ordinary_assets_without_historical_fiction(self):
+        prior,review,migration,value,index=self.migration_fixture()
+        old_bytes=Path(prior['path']).read_bytes();scope=P.policy_scope(index,self.l,S.REPAIR_APPROVAL_SHA)
+        self.assertEqual(len(scope['eligible']),8);self.assertEqual(scope['eligible'],review['legacyOrdinaryPaths'])
+        closure=P.custody_closure(index['path'],index['sha256'],self.l,S.REPAIR_APPROVAL_SHA)
+        self.assertEqual(closure['ordinaryEligiblePaths'],scope['eligible']);self.assertEqual(len(closure['ordinaryEligibleSnapshots']),8)
+        self.assertEqual(len(closure['admittedReleaseIds']),2)
+        self.assertEqual(Path(prior['path']).read_bytes(),old_bytes)
+        self.assertTrue(all('/transport-evidence/' in r['path'] for r in closure['pair']['sources']))
+        plan=S.create_plan(self.l,'future-retention',S.REPAIR_APPROVAL_SHA,scope)
+        out=S.execute(plan,S.digest(plan),self.l,True)
+        value['completedRetirements']=[dict(path=out['receiptPath'],sha256=out['receiptSha256'])]
+        updated=self.policy_record('audit30-policy-admission-index-v2-',value)
+        self.assertEqual(P.policy_scope(updated,self.l,S.REPAIR_APPROVAL_SHA)['eligible'],[])
+        self.assertEqual(len(P.load_index(updated['path'],updated['sha256'],self.l,S.REPAIR_APPROVAL_SHA)['retired']),8)
+
+    def test_migration_preserves_unresolved_missing_history_and_rejects_erasure(self):
+        _,review,migration,value,index=self.migration_fixture(legacy=False,missing=True)
+        closure=P.custody_closure(index['path'],index['sha256'],self.l,S.REPAIR_APPROVAL_SHA)
+        self.assertEqual(len(closure['historicalObligations']),1);self.assertEqual(closure['ordinaryEligiblePaths'],[])
+        bad=json.loads(json.dumps(review));bad['historicalAssetCensus']=[r for r in bad['historicalAssetCensus'] if r['status']!='unresolved-missing-historical-object']
+        migration['review']=self.policy_record('audit30-policy-migration-review-',bad)
+        value['migration']=self.policy_record('audit30-policy-migration-',migration)
+        forged=self.policy_record('audit30-policy-admission-index-v2-',value)
+        with self.assertRaisesRegex(ValueError,'omitted historical'):P.load_index(forged['path'],forged['sha256'],self.l,S.REPAIR_APPROVAL_SHA)
+
+    def test_repair_receipt_preserves_frozen_and_observed_known_hardlink_evidence(self):
+        _,_,_,value,index=self.migration_fixture(shared=True)
+        scope=P.policy_scope(index,self.l,S.REPAIR_APPROVAL_SHA);plan=S.create_plan(self.l,'future-retention',S.REPAIR_APPROVAL_SHA,scope)
+        out=S.execute(plan,S.digest(plan),self.l,True);done=json.loads(Path(out['receiptPath']).read_bytes())
+        self.assertTrue(any(row['snapshotSha256']!=row['observedSnapshotSha256'] for row in done['completed']))
+        self.assertEqual([r['snapshotSha256'] for r in done['completed']],[r['snapshot']['sha256'] for r in plan['delete']])
+        value['completedRetirements'].append(dict(path=out['receiptPath'],sha256=out['receiptSha256']))
+        updated=self.policy_record('audit30-policy-admission-index-v2-',value)
+        self.assertEqual(P.policy_scope(updated,self.l,S.REPAIR_APPROVAL_SHA)['eligible'],[])
+
+    def test_migration_review_staleness_protected_and_held_expansion_refuse(self):
+        prior,review,_,_,_=self.migration_fixture()
+        bad=json.loads(json.dumps(review));bad['protected']['current']['fields']['commit']='f'*40
+        with self.assertRaisesRegex(ValueError,'changed after exact review'):P.migration_admission(self.l,S.REPAIR_APPROVAL_SHA,self.policy_record('audit30-policy-migration-review-',bad))
+        protected=[dict(path=review['protected']['previous']['path'],kind='rollback-root')]
+        with self.assertRaisesRegex(ValueError,'protected'):P.migration_review(self.l,S.REPAIR_APPROVAL_SHA,prior,protected)
+        self.review['retain'].append(dict(role='ui',path=review['legacyOrdinaryPaths'][0]['path'].removeprefix(str(self.base)),decision='retain'));self.write_review();self.update_held()
+        with self.assertRaisesRegex(ValueError,'Individually held'):P.migration_review(self.l,S.REPAIR_APPROVAL_SHA,prior,review['legacyOrdinaryPaths'])
+
+    def test_migration_incomplete_archive_and_unapproved_ancestor_refuse(self):
+        prior,review,_,_,_=self.migration_fixture()
+        paths=[r for r in review['legacyOrdinaryPaths'] if not r['path'].endswith('.provenance')]
+        with self.assertRaisesRegex(ValueError,'incomplete'):P.migration_review(self.l,S.REPAIR_APPROVAL_SHA,prior,paths)
+        self.review['retain'].append(dict(role='ui',path='/var/backups/proofofwork-ui',decision='retain'));self.write_review();self.update_held()
+        with self.assertRaisesRegex(ValueError,'Unapproved held ancestor'):P.migration_review(self.l,S.REPAIR_APPROVAL_SHA,prior,review['legacyOrdinaryPaths'])
+
+    def test_migration_and_three_future_cycles_keep_only_one_admitted_rollback(self):
+        _,_,_,value,index=self.migration_fixture()
+        for number in range(3):
+            scope=P.policy_scope(index,self.l,S.REPAIR_APPROVAL_SHA);plan=S.create_plan(self.l,'future-retention',S.REPAIR_APPROVAL_SHA,scope);out=S.execute(plan,S.digest(plan),self.l,True)
+            value['completedRetirements'].append(dict(path=out['receiptPath'],sha256=out['receiptSha256']))
+            index=self.policy_record('audit30-policy-admission-index-v2-',value)
+            data=P.load_index(index['path'],index['sha256'],self.l,S.REPAIR_APPROVAL_SHA)
+            self.assertEqual(sum(os.path.lexists(p) for p in data['roots']),1)
+            self.assertEqual(sum(os.path.lexists(p) for p in data['assets']),6)
+            if number==2:break
+            self.publish_policy_fixture(f'aaaaaa00000{number+3}-20261016T0{number+3}0000Z',S.V5_SURFACES,'proofofwork-ui-release-v5')
+            with self.assertRaisesRegex(ValueError,'latest verified admission'):P.policy_scope(index,self.l,S.REPAIR_APPROVAL_SHA)
+            a=P.admission(self.l,S.REPAIR_APPROVAL_SHA,False,index);value['admissions'].append(self.policy_record('audit30-policy-admission-',a))
+            index=self.policy_record('audit30-policy-admission-index-v2-',value)
+
+    def ordinary_custody_fixture(self,xattrs=False):
+        _,_,_,_,index=self.migration_fixture(xattrs=xattrs)
+        scope=P.policy_scope(index,self.l,S.REPAIR_APPROVAL_SHA);plan=S.create_plan(self.l,'future-retention',S.REPAIR_APPROVAL_SHA,scope)
+        loader=importlib.machinery.SourceFileLoader('ordinary_custody_inventory',str(Path(__file__).resolve().parents[1]/'ui-retention/inventory.py'))
+        spec=importlib.util.spec_from_loader(loader.name,loader);E=importlib.util.module_from_spec(spec);loader.exec_module(E)
+        groups={};objects=[];custody=self.base/'independent-custody';custody.mkdir()
+        for row in plan['delete']:
+            p=Path(row['path']);root=row['kind']=='rollback-root'
+            primary=p if root or row['kind']=='managed-release-archive' else Path(str(p).removesuffix('.sha256').removesuffix('.provenance'))
+            key=str(primary)
+            if key not in groups:
+                inv=E.inventory(primary,os.geteuid()) if root else E.inventory_file_group(primary,sorted(primary.name+suffix for suffix in ('','.sha256','.provenance')),os.geteuid())
+                source=dict(inv['fingerprint'],inventory=inv['records'])
+                if not root:source['parent']=inv['parent']
+                archive=custody/(str(len(groups))+'.tgz')
+                with archive.open('wb') as output:exported=E.archive_root(primary,source,output,os.geteuid())
+                restored=E.extract_verify(archive,source,custody/(str(len(groups))+'-restored'))
+                E.verify_restored(custody/(str(len(groups))+'-restored'),source)
+                record=dict(ok=True,sourcePath=key,sourceInventory=source,archivePath=str(archive),archiveSha256=exported['archiveSha256'],inventorySha256=exported['inventorySha256'],restoration=restored,planSha256='e'*64)
+                groups[key]=(self.policy_record('ui-retention-custody-record-',record),record)
+            binding,record=groups[key]
+            objects.append(dict(path=row['path'],snapshotSha256=row['snapshot']['sha256'],custody=binding,sourceMember='.' if root else p.name,
+                archiveSha256=record['archiveSha256'],inventorySha256=record['inventorySha256'],custodyPlanSha256=record['planSha256'],independentRestorationVerified=True))
+        proof=dict(schema='pow-ui-retention-ordinary-custody-proof-v1',scopeApprovalSha256=S.REPAIR_APPROVAL_SHA,admissionIndex=index,
+            planSha256=S.digest(plan),protectedReleaseIds=sorted(plan['protected'][k]['fields']['release_id'] for k in ('current','previous')),objects=objects)
+        return plan,proof
+
+    def test_ordinary_custody_gate_verifies_real_restored_roots_and_closed_file_groups(self):
+        plan,proof=self.ordinary_custody_fixture()
+        binding=self.policy_record('ui-retention-custody-proof-',proof)
+        self.assertEqual(P.verify_custody_proof(binding,plan,self.l,S.REPAIR_APPROVAL_SHA),proof)
+        self.assertEqual(len(proof['objects']),8)
+        self.assertEqual(len({r['custody']['path'] for r in proof['objects']}),4)
+
+    def test_ordinary_custody_gate_preserves_binary_xattrs_between_inventory_encodings(self):
+        plan,proof=self.ordinary_custody_fixture(xattrs=True)
+        self.assertTrue(any(r['xattrs'] for row in plan['delete'] for r in row['snapshot']['entries']))
+        P.verify_custody_proof(self.policy_record('ui-retention-custody-proof-',proof),plan,self.l,S.REPAIR_APPROVAL_SHA)
+        for value in ([['x','00 FF']],[['x','FF']],[['x','xx']],[['x','00'],['x','00']]):
+            with self.assertRaises(ValueError):P.custody_xattrs(value)
+
+    def test_ordinary_custody_gate_rejects_partial_reordered_wrong_plan_or_member(self):
+        plan,proof=self.ordinary_custody_fixture()
+        changes=[dict(proof,objects=proof['objects'][:-1]),dict(proof,objects=proof['objects'][::-1]),dict(proof,planSha256='f'*64),dict(proof,protectedReleaseIds=[])]
+        for value in changes:
+            with self.assertRaises(ValueError):P.verify_custody_proof(self.policy_record('ui-retention-custody-proof-',value),plan,self.l,S.REPAIR_APPROVAL_SHA)
+        bad=json.loads(json.dumps(proof));bad['objects'][-1]['sourceMember']='unrelated.provenance'
+        with self.assertRaisesRegex(ValueError,'exact planned member'):P.verify_custody_proof(self.policy_record('ui-retention-custody-proof-',bad),plan,self.l,S.REPAIR_APPROVAL_SHA)
+
+    def test_ordinary_custody_gate_rejects_forged_metadata_and_boolean_only_restore(self):
+        plan,proof=self.ordinary_custody_fixture();first=proof['objects'][0]
+        record=json.loads(Path(first['custody']['path']).read_bytes())
+        for mutate in ('restore','metadata','inventory','archive'):
+            bad=json.loads(json.dumps(proof));changed=json.loads(json.dumps(record))
+            if mutate=='restore':changed['restoration']['ownerRestored']=False
+            elif mutate=='metadata':
+                changed['sourceInventory']['inventory'][0]['identity']['st_uid']+=1
+                sha=hashlib.sha256(S.encoded(changed['sourceInventory']['inventory'])+b'\n').hexdigest()
+                changed['inventorySha256']=sha;changed['restoration']['inventorySha256']=sha;bad['objects'][0]['inventorySha256']=sha
+            elif mutate=='inventory':changed.pop('sourceInventory')
+            else:changed['archiveSha256']='f'*64
+            bad['objects'][0]['custody']=self.policy_record('ui-retention-custody-record-',changed)
+            with self.assertRaises(ValueError):P.verify_custody_proof(self.policy_record('ui-retention-custody-proof-',bad),plan,self.l,S.REPAIR_APPROVAL_SHA)
+
+    def test_ordinary_external_hardlinks_require_exact_closed_alias_and_restore_evidence(self):
+        _,_,_,_,index=self.migration_fixture(shared=True,xattrs=True)
+        plan=S.create_plan(self.l,'future-retention',S.REPAIR_APPROVAL_SHA,P.policy_scope(index,self.l,S.REPAIR_APPROVAL_SHA))
+        loader=importlib.machinery.SourceFileLoader('closed_alias_inventory',str(Path(__file__).resolve().parents[1]/'ui-retention/inventory.py'))
+        spec=importlib.util.spec_from_loader(loader.name,loader);E=importlib.util.module_from_spec(spec);loader.exec_module(E)
+        root=Path(plan['delete'][0]['path']);inv=E.inventory(root,os.geteuid());source=dict(inv['fingerprint'],inventory=inv['records'])
+        with self.assertRaisesRegex(ValueError,'External hardlinks'):P.verify_external_link_closure(source,{},plan)
+        roots=[plan['protected'][k]['snapshot'] for k in ('current','previous')]+[r['snapshot'] for r in plan['delete'] if r['kind']=='rollback-root']
+        row=next(r for r in source['inventory'] if r['kind']=='file' and r['identity']['st_nlink']>1);identity=row['identity']
+        aliases=sorted(str(Path(r['path'])/entry['path']) for r in roots for entry in r['entries'] if entry['kind']=='file' and (entry['device'],entry['inode'])==(identity['st_dev'],identity['st_ino']))
+        closure=dict(schema='pow-ui-ordinary-export-hardlink-closure-v1',sourceRoot=str(root),policyIndex=index,
+            protectedReleaseIds=sorted(plan['protected'][k]['fields']['release_id'] for k in ('current','previous')),
+            verifiedRoots=sorted((dict(path=r['path'],snapshotSha256=r['sha256']) for r in roots),key=lambda r:r['path']),
+            groups=[dict(device=identity['st_dev'],inode=identity['st_ino'],identity=identity,xattrs=row['xattrs'],sha256=row['sha256'],aliases=aliases)])
+        source['externalLinkClosure']=closure
+        restored=dict(externalLinkClosureSha256=hashlib.sha256(S.encoded(closure)+b'\n').hexdigest(),externalAliasesRetainedAsEvidence=True)
+        P.verify_external_link_closure(source,restored,plan)
+        for change in ('alias','root','index','protected','bytes','identity','missing','restore'):
+            bad=json.loads(json.dumps(source));changed=bad['externalLinkClosure'];rest=dict(restored)
+            if change=='alias':changed['groups'][0]['aliases'][-1]='/outside/unknown'
+            elif change=='root':changed['verifiedRoots'][0]['snapshotSha256']='f'*64
+            elif change=='index':changed['policyIndex']['sha256']='f'*64
+            elif change=='protected':changed['protectedReleaseIds']=[]
+            elif change=='bytes':changed['groups'][0]['sha256']='f'*64
+            elif change=='identity':changed['groups'][0]['identity']['st_nlink']+=1
+            elif change=='missing':changed['groups']=[]
+            else:rest['externalAliasesRetainedAsEvidence']=False
+            rest['externalLinkClosureSha256']=hashlib.sha256(S.encoded(changed)+b'\n').hexdigest()
+            with self.assertRaises(ValueError):P.verify_external_link_closure(bad,rest,plan)
+
+    def test_standalone_legacy_archive_full_payload_proof_and_partial_group_refusal(self):
+        prior,review,_,_,_=self.migration_fixture()
+        archive_rows=[r for r in review['legacyOrdinaryPaths'] if r['kind']!='rollback-root']
+        standalone=P.migration_review(self.l,S.REPAIR_APPROVAL_SHA,prior,archive_rows)
+        migration=P.migration_admission(self.l,S.REPAIR_APPROVAL_SHA,self.policy_record('audit30-policy-migration-review-',standalone))
+        value=dict(schema=P.INDEX_V2,scopeApprovalSha256=S.REPAIR_APPROVAL_SHA,migration=self.policy_record('audit30-policy-migration-',migration),
+            admissions=[self.policy_record('audit30-policy-admission-migration-',migration['anchor'])],completedRetirements=[])
+        index=self.policy_record('audit30-policy-admission-index-v2-',value);scope=P.policy_scope(index,self.l,S.REPAIR_APPROVAL_SHA)
+        self.assertEqual(len(scope['eligible']),6);self.assertEqual(len(scope['qualifiedArchiveProofs']),2)
+        plan=S.create_plan(self.l,'future-retention',S.REPAIR_APPROVAL_SHA,scope);self.assertEqual(len(plan['delete']),6)
+        archive=Path(archive_rows[0]['path']);archive.write_bytes(b'not a valid recovery archive')
+        with self.assertRaises(ValueError):P.policy_scope(index,self.l,S.REPAIR_APPROVAL_SHA)
+
+    def test_repair_receipt_envelope_is_bounded_and_uses_existing_retirement_gate(self):
+        self.capacity_patch.stop()
+        try:
+            with patch.object(S.subprocess,'run') as run:
+                S.capacity(self.l,'audit30-retirement-evidence',32*1024**2,retirement=True)
+                self.assertEqual(run.call_args.args[0][-3:],['check-retirement','--path',str(self.l.evidence)])
+                S.capacity(self.l,'audit30-retirement-evidence',32*1024**2+1,retirement=True)
+                normal=run.call_args_list[-2].args[0]
+                self.assertEqual(normal[4:9],['check','--path',str(self.l.evidence),'--additional-bytes',str(32*1024**2+1)])
+                self.assertIn('check-scratch',run.call_args.args[0])
+                for phase,size,scratch in [('audit30-retirement-evidence',0,0),('source-receive',1,0),('audit30-retirement-evidence',1,1)]:
+                    with self.assertRaisesRegex(ValueError,'exact phase'):S.capacity(self.l,phase,size,scratch,retirement=True)
+                self.assertEqual(run.call_count,3)
+        finally:self.capacity_patch.start()
+
+    def test_actual_repair_cli_migration_records_and_apply_custody_gate(self):
+        import contextlib,io,types
+        prior,review,migration,value,index=self.migration_fixture()
+        def command(arguments):
+            with patch.object(P,'os',types.SimpleNamespace(geteuid=lambda:0,nice=lambda n:None,path=os.path,close=os.close)),patch.object(S,'Layout',return_value=self.l),patch.object(S,'approval'),patch('sys.argv',['ui-release-policy.py',*arguments,'--approval',str(self.l.evidence/'authority.json'),'--approval-sha256',S.REPAIR_APPROVAL_SHA]):
+                output=io.StringIO()
+                with contextlib.redirect_stdout(output):P.main()
+                return json.loads(output.getvalue())
+        out=command(['admit-migration','--migration-review',migration['review']['path'],'--migration-review-sha256',migration['review']['sha256'],'--record'])
+        self.assertEqual(out['status'],'migrated')
+        data=P.load_index(out['index']['path'],out['index']['sha256'],self.l,S.REPAIR_APPROVAL_SHA)
+        self.assertEqual(data['admissions'][0]['retainedPair'],review['retainedPair'])
+        scope=P.policy_scope(out['index'],self.l,S.REPAIR_APPROVAL_SHA);plan=S.create_plan(self.l,'future-retention',S.REPAIR_APPROVAL_SHA,scope)
+        path=self.l.evidence/'exact-plan.json';path.write_bytes(S.encoded(plan))
+        with patch.object(S,'execute',side_effect=AssertionError('Writer must not run without custody')) as execute:
+            with self.assertRaisesRegex(ValueError,'requires complete independently restored'):
+                command(['apply','--index',out['index']['path'],'--index-sha256',out['index']['sha256'],'--plan',str(path),'--plan-sha256',S.digest(plan)])
+            execute.assert_not_called()
     def forged_future_completion(self,admissions,done,intent=None):
         stamp=str(len(list(self.l.evidence.glob('audit30-forged-*'))))
         if intent is not None:

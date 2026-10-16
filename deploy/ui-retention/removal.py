@@ -170,6 +170,11 @@ def delete_tree(parent_fd,root_name,expected_root,journal,action_hook=None):
         else:directory_state[row['path']]=dict(s)
     E.require(all(len(names)==inode_state[key]['st_nlink'] for key,names in groups.items()),'Deletion scope has external hardlinks')
     def root_entry_fence():
+        retained=expected_root.get('retainedParent')
+        if retained:
+            named=E.identity(Path(retained['path']).lstat());opened=E.identity(os.fstat(parent_fd));before=retained['identity']
+            E.require(named==opened and Path(retained['path']).resolve(strict=True)==Path(retained['path']) and all(opened[k]==before[k] for k in ('st_dev','st_ino','st_mode','st_uid','st_gid')),'Containing evidence directory was renamed or replaced')
+            E.require([[n,os.getxattr(parent_fd,n).hex()] for n in sorted(os.listxattr(parent_fd))]==retained['xattrs'],'Containing evidence directory attributes changed')
         actual=E.identity(os.stat(root_name,dir_fd=parent_fd,follow_symlinks=False));original=by_path['.']['identity']
         E.require(all(actual[k]==original[k] for k in ('st_dev','st_ino','st_mode','st_uid','st_gid')),'Approved root parent entry was renamed or replaced')
         for parent,name,held,relative in ancestors:
@@ -230,6 +235,41 @@ def delete_tree(parent_fd,root_name,expected_root,journal,action_hook=None):
     root_before=os.stat(root_name,dir_fd=parent_fd,follow_symlinks=False)
     E.require(E.identity(root_before)==by_path['.']['identity'],'Final parent root entry differs from approved root')
     remove(parent_fd,root_name,'.');return completed
+
+
+def delete_file_group(parent_fd, expected_root, journal, action_hook=None):
+    """Remove only a complete inventoried sibling group, retaining its parent."""
+    E.require(expected_root['format']=='proofofwork-ui-retained-files-v1','Not a closed file group')
+    parent=expected_root['parent'];rows=expected_root['inventory'];completed=0
+    E.require(1<=len(rows)<=16 and all(r['kind']=='file' and Path(r['path']).name==r['path'] for r in rows),'Unsafe selective retirement membership')
+    E.require(len({r['path'] for r in rows})==len(rows),'Duplicate selective retirement member')
+    def parent_fence():
+        opened=E.identity(os.fstat(parent_fd));named=E.identity(Path(parent['path']).lstat());before=parent['identity']
+        E.require(opened==named and Path(parent['path']).resolve(strict=True)==Path(parent['path']),'Selected file parent was renamed or replaced')
+        E.require(all(opened[k]==before[k] for k in ('st_dev','st_ino','st_mode','st_uid','st_gid')),'Selected file parent authority changed')
+        E.require([[n,os.getxattr(parent_fd,n).hex()] for n in sorted(os.listxattr(parent_fd))]==parent['xattrs'],'Selected file parent attributes changed')
+    # A partial/missing group refuses before the first mutation.
+    for row in rows:
+        parent_fence();s=E.identity(os.stat(row['path'],dir_fd=parent_fd,follow_symlinks=False))
+        E.require(s==row['identity'] and stat.S_ISREG(s['st_mode']) and s['st_nlink']==1,'Closed file group changed or has external aliases')
+    for row in rows:
+        name=row['path'];wanted=row['identity'];parent_fence()
+        fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME,dir_fd=parent_fd)
+        try:
+            E.require(E.identity(os.fstat(fd))==wanted,'Selected file identity changed')
+            E.require([[n,os.getxattr(fd,n).hex()] for n in sorted(os.listxattr(fd))]==row['xattrs'],'Selected file attributes changed')
+            with os.fdopen(fd,'rb',closefd=False) as source:sha=hashlib.file_digest(source,'sha256').hexdigest()
+            E.require(sha==row['sha256'] and E.identity(os.fstat(fd))==wanted,'Selected file bytes changed')
+            action=dict(root=expected_root['root'],path=name,kind='file',before=wanted,sha256=sha)
+            journal('intent',action)
+            if action_hook:action_hook('before-unlink',action)
+            parent_fence();E.require(E.identity(os.stat(name,dir_fd=parent_fd,follow_symlinks=False))==wanted,'Selected file replaced after intent')
+            os.unlink(name,dir_fd=parent_fd);os.fsync(parent_fd);completed+=1
+            after=E.identity(os.fstat(fd));E.require(after['st_nlink']==0 and all(after[k]==wanted[k] for k in E.STAT_FIELDS if k not in ('st_nlink','st_ctime_ns')),'Selected file unexpectedly changed after unlink')
+            if action_hook:action_hook('after-unlink',action)
+            journal('completed',dict(**action,ordinal=completed))
+        finally:os.close(fd)
+    parent_fence();return completed
 
 
 class Journal:

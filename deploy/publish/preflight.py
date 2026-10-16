@@ -7,6 +7,7 @@ from pathlib import Path
 import stat
 import subprocess
 import time
+import types
 
 assert os.geteuid() == os.getegid() == 0
 paths = {
@@ -62,10 +63,11 @@ assert os.fstat(fd) == s and lock.lstat() == s
 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
 env = {'PATH':'/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL':'C',
        'GIT_OPTIONAL_LOCKS':'0', 'POW_UI_DEPLOY_LOCK_FD':str(fd)}
-helpers = {}; retained_source = None
+helpers = {}; retained_source = None; capacity_source = None
 for key, filename in paths.items():
     helpers[key], raw = helper_record(filename)
     if key == 'retained': retained_source = raw
+    if key == 'capacity': capacity_source = raw
 namespace = {'__name__':'_readonly_recovery_preflight'}
 exec(compile(retained_source, paths['retained'], 'exec'), namespace)
 fingerprint = namespace['fingerprint']
@@ -105,6 +107,12 @@ result = {'observedAt':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
           'activeManifest':active_manifest, 'retentionDeferred':True,
           'availableBytes':storage.f_bavail*storage.f_frsize, 'availableInodes':storage.f_favail,
           'checks':[]}
+capacity_namespace = {'__name__': '_native_capacity_census'}
+exec(compile(capacity_source, paths['capacity'], 'exec'), capacity_namespace)
+sequence_namespace = {'__name__': '_whole_sequence_census'}
+assert isinstance(SEQUENCE_SOURCE, bytes) and len(SEQUENCE_SOURCE) <= 16384
+exec(compile(SEQUENCE_SOURCE, 'sequence_capacity.py', 'exec'), sequence_namespace)
+result['wholeSequenceCensus'] = sequence_namespace['capture'](types.SimpleNamespace(**capacity_namespace))
 for argv in [
     ['/usr/local/sbin/proofofwork-ui-release-provenance','verify-rollback'],
     ['/usr/bin/python3','-I','-B',paths['capacity'],'check-scratch','--path','/var/tmp/proofofwork-deploy',

@@ -1,4 +1,4 @@
-"""Read-only production evidence collection and HTTPS byte verification."""
+"""Verify exact public HTTPS bytes, then complete the approved retention lifecycle."""
 import argparse
 import hashlib
 import json
@@ -72,3 +72,8 @@ subprocess.run(["/usr/bin/python3", "-I", "-B", str(helper), str(archive_path),
                 "--receipt", str(destination / "https-smoke-receipt.json"),
                 "--workers", "8", "--timeout", "30", "--overall-timeout", "900"],
                check=True, timeout=930)
+assert plan.get('retentionLifecycle'), 'Release requires an installed retention lifecycle binding'
+lifecycle = pathlib.Path(__file__).parents[1] / 'ui-retention/lifecycle.py'
+subprocess.run(['/usr/bin/python3', '-I', '-B', str(lifecycle), 'complete',
+                str(plan_path), str(publish_path), str(destination/'https-smoke-receipt.json'),
+                str(destination/'retention')], check=True, timeout=14400)

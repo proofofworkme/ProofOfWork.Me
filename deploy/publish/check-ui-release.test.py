@@ -197,7 +197,8 @@ class ReleaseRefusals(unittest.TestCase):
             with self.subTest(value=value):
                 output = self.base / 'preflight.json'
                 fake = subprocess.CompletedProcess([], 0, stdout=raw_json(value))
-                with patch.dict(self.release.preflight.__globals__, remote=lambda *a, **k: fake):
+                with patch.dict(self.release.preflight.__globals__, remote=lambda *a, **k: fake,
+                                lifecycle_module=lambda: types.SimpleNamespace(status=lambda **kw: {})):
                     with self.assertRaises(AssertionError):
                         self.release.preflight(types.SimpleNamespace(output=str(output)))
                 self.assertFalse(output.exists())
@@ -223,11 +224,17 @@ class ReleaseRefusals(unittest.TestCase):
         keys = ['controller', 'receiver', 'stage-shell', 'phase-capacity', 'capacity',
                 'retained', 'publisher', 'stager', 'provenance', 'transport']
         preflight = {'retentionDeferred': True, 'checks': [{'exitCode': 0}],
+                     'retentionLifecycle': {'config': {'path': '/trusted/config', 'sha256': 'a'*64}},
                      'retained': [{'root': '/var/backups/retained', 'treeSha256': 'e' * 64}],
                      'helpers': {k: {'path': '/trusted/' + k, 'sha256': 'd' * 64}
                                  for k in keys},
                      'live': {'manifestSha256': 'f' * 64, 'treeSha256': '0' * 64},
                      'oldManaged': {'logicalBytes': 123456, 'entries': 100}}
+        sequence = safe_module('sequence_capacity.py')
+        preflight['wholeSequenceCensus'] = {
+            'limits': dict(sequence.LIMITS), 'usage': {'backup': 0, 'transport': 0, 'scratch': 0},
+            'availableBytes': 30 * 1024**3, 'availableInodes': 1000000,
+            'liveTree': {'additionalBytes': 500000, 'additionalInodes': 100}}
         bpath, ppath = self.base / 'build.json', self.base / 'preflight.json'
         bpath.write_bytes(raw_json(build)); ppath.write_bytes(raw_json(preflight))
         args = types.SimpleNamespace(build_receipt=str(bpath), preflight=str(ppath),
@@ -240,7 +247,7 @@ class ReleaseRefusals(unittest.TestCase):
         if argv[-1] in ('HEAD^{tree}', COMMIT + '^{tree}'):
             return TREE + '\n'
         if 'show' in argv:
-            return (ROOT / argv[-1].rsplit('/', 1)[-1]).read_bytes()
+            return (ROOT.parents[1] / argv[-1].split(':', 1)[1]).read_bytes()
         return b''
 
     def test_plan_pins_exact_inputs_helpers_and_capacity(self):
@@ -258,6 +265,8 @@ class ReleaseRefusals(unittest.TestCase):
             self.assertGreater(plan['admissions'][kind + '-receive']['bytes'], 16 * 1024**2)
             self.assertGreaterEqual(plan['admissions'][kind + '-receive']['inodes'], 4000)
         self.assertGreater(plan['stageArchiveUpperBoundBytes'], 123456 + 32 * 1024**2)
+        self.assertTrue(plan['wholeSequenceAdmission']['ok'])
+        self.assertEqual(plan['wholeSequenceAdmission']['requirements']['retirementCreditBytes'], 0)
 
     def test_v4_plan_binds_all21_and_refuses_incomplete_or_wrong_format_receipts(self):
         build, previous, args = self.build_inputs(pages=True)

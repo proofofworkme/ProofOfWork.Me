@@ -27,12 +27,21 @@ import tarfile
 import time
 
 SURFACES = 'activity boost browser computer desktop dns growth id inception infinity landing marketplace nft token wallet work'.split()
+V3_SURFACES = frozenset('activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split())
+PRE_JOBS_SURFACES = V3_SURFACES - {'jobs'}
+V3_SURFACE_FAMILIES = {V3_SURFACES, PRE_JOBS_SURFACES, PRE_JOBS_SURFACES - {'code'}, PRE_JOBS_SURFACES - {'code', 'search'},
+                       PRE_JOBS_SURFACES - {'code', 'search', 'publish'}, PRE_JOBS_SURFACES - {'code', 'search', 'publish', 'dns'},
+                       PRE_JOBS_SURFACES - {'code', 'search', 'publish', 'dns', 'boost'}}
+V4_SURFACES = V3_SURFACES | {'pages'}
+V5_SURFACES = V4_SURFACES | {'permission'}
 ROOT_IDS = '04927c291bf4-20261001T150448Z 527e4cbaa66f-20261001T062733Z 53b5b428e864-20261001T201028Z 835e30258d23-20261002T052338Z d2636f6fb3c5-20261002T023421Z d4d888757a1c-20261002T013828Z dbfa88b95819-20261001T134456Z df4d56da93ce-20261002T042258Z ed838d5c8691-20261001T210406Z f81ae55bf4b0-20261002T031600Z'.split()
 ARCHIVE_IDS = '04927c291bf4-20261001T150448Z 527e4cbaa66f-20261001T062733Z 53b5b428e864-20261001T201028Z 9d46289661d5-20261001T023414Z d2636f6fb3c5-20261002T023421Z d4d888757a1c-20261002T013828Z dbfa88b95819-20261001T134456Z df4d56da93ce-20261002T042258Z ed838d5c8691-20261001T210406Z f81ae55bf4b0-20261002T031600Z'.split()
 SOURCE_IDS = 'ed838d5c8691-20261001T210406Z d2636f6fb3c5-20261002T023421Z f81ae55bf4b0-20261002T031600Z'.split()
 HELD_SHA = 'c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9'
 HOLD_SHA = 'e9aca6e22b1dc36b714ed663051f8bc20d9479efa4173474e0b6b771958ca6a4'
 APPROVAL_SHA = 'd99a40236b49b1735c794fb853c4f7f4f0724da8e3f83fab75c7464e0e8ee373'
+REPAIR_APPROVAL_SHA = 'df166edb2d9817dd4f8af24819880b6bf08b396b6aa483adaa141415fc709379'
+REPAIR_PROPOSAL_SHA = '051e67cbf011b43f7521c978776eb8c3acf13cb3316c091776c0af381becdb4c'
 SCOPE_SHA = 'f0027078971b7521fb2411e15bd8931b110a0f1815ea7e04bdaed3b5d4bdfdd0'
 RELEASE_ID = re.compile(r'[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z\Z')
 SHA = re.compile(r'[0-9a-f]{64}\Z')
@@ -167,21 +176,45 @@ class Layout:
     def moves(self):
         return [dict(source=str(self.scratch/('proofofwork-ui-source-'+rid)), target=str(self.target/('proofofwork-ui-source-'+rid))) for rid in SOURCE_IDS]
 
-def manifest(root):
-    h, b = hash_read(Path(root)/'.proofofwork-ui-release', 65536, True); out={}
+def declared_surfaces(fields):
+    families = {'proofofwork-ui-release-v3': V3_SURFACE_FAMILIES,
+                'proofofwork-ui-release-v4': {V4_SURFACES}, 'proofofwork-ui-release-v5': {V5_SURFACES}}
+    hashes = {k.split('.')[1] for k in fields if re.fullmatch(r'surface\.[a-z]+\.sha256', k)}
+    counts = {k.split('.')[1] for k in fields if re.fullmatch(r'surface\.[a-z]+\.file_count', k)}
+    expected = {'surface.' + name + suffix for name in hashes for suffix in ('.sha256', '.file_count')}
+    if (fields.get('format') not in families or frozenset(hashes) not in families[fields['format']]
+            or hashes != counts or {k for k in fields if k.startswith('surface.')} != expected):
+        raise ValueError('Incomplete or undeclared release surface coverage')
+    for name in hashes:
+        if not SHA.fullmatch(fields['surface.' + name + '.sha256']) or not re.fullmatch(r'[1-9][0-9]*', fields['surface.' + name + '.file_count']):
+            raise ValueError('Malformed release surface fingerprint/count')
+    return frozenset(hashes)
+
+def manifest_fields(b):
+    out={}
     for line in b.decode().splitlines():
         k, sep, v=line.partition('=')
         if not sep or k in out: raise ValueError('Malformed release manifest')
         out[k]=v
-    if out.get('format')!='proofofwork-ui-release-v3' or not RELEASE_ID.fullmatch(out.get('release_id','')):
+    if not RELEASE_ID.fullmatch(out.get('release_id','')):
         raise ValueError('Unsupported ordinary release manifest')
     if not re.fullmatch('[0-9a-f]{40}',out.get('commit','')) or not re.fullmatch('[0-9a-f]{40}',out.get('source_tree','')) or not out['commit'].startswith(out['release_id'].split('-')[0]):raise ValueError('Release commit/tree identity differs')
-    if {k.split('.')[1] for k in out if k.startswith('surface.') and k.endswith('.sha256')} != set(SURFACES):
-        raise ValueError('Incomplete 16-surface manifest')
-    return out,h,b
+    declared_surfaces(out)
+    return out
+
+def manifest(root):
+    h, b = hash_read(Path(root)/'.proofofwork-ui-release', 65536, True)
+    return manifest_fields(b),h,b
 
 def verify_surface_rows(rows, fields):
-    for surface in SURFACES:
+    surfaces = declared_surfaces(fields)
+    top = {r['path'].split('/')[0] for r in rows}
+    if any('proofofwork-' + name in top for name in V5_SURFACES - surfaces):
+        raise ValueError('Undeclared release surface directory')
+    directories = {r['path'] for r in rows if r['kind'] == 'directory'}
+    if not {'proofofwork-' + name for name in surfaces} <= directories:
+        raise ValueError('Missing real release surface directory')
+    for surface in sorted(surfaces):
         part=[r for r in rows if r['path'].startswith('proofofwork-'+surface+'/') and r['kind']=='file']
         h=hashlib.sha256()
         for r in sorted(part,key=lambda r:os.fsencode(r['path'])):
@@ -191,13 +224,14 @@ def verify_surface_rows(rows, fields):
             raise ValueError('Surface content/count differs: '+surface)
 
 def archive_proof(path, fields, manifest_bytes):
+    surfaces = declared_surfaces(fields)
     path=Path(path); safe(path,False); fp=snapshot(path); expected='proofofwork-ui-release-'+fields['release_id']+'.tgz'
     if path.name!=expected or fp['entries'][0]['sha256']!=fields['archive_sha256']: raise ValueError('Archive checksum/name differs')
     _, checksum=hash_read(Path(str(path)+'.sha256'),65536,True)
     if checksum.decode().split()!=[fields['archive_sha256'],expected]: raise ValueError('Archive checksum sidecar differs')
     _, provenance=hash_read(Path(str(path)+'.provenance'),65536,True)
     if provenance!=manifest_bytes: raise ValueError('Archive provenance differs from root manifest')
-    # A checksum alone does not establish that the archive contains these 16 surfaces.
+    # A checksum alone does not establish complete format-specific surface coverage.
     fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME); before=identity(path.lstat()); rows=[]; seen=set(); total=0; deadline=time.monotonic()+120
     with os.fdopen(fd,'rb') as stream,tarfile.open(fileobj=stream,mode='r|gz') as archive:
         for m in archive:
@@ -211,7 +245,7 @@ def archive_proof(path, fields, manifest_bytes):
                 if not m.isdir() or m.mode not in (0o700,0o755) or m.uid!=os.geteuid() or m.gid!=os.getegid(): raise ValueError('Unsafe surfaces archive root')
                 continue
             parts=name.split('/')
-            if len(parts)<2 or parts[0]!='surfaces' or parts[1] not in SURFACES: raise ValueError('Unexpected archive member')
+            if len(parts)<2 or parts[0]!='surfaces' or parts[1] not in surfaces: raise ValueError('Unexpected archive member')
             if m.uid!=os.geteuid():raise ValueError('Archive member has foreign ownership')
             r=dict(path='proofofwork-'+parts[1]+('/'+'/'.join(parts[2:]) if len(parts)>2 else ''),mode=m.mode,uid=m.uid,gid=m.gid)
             if m.isdir():
@@ -226,7 +260,7 @@ def archive_proof(path, fields, manifest_bytes):
             else: raise ValueError('Linked or special archive member')
             rows.append(r)
     if before!=identity(path.lstat()): raise ValueError('Archive changed during verification')
-    if 'surfaces' not in seen or {r['path'] for r in rows if r['kind']=='directory' and '/' not in r['path']}!={'proofofwork-'+s for s in SURFACES}: raise ValueError('Archive lacks surface directories')
+    if 'surfaces' not in seen or {r['path'] for r in rows if r['kind']=='directory' and '/' not in r['path']}!={'proofofwork-'+s for s in surfaces}: raise ValueError('Archive lacks surface directories')
     verify_surface_rows(rows,fields)
     rows.sort(key=lambda r:os.fsencode(r['path']))
     names={r['path'] for r in rows if r['kind']=='directory'}
@@ -235,17 +269,22 @@ def archive_proof(path, fields, manifest_bytes):
         if parent!='.' and parent not in names:raise ValueError('Archive file lacks a real parent directory')
     return dict(path=str(path),snapshot=fp,sidecars=[snapshot(Path(str(path)+s)) for s in ('.sha256','.provenance')],payloadSha256=digest(rows),payloadRows=rows,payloadBytes=total)
 
+def standalone_archive_proof(path):
+    _, raw = hash_read(Path(str(path)+'.provenance'),65536,True)
+    return archive_proof(Path(path),manifest_fields(raw),raw)
+
 def release_proof(root, layout, archive_cache):
     fields,mh,mb=manifest(root); fp=snapshot(root); verify_surface_rows(fp['entries'],fields)
+    managed_names = {'proofofwork-' + name for name in declared_surfaces(fields)}
     name=fields.get('archive_name','')
     if name!='proofofwork-ui-release-'+fields['release_id']+'.tgz': raise ValueError('Manifest archive name differs')
     p=layout.archives/name
     if str(p) not in archive_cache: archive_cache[str(p)]=archive_proof(p,fields,mb)
     elif archive_cache[str(p)]['snapshot']['entries'][0]['sha256']!=fields['archive_sha256']: raise ValueError('Conflicting archive binding')
-    managed=[{k:r[k] for k in ('path','kind','mode','uid','gid','sha256') if k in r} for r in fp['entries'] if r['path'].split('/')[0] in {'proofofwork-'+s for s in SURFACES}]
+    managed=[{k:r[k] for k in ('path','kind','mode','uid','gid','sha256') if k in r} for r in fp['entries'] if r['path'].split('/')[0] in managed_names]
     managed.sort(key=lambda r:os.fsencode(r['path']))
     if managed!=archive_cache[str(p)]['payloadRows']:raise ValueError('Archive directory/file inventory differs from verified root')
-    passthrough=[r for r in fp['entries'] if r['path']!='.' and r['path']!='.proofofwork-ui-release' and r['path'].split('/')[0] not in {'proofofwork-'+s for s in SURFACES}]
+    passthrough=[r for r in fp['entries'] if r['path']!='.' and r['path']!='.proofofwork-ui-release' and r['path'].split('/')[0] not in managed_names]
     logical=[{k:r[k] for k in ('path','kind','mode','uid','gid','xattrs','sha256') if k in r} for r in passthrough]
     return dict(path=str(root),fields=fields,manifestSha256=mh,snapshot=fp,passthroughSha256=digest(logical))
 
@@ -393,6 +432,14 @@ def source_pointers(path):
 
 def approval(path, expected, operation):
     value,h=read_json(path,expected)
+    if h == REPAIR_APPROVAL_SHA:
+        limits = dict(backupBudgetBytes=18*1024**3,transportBudgetBytes=9*1024**3,scratchBudgetBytes=5*1024**3,
+                      rootReserveBytes=10*1024**3,growthReserveBytes=64*1024**2,inodeReserve=128)
+        if (value.get('schema')!='pow-ui-retention-repair-approval-v1' or value.get('host')!='77.42.91.106'
+                or value.get('proposal',{}).get('sha256')!=REPAIR_PROPOSAL_SHA or value.get('limits')!=limits
+                or operation not in ('future-retention','admit-release','admit-migration','migration-review')):
+            raise ValueError('Missing exact retention repair approval')
+        return value,h
     if (h!=APPROVAL_SHA or value.get('schema')!='proof-of-work-audit30-human-first-batch-approval-v1'
             or value.get('scopeFileSha256')!=SCOPE_SHA or value.get('approvedItems')!=[1,2,3]
             or value.get('userStatement')!='Approve batch 1-3 as scoped.'
@@ -400,12 +447,19 @@ def approval(path, expected, operation):
         raise ValueError('Missing exact user scope approval')
     return value,h
 
+def source_locations(layout, release_id):
+    if not RELEASE_ID.fullmatch(release_id):raise ValueError('Invalid retained source release ID')
+    name = 'proofofwork-ui-source-' + release_id
+    return (layout.scratch/name, layout.base/'transport-evidence'/release_id/name)
+
 def protected_pair(layout, cache):
     current=release_proof(layout.live,layout,cache)
     previous=release_proof(layout.roots/('proofofwork-www-pre-'+current['fields']['release_id']),layout,cache)
     sources=[]
     for r in (current,previous):
-        p=layout.scratch/('proofofwork-ui-source-'+r['fields']['release_id']); meta=source_pointers(p)
+        candidates = [p for p in source_locations(layout, r['fields']['release_id']) if os.path.lexists(p)]
+        if len(candidates) != 1:raise ValueError('Missing or ambiguous retained source dependency')
+        p=candidates[0]; meta=source_pointers(p)
         if meta['head']!=r['fields']['commit'] or meta['tree']!=r['fields']['source_tree']:raise ValueError('Retained source differs from release')
         fp=snapshot(p,links=True);dependency=dependency_fingerprint(fp)
         fields=r['fields']
@@ -571,7 +625,13 @@ def create_plan(layout, kind, approval_sha, policy_scope=None, prerequisite=None
         for row in rows:
             if row['kind']!='managed-release-archive':continue
             p=Path(row['path'])
-            if str(p) not in cache:raise ValueError('No verified retained/candidate root proves archive recovery equivalence')
+            if str(p) not in cache:
+                admitted = next((r for r in (policy_scope or {}).get('qualifiedArchiveProofs',[]) if r['path']==str(p)),None)
+                if kind!='future-retention' or approval_sha!=REPAIR_APPROVAL_SHA or admitted is None:
+                    raise ValueError('No verified retained/candidate root proves archive recovery equivalence')
+                actual = standalone_archive_proof(p)
+                if actual != admitted:raise ValueError('Qualified standalone archive changed')
+                cache[str(p)] = actual
     elif kind in ('preserve-sources','inverse-preservation'):
         if kind=='preserve-sources':
             if not prerequisite:raise ValueError('Completed exact cleanup prerequisite required')
@@ -613,8 +673,8 @@ def validate_plan(plan,layout,kind,approval_sha):
     if plan.get('schema')!='pow-audit30-exact-ui-storage-plan-v1' or plan.get('host')!='77.42.91.106' or plan.get('kind')!=kind or plan.get('scopeApprovalSha256')!=approval_sha:raise ValueError('Wrong or forged operation plan')
     protected=plan['protected'];current=protected['current'];previous=protected['previous']
     if current['path']!=str(layout.live) or previous['path']!=str(layout.roots/('proofofwork-www-pre-'+current['fields']['release_id'])) or current['fields']['release_id']==previous['fields']['release_id']:raise ValueError('Protected live/immediate-prior paths differ')
-    wanted_sources=[str(layout.scratch/('proofofwork-ui-source-'+r['fields']['release_id'])) for r in (current,previous)]
-    if [r['path'] for r in protected['sources']]!=wanted_sources:raise ValueError('Protected source dependency paths differ')
+    if len(protected['sources']) != 2 or any(Path(source['path']) not in source_locations(layout, release['fields']['release_id']) for source,release in zip(protected['sources'],(current,previous))):
+        raise ValueError('Protected source dependency paths differ')
     for r in [current,previous,*protected['sources']]:
         if r['snapshot']['path']!=r['path'] or digest(r['snapshot']['entries'])!=r['snapshot']['sha256']:raise ValueError('Malformed protected snapshot')
     if kind=='cleanup':
@@ -665,9 +725,20 @@ def rename_no_replace(source,target):
         os.fsync(left);os.fsync(right)
     finally:os.close(left);os.close(right)
 
-def capacity(layout,phase,additional_bytes=8*1024**2,scratch_bytes=0):
+def capacity(layout,phase,additional_bytes=8*1024**2,scratch_bytes=0,retirement=False):
     # Preserve installed reserve/scratch/inode protections; no prospective recovery credit.
     safe(layout.capacity,False)
+    if retirement:
+        if phase!='audit30-retirement-evidence' or scratch_bytes or additional_bytes<=0:
+            raise ValueError('Ordinary retirement evidence requires its exact phase and positive bound')
+        if additional_bytes<=32*1024**2:
+            subprocess.run(['/usr/bin/python3','-I','-B',str(layout.capacity),'check-retirement','--path',str(layout.evidence)],check=True,timeout=60,capture_output=True)
+        else:
+            # Large complete proofs use normal fixed-budget admission, charged
+            # to the evidence pool. They never expand the retirement exception.
+            subprocess.run(['/usr/bin/python3','-I','-B',str(layout.capacity),'check','--path',str(layout.evidence),'--additional-bytes',str(additional_bytes),'--additional-inodes','128','--phase',phase],check=True,timeout=60,capture_output=True)
+            subprocess.run(['/usr/bin/python3','-I','-B',str(layout.capacity),'check-scratch','--path',str(layout.scratch),'--additional-bytes','0','--phase',phase],check=True,timeout=60,capture_output=True)
+        return
     subprocess.run(['/usr/bin/python3','-I','-B',str(layout.capacity),'check','--path',str(layout.scratch),'--additional-bytes',str(additional_bytes),'--additional-inodes','256','--phase',phase],check=True,timeout=60,capture_output=True)
     subprocess.run(['/usr/bin/python3','-I','-B',str(layout.capacity),'check-scratch','--path',str(layout.scratch),'--additional-bytes',str(scratch_bytes),'--phase',phase],check=True,timeout=60,capture_output=True)
 
@@ -740,7 +811,11 @@ def execute_impl(plan,plan_sha,layout,apply=False):
     if not apply:return dict(status='verified',planSha256=plan_sha,productionMutation=False,missingHeldPaths=plan['safeguards']['missingHeldPaths'])
     if not shutil.rmtree.avoids_symlink_attacks:raise ValueError('Descriptor-based rmtree unavailable')
     evidence_bound=max(8*1024**2,len(encoded(plan))*(4+2*len(plan['moves']))+len(plan['delete'])*4096)
-    safe(layout.evidence,True);capacity(layout,'audit30-evidence',evidence_bound)
+    safe(layout.evidence,True)
+    if plan['kind']=='future-retention' and plan['scopeApprovalSha256']==REPAIR_APPROVAL_SHA and not plan['moves']:
+        if len(plan['delete'])+3>128:raise ValueError('Ordinary retirement exceeds the fixed 128-inode receipt envelope')
+        capacity(layout,'audit30-retirement-evidence',evidence_bound,retirement=True)
+    else:capacity(layout,'audit30-evidence',evidence_bound)
     completed=[]; removed=collections.Counter()
     if 'reconciliation' in plan:
         _,failed,_,removed=reconciliation_state(layout,plan['reconciliation'],plan['scopeApprovalSha256']);completed=list(failed['completed'])
@@ -772,7 +847,12 @@ def execute_impl(plan,plan_sha,layout,apply=False):
             finally:os.close(fd)
             for entry in before['entries']:
                 if entry['kind']=='file':removed[(entry['device'],entry['inode'])]+=1
-            completed.append(dict(path=current,outcome='retired',snapshotSha256=before['sha256'],atUtc=utc()));progress('partial')
+            result=dict(path=current,outcome='retired',snapshotSha256=before['sha256'],atUtc=utc())
+            if plan['kind']=='future-retention' and plan['scopeApprovalSha256']==REPAIR_APPROVAL_SHA:
+                # Earlier verified removals may reduce a later root's shared-file
+                # link counts/ctime. Keep both the frozen proof and observed state.
+                result.update(snapshotSha256=r['snapshot']['sha256'],observedSnapshotSha256=before['sha256'])
+            completed.append(result);progress('partial')
         if plan['moves']:
             capacity(layout,'audit30-source-preservation',scratch_bytes=sum(r['allocatedBytes'] for r in plan['moves']) if plan['kind']=='inverse-preservation' else 0)
             if plan['kind']=='preserve-sources':

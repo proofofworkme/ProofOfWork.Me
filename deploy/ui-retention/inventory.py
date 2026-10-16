@@ -169,6 +169,63 @@ def assert_stable(root, records):
 def inventory_sha(rows):return digest(encoded(rows))
 
 
+def inventory_file_group(primary, member_names, owner=0):
+    """Inventory an explicit sibling-file set; the containing directory is retained."""
+    primary=Path(primary);parent=primary.parent;names_=list(member_names)
+    require(primary.is_absolute() and parent.resolve(strict=True)==parent and parent.is_dir(),'Noncanonical file-group parent')
+    require(names_==sorted(set(names_)) and primary.name in names_ and 1<=len(names_)<=16,'Invalid closed file-group membership')
+    require(all(Path(n).name==n and n not in ('.','..') and '\\' not in n and not any(ord(c)<32 or ord(c)==127 for c in n) for n in names_),'Unsafe file-group member')
+    before=parent.lstat();require(before.st_uid==before.st_gid==owner and not before.st_mode&0o7022,'Unsafe file-group parent')
+    rows=[];total=0
+    for name in names_:
+        p=parent/name;s=p.lstat()
+        require(stat.S_ISREG(s.st_mode) and s.st_dev==before.st_dev and s.st_uid==s.st_gid==owner and not s.st_mode&0o7022 and s.st_nlink==1,'Unsafe file-group member or external hardlink')
+        total+=s.st_size;require(total<=MAX_ROOT_BYTES,'File-group byte bound exceeded')
+        attrs=xattrs(p);fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME)
+        try:
+            require(identity(os.fstat(fd))==identity(s),'File-group member changed before read')
+            with os.fdopen(fd,'rb',closefd=False) as source:h=hashlib.file_digest(source,'sha256').hexdigest()
+            require(identity(os.fstat(fd))==identity(s) and identity(p.lstat())==identity(s) and xattrs(p)==attrs,'File-group member changed during read')
+        finally:os.close(fd)
+        rows.append(dict(path=name,kind='file',identity=identity(s),xattrs=attrs,sha256=h))
+    require(identity(parent.lstat())==identity(before),'File-group parent changed during inventory')
+    logical=[{k:r[k] for k in ('path','kind','identity','xattrs','sha256')} for r in rows]
+    fp=dict(format='proofofwork-ui-retained-files-v1',classification='retain',root=str(primary),manifestSha256=None,treeSha256=digest(encoded(logical)),entries=len(rows),regularBytes=total)
+    return dict(fingerprint=fp,records=rows,parent=dict(path=str(parent),identity=identity(before),xattrs=xattrs(parent)))
+
+
+def assert_file_group(current, expected_root):
+    assert_inventory(current,expected_root)
+    parent=expected_root['parent'];actual=current['parent']
+    # Sibling groups may have been retired since qualification. The parent is
+    # never retired; its identity, authority and attributes must remain exact.
+    require(actual['path']==parent['path'] and actual['xattrs']==parent['xattrs'] and all(actual['identity'][k]==parent['identity'][k] for k in ('st_dev','st_ino','st_mode','st_uid','st_gid')),'File-group parent was replaced or changed')
+    return current
+
+
+def verify_closed_aliases(root, records, closure):
+    """Only the caller's authenticated ordinary-root export may opt into this."""
+    root=Path(root);require(closure.get('schema')=='pow-ui-ordinary-export-hardlink-closure-v1' and closure.get('sourceRoot')==str(root),'Wrong ordinary export hardlink closure')
+    roots=[Path(r['path']) for r in closure['verifiedRoots']]
+    require(root in roots and len(set(roots))==len(roots) and len(roots)>=2,'Incomplete verified root closure')
+    required={};groups={}
+    for row in records:
+        if row['kind']=='file':groups.setdefault((row['identity']['st_dev'],row['identity']['st_ino']),[]).append(row)
+    for key,rows in groups.items():
+        if rows[0]['identity']['st_nlink']!=len(rows):required[key]=rows
+    selected={(r['device'],r['inode']):r for r in closure['groups']}
+    require(len(selected)==len(closure['groups']) and set(selected)==set(required),'Closed alias proof omits or adds an external group')
+    for key,rows in required.items():
+        group=selected[key];sample=rows[0];aliases=group['aliases']
+        require(group['identity']==sample['identity'] and group['xattrs']==sample['xattrs'] and group['sha256']==sample['sha256'],'Closed alias proof source metadata differs')
+        require(aliases==sorted(set(aliases)) and len(aliases)==sample['identity']['st_nlink'] and {str(root/r['path']) for r in rows}<=set(aliases),'Unknown or missing external hardlink alias')
+        for value in aliases:
+            path=Path(value)
+            require(any(path.is_relative_to(p) for p in roots) and path.resolve(strict=True)==path,'Alias escapes fully verified root set')
+            require(identity(path.lstat())==group['identity'] and xattrs(path)==group['xattrs'],'Closed hardlink alias changed or acquired another link')
+    return digest(encoded(closure))
+
+
 def ns_string(value):return str(value//10**9)+'.'+str(value%10**9).zfill(9)
 
 
@@ -184,16 +241,25 @@ class HashSink:
     def flush(self):self.sink.flush()
 
 
-def archive_root(root, expected_root, sink, owner=0, *, require_manifest=True, allow_symlinks=False):
-    actual=assert_inventory(inventory(root,owner,require_manifest=require_manifest,allow_symlinks=allow_symlinks),expected_root);records=actual['records'];wrapper=HashSink(sink);links={}
+def archive_root(root, expected_root, sink, owner=0, *, require_manifest=True, allow_symlinks=False, ordinary_closed_aliases=False):
+    group=expected_root['format']=='proofofwork-ui-retained-files-v1'
+    if group:
+        actual=assert_file_group(inventory_file_group(root,[r['path'] for r in expected_root['inventory']],owner),expected_root)
+        source_root=Path(root).parent
+    else:
+        actual=assert_inventory(inventory(root,owner,require_manifest=require_manifest,allow_symlinks=allow_symlinks),expected_root);source_root=Path(root)
+    records=actual['records'];wrapper=HashSink(sink);links={}
     groups={}
     for row in records:
         if row['kind']=='file':
             s=row['identity'];groups.setdefault((s['st_dev'],s['st_ino']),[]).append(row)
-    require(all(len(rows)==rows[0]['identity']['st_nlink'] for rows in groups.values()),'Source has an external hardlink')
+    external=not all(len(rows)==rows[0]['identity']['st_nlink'] for rows in groups.values())
+    if external:
+        require(ordinary_closed_aliases and not group and expected_root.get('externalLinkClosure') is not None,'Source has an external hardlink')
+        verify_closed_aliases(root,records,expected_root['externalLinkClosure'])
     with tarfile.open(fileobj=wrapper,mode='w|gz',format=tarfile.PAX_FORMAT) as archive:
         for row in records:
-            p=Path(root) if row['path']=='.' else Path(root)/row['path'];s=row['identity']
+            p=source_root if row['path']=='.' else source_root/row['path'];s=row['identity']
             require(identity(p.lstat())==s and xattrs(p)==row['xattrs'],'Source changed before archive member')
             member=tarfile.TarInfo(row['path']);member.mode=stat.S_IMODE(s['st_mode']);member.uid=s['st_uid'];member.gid=s['st_gid'];member.uname=member.gname=''
             member.mtime=s['st_mtime_ns']//10**9
@@ -214,7 +280,10 @@ def archive_root(root, expected_root, sink, owner=0, *, require_manifest=True, a
                         archive.addfile(member,source)
                         require(identity(os.fstat(source.fileno()))==s,'Archive source changed during export')
             require(identity(p.lstat())==s,'Source changed after archive member')
-    assert_stable(root,records);wrapper.flush()
+    if group:assert_file_group(inventory_file_group(root,[r['path'] for r in records],owner),expected_root)
+    else:assert_stable(root,records)
+    if external:verify_closed_aliases(root,records,expected_root['externalLinkClosure'])
+    wrapper.flush()
     return dict(fingerprint=actual['fingerprint'],inventorySha256=inventory_sha(records),archiveSha256=wrapper.hash.hexdigest(),archiveBytes=wrapper.count)
 
 
@@ -240,6 +309,8 @@ def apply_metadata(path,row,owner_required):
 def verify_restored(root,expected_root,owner_required=True):
     root=Path(root);records=expected_root['inventory'];observed={};links={};expected_links={};child_names=directory_children(records)
     require(root.resolve(strict=True)==root and root.is_dir(),'Restoration root is not canonical')
+    if expected_root['format']=='proofofwork-ui-retained-files-v1':
+        require(all(r['kind']=='file' and Path(r['path']).name==r['path'] for r in records) and names(root)==sorted(r['path'] for r in records),'Restored file-group membership differs')
     for row in records:
         path=root if row['path']=='.' else root/row['path'];s=path.lstat();wanted=row['identity']
         require(stat.S_IFMT(s.st_mode)==stat.S_IFMT(wanted['st_mode']) and stat.S_IMODE(s.st_mode)==stat.S_IMODE(wanted['st_mode']),'Restored type or mode differs')
@@ -257,10 +328,13 @@ def verify_restored(root,expected_root,owner_required=True):
             require(names(path)==children,'Restored directory membership differs')
     require(sorted(sorted(v) for v in links.values())==sorted(sorted(v) for v in expected_links.values()),'Restored internal hardlink topology differs')
     require(all(observed[v[0]].st_nlink==len(v) for v in links.values()),'Restored inode has an external hardlink')
-    return dict(inventorySha256=inventory_sha(records),ownerRestored=True,modeTimesXattrsRestored=True,internalHardlinksRestored=True,
+    result=dict(inventorySha256=inventory_sha(records),ownerRestored=True,modeTimesXattrsRestored=True,internalHardlinksRestored=True,
         fingerprint={k:expected_root[k] for k in ('format','classification','manifestSha256','treeSha256','entries','regularBytes')},
         uidMap=Path('/proc/self/uid_map').read_text().strip(),gidMap=Path('/proc/self/gid_map').read_text().strip(),
         qualification='Numeric owners are verified in this execution namespace. Host1000 may map to namespace0. A production-root restoration preserves archive UID/GID0. New inode IDs and ctime are expected; original IDs/ctime remain in immutable evidence. Original symlink atimes remain archived; readlink may advance restored symlink atime.')
+    if expected_root.get('externalLinkClosure'):
+        result.update(externalLinkClosureSha256=digest(encoded(expected_root['externalLinkClosure'])),externalAliasesRetainedAsEvidence=True)
+    return result
 
 
 def extract_verify(archive,expected_root,output,owner_required=True):

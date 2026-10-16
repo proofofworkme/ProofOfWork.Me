@@ -109,3 +109,28 @@ bootstrap; afterwards record release admission, a new immutable index, the
 reviewed policy plan, verified/application result, and the next immutable index
 with its completed retirement receipt. These are explicit per-publication
 operations; standing masked timers are not a substitute.
+
+## Approved lifecycle repair — 2026-10-16
+
+The approved repair adds a version-2 admission index with one immutable migration
+review and present-pair anchor. It preserves the version-1 index and historical
+missing-object obligations. Explicit reviewed legacy ordinary roots and complete
+archive groups may enter the new scope; this is a current authorization, not a
+fabricated historical admission. Readers verify v3 declared surface families,
+v4 Pages and v5 Permission, including preserved source-checkout locations.
+
+Repair-policy application additionally requires a root-owned, hash-bound custody
+proof covering each exact planned path in order. Full independent restoration
+records must match the frozen source inventory, including bytes and metadata.
+The existing ordinary writer performs deletion and retains its durable progress
+receipts. A bounded repair-only cleanup receipt envelope can use the existing
+32 MiB retirement admission. Larger proofs require normal admission against the
+unchanged backup budget at the actual evidence path; the emergency envelope is
+never enlarged. More than 128 projected receipt inodes refuse.
+
+The immutable lifecycle package and operator-host orchestrator automate these
+calls after exact HTTPS verification. They then freshly qualify and retire
+eligible obsolete source and upload copies through the custody writer, and
+block another upload until the cycle is complete. No broad prune timer is
+unmasked. See [the current infrastructure contract](../../OP_RETURN_INFRASTRUCTURE.md#automatic-ui-release-retention-repair-2026-10-16)
+for fixed budgets, installation, custody location and partial-operation rules.

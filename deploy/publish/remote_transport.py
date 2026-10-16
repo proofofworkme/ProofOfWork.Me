@@ -505,6 +505,28 @@ assert [str(path) for path in retained] == [record['root'] for record in p['reta
 for path, record in zip(retained, p['retainedRoots']):
     value = namespace['fingerprint'](path)
     assert value['manifestSha256'] == record['manifestSha256'] and value['treeSha256'] == record['treeSha256']
+if phase == 'surfaces-stage':
+    lifecycle = p['retentionLifecycle']
+    assert lifecycle['config']['path'] == '/etc/proofofwork-retention/ui-lifecycle.json'
+    assert lifecycle['state']['path'] == '/var/lib/proofofwork-ui-retention/state.json'
+    for key in ('config', 'controller', 'state'):
+        bound(lifecycle[key]['path'], lifecycle[key]['sha256'])
+    # Re-measure under this continuously held lock before the receiver reads
+    # its first byte. A successful old preflight is never a space reservation.
+    sequence_source = p['sequenceCapacity']['source'].encode()
+    assert len(sequence_source) <= 16384
+    assert hashlib.sha256(sequence_source).hexdigest() == p['sequenceCapacity']['sha256']
+    assert p['wrapperSourceSha256']['sequence_capacity.py'] == p['sequenceCapacity']['sha256']
+    sequence_ns = {'__name__': '_transport_whole_sequence'}
+    exec(compile(sequence_source, 'sequence_capacity.py', 'exec'), sequence_ns)
+    native_ns = {'__name__': '_transport_native_capacity'}
+    exec(compile(bound(helpers['capacity']['path'], helpers['capacity']['sha256']),
+                 helpers['capacity']['path'], 'exec'), native_ns)
+    import types
+    fresh_census = sequence_ns['capture'](types.SimpleNamespace(**native_ns))
+    required = sequence_ns['requirements'](p, fresh_census)
+    assert required == p['wholeSequenceAdmission']['requirements'], 'Whole-release allocation model changed'
+    whole_sequence_admission = sequence_ns['admit'](required, fresh_census)
 capacity_incoming = validate_capacity_resume(p) if phase == 'preserved-capacity-resume' else None
 out = BASE / ('recovery-transport-' + release + '-' + phase + '-' + p['publicationAttempt'])
 assert not os.path.lexists(out)
@@ -518,6 +540,8 @@ out.mkdir(mode=0o700); sync(BASE)
 durable_json(out / 'intent.json', {'releaseId': release, 'commit': p['commit'], 'tree': p['tree'],
     'phase': phase, 'planSha256': plan_sha, 'continuousParentLock': True,
     'historicalDeletion': False, 'retentionDeferred': True})
+if phase == 'surfaces-stage':
+    durable_json(out / 'whole-sequence-admission.json', whole_sequence_admission)
 kind = 'source' if phase == 'source' else 'surfaces'
 allocation = p['admissions'][kind + '-receive']
 archive = ARCHIVES / ('proofofwork-ui-release-' + release + '.tgz')

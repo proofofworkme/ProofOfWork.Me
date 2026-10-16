@@ -1,0 +1,43 @@
+{
+  "schema": "pow-ui-retention-repair-approval-v1",
+  "approvalDate": "2026-10-16",
+  "timezone": "America/Toronto",
+  "approvalSource": "Explicit human instruction in the implementation chat",
+  "authorization": "I approve the prepared retention repair. Implement and deploy it so old release copies are cleaned up automatically, keeping the current release, one verified rollback, and required evidence without raising storage limits.",
+  "proposal": {
+    "path": "audits/2026-10-16-ui-retention-repair-proposal.json",
+    "sha256": "051e67cbf011b43f7521c978776eb8c3acf13cb3316c091776c0af381becdb4c"
+  },
+  "host": "77.42.91.106",
+  "scope": [
+    "Implement and deploy the prepared UI retention repair",
+    "Append-only reconciliation of actual release admission history without fabricated prior admissions",
+    "Automatic verified post-publication retention and whole-sequence capacity admission",
+    "Qualified custody and selective retirement of superseded UI release copies, retaining required evidence",
+    "One initial verified real cleanup cycle plus repeated-cycle fixtures"
+  ],
+  "protected": [
+    "Current complete UI release and its required dependencies",
+    "One fully verified immediate-prior rollback and its required dependencies",
+    "Unique evidence in independently restored durable custody",
+    "Existing held paths and immutable hold markers, subject only to already explicit ordinary managed-container exceptions",
+    "Existing masked broad-pruning timers",
+    "Node runtime overlays, canonical chain data, database backups and unrelated local work"
+  ],
+  "limits": {
+    "backupBudgetBytes": 19327352832,
+    "transportBudgetBytes": 9663676416,
+    "scratchBudgetBytes": 5368709120,
+    "rootReserveBytes": 10737418240,
+    "growthReserveBytes": 67108864,
+    "inodeReserve": 128
+  },
+  "forbidden": [
+    "Storage-limit increases",
+    "Age-only or generic recursive cleanup",
+    "Removing or weakening holds or unmasking broad-pruning timers",
+    "Deleting retained custody evidence",
+    "Inventing historical admissions or rewriting sealed receipts"
+  ],
+  "completion": "Complete one measured real retention cycle; verify the retained recovery pair, required evidence and unchanged limits; pass release synchronization before announcement."
+}
