@@ -152,6 +152,14 @@ block another upload until the cycle is complete. No broad prune timer is
 unmasked. See [the current infrastructure contract](../../OP_RETURN_INFRASTRUCTURE.md#automatic-ui-release-retention-repair-2026-10-16)
 for fixed budgets, installation, custody location and partial-operation rules.
 
+The [initial completed execution](../../audits/2026-10-18-ui-retention-repair-execution.json)
+records four obsolete rollback trees, 16 complete archive groups and three
+obsolete source directories retired after sealed custody and independent
+restoration. It preserves the earlier refusals and reconciliations and records
+observed disk endpoints without double-counting nested pools or hardlinked
+copies. Protected and unqualified history remains explicit; storage budgets
+and free-space reserves are unchanged.
+
 The first backlog pass exposed repeated full-closure verification for each
 object. The corrected batch exporter verifies the full closure at its boundaries
 under one continuous lock and guards every dependency between objects, while

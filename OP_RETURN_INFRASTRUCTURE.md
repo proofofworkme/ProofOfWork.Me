@@ -7814,6 +7814,29 @@ then checks the normal public status path. Completed-cycle upgrade execution has
 a bounded 60-minute transport timeout for these full proof checks; read-only
 upgrade planning retains its 30-minute bound and storage limits are unchanged.
 
+The initial backlog cycle completed on 2026-10-18. Its
+[execution record](audits/2026-10-18-ui-retention-repair-execution.json) binds
+retirement of four obsolete rollback trees and 16 complete archive groups
+(52 ordinary paths), followed by three qualified obsolete source directories.
+Every retired object had sealed off-host custody and independent restoration
+proof. A pre-intent deployment-lock refusal was preserved and explicitly
+reconciled after fresh proof that the sources and lifecycle state were unchanged.
+The original capacity and configuration-guard refusals, old packages, phase
+receipts and admission history remain intact. The corrective package passed
+normal completed status after activation. Remaining protected or unqualified
+historical copies retain their specific holds, provenance gaps and recovery
+dependencies; none are silently admitted or discarded.
+The final evidence collector also detected access-time changes in seven
+temporary restored copies. Their original archives, inventories, restoration
+receipts and changed temporary copies were preserved. Fresh independent copies
+were restored from the same sealed archives and checked with the unchanged
+strict byte, metadata and hardlink verifier; no metadata check was relaxed.
+At the recorded endpoints, backup allocation fell from 17.6 GiB to 11.3 GiB
+and root free space rose from 11.3 GiB to 17.7 GiB. These observations include
+concurrent writes and new durable evidence; nested pool decreases are not summed
+as exact physical bytes reclaimed. The 18 GiB backup, 9 GiB transport and 5 GiB
+scratch ceilings and 10 GiB root reserve remain unchanged.
+
 ### Proof Computer temporary domain bridge — 2026-10-13
 
 `proofcomputer.com` and `www.proofcomputer.com` are temporary redirect-only
