@@ -13,9 +13,14 @@ import json
 import os
 from pathlib import Path
 import re
+import select
+import shlex
 import stat
+import struct
 import subprocess
 import sys
+import threading
+import time
 import types
 import uuid
 import zlib
@@ -33,6 +38,12 @@ REPAIR_PROPOSAL_SHA = '051e67cbf011b43f7521c978776eb8c3acf13cb3316c091776c0af381
 SCRATCH = Path('/var/tmp/proofofwork-deploy')
 OFFHOST_RESERVE_BYTES = 10*1024**3 + 64*1024**2
 OFFHOST_RESERVE_INODES = 128
+BATCH_MAGIC=b'POW-UI-CUSTODY-BATCH-v1\n'
+BATCH_CHUNK=1024**2
+BATCH_JSON=64*1024
+BATCH_OBJECTS=64
+BATCH_BYTES=18*1024**3
+BATCH_SECONDS=5400
 
 
 class QualificationError(ValueError):
@@ -319,6 +330,141 @@ def remote_qualify(frame=None):
     fence(plan,full=True);print(json.dumps(plan))
 
 
+def batch_rows(plan):
+    rows=[row for row in plan['candidates'] if row.get('eligible') is True]
+    require(len(rows)<=BATCH_OBJECTS and len({row['path'] for row in rows})==len(rows),'batch-scope','Duplicate or oversized custody batch')
+    require(sum(row['inventory']['fingerprint']['regularBytes'] for row in rows)<=BATCH_BYTES,'batch-scope','Custody batch exceeds unchanged retained-pool byte bound')
+    return rows
+
+
+def batch_guards(plan):
+    """Only called after the full entry fence, inside its continuous lock."""
+    snapshots={};visited=set();total=0
+    def add(snapshot):
+        path=snapshot['path']
+        require(path not in snapshots or snapshots[path]==snapshot,'batch-guard','Conflicting verified dependency snapshots')
+        snapshots[path]=snapshot
+    def walk(value):
+        if isinstance(value,dict):
+            if value.get('model')=='audit30-whole-bytes-inode-xattrs-v1':add(value)
+            else:
+                for child in value.values():walk(child)
+        elif isinstance(value,list):
+            for child in value:walk(child)
+    cache={}
+    closure=plan.get('closure') or A.protected_pair(A.Layout(),cache)
+    walk(closure)
+    walk(cache)
+    # The authenticated closure names protected archive triplets separately
+    # from root/source snapshots. Capture their complete byte/metadata proofs
+    # now under the same entry lock, then guard them between every object.
+    for path in closure.get('protectedPaths',[]):
+        if path not in snapshots:add(A.snapshot(Path(path),links=True))
+    # Admission/approval receipts are immutable inputs to the full closure too.
+    def evidence(binding):
+        nonlocal total
+        if not isinstance(binding,dict):return
+        if 'intentPath' in binding and 'intentSha256' in binding:
+            evidence(dict(path=binding['intentPath'],sha256=binding['intentSha256']))
+        if set(binding)=={'path','sha256'} and isinstance(binding['path'],str) and binding['path'].startswith(str(BASE/'cleanup-evidence')+'/') and re.fullmatch(r'[a-f0-9]{64}',str(binding['sha256'])):
+            path=binding['path']
+            if path in visited:
+                require(snapshots[path]['entries'][0]['sha256']==binding['sha256'],'batch-guard','Conflicting receipt binding');return
+            require(len(visited)<128,'batch-guard','Receipt dependency graph exceeds bound');visited.add(path)
+            raw,_=E.read_regular(path,128*1024**2);total+=len(raw)
+            require(total<=256*1024**2 and E.digest(raw)==binding['sha256'],'batch-guard','Receipt bytes differ or dependency bound exceeded')
+            snapshot=A.snapshot(Path(path));require(snapshot['entries'][0]['sha256']==binding['sha256'],'batch-guard','Receipt changed during entry verification');add(snapshot)
+            evidence(json.loads(raw));return
+        for child in binding.values():
+            if isinstance(child,dict):evidence(child)
+            elif isinstance(child,list):
+                for item in child:
+                    if isinstance(item,dict):evidence(item)
+    if plan.get('lifecycle'):evidence(plan['lifecycle'])
+    require(snapshots,'batch-guard','No fully verified protected dependency snapshots')
+    return snapshots
+
+
+def guard_batch(plan,snapshots):
+    fence(plan)
+    for path,previous in snapshots.items():
+        current=A.guard_snapshot(Path(path),previous,links=True)
+        A.match_snapshot(current,previous)
+        snapshots[path]=current
+
+
+def write_all(stream,data):
+    view=memoryview(data)
+    while view:
+        count=stream.write(view);count=len(view) if count is None else count
+        require(type(count)is int and 0<count<=len(view),'batch-stream','Custody stream made no progress');view=view[count:]
+
+
+def batch_frame(stream,kind,payload):
+    require(kind in (b'J',b'D') and 0<len(payload)<=(BATCH_JSON if kind==b'J' else BATCH_CHUNK),'batch-stream','Invalid custody frame')
+    write_all(stream,kind+struct.pack('>I',len(payload)));write_all(stream,payload)
+
+
+def batch_event(stream,value):batch_frame(stream,b'J',encoded(value))
+
+
+class BatchSink:
+    def __init__(self,stream,deadline):self.stream=stream;self.deadline=deadline
+    def write(self,data):
+        require(time.monotonic()<self.deadline,'batch-timeout','Custody export batch deadline exceeded')
+        for start in range(0,len(data),BATCH_CHUNK):batch_frame(self.stream,b'D',data[start:start+BATCH_CHUNK])
+        return len(data)
+    def flush(self):self.stream.flush()
+
+
+def batch_members(rows,plan):
+    members=[]
+    for row in rows:
+        path=Path(row['path']);kind,_,_=scope(path,plan)
+        members.extend(str(path)+suffix for suffix in (('','.sha256','.provenance') if kind=='managed-archive-group' else ('',)))
+    return members
+
+
+def remote_export_batch(frame,stream,lock_fd):
+    plan=frame['plan'];rows=batch_rows(plan);plan_sha=E.digest(encoded(plan))
+    require(set(frame)=={'plan','planSha256'} and frame['planSha256']==plan_sha,'batch-scope','Custody batch plan SHA differs')
+    deadline=time.monotonic()+BATCH_SECONDS
+    layout=A.Layout();lock_binding=A.require_execution_lock(lock_fd,layout)
+    def locked_guard():
+        A.require_execution_lock(lock_fd,layout,lock_binding)
+        guard_batch(plan,guards)
+        A.require_execution_lock(lock_fd,layout,lock_binding)
+    fence(plan,full=True);guards=batch_guards(plan)
+    A.require_execution_lock(lock_fd,layout,lock_binding)
+    all_members=batch_members(rows,plan)
+    if all_members:check_references(all_members)
+    write_all(stream,BATCH_MAGIC);batch_event(stream,dict(type='batch-start',planSha256=plan_sha,count=len(rows)))
+    results=[]
+    for index,row in enumerate(rows):
+        require(time.monotonic()<deadline,'batch-timeout','Custody export batch deadline exceeded')
+        locked_guard()
+        path=Path(row['path']);kind,rid,ordinary=scope(path,plan)
+        require(row.get('retirementMethod','custody')==('ordinary-policy' if ordinary else 'custody'),'batch-scope','Custody retirement method changed')
+        actual=row_inventory(path,kind)
+        (E.assert_file_group if kind=='managed-archive-group' else E.assert_inventory)(actual,expected(row))
+        if 'artifactProof' in row:
+            require(artifact_proof(path,plan,actual)==row['artifactProof'],'batch-proof','Artifact proof changed during batch')
+        if row.get('externalLinkClosure'):
+            require(ordinary and kind=='rollback-root' and closed_alias_proof(path,plan,actual)==row['externalLinkClosure'],'external-hardlink','Ordinary alias closure changed')
+        batch_event(stream,dict(type='object-start',index=index,path=row['path']))
+        result=E.archive_root(path,expected(row),BatchSink(stream,deadline),require_manifest=False,allow_symlinks=True,ordinary_closed_aliases=ordinary and kind=='rollback-root')
+        locked_guard()
+        result=dict(index=index,path=row['path'],proof=result);results.append(result)
+        batch_event(stream,dict(type='object-complete',**result))
+    if all_members:check_references(all_members)
+    fence(plan,full=True)
+    A.require_execution_lock(lock_fd,layout,lock_binding)
+    require(time.monotonic()<deadline,'batch-timeout','Custody export batch deadline exceeded')
+    seal=dict(type='batch-complete',schema='pow-ui-custody-export-batch-v1',planSha256=plan_sha,count=len(rows),objects=results,
+              objectManifestSha256=E.digest(encoded(results)),entryAndFinalProtectedVerification=True,continuousDeploymentLock=True)
+    batch_event(stream,seal);stream.flush()
+
+
 def remote_operation(operation, frame):
     if os.geteuid() != 0:
         raise ValueError('Remote operation requires root')
@@ -326,6 +472,8 @@ def remote_operation(operation, frame):
     try:
         if operation == 'qualify':
             remote_qualify(frame); return
+        if operation == 'export-batch':
+            remote_export_batch(frame,sys.stdout.buffer,lock);return
         plan = frame['plan']; row = frame['row']; path = Path(row['path'])
         kind,rid,ordinary=scope(path, plan); fence(plan, full=True)
         require(row.get('eligible') is True,'plan-invalid','Candidate was not positively qualified')
@@ -401,6 +549,14 @@ def verify_custody(row, record, plan_path, custody):
     require(restored.get('sourceRoot')==row['path'] and restored.get('archiveSha256')==record['archiveSha256'] and restored.get('inventorySha256')==record['inventorySha256'] and all(restored.get(k) is True for k in ('ownerRestored','modeTimesXattrsRestored','internalHardlinksRestored')),'custody-mismatch','Independent restoration does not bind custody bytes/metadata')
     if wanted.get('externalLinkClosure'):
         require(restored.get('externalAliasesRetainedAsEvidence') is True and restored.get('externalLinkClosureSha256')==E.digest(E.encoded(wanted['externalLinkClosure'])),'custody-mismatch','Independent restoration lost complete ordinary alias evidence')
+    if record.get('batchExport'):
+        bound=record['batchExport'];batch_path=Path(custody)/'batch-exported.json'
+        require(bound.get('path')==str(batch_path) and digest(batch_path)==bound.get('sha256'),'custody-mismatch','Custody batch seal changed')
+        batch=json.loads(batch_path.read_bytes());index=bound.get('index')
+        require(batch.get('schema')=='pow-ui-custody-export-batch-v1' and batch.get('planSha256')==record['planSha256'] and batch.get('entryAndFinalProtectedVerification') is True and batch.get('continuousDeploymentLock') is True,'custody-mismatch','Custody batch lacks continuous-lock final proof')
+        require(type(index)is int and 0<=index<len(batch['objects']) and batch['count']==len(batch['objects']) and E.digest(encoded(batch['objects']))==batch['objectManifestSha256'],'custody-mismatch','Custody batch manifest differs')
+        exported=batch['objects'][index]
+        require(exported['index']==index and exported['path']==row['path'] and exported['proof']['archiveSha256']==record['archiveSha256'] and exported['proof']['inventorySha256']==record['inventorySha256'],'custody-mismatch','Custody record is not a sealed batch member')
     return archive
 
 
@@ -411,7 +567,7 @@ def restored_check(archive, inventory_path, destination, *, fresh=False):
     return subprocess.run(['unshare','--user','--map-root-user','python3','-I','-B','-c',script,str(ROOT/SOURCES['E']),*args],capture_output=True,text=True,timeout=900)
 
 
-def custody_allocation(rows, first_archive=True):
+def custody_allocation(rows, first_archive=True, *, archives_existing=False):
     """Conservative full-byte archive + independent restore; no compression credit."""
     archive_bytes=restore_bytes=archive_inodes=restore_inodes=0
     for index,row in enumerate(rows):
@@ -419,18 +575,18 @@ def custody_allocation(rows, first_archive=True):
         # PAX headers, gzip expansion, allocation rounding, sealed metadata and
         # logs are charged in addition to every logical source byte.
         tar_bound=regular+entries*8192+metadata*2+128*1024
-        if index or first_archive:archive_bytes+=tar_bound+tar_bound//1000+64*1024
+        if not archives_existing and (index or first_archive):archive_bytes+=tar_bound+tar_bound//1000+64*1024
         archive_bytes+=metadata*3+2*1024**2;archive_inodes+=12
         restore_bytes+=regular+entries*8192+64*1024;restore_inodes+=entries+2
     return dict(archiveBytes=archive_bytes,archiveInodes=archive_inodes,restoreBytes=restore_bytes,restoreInodes=restore_inodes)
 
 
-def check_custody_capacity(rows, custody_parent, restore_parent, *, first_archive=True, observe=None):
+def check_custody_capacity(rows, custody_parent, restore_parent, *, first_archive=True, archives_existing=False, observe=None):
     if observe is None:
         def observe(path):
             path=Path(path);require(path.resolve(strict=True)==path and path.is_dir(),'custody-capacity','Offhost allocation parent is not canonical')
             fs=os.statvfs(path);return dict(device=path.stat().st_dev,availableBytes=fs.f_bavail*fs.f_frsize,availableInodes=fs.f_favail)
-    model=custody_allocation(rows,first_archive);pools={}
+    model=custody_allocation(rows,first_archive,archives_existing=archives_existing);pools={}
     for path,b,i in ((custody_parent,model['archiveBytes'],model['archiveInodes']),(restore_parent,model['restoreBytes'],model['restoreInodes'])):
         state=observe(path);key=state['device']
         if key not in pools:pools[key]=dict(device=key,paths=[],additionalBytes=0,additionalInodes=0,availableBytes=state['availableBytes'],availableInodes=state['availableInodes'])
@@ -441,15 +597,120 @@ def check_custody_capacity(rows, custody_parent, restore_parent, *, first_archiv
     return dict(ok=True,model='uncompressed-full-custody-and-independent-restore-v1',allocation=model,filesystems=list(pools.values()),reserveBytes=OFFHOST_RESERVE_BYTES,reserveInodes=OFFHOST_RESERVE_INODES)
 
 
+def read_exact(stream,size,deadline,*,allow_eof=False):
+    parts=[];count=0
+    while count<size:
+        require(time.monotonic()<deadline,'batch-timeout','Custody stream deadline exceeded')
+        try:fd=stream.fileno()
+        except (AttributeError,OSError):fd=None
+        if fd is not None:
+            ready,_,_=select.select([fd],[],[],max(0,deadline-time.monotonic()))
+            require(ready,'batch-timeout','Custody stream deadline exceeded')
+            part=os.read(fd,min(size-count,BATCH_CHUNK))
+        else:part=stream.read(min(size-count,BATCH_CHUNK))
+        if not part:
+            require(allow_eof and not count,'batch-stream','Interrupted or truncated custody batch');return b''
+        parts.append(part);count+=len(part)
+    return b''.join(parts)
+
+
+def read_batch_frame(stream,deadline):
+    header=read_exact(stream,5,deadline);kind=header[:1];size=struct.unpack('>I',header[1:])[0]
+    require(kind in (b'J',b'D') and 0<size<=(BATCH_JSON if kind==b'J' else BATCH_CHUNK),'batch-stream','Invalid or oversized custody frame')
+    raw=read_exact(stream,size,deadline)
+    if kind==b'J':
+        value=json.loads(raw);require(isinstance(value,dict) and encoded(value)==raw,'batch-stream','Noncanonical custody event');return kind,value
+    return kind,raw
+
+
+def receive_batch(stream,plan,custody,deadline,capacity_check=None):
+    """Stream directly to exclusive files; the caller seals only after exit zero."""
+    rows=batch_rows(plan);plan_sha=E.digest(encoded(plan));results=[];total=0
+    require(read_exact(stream,len(BATCH_MAGIC),deadline)==BATCH_MAGIC,'batch-stream','Wrong custody batch protocol')
+    kind,start=read_batch_frame(stream,deadline)
+    require(kind==b'J' and start==dict(type='batch-start',planSha256=plan_sha,count=len(rows)),'batch-stream','Wrong custody batch scope/order')
+    for index,row in enumerate(rows):
+        kind,event=read_batch_frame(stream,deadline)
+        require(kind==b'J' and event==dict(type='object-start',index=index,path=row['path']),'batch-stream','Unexpected custody object or ordering')
+        if capacity_check:capacity_check(index)
+        key=hashlib.sha256(row['path'].encode()).hexdigest()[:16];archive=Path(custody)/(key+'.tgz');h=hashlib.sha256();count=0
+        with archive.open('xb') as output:
+            while True:
+                kind,value=read_batch_frame(stream,deadline)
+                if kind==b'J':break
+                count+=len(value);total+=len(value)
+                require(count<=E.MAX_ROOT_BYTES and total<=BATCH_BYTES,'batch-stream','Custody archive byte bound exceeded')
+                h.update(value);write_all(output,value)
+            output.flush();os.fsync(output.fileno())
+        require(value.get('type')=='object-complete' and value.get('index')==index and value.get('path')==row['path'],'batch-stream','Custody object completion differs')
+        proof=value.get('proof',{});wanted=row['inventory']['fingerprint']
+        require(set(value)=={'type','index','path','proof'} and proof.get('fingerprint')==wanted and proof.get('inventorySha256')==E.inventory_sha(row['inventory']['records']) and proof.get('archiveBytes')==count and proof.get('archiveSha256')==h.hexdigest(),'batch-stream','Streamed custody proof differs')
+        result=dict(index=index,path=row['path'],proof=proof);results.append(result)
+        save(Path(custody)/(key+'.stderr'),proof)
+    kind,seal=read_batch_frame(stream,deadline)
+    expected_seal=dict(type='batch-complete',schema='pow-ui-custody-export-batch-v1',planSha256=plan_sha,count=len(rows),objects=results,
+                       objectManifestSha256=E.digest(encoded(results)),entryAndFinalProtectedVerification=True,continuousDeploymentLock=True)
+    require(kind==b'J' and seal==expected_seal,'batch-stream','Missing or mismatched final custody batch seal')
+    require(read_exact(stream,1,deadline,allow_eof=True)==b'','batch-stream','Trailing bytes after custody batch seal')
+    return seal
+
+
+def export_batch(plan,custody,restore):
+    rows=batch_rows(plan);plan_sha=E.digest(encoded(plan));deadline=time.monotonic()+BATCH_SECONDS
+    save(custody/'batch-intent.json',dict(schema='pow-ui-custody-export-batch-intent-v1',planSha256=plan_sha,paths=[r['path'] for r in rows],
+         interruptionRequiresExplicitReconciliation=True,maximumSeconds=BATCH_SECONDS))
+    unit='proofofwork-ui-custody-export-'+plan_sha[:12]+'-'+uuid.uuid4().hex[:12]+'.service'
+    command=['systemd-run','--unit='+unit,'--service-type=exec','--wait','--pipe','--collect',
+             '--property=User=root','--property=Group=root','--property=KillMode=control-group',
+             '--property=RuntimeMaxSec=90min','--property=TimeoutStopSec=30s','--property=CPUQuota=50%',
+             '--property=MemoryMax=2G','--property=MemorySwapMax=0','--property=TasksMax=128','--property=UMask=0077',
+             '--property=Nice=15','ionice','-c','3','python3','-I','-B','-']
+    payload=launcher('export-batch',dict(plan=plan,planSha256=plan_sha));process=None;sender=None;errors=[]
+    try:
+        with (custody/'batch-stderr.log').open('xb') as stderr:
+            process=subprocess.Popen([*SSH[:-1],'-o','ConnectTimeout=15',SSH[-1],shlex.join(command)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=stderr)
+            def send():
+                try:write_all(process.stdin,payload);process.stdin.close()
+                except BaseException as error:errors.append(error)
+            sender=threading.Thread(target=send,daemon=True);sender.start()
+            seal=receive_batch(process.stdout,plan,custody,deadline,
+                lambda index:check_custody_capacity(rows[index:],custody,restore))
+            require(process.wait(timeout=max(0.01,deadline-time.monotonic()))==0,'batch-process','Custody exporter did not exit successfully')
+            sender.join(timeout=1);require(not sender.is_alive() and not errors,'batch-process','Custody batch request was interrupted')
+            stderr.flush();os.fsync(stderr.fileno())
+        save(custody/'batch-exported.json',seal)
+        return seal
+    except BaseException as error:
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:process.wait(timeout=10)
+            except subprocess.TimeoutExpired:process.kill();process.wait(timeout=10)
+        if sender is not None:sender.join(timeout=1)
+        save(custody/'batch-failure.json',dict(error=str(error)[:2000],remoteUnit=unit,manualReconciliationRequired=True))
+        raise
+    finally:
+        if process is not None:
+            if process.stdin and not process.stdin.closed:process.stdin.close()
+            if process.stdout:process.stdout.close()
+
+
 def preserve(plan_path, custody, resume=False):
-    plan = json.loads(plan_path.read_bytes());rows=[r for r in plan['candidates'] if r['eligible']]
+    plan = json.loads(plan_path.read_bytes());rows=batch_rows(plan)
     restore = Path('/tmp')/('pow-ui-custody-restore-'+hashlib.sha256(str(custody).encode()).hexdigest()[:16])
+    require(not (custody/'batch-intent.json').exists(),'batch-partial','Existing custody batch requires explicit reconciliation; no automatic resume')
     capacity=check_custody_capacity(rows,custody.parent,restore.parent)
     custody.mkdir(mode=0o700, exist_ok=resume)
     restore.mkdir(mode=0o700, exist_ok=resume)
     save(custody/('capacity-'+uuid.uuid4().hex+'.json'),capacity)
+    # Legacy explicit resume retains its prior per-object semantics only when
+    # every selected object is already complete. It never reopens a new batch.
+    if resume:
+        require(all((custody/(hashlib.sha256(r['path'].encode()).hexdigest()[:16]+'.json')).is_file() for r in rows),'batch-partial','Partial preservation requires explicit reconciliation')
+    else:
+        export_batch(plan,custody,restore)
+    batch_path=custody/'batch-exported.json'
     for index, row in enumerate(rows):
-        check_custody_capacity(rows[index:],custody,restore)
+        check_custody_capacity(rows[index:],custody,restore,archives_existing=True)
         key = hashlib.sha256(row['path'].encode()).hexdigest()[:16]
         archive = custody/(key+'.tgz'); errors = custody/(key+'.stderr')
         if resume and (custody/(key+'.json')).exists():
@@ -461,21 +722,16 @@ def preserve(plan_path, custody, resume=False):
             result=restored_check(archive,custody/(key+'.inventory.json'),restore/token,fresh=True)
             save(custody/(token+'.json'),dict(exitCode=result.returncode,stdout=result.stdout,stderr=result.stderr))
             result.check_returncode();print(json.dumps({'alreadyPreserved':row['path'],'freshRestoration':str(restore/token)}),flush=True);continue
-        if archive.exists() or errors.exists():
-            raise ValueError('Partial custody requires manual reconciliation: '+str(archive))
-        frame = {'plan':{k:v for k,v in plan.items() if k!='candidates'},'row':row}
-        with archive.open('xb') as out, errors.open('xb') as err:
-            subprocess.run([*SSH,'nice -n 15 ionice -c 3 python3 -I -B -'],input=launcher('export',frame),stdout=out,stderr=err,check=True,timeout=900)
-            out.flush(); os.fsync(out.fileno())
         exported = json.loads(errors.read_text()); assert digest(archive)==exported['archiveSha256'] and exported['inventorySha256']==E.inventory_sha(row['inventory']['records'])
         inventory_path=custody/(key+'.inventory.json');save(inventory_path,expected(row))
-        check_custody_capacity(rows[index:],custody,restore,first_archive=False)
+        check_custody_capacity(rows[index:],custody,restore,archives_existing=True)
         result=restored_check(archive,inventory_path,restore/key,fresh=True)
         save(custody/(key+'.restore-log.json'),{'exitCode':result.returncode,'stdout':result.stdout,'stderr':result.stderr})
         result.check_returncode()
         restored=json.loads(result.stdout)
         record={'ok':True,'sourcePath':row['path'],'archivePath':str(archive),'archiveSha256':digest(archive),
                 'inventorySha256':E.inventory_sha(row['inventory']['records']),'sourceInventory':expected(row),'restoration':restored,'planSha256':digest(plan_path)}
+        record['batchExport']=dict(path=str(batch_path),sha256=digest(batch_path),index=index)
         save(custody/(key+'.json'),record);print(json.dumps({'preserved':row['path'],'bytes':archive.stat().st_size}),flush=True)
 
 

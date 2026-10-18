@@ -134,3 +134,12 @@ eligible obsolete source and upload copies through the custody writer, and
 block another upload until the cycle is complete. No broad prune timer is
 unmasked. See [the current infrastructure contract](../../OP_RETURN_INFRASTRUCTURE.md#automatic-ui-release-retention-repair-2026-10-16)
 for fixed budgets, installation, custody location and partial-operation rules.
+
+The first backlog pass exposed repeated full-closure verification for each
+object. The corrected batch exporter verifies the full closure at its boundaries
+under one continuous lock and guards every dependency between objects, while
+retaining each object's complete byte/artifact proof. Ordinary retirement may
+reuse protected proofs only with a live exclusive deployment-lock descriptor;
+without that descriptor it performs the full checks. Selected objects and
+shared inodes affected by known unlinks remain fully hashed, and completion
+requires a fresh protected-release proof. No proof cache survives the operation.

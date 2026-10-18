@@ -177,7 +177,11 @@ def publication_binding(plan, publish_log):
             'value': rows[0]}
 
 
-def complete(plan_path, publish_log, https_receipt, destination):
+def complete(plan_path, publish_log, https_receipt, destination, attempt=None):
+    # An attempt names a separately authenticated reconciliation; it is never
+    # permission to reuse a partial local directory or remote phase intent.
+    assert attempt is None or re.fullmatch(r'[a-z0-9][a-z0-9-]{0,15}', attempt), 'Invalid retention attempt'
+    suffix = '' if attempt is None else '-'+attempt
     plan = json.loads(plan_path.read_bytes()); rid = plan['releaseId']
     if 'retentionLocalSources' in plan:
         assert set(plan['retentionLocalSources']) == set(LOCAL_SOURCES)
@@ -191,7 +195,7 @@ def complete(plan_path, publish_log, https_receipt, destination):
         for key in ('config','controller'):
             assert plan['retentionLifecycle'][key]==binding[key], 'Installed lifecycle changed after release admission'
     frame={'expectedStateSha256':current['stateSha256'], 'expectedPair':current['pair'],
-           'operationId':'release-'+rid, 'httpsReceipt':blob(https_receipt),
+           'operationId':'release-'+rid+suffix, 'httpsReceipt':blob(https_receipt),
            'publicationReceipt':publication_binding(plan,publish_log)}
     prepared=call(binding,'prepare-cycle',frame);save(destination/'prepared.json',prepared)
     assert prepared['lifecycleBinding']['approval']['sha256']==APPROVAL_SHA
@@ -207,7 +211,7 @@ def complete(plan_path, publish_log, https_receipt, destination):
     proof,records=ordinary_proof(prepared['ordinaryPlan']['value'],narrowed,ordinary_custody,module)
     proof_path=destination/'ordinary-custody-proof.json';save(proof_path,proof)
     mutation={'expectedStateSha256':prepared['stateSha256'],'expectedPair':current['pair'],
-              'operationId':'ordinary-'+rid,'cycleId':prepared['cycleId'],'pendingToken':prepared['pendingToken'],
+              'operationId':'ordinary-'+rid+suffix,'cycleId':prepared['cycleId'],'pendingToken':prepared['pendingToken'],
               'custodyProof':blob(proof_path),'custodyRecords':records}
     applied=call(binding,'apply-ordinary',mutation);save(destination/'ordinary-applied.json',applied)
     # Ordinary deletion changes the admission closure. Always qualify anew.
@@ -215,7 +219,7 @@ def complete(plan_path, publish_log, https_receipt, destination):
     bulk=cycle_custody/'bulk';module.preserve(qualified,bulk)
     retired=destination/'custody-completed.json';module.retire(qualified,bulk,retired)
     final=call(binding,'complete-cycle',{'expectedStateSha256':applied['stateSha256'],
-        'expectedPair':current['pair'],'operationId':'complete-'+rid,
+        'expectedPair':current['pair'],'operationId':'complete-'+rid+suffix,
         'cycleId':prepared['cycleId'],'pendingToken':prepared['pendingToken'],
         'custodyPlan':blob(qualified),'custodyResult':blob(retired)})
     save(destination/'completed.json',final)
@@ -231,9 +235,10 @@ def main():
     p=sub.add_parser('status');p.add_argument('--require-complete',action='store_true')
     p=sub.add_parser('complete')
     for name in ('plan','publish_log','https_receipt','destination'):p.add_argument(name,type=Path)
+    p.add_argument('--attempt', help='Unique bounded name after authenticated phase reconciliation')
     args=parser.parse_args()
     if args.op=='status':print(json.dumps(status(args.require_complete)))
-    else:complete(args.plan,args.publish_log,args.https_receipt,args.destination)
+    else:complete(args.plan,args.publish_log,args.https_receipt,args.destination,args.attempt)
 
 
 if __name__=='__main__':main()

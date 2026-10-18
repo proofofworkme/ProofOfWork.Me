@@ -7716,6 +7716,19 @@ surface-upload copies through the existing descriptor-relative custody writer.
 Archive groups select exactly the archive and its two sidecars, preserving the
 containing evidence directory and unrelated children.
 
+Custody exports use one bounded batch under a continuously held deployment
+lock. A complete admission/dependency proof at entry is followed by complete
+entry-set, inode, timestamp, owner, mode, link and xattr guards between objects;
+each selected object still receives full byte and artifact verification. The
+stream binds each archive to its exact path, order, size and hash, and a final
+protected-release verification seals the batch. Independent restores and custody
+receipts are accepted only after the complete stream and successful exporter
+exit. A partial batch remains evidence and requires explicit reconciliation.
+Ordinary deletion likewise reuses protected byte proofs only within its single
+held lock, rehashes each selected object and any affected shared inode, and
+fully verifies the protected releases again at completion. Proof reuse never
+crosses a lock release, process restart or separate invocation.
+
 Deduplicated ordinary roots may share inodes with the protected pair. Their
 export requires a complete authenticated alias inventory across the verified
 live, prior and admitted ordinary roots. Every alias and total link count must
@@ -7735,6 +7748,16 @@ retention completion are separate results. The next upload remains blocked
 until the exact incomplete operation is reconciled. Automatic cleanup is part
 of a verified release on the custody-capable operator host; it is not an
 unattended age-based pruning timer.
+
+The initial cycle's sealed plan was retained when its read-only qualification
+was stopped to remove excessive repeated verification; no custody export or
+deletion had begun. The [interruption record](audits/2026-10-17-ui-retention-readonly-interruption.json)
+binds that plan and observed state. Upgrading an installed lifecycle package
+requires an exact config/state-bound plan, preserves the old immutable package
+and prior config/state bytes, and authenticates that a superseded prepared
+cycle never reached custody or retirement. A unique `complete --attempt` name
+then identifies a fresh cycle; it does not authorize reusing partial custody
+or overwriting a prior phase receipt.
 
 ### Proof Computer temporary domain bridge — 2026-10-13
 

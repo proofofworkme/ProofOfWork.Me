@@ -166,6 +166,7 @@ class Runtime:
         self.C = custody
         self.layout = layout or storage.Layout()
         self.state_path = Path(config['statePath'])
+        self.lock_fd = None
 
     def current(self):
         cache = {}
@@ -183,6 +184,32 @@ class Runtime:
         require(value.get('schema') == 'pow-ui-retention-lifecycle-state-v1'
                 and value.get('configSha256') == self.config_sha
                 and type(value.get('revision')) is int, 'State authority differs')
+        if value.get('lastUpgrade'):
+            upgrade = value['lastUpgrade']
+            journal = self.layout.evidence / ('ui-lifecycle-upgrade-' + self.config['package']['sha256'])
+            require(upgrade['intentPath'] == str(journal / 'intent.json')
+                    and upgrade['completionPath'] == str(journal / 'completed.json'), 'Upgrade proof namespace differs')
+            completed, _ = read_json(upgrade['completionPath'])
+            require(completed.get('schema') == 'pow-ui-retention-upgrade-completed-v1'
+                    and completed.get('ok') is True
+                    and completed['config'] == {'path': str(CONFIG_PATH), 'sha256': self.config_sha}
+                    and completed['intent'] == {'path': upgrade['intentPath'], 'sha256': upgrade['intentSha256']}
+                    and completed['stateRevision'] <= value['revision'], 'Upgrade terminal proof differs')
+            intent, _ = read_json(upgrade['intentPath'], upgrade['intentSha256'])
+            template = intent['stateTemplate']
+            reconciled = dict(template, lastUpgrade=dict(template['lastUpgrade'], intentSha256=upgrade['intentSha256']))
+            require(reconciled['lastUpgrade'] == upgrade
+                    and template['configSha256'] == self.config_sha
+                    and intent['stateTemplateSha256'] == sha(encoded(template))
+                    and sha(encoded(reconciled)) == completed['state']['sha256']
+                    and completed['stateRevision'] == template['revision']
+                    and completed['priorConfig']['path'] == str(journal / 'prior-config.json')
+                    and completed['priorState']['path'] == str(journal / 'prior-state.json')
+                    and completed['priorConfig']['sha256'] == upgrade['priorConfigSha256']
+                    and completed['priorState']['sha256'] == upgrade['priorStateSha256']
+                    and completed['supersededCycleId'] == upgrade['supersededCycleId'], 'Upgrade reconciliation differs')
+            read(completed['priorConfig']['path'], upgrade['priorConfigSha256'])
+            read(completed['priorState']['path'], upgrade['priorStateSha256'])
         return value, digest
 
     def evidence(self, name, value):
@@ -409,7 +436,7 @@ class Runtime:
         applying_sha = self.cas(active_sha, applying, operation_id + '-start')
         # No catch-and-retry: interruption leaves the applying state and immutable
         # policy progress records for explicit reconciliation.
-        outcome = self.S.execute(plan, self.S.digest(plan), self.layout, True)
+        outcome = self.S.execute(plan, self.S.digest(plan), self.layout, True, lock_fd=self.lock_fd)
         require(outcome.get('status') == 'completed', 'Ordinary retirement did not complete')
         previous_index, _ = read_json(state['index']['path'], state['index']['sha256'])
         completed = {'path': outcome['receiptPath'], 'sha256': outcome['receiptSha256']}
@@ -457,8 +484,10 @@ class Runtime:
         require(operation in methods and isinstance(frame, dict), 'Unsupported lifecycle operation/frame')
         lock = self.S.lock(self.layout)
         try:
+            self.lock_fd = lock
             return methods[operation](frame)
         finally:
+            self.lock_fd = None
             os.close(lock)
 
 

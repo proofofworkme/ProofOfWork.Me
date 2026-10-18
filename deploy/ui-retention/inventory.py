@@ -241,6 +241,13 @@ class HashSink:
     def flush(self):self.sink.flush()
 
 
+class HashSource:
+    """Verify the exact regular-file bytes actually consumed by the tar writer."""
+    def __init__(self,source):self.source=source;self.hash=hashlib.sha256();self.count=0
+    def read(self,size=-1):
+        data=self.source.read(size);self.hash.update(data);self.count+=len(data);return data
+
+
 def archive_root(root, expected_root, sink, owner=0, *, require_manifest=True, allow_symlinks=False, ordinary_closed_aliases=False):
     group=expected_root['format']=='proofofwork-ui-retained-files-v1'
     if group:
@@ -277,7 +284,8 @@ def archive_root(root, expected_root, sink, owner=0, *, require_manifest=True, a
                     links[key]=row['path'];member.size=s['st_size'];fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME)
                     with os.fdopen(fd,'rb') as source:
                         require(identity(os.fstat(source.fileno()))==s,'Archive source identity changed')
-                        archive.addfile(member,source)
+                        checked=HashSource(source);archive.addfile(member,checked)
+                        require(checked.count==s['st_size'] and checked.hash.hexdigest()==row['sha256'],'Streamed archive member bytes differ from verified inventory')
                         require(identity(os.fstat(source.fileno()))==s,'Archive source changed during export')
             require(identity(p.lstat())==s,'Source changed after archive member')
     if group:assert_file_group(inventory_file_group(root,[r['path'] for r in records],owner),expected_root)

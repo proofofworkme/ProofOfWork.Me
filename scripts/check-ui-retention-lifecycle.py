@@ -54,9 +54,25 @@ class Lifecycle(unittest.TestCase):
         self.assertEqual(operation,'complete-cycle');self.assertEqual(frame['expectedStateSha256'],'3'*64)
         return {'retentionComplete':True}
 
-    def run_cycle(self,call=None):
+    def run_cycle(self,call=None,attempt=None):
         with patch.object(L,'CUSTODY',self.root/'custody'),patch.object(L,'status',return_value={'binding':self.binding,'pair':self.pair,'stateSha256':'1'*64}),patch.object(L,'call',side_effect=call or self.call),patch.object(L,'custody_module',return_value=self.module),contextlib.redirect_stdout(io.StringIO()):
-            return L.complete(self.plan,self.log,self.https,self.destination)
+            return L.complete(self.plan,self.log,self.https,self.destination,attempt)
+
+    def test_reconciled_attempt_uses_unique_phase_names_without_reusing_custody(self):
+        names=[]
+        def capture(binding,operation,frame):
+            names.append(frame['operationId'])
+            return self.call(binding,operation,frame)
+        self.run_cycle(capture,'batch1')
+        self.assertEqual(names,[prefix+self.rid+'-batch1' for prefix in ('release-','ordinary-','complete-')])
+        before=list(self.calls)
+        with self.assertRaises(FileExistsError):self.run_cycle(capture,'batch2')
+        self.assertEqual(self.calls,before)
+
+    def test_invalid_attempt_refuses_before_creating_directory_or_remote_call(self):
+        for attempt in ('../retry','UPPER','a'*17,''):
+            with self.assertRaisesRegex(AssertionError,'Invalid retention attempt'):self.run_cycle(attempt=attempt)
+        self.assertFalse(self.destination.exists());self.assertEqual(self.calls,[])
 
     def test_ordinary_completion_requires_fresh_custody_closure_and_final_receipt(self):
         self.assertTrue(self.run_cycle()['retentionComplete'])

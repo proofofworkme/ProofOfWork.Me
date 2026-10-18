@@ -109,6 +109,50 @@ class RemoteTests(unittest.TestCase):
         self.assertIsNone(json.loads(prior)['pending'])
         self.assertEqual(self.runtime.state()[0]['pending']['stage'], 'prepared')
 
+    def upgrade_request(self, prepared):
+        proof = {'remoteReadOnlyQualifier': {'pid': 999999999}}
+        raw = I.encoded(proof)
+        return {'configSha256': self.runtime.config_sha, 'stateSha256': prepared['stateSha256'],
+                'interruption': {'base64': base64.b64encode(raw).decode(),
+                                 'binding': {'path': '/local/interruption.json', 'sha256': I.sha(raw)},
+                                 'prepared': {k: prepared[k] for k in
+                                              ('receipt', 'intent', 'stateSha256', 'cycleId', 'pendingToken')}}}
+
+    def test_upgrade_review_authenticates_real_sealed_preparation_without_mutation(self):
+        prepared = self.prepare(); request = self.upgrade_request(prepared)
+        original_state = self.runtime.state_path.read_bytes()
+        before = I.evidence_inventory(self.layout.evidence)
+        reviewed = I.prepared_review(self.runtime, request)
+        self.assertTrue(reviewed['ordinarySnapshotsVerified'])
+        self.assertTrue(reviewed['noRetirementStarted'])
+        self.assertEqual(reviewed['stateSha256'], prepared['stateSha256'])
+        self.assertEqual(I.evidence_inventory(self.layout.evidence), before)
+        self.assertEqual(self.runtime.state_path.read_bytes(), original_state)
+        # An interruption does not authorize altering the old controller pin.
+        plan = prepared['ordinaryPlan']['value']
+        target = Path(plan['delete'][0]['path'])
+        if target.is_file():
+            target.write_bytes(b'changed candidate')
+        else:
+            (target / 'unreviewed-new-file').write_bytes(b'changed candidate')
+        with self.assertRaises(ValueError):
+            I.prepared_review(self.runtime, request)
+
+    def test_upgrade_review_refuses_later_phase_and_custody_evidence(self):
+        prepared = self.prepare(); request = self.upgrade_request(prepared)
+        for name in ('ui-retention-custody-proof-late.json', 'audit30-future-retention-late-intent.json'):
+            late = self.layout.evidence / name
+            R.write_new(late, b'{}')
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'Post-preparation'):
+                I.prepared_review(self.runtime, request)
+            late.unlink()
+        state, _ = self.runtime.state()
+        state['activePhase'] = {'operation': 'apply-ordinary'}
+        self.runtime.state_path.write_bytes(R.encoded(state))
+        request['stateSha256'] = R.sha(R.encoded(state))
+        with self.assertRaisesRegex(ValueError, 'sealed prepared-before-custody'):
+            I.prepared_review(self.runtime, request)
+
     def test_stale_state_and_current_pair_refuse_before_intent(self):
         initialized = self.initialize()
         https, publication, context = self.https()
@@ -494,14 +538,14 @@ class RemoteTests(unittest.TestCase):
 
 
 class PackagingTests(unittest.TestCase):
-    def fixture_payload(self):
+    def fixture_payload(self, commit='1' * 40, tree='2' * 40):
         def git(argv):
             if 'status' in argv:
                 return b''
             if argv[-1] == 'HEAD':
-                return b'1' * 40
+                return commit.encode()
             if argv[-1] == 'HEAD^{tree}':
-                return b'2' * 40
+                return tree.encode()
             return (I.ROOT / argv[-1].split(':', 1)[1]).read_bytes()
         with patch.object(I.subprocess, 'check_output', side_effect=git):
             return I.committed_payload()
@@ -581,6 +625,154 @@ class PackagingTests(unittest.TestCase):
         self.assertNotIn('deploy/proofofwork-ui-capacity.py', I.FILES)
         self.assertNotIn('deploy/proofofwork-retention-protection.py', I.FILES)
         self.assertIn('deploy/ui-retention/lifecycle.py', I.FILES)
+
+    def upgrade_fixture(self, base):
+        install = self.installer_fixture(base)
+        I.install_remote(install, base)
+        config_raw = (base / I.CONFIG.lstrip('/')).read_bytes()
+        state = {'schema': 'pow-ui-retention-lifecycle-state-v1', 'configSha256': I.sha(config_raw),
+                 'revision': 3, 'status': 'retention-incomplete', 'activePhase': None,
+                 'index': {'path': '/unchanged/index.json', 'sha256': 'd' * 64},
+                 'pending': {'cycleId': 'release-original', 'stage': 'prepared'}, 'completedContext': None}
+        I.save(base / I.STATE.lstrip('/'), I.encoded(state))
+        phase = base / I.EVIDENCE.lstrip('/') / 'ui-lifecycle-release-original-completed.json'
+        I.save(phase, b'{"immutable":"original phase"}\n')
+        proof = {'schema': 'pow-ui-retention-readonly-interruption-v1', 'implementationCommit': '1' * 40,
+                 'remoteReadOnlyQualifier': {'pid': 999999999},
+                 'prepared': {'receipt': {'path': str(phase), 'sha256': I.sha(phase.read_bytes())},
+                              'cycleId': 'release-original', 'stateSha256': I.sha(I.encoded(state))}}
+        raw = I.encoded(proof)
+        request = {'configSha256': I.sha(config_raw), 'stateSha256': I.sha(I.encoded(state)),
+                   'interruption': {'base64': base64.b64encode(raw).decode(),
+                                    'binding': {'path': '/local/proof', 'sha256': I.sha(raw)},
+                                    'prepared': proof['prepared']}}
+        runtime = types.SimpleNamespace(config={'sourceCommit': '1' * 40})
+        review = {'state': state, 'stateSha256': request['stateSha256'], 'ordinarySnapshotsVerified': True}
+        self.addCleanup(patch.stopall)
+        patch.object(I, 'existing_runtime', return_value=runtime).start()
+        patch.object(I, 'prepared_review', return_value=review).start()
+        return {'schema': 'pow-ui-retention-upgrade-plan-v1', 'scopeApprovalSha256': I.APPROVAL,
+                'payload': self.fixture_payload('3' * 40, '4' * 40), 'request': request,
+                'before': I.upgrade_inventory(request, base)}, install, phase
+
+    def upgraded_runtime(self, base, payload):
+        config = dict(payload['config'], statePath=str(base / I.STATE.lstrip('/')))
+        return R.Runtime(config, payload['configSha256'], None, None,
+                         layout=types.SimpleNamespace(evidence=base / I.EVIDENCE.lstrip('/')))
+
+    def test_upgrade_preserves_old_bytes_and_reconciles_only_sealed_pending_cycle(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(I.subprocess, 'run',
+                return_value=subprocess.CompletedProcess([], 0, b'{}')):
+            base = Path(directory); previous = os.umask(0o077)
+            try:
+                plan, old, phase = self.upgrade_fixture(base)
+                phase_raw = phase.read_bytes()
+                before_guards = I.guard_inventory(base)
+                result = I.upgrade_remote(plan, base)
+                runtime = self.upgraded_runtime(base, plan['payload'])
+                state, digest = runtime.state()
+                self.assertEqual(digest, result['state']['sha256'])
+                self.assertIsNone(state['pending'])
+                self.assertIsNone(state['activePhase'])
+                self.assertEqual(state['revision'], 5)
+                self.assertEqual(state['status'], 'retention-incomplete')
+                self.assertEqual(state['index'], plan['before']['preparedReview']['state']['index'])
+                self.assertEqual(phase.read_bytes(), phase_raw)
+                self.assertEqual(Path(result['priorConfig']['path']).read_bytes(),
+                                 base64.b64decode(plan['before']['configBase64']))
+                self.assertEqual(Path(result['priorState']['path']).read_bytes(),
+                                 base64.b64decode(plan['before']['stateBase64']))
+                old_package = base / old['payload']['config']['package']['path'].lstrip('/')
+                for relative, pin in old['payload']['manifest']['files'].items():
+                    self.assertEqual(I.sha((old_package / relative).read_bytes()), pin['sha256'])
+                after = I.guard_inventory(base)
+                for key in ('files', 'units', 'currentManifest', 'previousManifest'):
+                    self.assertEqual(after[key], before_guards[key])
+                self.assertTrue(result['freshPreparationRequired'])
+                self.assertFalse(result['retentionComplete'])
+                # Every later state still authenticates the retained upgrade proof.
+                state['revision'] += 1
+                runtime.state_path.write_bytes(R.encoded(state))
+                runtime.state()
+                Path(result['receipt']['path']).write_bytes(b'{}')
+                with self.assertRaisesRegex(ValueError, 'Upgrade terminal'):
+                    runtime.state()
+            finally:
+                os.umask(previous)
+
+    def test_upgrade_stale_state_refuses_without_package_or_config_changes(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(I.subprocess, 'run',
+                return_value=subprocess.CompletedProcess([], 0, b'{}')):
+            base = Path(directory); previous = os.umask(0o077)
+            try:
+                plan, _, _ = self.upgrade_fixture(base)
+                config_raw = (base / I.CONFIG.lstrip('/')).read_bytes()
+                (base / I.STATE.lstrip('/')).write_bytes(b'changed state')
+                with self.assertRaisesRegex(ValueError, 'SHA differs'):
+                    I.upgrade_remote(plan, base)
+                self.assertEqual((base / I.CONFIG.lstrip('/')).read_bytes(), config_raw)
+                self.assertFalse((base / plan['payload']['config']['package']['path'].lstrip('/')).exists())
+            finally:
+                os.umask(previous)
+
+    def test_interrupted_upgrade_is_fail_closed_before_and_after_config_switch(self):
+        for phase in ('package', 'terminal'):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as directory, patch.object(I.subprocess, 'run',
+                    return_value=subprocess.CompletedProcess([], 0, b'{}')):
+                base = Path(directory); previous = os.umask(0o077)
+                try:
+                    plan, _, _ = self.upgrade_fixture(base)
+                    original = I.save
+                    def fail(path, raw):
+                        if (phase == 'package' and 'tools-' in str(path) and path.name == 'lifecycle_remote.py'
+                                or phase == 'terminal' and 'ui-lifecycle-upgrade-' in str(path) and path.name == 'completed.json'):
+                            raise OSError('simulated interrupted upgrade')
+                        return original(path, raw)
+                    with patch.object(I, 'save', side_effect=fail), self.assertRaises(OSError):
+                        I.upgrade_remote(plan, base)
+                    if phase == 'package':
+                        state = json.loads((base / I.STATE.lstrip('/')).read_bytes())
+                        self.assertEqual(state['activePhase']['operation'], 'upgrade')
+                    else:
+                        with self.assertRaises(FileNotFoundError):
+                            self.upgraded_runtime(base, plan['payload']).state()
+                    with self.assertRaisesRegex(ValueError, 'Unsealed upgrade'):
+                        I.upgrade_remote(plan, base)
+                finally:
+                    patch.stopall()
+                    os.umask(previous)
+
+    def test_local_interruption_requires_exact_files_and_absent_custody(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); previous = os.umask(0o077)
+            try:
+                attempt = base / 'attempt'; attempt.mkdir(mode=0o700)
+                prepared = {'receipt': {'path': '/remote/completed.json', 'sha256': 'a' * 64},
+                            'intent': {'path': '/remote/intent.json', 'sha256': 'b' * 64},
+                            'stateSha256': 'c' * 64, 'cycleId': 'release-fixture', 'pendingToken': 'd' * 64}
+                I.save(attempt / 'prepared.json', I.encoded(prepared))
+                log = base / 'interrupted.log'; I.save(log, b'interrupted before qualification completed\n')
+                proof = {'schema': 'pow-ui-retention-readonly-interruption-v1',
+                         'offHostCustodyRootAbsent': True, 'ordinaryCustodyProofAbsent': True,
+                         'ordinaryAppliedReceiptAbsent': True, 'localEvidenceDirectoryEntries': ['prepared.json'],
+                         'localOrchestrator': {'pid': 999999999, 'signal': 'SIGINT', 'exitCode': 130},
+                         'prepared': {'path': str(attempt / 'prepared.json'),
+                                      'sha256': I.sha(I.encoded(prepared)),
+                                      **{k: prepared[k] for k in ('receipt', 'stateSha256', 'cycleId')}},
+                         'log': {'path': str(log), 'sha256': I.sha(log.read_bytes())}}
+                proof_path = base / 'interruption.json'; I.save(proof_path, I.encoded(proof))
+                binding = {'path': str(proof_path), 'sha256': I.sha(I.encoded(proof))}
+                with patch.object(I, 'CUSTODY', str(base / 'custody')):
+                    self.assertEqual(I.local_interruption(binding)['prepared'], prepared)
+                    (base / 'custody').mkdir(mode=0o700)
+                    with self.assertRaisesRegex(ValueError, 'Custody export root already exists'):
+                        I.local_interruption(binding)
+                    (base / 'custody').rmdir()
+                    I.save(attempt / 'ordinary-qualified.json', b'{}')
+                    with self.assertRaisesRegex(ValueError, 'subsequent phase evidence'):
+                        I.local_interruption(binding)
+            finally:
+                os.umask(previous)
 
     def test_committed_package_refuses_dirty_source(self):
         with patch.object(I.subprocess, 'check_output', return_value=b' M tracked.py\n'):

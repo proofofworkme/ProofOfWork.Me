@@ -1,0 +1,38 @@
+{
+  "schema": "pow-ui-retention-readonly-interruption-v1",
+  "observedAtUtc": "2026-10-18T03:50:13.996944+00:00",
+  "implementationCommit": "78f6841e198ac1c966e1d1bc01af7261283eca41",
+  "reason": "Repeated full-closure verification per object creates avoidable backlog cost and worker-deadline risk; stopped before custody export or deletion for bounded batch repair.",
+  "prepared": {
+    "path": "/tmp/ui-retention-initial-cycle-20261017/prepared.json",
+    "sha256": "1c658b2d30e07bedbfaa8a742c65f4363a8a783e88577f2f905e1148ee1dc3d6",
+    "receipt": {
+      "path": "/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-release-2dca4504c366-20261016T024741Z-completed.json",
+      "sha256": "a58d61f8b385bd267d54ab0a77bcbf2ba36d310ed9d9b0c8ce33a6fdec69533c"
+    },
+    "stateSha256": "36d787bf7d3b8f59610357a39085965c3233549524e6b43fb19ff81e9bc8147e",
+    "cycleId": "release-2dca4504c366-20261016T024741Z"
+  },
+  "localOrchestrator": {
+    "pid": 3520817,
+    "verifiedCwd": "/tmp/pow-code-page-references",
+    "signal": "SIGINT",
+    "exitCode": 130
+  },
+  "remoteReadOnlyQualifier": {
+    "pid": 477071,
+    "verifiedStartTicks": "1410737484",
+    "orphanPpid": 1,
+    "signal": "SIGTERM"
+  },
+  "localEvidenceDirectoryEntries": [
+    "prepared.json"
+  ],
+  "offHostCustodyRootAbsent": true,
+  "ordinaryCustodyProofAbsent": true,
+  "ordinaryAppliedReceiptAbsent": true,
+  "log": {
+    "path": "/tmp/ui-retention-initial-cycle-20261017.log",
+    "sha256": "3ea105db494f413992c1904d4598e5e8e3ceb222b9809ceff82158c875152806"
+  }
+}

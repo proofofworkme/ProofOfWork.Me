@@ -105,10 +105,15 @@ def attributes(path):
         out.append([name, base64.b64encode(b).decode()])
     return out
 
-def snapshot(path, links=False, deadline_seconds=120):
-    """Complete bytes, types, modes, owners, links/xattrs and inode identities."""
+def _snapshot(path, links, deadline_seconds, verified=None, removed=None):
     path = Path(path); root = safe(path); entries = []; fence = []
+    prior = {r['path']:r for r in verified['entries']} if verified is not None else None
     deadline = time.monotonic() + deadline_seconds; regular = 0
+    def unchanged(r):
+        if prior is None:return
+        before=prior.get(r['path'])
+        if before is None:raise ValueError('Snapshot guard found an added entry: '+r['path'])
+        match_snapshot(dict(entries=[r]),dict(entries=[before]),removed)
     def walk(p, rel):
         nonlocal regular
         if time.monotonic() > deadline or len(entries) >= 250000: raise ValueError('Snapshot bound exceeded')
@@ -119,7 +124,7 @@ def snapshot(path, links=False, deadline_seconds=120):
                  device=s.st_dev, inode=s.st_ino, size=s.st_size, mtimeNs=s.st_mtime_ns,
                  ctimeNs=s.st_ctime_ns, links=s.st_nlink, xattrs=attributes(p))
         if stat.S_ISDIR(s.st_mode):
-            r['kind'] = 'directory'; entries.append(r)
+            r['kind'] = 'directory'; unchanged(r); entries.append(r)
             fd = os.open(p, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME)
             try: names = sorted((e.name for e in os.scandir(fd)), key=os.fsencode)
             finally: os.close(fd)
@@ -129,20 +134,56 @@ def snapshot(path, links=False, deadline_seconds=120):
         elif stat.S_ISREG(s.st_mode):
             regular += s.st_size
             if regular > 4*1024**3: raise ValueError('Snapshot byte bound exceeded')
-            r.update(kind='file', sha256=hash_read(p)[0]); entries.append(r)
+            r['kind']='file'
+            before=prior.get(rel) if prior is not None else None
+            if prior is not None:
+                if before is None:raise ValueError('Snapshot guard found an added entry: '+rel)
+                r['sha256']=before.get('sha256');unchanged(r)
+            # A known unlink may change a shared protected inode's ctime. Its
+            # bytes must be read again; old removal credit never excuses a later
+            # ctime change once this fresh snapshot becomes the next baseline.
+            if before is None or (r['ctimeNs'],r['links'])!=(before['ctimeNs'],before['links']):
+                r['sha256']=hash_read(p)[0]
+            unchanged(r);entries.append(r)
         elif links and stat.S_ISLNK(s.st_mode):
             target = os.readlink(p)
             if not target or os.path.isabs(target) or not p.resolve(strict=True).is_relative_to(path):
                 raise ValueError('Absolute, dangling or escaping source link')
-            r.update(kind='symlink', target=target); entries.append(r)
+            r.update(kind='symlink', target=target); unchanged(r); entries.append(r)
         else: raise ValueError('Unsupported entry or forbidden symlink')
         if identity(p.lstat()) != identity(s): raise ValueError('Entry changed during snapshot')
         fence.append((p, identity(s), r['xattrs']))
     walk(path, '.')
     for p, expected, attrs in fence:
         if identity(p.lstat()) != expected or attributes(p) != attrs: raise ValueError('Snapshot fence changed')
+    if prior is not None and len(entries)!=len(prior):raise ValueError('Snapshot guard entry set changed')
     return dict(path=str(path), model='audit30-whole-bytes-inode-xattrs-v1', entries=entries,
                 sha256=digest(entries), regularBytes=regular)
+
+def snapshot(path, links=False, deadline_seconds=120):
+    """Complete bytes, types, modes, owners, links/xattrs and inode identities."""
+    return _snapshot(path,links,deadline_seconds)
+
+def guard_snapshot(path, verified_snapshot, removed=None, previous_removed=None, links=False, deadline_seconds=120):
+    """Reuse fresh byte proofs only within one continuously locked operation.
+
+    The caller supplies a fully verified snapshot from this operation (or the
+    preceding guard result), never a historical receipt or cross-call cache.
+    Every entry, identity, xattr and link target is walked and fenced again.
+    Only the operation's new, exact unlink deltas may change shared inodes;
+    affected files are rehashed before accepting that metadata transition.
+    """
+    if (verified_snapshot.get('path')!=str(Path(path)) or verified_snapshot.get('model')!='audit30-whole-bytes-inode-xattrs-v1'
+            or digest(verified_snapshot['entries'])!=verified_snapshot.get('sha256')
+            or len({r['path'] for r in verified_snapshot['entries']})!=len(verified_snapshot['entries'])):
+        raise ValueError('Invalid transaction-local snapshot guard baseline')
+    removed=removed or {};previous_removed=previous_removed or {};delta={}
+    for key in removed.keys()|previous_removed.keys():
+        current=removed.get(key,0);previous=previous_removed.get(key,0)
+        if not isinstance(current,int) or not isinstance(previous,int) or current<previous or previous<0:
+            raise ValueError('Snapshot guard removal counter regressed')
+        if current!=previous:delta[key]=current-previous
+    return _snapshot(path,links,deadline_seconds,verified_snapshot,delta)
 
 def match_snapshot(actual, expected, removed=None, relocation=False):
     removed = removed or {}; a = actual['entries']; b = expected['entries']
@@ -752,8 +793,28 @@ def resources(layout):
     allocated=int(subprocess.check_output(['/usr/bin/du','-x','-s','-B1',str(layout.scratch)],timeout=120).split()[0])
     return dict(atUtc=utc(),availableRootBytes=v.f_bavail*v.f_frsize,availableInodes=v.f_favail,scratchAllocatedBytes=allocated,scratchMaximumBytes=5*1024**3,scratchHeadroomBytes=5*1024**3-allocated,qualification='Observed filesystem endpoints include concurrent background writes and new durable evidence; retirement recovery is not the sum of hardlinked apparent sizes. Preservation reclassifies allocation and does not free root bytes.')
 
-def verify_plan(plan,layout,removed=None,full=True):
+def require_execution_lock(lock_fd,layout,expected=None):
+    """Observe an already-held Linux flock; never acquire or repair a lock gap."""
+    if not isinstance(lock_fd,int) or isinstance(lock_fd,bool) or lock_fd<0:raise ValueError('Explicit live deployment lock descriptor required')
+    opened=os.fstat(lock_fd);named=safe(layout.lock,False)
+    binding=dict(fd=lock_fd,identity=identity(opened))
+    if opened.st_nlink!=1 or identity(opened)!=identity(named) or expected is not None and binding!=expected:
+        raise ValueError('Deployment lock descriptor or pathname changed')
+    with open('/proc/self/fdinfo/'+str(lock_fd)) as stream:raw=stream.read(16385)
+    if len(raw)>16384:raise ValueError('Deployment lock descriptor evidence bound exceeded')
+    locks=[line.split() for line in raw.splitlines() if line.startswith('lock:')]
+    key=(os.major(opened.st_dev),os.minor(opened.st_dev),opened.st_ino)
+    if len(locks)!=1 or len(locks[0])!=9 or locks[0][2:6]!=['FLOCK','ADVISORY','WRITE',str(os.getpid())] or locks[0][7:]!=['0','EOF']:
+        raise ValueError('Deployment lock is not continuously held by this process')
+    device=locks[0][6].split(':')
+    if len(device)!=3 or (int(device[0],16),int(device[1],16),int(device[2]))!=key:
+        raise ValueError('Deployment lock inode evidence differs')
+    return binding
+
+def verify_plan(plan,layout,removed=None,full=True,_protected_guard=None):
     removed=removed or {}
+    if _protected_guard is not None:
+        require_execution_lock(_protected_guard['lock']['fd'],layout,_protected_guard['lock'])
     if 'reconciliation' in plan:
         original,failed,review,reconstructed=reconciliation_state(layout,plan['reconciliation'],plan['scopeApprovalSha256'])
         if plan['kind']!='cleanup' or any(plan[k]!=original[k] for k in ('delete','moves','protected','archives','heldBoundaries','citationReview','capacityHelperSha256','policyScope')) or plan['safeguards']!=review['afterGuards']:raise ValueError('Reconciliation expanded or rewrote original proof/scope')
@@ -768,18 +829,32 @@ def verify_plan(plan,layout,removed=None,full=True):
     paths=[r['path'] for r in plan['delete'] if os.path.lexists(r['path'])]+[r['source'] for r in plan['moves'] if os.path.lexists(r['source'])]
     admitted=load_citation_review(plan.get('citationReview'),layout,plan['protected'],plan['kind'],[r['path'] for r in plan['delete']],plan['scopeApprovalSha256'])
     references(paths,layout.refs+[Path(r['path']) for r in plan['protected']['sources']],reviewed_files=admitted)
-    protected=plan['protected']; cache={}
-    for k in ('current','previous'):
-        expected=protected[k]; actual=release_proof(Path(expected['path']),layout,cache)
-        if actual['fields']!=expected['fields']:raise ValueError('Current/prior release changed')
-        match_snapshot(actual['snapshot'],expected['snapshot'],removed)
-        retained_archive=cache[str(layout.archives/expected['fields']['archive_name'])]
-        archived=next((r for r in plan['archives'] if r['path']==retained_archive['path']),None)
-        if archived is None:raise ValueError('Retained archive snapshot absent from frozen plan')
-        match_snapshot(retained_archive['snapshot'],archived['snapshot'],removed)
-        if [r['path'] for r in retained_archive['sidecars']]!=[r['path'] for r in archived['sidecars']]:raise ValueError('Retained archive sidecar scope differs')
-        for observed,frozen in zip(retained_archive['sidecars'],archived['sidecars']):match_snapshot(observed,frozen,removed)
-    for r in protected['sources']:match_snapshot(snapshot(Path(r['path']),links=True),r['snapshot'],removed)
+    protected=plan['protected']; cache={}; guarded=[]
+    if _protected_guard is not None:
+        if (full or _protected_guard['plan'] is not plan or plan['kind']!='future-retention'
+                or plan['scopeApprovalSha256']!=REPAIR_APPROVAL_SHA or plan['moves'] or 'reconciliation' in plan):
+            raise ValueError('Transaction-local proof reuse is limited to ordinary retirement')
+        for row in _protected_guard['snapshots']:
+            observed=guard_snapshot(row['snapshot']['path'],row['snapshot'],removed,
+                                    _protected_guard['removed'],links=row['links'])
+            guarded.append(dict(snapshot=observed,links=row['links']))
+    else:
+        for k in ('current','previous'):
+            expected=protected[k]; actual=release_proof(Path(expected['path']),layout,cache)
+            if actual['fields']!=expected['fields']:raise ValueError('Current/prior release changed')
+            match_snapshot(actual['snapshot'],expected['snapshot'],removed)
+            guarded.append(dict(snapshot=actual['snapshot'],links=False))
+            retained_archive=cache[str(layout.archives/expected['fields']['archive_name'])]
+            archived=next((r for r in plan['archives'] if r['path']==retained_archive['path']),None)
+            if archived is None:raise ValueError('Retained archive snapshot absent from frozen plan')
+            match_snapshot(retained_archive['snapshot'],archived['snapshot'],removed)
+            guarded.append(dict(snapshot=retained_archive['snapshot'],links=False))
+            if [r['path'] for r in retained_archive['sidecars']]!=[r['path'] for r in archived['sidecars']]:raise ValueError('Retained archive sidecar scope differs')
+            for observed,frozen in zip(retained_archive['sidecars'],archived['sidecars']):
+                match_snapshot(observed,frozen,removed);guarded.append(dict(snapshot=observed,links=False))
+        for r in protected['sources']:
+            observed=snapshot(Path(r['path']),links=True);match_snapshot(observed,r['snapshot'],removed)
+            guarded.append(dict(snapshot=observed,links=True))
     if full:
         for r in plan['delete']:
             match_snapshot(snapshot(Path(r['path'])),r['snapshot'],removed)
@@ -791,6 +866,10 @@ def verify_plan(plan,layout,removed=None,full=True):
         for r in plan['archives']:
             match_snapshot(snapshot(Path(r['path'])),r['snapshot'],removed)
             for s in r['sidecars']:match_snapshot(snapshot(Path(s['path'])),s,removed)
+    result=dict(plan=plan,snapshots=guarded,removed=dict(removed))
+    if _protected_guard is not None:
+        result['lock']=require_execution_lock(_protected_guard['lock']['fd'],layout,_protected_guard['lock'])
+    return result
 
 @contextlib.contextmanager
 def graceful_termination():
@@ -802,12 +881,16 @@ def graceful_termination():
     finally:
         for number,handler in previous.items():signal.signal(number,handler)
 
-def execute(plan,plan_sha,layout,apply=False):
+def execute(plan,plan_sha,layout,apply=False,*,lock_fd=None):
     if not apply:return execute_impl(plan,plan_sha,layout,False)
-    with graceful_termination():return execute_impl(plan,plan_sha,layout,True)
+    with graceful_termination():return execute_impl(plan,plan_sha,layout,True,lock_fd=lock_fd)
 
-def execute_impl(plan,plan_sha,layout,apply=False):
-    verify_plan(plan,layout)
+def execute_impl(plan,plan_sha,layout,apply=False,*,lock_fd=None):
+    reuse_protected=(apply and lock_fd is not None and plan['kind']=='future-retention'
+                     and plan['scopeApprovalSha256']==REPAIR_APPROVAL_SHA and not plan['moves'] and 'reconciliation' not in plan)
+    execution_lock=require_execution_lock(lock_fd,layout) if reuse_protected else None
+    protected_guard=verify_plan(plan,layout)
+    if reuse_protected:protected_guard['lock']=require_execution_lock(lock_fd,layout,execution_lock)
     if not apply:return dict(status='verified',planSha256=plan_sha,productionMutation=False,missingHeldPaths=plan['safeguards']['missingHeldPaths'])
     if not shutil.rmtree.avoids_symlink_attacks:raise ValueError('Descriptor-based rmtree unavailable')
     evidence_bound=max(8*1024**2,len(encoded(plan))*(4+2*len(plan['moves']))+len(plan['delete'])*4096)
@@ -817,6 +900,9 @@ def execute_impl(plan,plan_sha,layout,apply=False):
         capacity(layout,'audit30-retirement-evidence',evidence_bound,retirement=True)
     else:capacity(layout,'audit30-evidence',evidence_bound)
     completed=[]; removed=collections.Counter()
+    # The caller owns the explicit lock for this entire call. Only that live
+    # descriptor enables reuse of the fresh initial proofs; absent a descriptor,
+    # preserve full per-object verification. No guard is serialized or resumed.
     if 'reconciliation' in plan:
         _,failed,_,removed=reconciliation_state(layout,plan['reconciliation'],plan['scopeApprovalSha256']);completed=list(failed['completed'])
     stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ');prefix=layout.evidence/('audit30-'+plan['kind']+'-'+stamp)
@@ -834,8 +920,11 @@ def execute_impl(plan,plan_sha,layout,apply=False):
     try:
         durable(intent,dict(schema='pow-audit30-ui-storage-intent-v1',plan=plan,planSha256=plan_sha,atUtc=utc(),status='approved-intent',beforeCapacity=before_capacity))
         for r in plan['delete'][len(completed):]:
-            current=r['path'];phase='immediate-before-retirement'; verify_plan(plan,layout,removed,full=False)
+            current=r['path'];phase='immediate-before-retirement'
+            protected_guard=verify_plan(plan,layout,removed,full=False,
+                                        _protected_guard=protected_guard if reuse_protected else None)
             before=snapshot(Path(current));match_snapshot(before,r['snapshot'],removed);references([current],layout.refs)
+            if reuse_protected:require_execution_lock(lock_fd,layout,execution_lock)
             parent=Path(current).parent;fd=os.open(parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
             try:
                 expected=before['entries'][0];opened=os.stat(Path(current).name,dir_fd=fd,follow_symlinks=False)
@@ -866,7 +955,10 @@ def execute_impl(plan,plan_sha,layout,apply=False):
                 phase='atomic-preservation';rename_no_replace(p,q)
                 after=snapshot(q,links=True);match_snapshot(after,before,relocation=True)
                 completed.append(dict(source=str(p),target=str(q),outcome='preserved',beforeSnapshot=before,afterSnapshot=after,inverse=dict(source=str(q),target=str(p)),expectedChanges='root pathname/ctime and both parent directory metadata',rootDiskBytesRecovered=0,atUtc=utc()));progress('partial')
-        phase='final-verification';verify_plan(plan,layout,removed,full=False)
+        phase='final-verification'
+        if reuse_protected:require_execution_lock(lock_fd,layout,execution_lock)
+        verify_plan(plan,layout,removed,full=False)
+        if reuse_protected:require_execution_lock(lock_fd,layout,execution_lock)
         if any(os.path.lexists(r['path']) for r in plan['delete']):raise ValueError('Retired path remains')
         for r in plan['moves']:
             if os.path.lexists(r['source']):raise ValueError('Preserved original path remains')

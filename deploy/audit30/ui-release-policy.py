@@ -30,7 +30,8 @@ BOOTSTRAP_IDS={'26500e4d2ff7-20261002T054938Z','835e30258d23-20261002T052338Z'}
 # upgrades; adding another version needs an explicit source review. No future
 # retirement existed before this canonical plan-serialization contract.
 KNOWN_RETIREMENT_CONTROLLERS={'f292da5dcda23393208d05e1cffaea0b50b9a9cc915b81a5b9d55fdd0aa81319',
-                            '35ba28d173941aadaa29c6c43dc792822d5589a11370c5ff43cc7947ee0353f4'}
+                            '35ba28d173941aadaa29c6c43dc792822d5589a11370c5ff43cc7947ee0353f4',
+                            'ef7fdf48ee628c8e4cf5e13cbb193cb40892d80424d2a286b9c6d1b37d04cf1e'}
 INDEX_V1 = 'pow-audit30-ui-admission-index-v1'
 INDEX_V2 = 'pow-ui-retention-admission-index-v2'
 MIGRATION_SCHEMA = 'pow-ui-retention-lineage-migration-v1'
@@ -518,7 +519,7 @@ def main():
         if a.command=='apply' and a.approval_sha256==S.REPAIR_APPROVAL_SHA:
             if not a.custody_proof or not a.custody_proof_sha256:raise ValueError('Repair apply requires complete independently restored ordinary custody')
             verify_custody_proof(dict(path=str(a.custody_proof),sha256=a.custody_proof_sha256),plan,layout,a.approval_sha256)
-        print(json.dumps(S.execute(plan,h,layout,a.command=='apply'),sort_keys=True))
+        print(json.dumps(S.execute(plan,h,layout,a.command=='apply',lock_fd=fd),sort_keys=True))
     finally:os.close(fd)
 
 if __name__=='__main__':

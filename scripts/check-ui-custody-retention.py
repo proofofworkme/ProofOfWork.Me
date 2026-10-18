@@ -37,7 +37,7 @@ if not result.wasSuccessful():raise SystemExit(1)
 
 
 # Selective custody fixtures never touch production or invoke a remote command.
-import copy, hashlib, stat, tarfile
+import copy, hashlib, stat, tarfile, struct, time, types
 from unittest.mock import patch
 C=load('custody_controller','deploy/ui-retention/custody.py');C.load_helpers();C.E=E;C.W=W
 
@@ -324,12 +324,139 @@ class OffhostCapacityTests(unittest.TestCase):
   for field in ('availableBytes','availableInodes'):
    bad=dict(state);bad[field]-=1
    with self.assertRaisesRegex(ValueError,'capacity refused'):C.check_custody_capacity([row],'/custody','/restore',observe=lambda p:bad)
+ def test_sealed_archives_are_not_charged_again_before_restore(self):
+  rows=[{'inventory':{'fingerprint':dict(format='test',regularBytes=1000000), 'records':[dict(path='a',kind='file')]}} for _ in range(3)]
+  initial=C.custody_allocation(rows);remaining=C.custody_allocation(rows,archives_existing=True)
+  self.assertGreater(initial['archiveBytes'],remaining['archiveBytes'])
+  self.assertEqual(initial['restoreBytes'],remaining['restoreBytes'])
+  self.assertGreater(remaining['archiveBytes'],0) # Future receipts/metadata stay reserved.
+  needed=remaining['archiveBytes']+remaining['restoreBytes'];inodes=remaining['archiveInodes']+remaining['restoreInodes']
+  state=dict(device=1,availableBytes=needed+C.OFFHOST_RESERVE_BYTES,availableInodes=inodes+C.OFFHOST_RESERVE_INODES)
+  self.assertTrue(C.check_custody_capacity(rows,'/custody','/restore',archives_existing=True,observe=lambda p:state)['ok'])
+  with self.assertRaisesRegex(ValueError,'capacity refused'):C.check_custody_capacity(rows,'/custody','/restore',observe=lambda p:state)
+  state['availableBytes']-=1
+  with self.assertRaisesRegex(ValueError,'capacity refused'):C.check_custody_capacity(rows,'/custody','/restore',archives_existing=True,observe=lambda p:state)
  def test_distinct_custody_and_restore_devices_each_require_reserve(self):
   model=C.custody_allocation([])
   def state(p):return dict(device=1 if p=='/custody' else 2,availableBytes=C.OFFHOST_RESERVE_BYTES-1 if p=='/restore' else C.OFFHOST_RESERVE_BYTES,availableInodes=C.OFFHOST_RESERVE_INODES)
   with self.assertRaisesRegex(ValueError,'capacity refused'):C.check_custody_capacity([],'/custody','/restore',observe=state)
 
 
-suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls) for cls in (FileGroupTests,ArtifactQualificationTests,ClosedOrdinaryAliasTests,OffhostCapacityTests))
+class BatchPreservationTests(unittest.TestCase):
+ def setUp(self):
+  self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.base=Path(self.tmp.name)
+  self.rows=[]
+  for number in range(3):
+   root=self.base/('source'+str(number));root.mkdir();(root/'content').write_bytes(('unique '+str(number)).encode())
+   inv=E.inventory(root,os.geteuid(),require_manifest=False)
+   self.rows.append(dict(path=str(root),eligible=True,retirementMethod='custody',artifactClass='preserved-source',inventory=inv))
+  self.plan=dict(candidates=self.rows);self.plan_sha=E.digest(C.encoded(self.plan));self.custody=self.base/'custody';self.custody.mkdir()
+ def stream(self):
+  output=io.BytesIO();original=E.archive_root
+  def archive(root,expected,sink,**kw):return original(root,expected,sink,os.geteuid(),**kw)
+  with patch.object(C,'fence') as fence,patch.object(C.A,'require_execution_lock',return_value={'fd':99}),patch.object(C,'batch_guards',return_value={}),patch.object(C,'guard_batch'),patch.object(C,'check_references'),patch.object(C,'scope',return_value=('preserved-source',None,False)),patch.object(C,'row_inventory',side_effect=lambda p,k:E.inventory(p,os.geteuid(),require_manifest=False)),patch.object(E,'archive_root',side_effect=archive):
+   C.remote_export_batch(dict(plan=self.plan,planSha256=self.plan_sha),output,99)
+   self.assertEqual([c.kwargs for c in fence.call_args_list],[{'full':True},{'full':True}])
+  return output.getvalue()
+ def receive(self,raw):return C.receive_batch(io.BytesIO(raw),self.plan,self.custody,time.monotonic()+10)
+ def rewrite(self,raw,change):
+  source=io.BytesIO(raw[len(C.BATCH_MAGIC):]);out=io.BytesIO();out.write(C.BATCH_MAGIC);number=0
+  while source.tell()<len(raw)-len(C.BATCH_MAGIC):
+   kind,value=C.read_batch_frame(source,time.monotonic()+10)
+   replacement=change(number,kind,value);number+=1
+   if replacement is not None:kind,value=replacement
+   C.batch_frame(out,kind,C.encoded(value) if kind==b'J' else value)
+  return out.getvalue()
+ def test_real_archives_stream_and_restore_with_only_two_full_fences(self):
+  result=self.receive(self.stream());self.assertEqual(result['count'],3)
+  self.assertFalse((self.custody/'batch-exported.json').exists())
+  for number,row in enumerate(self.rows):
+   key=hashlib.sha256(row['path'].encode()).hexdigest()[:16];archive=self.custody/(key+'.tgz')
+   E.extract_verify(archive,C.expected(row),self.base/('restored'+str(number)))
+   self.assertEqual((self.base/('restored'+str(number))/'content').read_bytes(),('unique '+str(number)).encode())
+ def test_truncated_stream_never_has_a_batch_seal(self):
+  with self.assertRaisesRegex(ValueError,'truncated'):self.receive(self.stream()[:-7])
+  self.assertFalse((self.custody/'batch-exported.json').exists())
+ def test_trailing_bytes_refuse_even_after_a_valid_seal(self):
+  with self.assertRaises(ValueError):self.receive(self.stream()+b'extra')
+ def test_wrong_object_order_refuses_before_archive_creation(self):
+  raw=self.rewrite(self.stream(),lambda n,k,v:(k,dict(v,index=2)) if k==b'J' and v.get('type')=='object-start' and v['index']==0 else None)
+  with self.assertRaisesRegex(ValueError,'ordering'):self.receive(raw)
+  self.assertFalse(list(self.custody.glob('*.tgz')))
+ def test_data_corruption_refuses_before_restore(self):
+  changed=[False]
+  def corrupt(n,k,v):
+   if k==b'D' and not changed[0]:changed[0]=True;return k,bytes([v[0]^1])+v[1:]
+  with self.assertRaisesRegex(ValueError,'proof differs'):self.receive(self.rewrite(self.stream(),corrupt))
+ def test_changed_final_manifest_refuses(self):
+  raw=self.rewrite(self.stream(),lambda n,k,v:(k,dict(v,objectManifestSha256='0'*64)) if k==b'J' and v.get('type')=='batch-complete' else None)
+  with self.assertRaisesRegex(ValueError,'final custody batch seal'):self.receive(raw)
+ def test_oversized_frame_is_refused_before_payload_allocation(self):
+  raw=C.BATCH_MAGIC+b'J'+struct.pack('>I',C.BATCH_JSON+1)
+  with self.assertRaisesRegex(ValueError,'oversized'):self.receive(raw)
+ def test_duplicate_plan_paths_and_pool_expansion_refuse(self):
+  with self.assertRaisesRegex(ValueError,'Duplicate'):C.batch_rows(dict(candidates=[self.rows[0],self.rows[0]]))
+  with patch.object(C,'BATCH_BYTES',1),self.assertRaisesRegex(ValueError,'retained-pool'):C.batch_rows(self.plan)
+ def test_closed_empty_batch_is_exact(self):
+  self.plan={'candidates':[]};self.rows=[];self.plan_sha=E.digest(C.encoded(self.plan))
+  self.assertEqual(self.receive(self.stream())['objects'],[])
+ def test_exact_complete_dependency_metadata_guards_refuse_xattr_drift(self):
+  path=Path(self.rows[0]['path']);fp=C.A.snapshot(path,links=True);guards={str(path):fp}
+  with patch.object(C,'fence'):
+   C.guard_batch({},guards)
+   os.setxattr(path/'content','user.changed',b'new')
+   with self.assertRaises(ValueError):C.guard_batch({},guards)
+ def test_new_dependency_member_refuses(self):
+  path=Path(self.rows[0]['path']);guards={str(path):C.A.snapshot(path,links=True)}
+  (path/'new').write_bytes(b'drift')
+  with patch.object(C,'fence'),self.assertRaises(ValueError):C.guard_batch({},guards)
+ def test_streamed_member_hash_must_match_inventory(self):
+  row=self.rows[0];bad=copy.deepcopy(row['inventory']);next(r for r in bad['records'] if r['kind']=='file')['sha256']='0'*64
+  expected=dict(bad['fingerprint'],inventory=bad['records'])
+  with patch.object(E,'inventory',return_value=bad),self.assertRaisesRegex(ValueError,'Streamed archive member bytes differ'):
+   E.archive_root(Path(row['path']),expected,io.BytesIO(),os.geteuid(),require_manifest=False)
+ def test_nonzero_process_exit_after_seal_leaves_partial_evidence_only(self):
+  raw=self.stream();fake=types.SimpleNamespace(stdin=io.BytesIO(),stdout=io.BytesIO(raw),wait=lambda **kw:1,poll=lambda:1)
+  with patch.object(C.subprocess,'Popen',return_value=fake),patch.object(C,'launcher',return_value=b'approved request'),patch.object(C,'check_custody_capacity'),self.assertRaisesRegex(ValueError,'exit successfully'):
+   C.export_batch(self.plan,self.custody,self.base)
+  self.assertTrue((self.custody/'batch-intent.json').exists());self.assertTrue((self.custody/'batch-failure.json').exists())
+  self.assertFalse((self.custody/'batch-exported.json').exists());self.assertFalse(list(self.custody.glob('*.inventory.json')))
+ def test_partial_batch_cannot_resume_automatically(self):
+  (self.custody/'batch-intent.json').write_bytes(b'{}');path=self.base/'plan.json';path.write_bytes(C.encoded(self.plan))
+  with patch.object(C,'check_custody_capacity') as capacity,self.assertRaisesRegex(ValueError,'no automatic resume'):
+   C.preserve(path,self.custody,True)
+  capacity.assert_not_called()
+ def test_read_deadline_is_bounded(self):
+  with self.assertRaisesRegex(ValueError,'deadline'):C.read_exact(io.BytesIO(),1,time.monotonic()-1)
+ def test_receipt_graph_includes_split_intent_binding_and_prior_index(self):
+  evidence=self.base/'cleanup-evidence';evidence.mkdir()
+  def store(name,value):
+   p=evidence/name;p.write_bytes(C.encoded(value));return dict(path=str(p),sha256=C.digest(p))
+  prior=store('prior-index.json',{'history':[]});intent=store('ordinary-intent.json',{'plan':{'admissionIndex':prior}})
+  completed=store('ordinary-completed.json',dict(intentPath=intent['path'],intentSha256=intent['sha256']))
+  index=store('index.json',dict(completedRetirements=[completed]));approval=store('approval.json',{'authorized':True})
+  protected=C.A.snapshot(Path(self.rows[0]['path']),links=True)
+  with patch.object(C,'BASE',self.base):
+   guards=C.batch_guards(dict(closure={'protected':protected},lifecycle=dict(index=index,approval=approval)))
+  self.assertEqual(set(guards),{protected['path'],prior['path'],intent['path'],completed['path'],index['path'],approval['path']})
+ def test_protected_archive_and_sidecars_receive_intermediate_guards(self):
+  protected=C.A.snapshot(Path(self.rows[0]['path']),links=True)
+  files=[]
+  for suffix in ('','.sha256','.provenance'):
+   p=self.base/('protected.tgz'+suffix);p.write_bytes(('exact '+suffix).encode());files.append(str(p))
+  plan=dict(closure=dict(protected=protected,protectedPaths=files))
+  guards=C.batch_guards(plan);self.assertEqual(set(guards),{protected['path'],*files})
+  with patch.object(C,'fence'):C.guard_batch(plan,guards)
+  os.setxattr(files[1],'user.changed',b'drift')
+  with patch.object(C,'fence'),self.assertRaises(ValueError):C.guard_batch(plan,guards)
+ def test_reference_members_are_derived_even_when_row_members_are_empty(self):
+  rows=[dict(path='/approved/source',members=[]),dict(path='/approved/archive.tgz',members=['/wrong'])]
+  with patch.object(C,'scope',side_effect=[('preserved-source',None,False),('managed-archive-group',None,True)]):
+   self.assertEqual(C.batch_members(rows,{}),['/approved/source','/approved/archive.tgz','/approved/archive.tgz.sha256','/approved/archive.tgz.provenance'])
+ def test_real_execution_lock_is_required_before_export(self):
+  with self.assertRaises(ValueError):C.remote_export_batch(dict(plan=self.plan,planSha256=self.plan_sha),io.BytesIO(),None)
+
+
+suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls) for cls in (FileGroupTests,ArtifactQualificationTests,ClosedOrdinaryAliasTests,OffhostCapacityTests,BatchPreservationTests))
 result=unittest.TextTestRunner(verbosity=1).run(suite)
 if not result.wasSuccessful():raise SystemExit(1)

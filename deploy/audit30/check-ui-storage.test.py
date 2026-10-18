@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Actual temporary-filesystem fixtures: corruption, holds, pointers and partial work."""
 import hashlib
+import fcntl
 import importlib.machinery
 import importlib.util
 import json
@@ -16,6 +17,69 @@ from unittest.mock import patch
 def load(name,filename):
     loader=importlib.machinery.SourceFileLoader(name,str(Path(__file__).with_name(filename)));spec=importlib.util.spec_from_loader(name,loader);m=importlib.util.module_from_spec(spec);loader.exec_module(m);return m
 S=load('audit30_storage_test','ui-storage.py');P=load('audit30_policy_test','ui-release-policy.py')
+
+class SnapshotGuardTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();self.base=Path(self.tmp.name);self.root=self.base/'root';self.root.mkdir(mode=0o700)
+        self.file=self.root/'file';self.file.write_bytes(b'exact bytes');self.file.chmod(0o600)
+    def tearDown(self):self.tmp.cleanup()
+    def test_unchanged_complete_guard_reuses_hashes_and_preserves_xattrs_and_links(self):
+        os.setxattr(self.file,'user.guard',b'\0\xff');(self.root/'link').symlink_to('file')
+        full=S.snapshot(self.root,links=True)
+        with patch.object(S,'hash_read',side_effect=AssertionError('Unchanged bytes were reread')):
+            self.assertEqual(S.guard_snapshot(self.root,full,links=True),full)
+    def test_same_size_write_restored_mtime_and_inode_replacement_refuse(self):
+        full=S.snapshot(self.root);before=self.file.stat();self.file.write_bytes(b'other bytes');os.utime(self.file,ns=(before.st_atime_ns,before.st_mtime_ns))
+        with self.assertRaises(ValueError):S.guard_snapshot(self.root,full)
+        full=S.snapshot(self.root);replacement=self.base/'replacement';replacement.write_bytes(self.file.read_bytes());replacement.chmod(0o600);os.utime(replacement,ns=(self.file.stat().st_atime_ns,self.file.stat().st_mtime_ns));replacement.replace(self.file)
+        with self.assertRaises(ValueError):S.guard_snapshot(self.root,full)
+    def test_complete_entry_set_modes_and_xattrs_are_guarded(self):
+        changes=[lambda:(self.root/'added').write_text('new'),lambda:self.file.unlink(),
+                 lambda:self.file.chmod(0o400),lambda:os.setxattr(self.file,'user.guard',b'changed')]
+        for change in changes:
+            with self.subTest(change=change):
+                for p in self.root.iterdir():p.unlink()
+                self.file.write_bytes(b'exact bytes');self.file.chmod(0o600);full=S.snapshot(self.root);change()
+                with self.assertRaises(ValueError):S.guard_snapshot(self.root,full)
+    def test_symlink_target_and_forged_baseline_refuse(self):
+        link=self.root/'link';link.symlink_to('file');full=S.snapshot(self.root,links=True);link.unlink();link.symlink_to('../outside')
+        with self.assertRaises(ValueError):S.guard_snapshot(self.root,full,links=True)
+        bad=dict(full,sha256='0'*64)
+        with self.assertRaisesRegex(ValueError,'baseline'):S.guard_snapshot(self.root,bad,links=True)
+    def test_mutation_between_walk_and_final_fence_refuses(self):
+        full=S.snapshot(self.root);identity=S.identity;root_inode=self.root.stat().st_ino;changed=False
+        def mutate_at_fence(info):
+            nonlocal changed
+            result=identity(info)
+            if info.st_ino==root_inode and not changed:
+                changed=True;before=self.file.stat();self.file.write_bytes(b'other bytes');os.utime(self.file,ns=(before.st_atime_ns,before.st_mtime_ns))
+            return result
+        with patch.object(S,'identity',side_effect=mutate_at_fence):
+            with self.assertRaisesRegex(ValueError,'fence changed'):S.guard_snapshot(self.root,full)
+    def test_new_entry_after_directory_enumeration_refuses(self):
+        full=S.snapshot(self.root);attributes=S.attributes;changed=False
+        def add_during_walk(path):
+            nonlocal changed
+            result=attributes(path)
+            if Path(path)==self.file and not changed:changed=True;(self.root/'added').write_text('racing entry')
+            return result
+        with patch.object(S,'attributes',side_effect=add_during_walk):
+            with self.assertRaises(ValueError):S.guard_snapshot(self.root,full)
+    def test_new_owned_unlink_rehashes_shared_file_and_credit_is_not_reused(self):
+        alias=self.base/'alias';os.link(self.file,alias);full=S.snapshot(self.root);info=self.file.stat();removed={(info.st_dev,info.st_ino):1};alias.unlink()
+        with patch.object(S,'hash_read',wraps=S.hash_read) as reads:
+            observed=S.guard_snapshot(self.root,full,removed);self.assertEqual([Path(c.args[0]) for c in reads.call_args_list],[self.file])
+        with patch.object(S,'hash_read',side_effect=AssertionError('Old unlink was rehashed')):
+            self.assertEqual(S.guard_snapshot(self.root,observed,removed,removed),observed)
+        before=self.file.stat();self.file.write_bytes(b'exact bytes');os.utime(self.file,ns=(before.st_atime_ns,before.st_mtime_ns))
+        with self.assertRaisesRegex(ValueError,'ctime'):S.guard_snapshot(self.root,observed,removed,removed)
+        with self.assertRaisesRegex(ValueError,'regressed'):S.guard_snapshot(self.root,observed,{},removed)
+    def test_owned_unlink_does_not_hide_concurrent_byte_mutation(self):
+        alias=self.base/'alias';os.link(self.file,alias);full=S.snapshot(self.root);before=self.file.stat();alias.unlink();self.file.write_bytes(b'other bytes');os.utime(self.file,ns=(before.st_atime_ns,before.st_mtime_ns))
+        with self.assertRaisesRegex(ValueError,'bytes, metadata'):S.guard_snapshot(self.root,full,{(before.st_dev,before.st_ino):1})
+    def test_unowned_link_change_refuses(self):
+        full=S.snapshot(self.root);os.link(self.file,self.base/'alias')
+        with self.assertRaisesRegex(ValueError,'hardlink'):S.guard_snapshot(self.root,full)
 
 class StorageTests(unittest.TestCase):
     def setUp(self):
@@ -396,7 +460,7 @@ finally:t.tearDown()
         p=self.l.evidence/(prefix+str(len(list(self.l.evidence.iterdir())))+'.json');S.durable(p,value)
         return dict(path=str(p),sha256=S.hash_read(p,S.MAX_JSON)[0])
 
-    def migration_fixture(self,legacy=True,missing=False,shared=False,xattrs=False):
+    def migration_fixture(self,legacy=True,missing=False,shared=False,xattrs=False,shared_protected=False):
         pp=patch.object(P,'S',S);pp.start();self.addCleanup(pp.stop)
         old=patch.object(S,'APPROVAL_SHA',self.auth);old.start();self.addCleanup(old.stop)
         prior=self.policy_index([P.admission(self.l,self.auth,True)])
@@ -416,6 +480,9 @@ finally:t.tearDown()
             left=self.l.roots/('proofofwork-www-pre-'+self.current)/'proofofwork-work/index.html'
             right=self.l.roots/('proofofwork-www-pre-'+first)/'proofofwork-work/index.html'
             left.unlink();os.link(right,left)
+        if shared_protected:
+            left=self.l.roots/('proofofwork-www-pre-'+self.current)/'proofofwork-work/index.html'
+            left.unlink();os.link(self.l.live/'proofofwork-work/index.html',left)
         if xattrs:
             os.setxattr(self.l.roots/('proofofwork-www-pre-'+self.current)/'proofofwork-work/index.html','user.custody-test',b'\x00\xffbinary attributes')
             os.setxattr(self.l.archives/('proofofwork-ui-release-'+self.current+'.tgz'),'user.custody-test',b'\x00\xffarchive attributes')
@@ -485,6 +552,132 @@ finally:t.tearDown()
         value['completedRetirements'].append(dict(path=out['receiptPath'],sha256=out['receiptSha256']))
         updated=self.policy_record('audit30-policy-admission-index-v2-',value)
         self.assertEqual(P.policy_scope(updated,self.l,S.REPAIR_APPROVAL_SHA)['eligible'],[])
+
+    def ordinary_execution_plan(self,**options):
+        _,_,_,_,index=self.migration_fixture(**options)
+        return S.create_plan(self.l,'future-retention',S.REPAIR_APPROVAL_SHA,P.policy_scope(index,self.l,S.REPAIR_APPROVAL_SHA))
+
+    def execute_locked(self,plan):
+        fd=S.lock(self.l)
+        try:return S.execute(plan,S.digest(plan),self.l,True,lock_fd=fd)
+        finally:os.close(fd)
+
+    def test_ordinary_execution_full_protected_bytes_only_at_start_and_end(self):
+        plan=self.ordinary_execution_plan();protected={str(self.l.archives/plan['protected'][k]['fields']['archive_name']) for k in ('current','previous')}
+        lock=S.lock(self.l)
+        try:
+            with patch.object(S,'archive_proof',wraps=S.archive_proof) as archives,patch.object(S,'snapshot',wraps=S.snapshot) as snapshots:
+                out=S.execute(plan,S.digest(plan),self.l,True,lock_fd=lock)
+        finally:os.close(lock)
+        self.assertEqual(out['completedCount'],len(plan['delete']))
+        for path in protected:self.assertEqual(sum(str(c.args[0])==path for c in archives.call_args_list),2)
+        for source in plan['protected']['sources']:
+            self.assertEqual(sum(str(c.args[0])==source['path'] for c in snapshots.call_args_list),2)
+        # Every selected object is still fully read at initial validation and
+        # again immediately before its own deletion, independent of the guards.
+        for row in plan['delete']:self.assertGreaterEqual(sum(str(c.args[0])==row['path'] for c in snapshots.call_args_list),2)
+
+    def test_ordinary_guard_refuses_protected_mutation_after_first_deletion(self):
+        plan=self.ordinary_execution_plan();source=Path(plan['protected']['sources'][0]['path'])/'source';durable=S.durable
+        def mutate_after_one(path,value):
+            durable(path,value)
+            if value.get('status')=='partial' and len(value['completed'])==1:
+                before=source.stat();source.write_bytes(b'x'*before.st_size);os.utime(source,ns=(before.st_atime_ns,before.st_mtime_ns))
+        with patch.object(S,'durable',side_effect=mutate_after_one):
+            with self.assertRaises(ValueError):self.execute_locked(plan)
+        failed=json.loads(next(self.l.evidence.glob('*-001-failed.json')).read_bytes())
+        self.assertEqual(len(failed['completed']),1);self.assertTrue(Path(plan['delete'][1]['path']).exists())
+
+    def test_ordinary_guard_refuses_new_protected_entry_before_first_deletion(self):
+        plan=self.ordinary_execution_plan();durable=S.durable
+        def mutate_after_intent(path,value):
+            durable(path,value)
+            if value.get('status')=='approved-intent':(Path(plan['protected']['sources'][0]['path'])/'new-entry').write_text('raced source')
+        with patch.object(S,'durable',side_effect=mutate_after_intent):
+            with self.assertRaises(ValueError):self.execute_locked(plan)
+        self.assertTrue(all(Path(r['path']).exists() for r in plan['delete']))
+        self.assertTrue(list(self.l.evidence.glob('*-000-failed.json')))
+
+    def test_ordinary_selected_candidate_is_not_served_from_metadata_cache(self):
+        plan=self.ordinary_execution_plan();durable=S.durable;candidate=Path(plan['delete'][1]['path'])/'proofofwork-work/index.html'
+        def mutate_candidate(path,value):
+            durable(path,value)
+            if value.get('status')=='partial' and len(value['completed'])==1:
+                before=candidate.stat();candidate.write_bytes(b'x'*before.st_size);os.utime(candidate,ns=(before.st_atime_ns,before.st_mtime_ns))
+        with patch.object(S,'durable',side_effect=mutate_candidate):
+            with self.assertRaises(ValueError):self.execute_locked(plan)
+        self.assertTrue(candidate.exists());self.assertTrue(list(self.l.evidence.glob('*-001-failed.json')))
+
+    def test_ordinary_completion_performs_fresh_full_protected_verification(self):
+        plan=self.ordinary_execution_plan();release_proof=S.release_proof;current_calls=0
+        def mutate_before_final_full(root,layout,cache):
+            nonlocal current_calls
+            if Path(root)==self.l.live:
+                current_calls+=1
+                if current_calls==2:
+                    p=self.l.live/'proofofwork-work/index.html';before=p.stat();p.write_bytes(b'x'*before.st_size);os.utime(p,ns=(before.st_atime_ns,before.st_mtime_ns))
+            return release_proof(root,layout,cache)
+        with patch.object(S,'release_proof',side_effect=mutate_before_final_full):
+            with self.assertRaises(ValueError):self.execute_locked(plan)
+        self.assertEqual(current_calls,2);self.assertFalse(list(self.l.evidence.glob('*-completed.json')))
+        failure=json.loads(next(self.l.evidence.glob('*-failed.json')).read_bytes());self.assertEqual(len(failure['completed']),len(plan['delete']))
+
+    def test_ordinary_full_proofs_are_not_reused_across_execute_calls(self):
+        plan=self.ordinary_execution_plan();path=str(self.l.archives/plan['protected']['current']['fields']['archive_name'])
+        with patch.object(S,'archive_proof',wraps=S.archive_proof) as archives:
+            for _ in range(2):self.assertEqual(S.execute(plan,S.digest(plan),self.l,False)['status'],'verified')
+        self.assertEqual(sum(str(c.args[0])==path for c in archives.call_args_list),2)
+
+    def test_ordinary_unlocked_execute_keeps_full_per_object_verification(self):
+        plan=self.ordinary_execution_plan();path=str(self.l.archives/plan['protected']['current']['fields']['archive_name'])
+        with patch.object(S,'archive_proof',wraps=S.archive_proof) as archives,patch.object(S,'guard_snapshot',side_effect=AssertionError('Unbound reuse')):
+            self.assertEqual(S.execute(plan,S.digest(plan),self.l,True)['completedCount'],len(plan['delete']))
+        self.assertEqual(sum(str(c.args[0])==path for c in archives.call_args_list),len(plan['delete'])+2)
+
+    def test_ordinary_lock_loss_after_intent_refuses_without_reacquiring(self):
+        plan=self.ordinary_execution_plan();fd=S.lock(self.l);durable=S.durable
+        def release_after_intent(path,value):
+            durable(path,value)
+            if value.get('status')=='approved-intent':fcntl.flock(fd,fcntl.LOCK_UN)
+        try:
+            with patch.object(S,'durable',side_effect=release_after_intent):
+                with self.assertRaisesRegex(ValueError,'continuously held'):S.execute(plan,S.digest(plan),self.l,True,lock_fd=fd)
+            self.assertTrue(all(Path(r['path']).exists() for r in plan['delete']))
+            other=S.lock(self.l);os.close(other)  # The failed guard did not silently reacquire it.
+        finally:os.close(fd)
+
+    def test_ordinary_explicit_unlocked_or_wrong_descriptor_refuses_before_intent(self):
+        plan=self.ordinary_execution_plan()
+        for path in (self.l.lock,self.l.capacity):
+            with path.open('rb') as opened:
+                with self.assertRaises(ValueError):S.execute(plan,S.digest(plan),self.l,True,lock_fd=opened.fileno())
+        self.assertFalse(list(self.l.evidence.glob('audit30-future-retention-*-intent.json')))
+
+    def test_ordinary_lock_path_replacement_refuses_cached_proofs(self):
+        plan=self.ordinary_execution_plan();fd=S.lock(self.l);durable=S.durable
+        def replace_after_intent(path,value):
+            durable(path,value)
+            if value.get('status')=='approved-intent':self.l.lock.unlink();self.l.lock.write_text('replacement lock')
+        try:
+            with patch.object(S,'durable',side_effect=replace_after_intent):
+                with self.assertRaisesRegex(ValueError,'lock descriptor or pathname changed'):S.execute(plan,S.digest(plan),self.l,True,lock_fd=fd)
+        finally:os.close(fd)
+        self.assertTrue(all(Path(r['path']).exists() for r in plan['delete']))
+
+    def test_ordinary_guard_rehashes_protected_shared_inode_after_owned_unlink(self):
+        plan=self.ordinary_execution_plan(shared_protected=True);shared=self.l.live/'proofofwork-work/index.html'
+        with patch.object(S,'hash_read',wraps=S.hash_read) as reads:self.execute_locked(plan)
+        self.assertEqual(sum(Path(c.args[0])==shared for c in reads.call_args_list),3)  # Start, owned unlink, final.
+
+    def test_ordinary_prior_unlink_does_not_excuse_later_protected_ctime_change(self):
+        plan=self.ordinary_execution_plan(shared_protected=True);shared=self.l.live/'proofofwork-work/index.html';durable=S.durable
+        def mutate_after_two(path,value):
+            durable(path,value)
+            if value.get('status')=='partial' and len(value['completed'])==2:
+                before=shared.stat();shared.write_bytes(shared.read_bytes());os.utime(shared,ns=(before.st_atime_ns,before.st_mtime_ns))
+        with patch.object(S,'durable',side_effect=mutate_after_two):
+            with self.assertRaisesRegex(ValueError,'ctime'):self.execute_locked(plan)
+        self.assertTrue(Path(plan['delete'][2]['path']).exists());self.assertTrue(list(self.l.evidence.glob('*-002-failed.json')))
 
     def test_migration_review_staleness_protected_and_held_expansion_refuse(self):
         prior,review,_,_,_=self.migration_fixture()
