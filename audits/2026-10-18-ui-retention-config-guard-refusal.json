@@ -1,0 +1,128 @@
+{
+  "completedCycle": {
+    "cycleId": "release-2dca4504c366-20261016T024741Z-batch1",
+    "local": {
+      "bytes": 14560,
+      "path": "/tmp/ui-retention-receipt-repair-20261018/reconciled-after-lock-refusal/completed.json",
+      "sha256": "3d416a9a08d4852d4514127e0fb1154329eb57ee91ceb9b94e296bd017515875"
+    },
+    "receipt": {
+      "path": "/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-complete-2dca4504c366-20261016T024741Z-receipt1-completed.json",
+      "sha256": "98564fd15ca4cea0904201e4bf4fd3833b4c0015f610be91268a36ff08f3aff8"
+    },
+    "retentionComplete": true
+  },
+  "completedUpgrade": {
+    "plan": {
+      "bytes": 706927,
+      "path": "/tmp/ui-retention-receipt-repair-20261018/completed-upgrade-plan.json",
+      "sha256": "41045abc344091af0073deea8e1aeae85ab6ecf4c9aa4fcfa4c62d7f8e05bb94"
+    },
+    "receipt": {
+      "path": "/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-upgrade-ab5f495e00b4de8524c64ba82128d5d0ae69380f970d1a23b832dee2f921f364/completed.json",
+      "sha256": "823045102b9b74c6eaf935bf3dc71a663170c51bb7b295ac74fced2e622de952"
+    },
+    "result": {
+      "bytes": 40123,
+      "path": "/tmp/ui-retention-receipt-repair-20261018/completed-upgrade.log",
+      "sha256": "43b7e358417e704782eb307f5d21636e656b1102a224582e65901fcaeabd2740"
+    }
+  },
+  "config": {
+    "bytes": 1165,
+    "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+    "sha256": "d17e53fcc5cd20bcaa2d08a72f3eb2fef122d28ec35925d2af72aa000e7d8824"
+  },
+  "disposition": "completed-cycle-preserved-config-transition-required",
+  "failure": {
+    "emptyOutput": {
+      "bytes": 0,
+      "path": "/tmp/ui-retention-receipt-repair-20261018/final-status.json",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "error": "Retention holds/timers changed",
+    "exitCode": 1,
+    "log": {
+      "bytes": 2964,
+      "path": "/tmp/ui-retention-receipt-repair-20261018/collect-after-inventory.log",
+      "sha256": "89e895b4ccd53869c501f1c663b97b8b388073c6cf7d21922c823efbabe97260"
+    },
+    "normalStatusVerified": false,
+    "operation": "normal-status-require-complete"
+  },
+  "guardDifference": {
+    "currentLifecycleConfig": {
+      "identity": {
+        "st_atime_ns": 1792308185610499907,
+        "st_blksize": 4096,
+        "st_blocks": 8,
+        "st_ctime_ns": 1792308185649503306,
+        "st_dev": 2049,
+        "st_gid": 0,
+        "st_ino": 129223,
+        "st_mode": 33152,
+        "st_mtime_ns": 1792308185610499907,
+        "st_nlink": 1,
+        "st_size": 1165,
+        "st_uid": 0
+      },
+      "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+      "sha256": "d17e53fcc5cd20bcaa2d08a72f3eb2fef122d28ec35925d2af72aa000e7d8824",
+      "xattrs": []
+    },
+    "oldLifecycleConfig": {
+      "identity": {
+        "st_atime_ns": 1792297400143686854,
+        "st_blksize": 4096,
+        "st_blocks": 8,
+        "st_ctime_ns": 1792297400149687390,
+        "st_dev": 2049,
+        "st_gid": 0,
+        "st_ino": 129082,
+        "st_mode": 33152,
+        "st_mtime_ns": 1792297400143686854,
+        "st_nlink": 1,
+        "st_size": 1165,
+        "st_uid": 0
+      },
+      "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+      "sha256": "b0fac0cdc69254adc9b5ef718df10181606f8df8eb18fc27f8b51f506e5bc32b",
+      "xattrs": []
+    },
+    "onlyChangedPaths": [
+      "/etc/proofofwork-retention/ui-lifecycle.json"
+    ],
+    "otherHoldRowsUnchanged": true,
+    "timersUnchanged": true
+  },
+  "guardObservation": {
+    "bytes": 4159,
+    "path": "/tmp/ui-retention-receipt-repair-20261018/post-upgrade-guards.json",
+    "sha256": "1bb6cd6ee6dcc6b4306c94e73fb139ce938c90ab373ab2f1dab33b07dbbd94ae"
+  },
+  "installedSourceCommit": "9cdebb4723915b3073f9a9adba981669db261558",
+  "originalPlansAndReceiptsMustRemainUnchanged": true,
+  "qualifiedPlan": {
+    "bytes": 28840561,
+    "path": "/tmp/ui-retention-initial-batch-cycle-20261018/custody-qualified.json",
+    "sha256": "bef3dd59b7c4a46380db9fa6eeabdc60b8ec05b8534c98d2ac2c30496368e625"
+  },
+  "recordedAtUtc": "2026-10-18T07:28:09.971581+00:00",
+  "retirementReplayAllowed": false,
+  "schema": "pow-ui-custody-completed-config-guard-refusal-v1",
+  "scopeApprovalSha256": "df166edb2d9817dd4f8af24819880b6bf08b396b6aa483adaa141415fc709379",
+  "state": {
+    "activePhase": null,
+    "bytes": 35048,
+    "path": "/var/lib/proofofwork-ui-retention/state.json",
+    "pendingStage": null,
+    "revision": 14,
+    "sha256": "ca18769969e5b3699abfbf5de1243e641e88d36eae433ea1b82e66fbae4d8692",
+    "status": "complete"
+  },
+  "stateObservation": {
+    "bytes": 404,
+    "path": "/tmp/ui-retention-receipt-repair-20261018/post-upgrade-failure-bindings.json",
+    "sha256": "b3264f5e88a6f81669d3dc31fcd9a651aacc1785eef676515691cf058a6ff219"
+  }
+}

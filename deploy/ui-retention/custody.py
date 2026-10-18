@@ -50,6 +50,8 @@ RETIREMENT_AUXILIARY_BYTES=256*1024
 RETIREMENT_FAILURE_BYTES=32*1024
 RETIREMENT_STDOUT_BYTES=32*1024**2
 RETIREMENT_STDERR_BYTES=256*1024
+LIFECYCLE_CONFIG=Path('/etc/proofofwork-retention/ui-lifecycle.json')
+LIFECYCLE_STATE=Path('/var/lib/proofofwork-ui-retention/state.json')
 
 
 class QualificationError(ValueError):
@@ -162,6 +164,10 @@ def scope(path, plan):
 def fence(plan, full=False):
     if E.hold_snapshot() != plan['holds'] or E.timer_snapshot() != plan['timers']:
         raise ValueError('Retention holds/timers changed')
+    protected_fence(plan,full)
+
+
+def protected_fence(plan, full=False):
     for path, sha in plan['protectedManifests'].items():
         if E.digest(E.read_regular(Path(path) / '.proofofwork-ui-release')[0]) != sha:
             raise ValueError('Protected release changed; qualify again')
@@ -172,6 +178,112 @@ def fence(plan, full=False):
             raise ValueError('Last verified rollback differs')
         if plan.get('lifecycle') and lifecycle_context(plan['lifecycle'])!=plan['closure']:
             raise ValueError('Authenticated admission/dependency closure changed; qualify again')
+
+
+def completion_config_holds(plan, plan_sha, result_sha, transitions):
+    """Authenticate sealed config replacements only for a historical completion.
+
+    This is deliberately separate from fence(): no writer accepts this authority.
+    Every original plan/intent byte remains unchanged, including its old hold row.
+    """
+    require(type(transitions)is list and 0<len(transitions)<=16,'completion-transition','Invalid completed config transition chain')
+    config_path=str(LIFECYCLE_CONFIG);evidence=BASE/'cleanup-evidence';read_bytes=0
+    def bound(binding, maximum=16*1024**2):
+        nonlocal read_bytes
+        require(isinstance(binding,dict) and set(binding)=={'path','sha256'} and re.fullmatch('[0-9a-f]{64}',binding['sha256'] or ''),'completion-transition','Invalid transition evidence binding')
+        path=Path(binding['path'])
+        require(path.is_absolute() and evidence in path.parents,'completion-transition','Transition evidence is outside immutable custody evidence')
+        raw,actual=record(path,maximum);read_bytes+=len(raw)
+        require(read_bytes<=256*1024**2 and actual['sha256']==binding['sha256'],'completion-transition','Transition evidence hash/bound differs')
+        return json.loads(raw),raw
+    old_rows=[r for r in plan['holds'] if r['path']==config_path]
+    require(len(old_rows)==1 and plan.get('lifecycle'),'completion-transition','Historical lifecycle config hold is missing or duplicated')
+    original=old_rows[0];config_sha=original['sha256'];last_state=None;last_proof=None;last_config=None
+    for position,link in enumerate(transitions):
+        require(isinstance(link,dict) and set(link)=={'intent','completed'},'completion-transition','Invalid sealed upgrade link')
+        intent,ir=bound(link['intent']);completed,_=bound(link['completed'])
+        upgrade_plan=intent.get('plan',{});payload=upgrade_plan.get('payload',{});config=payload.get('config',{})
+        package=config.get('package',{});package_sha=package.get('sha256','')
+        require(re.fullmatch('[0-9a-f]{64}',package_sha) and package.get('path')==str(evidence/('ui-lifecycle-tools-'+package_sha)),'completion-transition','Upgrade package namespace differs')
+        journal=evidence/('ui-lifecycle-upgrade-'+package_sha)
+        require(link['intent']['path']==str(journal/'intent.json') and link['completed']['path']==str(journal/'completed.json'),'completion-transition','Upgrade receipt namespace differs')
+        require(intent.get('schema')=='pow-ui-retention-upgrade-intent-v1' and intent.get('disposition')=='completed-cycle-preserved' and intent.get('freshPreparationRequired') is False
+            and upgrade_plan.get('schema')=='pow-ui-retention-upgrade-plan-v1' and upgrade_plan.get('scopeApprovalSha256')==REPAIR_APPROVAL_SHA,'completion-transition','Upgrade does not preserve an approved completed cycle')
+        request=upgrade_plan.get('request',{});before=upgrade_plan.get('before',{});review=before.get('completedReview',{})
+        require(request.get('mode') in ('completed-cycle','completed-config-repair') and request.get('configSha256')==config_sha,'completion-transition','Completed config chain is missing or reordered')
+        prior_config_binding=dict(path=str(journal/'prior-config.json'),sha256=config_sha)
+        prior_state_binding=dict(path=str(journal/'prior-state.json'),sha256=request.get('stateSha256'))
+        prior_config,cr=bound(prior_config_binding);prior_state,sr=bound(prior_state_binding)
+        require(base64.b64decode(before['configBase64'],validate=True)==cr and base64.b64decode(before['stateBase64'],validate=True)==sr
+            and review.get('state')==prior_state and review.get('stateSha256')==prior_state_binding['sha256'] and review.get('fullCompletionVerified') is True
+            and review.get('context')==prior_state.get('completedContext') and review.get('lastCompleted')==prior_state.get('lastCompleted'),'completion-transition','Upgrade prior config/state proof differs')
+        require(prior_state.get('schema')=='pow-ui-retention-lifecycle-state-v1' and prior_state.get('configSha256')==config_sha and prior_state.get('status')=='complete'
+            and prior_state.get('pending') is None and prior_state.get('activePhase') is None and type(prior_state.get('revision'))is int,'completion-transition','Upgrade predecessor is not a sealed completed state')
+        if last_state is not None:
+            require(prior_state==last_state and prior_config==last_config,'completion-transition','Completed upgrade chain does not join exactly')
+        last_completed=prior_state.get('lastCompleted',{});cycle=last_completed.get('cycleId')
+        require(isinstance(cycle,str) and bool(cycle) and last_completed.get('custodyPlan',{}).get('sha256')==plan_sha
+            and last_completed.get('custodyResult',{}).get('sha256')==result_sha and prior_state.get('index')==plan['lifecycle']['index'],'completion-transition','Upgrade preserves a different custody cycle')
+        if last_state is None:
+            _,pr=bound(last_completed['custodyPlan'],64*1024**2);bound(last_completed['custodyResult'],64*1024**2)
+            require(pr==encoded(plan),'completion-transition','Preserved custody plan bytes differ')
+            phase,_=bound(review['completionIntent'],64*1024**2);terminal,_=bound(review['completionReceipt'])
+            phase_path=Path(review['completionIntent']['path'])
+            require(prior_state.get('lastIntent')==review['completionIntent'] and phase_path.parent==evidence and phase_path.name.endswith('-intent.json')
+                and review['completionReceipt']['path']==str(phase_path.with_name(phase_path.name.removesuffix('-intent.json')+'-completed.json'))
+                and phase.get('operation')=='complete-cycle' and phase.get('configSha256')==config_sha
+                and terminal.get('ok') is True and terminal.get('retentionComplete') is True and terminal.get('intent')==review['completionIntent']
+                and terminal.get('stateSha256')==prior_state_binding['sha256'] and terminal.get('stateRevision')==prior_state['revision']
+                and terminal.get('index')==prior_state['index'] and terminal.get('cycleId')==cycle,'completion-transition','Original completed phase proof differs')
+        new_sha=E.digest(encoded(config))
+        require(config.get('schema')=='pow-ui-retention-lifecycle-config-v1' and config.get('scopeApprovalSha256')==REPAIR_APPROVAL_SHA
+            and config.get('statePath')==str(LIFECYCLE_STATE) and payload.get('configSha256')==new_sha and new_sha!=config_sha
+            and E.digest(encoded(payload.get('manifest')))==package_sha,'completion-transition','Replacement config/package authority differs')
+        upgrade=dict(intentPath=str(journal/'intent.json'),completionPath=str(journal/'completed.json'),priorConfigSha256=config_sha,
+            priorStateSha256=prior_state_binding['sha256'],supersededCycleId=None,preservedCompletedCycleId=cycle)
+        # New installers seal a normal-status proof after the config CAS. Their
+        # private post-CAS verification runs before that proof is written; normal
+        # coordinator entry independently requires the seal. Bind its path here.
+        if 'statusVerificationPath' in intent.get('stateTemplate',{}).get('lastUpgrade',{}):
+            upgrade['statusVerificationPath']=str(journal/'verified.json')
+        template=dict(prior_state,configSha256=new_sha,revision=prior_state['revision']+2,status='complete',pending=None,activePhase=None,
+            completedContext=prior_state['completedContext'],lastUpgrade=upgrade)
+        require(intent.get('stateTemplate')==template and intent.get('stateTemplateSha256')==E.digest(encoded(template)),'completion-transition','Upgrade changes completed state beyond config/revision authority')
+        final=dict(template,lastUpgrade=dict(upgrade,intentSha256=link['intent']['sha256']))
+        proof=completed.get('completionVerification',{})
+        require(completed.get('schema')=='pow-ui-retention-upgrade-completed-v1' and completed.get('ok') is True and completed.get('intent')==link['intent']
+            and completed.get('config')==dict(path=config_path,sha256=new_sha) and completed.get('state')==dict(path=str(LIFECYCLE_STATE),sha256=E.digest(encoded(final)))
+            and completed.get('stateRevision')==final['revision'] and completed.get('priorConfig')==prior_config_binding and completed.get('priorState')==prior_state_binding
+            and completed.get('supersededCycleId') is None and completed.get('preservedCompletedCycleId')==cycle and completed.get('index')==prior_state['index']
+            and completed.get('freshPreparationRequired') is False and all(completed.get(k) is True for k in ('retentionComplete','publicationHealthy','priorPackageAndPhaseEvidencePreserved','priorHelpersHoldsAndTimersPreserved')),'completion-transition','Upgrade terminal receipt is incomplete or inconsistent')
+        require(proof.get('fullCompletionVerified') is True and proof.get('context')==prior_state['completedContext'] and proof.get('index')==prior_state['index']
+            and proof.get('lastCompleted')==last_completed and proof.get('custodyLifecycle')==plan['lifecycle']
+            and proof.get('verifiedConfigTransitions',[])==transitions[:position],'completion-transition','Upgrade completion verification differs from historical custody authority')
+        if last_proof is not None:
+            require(all(proof[k]==last_proof[k] for k in ('context','index','lastCompleted','custodyLifecycle')),'completion-transition','Upgrade completion proof changed across chain')
+        config_sha=new_sha;last_state=final;last_proof=proof;last_config=config
+    holds=E.hold_snapshot();current_rows=[r for r in holds if r['path']==config_path]
+    require(len(current_rows)==1,'completion-transition','Current lifecycle config hold is missing or duplicated')
+    current=current_rows[0];raw,binding=record(LIFECYCLE_CONFIG)
+    require(current['sha256']==config_sha==binding['sha256'] and current['identity']==binding['identity'] and raw==encoded(last_config)
+        and current['xattrs']==E.xattrs(LIFECYCLE_CONFIG),'completion-transition','Current lifecycle config is not the sealed chain endpoint')
+    for row in (original,current):
+        ident=row['identity']
+        require(set(row)=={'path','sha256','identity','xattrs'} and set(ident)==set(E.STAT_FIELDS) and ident['st_mode']==stat.S_IFREG|0o600 and ident['st_uid']==ident['st_gid']==0 and ident['st_nlink']==1,'completion-transition','Lifecycle config hold permissions/type/links changed')
+    stable=('st_dev','st_mode','st_nlink','st_uid','st_gid','st_blksize')
+    require(all(current['identity'][k]==original['identity'][k] for k in stable) and current['xattrs']==original['xattrs'],'completion-transition','Lifecycle config hold stable identity/xattrs changed')
+    require([r if r['path']!=config_path else original for r in holds]==plan['holds'],'completion-transition','A non-config retention hold changed')
+    return holds
+
+
+def completion_fence(plan, plan_sha, result_sha, transitions, expected_holds=None):
+    if not transitions:
+        fence(plan,full=True)
+        return None
+    holds=completion_config_holds(plan,plan_sha,result_sha,transitions)
+    require((expected_holds is None or holds==expected_holds) and E.timer_snapshot()==plan['timers'],'completion-transition','Completion holds/timers changed during verification')
+    protected_fence(plan,full=True)
+    return holds
 
 
 def expected(row):
@@ -887,11 +999,12 @@ def retire(plan_path,custody,output,*,expected_sources=None):
     save(output,{'ok':True,'completed':completed,'planSha256':digest(plan_path)})
 
 
-def verify_final_result(plan, plan_sha, result, result_sha):
+def verify_final_result(plan, plan_sha, result, result_sha, *, config_transitions=None):
     """Read-only terminal proof for the lifecycle coordinator; no inferred retries."""
+    require(config_transitions is None or type(config_transitions)is list,'completion-transition','Invalid completion transition argument')
     require(E.digest(encoded(plan))==plan_sha and E.digest(encoded(result))==result_sha,'completion-mismatch','Custody plan/result canonical bytes differ')
     require(result.get('ok') is True and result.get('planSha256')==plan_sha,'completion-mismatch','Custody result is not bound to the completed plan')
-    fence(plan,full=True)
+    completion_holds=completion_fence(plan,plan_sha,result_sha,config_transitions)
     wanted=[r for r in plan['candidates'] if r.get('eligible') is True and r.get('retirementMethod','custody')=='custody']
     completed=result.get('completed',[])
     require([r.get('path') for r in completed]==[r['path'] for r in wanted] and len({r['path'] for r in wanted})==len(wanted),'completion-mismatch','Custody completion omitted, duplicated, reordered or expanded scope')
@@ -930,9 +1043,11 @@ def verify_final_result(plan, plan_sha, result, result_sha):
         proofs.append(dict(path=str(path),receipt=binding,intent=ib,journal=jb))
     remaining=[qualify_candidate(p,plan) for p in discover(plan)]
     require(not [r for r in remaining if r.get('eligible')],'retention-incomplete','Qualified bulk artifacts remain after the custody cycle')
-    fence(plan,full=True)
-    return dict(ok=True,planSha256=plan_sha,resultSha256=result_sha,completedCount=len(completed),receipts=proofs,
-        remaining=[{k:r[k] for k in ('path','eligible','artifactClass','retirementMethod','rejectionCategory','reason') if k in r} for r in remaining],protectedPairVerified=True,holdsAndTimersUnchanged=True)
+    completion_fence(plan,plan_sha,result_sha,config_transitions,completion_holds)
+    verified=dict(ok=True,planSha256=plan_sha,resultSha256=result_sha,completedCount=len(completed),receipts=proofs,
+        remaining=[{k:r[k] for k in ('path','eligible','artifactClass','retirementMethod','rejectionCategory','reason') if k in r} for r in remaining],protectedPairVerified=True,holdsAndTimersUnchanged=not bool(config_transitions))
+    if config_transitions:verified.update(holdsAndTimersVerified=True,verifiedConfigTransitions=config_transitions)
+    return verified
 
 
 def main():

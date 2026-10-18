@@ -564,6 +564,119 @@ class RetirementDiagnosticsTests(unittest.TestCase):
   self.assertEqual(invoke.call_count,1);self.assertEqual(invoke.call_args.args[0]['row']['path'],'/source/0');self.assertFalse((self.base/'result.json').exists())
 
 
-suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls) for cls in (FileGroupTests,ArtifactQualificationTests,ClosedOrdinaryAliasTests,OffhostCapacityTests,BatchPreservationTests,RetirementBudgetTests,RetirementDiagnosticsTests))
+class CompletionConfigTransitionTests(unittest.TestCase):
+ def setUp(self):
+  self.records={};self.transitions=[];self.serial=10
+  self.identity={k:1 for k in E.STAT_FIELDS};self.identity.update(st_mode=stat.S_IFREG|0o600,st_uid=0,st_gid=0,st_nlink=1)
+  self.evidence=C.BASE/'cleanup-evidence';self.config={'schema':'pow-ui-retention-lifecycle-config-v1','scopeApprovalSha256':C.REPAIR_APPROVAL_SHA,'statePath':str(C.LIFECYCLE_STATE),'generation':0}
+  self.current=self.hold(self.config);self.other=dict(path='/etc/proofofwork-retention/held.json',sha256='a'*64,identity=dict(self.identity),xattrs={})
+  self.plan=dict(holds=[copy.deepcopy(self.current),copy.deepcopy(self.other)],timers={'exact':'timers'},candidates=[],lifecycle=dict(index={'path':str(self.evidence/'index.json'),'sha256':'b'*64}))
+  self.plan_binding=self.put(self.evidence/'cycle-custody-plan.json',self.plan);self.plan_sha=self.plan_binding['sha256']
+  self.result=dict(ok=True,planSha256=self.plan_sha,completed=[]);self.result_binding=self.put(self.evidence/'cycle-custody-result.json',self.result);self.result_sha=self.result_binding['sha256']
+  phase=dict(operation='complete-cycle',configSha256=E.digest(C.encoded(self.config)));self.phase=self.put(self.evidence/'cycle-intent.json',phase)
+  self.state=dict(schema='pow-ui-retention-lifecycle-state-v1',configSha256=phase['configSha256'],revision=12,status='complete',pending=None,activePhase=None,
+   index=self.plan['lifecycle']['index'],completedContext={'pair':'same','guards':'exact'},lastIntent=self.phase,
+   lastCompleted=dict(cycleId='cycle1',custodyPlan=self.plan_binding,custodyResult=self.result_binding))
+  self.phase_receipt=self.put(self.evidence/'cycle-completed.json',dict(ok=True,retentionComplete=True,intent=self.phase,stateSha256=E.digest(C.encoded(self.state)),stateRevision=12,index=self.state['index'],cycleId='cycle1'))
+  self.add_upgrade()
+  self.addCleanup(patch.stopall)
+  patch.object(C,'record',side_effect=self.read).start();patch.object(E,'hold_snapshot',side_effect=lambda:copy.deepcopy([self.current,self.other])).start()
+  patch.object(E,'timer_snapshot',return_value=self.plan['timers']).start();patch.object(E,'xattrs',return_value={}).start()
+  patch.object(C,'protected_fence').start();patch.object(C,'discover',return_value=[]).start()
+ def put(self,path,value):
+  raw=C.encoded(value);self.records[str(path)]=raw;return dict(path=str(path),sha256=E.digest(raw))
+ def read(self,path,maximum=8*1024**2):
+  raw=self.records[str(path)];self.assertLessEqual(len(raw),maximum)
+  ident=self.current['identity'] if str(path)==str(C.LIFECYCLE_CONFIG) else self.identity
+  return raw,dict(path=str(path),sha256=E.digest(raw),identity=copy.deepcopy(ident))
+ def hold(self,config):
+  self.serial+=1;ident=dict(self.identity,st_ino=self.serial,st_mtime_ns=self.serial,st_ctime_ns=self.serial,st_size=len(C.encoded(config)))
+  return dict(path=str(C.LIFECYCLE_CONFIG),sha256=E.digest(C.encoded(config)),identity=ident,xattrs={})
+ def add_upgrade(self):
+  old=copy.deepcopy(self.state);old_config=copy.deepcopy(self.config);number=len(self.transitions)+1
+  manifest={'generation':number};package=E.digest(C.encoded(manifest));journal=self.evidence/('ui-lifecycle-upgrade-'+package)
+  self.config=dict(old_config,generation=number,package=dict(path=str(self.evidence/('ui-lifecycle-tools-'+package)),sha256=package));config_sha=E.digest(C.encoded(self.config))
+  prior_config=self.put(journal/'prior-config.json',old_config);prior_state=self.put(journal/'prior-state.json',old)
+  review=dict(state=old,stateSha256=prior_state['sha256'],context=old['completedContext'],lastCompleted=old['lastCompleted'],fullCompletionVerified=True,completionIntent=self.phase,completionReceipt=self.phase_receipt)
+  plan=dict(schema='pow-ui-retention-upgrade-plan-v1',scopeApprovalSha256=C.REPAIR_APPROVAL_SHA,request=dict(mode='completed-cycle',configSha256=prior_config['sha256'],stateSha256=prior_state['sha256']),
+   payload=dict(config=self.config,configSha256=config_sha,manifest=manifest),before=dict(completedReview=review,configBase64=C.base64.b64encode(C.encoded(old_config)).decode(),stateBase64=C.base64.b64encode(C.encoded(old)).decode()))
+  upgrade=dict(intentPath=str(journal/'intent.json'),completionPath=str(journal/'completed.json'),priorConfigSha256=prior_config['sha256'],priorStateSha256=prior_state['sha256'],supersededCycleId=None,preservedCompletedCycleId='cycle1')
+  if number>1:upgrade['statusVerificationPath']=str(journal/'verified.json')
+  template=dict(old,configSha256=config_sha,revision=old['revision']+2,lastUpgrade=upgrade)
+  intent=self.put(journal/'intent.json',dict(schema='pow-ui-retention-upgrade-intent-v1',plan=plan,stateTemplate=template,stateTemplateSha256=E.digest(C.encoded(template)),disposition='completed-cycle-preserved',freshPreparationRequired=False))
+  self.state=dict(template,lastUpgrade=dict(upgrade,intentSha256=intent['sha256']))
+  proof=dict(context=old['completedContext'],index=old['index'],lastCompleted=old['lastCompleted'],custodyLifecycle=self.plan['lifecycle'],fullCompletionVerified=True)
+  if number>1:proof['verifiedConfigTransitions']=copy.deepcopy(self.transitions)
+  receipt=dict(schema='pow-ui-retention-upgrade-completed-v1',ok=True,intent=intent,config=dict(path=str(C.LIFECYCLE_CONFIG),sha256=config_sha),state=dict(path=str(C.LIFECYCLE_STATE),sha256=E.digest(C.encoded(self.state))),stateRevision=self.state['revision'],
+   priorConfig=prior_config,priorState=prior_state,supersededCycleId=None,preservedCompletedCycleId='cycle1',index=old['index'],freshPreparationRequired=False,retentionComplete=True,publicationHealthy=True,priorPackageAndPhaseEvidencePreserved=True,priorHelpersHoldsAndTimersPreserved=True,completionVerification=proof)
+  completed=self.put(journal/'completed.json',receipt);self.transitions.append(dict(intent=intent,completed=completed));self.current=self.hold(self.config);self.put(C.LIFECYCLE_CONFIG,self.config)
+ def verify(self,transitions=None):
+  return C.verify_final_result(self.plan,self.plan_sha,self.result,self.result_sha,config_transitions=self.transitions if transitions is None else transitions)
+ def change_record(self,binding,change):
+  value=json.loads(self.records[binding['path']]);change(value);updated=self.put(binding['path'],value);binding['sha256']=updated['sha256']
+ def test_single_sealed_upgrade_accepts_without_rewriting_plan(self):
+  original=C.encoded(self.plan);result=self.verify();self.assertTrue(result['ok']);self.assertFalse(result['holdsAndTimersUnchanged']);self.assertTrue(result['holdsAndTimersVerified']);self.assertEqual(original,C.encoded(self.plan))
+ def test_multiple_complete_preserving_upgrades_join(self):
+  self.add_upgrade();self.assertTrue(self.verify()['ok'])
+ def test_wrong_status_seal_path_refuses(self):
+  self.add_upgrade();binding=self.transitions[-1]['intent']
+  self.change_record(binding,lambda r:r['stateTemplate']['lastUpgrade'].update(statusVerificationPath='/unrelated/verified.json'))
+  with self.assertRaisesRegex(ValueError,'completed state'):self.verify()
+ def test_strict_writer_fence_still_refuses_same_config_change(self):
+  with self.assertRaisesRegex(ValueError,'holds/timers'):C.fence(self.plan,full=True)
+  with self.assertRaises(TypeError):C.fence(self.plan,config_transitions=self.transitions)
+ def test_default_completion_still_refuses_config_change(self):
+  with self.assertRaisesRegex(ValueError,'holds/timers'):self.verify([])
+ def test_missing_reordered_duplicate_and_overlong_chains_refuse(self):
+  self.add_upgrade()
+  for chain in (self.transitions[1:],list(reversed(self.transitions)),[self.transitions[0]]*2,[self.transitions[0]]*17):
+   with self.subTest(chain=len(chain)),self.assertRaises(ValueError):self.verify(chain)
+ def test_unsealed_upgrade_refuses(self):
+  del self.records[self.transitions[0]['completed']['path']]
+  with self.assertRaises(KeyError):self.verify()
+ def test_wrong_upgrade_binding_hash_refuses(self):
+  self.transitions[0]['intent']['sha256']='0'*64
+  with self.assertRaisesRegex(ValueError,'hash/bound'):self.verify()
+ def test_unrelated_config_bytes_refuse(self):
+  self.config['unapproved']=True;self.current=self.hold(self.config);self.put(C.LIFECYCLE_CONFIG,self.config)
+  with self.assertRaisesRegex(ValueError,'endpoint'):self.verify()
+ def test_unrelated_hold_and_timer_changes_refuse(self):
+  self.other['identity']['st_ino']+=1
+  with self.assertRaisesRegex(ValueError,'non-config'):self.verify()
+  self.other['identity']['st_ino']-=1
+  with patch.object(E,'timer_snapshot',return_value={'changed':True}),self.assertRaisesRegex(ValueError,'holds/timers'):self.verify()
+ def test_config_duplicate_missing_xattrs_permissions_and_device_refuse(self):
+  for modify in (lambda r:r['identity'].update(st_mode=stat.S_IFREG|0o644),lambda r:r['identity'].update(st_uid=1),lambda r:r['identity'].update(st_nlink=2),lambda r:r['identity'].update(st_dev=99),lambda r:r.update(xattrs={'user.x':'changed'})):
+   prior=copy.deepcopy(self.current);modify(self.current)
+   with self.subTest(row=self.current),self.assertRaises(ValueError):self.verify()
+   self.current=prior
+  for holds in ([self.other],[self.current,self.current,self.other]):
+   with patch.object(E,'hold_snapshot',return_value=holds),self.assertRaisesRegex(ValueError,'missing or duplicated'):self.verify()
+ def test_completed_cycle_index_context_and_flags_cannot_be_substituted(self):
+  binding=self.transitions[0]['completed'];original=copy.deepcopy(binding);raw=self.records[binding['path']]
+  for change in (lambda r:r.update(retentionComplete=False),lambda r:r.update(preservedCompletedCycleId='different'),lambda r:r['completionVerification'].update(index={'other':True}),lambda r:r['completionVerification'].update(context={'changed':True}),lambda r:r['completionVerification']['lastCompleted']['custodyResult'].update(sha256='e'*64)):
+   self.change_record(binding,change)
+   with self.assertRaises(ValueError):self.verify()
+   binding.update(original);self.records[binding['path']]=raw
+ def test_proposed_uninstalled_config_is_not_accepted(self):
+  old_current=copy.deepcopy(self.current);old_raw=self.records[str(C.LIFECYCLE_CONFIG)];self.add_upgrade();self.current=old_current;self.records[str(C.LIFECYCLE_CONFIG)]=old_raw
+  with self.assertRaisesRegex(ValueError,'endpoint'):self.verify()
+ def test_original_terminal_phase_is_required(self):
+  value=json.loads(self.records[self.phase_receipt['path']]);value['retentionComplete']=False;self.records[self.phase_receipt['path']]=C.encoded(value)
+  with self.assertRaisesRegex(ValueError,'hash/bound'):self.verify()
+ def test_hold_replacement_between_entry_and_exit_refuses(self):
+  first=copy.deepcopy([self.current,self.other]);second=copy.deepcopy(first);second[0]['identity']['st_ino']+=1
+  calls=0
+  def holds():
+   nonlocal calls
+   calls+=1
+   if calls>1:self.current=second[0]
+   return first if calls==1 else second
+  with patch.object(E,'hold_snapshot',side_effect=holds),self.assertRaisesRegex(ValueError,'during verification'):self.verify()
+ def test_invalid_transition_argument_refuses(self):
+  with self.assertRaisesRegex(ValueError,'argument'):self.verify({'from':'old','to':'new'})
+
+
+suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls) for cls in (FileGroupTests,ArtifactQualificationTests,ClosedOrdinaryAliasTests,OffhostCapacityTests,BatchPreservationTests,RetirementBudgetTests,RetirementDiagnosticsTests,CompletionConfigTransitionTests))
 result=unittest.TextTestRunner(verbosity=1).run(suite)
 if not result.wasSuccessful():raise SystemExit(1)

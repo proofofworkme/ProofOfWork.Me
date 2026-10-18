@@ -137,6 +137,14 @@ reserve remain unchanged. Each operator dispatch durably records its request,
 bounded stdout/stderr, exit or timeout and hashes; uncertain outcomes require
 explicit reconciliation and never trigger an automatic retry.
 
+Historical completed custody plans also bind the lifecycle configuration file.
+Only completion verification may reconcile that row through an authenticated
+chain of completed package upgrades. All other hold rows and timers remain
+exact, original plan bytes stay unchanged, and deletion/export guards receive
+no such exception. A package upgrade must verify normal completed status after
+the configuration switch; the detailed refusal evidence is retained in the
+[infrastructure contract](../../OP_RETURN_INFRASTRUCTURE.md#automatic-ui-release-retention-repair-2026-10-16).
+
 The immutable lifecycle package and operator-host orchestrator automate these
 calls after exact HTTPS verification. They then freshly qualify and retire
 eligible obsolete source and upload copies through the custody writer, and

@@ -158,7 +158,7 @@ def validate_config(path, expected):
 
 
 class Runtime:
-    def __init__(self, config, config_sha, storage, policy, custody=None, layout=None):
+    def __init__(self, config, config_sha, storage, policy, custody=None, layout=None, *, verify_upgrade=False):
         self.config = config
         self.config_sha = config_sha
         self.S = storage
@@ -167,6 +167,9 @@ class Runtime:
         self.layout = layout or storage.Layout()
         self.state_path = Path(config['statePath'])
         self.lock_fd = None
+        # Only the installer calls this constructor keyword, while holding the
+        # deployment lock. The public dispatcher never accepts a bypass frame.
+        self.verify_upgrade = verify_upgrade
 
     def current(self):
         cache = {}
@@ -224,7 +227,27 @@ class Runtime:
                         and proof['index'] == template['index']
                         and proof['lastCompleted'] == template['lastCompleted'],
                         'Preserved completion upgrade proof differs')
+            self.verify_status_seal(upgrade, completed, template,
+                                    skip=self.verify_upgrade)
         return value, digest
+
+    def verify_status_seal(self, upgrade, completed, template, *, skip=False):
+        if not upgrade.get('statusVerificationPath'):
+            return
+        path = Path(upgrade['completionPath']).parent / 'verified.json'
+        require(upgrade['statusVerificationPath'] == str(path), 'Upgrade status verification namespace differs')
+        if skip:
+            return
+        verified, _ = read_json(path)
+        _, receipt_sha = read_json(upgrade['completionPath'])
+        require(verified.get('schema') == 'pow-ui-retention-upgrade-status-verified-v1'
+                and verified.get('ok') is True
+                and verified['config'] == completed['config']
+                and verified['state'] == completed['state']
+                and verified['upgradeReceipt'] == {'path': upgrade['completionPath'], 'sha256': receipt_sha}
+                and verified['preservedCompletedCycleId'] == upgrade['preservedCompletedCycleId']
+                and verified['contextSha256'] == sha(encoded(template['completedContext'])),
+                'Post-switch normal status proof differs')
 
     def completion_lifecycle(self, state, index):
         upgrade = state.get('lastUpgrade', {})
@@ -235,6 +258,33 @@ class Runtime:
                     'Preserved completion identity differs')
             return proof['custodyLifecycle']
         return self.lifecycle(index)
+
+    def completion_transitions(self, state):
+        """Only sealed upgrades preserving this exact completed cycle qualify."""
+        chain = []; checkpoint = state
+        completed_cycle = state.get('lastCompleted', {}).get('cycleId')
+        for _ in range(16):
+            upgrade = checkpoint.get('lastUpgrade', {})
+            if not completed_cycle or upgrade.get('preservedCompletedCycleId') != completed_cycle:
+                break
+            intent, _ = read_json(upgrade['intentPath'], upgrade['intentSha256'])
+            completed, completed_sha = read_json(upgrade['completionPath'])
+            require(intent['disposition'] == 'completed-cycle-preserved'
+                    and completed['intent'] == {'path': upgrade['intentPath'], 'sha256': upgrade['intentSha256']}
+                    and completed['preservedCompletedCycleId'] == completed_cycle,
+                    'Completed config transition differs')
+            self.verify_status_seal(upgrade, completed, intent['stateTemplate'],
+                                    skip=self.verify_upgrade and checkpoint is state)
+            prior, _ = read_json(completed['priorState']['path'], upgrade['priorStateSha256'])
+            require(all(prior[k] == state[k] for k in ('index', 'completedContext', 'lastCompleted', 'lastIntent'))
+                    and prior['status'] == 'complete' and not prior.get('pending') and not prior.get('activePhase'),
+                    'Config transition changed completed proof')
+            chain.append({'intent': {'path': upgrade['intentPath'], 'sha256': upgrade['intentSha256']},
+                          'completed': {'path': upgrade['completionPath'], 'sha256': completed_sha}})
+            checkpoint = prior
+        else:
+            raise ValueError('Completed config transition chain exceeds bound')
+        return list(reversed(chain))
 
     def evidence(self, name, value):
         raw = encoded(value)
@@ -336,7 +386,9 @@ class Runtime:
                 plan, _ = read_json(plan_binding['path'], plan_binding['sha256'])
                 result, _ = read_json(result_binding['path'], result_binding['sha256'])
                 require(plan.get('lifecycle') == self.completion_lifecycle(state, index), 'Completed custody index differs')
-                self.C.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'])
+                transitions = self.completion_transitions(state)
+                self.C.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'],
+                                           **({'config_transitions': transitions} if transitions else {}))
         if frame.get('requireComplete'):
             require(complete, 'Published UI is healthy; retention-incomplete blocks another upload')
         return {'ok': True, 'initialized': state is not None, 'retentionComplete': complete,

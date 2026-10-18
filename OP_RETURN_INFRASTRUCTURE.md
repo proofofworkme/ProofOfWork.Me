@@ -7796,6 +7796,24 @@ index and original custody lifecycle binding under exact config/state comparison
 future cycles use the new immutable package. No prepared-cycle supersession or
 completed-cycle upgrade erases earlier state, receipts or packages.
 
+The initial completion-preserving upgrade exposed one additional historical
+guard dependency: the custody snapshot includes `ui-lifecycle.json` itself.
+Replacing that file through an approved package upgrade made normal completion
+status refuse, although the cleanup and upgrade receipts were valid. The
+[configuration guard refusal](audits/2026-10-18-ui-retention-config-guard-refusal.json)
+binds the observed failure and confirms that only this configuration row changed;
+all other hold rows and timers remained exact. Completion verification may follow
+an authenticated chain of sealed completed-cycle upgrades for that one row.
+Original custody plans retain their exact bytes, and qualification, export and
+deletion continue to use strict guards. A corrective package upgrade must verify
+normal completed status after switching configuration as well as before it.
+New completed-cycle upgrades require a separate immutable status-verification
+receipt before ordinary lifecycle operations can proceed. The installer performs
+the first verification while holding the deployment lock, seals that receipt,
+then checks the normal public status path. Completed-cycle upgrade execution has
+a bounded 60-minute transport timeout for these full proof checks; read-only
+upgrade planning retains its 30-minute bound and storage limits are unchanged.
+
 ### Proof Computer temporary domain bridge — 2026-10-13
 
 `proofcomputer.com` and `www.proofcomputer.com` are temporary redirect-only

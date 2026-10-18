@@ -17,6 +17,7 @@ import re
 import stat
 import subprocess
 import sys
+import types
 
 ROOT = Path(__file__).resolve().parents[2]
 SSH = ['ssh', '-i', '/home/sixer/.ssh/proofofwork_me_ed25519', '-o', 'BatchMode=yes',
@@ -481,6 +482,68 @@ def completed_review(runtime, request):
             'lastCompleted': state['lastCompleted'], 'fullCompletionVerified': True}
 
 
+def repair_verifier_runtime(payload, old_runtime):
+    """Use only reviewed new verifier bytes; never patch the installed module."""
+    validate_payload(payload)
+    package = Path(old_runtime.config['package']['path'])
+    manifest = json.loads(read_bound(package / 'package.json', old_runtime.config['package']['sha256']))
+    for relative in old_runtime.C.SOURCES.values():
+        require(payload['files'][relative]['sha256'] == manifest['files'][relative]['sha256'],
+                'Config-transition repair cannot replace custody dependencies')
+    def module(name, relative, bindings=None):
+        value = types.ModuleType(name); value.__file__ = '/bound/' + relative
+        if bindings: value.__dict__.update(bindings)
+        sys.modules[name] = value
+        exec(compile(base64.b64decode(payload['files'][relative]['base64'], validate=True), value.__file__, 'exec'), value.__dict__)
+        return value
+    custody = module('repair_new_custody', 'deploy/ui-retention/custody.py',
+                     {name: getattr(old_runtime.C, name) for name in old_runtime.C.SOURCES})
+    coordinator = module('repair_new_coordinator', 'deploy/ui-retention/lifecycle_remote.py')
+    require(hasattr(coordinator.Runtime, 'completion_transitions'), 'Reviewed coordinator lacks explicit transition verification')
+    return coordinator.Runtime(old_runtime.config, old_runtime.config_sha, old_runtime.S, old_runtime.P, custody,
+                               layout=old_runtime.layout)
+
+
+def local_guard_refusal(binding, payload):
+    path = Path(binding['path']); raw = read_bound(path, binding['sha256'])
+    require(ROOT in path.parents, 'Guard refusal must be committed repository evidence')
+    relative = str(path.relative_to(ROOT))
+    require(relative.startswith('audits/') and relative.endswith('.json'), 'Unexpected guard refusal path')
+    committed = subprocess.check_output(['git', '-C', str(ROOT), 'show', payload['manifest']['sourceCommit'] + ':' + relative])
+    require(committed == raw, 'Guard refusal differs from committed source')
+    value = json.loads(raw)
+    require(value.get('schema') == 'pow-ui-custody-completed-config-guard-refusal-v1'
+            and value.get('scopeApprovalSha256') == APPROVAL and value.get('retirementReplayAllowed') is False
+            and value['guardDifference']['onlyChangedPaths'] == [CONFIG]
+            and value['guardDifference']['otherHoldRowsUnchanged'] is True
+            and value['guardDifference']['timersUnchanged'] is True, 'Expanded config guard refusal')
+    for bound in (value['completedCycle']['local'], value['completedUpgrade']['plan'], value['completedUpgrade']['result'],
+                  value['failure']['log'], value['failure']['emptyOutput'], value['guardObservation'], value['stateObservation']):
+        read_bound(bound['path'], bound['sha256'])
+    return {'binding': binding, 'base64': base64.b64encode(raw).decode()}
+
+
+def validate_guard_refusal(request, runtime):
+    bound = request['guardRefusal']; raw = base64.b64decode(bound['base64'], validate=True)
+    require(len(raw) <= 1024**2 and sha(raw) == bound['binding']['sha256'], 'Guard refusal SHA differs')
+    value = json.loads(raw); state, state_sha = runtime.state()
+    require(value['schema'] == 'pow-ui-custody-completed-config-guard-refusal-v1'
+            and value['scopeApprovalSha256'] == APPROVAL and value['retirementReplayAllowed'] is False
+            and value['config']['path'] == CONFIG and value['config']['sha256'] == runtime.config_sha == request['configSha256']
+            and value['state']['path'] == STATE and value['state']['sha256'] == state_sha == request['stateSha256']
+            and value['state']['revision'] == state['revision'] and value['state']['status'] == state['status'] == 'complete'
+            and value['installedSourceCommit'] == runtime.config['sourceCommit']
+            and value['qualifiedPlan']['sha256'] == state['lastCompleted']['custodyPlan']['sha256']
+            and value['completedCycle']['cycleId'] == state['lastCompleted']['cycleId']
+            and value['guardDifference']['onlyChangedPaths'] == [CONFIG]
+            and value['guardDifference']['otherHoldRowsUnchanged'] is True
+            and value['guardDifference']['timersUnchanged'] is True, 'Guard refusal does not bind existing completion')
+    read_bound(value['completedCycle']['receipt']['path'], value['completedCycle']['receipt']['sha256'])
+    require(value['completedUpgrade']['receipt']['path'] == state['lastUpgrade']['completionPath'],
+            'Guard refusal upgrade receipt differs')
+    read_bound(value['completedUpgrade']['receipt']['path'], value['completedUpgrade']['receipt']['sha256'])
+
+
 def completed_package_review(payload, package, old_runtime, review):
     """New code must independently accept the preserved completion before CAS."""
     spec = importlib.util.spec_from_file_location('upgrade_new_lifecycle', package / 'deploy/ui-retention/lifecycle_remote.py')
@@ -502,10 +565,13 @@ def completed_package_review(payload, package, old_runtime, review):
     require(plan['lifecycle'] == expected_lifecycle, 'Preserved custody authority differs')
     # Approval content is identical, but its immutable package path changes.
     # The preserved plan intentionally retains its original approval binding.
-    custody.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'])
+    transitions = runtime.completion_transitions(state)
+    custody.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'],
+                                **({'config_transitions': transitions} if transitions else {}))
     storage.compare_guards(runtime.layout, context['guards'], [])
     return {'context': context, 'index': index, 'lastCompleted': state['lastCompleted'],
             'custodyLifecycle': plan['lifecycle'],
+            'verifiedConfigTransitions': transitions,
             'fullCompletionVerified': True}
 
 
@@ -514,8 +580,15 @@ def upgrade_inventory_locked(request, prefix):
         require(path.is_dir() and not path.is_symlink() and (path / 'completed.json').is_file(),
                 'Unsealed upgrade requires explicit reconciliation')
     runtime = existing_runtime(request['configSha256'], prefix)
-    if request.get('mode') == 'completed-cycle':
-        require(set(request) == {'mode', 'configSha256', 'stateSha256'}, 'Expanded completed upgrade request')
+    if request.get('mode') in ('completed-cycle', 'completed-config-repair'):
+        repair = request['mode'] == 'completed-config-repair'
+        require(set(request) == {'mode', 'configSha256', 'stateSha256'} | ({'verificationPayload', 'guardRefusal'} if repair else set()),
+                'Expanded completed upgrade request')
+        if repair:
+            require(runtime.state()[0].get('lastUpgrade', {}).get('preservedCompletedCycleId'),
+                    'Config repair requires a sealed completion-preserving upgrade')
+            validate_guard_refusal(request, runtime)
+            runtime = repair_verifier_runtime(request['verificationPayload'], runtime)
         config_raw = read_bound(prefix / CONFIG.lstrip('/'), request['configSha256'])
         state_raw = read_bound(prefix / STATE.lstrip('/'), request['stateSha256'])
         return {'guards': guard_inventory(prefix), 'completedReview': completed_review(runtime, request),
@@ -537,6 +610,34 @@ def upgrade_inventory_locked(request, prefix):
             'evidence': evidence_inventory(prefix / EVIDENCE.lstrip('/'))}
 
 
+def verify_activated_upgrade(result, prefix=Path('/')):
+    """Seal actual post-switch verification before normal callers may proceed."""
+    runtime = existing_runtime(result['config']['sha256'], prefix)
+    runtime.verify_upgrade = True
+    state, state_sha = runtime.state()
+    require(state_sha == result['state']['sha256'] and state['revision'] == result['stateRevision'],
+            'Activated upgrade state differs')
+    path = Path(state['lastUpgrade']['statusVerificationPath'])
+    require(path == Path(result['intent']['path']).parent / 'verified.json' and not os.path.lexists(path),
+            'Upgrade verification evidence already exists')
+    status = runtime.status({'requireComplete': True})
+    require(status['retentionComplete'] is True and status['stateSha256'] == state_sha,
+            'Activated package did not verify completed retention')
+    receipt = {'path': str(Path(result['intent']['path']).parent / 'completed.json'),
+               'sha256': sha(encoded(result))}
+    read_bound(receipt['path'], receipt['sha256'])
+    verified = {'schema': 'pow-ui-retention-upgrade-status-verified-v1', 'ok': True,
+                'config': result['config'], 'state': result['state'], 'upgradeReceipt': receipt,
+                'preservedCompletedCycleId': result['preservedCompletedCycleId'],
+                'contextSha256': sha(encoded(status['context']))}
+    save(path, encoded(verified))
+    runtime.verify_upgrade = False
+    normal = runtime.status({'requireComplete': True})
+    require(normal['retentionComplete'] is True and normal['stateSha256'] == state_sha,
+            'Normal post-switch status did not pass')
+    return {'path': str(path), 'sha256': sha(encoded(verified))}
+
+
 def upgrade_remote(plan, prefix=Path('/')):
     require(os.geteuid() == 0 or prefix != Path('/'), 'Production upgrade requires root')
     require(plan.get('schema') == 'pow-ui-retention-upgrade-plan-v1'
@@ -547,7 +648,9 @@ def upgrade_remote(plan, prefix=Path('/')):
     with deploy_lock(prefix):
         before = upgrade_inventory_locked(plan['request'], prefix)
         require(before == plan['before'], 'Upgrade config/state/guards/evidence changed after review')
-        completed_mode = plan['request'].get('mode') == 'completed-cycle'
+        completed_mode = plan['request'].get('mode') in ('completed-cycle', 'completed-config-repair')
+        if plan['request'].get('mode') == 'completed-config-repair':
+            require(plan['request']['verificationPayload'] == payload, 'Repair verifier differs from install payload')
         review = before['completedReview' if completed_mode else 'preparedReview']
         old_state = review['state']
         old_config = json.loads(base64.b64decode(before['configBase64']))
@@ -565,6 +668,7 @@ def upgrade_remote(plan, prefix=Path('/')):
                                     'supersededCycleId': None if completed_mode else old_state['pending']['cycleId']})
         if completed_mode:
             planned['lastUpgrade']['preservedCompletedCycleId'] = old_state['lastCompleted']['cycleId']
+            planned['lastUpgrade']['statusVerificationPath'] = str(journal / 'verified.json')
         intent = {'schema': 'pow-ui-retention-upgrade-intent-v1', 'plan': plan,
                   'stateTemplate': planned, 'stateTemplateSha256': sha(encoded(planned)),
                   'disposition': 'completed-cycle-preserved' if completed_mode else 'prepared-before-custody-superseded',
@@ -632,7 +736,17 @@ def upgrade_remote(plan, prefix=Path('/')):
         else:
             result['preparedGuardReconciliation'] = review['guardReconciliation']
         save(journal / 'completed.json', encoded(result))
-        return dict(result, receipt={'path': str(journal / 'completed.json'), 'sha256': sha(encoded(result))})
+        verified = None
+        if completed_mode:
+            try:
+                verified = verify_activated_upgrade(result, prefix)
+            except BaseException as error:
+                save(journal / 'verification-failed.json', encoded({'error': str(error),
+                     'manualReconciliationRequired': True, 'config': result['config'], 'state': result['state']}))
+                raise
+        out = dict(result, receipt={'path': str(journal / 'completed.json'), 'sha256': sha(encoded(result))})
+        if verified: out['normalStatusVerification'] = verified
+        return out
 
 
 def install_remote(plan, prefix=Path('/')):
@@ -708,8 +822,11 @@ def remote(operation, value=None):
     code += 'sys.stdout.buffer.write(encoded(result))\n'
     # __file__ is not meaningful in a streamed installer; ROOT is unused remotely.
     code = "__file__='/tmp/ui-lifecycle-installer/deploy/ui-retention/install_lifecycle.py'\n" + code
+    timeout = 1800 if operation.startswith('upgrade') else 180
+    if operation == 'upgrade' and value.get('request', {}).get('mode') in ('completed-cycle', 'completed-config-repair'):
+        timeout = 3600
     result = subprocess.run([*SSH, 'nice -n 15 ionice -c 3 python3 -I -B -'], input=code.encode(),
-                            capture_output=True, timeout=1800 if operation.startswith('upgrade') else 180)
+                            capture_output=True, timeout=timeout)
     if result.returncode:
         sys.stderr.buffer.write(result.stderr)
         raise ValueError('Remote lifecycle ' + operation + ' refused')
@@ -734,14 +851,23 @@ def main():
     completed_plan.add_argument('--config-sha256', required=True)
     completed_plan.add_argument('--state-sha256', required=True)
     completed_plan.add_argument('--output', type=Path, required=True)
+    repair_plan = sub.add_parser('plan-upgrade-config-repair')
+    repair_plan.add_argument('--guard-refusal', type=Path, required=True)
+    repair_plan.add_argument('--guard-refusal-sha256', required=True)
+    repair_plan.add_argument('--config-sha256', required=True)
+    repair_plan.add_argument('--state-sha256', required=True)
+    repair_plan.add_argument('--output', type=Path, required=True)
     upgrade = sub.add_parser('upgrade')
     upgrade.add_argument('--plan', type=Path, required=True)
     upgrade.add_argument('--plan-sha256', required=True)
     args = parser.parse_args()
-    if args.operation == 'plan-upgrade-complete':
+    if args.operation in ('plan-upgrade-complete', 'plan-upgrade-config-repair'):
         payload = committed_payload()
         require(SHA.fullmatch(args.config_sha256) and SHA.fullmatch(args.state_sha256), 'Invalid upgrade binding')
         request = {'mode': 'completed-cycle', 'configSha256': args.config_sha256, 'stateSha256': args.state_sha256}
+        if args.operation == 'plan-upgrade-config-repair':
+            refusal = local_guard_refusal({'path': str(args.guard_refusal.resolve()), 'sha256': args.guard_refusal_sha256}, payload)
+            request.update(mode='completed-config-repair', verificationPayload=payload, guardRefusal=refusal)
         plan = {'schema': 'pow-ui-retention-upgrade-plan-v1', 'scopeApprovalSha256': APPROVAL,
                 'payload': payload, 'request': request, 'before': remote('upgrade-inventory', request)}
         output = args.output.absolute(); save(output, encoded(plan))
@@ -771,7 +897,10 @@ def main():
         require(plan.get('schema') == 'pow-ui-retention-upgrade-plan-v1'
                 and plan.get('scopeApprovalSha256') == APPROVAL, 'Upgrade plan authority differs')
         require(committed_payload() == plan['payload'], 'Committed package changed after review')
-        if plan['request'].get('mode') != 'completed-cycle':
+        if plan['request'].get('mode') == 'completed-config-repair':
+            require(local_guard_refusal(plan['request']['guardRefusal']['binding'], plan['payload']) == plan['request']['guardRefusal'],
+                    'Guard refusal evidence changed after review')
+        elif plan['request'].get('mode') != 'completed-cycle':
             require(local_interruption(plan['request']['interruption']['binding']) == plan['request']['interruption'],
                     'Interrupted local custody context changed after review')
         print(json.dumps(remote('upgrade', plan)))

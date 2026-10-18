@@ -797,12 +797,12 @@ class PackagingTests(unittest.TestCase):
                                     'custodyResult': {'path': '/old/result', 'sha256': '5' * 64},
                                     'ordinaryReceipt': {'path': '/old/ordinary', 'sha256': '6' * 64}},
                      lastIntent={'path': '/old/intent', 'sha256': '7' * 64})
+        state['completedContext']['guards'] = {'exact': 'fixture-held-identity'}
         path = base / I.STATE.lstrip('/'); path.write_bytes(I.encoded(state))
         request = {'mode': 'completed-cycle', 'configSha256': plan['request']['configSha256'],
                    'stateSha256': I.sha(path.read_bytes())}
         review = {'state': state, 'stateSha256': request['stateSha256'], 'context': state['completedContext'],
                   'lastCompleted': state['lastCompleted'], 'fullCompletionVerified': True}
-        review['context']['guards'] = {'exact': 'fixture-held-identity'}
         runtime = I.existing_runtime(request['configSha256'], base)
         runtime.S = types.SimpleNamespace(compare_guards=lambda *args: None)
         runtime.layout = types.SimpleNamespace()
@@ -812,6 +812,18 @@ class PackagingTests(unittest.TestCase):
                         'custodyLifecycle': {'schema': 'pow-ui-custody-lifecycle-v1',
                                              'approval': old['payload']['config']['approval'], 'index': state['index']}}
         patch.object(I, 'completed_package_review', return_value=verification).start()
+        real_verify = I.verify_activated_upgrade
+        self.activation_status_modes = []
+        def verify(result, prefix):
+            active = self.upgraded_runtime(prefix, plan['payload'])
+            def status(frame):
+                value, digest = active.state()
+                self.activation_status_modes.append(active.verify_upgrade)
+                return {'retentionComplete': True, 'stateSha256': digest, 'context': value['completedContext']}
+            active.status = status
+            with patch.object(I, 'existing_runtime', return_value=active):
+                return real_verify(result, prefix)
+        patch.object(I, 'verify_activated_upgrade', side_effect=verify).start()
         plan['request'] = request; plan['before'] = I.upgrade_inventory(request, base)
         return plan, old, phase, verification
 
@@ -825,6 +837,10 @@ class PackagingTests(unittest.TestCase):
                 result = I.upgrade_remote(plan, base)
                 runtime = self.upgraded_runtime(base, plan['payload']); state, state_sha = runtime.state()
                 self.assertTrue(result['retentionComplete']); self.assertFalse(result['freshPreparationRequired'])
+                self.assertEqual(self.activation_status_modes, [True, False])
+                verified = json.loads(I.read_bound(result['normalStatusVerification']['path'], result['normalStatusVerification']['sha256']))
+                self.assertEqual(verified['state'], result['state'])
+                self.assertEqual(verified['upgradeReceipt'], result['receipt'])
                 self.assertEqual(state['status'], 'complete'); self.assertIsNone(state['pending'])
                 for key in ('index', 'completedContext', 'lastCompleted', 'lastIntent'):
                     self.assertEqual(state[key], original[key])
@@ -840,6 +856,135 @@ class PackagingTests(unittest.TestCase):
                 terminal.write_bytes(I.encoded(value))
                 with self.assertRaisesRegex(ValueError, 'completion upgrade proof'):
                     runtime.state()
+            finally:
+                os.umask(previous)
+
+    def test_remote_timeout_only_extends_completed_mutation(self):
+        cases = [('inventory', {}, 180), ('install', {}, 180),
+                 ('upgrade-inventory', {'mode': 'completed-config-repair'}, 1800),
+                 ('upgrade', {'request': {}}, 1800),
+                 ('upgrade', {'request': {'mode': 'completed-cycle'}}, 3600),
+                 ('upgrade', {'request': {'mode': 'completed-config-repair'}}, 3600)]
+        for operation, value, seconds in cases:
+            with self.subTest(operation=operation, value=value), patch.object(I.subprocess, 'run',
+                    return_value=subprocess.CompletedProcess([], 0, b'{}')) as dispatch:
+                I.remote(operation, value)
+                self.assertEqual(dispatch.call_args.kwargs['timeout'], seconds)
+
+    def test_completed_upgrade_requires_verified_seal_and_rejects_stripped_marker(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(I.subprocess, 'run',
+                return_value=subprocess.CompletedProcess([], 0, b'{}')):
+            base = Path(directory); previous = os.umask(0o077)
+            try:
+                plan, _, _, _ = self.completed_upgrade_fixture(base)
+                result = I.upgrade_remote(plan, base)
+                runtime = self.upgraded_runtime(base, plan['payload']); state, _ = runtime.state()
+                seal = Path(result['normalStatusVerification']['path']); original = seal.read_bytes()
+                seal.unlink()
+                with self.assertRaises(FileNotFoundError): runtime.state()
+                seal.write_bytes(original)
+                forged = json.loads(original); forged['state']['sha256'] = '0' * 64
+                seal.write_bytes(I.encoded(forged))
+                with self.assertRaisesRegex(ValueError, 'Post-switch normal status proof'): runtime.state()
+                seal.write_bytes(original)
+                state['lastUpgrade'].pop('statusVerificationPath')
+                runtime.state_path.write_bytes(I.encoded(state))
+                with self.assertRaisesRegex(ValueError, 'Upgrade reconciliation differs'): runtime.state()
+            finally:
+                os.umask(previous)
+
+    def test_completed_upgrade_status_failure_is_sealed_and_blocks_normal_entry(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(I.subprocess, 'run',
+                return_value=subprocess.CompletedProcess([], 0, b'{}')):
+            base = Path(directory); previous = os.umask(0o077)
+            try:
+                plan, _, _, _ = self.completed_upgrade_fixture(base)
+                with patch.object(I, 'verify_activated_upgrade', side_effect=ValueError('actual hold changed')):
+                    with self.assertRaisesRegex(ValueError, 'actual hold changed'): I.upgrade_remote(plan, base)
+                runtime = self.upgraded_runtime(base, plan['payload'])
+                state = json.loads(runtime.state_path.read_bytes())
+                journal = Path(state['lastUpgrade']['intentPath']).parent
+                self.assertTrue((journal / 'completed.json').is_file())
+                self.assertFalse((journal / 'verified.json').exists())
+                failure = json.loads((journal / 'verification-failed.json').read_bytes())
+                self.assertTrue(failure['manualReconciliationRequired'])
+                with self.assertRaises(FileNotFoundError): runtime.state()
+            finally:
+                os.umask(previous)
+
+    def test_completed_transition_chain_rejects_changed_intermediate_cycle(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(I.subprocess, 'run',
+                return_value=subprocess.CompletedProcess([], 0, b'{}')):
+            base = Path(directory); previous = os.umask(0o077)
+            try:
+                plan, _, _, _ = self.completed_upgrade_fixture(base)
+                result = I.upgrade_remote(plan, base)
+                runtime = self.upgraded_runtime(base, plan['payload']); state, _ = runtime.state()
+                chain = runtime.completion_transitions(state)
+                self.assertEqual(chain, [{'intent': result['intent'], 'completed': result['receipt']}])
+                self.assertEqual(runtime.completion_transitions(dict(state, lastCompleted=dict(state['lastCompleted'], cycleId='next'))), [])
+                terminal = Path(result['receipt']['path']); value = json.loads(terminal.read_bytes())
+                value['preservedCompletedCycleId'] = 'unrelated-cycle'; terminal.write_bytes(I.encoded(value))
+                with self.assertRaisesRegex(ValueError, 'Completed config transition differs'): runtime.completion_transitions(state)
+            finally:
+                os.umask(previous)
+
+    def test_config_repair_refusal_binds_exact_completed_state_and_receipts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); previous = os.umask(0o077)
+            try:
+                cycle_receipt = base / 'cycle.json'; upgrade_receipt = base / 'upgrade.json'
+                cycle_receipt.write_bytes(b'cycle'); upgrade_receipt.write_bytes(b'upgrade')
+                state = {'revision': 14, 'status': 'complete', 'lastCompleted': {
+                    'cycleId': 'completed-cycle', 'custodyPlan': {'sha256': 'a' * 64}},
+                    'lastUpgrade': {'completionPath': str(upgrade_receipt)}}
+                runtime = types.SimpleNamespace(config_sha='b' * 64, config={'sourceCommit': 'c' * 40},
+                                                state=lambda: (state, 'd' * 64))
+                value = {'schema': 'pow-ui-custody-completed-config-guard-refusal-v1',
+                    'scopeApprovalSha256': I.APPROVAL, 'retirementReplayAllowed': False,
+                    'config': {'path': I.CONFIG, 'sha256': 'b' * 64},
+                    'state': {'path': I.STATE, 'sha256': 'd' * 64, 'revision': 14, 'status': 'complete'},
+                    'installedSourceCommit': 'c' * 40, 'qualifiedPlan': {'sha256': 'a' * 64},
+                    'completedCycle': {'cycleId': 'completed-cycle', 'receipt': {
+                        'path': str(cycle_receipt), 'sha256': I.sha(b'cycle')}},
+                    'completedUpgrade': {'receipt': {'path': str(upgrade_receipt), 'sha256': I.sha(b'upgrade')}},
+                    'guardDifference': {'onlyChangedPaths': [I.CONFIG], 'otherHoldRowsUnchanged': True, 'timersUnchanged': True}}
+                def request(proof):
+                    raw = I.encoded(proof)
+                    return {'configSha256': 'b' * 64, 'stateSha256': 'd' * 64,
+                        'guardRefusal': {'base64': base64.b64encode(raw).decode(),
+                            'binding': {'path': '/reviewed/refusal.json', 'sha256': I.sha(raw)}}}
+                I.validate_guard_refusal(request(value), runtime)
+                for key, wrong in [('qualifiedPlan', {'sha256': '0' * 64}),
+                                   ('config', {'path': I.CONFIG, 'sha256': '0' * 64}),
+                                   ('guardDifference', {'onlyChangedPaths': [I.CONFIG, '/unrelated'],
+                                    'otherHoldRowsUnchanged': True, 'timersUnchanged': True})]:
+                    with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'does not bind existing completion'):
+                        I.validate_guard_refusal(request(dict(value, **{key: wrong})), runtime)
+                cycle_receipt.write_bytes(b'changed cycle')
+                with self.assertRaisesRegex(ValueError, 'SHA differs'): I.validate_guard_refusal(request(value), runtime)
+            finally:
+                os.umask(previous)
+
+    def test_repair_verifier_does_not_patch_old_modules_or_change_dependencies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); previous = os.umask(0o077)
+            try:
+                payload = self.fixture_payload()
+                manifest = payload['manifest']; (base / 'package.json').write_bytes(I.encoded(manifest))
+                custody = load('repair_fixture_old_custody', HERE / 'custody.py'); custody.load_helpers()
+                old = types.SimpleNamespace(config={'package': {'path': str(base), 'sha256': I.sha(I.encoded(manifest))},
+                    'statePath': str(base / 'state.json')}, config_sha='b' * 64, S=custody.A, P=custody.P, C=custody, layout=None)
+                verifier = I.repair_verifier_runtime(payload, old)
+                self.assertIsNot(verifier.C, old.C); self.assertIs(verifier.C.E, old.C.E)
+                self.assertIsNot(type(verifier), R.Runtime)
+                self.assertEqual(verifier.config, old.config)
+                changed = json.loads(json.dumps(manifest))
+                changed['files']['deploy/ui-retention/removal.py']['sha256'] = '0' * 64
+                (base / 'package.json').write_bytes(I.encoded(changed))
+                old.config['package']['sha256'] = I.sha(I.encoded(changed))
+                with self.assertRaisesRegex(ValueError, 'cannot replace custody dependencies'):
+                    I.repair_verifier_runtime(payload, old)
             finally:
                 os.umask(previous)
 
