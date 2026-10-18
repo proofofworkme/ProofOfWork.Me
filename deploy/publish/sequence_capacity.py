@@ -67,11 +67,16 @@ def requirements(plan, census):
     # Provenance verification extracts the managed archive while the candidate,
     # source and archive still exist. Bound that transient copy too.
     verification = candidate
+    # Fresh release-evidence transport atomically moves the received surfaces
+    # out of scratch, verifies their old path is absent, and only then stages.
+    # These phases cannot overlap. Keep the full verification cushion charged
+    # to staging even though the controlled provenance process uses /tmp.
+    scratch_peak = max(incoming, candidate + verification)
     extra = {
         'root': incoming + source + candidate + archive + verification + EVIDENCE_BYTES,
         'backup': incoming + source + archive + old + EVIDENCE_BYTES,
         'transport': incoming + source + archive + EVIDENCE_BYTES,
-        'scratch': incoming + candidate + verification + EVIDENCE_BYTES,
+        'scratch': scratch_peak + EVIDENCE_BYTES,
     }
     inodes = (integer(plan['admissions']['source-receive']['inodes']) +
               3 * integer(plan['admissions']['surfaces-receive']['inodes']) +

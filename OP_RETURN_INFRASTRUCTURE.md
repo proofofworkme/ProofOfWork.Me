@@ -7703,6 +7703,14 @@ archive/sidecars, receipts, and movement of the old live root into the backup
 pool. It measures existing allocations by inode, gives no credit for promised
 cleanup or future hardlinks, and repeats admission under the deployment lock
 before the first payload byte. Existing phase-specific checks remain mandatory.
+Scratch admission uses the maximum of the receive phase and the later candidate
+plus verification phase, with the same receipt reserve. The incoming payload
+is moved into retained transport evidence before staging allocates a candidate;
+adding those nonconcurrent scratch phases caused a
+[26,624,000-byte pre-upload refusal](audits/2026-10-18-ui-retention-scratch-admission-refusal.json).
+The correction retains the full conservative verification-copy charge and all
+root, backup, transport and inode charges. No budget, reserve, historical hold
+or future cleanup/hardlink credit changes.
 
 After exact HTTPS verification, `deploy/publish/collect_verify.py` automatically
 runs `deploy/ui-retention/lifecycle.py`. The operator host preserves each

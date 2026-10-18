@@ -152,6 +152,14 @@ block another upload until the cycle is complete. No broad prune timer is
 unmasked. See [the current infrastructure contract](../../OP_RETURN_INFRASTRUCTURE.md#automatic-ui-release-retention-repair-2026-10-16)
 for fixed budgets, installation, custody location and partial-operation rules.
 
+Whole-release scratch admission takes the peak across receive and later staging
+phases: the incoming payload leaves scratch for retained transport evidence
+before candidate allocation. Candidate plus verification copies and the receipt
+reserve remain fully charged. Root, backup, transport and inode projections,
+fixed limits and all historical holds remain unchanged; the original
+[pre-upload refusal](../../audits/2026-10-18-ui-retention-scratch-admission-refusal.json)
+is preserved.
+
 The [initial completed execution](../../audits/2026-10-18-ui-retention-repair-execution.json)
 records four obsolete rollback trees, 16 complete archive groups and three
 obsolete source directories retired after sealed custody and independent

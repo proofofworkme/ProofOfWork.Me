@@ -1,0 +1,55 @@
+{
+  "schema": "pow-ui-whole-sequence-scratch-refusal-v1",
+  "observedAtUtc": "2026-10-18T08:23:10Z",
+  "sourceCommit": "6e21bea0099c206424f080d2bae54c5160005326",
+  "sourceTree": "68083fab2c47c1b2046285d15b5991dc8b457155",
+  "sequenceSourceSha256": "721003ed45ef7dbd010090f631d5a0d861911826bd4206fef7c45c004bb931d7",
+  "phase": "local-make-plan-before-upload",
+  "result": {
+    "exitCode": 1,
+    "scratchDeficitBytes": 26624000,
+    "scratchAllocatedBytes": 2874064896,
+    "scratchMaximumBytes": 5368709120,
+    "prospectiveScratchBytes": 2521268224
+  },
+  "productionMutation": false,
+  "planCreated": false,
+  "payloadUploaded": false,
+  "evidence": {
+    "refusalLog": {
+      "path": "/tmp/ui-retention-final-make-plan-20261018.log",
+      "sha256": "3d46771d51f968403e4c2ede6628da50b410603c01930ed7267c06b56da7584b",
+      "bytes": 881
+    },
+    "preflight": {
+      "path": "/tmp/ui-retention-final-preflight-20261018.json",
+      "sha256": "aa07d4574fcb1e31dae6d6863caa63ec3f3f9bc13a59c7fba07321889ec8224d",
+      "bytes": 55159
+    },
+    "buildReceipt": {
+      "path": "/tmp/ui-retention-final-build-20261018/build-receipt.json",
+      "sha256": "f7e642634ad82163f214d89db2444066fd451b0dbca630cd5d21e9d3c2c79bff",
+      "bytes": 1202
+    }
+  },
+  "finding": "The scratch estimate summed the received surface payload with later candidate and verification copies. The preserving transport moves the payload into retained transport evidence before staging can allocate the candidate, so those scratch phases do not coexist.",
+  "repairContract": {
+    "scratchPeak": "max(receivedSurfaces, candidateCopy + provenanceExtraction) + receiptDirectoryAndCompatibilityMargin",
+    "rootBackupTransportAndInodeChargesUnchanged": true,
+    "verificationCopyStillConservativelyChargedToScratch": true,
+    "fixedLimitsUnchanged": true,
+    "promisedCleanupCreditBytes": 0,
+    "futureHardlinkCreditBytes": 0,
+    "historicalScratchMovedOrDeleted": false,
+    "sameBuildScratchPreview": {
+      "incomingBytes": 391208960,
+      "candidateBytes": 1031475200,
+      "verificationBytes": 1031475200,
+      "evidenceReserveBytes": 67108864,
+      "additionalScratchBytes": 2130059264,
+      "headroomBytes": 364584960,
+      "qualification": "Arithmetic from the refused build and preflight only; no claim of a later upload admission."
+    }
+  },
+  "qualification": "This record preserves the local refusal and its exact inputs. It does not claim a later upload, publication, retention cycle, or synchronized release."
+}
