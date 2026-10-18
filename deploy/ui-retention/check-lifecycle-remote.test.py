@@ -538,6 +538,39 @@ class RemoteTests(unittest.TestCase):
 
 
 class PackagingTests(unittest.TestCase):
+    def test_installer_guard_and_bound_reads_preserve_stale_atime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'guard'
+            contents = b'exact installed guard bytes\n'
+            path.write_bytes(contents); path.chmod(0o600)
+            # Relatime would refresh this old atime on an ordinary read. The
+            # exact before/after stat fence must pass without changing it.
+            os.utime(path, ns=(1_000_000_000, 2_000_000_000))
+            before = path.lstat()
+            with patch.object(I.os, 'open', wraps=os.open) as opened:
+                record = I.file_record(path)
+                self.assertEqual(I.read_bound(path, I.sha(contents)), contents)
+            self.assertEqual(record['sha256'], I.sha(contents))
+            self.assertEqual(path.lstat(), before)
+            self.assertEqual(path.lstat().st_atime_ns, before.st_atime_ns)
+            for call in opened.call_args_list:
+                self.assertEqual(call.args[1] & (os.O_NOFOLLOW | os.O_NOATIME), os.O_NOFOLLOW | os.O_NOATIME)
+
+    def test_installer_guard_refuses_path_replacement_after_descriptor_open(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'guard'; replacement = Path(directory) / 'replacement'
+            path.write_bytes(b'original'); replacement.write_bytes(b'replaced')
+            path.chmod(0o600); replacement.chmod(0o600)
+            real_open = os.open
+            def replaced_open(name, flags, *args, **kwargs):
+                fd = real_open(name, flags, *args, **kwargs)
+                if name == path:
+                    os.replace(replacement, path)
+                return fd
+            with patch.object(I.os, 'open', side_effect=replaced_open):
+                with self.assertRaisesRegex(ValueError, 'Guard file (identity )?changed: '):
+                    I.file_record(path)
+
     def fixture_payload(self, commit='1' * 40, tree='2' * 40):
         def git(argv):
             if 'status' in argv:

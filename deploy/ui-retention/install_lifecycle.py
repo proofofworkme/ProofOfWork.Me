@@ -66,8 +66,15 @@ def file_record(path):
     path = Path(path)
     before = safe(path)
     require(before.st_size <= 2 * 1024**2 and before.st_nlink == 1, 'Oversized or linked guard file')
-    raw = path.read_bytes()
-    require(path.lstat() == before, 'Guard file changed')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+    try:
+        require(os.fstat(fd) == before, 'Guard file identity changed: ' + str(path))
+        with os.fdopen(fd, 'rb', closefd=False) as stream:
+            raw = stream.read(2 * 1024**2 + 1)
+        require(len(raw) == before.st_size and os.fstat(fd) == before and path.lstat() == before,
+                'Guard file changed: ' + str(path))
+    finally:
+        os.close(fd)
     return dict(sha256=sha(raw), bytes=len(raw), mode=stat.S_IMODE(before.st_mode),
                 uid=before.st_uid, gid=before.st_gid, inode=before.st_ino,
                 device=before.st_dev, mtimeNs=before.st_mtime_ns, ctimeNs=before.st_ctime_ns)
