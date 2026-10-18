@@ -44,6 +44,12 @@ BATCH_JSON=64*1024
 BATCH_OBJECTS=64
 BATCH_BYTES=18*1024**3
 BATCH_SECONDS=5400
+RETIREMENT_RECEIPT_BYTES=32*1024**2
+RETIREMENT_JOURNAL_BYTES=16*1024**2
+RETIREMENT_AUXILIARY_BYTES=256*1024
+RETIREMENT_FAILURE_BYTES=32*1024
+RETIREMENT_STDOUT_BYTES=32*1024**2
+RETIREMENT_STDERR_BYTES=256*1024
 
 
 class QualificationError(ValueError):
@@ -70,6 +76,20 @@ def save(path, value):
     fd=os.open(Path(path).parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
     try:os.fsync(fd)
     finally:os.close(fd)
+
+
+def bounded_error(error):
+    message=str(error)
+    return message if len(message)<=2048 else message[:2000]+' [truncated; inspect command diagnostics]'
+
+
+def retirement_capacity(frame, source):
+    """The writer enforces this inventory-derived bound before every action."""
+    journal=W.journal_capacity_bound(source)
+    require(type(journal)is int and 0<journal<=RETIREMENT_JOURNAL_BYTES,'receipt-capacity','Custody journal exceeds the unchanged 16 MiB journal reservation')
+    total=len(encoded(frame))+len(encoded(frame['custody']))+journal+RETIREMENT_AUXILIARY_BYTES
+    require(total<=RETIREMENT_RECEIPT_BYTES,'receipt-capacity','Custody evidence would exceed the unchanged 32 MiB retirement receipt reservation')
+    return dict(journalBytes=journal,totalBytes=total,auxiliaryBytes=RETIREMENT_AUXILIARY_BYTES)
 
 
 def load_helpers():
@@ -500,12 +520,12 @@ def remote_operation(operation, frame):
         receipt = BASE/'cleanup-evidence'/('bounded-retention-' + frame['operationId'])
         if receipt.exists():
             raise ValueError('Prior intent exists; reconcile manually, never retry blindly')
-        require(len(encoded(frame))+len(encoded(custody))+16*1024**2+256*1024<=32*1024**2,'receipt-capacity','Custody evidence would exceed the unchanged 32 MiB retirement receipt reservation')
+        retirement_capacity(frame,expected(row))
         # Small durable receipt/journal envelope; existing reserve is never lowered.
         subprocess.run(['/usr/bin/python3','-I','-B','/usr/local/sbin/proofofwork-ui-capacity',
                         'check-retirement','--path',str(receipt.parent)], check=True, stdout=subprocess.DEVNULL)
         before = os.statvfs(BASE); receipt.mkdir(mode=0o700); W.sync_directory(receipt.parent)
-        E.save_new(receipt/'intent.json', encoded(frame)); journal = W.Journal(receipt/'actions.jsonl')
+        E.save_new(receipt/'intent.json', encoded(frame)); journal = W.Journal(receipt/'actions.jsonl',expected_root=expected(row))
         parent = os.open(path.parent, os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_NOATIME)
         try:
             fence(plan)
@@ -516,9 +536,12 @@ def remote_operation(operation, frame):
                       'beforeAvailableBytes':before.f_bavail*before.f_frsize,
                       'afterAvailableBytes':after.f_bavail*after.f_frsize,
                       'receipt':str(receipt),'protectedPairVerified':True}
+            require(len(encoded(result))-len(encoded(custody))<=RETIREMENT_AUXILIARY_BYTES-RETIREMENT_FAILURE_BYTES,'receipt-capacity','Custody completion exceeds reserved auxiliary evidence')
             E.save_new(receipt/'completed.json',encoded(result)); print(json.dumps(result))
         except BaseException as error:
-            E.save_new(receipt/'failure.json',encoded({'error':str(error),'manualReconciliationRequired':True}))
+            failure=encoded({'error':bounded_error(error),'manualReconciliationRequired':True})
+            require(len(failure)<=RETIREMENT_FAILURE_BYTES,'receipt-capacity','Custody failure exceeds reserved auxiliary evidence')
+            E.save_new(receipt/'failure.json',failure)
             raise
         finally:
             os.close(parent); journal.close()
@@ -526,13 +549,22 @@ def remote_operation(operation, frame):
         os.close(lock)
 
 
-def launcher(operation, frame):
+def launcher_source_pins():
+    return [dict(path=relative,sha256=digest(ROOT/relative)) for relative in sorted([*SOURCES.values(),'deploy/ui-retention/custody.py'])]
+
+
+def launcher(operation, frame, *, expected_sources=None):
+    pins={item['path']:item['sha256'] for item in expected_sources} if expected_sources is not None else None
+    def source(relative):
+        raw=(ROOT/relative).read_bytes()
+        require(pins is None or pins.get(relative)==hashlib.sha256(raw).hexdigest(),'implementation-drift','Retirement launcher source changed')
+        return raw
     code = 'import base64,zlib,types,sys,json\n'
     for name, relative in SOURCES.items():
-        raw = (ROOT/relative).read_bytes()
+        raw = source(relative)
         code += f"m=types.ModuleType('bound_{name}');sys.modules[m.__name__]=m;m._BOUND_EXPORTER=globals().get('E');m._BOUND_STORAGE=globals().get('A')\n"
         code += f"exec(compile(base64.b64decode({base64.b64encode(raw).decode()!r}),{relative!r},'exec'),m.__dict__);{name}=m\n"
-    own = Path(__file__).read_bytes()
+    own = source('deploy/ui-retention/custody.py') if pins is not None else Path(__file__).read_bytes()
     code += f"ns={{'__name__':'bound_controller','__file__':'/bound/deploy/ui-retention/custody.py','E':E,'W':W,'R':R,'A':A,'P':P}}\nexec(compile(base64.b64decode({base64.b64encode(own).decode()!r}),'custody.py','exec'),ns)\n"
     packed = base64.b64encode(zlib.compress(encoded(frame))).decode()
     code += f"ns['remote_operation']({operation!r},json.loads(zlib.decompress(base64.b64decode({packed!r}))))\n"
@@ -735,7 +767,109 @@ def preserve(plan_path, custody, resume=False):
         save(custody/(key+'.json'),record);print(json.dumps({'preserved':row['path'],'bytes':archive.stat().st_size}),flush=True)
 
 
-def retire(plan_path,custody,output):
+def retirement_request(frame,attempt,*,timeout=900,expected_sources=None):
+    """One invocation with durable bounded diagnostics; an existing attempt refuses."""
+    attempt=Path(attempt)
+    require(not os.path.lexists(attempt),'retirement-attempt','Prior retirement attempt exists; reconcile explicitly, never retry blindly')
+    pins=launcher_source_pins()
+    require(expected_sources is None or sorted(expected_sources,key=lambda item:item['path'])==pins,'implementation-drift','Retirement implementation differs from reviewed source pins')
+    payload=launcher('retire',frame,expected_sources=pins)
+    attempt.mkdir(mode=0o700);W.sync_directory(attempt.parent)
+    remote_receipt=str(BASE/'cleanup-evidence'/('bounded-retention-'+frame['operationId']))
+    request=dict(schema='pow-ui-custody-retirement-request-v1',operationId=frame['operationId'],sourcePath=frame['row']['path'],
+        frameSha256=hashlib.sha256(encoded(frame)).hexdigest(),frameBytes=len(encoded(frame)),
+        launcherSha256=hashlib.sha256(payload).hexdigest(),launcherBytes=len(payload),implementationSources=pins,
+        planSha256=frame['custody']['planSha256'],custodySha256=hashlib.sha256(encoded(frame['custody'])).hexdigest(),
+        expectedRemoteReceipt=remote_receipt,timeoutSeconds=timeout,stdoutLimitBytes=RETIREMENT_STDOUT_BYTES,stderrLimitBytes=RETIREMENT_STDERR_BYTES,
+        startedAtUtc=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()))
+    save(attempt/'request.json',request)
+    logs={};process=None;failure=None;timed_out=False;sent=0;value=None;readers={};stream_names={};started=False
+    deadline=time.monotonic()+timeout
+    def capture(fd):
+        data=os.read(fd,65536)
+        if not data:
+            readers.pop(fd).close();return
+        name=stream_names[fd]
+        info=logs[name];info['observedBytes']+=len(data)
+        keep=data[:max(0,info['limit']-info['storedBytes'])]
+        if keep:
+            write_all(info['file'],keep);info['storedBytes']+=len(keep)
+            info['file'].flush();os.fsync(info['file'].fileno())
+        if len(keep)!=len(data):
+            info['truncated']=True
+            raise QualificationError('retirement-output','Retirement '+name+' exceeds its diagnostic limit')
+    try:
+        for name,limit in [('stdout',RETIREMENT_STDOUT_BYTES),('stderr',RETIREMENT_STDERR_BYTES)]:
+            logs[name]=dict(file=(attempt/(name+'.log')).open('xb'),limit=limit,storedBytes=0,observedBytes=0,truncated=False)
+        process=subprocess.Popen([*SSH,'nice -n 15 ionice -c 3 python3 -I -B -'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        started=True
+        for stream in (process.stdin,process.stdout,process.stderr):os.set_blocking(stream.fileno(),False)
+        readers={process.stdout.fileno():process.stdout,process.stderr.fileno():process.stderr}
+        stream_names={process.stdout.fileno():'stdout',process.stderr.fileno():'stderr'}
+        while readers or process.poll() is None:
+            remaining=deadline-time.monotonic()
+            if remaining<=0:
+                timed_out=True;raise QualificationError('retirement-timeout','Retirement command timed out; remote outcome requires reconciliation')
+            writers=[process.stdin.fileno()] if not process.stdin.closed else []
+            ready,writable,_=select.select(list(readers),writers,[],min(0.25,remaining))
+            if writable:
+                try:sent+=os.write(process.stdin.fileno(),payload[sent:sent+65536])
+                except BrokenPipeError:process.stdin.close()
+                if sent==len(payload) and not process.stdin.closed:process.stdin.close()
+            for fd in ready:capture(fd)
+        code=process.wait(timeout=max(0.01,deadline-time.monotonic()))
+        require(code==0,'retirement-process','Retirement command exited with code '+str(code))
+        require(sent==len(payload),'retirement-process','Retirement request was not fully written')
+        for info in logs.values():info['file'].flush()
+        value=json.loads((attempt/'stdout.log').read_bytes())
+        require(isinstance(value,dict) and value.get('ok') is True and value.get('path')==frame['row']['path'] and value.get('receipt')==remote_receipt,
+                'retirement-response','Retirement response does not bind the requested source and receipt')
+    except BaseException as error:
+        failure=error
+    finally:
+        if process is not None and process.poll() is None:
+            try:
+                try:process.terminate()
+                except ProcessLookupError:pass
+                try:process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    try:process.kill()
+                    except ProcessLookupError:pass
+                    process.wait(timeout=2)
+            except BaseException as error:
+                failure=failure or error
+        # Preserve buffered refusal/traceback bytes even when timeout or an
+        # output limit caused termination. No remote outcome is inferred.
+        drain_deadline=time.monotonic()+2
+        while readers and time.monotonic()<drain_deadline:
+            ready,_,_=select.select(list(readers),[],[],0.05)
+            if not ready:continue
+            for fd in ready:
+                try:capture(fd)
+                except QualificationError:pass
+                except (OSError,ValueError) as error:
+                    failure=failure or error
+                    stream=readers.pop(fd,None)
+                    if stream is not None:stream.close()
+        if process is not None:
+            for stream in (process.stdin,process.stdout,process.stderr):
+                if not stream.closed:stream.close()
+        for info in logs.values():
+            info['file'].flush();os.fsync(info['file'].fileno());info['file'].close()
+    streams={name:dict(path=str(attempt/(name+'.log')),sha256=digest(attempt/(name+'.log')),
+        bytes=info['storedBytes'],observedBytes=info['observedBytes'],truncated=info['truncated']) for name,info in logs.items()}
+    outcome=dict(schema='pow-ui-custody-retirement-outcome-v1',request=dict(path=str(attempt/'request.json'),sha256=digest(attempt/'request.json')),
+        operationId=frame['operationId'],started=started,exitCode=process.returncode if process is not None else None,timedOut=timed_out,
+        requestBytesWritten=sent,requestFullyWritten=sent==len(payload),commandSucceeded=failure is None,
+        responseValidated=value is not None and failure is None,failure=bounded_error(failure) if failure is not None else None,
+        manualReconciliationRequired=started and failure is not None,streams=streams,finishedAtUtc=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()))
+    save(attempt/'outcome.json',outcome)
+    if failure is not None:
+        raise QualificationError('retirement-failed','Retirement stopped; inspect '+str(attempt/'outcome.json')) from failure
+    return value
+
+
+def retire(plan_path,custody,output,*,expected_sources=None):
     plan=json.loads(plan_path.read_bytes()); completed=[]
     if output.exists():raise ValueError('Result exists; inspect prior operation')
     for row in plan['candidates']:
@@ -747,8 +881,8 @@ def retire(plan_path,custody,output):
         restored_check(archive,custody/(key+'.inventory.json'),Path(record['restoration']['restoredPath'])).check_returncode()
         frame={'plan':{k:v for k,v in plan.items() if k!='candidates'},'row':row,'custody':record,'operationId':digest(plan_path)[:12]+'-'+key,
                'authorization':('2026-10-16: approved retention repair '+REPAIR_APPROVAL_SHA if plan.get('lifecycle') else '2026-10-13: Go ahead with the safe UI VPS cleanup and implement bounded retention and disk reserve checks. Keep the last verified rollback and all unique audit evidence, and verify everything still works.')}
-        result=subprocess.run([*SSH,'nice -n 15 ionice -c 3 python3 -I -B -'],input=launcher('retire',frame),capture_output=True,check=True,timeout=900)
-        value=json.loads(result.stdout);completed.append(value);save(Path(str(output)+'.'+key+'.json'),value)
+        value=retirement_request(frame,Path(str(output)+'.'+key+'.attempt'),expected_sources=expected_sources)
+        completed.append(value);save(Path(str(output)+'.'+key+'.json'),value)
         print(json.dumps({'retired':row['path'],'availableBytes':value['afterAvailableBytes']}),flush=True)
     save(output,{'ok':True,'completed':completed,'planSha256':digest(plan_path)})
 

@@ -128,6 +128,15 @@ receipts. A bounded repair-only cleanup receipt envelope can use the existing
 unchanged backup budget at the actual evidence path; the emergency envelope is
 never enlarged. More than 128 projected receipt inodes refuse.
 
+Source retirement derives its journal reservation from the validated inventory:
+two records per exact member, escaped static fields, 20-character UTC timestamps,
+bounded ordinals and at most 21 decimal characters per stat integer. The writer
+enforces that contract and reserves each intent/completion pair before unlinking.
+The 32 MiB total receipt ceiling, 16 MiB journal ceiling and 256 KiB auxiliary
+reserve remain unchanged. Each operator dispatch durably records its request,
+bounded stdout/stderr, exit or timeout and hashes; uncertain outcomes require
+explicit reconciliation and never trigger an automatic retry.
+
 The immutable lifecycle package and operator-host orchestrator automate these
 calls after exact HTTPS verification. They then freshly qualify and retire
 eligible obsolete source and upload copies through the custody writer, and

@@ -210,7 +210,31 @@ class Runtime:
                     and completed['supersededCycleId'] == upgrade['supersededCycleId'], 'Upgrade reconciliation differs')
             read(completed['priorConfig']['path'], upgrade['priorConfigSha256'])
             read(completed['priorState']['path'], upgrade['priorStateSha256'])
+            if 'preservedCompletedCycleId' in upgrade:
+                proof = completed['completionVerification']
+                require(intent['disposition'] == 'completed-cycle-preserved'
+                        and intent['freshPreparationRequired'] is False
+                        and completed['freshPreparationRequired'] is False
+                        and completed['retentionComplete'] is True
+                        and completed['preservedCompletedCycleId'] == upgrade['preservedCompletedCycleId']
+                        and upgrade['supersededCycleId'] is None
+                        and template['status'] == 'complete' and not template.get('pending')
+                        and proof['fullCompletionVerified'] is True
+                        and proof['context'] == template['completedContext']
+                        and proof['index'] == template['index']
+                        and proof['lastCompleted'] == template['lastCompleted'],
+                        'Preserved completion upgrade proof differs')
         return value, digest
+
+    def completion_lifecycle(self, state, index):
+        upgrade = state.get('lastUpgrade', {})
+        if upgrade.get('preservedCompletedCycleId') == state.get('lastCompleted', {}).get('cycleId'):
+            completed, _ = read_json(upgrade['completionPath'])
+            proof = completed['completionVerification']
+            require(proof['lastCompleted'] == state['lastCompleted'] and proof['index'] == index,
+                    'Preserved completion identity differs')
+            return proof['custodyLifecycle']
+        return self.lifecycle(index)
 
     def evidence(self, name, value):
         raw = encoded(value)
@@ -311,7 +335,7 @@ class Runtime:
                 result_binding = state['lastCompleted']['custodyResult']
                 plan, _ = read_json(plan_binding['path'], plan_binding['sha256'])
                 result, _ = read_json(result_binding['path'], result_binding['sha256'])
-                require(plan.get('lifecycle') == self.lifecycle(index), 'Completed custody index differs')
+                require(plan.get('lifecycle') == self.completion_lifecycle(state, index), 'Completed custody index differs')
                 self.C.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'])
         if frame.get('requireComplete'):
             require(complete, 'Published UI is healthy; retention-incomplete blocks another upload')

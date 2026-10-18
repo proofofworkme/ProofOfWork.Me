@@ -1,0 +1,160 @@
+{
+  "approval": {
+    "path": "audits/2026-10-16-ui-retention-repair-approval.json",
+    "sha256": "df166edb2d9817dd4f8af24819880b6bf08b396b6aa483adaa141415fc709379"
+  },
+  "config": {
+    "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+    "sha256": "b0fac0cdc69254adc9b5ef718df10181606f8df8eb18fc27f8b51f506e5bc32b"
+  },
+  "custodyPlan": {
+    "bytes": 28840561,
+    "path": "/tmp/ui-retention-initial-batch-cycle-20261018/custody-qualified.json",
+    "sha256": "bef3dd59b7c4a46380db9fa6eeabdc60b8ec05b8534c98d2ac2c30496368e625"
+  },
+  "custodyRoot": "/home/sixer/ProofOfWork.Me.release-custody-ui-retention/2dca4504c366-20261016T024741Z/bulk",
+  "cycleId": "release-2dca4504c366-20261016T024741Z-batch1",
+  "directStderrAvailable": false,
+  "disposition": "authenticated-pre-intent-refusal",
+  "evidence": [
+    {
+      "bytes": 6609,
+      "path": "/tmp/ui-retention-initial-batch-local-retirement-failure-20261018.json",
+      "sha256": "96f146bd261cba7ddabda29884101e731ffc3de7a5388c54f5c80ae38882be11"
+    },
+    {
+      "bytes": 937,
+      "path": "/tmp/ui-retention-batch-upgrade-20261018/source-retirement-inspection.json",
+      "sha256": "87a64163b3bf181b27e997c022b676a12b79596cfd2529ba23956f6d54c155e2"
+    }
+  ],
+  "finding": {
+    "actualRemoteErrorTextRecovered": false,
+    "auxiliaryReserveBytes": 262144,
+    "firstCalculatedBytes": 35447671,
+    "firstExcessBytes": 1893239,
+    "journalLimitBytes": 16777216,
+    "observedFailure": "CalledProcessError at first source retirement dispatch",
+    "ordinaryDeletionVerified": true,
+    "receiptLimitBytes": 33554432,
+    "reproducedPreIntentCheck": "receipt-capacity",
+    "retentionComplete": false,
+    "retirementReceiptDirectoriesPresent": 0,
+    "sourceCopiesIntact": 3,
+    "sourceDeletionObserved": false
+  },
+  "index": {
+    "path": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-policy-admission-index-ordinary-2dca4504c366-20261016T024741Z-batch1.json",
+    "sha256": "1437e1e49cad93240ce7d7cc6a0739eae3a3f338e5247230004a8434243f64b1"
+  },
+  "installedConfigSha256": "b0fac0cdc69254adc9b5ef718df10181606f8df8eb18fc27f8b51f506e5bc32b",
+  "installedSourceCommit": "8b1ff6e0c723b18ddd3f50fdf1bfb293cf54733c",
+  "installedSourceHashes": {
+    "deploy/ui-retention/custody.py": "5b174e933904c6b48a9581a33d8b7a4c52d3e0c914310dd778dc291e79f9284e",
+    "deploy/ui-retention/lifecycle.py": "9cb2093408bea7bddf87fc78b2acbfd39ffee85a3a1a89bd7b9c29f112a15ee3",
+    "deploy/ui-retention/removal.py": "e7080344c749d31c52eef0129f78df69c15840817ac674119dd21a55b0d546ba"
+  },
+  "localFailureInspection": {
+    "bytes": 6609,
+    "path": "/tmp/ui-retention-initial-batch-local-retirement-failure-20261018.json",
+    "sha256": "96f146bd261cba7ddabda29884101e731ffc3de7a5388c54f5c80ae38882be11"
+  },
+  "ordinaryApplied": {
+    "bytes": 1773,
+    "path": "/tmp/ui-retention-initial-batch-cycle-20261018/ordinary-applied.json",
+    "sha256": "409637cce7c4ce0d68373d64010977a81d165e704bbfafe05b8e9d9d3de7577d"
+  },
+  "ordinaryReceipt": {
+    "path": "/var/backups/proofofwork-ui/cleanup-evidence/audit30-future-retention-20261018T055127.589034Z-052-completed.json",
+    "sha256": "ada90a5e0230942d9766238eb3bc8222860ba850870a10be460124a510c795e6"
+  },
+  "pendingToken": "33a2f9cf6eca662b36f5edde8a50b91106827bcb1eca21e3d4ed5878dd53090e",
+  "prepared": {
+    "bytes": 28288103,
+    "path": "/tmp/ui-retention-initial-batch-cycle-20261018/prepared.json",
+    "sha256": "384925e59e3a289ddf37252d88db4cf379690b910908e46c0a8f70937e2518af"
+  },
+  "process": {
+    "directRemoteStderrAvailable": false,
+    "exitCode": 1,
+    "log": {
+      "bytes": 4646,
+      "path": "/tmp/ui-retention-initial-batch-cycle-20261018.log",
+      "sha256": "630e0fb44a47daa03724639a6ab31902dc0f32d756a5ad7f7f8eae20eb96d179"
+    }
+  },
+  "productionInspection": {
+    "bytes": 937,
+    "path": "/tmp/ui-retention-batch-upgrade-20261018/source-retirement-inspection.json",
+    "sha256": "87a64163b3bf181b27e997c022b676a12b79596cfd2529ba23956f6d54c155e2"
+  },
+  "qualifiedPlan": {
+    "bytes": 28840561,
+    "path": "/tmp/ui-retention-initial-batch-cycle-20261018/custody-qualified.json",
+    "sha256": "bef3dd59b7c4a46380db9fa6eeabdc60b8ec05b8534c98d2ac2c30496368e625"
+  },
+  "recordedAtUtc": "2026-10-18T06:28:34.458373+00:00",
+  "recoveryRequirements": [
+    "Preserve the failed log, sealed custody, original plan and completed ordinary cleanup.",
+    "Revalidate exact state, closure, source inventories, restored custody and absent retirement intents before explicit reconciliation.",
+    "Keep the 32 MiB receipt allowance, 16 MiB journal ceiling and all storage ceilings unchanged.",
+    "Do not replay ordinary cleanup or re-export sealed custody."
+  ],
+  "schema": "pow-ui-custody-preintent-refusal-v1",
+  "scopeApprovalSha256": "df166edb2d9817dd4f8af24819880b6bf08b396b6aa483adaa141415fc709379",
+  "sealedBatch": {
+    "bytes": 2488,
+    "path": "/home/sixer/ProofOfWork.Me.release-custody-ui-retention/2dca4504c366-20261016T024741Z/bulk/batch-exported.json",
+    "sha256": "336fe24668863ec7e43dc13e1eea8efa973dfe8bc3eae04cd8c611311c79aacf"
+  },
+  "sourceChecks": [
+    {
+      "path": "/var/backups/proofofwork-ui/transport-evidence/5905da2ac478-20261015T165202Z/proofofwork-ui-source-5905da2ac478-20261015T165202Z",
+      "receiptAbsent": true,
+      "receiptPath": "/var/backups/proofofwork-ui/cleanup-evidence/bounded-retention-bef3dd59b7c4-120d20c07e7cbcd3",
+      "sourcePresent": true
+    },
+    {
+      "path": "/var/backups/proofofwork-ui/transport-evidence/7afc0f9584a7-20261015T180402Z/proofofwork-ui-source-7afc0f9584a7-20261015T180402Z",
+      "receiptAbsent": true,
+      "receiptPath": "/var/backups/proofofwork-ui/cleanup-evidence/bounded-retention-bef3dd59b7c4-cb4388aaa0a21f19",
+      "sourcePresent": true
+    },
+    {
+      "path": "/var/backups/proofofwork-ui/transport-evidence/fb188b9593a5-20261015T122735Z/proofofwork-ui-source-fb188b9593a5-20261015T122735Z",
+      "receiptAbsent": true,
+      "receiptPath": "/var/backups/proofofwork-ui/cleanup-evidence/bounded-retention-bef3dd59b7c4-551797f8906c69ef",
+      "sourcePresent": true
+    }
+  ],
+  "sourceObservations": [
+    {
+      "path": "/var/backups/proofofwork-ui/transport-evidence/5905da2ac478-20261015T165202Z/proofofwork-ui-source-5905da2ac478-20261015T165202Z",
+      "receipt": "/var/backups/proofofwork-ui/cleanup-evidence/bounded-retention-bef3dd59b7c4-120d20c07e7cbcd3",
+      "receiptPresent": false,
+      "records": [],
+      "sourcePresent": true
+    },
+    {
+      "path": "/var/backups/proofofwork-ui/transport-evidence/7afc0f9584a7-20261015T180402Z/proofofwork-ui-source-7afc0f9584a7-20261015T180402Z",
+      "receipt": "/var/backups/proofofwork-ui/cleanup-evidence/bounded-retention-bef3dd59b7c4-cb4388aaa0a21f19",
+      "receiptPresent": false,
+      "records": [],
+      "sourcePresent": true
+    },
+    {
+      "path": "/var/backups/proofofwork-ui/transport-evidence/fb188b9593a5-20261015T122735Z/proofofwork-ui-source-fb188b9593a5-20261015T122735Z",
+      "receipt": "/var/backups/proofofwork-ui/cleanup-evidence/bounded-retention-bef3dd59b7c4-551797f8906c69ef",
+      "receiptPresent": false,
+      "records": [],
+      "sourcePresent": true
+    }
+  ],
+  "state": {
+    "path": "/var/lib/proofofwork-ui-retention/state.json",
+    "pendingStage": "ordinary-complete",
+    "revision": 10,
+    "sha256": "c51a2d72a341f88a1adadf62095df15cf2e8fd4605b37fe6bf12996497844a06",
+    "status": "retention-incomplete"
+  }
+}

@@ -255,7 +255,9 @@ def existing_runtime(config_sha, prefix=Path('/')):
     config, digest, package = module.validate_config(CONFIG, config_sha)
     storage = module.load_module('upgrade_old_storage', package / 'deploy/audit30/ui-storage.py')
     policy = module.load_module('upgrade_old_policy', package / 'deploy/audit30/ui-release-policy.py', _BOUND_STORAGE=storage)
-    return module.Runtime(config, digest, storage, policy)
+    custody = module.load_module('upgrade_old_custody', package / 'deploy/ui-retention/custody.py')
+    custody.load_helpers()
+    return module.Runtime(config, digest, storage, policy, custody)
 
 
 def local_interruption(binding):
@@ -437,11 +439,89 @@ def upgrade_inventory(request, prefix=Path('/')):
         return upgrade_inventory_locked(request, prefix)
 
 
+def completed_review(runtime, request):
+    """Authenticate a completed cycle without replacing any of its proofs."""
+    state, state_sha = runtime.state()
+    require(state_sha == request['stateSha256'], 'Completed state changed after review')
+    require(state and state.get('status') == 'complete' and not state.get('pending')
+            and not state.get('activePhase') and not runtime.unfinished_intents(),
+            'Only a sealed completed cycle can use a completion-preserving upgrade')
+    status = runtime.status({'requireComplete': True})
+    require(status['stateSha256'] == state_sha and status['context'] == state['completedContext'],
+            'Completed context changed')
+    checkpoint, checkpoint_sha = state, state_sha
+    # Repeated compatible upgrades retain the original completed phase bytes.
+    for _ in range(16):
+        upgrade = checkpoint.get('lastUpgrade', {})
+        if upgrade.get('preservedCompletedCycleId') != state['lastCompleted']['cycleId']:
+            break
+        prior_path = Path(upgrade['intentPath']).parent / 'prior-state.json'
+        prior = json.loads(read_bound(prior_path, upgrade['priorStateSha256']))
+        require(all(prior[k] == state[k] for k in ('index', 'completedContext', 'lastCompleted', 'lastIntent'))
+                and prior['status'] == 'complete' and not prior.get('pending') and not prior.get('activePhase'),
+                'Prior completed upgrade chain differs')
+        checkpoint, checkpoint_sha = prior, upgrade['priorStateSha256']
+    else:
+        raise ValueError('Completed upgrade chain exceeds bound')
+    intent_binding = checkpoint['lastIntent']
+    intent = json.loads(read_bound(intent_binding['path'], intent_binding['sha256']))
+    path = Path(intent_binding['path'])
+    require(path.parent == runtime.layout.evidence and path.name.endswith('-intent.json')
+            and intent['operation'] == 'complete-cycle' and intent['configSha256'] == checkpoint['configSha256'],
+            'Completed phase intent differs')
+    receipt_path = path.with_name(path.name.removesuffix('-intent.json') + '-completed.json')
+    receipt_raw = read_bound(receipt_path); receipt = json.loads(receipt_raw)
+    require(receipt.get('ok') is True and receipt.get('retentionComplete') is True
+            and receipt['intent'] == intent_binding and receipt['stateSha256'] == checkpoint_sha
+            and receipt['stateRevision'] == checkpoint['revision'] and receipt['index'] == state['index']
+            and receipt['cycleId'] == state['lastCompleted']['cycleId'], 'Completed terminal receipt differs')
+    return {'state': state, 'stateSha256': state_sha, 'context': status['context'],
+            'completionIntent': intent_binding,
+            'completionReceipt': {'path': str(receipt_path), 'sha256': sha(receipt_raw)},
+            'lastCompleted': state['lastCompleted'], 'fullCompletionVerified': True}
+
+
+def completed_package_review(payload, package, old_runtime, review):
+    """New code must independently accept the preserved completion before CAS."""
+    spec = importlib.util.spec_from_file_location('upgrade_new_lifecycle', package / 'deploy/ui-retention/lifecycle_remote.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    storage = module.load_module('upgrade_new_storage', package / 'deploy/audit30/ui-storage.py')
+    policy = module.load_module('upgrade_new_policy', package / 'deploy/audit30/ui-release-policy.py', _BOUND_STORAGE=storage)
+    custody = module.load_module('upgrade_new_custody', package / 'deploy/ui-retention/custody.py'); custody.load_helpers()
+    runtime = module.Runtime(payload['config'], payload['configSha256'], storage, policy, custody,
+                             layout=old_runtime.layout)
+    _, context = runtime.current()
+    require(context == review['context'], 'New package changes completed protected context')
+    state = review['state']; index = state['index']
+    require(not policy.policy_scope(index, runtime.layout, APPROVAL)['eligible'], 'New package finds eligible ordinary assets')
+    plan_binding = state['lastCompleted']['custodyPlan']; result_binding = state['lastCompleted']['custodyResult']
+    plan = json.loads(read_bound(plan_binding['path'], plan_binding['sha256']))
+    result = json.loads(read_bound(result_binding['path'], result_binding['sha256']))
+    expected_lifecycle = (old_runtime.completion_lifecycle(state, index)
+                          if hasattr(old_runtime, 'completion_lifecycle') else old_runtime.lifecycle(index))
+    require(plan['lifecycle'] == expected_lifecycle, 'Preserved custody authority differs')
+    # Approval content is identical, but its immutable package path changes.
+    # The preserved plan intentionally retains its original approval binding.
+    custody.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'])
+    storage.compare_guards(runtime.layout, context['guards'], [])
+    return {'context': context, 'index': index, 'lastCompleted': state['lastCompleted'],
+            'custodyLifecycle': plan['lifecycle'],
+            'fullCompletionVerified': True}
+
+
 def upgrade_inventory_locked(request, prefix):
     for path in (prefix / EVIDENCE.lstrip('/')).glob('ui-lifecycle-upgrade-*'):
         require(path.is_dir() and not path.is_symlink() and (path / 'completed.json').is_file(),
                 'Unsealed upgrade requires explicit reconciliation')
     runtime = existing_runtime(request['configSha256'], prefix)
+    if request.get('mode') == 'completed-cycle':
+        require(set(request) == {'mode', 'configSha256', 'stateSha256'}, 'Expanded completed upgrade request')
+        config_raw = read_bound(prefix / CONFIG.lstrip('/'), request['configSha256'])
+        state_raw = read_bound(prefix / STATE.lstrip('/'), request['stateSha256'])
+        return {'guards': guard_inventory(prefix), 'completedReview': completed_review(runtime, request),
+                'configBase64': base64.b64encode(config_raw).decode(), 'stateBase64': base64.b64encode(state_raw).decode(),
+                'evidence': evidence_inventory(prefix / EVIDENCE.lstrip('/'))}
+    require('mode' not in request, 'Unknown upgrade mode')
     raw = base64.b64decode(request['interruption']['base64'], validate=True)
     require(sha(raw) == request['interruption']['binding']['sha256'], 'Interruption evidence SHA differs')
     interruption = json.loads(raw)
@@ -467,22 +547,28 @@ def upgrade_remote(plan, prefix=Path('/')):
     with deploy_lock(prefix):
         before = upgrade_inventory_locked(plan['request'], prefix)
         require(before == plan['before'], 'Upgrade config/state/guards/evidence changed after review')
-        old_state = before['preparedReview']['state']
+        completed_mode = plan['request'].get('mode') == 'completed-cycle'
+        review = before['completedReview' if completed_mode else 'preparedReview']
+        old_state = review['state']
         old_config = json.loads(base64.b64decode(before['configBase64']))
         require(old_config['package'] != payload['config']['package'], 'Upgrade requires a new immutable package')
         package = at(payload['config']['package']['path'])
         journal = at(EVIDENCE) / ('ui-lifecycle-upgrade-' + payload['config']['package']['sha256'])
         require(not os.path.lexists(package) and not os.path.lexists(journal), 'Prior upgrade/package requires explicit reconciliation')
         planned = dict(old_state, configSha256=payload['configSha256'], revision=old_state['revision'] + 2,
-                       status='retention-incomplete', pending=None, activePhase=None, completedContext=None,
+                       status='complete' if completed_mode else 'retention-incomplete', pending=None, activePhase=None,
+                       completedContext=old_state['completedContext'] if completed_mode else None,
                        lastUpgrade={'intentPath': str(journal / 'intent.json'),
                                     'completionPath': str(journal / 'completed.json'),
                                     'priorConfigSha256': plan['request']['configSha256'],
                                     'priorStateSha256': plan['request']['stateSha256'],
-                                    'supersededCycleId': old_state['pending']['cycleId']})
+                                    'supersededCycleId': None if completed_mode else old_state['pending']['cycleId']})
+        if completed_mode:
+            planned['lastUpgrade']['preservedCompletedCycleId'] = old_state['lastCompleted']['cycleId']
         intent = {'schema': 'pow-ui-retention-upgrade-intent-v1', 'plan': plan,
                   'stateTemplate': planned, 'stateTemplateSha256': sha(encoded(planned)),
-                  'disposition': 'prepared-before-custody-superseded', 'freshPreparationRequired': True}
+                  'disposition': 'completed-cycle-preserved' if completed_mode else 'prepared-before-custody-superseded',
+                  'freshPreparationRequired': not completed_mode}
         intent_sha = sha(encoded(intent))
         planned = dict(planned, lastUpgrade=dict(planned['lastUpgrade'], intentSha256=intent_sha))
         allocation = max(8 * 1024**2, len(encoded(intent)) * 2 + sum(v['bytes'] for v in payload['files'].values()) * 4)
@@ -508,6 +594,10 @@ def upgrade_remote(plan, prefix=Path('/')):
         save(package / 'package.json', encoded(payload['manifest']))
         for relative, value in payload['files'].items():
             read_bound(package / relative, value['sha256'])
+        completion_verification = None
+        if completed_mode:
+            old_runtime = existing_runtime(plan['request']['configSha256'], prefix)
+            completion_verification = completed_package_review(payload, package, old_runtime, review)
         after = guard_inventory(prefix)
         after['existingPackages'] = [p for p in after['existingPackages'] if p != package.name]
         require(after == before['guards'], 'Existing helpers/holds/timers/pair changed during upgrade')
@@ -523,6 +613,8 @@ def upgrade_remote(plan, prefix=Path('/')):
         # old config/new state fail authority, and new config/new state require
         # the immutable terminal upgrade receipt before any lifecycle operation.
         read_bound(at(CONFIG), plan['request']['configSha256']); read_bound(at(STATE), sha(encoded(active)))
+        if completed_mode:
+            old_runtime.S.compare_guards(old_runtime.layout, review['context']['guards'], [])
         os.replace(state_next, at(STATE)); sync(at(STATE).parent)
         os.replace(config_next, at(CONFIG)); sync(at(CONFIG).parent)
         result = {'schema': 'pow-ui-retention-upgrade-completed-v1', 'ok': True,
@@ -531,10 +623,14 @@ def upgrade_remote(plan, prefix=Path('/')):
                   'state': {'path': STATE, 'sha256': sha(encoded(planned))}, 'stateRevision': planned['revision'],
                   'priorConfig': {'path': str(journal / 'prior-config.json'), 'sha256': plan['request']['configSha256']},
                   'priorState': {'path': str(journal / 'prior-state.json'), 'sha256': plan['request']['stateSha256']},
-                  'supersededCycleId': old_state['pending']['cycleId'], 'index': planned['index'],
-                  'preparedGuardReconciliation': before['preparedReview']['guardReconciliation'],
-                  'freshPreparationRequired': True, 'retentionComplete': False, 'publicationHealthy': True,
+                  'supersededCycleId': None if completed_mode else old_state['pending']['cycleId'], 'index': planned['index'],
+                  'freshPreparationRequired': not completed_mode, 'retentionComplete': completed_mode, 'publicationHealthy': True,
                   'priorPackageAndPhaseEvidencePreserved': True, 'priorHelpersHoldsAndTimersPreserved': True}
+        if completed_mode:
+            result.update(preservedCompletedCycleId=old_state['lastCompleted']['cycleId'],
+                          completionVerification=completion_verification)
+        else:
+            result['preparedGuardReconciliation'] = review['guardReconciliation']
         save(journal / 'completed.json', encoded(result))
         return dict(result, receipt={'path': str(journal / 'completed.json'), 'sha256': sha(encoded(result))})
 
@@ -634,11 +730,26 @@ def main():
     upgrade_plan.add_argument('--config-sha256', required=True)
     upgrade_plan.add_argument('--state-sha256', required=True)
     upgrade_plan.add_argument('--output', type=Path, required=True)
+    completed_plan = sub.add_parser('plan-upgrade-complete')
+    completed_plan.add_argument('--config-sha256', required=True)
+    completed_plan.add_argument('--state-sha256', required=True)
+    completed_plan.add_argument('--output', type=Path, required=True)
     upgrade = sub.add_parser('upgrade')
     upgrade.add_argument('--plan', type=Path, required=True)
     upgrade.add_argument('--plan-sha256', required=True)
     args = parser.parse_args()
-    if args.operation == 'plan-upgrade':
+    if args.operation == 'plan-upgrade-complete':
+        payload = committed_payload()
+        require(SHA.fullmatch(args.config_sha256) and SHA.fullmatch(args.state_sha256), 'Invalid upgrade binding')
+        request = {'mode': 'completed-cycle', 'configSha256': args.config_sha256, 'stateSha256': args.state_sha256}
+        plan = {'schema': 'pow-ui-retention-upgrade-plan-v1', 'scopeApprovalSha256': APPROVAL,
+                'payload': payload, 'request': request, 'before': remote('upgrade-inventory', request)}
+        output = args.output.absolute(); save(output, encoded(plan))
+        print(json.dumps({'plan': str(output), 'sha256': sha(encoded(plan)),
+                          'config': {'path': CONFIG, 'sha256': payload['configSha256']},
+                          'preservedCompletedCycleId': plan['before']['completedReview']['lastCompleted']['cycleId'],
+                          'freshPreparationRequired': False}))
+    elif args.operation == 'plan-upgrade':
         payload = committed_payload()
         interruption = local_interruption({'path': str(args.interruption.resolve()), 'sha256': args.interruption_sha256})
         require(interruption['prepared']['stateSha256'] == args.state_sha256, 'Requested interrupted state differs')
@@ -660,8 +771,9 @@ def main():
         require(plan.get('schema') == 'pow-ui-retention-upgrade-plan-v1'
                 and plan.get('scopeApprovalSha256') == APPROVAL, 'Upgrade plan authority differs')
         require(committed_payload() == plan['payload'], 'Committed package changed after review')
-        require(local_interruption(plan['request']['interruption']['binding']) == plan['request']['interruption'],
-                'Interrupted local custody context changed after review')
+        if plan['request'].get('mode') != 'completed-cycle':
+            require(local_interruption(plan['request']['interruption']['binding']) == plan['request']['interruption'],
+                    'Interrupted local custody context changed after review')
         print(json.dumps(remote('upgrade', plan)))
     elif args.operation == 'plan':
         payload = committed_payload()

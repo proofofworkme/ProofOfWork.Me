@@ -83,7 +83,7 @@
     "check:code:deploy": "python3 -I -B deploy/code/check-scoped-node.test.py && python3 -I -B deploy/code-reference/check-scoped-node.test.py && python3 -I -B deploy/code-reference/check-release.test.py",
     "check:search-release": "python3 -I -B deploy/search/check-install-ui.test.py && python3 -I -B deploy/search/check-hold-node-timer.test.py && python3 -I -B deploy/publish/check-ui-release.test.py",
     "check:publish-ui-release": "python3 -I -B deploy/publish/check-ui-release.test.py",
-    "check:ui-retention-lifecycle": "python3 -I -B deploy/audit30/check-ui-storage.test.py && python3 -I -B scripts/check-ui-custody-retention.py && python3 -I -B scripts/check-ui-release-sequence-capacity.py && python3 -I -B scripts/check-ui-retention-lifecycle.py && python3 -I -B deploy/ui-retention/check-lifecycle-remote.test.py",
+    "check:ui-retention-lifecycle": "python3 -I -B deploy/audit30/check-ui-storage.test.py && python3 -I -B deploy/ui-retention/check-removal.test.py && python3 -I -B scripts/check-ui-custody-retention.py && python3 -I -B scripts/check-ui-release-sequence-capacity.py && python3 -I -B scripts/check-ui-retention-lifecycle.py && python3 -I -B deploy/ui-retention/check-lifecycle-remote.test.py && python3 -I -B deploy/ui-retention/check-custody-reconciliation.test.py",
     "check:surface-read-state": "node scripts/check-surface-read-state.mjs",
     "check:assurance-regressions": "node --test scripts/check-recursive-assurance.test.mjs",
     "check:summary-route-readiness": "node scripts/check-summary-route-readiness.mjs",

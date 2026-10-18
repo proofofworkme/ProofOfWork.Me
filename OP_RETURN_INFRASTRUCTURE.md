@@ -7773,6 +7773,29 @@ cycle never reached custody or retirement. A unique `complete --attempt` name
 then identifies a fresh cycle; it does not authorize reusing partial custody
 or overwriting a prior phase receipt.
 
+The next cycle completed all 52 ordinary paths and sealed custody for three
+eligible source directories, then refused the first source operation before
+creating an intent. Its blanket journal estimate exceeded the existing receipt
+ceiling. The [refusal record](audits/2026-10-18-ui-retention-receipt-refusal.json)
+distinguishes observed process failure and absent intents from the independently
+reproduced sizing error; the original subprocess stderr was not retained.
+The corrected writer derives a conservative journal maximum from the exact
+inventory, enforces field widths and action shapes, and reserves each paired
+intent/completion before deletion. The 32 MiB receipt, 16 MiB journal and
+256 KiB auxiliary limits remain unchanged. Future dispatches preserve bounded
+stdout/stderr and a durable request/outcome receipt even on refusal or timeout.
+
+`reconcile_custody.py` provides explicit plan/apply reconciliation for that
+pre-intent refusal. It binds the old configuration, state, ordinary completion,
+qualified source plan, sealed custody/restoration proofs, absent source intents,
+refusal evidence and reviewed launcher hashes. It resumes only source retirement
+and completes the existing cycle through the authenticated installed runtime.
+It neither repeats ordinary cleanup nor exports custody again. A separate
+completed-cycle package upgrade preserves the verified completion, admission
+index and original custody lifecycle binding under exact config/state comparison;
+future cycles use the new immutable package. No prepared-cycle supersession or
+completed-cycle upgrade erases earlier state, receipts or packages.
+
 ### Proof Computer temporary domain bridge — 2026-10-13
 
 `proofcomputer.com` and `www.proofcomputer.com` are temporary redirect-only

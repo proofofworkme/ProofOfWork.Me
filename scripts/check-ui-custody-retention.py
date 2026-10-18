@@ -457,6 +457,113 @@ class BatchPreservationTests(unittest.TestCase):
   with self.assertRaises(ValueError):C.remote_export_batch(dict(plan=self.plan,planSha256=self.plan_sha),io.BytesIO(),None)
 
 
-suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls) for cls in (FileGroupTests,ArtifactQualificationTests,ClosedOrdinaryAliasTests,OffhostCapacityTests,BatchPreservationTests))
+class RetirementBudgetTests(unittest.TestCase):
+ def setUp(self):
+  self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.base=Path(self.tmp.name)
+  self.root=self.base/'source';self.root.mkdir();(self.root/'file').write_bytes(b'unique')
+  self.inventory=E.inventory(self.root,os.geteuid(),require_manifest=False)
+  self.row=dict(path=str(self.root),inventory=self.inventory,eligible=True)
+  self.source=C.expected(self.row);self.frame=dict(custody={'sourceInventory':self.source},row=self.row)
+ def test_exact_budget_accepts_and_one_byte_over_refuses(self):
+  total=C.retirement_capacity(self.frame,self.source)['totalBytes']
+  with patch.object(C,'RETIREMENT_RECEIPT_BYTES',total):self.assertEqual(C.retirement_capacity(self.frame,self.source)['totalBytes'],total)
+  with patch.object(C,'RETIREMENT_RECEIPT_BYTES',total-1),self.assertRaisesRegex(ValueError,'32 MiB'):C.retirement_capacity(self.frame,self.source)
+ def test_journal_ceiling_is_independent_and_unchanged(self):
+  for invalid in (0,True,16*1024**2+1):
+   with patch.object(W,'journal_capacity_bound',return_value=invalid),self.assertRaisesRegex(ValueError,'16 MiB'):C.retirement_capacity(self.frame,self.source)
+ def test_auxiliary_reservation_is_full_and_failure_message_is_bounded(self):
+  bound=C.retirement_capacity(self.frame,self.source)
+  self.assertEqual(bound['auxiliaryBytes'],256*1024)
+  raw=C.encoded(dict(error=C.bounded_error(ValueError('\U0001f600'*100000)),manualReconciliationRequired=True))
+  self.assertLessEqual(len(raw),C.RETIREMENT_FAILURE_BYTES);self.assertIn(b'truncated',raw)
+ def test_remote_writer_uses_enforced_bound_and_preserves_receipt_schema(self):
+  import contextlib
+  evidence=self.base/'cleanup-evidence';evidence.mkdir()
+  custody=dict(ok=True,sourcePath=str(self.root),sourceInventory=self.source,inventorySha256=E.inventory_sha(self.inventory['records']),restoration=dict(ownerRestored=True,modeTimesXattrsRestored=True,internalHardlinksRestored=True))
+  frame=dict(plan={},row=self.row,custody=custody,operationId='fixture')
+  original=W.Journal;calls=[]
+  def journal(path,**kwargs):calls.append(kwargs);return original(path,**kwargs)
+  with patch.object(C,'BASE',self.base),patch.object(C.os,'geteuid',return_value=0),patch.object(E,'lock_existing',side_effect=lambda:os.open(self.base,os.O_RDONLY|os.O_DIRECTORY)),patch.object(C,'scope',return_value=('preserved-source',None,False)),patch.object(C,'fence'),patch.object(C,'check_references'),patch.object(C,'row_inventory',return_value=self.inventory),patch.object(C.subprocess,'run'),patch.object(W,'Journal',side_effect=journal),contextlib.redirect_stdout(io.StringIO()):
+   C.remote_operation('retire',frame)
+  receipt=evidence/'bounded-retention-fixture'
+  self.assertEqual(calls,[dict(expected_root=self.source)]);self.assertFalse(self.root.exists())
+  self.assertEqual(json.loads((receipt/'intent.json').read_bytes()),frame)
+  completed=json.loads((receipt/'completed.json').read_bytes())
+  self.assertEqual(set(completed),{'ok','path','actions','custody','beforeAvailableBytes','afterAvailableBytes','receipt','protectedPairVerified'})
+  self.assertLessEqual((receipt/'actions.jsonl').stat().st_size,W.journal_capacity_bound(self.source))
+ def test_remote_failure_evidence_is_bounded_and_does_not_erase_intent(self):
+  self.base.joinpath('cleanup-evidence').mkdir()
+  custody=dict(ok=True,sourcePath=str(self.root),sourceInventory=self.source,inventorySha256=E.inventory_sha(self.inventory['records']),restoration=dict(ownerRestored=True,modeTimesXattrsRestored=True,internalHardlinksRestored=True))
+  frame=dict(plan={},row=self.row,custody=custody,operationId='fixture')
+  with patch.object(C,'BASE',self.base),patch.object(C.os,'geteuid',return_value=0),patch.object(E,'lock_existing',side_effect=lambda:os.open(self.base,os.O_RDONLY|os.O_DIRECTORY)),patch.object(C,'scope',return_value=('preserved-source',None,False)),patch.object(C,'fence'),patch.object(C,'check_references'),patch.object(C,'row_inventory',return_value=self.inventory),patch.object(C.subprocess,'run'),patch.object(W,'delete_tree',side_effect=ValueError('\U0001f600'*100000)),self.assertRaises(ValueError):
+   C.remote_operation('retire',frame)
+  receipt=self.base/'cleanup-evidence/bounded-retention-fixture';failure=receipt/'failure.json'
+  self.assertTrue((receipt/'intent.json').exists());self.assertFalse((receipt/'completed.json').exists());self.assertTrue(self.root.exists())
+  self.assertLessEqual(failure.stat().st_size,C.RETIREMENT_FAILURE_BYTES)
+  self.assertEqual(set(json.loads(failure.read_bytes())),{'error','manualReconciliationRequired'})
+
+
+class RetirementDiagnosticsTests(unittest.TestCase):
+ def setUp(self):
+  self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.base=Path(self.tmp.name);self.attempt=self.base/'attempt'
+  self.frame=dict(operationId='exact-operation',row=dict(path='/approved/source'),custody=dict(planSha256='a'*64))
+  self.response=dict(ok=True,path='/approved/source',receipt=str(C.BASE/'cleanup-evidence/bounded-retention-exact-operation'))
+ def invoke(self,script,*,timeout=5,payload=b'approved request'):
+  with patch.object(C,'SSH',[sys.executable,'-c',script]),patch.object(C,'launcher',return_value=payload):
+   return C.retirement_request(self.frame,self.attempt,timeout=timeout)
+ def outcome(self):
+  value=json.loads((self.attempt/'outcome.json').read_bytes())
+  self.assertEqual(value['request']['sha256'],C.digest(self.attempt/'request.json'))
+  for stream in value['streams'].values():
+   self.assertEqual(stream['sha256'],C.digest(stream['path']));self.assertEqual(stream['bytes'],Path(stream['path']).stat().st_size)
+  return value
+ def test_success_streams_concurrently_and_binds_sources_request_and_hashes(self):
+  response=dict(self.response,extra='x'*131072);payload=b'p'*1024**2
+  script="import os,sys,json;os.write(2,b'warning'*18000);data=sys.stdin.buffer.read();assert len(data)==1048576;print(json.dumps(dict("+repr(self.response)+",extra='x'*131072)))"
+  self.assertEqual(self.invoke(script,payload=payload),response)
+  result=self.outcome();self.assertTrue(result['commandSucceeded']);self.assertFalse(result['manualReconciliationRequired']);self.assertEqual(result['requestBytesWritten'],len(payload))
+  request=json.loads((self.attempt/'request.json').read_bytes());self.assertEqual(request['implementationSources'],C.launcher_source_pins());self.assertEqual(request['launcherSha256'],hashlib.sha256(payload).hexdigest());self.assertEqual(request['frameSha256'],E.digest(C.encoded(self.frame)))
+ def test_nonzero_exit_keeps_both_logs_and_refuses_implicit_retry(self):
+  with self.assertRaisesRegex(ValueError,'outcome.json'):self.invoke("import os,sys;sys.stdin.buffer.read();os.write(1,b'partial');os.write(2,b'exact refusal');sys.exit(7)")
+  result=self.outcome();self.assertEqual(result['exitCode'],7);self.assertTrue(result['manualReconciliationRequired'])
+  self.assertEqual((self.attempt/'stdout.log').read_bytes(),b'partial');self.assertEqual((self.attempt/'stderr.log').read_bytes(),b'exact refusal')
+  before={p.name:p.read_bytes() for p in self.attempt.iterdir()}
+  with patch.object(C.subprocess,'Popen') as launch,self.assertRaisesRegex(ValueError,'never retry blindly'):self.invoke('raise Exception()')
+  launch.assert_not_called();self.assertEqual(before,{p.name:p.read_bytes() for p in self.attempt.iterdir()})
+ def test_timeout_durably_keeps_partial_diagnostics_and_unknown_remote_outcome(self):
+  with self.assertRaises(ValueError):self.invoke("import os,sys,time;sys.stdin.buffer.read();os.write(2,b'before timeout');time.sleep(10)",timeout=0.2)
+  result=self.outcome();self.assertTrue(result['timedOut']);self.assertTrue(result['manualReconciliationRequired']);self.assertFalse(result['commandSucceeded']);self.assertEqual((self.attempt/'stderr.log').read_bytes(),b'before timeout')
+ def test_bounded_output_preserves_prefix_and_overflow_diagnostic(self):
+  with patch.object(C,'RETIREMENT_STDERR_BYTES',1024),self.assertRaises(ValueError):self.invoke("import os,sys;sys.stdin.buffer.read();os.write(2,b'x'*4096)")
+  result=self.outcome();self.assertEqual(result['streams']['stderr']['bytes'],1024);self.assertTrue(result['streams']['stderr']['truncated']);self.assertGreater(result['streams']['stderr']['observedBytes'],1024);self.assertIn('diagnostic limit',result['failure'])
+ def test_malformed_response_is_recorded_before_raising(self):
+  with self.assertRaises(ValueError):self.invoke("import sys;sys.stdin.buffer.read();print('not json')")
+  result=self.outcome();self.assertEqual(result['exitCode'],0);self.assertFalse(result['responseValidated']);self.assertTrue(result['manualReconciliationRequired'])
+ def test_wrong_source_response_refuses(self):
+  response=dict(self.response,path='/different/source')
+  with self.assertRaises(ValueError):self.invoke("import sys;sys.stdin.buffer.read();print("+repr(json.dumps(response))+")")
+  self.assertFalse(self.outcome()['commandSucceeded'])
+ def test_spawn_failure_is_recorded_without_remote_invocation(self):
+  with patch.object(C.subprocess,'Popen',side_effect=FileNotFoundError('missing ssh')),self.assertRaises(ValueError):self.invoke('')
+  result=self.outcome();self.assertFalse(result['started']);self.assertIsNone(result['exitCode']);self.assertFalse(result['manualReconciliationRequired'])
+ def test_launcher_source_drift_refuses_before_launch(self):
+  pins=C.launcher_source_pins();pins[0]['sha256']='0'*64
+  with self.assertRaisesRegex(ValueError,'source changed'):C.launcher('retire',self.frame,expected_sources=pins)
+ def test_reviewed_source_pins_must_match_each_dispatch(self):
+  pins=C.launcher_source_pins();pins[0]['sha256']='0'*64
+  with patch.object(C.subprocess,'Popen') as launch,self.assertRaisesRegex(ValueError,'reviewed source pins'):
+   C.retirement_request(self.frame,self.attempt,expected_sources=pins)
+  launch.assert_not_called();self.assertFalse(self.attempt.exists())
+ def test_first_failed_invocation_stops_the_sequence(self):
+  custody=self.base/'custody';custody.mkdir();rows=[dict(path='/source/'+str(n),eligible=True) for n in range(3)]
+  plan=self.base/'plan.json';plan.write_bytes(C.encoded(dict(candidates=rows)))
+  for row in rows:(custody/(hashlib.sha256(row['path'].encode()).hexdigest()[:16]+'.json')).write_bytes(C.encoded(dict(restoration=dict(restoredPath='/restored'))))
+  check=types.SimpleNamespace(check_returncode=lambda:None)
+  with patch.object(C,'verify_custody',return_value=Path('/archive')),patch.object(C,'restored_check',return_value=check),patch.object(C,'retirement_request',side_effect=ValueError('refusal')) as invoke,self.assertRaises(ValueError):
+   C.retire(plan,custody,self.base/'result.json')
+  self.assertEqual(invoke.call_count,1);self.assertEqual(invoke.call_args.args[0]['row']['path'],'/source/0');self.assertFalse((self.base/'result.json').exists())
+
+
+suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls) for cls in (FileGroupTests,ArtifactQualificationTests,ClosedOrdinaryAliasTests,OffhostCapacityTests,BatchPreservationTests,RetirementBudgetTests,RetirementDiagnosticsTests))
 result=unittest.TextTestRunner(verbosity=1).run(suite)
 if not result.wasSuccessful():raise SystemExit(1)

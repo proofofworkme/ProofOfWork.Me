@@ -272,14 +272,98 @@ def delete_file_group(parent_fd, expected_root, journal, action_hook=None):
     parent_fence();return completed
 
 
+MAX_JOURNAL_BYTES=16*1024**2
+JOURNAL_INTEGER_CHARS=21
+JOURNAL_TIME='9999-12-31T23:59:59Z'
+
+
+def journal_identity(value):
+    E.require(isinstance(value,dict) and set(value)==set(E.STAT_FIELDS), 'Retirement journal identity fields differ')
+    E.require(all(type(v) is int and len(str(v))<=JOURNAL_INTEGER_CHARS for v in value.values()),
+              'Retirement journal integer exceeds reserved width')
+
+
+def journal_contract(expected_root):
+    """Exact static action bytes plus a conservative bound on changing stat values."""
+    E.require(isinstance(expected_root,dict) and expected_root.get('format') in
+              ('proofofwork-ui-retained-root-v1','proofofwork-ui-retained-files-v1'), 'Invalid retirement journal inventory format')
+    root=expected_root.get('root');rows=expected_root.get('inventory');count=expected_root.get('entries')
+    E.require(isinstance(root,str) and root.startswith('/') and '\0' not in root and str(Path(root))==root,
+              'Invalid retirement journal root')
+    E.require(type(count) is int and isinstance(rows,list) and count==len(rows) and 0<count<=E.MAX_ENTRIES,
+              'Invalid retirement journal member count')
+    actions={};total=0;wide=-(10**(JOURNAL_INTEGER_CHARS-1)-1)
+    for row in rows:
+        name=row.get('path');kind=row.get('kind')
+        E.require(isinstance(name,str) and name and not name.startswith('/') and '\0' not in name
+                  and str(Path(name))==name and (name=='.' or all(part not in ('','..','.') for part in name.split('/')))
+                  and name not in actions, 'Unknown or duplicate retirement journal member')
+        E.require(kind in ('file','directory','symlink'), 'Invalid retirement journal member kind')
+        journal_identity(row.get('identity'))
+        action=dict(root=root,path=name,kind=kind)
+        if kind=='symlink':
+            E.require(isinstance(row.get('target'),str) and row['target'] and '\0' not in row['target'], 'Invalid retirement journal link target')
+            action['target']=row['target']
+        else:
+            sha=row.get('sha256')
+            E.require((kind=='file' and isinstance(sha,str) and re.fullmatch('[0-9a-f]{64}',sha))
+                      or (kind=='directory' and sha is None), 'Invalid retirement journal payload hash')
+            action['sha256']=sha
+        actions[name]=dict(action)
+        bounded=dict(action,before={field:wide for field in E.STAT_FIELDS})
+        total+=len(E.encoded(dict(stage='intent',action=bounded,atUtc=JOURNAL_TIME)))
+        total+=len(E.encoded(dict(stage='completed',action=dict(bounded,ordinal=count),atUtc=JOURNAL_TIME)))
+    if expected_root['format']=='proofofwork-ui-retained-root-v1':
+        E.require(actions.get('.',{}).get('kind')=='directory', 'Retirement journal root entry absent')
+    else:
+        E.require(count<=16 and all(r['kind']=='file' and Path(name).name==name and name!='.' for name,r in actions.items()),
+                  'Invalid retirement journal file group')
+    E.require(total<=MAX_JOURNAL_BYTES, 'Retirement journal exceeds reserved envelope')
+    return actions,total
+
+
+def journal_capacity_bound(expected_root):
+    return journal_contract(expected_root)[1]
+
+
 class Journal:
-    def __init__(self,path):
+    def __init__(self,path,expected_root=None):
+        self.actions,self.maximum=journal_contract(expected_root) if expected_root is not None else (None,MAX_JOURNAL_BYTES)
+        self.pending=None;self.reserved=0;self.seen=set()
         self.path=Path(path);self.fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_APPEND|os.O_NOFOLLOW,0o600);self.count=0;self.bytes=0
         sync_directory(self.path.parent)
     def __call__(self,stage,action):
-        raw=E.encoded(dict(stage=stage,action=action,atUtc=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())))
-        self.bytes+=len(raw);E.require(self.bytes<=16*1024**2,'Retirement journal exceeds reserved envelope');view=memoryview(raw)
-        while view:view=view[os.write(self.fd,view):]
-        os.fsync(self.fd)
+        now=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
+        if self.actions is not None:
+            E.require(isinstance(now,str) and re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z',now),
+                      'Retirement journal timestamp exceeds reserved width')
+            E.require(stage in ('intent','completed') and isinstance(action,dict), 'Invalid retirement journal action stage')
+            if stage=='intent':
+                E.require(self.pending is None and action.get('path') in self.actions and action['path'] not in self.seen,
+                          'Unknown, duplicate or unpaired retirement journal intent')
+                journal_identity(action.get('before'))
+                static={k:v for k,v in action.items() if k!='before'}
+                E.require(E.encoded(static)==E.encoded(self.actions[action['path']]), 'Retirement journal action shape differs from inventory')
+                # Snapshot the caller's mutable dictionaries. The exact paired
+                # completion is reserved before an intent can precede an unlink.
+                pending=json.loads(E.encoded(action));completion=dict(pending,ordinal=self.count+1)
+                reserved=len(E.encoded(dict(stage='completed',action=completion,atUtc=JOURNAL_TIME)))
+                intent_bytes=len(E.encoded(dict(stage=stage,action=pending,atUtc=now)))
+                E.require(self.bytes+intent_bytes+reserved<=self.maximum, 'Retirement journal pair exceeds reserved envelope')
+            else:
+                E.require(self.pending is not None and type(action.get('ordinal')) is int
+                          and E.encoded(action)==E.encoded(dict(self.pending,ordinal=self.count+1)),
+                          'Retirement journal completion differs from reserved intent')
+        raw=E.encoded(dict(stage=stage,action=action,atUtc=now))
+        E.require(self.bytes+len(raw)<=self.maximum, 'Retirement journal exceeds reserved envelope')
+        if self.actions is not None and stage=='completed':
+            E.require(len(raw)<=self.reserved, 'Retirement journal completion exceeds paired reservation')
+        view=memoryview(raw)
+        while view:
+            written=os.write(self.fd,view);E.require(written>0,'Retirement journal write made no progress');view=view[written:]
+        os.fsync(self.fd);self.bytes+=len(raw)
+        if self.actions is not None:
+            if stage=='intent':self.pending=pending;self.reserved=reserved;self.seen.add(action['path'])
+            else:self.pending=None;self.reserved=0
         if stage=='completed':self.count+=1
     def close(self):os.close(self.fd)

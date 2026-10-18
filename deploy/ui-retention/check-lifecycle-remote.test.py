@@ -344,6 +344,34 @@ class RemoteTests(unittest.TestCase):
             self.runtime.cas('0' * 64, before, 'wrong-cas')
         self.assertEqual(self.runtime.state()[1], digest)
 
+    def test_completed_upgrade_review_revalidates_terminal_cycle_and_custody(self):
+        _, _, _, frame = self.custody_state()
+        applied = self.runtime.dispatch('apply-ordinary', frame)
+        state, _ = self.runtime.state()
+        custody = types.SimpleNamespace(verify_final_result=lambda *args: {'ok': True})
+        self.runtime.C = custody
+        plan = {'lifecycle': self.runtime.lifecycle(applied['index']), 'candidates': []}
+        final = self.runtime.dispatch('complete-cycle', {
+            'expectedStateSha256': applied['stateSha256'], 'expectedPair': state['pending']['context']['pair'],
+            'operationId': 'complete-upgrade-test', 'cycleId': 'fixture', 'pendingToken': 'f' * 64,
+            'custodyPlan': envelope(plan), 'custodyResult': envelope({'ok': True})})
+        request = {'mode': 'completed-cycle', 'configSha256': self.runtime.config_sha,
+                   'stateSha256': final['stateSha256']}
+        before = self.runtime.state_path.read_bytes()
+        review = I.completed_review(self.runtime, request)
+        self.assertTrue(review['fullCompletionVerified'])
+        self.assertEqual(review['completionReceipt'], final['receipt'])
+        self.assertEqual(self.runtime.state_path.read_bytes(), before)
+        with patch.object(custody, 'verify_final_result', side_effect=ValueError('retired source reappeared')):
+            with self.assertRaisesRegex(ValueError, 'reappeared'):
+                I.completed_review(self.runtime, request)
+        with self.assertRaisesRegex(ValueError, 'state changed'):
+            I.completed_review(self.runtime, dict(request, stateSha256='0' * 64))
+        terminal = Path(final['receipt']['path']); original = terminal.read_bytes()
+        altered = json.loads(original); altered['stateRevision'] += 1; terminal.write_bytes(R.encoded(altered))
+        with self.assertRaisesRegex(ValueError, 'terminal receipt differs'):
+            I.completed_review(self.runtime, request)
+
     def test_complete_status_rechecks_real_retirement_absence_and_journal(self):
         _, _, _, frame = self.custody_state()
         applied = self.runtime.dispatch('apply-ordinary', frame)
@@ -760,6 +788,94 @@ class PackagingTests(unittest.TestCase):
         config = dict(payload['config'], statePath=str(base / I.STATE.lstrip('/')))
         return R.Runtime(config, payload['configSha256'], None, None,
                          layout=types.SimpleNamespace(evidence=base / I.EVIDENCE.lstrip('/')))
+
+    def completed_upgrade_fixture(self, base):
+        plan, old, phase = self.upgrade_fixture(base)
+        state = plan['before']['preparedReview']['state']
+        state.update(status='complete', pending=None, completedContext={'pair': {'current': 'a', 'previous': 'b'}},
+                     lastCompleted={'cycleId': 'release-completed', 'custodyPlan': {'path': '/old/plan', 'sha256': '4' * 64},
+                                    'custodyResult': {'path': '/old/result', 'sha256': '5' * 64},
+                                    'ordinaryReceipt': {'path': '/old/ordinary', 'sha256': '6' * 64}},
+                     lastIntent={'path': '/old/intent', 'sha256': '7' * 64})
+        path = base / I.STATE.lstrip('/'); path.write_bytes(I.encoded(state))
+        request = {'mode': 'completed-cycle', 'configSha256': plan['request']['configSha256'],
+                   'stateSha256': I.sha(path.read_bytes())}
+        review = {'state': state, 'stateSha256': request['stateSha256'], 'context': state['completedContext'],
+                  'lastCompleted': state['lastCompleted'], 'fullCompletionVerified': True}
+        review['context']['guards'] = {'exact': 'fixture-held-identity'}
+        runtime = I.existing_runtime(request['configSha256'], base)
+        runtime.S = types.SimpleNamespace(compare_guards=lambda *args: None)
+        runtime.layout = types.SimpleNamespace()
+        patch.object(I, 'completed_review', return_value=review).start()
+        verification = {'context': state['completedContext'], 'index': state['index'],
+                        'lastCompleted': state['lastCompleted'], 'fullCompletionVerified': True,
+                        'custodyLifecycle': {'schema': 'pow-ui-custody-lifecycle-v1',
+                                             'approval': old['payload']['config']['approval'], 'index': state['index']}}
+        patch.object(I, 'completed_package_review', return_value=verification).start()
+        plan['request'] = request; plan['before'] = I.upgrade_inventory(request, base)
+        return plan, old, phase, verification
+
+    def test_completed_upgrade_preserves_completion_and_old_custody_authority(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(I.subprocess, 'run',
+                return_value=subprocess.CompletedProcess([], 0, b'{}')):
+            base = Path(directory); previous = os.umask(0o077)
+            try:
+                plan, old, phase, verification = self.completed_upgrade_fixture(base)
+                phase_raw = phase.read_bytes(); original = plan['before']['completedReview']['state']
+                result = I.upgrade_remote(plan, base)
+                runtime = self.upgraded_runtime(base, plan['payload']); state, state_sha = runtime.state()
+                self.assertTrue(result['retentionComplete']); self.assertFalse(result['freshPreparationRequired'])
+                self.assertEqual(state['status'], 'complete'); self.assertIsNone(state['pending'])
+                for key in ('index', 'completedContext', 'lastCompleted', 'lastIntent'):
+                    self.assertEqual(state[key], original[key])
+                self.assertEqual(state_sha, result['state']['sha256'])
+                self.assertEqual(runtime.completion_lifecycle(state, state['index']), verification['custodyLifecycle'])
+                self.assertNotEqual(verification['custodyLifecycle']['approval'], runtime.config['approval'])
+                changed = dict(state, lastCompleted=dict(state['lastCompleted'], cycleId='next-cycle'))
+                self.assertEqual(runtime.completion_lifecycle(changed, state['index']), runtime.lifecycle(state['index']))
+                self.assertEqual(phase.read_bytes(), phase_raw)
+                self.assertEqual(Path(result['priorState']['path']).read_bytes(), base64.b64decode(plan['before']['stateBase64']))
+                terminal = Path(result['receipt']['path']); value = json.loads(terminal.read_bytes())
+                value['completionVerification']['index'] = {'path': '/substituted', 'sha256': '0' * 64}
+                terminal.write_bytes(I.encoded(value))
+                with self.assertRaisesRegex(ValueError, 'completion upgrade proof'):
+                    runtime.state()
+            finally:
+                os.umask(previous)
+
+    def test_completed_upgrade_incompatible_new_verifier_blocks_config_switch(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(I.subprocess, 'run',
+                return_value=subprocess.CompletedProcess([], 0, b'{}')):
+            base = Path(directory); previous = os.umask(0o077)
+            try:
+                plan, _, _, _ = self.completed_upgrade_fixture(base)
+                config_raw = (base / I.CONFIG.lstrip('/')).read_bytes()
+                with patch.object(I, 'completed_package_review', side_effect=ValueError('new verifier refuses')):
+                    with self.assertRaisesRegex(ValueError, 'new verifier refuses'):
+                        I.upgrade_remote(plan, base)
+                self.assertEqual((base / I.CONFIG.lstrip('/')).read_bytes(), config_raw)
+                state = json.loads((base / I.STATE.lstrip('/')).read_bytes())
+                self.assertEqual(state['activePhase']['operation'], 'upgrade')
+                with self.assertRaisesRegex(ValueError, 'Unsealed upgrade'):
+                    I.upgrade_remote(plan, base)
+            finally:
+                os.umask(previous)
+
+    def test_completed_upgrade_final_held_census_drift_blocks_config_switch(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(I.subprocess, 'run',
+                return_value=subprocess.CompletedProcess([], 0, b'{}')):
+            base = Path(directory); previous = os.umask(0o077)
+            try:
+                plan, _, _, _ = self.completed_upgrade_fixture(base)
+                config_raw = (base / I.CONFIG.lstrip('/')).read_bytes()
+                runtime = I.existing_runtime(plan['request']['configSha256'], base)
+                runtime.S.compare_guards = lambda *args: (_ for _ in ()).throw(ValueError('held census changed'))
+                with self.assertRaisesRegex(ValueError, 'held census changed'):
+                    I.upgrade_remote(plan, base)
+                self.assertEqual((base / I.CONFIG.lstrip('/')).read_bytes(), config_raw)
+                self.assertEqual(json.loads((base / I.STATE.lstrip('/')).read_bytes())['activePhase']['operation'], 'upgrade')
+            finally:
+                os.umask(previous)
 
     def test_upgrade_preserves_old_bytes_and_reconciles_only_sealed_pending_cycle(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(I.subprocess, 'run',
