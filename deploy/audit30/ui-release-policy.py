@@ -31,7 +31,8 @@ BOOTSTRAP_IDS={'26500e4d2ff7-20261002T054938Z','835e30258d23-20261002T052338Z'}
 # retirement existed before this canonical plan-serialization contract.
 KNOWN_RETIREMENT_CONTROLLERS={'f292da5dcda23393208d05e1cffaea0b50b9a9cc915b81a5b9d55fdd0aa81319',
                             '35ba28d173941aadaa29c6c43dc792822d5589a11370c5ff43cc7947ee0353f4',
-                            'ef7fdf48ee628c8e4cf5e13cbb193cb40892d80424d2a286b9c6d1b37d04cf1e'}
+                            'ef7fdf48ee628c8e4cf5e13cbb193cb40892d80424d2a286b9c6d1b37d04cf1e',
+                            '095ec62c1bc8fc3756e203560fdc3482c94e4f96ba854d48524cb09687079011'}
 INDEX_V1 = 'pow-audit30-ui-admission-index-v1'
 INDEX_V2 = 'pow-ui-retention-admission-index-v2'
 MIGRATION_SCHEMA = 'pow-ui-retention-lineage-migration-v1'

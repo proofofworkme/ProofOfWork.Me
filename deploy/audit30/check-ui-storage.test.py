@@ -87,6 +87,10 @@ class StorageTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.base=Path(self.tmp.name);self.l=S.Layout(self.base)
         for p in [self.l.live,self.l.roots,self.l.archives,self.l.scratch,self.l.evidence,self.l.target.parent,self.l.lock.parent,self.l.units,self.l.held.parent,self.l.capacity.parent]:p.mkdir(parents=True,exist_ok=True)
         self.l.lock.write_text('');self.l.capacity.write_text('# safe capacity fixture\n');self.l.hold.write_text('generic hold remains\n')
+        configs={}
+        for name in ('/etc/logrotate.d/rsyslog','/etc/logrotate.d/ufw'):
+            path=self.base/name.lstrip('/');path.parent.mkdir(parents=True,exist_ok=True);path.write_text('hourly\nrotate 48\ncompress\ndelaycompress\n');configs[name]=S.hash_read(path)[0]
+        self.rotation_patch=patch.object(S,'ROTATION_CONFIG_PINS',configs);self.rotation_patch.start();self.addCleanup(self.rotation_patch.stop)
         rows=[dict(role='ui',path=p,decision='retain',retentionClass='managed-ui-recovery-container',releaseGate='exact proof and explicit scoped approval') for p in ['/var/backups/proofofwork-ui/releases','/var/backups/proofofwork-ui/rollback-roots']]
         self.review=dict(retain=rows);self.write_review()
         for n in ('proofofwork-ui-release-prune.timer','proofofwork-ui-storage-prune.timer'):(self.l.units/n).symlink_to('/dev/null')
@@ -561,6 +565,79 @@ finally:t.tearDown()
         fd=S.lock(self.l)
         try:return S.execute(plan,S.digest(plan),self.l,True,lock_fd=fd)
         finally:os.close(fd)
+
+    def rotating_logs(self,extra=()):
+        paths=sorted(S.rotating_log_paths(self.l))+[str(self.base/'var/log'/name) for name in extra]
+        for name in paths:
+            path=Path(name);path.parent.mkdir(parents=True,exist_ok=True);path.write_text('retained log\n');path.chmod(0o640)
+            self.review['retain'].append(dict(role='ui',path='/'+str(path.relative_to(self.base)),decision='retain'))
+        self.write_review();self.update_held();return [Path(name) for name in paths]
+
+    def rotate_logs(self):
+        for family in ('auth.log','kern.log','syslog','ufw.log'):
+            logs=self.base/'var/log';(logs/(family+'.48.gz')).unlink()
+            for number in range(47,1,-1):(logs/(family+'.'+str(number)+'.gz')).rename(logs/(family+'.'+str(number+1)+'.gz'))
+            (logs/(family+'.1')).unlink();(logs/(family+'.2.gz')).write_text('compressed log\n');(logs/(family+'.2.gz')).chmod(0o640)
+            (logs/family).rename(logs/(family+'.1'));(logs/family).write_text('fresh active log\n');(logs/family).chmod(0o640)
+
+    def test_approved_rotation_model_keeps_legacy_strict_and_observations_separate(self):
+        self.rotating_logs();legacy,_=S.safeguards(self.l);current,_=S.safeguards(self.l,model=S.ROTATING_LOG_GUARD_MODEL)
+        before=S.rotating_log_observations(self.l,current);self.assertEqual(len(before),196);self.assertEqual(len(current['rotationConfigs']),2)
+        self.assertEqual(S.modeled_guards(self.l,legacy,S.ROTATING_LOG_GUARD_MODEL),current)
+        self.assertTrue(all('inode' not in row for row in current['heldCensus'] if row['path'] in S.rotating_log_paths(self.l)))
+        self.rotate_logs();S.compare_guards(self.l,current,[])
+        self.assertNotEqual(before,S.rotating_log_observations(self.l,current))
+        with self.assertRaisesRegex(ValueError,'census changed'):S.compare_guards(self.l,legacy,[])
+        with self.assertRaisesRegex(ValueError,'Unsupported'):S.safeguards(self.l,model='unknown-model')
+        original=self.plan();original['safeguards']=current
+        with self.assertRaisesRegex(ValueError,'approved repair scope'):S.validate_plan(original,self.l,'cleanup',self.auth)
+
+    def test_rotation_during_ordinary_retirement_retains_descriptive_inode_evidence(self):
+        self.rotating_logs();plan=self.ordinary_execution_plan();durable=S.durable;rotated=False
+        def write(path,value):
+            nonlocal rotated
+            durable(path,value)
+            if value.get('status')=='partial' and not rotated:rotated=True;self.rotate_logs()
+        with patch.object(S,'durable',side_effect=write):out=self.execute_locked(plan)
+        receipt=json.loads(Path(out['receiptPath']).read_bytes())
+        self.assertTrue(rotated);self.assertTrue(receipt['holdsAndMasksUnchanged']);self.assertEqual(out['completedCount'],len(plan['delete']))
+        self.assertNotEqual(plan['heldLogObservations'],receipt['heldLogObservations'])
+        self.assertEqual(len(receipt['heldLogObservations']),196)
+
+    def test_rotation_model_refuses_absence_type_owner_device_mode_and_config_drift(self):
+        self.rotating_logs();expected,_=S.safeguards(self.l,model=S.ROTATING_LOG_GUARD_MODEL);log=self.base/'var/log/auth.log'
+        raw,_=S.safeguards(self.l)
+        for field in ('uid','gid','device','mode'):
+            changed=json.loads(json.dumps(raw));row=next(row for row in changed['heldCensus'] if row['path']==str(log));row[field]+=1
+            altered=S.modeled_guards(self.l,changed,S.ROTATING_LOG_GUARD_MODEL)
+            with self.assertRaisesRegex(ValueError,'census changed'):S.compare_guards(self.l,altered,[])
+        log.unlink()
+        with self.assertRaisesRegex(ValueError,'absent or not regular'):S.compare_guards(self.l,expected,[])
+        log.symlink_to(self.base/'var/log/syslog')
+        with self.assertRaisesRegex(ValueError,'absent or not regular'):S.compare_guards(self.l,expected,[])
+        log.unlink();log.mkdir()
+        with self.assertRaisesRegex(ValueError,'absent or not regular'):S.compare_guards(self.l,expected,[])
+        log.rmdir();log.write_text('log\n');log.chmod(0o640)
+        for config in expected['rotationConfigs']:
+            path=Path(config['path']);before=path.read_bytes();path.write_bytes(before+b'changed')
+            with self.assertRaisesRegex(ValueError,'rotation configuration changed'):S.compare_guards(self.l,expected,[])
+            path.write_bytes(before)
+
+    def test_rotation_model_keeps_unknown_logs_holds_masks_and_release_inodes_exact(self):
+        self.rotating_logs(extra=('auth.log.49.gz','other.log'));expected,_=S.safeguards(self.l,model=S.ROTATING_LOG_GUARD_MODEL)
+        for name in ('auth.log.49.gz','other.log'):
+            log=self.base/'var/log'/name;replacement=log.with_name('replacement');replacement.write_bytes(log.read_bytes());replacement.chmod(0o640);replacement.replace(log)
+            with self.assertRaisesRegex(ValueError,'census changed'):S.compare_guards(self.l,expected,[])
+            expected,_=S.safeguards(self.l,model=S.ROTATING_LOG_GUARD_MODEL)
+        self.review['retain'].append(dict(role='ui',path='/var/log/new.log',decision='retain'));self.write_review()
+        with self.assertRaises(ValueError):S.compare_guards(self.l,expected,[])
+        self.review['retain'].pop();self.write_review()
+        mask=self.l.units/'proofofwork-ui-release-prune.timer';mask.unlink();mask.write_text('unexpected unmask')
+        with self.assertRaisesRegex(ValueError,'mask changed'):S.compare_guards(self.l,expected,[])
+        mask.unlink();mask.symlink_to('/dev/null')
+        plan=self.ordinary_execution_plan();path=Path(plan['protected']['current']['path'])/'proofofwork-work/index.html'
+        old=path.stat();replacement=path.with_name('replacement');replacement.write_bytes(path.read_bytes());replacement.chmod(old.st_mode&0o777);os.utime(replacement,ns=(old.st_atime_ns,old.st_mtime_ns));replacement.replace(path)
+        with self.assertRaises(ValueError):self.execute_locked(plan)
 
     def test_ordinary_execution_full_protected_bytes_only_at_start_and_end(self):
         plan=self.ordinary_execution_plan();protected={str(self.l.archives/plan['protected'][k]['fields']['archive_name']) for k in ('current','previous')}

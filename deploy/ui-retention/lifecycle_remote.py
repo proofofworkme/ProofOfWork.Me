@@ -171,7 +171,7 @@ class Runtime:
     def current(self):
         cache = {}
         pair = self.S.protected_pair(self.layout, cache)
-        guards, _ = self.S.safeguards(self.layout)
+        guards, _ = self.S.safeguards(self.layout, model=self.S.ROTATING_LOG_GUARD_MODEL)
         ids = self.P.pair_ids(pair)
         manifests = {key: self.S.hash_read(Path(pair[key]['path']) / '.proofofwork-ui-release')[0]
                      for key in ('current', 'previous')}

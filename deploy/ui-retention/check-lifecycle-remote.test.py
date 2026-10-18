@@ -123,6 +123,9 @@ class RemoteTests(unittest.TestCase):
         original_state = self.runtime.state_path.read_bytes()
         before = I.evidence_inventory(self.layout.evidence)
         reviewed = I.prepared_review(self.runtime, request)
+        self.assertEqual(prepared['ordinaryPlan']['value']['safeguards']['heldIdentityModel'], F.S.ROTATING_LOG_GUARD_MODEL)
+        self.assertEqual(reviewed['context']['guards']['heldIdentityModel'], F.S.ROTATING_LOG_GUARD_MODEL)
+        self.assertEqual(reviewed['guardReconciliation']['differences'], [])
         self.assertTrue(reviewed['ordinarySnapshotsVerified'])
         self.assertTrue(reviewed['noRetirementStarted'])
         self.assertEqual(reviewed['stateSha256'], prepared['stateSha256'])
@@ -152,6 +155,43 @@ class RemoteTests(unittest.TestCase):
         request['stateSha256'] = R.sha(R.encoded(state))
         with self.assertRaisesRegex(ValueError, 'sealed prepared-before-custody'):
             I.prepared_review(self.runtime, request)
+
+    def test_prepared_log_rotation_supersession_keeps_original_plan_nonexecutable(self):
+        # Reproduce the exact legacy guard model of the abandoned package even
+        # when the fixture's current storage implementation supports a new one.
+        if hasattr(F.S, 'ROTATING_LOG_GUARD_MODEL'):
+            legacy = patch.object(F.S, 'ROTATING_LOG_GUARD_MODEL', None)
+            legacy.start(); self.addCleanup(legacy.stop)
+        logs = self.fixture.base / 'var/log'; logs.mkdir(parents=True)
+        log = logs / 'auth.log'; log.write_bytes(b'old log bytes')
+        self.fixture.review['retain'].append({'role': 'ui', 'path': '/var/log/auth.log', 'decision': 'retain'})
+        self.fixture.write_review(); self.fixture.update_held()
+        prepared = self.prepare(); request = self.upgrade_request(prepared)
+        plan = prepared['ordinaryPlan']['value']; plan_raw = Path(prepared['ordinaryPlan']['path']).read_bytes()
+        state_raw = self.runtime.state_path.read_bytes()
+        log.rename(log.with_name('auth.log.before-rotation')); log.write_bytes(b'new log bytes')
+        configs = {}
+        for name in ('rsyslog', 'ufw'):
+            relative = '/etc/logrotate.d/' + name; path = self.fixture.base / relative.lstrip('/')
+            path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b'hourly\nrotate 48\n')
+            configs[relative] = I.sha(path.read_bytes())
+        with self.assertRaisesRegex(ValueError, 'census changed'):
+            F.S.verify_plan(plan, self.layout)
+        with patch.object(I, 'ROTATION_CONFIG_PINS', configs), \
+                patch.object(F.S, 'execute', side_effect=AssertionError('Supersession must not execute')), \
+                patch.object(F.S, 'verify_plan', side_effect=AssertionError('Original plan must not be rebound')):
+            result = I.prepared_review(self.runtime, request)
+            change = result['guardReconciliation']
+            self.assertEqual(len(change['differences']), 1)
+            self.assertEqual(change['differences'][0]['path'], str(log))
+            self.assertFalse(change['ordinaryExecutionAuthorized'])
+            self.assertNotEqual(change['oldGuardsSha256'], change['currentGuardsSha256'])
+            self.assertEqual(Path(prepared['ordinaryPlan']['path']).read_bytes(), plan_raw)
+            self.assertEqual(self.runtime.state_path.read_bytes(), state_raw)
+            victim = self.layout.live / 'proofofwork-activity/index.html'
+            victim.write_bytes(b'changed protected UI')
+            with self.assertRaises(ValueError):
+                I.prepared_review(self.runtime, request)
 
     def test_stale_state_and_current_pair_refuse_before_intent(self):
         initialized = self.initialize()
@@ -538,6 +578,33 @@ class RemoteTests(unittest.TestCase):
 
 
 class PackagingTests(unittest.TestCase):
+    def test_prepared_guard_rotation_is_limited_to_exact_regular_log_inode_fields(self):
+        layout = types.SimpleNamespace(prefix=Path('/'))
+        rows = [{'path': '/var/log/' + family + suffix, 'exists': True, 'device': 2049,
+                 'inode': number + 1, 'mode': 0o100640, 'uid': 103, 'gid': 4}
+                for number, (family, suffix) in enumerate((f, s) for f in ('auth.log', 'kern.log', 'syslog', 'ufw.log')
+                    for s in ('', '.1', *('.' + str(n) + '.gz' for n in range(2, 49))))]
+        before = {'heldSha256': 'a' * 64, 'holdSha256': 'b' * 64, 'masks': ['unchanged'],
+                  'heldCensus': rows, 'missingHeldPaths': ['/held/missing']}
+        current = dict(before, heldCensus=[dict(row, inode=row['inode'] + 1000) for row in rows])
+        proof = I.prepared_guard_reconciliation(before, current, layout)
+        self.assertEqual(len(proof['differences']), 196)
+        self.assertEqual(proof['oldGuardsSha256'], I.sha(I.encoded(before)))
+        variants = [dict(current, holdSha256='changed'), dict(current, masks=[]),
+                    dict(current, missingHeldPaths=[]), dict(current, heldCensus=current['heldCensus'][::-1])]
+        for field, value in (('device', 3), ('mode', 0o100600), ('uid', 0), ('gid', 0),
+                             ('exists', False), ('path', '/var/log/auth.log.49.gz'), ('inode', True)):
+            variants.append(dict(current, heldCensus=[dict(current['heldCensus'][0], **{field: value}), *current['heldCensus'][1:]]))
+        for variant in variants:
+            with self.subTest(variant=variant['heldCensus'][0]), self.assertRaises(ValueError):
+                I.prepared_guard_reconciliation(before, variant, layout)
+        # An unrelated regular held path may never acquire the log exception.
+        for path, mode in (('/var/backups/protected', 0o100640), ('/var/log/auth.log', 0o120777)):
+            left = dict(rows[0], path=path, mode=mode)
+            with self.subTest(path=path, mode=mode), self.assertRaises(ValueError):
+                I.prepared_guard_reconciliation(dict(before, heldCensus=[left]),
+                                               dict(before, heldCensus=[dict(left, inode=9000)]), layout)
+
     def test_installer_guard_and_bound_reads_preserve_stale_atime(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'guard'
@@ -680,7 +747,8 @@ class PackagingTests(unittest.TestCase):
                                     'binding': {'path': '/local/proof', 'sha256': I.sha(raw)},
                                     'prepared': proof['prepared']}}
         runtime = types.SimpleNamespace(config={'sourceCommit': '1' * 40})
-        review = {'state': state, 'stateSha256': request['stateSha256'], 'ordinarySnapshotsVerified': True}
+        review = {'state': state, 'stateSha256': request['stateSha256'], 'ordinarySnapshotsVerified': True,
+                  'guardReconciliation': {'oldGuardsSha256': 'a' * 64, 'currentGuardsSha256': 'a' * 64, 'differences': []}}
         self.addCleanup(patch.stopall)
         patch.object(I, 'existing_runtime', return_value=runtime).start()
         patch.object(I, 'prepared_review', return_value=review).start()

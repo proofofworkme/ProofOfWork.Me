@@ -7729,6 +7729,20 @@ held lock, rehashes each selected object and any affected shared inode, and
 fully verifies the protected releases again at completion. Proof reuse never
 crosses a lock release, process restart or separate invocation.
 
+Approved repair plans explicitly use the
+`pow-ui-held-census-rotating-logs-v1` guard model. It pins the existing rsyslog
+and ufw logrotate configuration bytes and excludes only inode numbers for the
+196 held `auth.log`, `kern.log`, `syslog` and `ufw.log` paths: active, `.1`, and
+`.2.gz` through `.48.gz`. Presence, device, full mode/type, owner and group
+remain exact; absent or nonregular logs refuse. Descriptive inode observations
+remain in plans and progress receipts outside guard equality. This permits
+the configured hourly rotation without changing log retention, holds, masks,
+other held identities or any release/source/archive snapshot. Historical plans
+retain strict inode guards. Upgrade-only reconciliation may authenticate this
+same bounded inode drift for an abandoned prepared cycle while fully verifying
+its artifact/source/reference bytes; it neither rewrites nor executes the old
+plan. The fresh cycle receives a new approved plan under the explicit model.
+
 Deduplicated ordinary roots may share inodes with the protected pair. Their
 export requires a complete authenticated alias inventory across the verified
 live, prior and admitted ordinary roots. Every alias and total link count must

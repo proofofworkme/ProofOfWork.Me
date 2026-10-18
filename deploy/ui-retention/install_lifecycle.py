@@ -38,6 +38,10 @@ FILES = (
 )
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 MAX_EVIDENCE = 64 * 1024**2
+ROTATION_CONFIG_PINS = {
+    '/etc/logrotate.d/rsyslog': 'b33b9a6126dfec23ec966cb43d18fbd90d053acc683f67d3c76aa49c0b1afc3b',
+    '/etc/logrotate.d/ufw': '03dedaa1de48c9b708363ef4ac2ebeb35b20e47ce1f8a5d650f1335a5f37a5d1',
+}
 
 
 def require(ok, message):
@@ -281,6 +285,81 @@ def local_interruption(binding):
             'prepared': {k: prepared[k] for k in ('receipt', 'intent', 'stateSha256', 'cycleId', 'pendingToken')}}
 
 
+def prepared_guard_reconciliation(before, current, layout):
+    """Classify only obsolete prepared evidence; never authorize execution."""
+    require(set(before) == set(current)
+            and all(encoded(before[key]) == encoded(current[key]) for key in before if key != 'heldCensus'),
+            'Prepared upgrade changed hold/mask/missing/non-census guards')
+    left = before['heldCensus']; right = current['heldCensus']
+    require(len(left) == len(right) and [r['path'] for r in left] == [r['path'] for r in right]
+            and len({r['path'] for r in left}) == len(left), 'Prepared upgrade changed held-path scope/order')
+    permitted = {str(layout.prefix / ('var/log/' + family + suffix))
+                 for family in ('auth.log', 'kern.log', 'syslog', 'ufw.log')
+                 for suffix in ('', '.1', *('.' + str(n) + '.gz' for n in range(2, 49)))}
+    changes = []
+    for old, now in zip(left, right):
+        if encoded(old) == encoded(now):
+            continue
+        require(old['path'] in permitted and old.get('exists') is True and now.get('exists') is True
+                and set(old) == set(now) == {'path', 'exists', 'device', 'inode', 'mode', 'uid', 'gid'}
+                and stat.S_ISREG(old['mode']) and stat.S_ISREG(now['mode'])
+                and encoded({k: v for k, v in old.items() if k != 'inode'}) == encoded({k: v for k, v in now.items() if k != 'inode'})
+                and type(old['inode']) is int and old['inode'] > 0
+                and type(now['inode']) is int and now['inode'] > 0,
+                'Prepared upgrade drift exceeds fixed regular-log inode rotation')
+        changes.append({'path': old['path'], 'expected': old, 'actual': now})
+    return {'schema': 'pow-ui-prepared-guard-supersession-v1',
+            'oldGuardsSha256': sha(encoded(before)), 'currentGuardsSha256': sha(encoded(current)),
+            'differences': changes, 'ordinaryExecutionAuthorized': False,
+            'qualification': 'Only the abandoned prepared cycle is superseded; its original plan remains immutable.'}
+
+
+def verify_prepared_bytes_for_supersession(storage, plan, layout, current_guards):
+    """Full old-controller byte proofs without constructing an executable plan.
+
+    The old plan's unrelated log census may be obsolete. All artifact, source,
+    provenance, reference and capacity bindings remain exact. This verifier has
+    no execution path and returns no modified plan or reusable execution guard.
+    """
+    storage.validate_plan(plan, layout, 'future-retention', APPROVAL)
+    require(not plan['moves'] and 'reconciliation' not in plan, 'Expanded prepared supersession scope')
+    storage.compare_guards(layout, current_guards, [])
+    require(storage.hash_read(layout.capacity, 1024**2)[0] == plan['capacityHelperSha256'],
+            'Prepared capacity helper changed')
+    require(storage.hash_read(Path(storage.__file__).resolve(), 1024**2)[0] == plan['controllerSha256'],
+            'Prepared controller binding changed')
+    protected = plan['protected']; cache = {}
+    paths = [row['path'] for row in plan['delete']]
+    admitted = storage.load_citation_review(plan.get('citationReview'), layout, protected,
+                                            plan['kind'], paths, APPROVAL)
+    storage.references(paths, layout.refs + [Path(row['path']) for row in protected['sources']], reviewed_files=admitted)
+    for key in ('current', 'previous'):
+        expected = protected[key]
+        actual = storage.release_proof(Path(expected['path']), layout, cache)
+        require(actual['fields'] == expected['fields'], 'Prepared protected release provenance changed')
+        storage.match_snapshot(actual['snapshot'], expected['snapshot'])
+        retained = cache[str(layout.archives / expected['fields']['archive_name'])]
+        archived = next((row for row in plan['archives'] if row['path'] == retained['path']), None)
+        require(archived is not None, 'Prepared retained archive binding absent')
+        storage.match_snapshot(retained['snapshot'], archived['snapshot'])
+        require([row['path'] for row in retained['sidecars']] == [row['path'] for row in archived['sidecars']],
+                'Prepared retained archive sidecar scope changed')
+        for actual_sidecar, expected_sidecar in zip(retained['sidecars'], archived['sidecars']):
+            storage.match_snapshot(actual_sidecar, expected_sidecar)
+    for row in protected['sources']:
+        storage.match_snapshot(storage.snapshot(Path(row['path']), links=True), row['snapshot'])
+    for row in plan['delete']:
+        storage.match_snapshot(storage.snapshot(Path(row['path'])), row['snapshot'])
+        if row['kind'] == 'rollback-root':
+            actual = storage.release_proof(Path(row['path']), layout, cache)
+            require(actual['fields'] == row['release']['fields'], 'Prepared candidate provenance changed')
+    for row in plan['archives']:
+        storage.match_snapshot(storage.snapshot(Path(row['path'])), row['snapshot'])
+        for sidecar in row['sidecars']:
+            storage.match_snapshot(storage.snapshot(Path(sidecar['path'])), sidecar)
+    storage.compare_guards(layout, current_guards, [])
+
+
 def prepared_review(runtime, request):
     state, state_sha = runtime.state()
     require(state_sha == request['stateSha256'], 'Prepared state changed after interruption')
@@ -307,17 +386,35 @@ def prepared_review(runtime, request):
     require(receipt['ordinaryPlan'] == dict(pending['ordinaryPlan'], value=plan)
             and runtime.S.digest(plan) == pending['ordinaryPlan']['sha256']
             and plan['policyScope']['admissionIndex'] == state['index'], 'Prepared ordinary plan differs')
-    # One full old-controller verification authenticates all frozen candidates,
-    # archives, retained sources, held ancestors and current/prior bytes. No old
-    # plan is rebound or executed using the replacement controller.
-    runtime.S.verify_plan(plan, runtime.layout)
+    require(plan['safeguards'] == pending['context']['guards'] == intent['context']['guards'],
+            'Sealed prepared guard bindings differ')
+    if 'heldIdentityModel' in plan['safeguards']:
+        require(hasattr(runtime.S, 'guard_model'), 'Prepared guard model is unsupported by its installed controller')
+        guards, _ = runtime.S.safeguards(runtime.layout, model=runtime.S.guard_model(plan['safeguards']))
+    else:
+        guards, _ = runtime.S.safeguards(runtime.layout)
+    guard_reconciliation = prepared_guard_reconciliation(plan['safeguards'], guards, runtime.layout)
+    if guard_reconciliation['differences']:
+        # Configured rotation is pinned independently of the permitted inode
+        # drift. These files and all log data remain outside the upgrade scope.
+        configs = [{'path': str(runtime.layout.prefix / path.lstrip('/')), 'sha256': digest}
+                   for path, digest in ROTATION_CONFIG_PINS.items()]
+        require(len(configs) == 2, 'Unexpected configured log rotation scope')
+        for binding in configs:
+            read_bound(binding['path'], binding['sha256'])
+        guard_reconciliation['rotationConfigFiles'] = configs
+        verify_prepared_bytes_for_supersession(runtime.S, plan, runtime.layout, guards)
+    else:
+        runtime.S.verify_plan(plan, runtime.layout)
     runtime.P.load_index(state['index']['path'], state['index']['sha256'], runtime.layout, APPROVAL)
-    guards, _ = runtime.S.safeguards(runtime.layout)
     pair = plan['protected']
     context = {'pair': runtime.P.pair_ids(pair), 'guards': guards,
                'manifests': {k: runtime.S.hash_read(Path(pair[k]['path']) / '.proofofwork-ui-release')[0]
                              for k in ('current', 'previous')}}
-    require(context == pending['context'] == intent['context'], 'Prepared protected pair/guards changed')
+    require(pending['context'] == intent['context']
+            and {k: v for k, v in context.items() if k != 'guards'} ==
+                {k: v for k, v in pending['context'].items() if k != 'guards'}, 'Prepared protected pair changed')
+    runtime.S.compare_guards(runtime.layout, guards, [])
     https = json.loads(read_bound(pending['httpsReceipt']['path'], pending['httpsReceipt']['sha256']))
     runtime.verify_publication(https, pending['publicationReceipt'], pair, context)
     interrupted = json.loads(base64.b64decode(request['interruption']['base64'], validate=True))
@@ -331,7 +428,8 @@ def prepared_review(runtime, request):
     return {'state': state, 'stateSha256': state_sha, 'context': context,
             'phase': {k: pending[k] for k in ('cycleId', 'token', 'ordinaryPlan', 'httpsReceipt', 'publicationReceipt')},
             'prepareIntent': expected['intent'], 'prepareReceipt': expected['receipt'],
-            'ordinarySnapshotsVerified': True, 'noRetirementStarted': True}
+            'ordinarySnapshotsVerified': True, 'noRetirementStarted': True,
+            'guardReconciliation': guard_reconciliation}
 
 
 def upgrade_inventory(request, prefix=Path('/')):
@@ -434,6 +532,7 @@ def upgrade_remote(plan, prefix=Path('/')):
                   'priorConfig': {'path': str(journal / 'prior-config.json'), 'sha256': plan['request']['configSha256']},
                   'priorState': {'path': str(journal / 'prior-state.json'), 'sha256': plan['request']['stateSha256']},
                   'supersededCycleId': old_state['pending']['cycleId'], 'index': planned['index'],
+                  'preparedGuardReconciliation': before['preparedReview']['guardReconciliation'],
                   'freshPreparationRequired': True, 'retentionComplete': False, 'publicationHealthy': True,
                   'priorPackageAndPhaseEvidencePreserved': True, 'priorHelpersHoldsAndTimersPreserved': True}
         save(journal / 'completed.json', encoded(result))

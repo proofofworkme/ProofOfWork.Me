@@ -143,3 +143,16 @@ reuse protected proofs only with a live exclusive deployment-lock descriptor;
 without that descriptor it performs the full checks. Selected objects and
 shared inodes affected by known unlinks remain fully hashed, and completion
 requires a fresh protected-release proof. No proof cache survives the operation.
+
+New approved repair plans explicitly select
+`pow-ui-held-census-rotating-logs-v1`. This model pins the rsyslog and ufw
+logrotate configuration bytes and retains presence, device, full mode/type,
+owner and group for the held `auth.log`, `kern.log`, `syslog` and `ufw.log`
+families (active, `.1`, and `.2.gz` through `.48.gz`). Only these 196 paths omit
+inode numbers from guard equality so the configured hourly rotation can run.
+The plan and progress receipts retain descriptive inode observations separately.
+Missing or nonregular logs, configuration changes, other held identities,
+release snapshots, holds and timer masks still refuse. Historical plans retain
+their original strict guard model. The installer may separately authenticate
+inode-only drift when superseding an abandoned prepared cycle; it preserves
+the original plan and full artifact proofs and never makes that plan executable.

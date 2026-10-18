@@ -50,6 +50,7 @@ MAX_JSON = 64 * 1024**2
 # dynamic-log exception or an automatic recovery from absent paths.
 RECONCILIATION_PINS = dict(reviewManifest='3d09b077148cf471c1b9581e091a676ad7d4b25e799ba50b11561247b7f1f04b',originalPlan='17fd46d15d836d485e96fe0e25abf9bae0505cfee4d64728a895fd50b0e7e8b7',originalIntent='e2a6afa6f7da36ce4e9c5c7797409e5911d99bdcd5f448a2843e513d3a892df2',failedReceipt='4575ad6fee8475822c4db7db31da7843b26abd1053f052027ec4dc4cfcdf12a9',originalController='038a2315c4ba5d10e27335a69c400f6c09ec3c2b50b0f64fefb1f5f09d6a06c2',rotationEvidence='0550a89409c6176febf514278ee0ae70710e0b4b5788d2962e077dfe799b3bb9')
 ROTATION_CONFIG_PINS={'/etc/logrotate.d/rsyslog':'b33b9a6126dfec23ec966cb43d18fbd90d053acc683f67d3c76aa49c0b1afc3b','/etc/logrotate.d/ufw':'03dedaa1de48c9b708363ef4ac2ebeb35b20e47ce1f8a5d650f1335a5f37a5d1'}
+ROTATING_LOG_GUARD_MODEL='pow-ui-held-census-rotating-logs-v1'
 
 def utc(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
 def encoded(value): return json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
@@ -342,7 +343,37 @@ def held_boundary(paths, review, layout):
                 records.append(dict(candidate=p,ancestor=q,releaseGate=row['releaseGate']))
     return records
 
-def safeguards(layout):
+def guard_model(guards):
+    if 'heldIdentityModel' not in guards:return None
+    if guards['heldIdentityModel']!=ROTATING_LOG_GUARD_MODEL or not guards['heldIdentityModel']:
+        raise ValueError('Unsupported held identity model')
+    return guards['heldIdentityModel']
+
+def rotating_log_paths(layout):
+    return {str(layout.prefix/('var/log/'+family+suffix))
+            for family in ('auth.log','kern.log','syslog','ufw.log')
+            for suffix in ('','.1',*('.'+str(n)+'.gz' for n in range(2,49)))}
+
+def modeled_guards(layout,guards,model):
+    """Normalize only the approved unrelated log identities, never artifact proof."""
+    if model is None:return guards
+    guard_model(dict(heldIdentityModel=model))
+    configs=[]
+    for path,expected in ROTATION_CONFIG_PINS.items():
+        p=layout.prefix/path.lstrip('/')
+        if hash_read(p,65536)[0]!=expected:raise ValueError('Pinned hourly log rotation configuration changed')
+        configs.append(dict(path=str(p),sha256=expected))
+    permitted=rotating_log_paths(layout);census=[]
+    for original in guards['heldCensus']:
+        row=dict(original)
+        if row['path'] in permitted:
+            if row.get('exists') is not True or not stat.S_ISREG(row.get('mode',0)):
+                raise ValueError('Configured held rotating log is absent or not regular')
+            row.pop('inode')
+        census.append(row)
+    return dict(guards,heldIdentityModel=model,rotationConfigs=configs,heldCensus=census)
+
+def safeguards(layout,model=None):
     review,h=read_json(layout.held,HELD_SHA); hold=hash_read(layout.hold,65536)[0]
     if hold!=HOLD_SHA: raise ValueError('Generic hold changed')
     masks=[]
@@ -358,7 +389,17 @@ def safeguards(layout):
         if row['exists']:
             s=p.lstat();row.update(device=s.st_dev,inode=s.st_ino,mode=s.st_mode,uid=s.st_uid,gid=s.st_gid)
         census.append(row)
-    return dict(heldSha256=h,holdSha256=hold,masks=masks,heldCensus=census,missingHeldPaths=[r['path'] for r in census if not r['exists']]),review
+    guards=dict(heldSha256=h,holdSha256=hold,masks=masks,heldCensus=census,missingHeldPaths=[r['path'] for r in census if not r['exists']])
+    return modeled_guards(layout,guards,model),review
+
+def rotating_log_observations(layout,expected):
+    """Descriptive inodes stay outside comparable guards and never grant deletion."""
+    model=guard_model(expected)
+    if model is None:return []
+    raw,_=safeguards(layout)
+    if modeled_guards(layout,raw,model)!=expected:raise ValueError('Held log observation guard changed')
+    permitted=rotating_log_paths(layout)
+    return [row for row in raw['heldCensus'] if row['path'] in permitted]
 
 def path_occurrences(raw,paths):
     out=[]
@@ -647,8 +688,10 @@ def create_reconciliation_plan(layout,approval_sha,binding):
     return plan
 
 def create_plan(layout, kind, approval_sha, policy_scope=None, prerequisite=None, inverse_receipt=None,citation_review=None):
-    cache={}; protected=protected_pair(layout,cache); guards,review=safeguards(layout)
+    model=ROTATING_LOG_GUARD_MODEL if kind=='future-retention' and approval_sha==REPAIR_APPROVAL_SHA else None
+    cache={}; protected=protected_pair(layout,cache); guards,review=safeguards(layout,model=model)
     plan=dict(schema='pow-audit30-exact-ui-storage-plan-v1',kind=kind,host='77.42.91.106',atUtc=utc(),scopeApprovalSha256=approval_sha,safeguards=guards,protected=protected,delete=[],moves=[],policyScope=policy_scope,capacityHelperSha256=hash_read(layout.capacity,1024**2)[0],controllerSha256=hash_read(Path(__file__).resolve(),1024**2)[0])
+    if model is not None:plan['heldLogObservations']=rotating_log_observations(layout,guards)
     if kind in ('cleanup','future-retention'):
         rows=layout.exact() if kind=='cleanup' else policy_scope['eligible']
         keep={protected[k]['path'] for k in ('current','previous')}|{r['path'] for r in protected['sources']}|{str(layout.archives/protected[k]['fields']['archive_name'])+s for k in ('current','previous') for s in ('','.sha256','.provenance')}
@@ -712,6 +755,8 @@ def create_plan(layout, kind, approval_sha, policy_scope=None, prerequisite=None
 
 def validate_plan(plan,layout,kind,approval_sha):
     if plan.get('schema')!='pow-audit30-exact-ui-storage-plan-v1' or plan.get('host')!='77.42.91.106' or plan.get('kind')!=kind or plan.get('scopeApprovalSha256')!=approval_sha:raise ValueError('Wrong or forged operation plan')
+    if guard_model(plan['safeguards']) is not None and (kind!='future-retention' or approval_sha!=REPAIR_APPROVAL_SHA):
+        raise ValueError('Rotating log guard requires approved repair scope')
     protected=plan['protected'];current=protected['current'];previous=protected['previous']
     if current['path']!=str(layout.live) or previous['path']!=str(layout.roots/('proofofwork-www-pre-'+current['fields']['release_id'])) or current['fields']['release_id']==previous['fields']['release_id']:raise ValueError('Protected live/immediate-prior paths differ')
     if len(protected['sources']) != 2 or any(Path(source['path']) not in source_locations(layout, release['fields']['release_id']) for source,release in zip(protected['sources'],(current,previous))):
@@ -784,7 +829,7 @@ def capacity(layout,phase,additional_bytes=8*1024**2,scratch_bytes=0,retirement=
     subprocess.run(['/usr/bin/python3','-I','-B',str(layout.capacity),'check-scratch','--path',str(layout.scratch),'--additional-bytes',str(scratch_bytes),'--phase',phase],check=True,timeout=60,capture_output=True)
 
 def compare_guards(layout,expected,paths):
-    actual,_=safeguards(layout)
+    actual,_=safeguards(layout,model=guard_model(expected))
     # Held parents survive; expected metadata intentionally omits directory timestamps/counts.
     if actual!=expected:raise ValueError('Hold bytes, masks or held-path census changed')
 
@@ -910,12 +955,14 @@ def execute_impl(plan,plan_sha,layout,apply=False,*,lock_fd=None):
     intent=Path(str(prefix)+'-intent.json');phase='before-action';current=None
     def progress(status,error=None):
         p=Path(str(prefix)+'-'+str(len(completed)).zfill(3)+'-'+status+'.json')
+        descriptive={}
         try:
-            actual,_=safeguards(layout);guards_unchanged=actual==plan['safeguards'];missing=actual['missingHeldPaths']
+            actual,_=safeguards(layout,model=guard_model(plan['safeguards']));guards_unchanged=actual==plan['safeguards'];missing=actual['missingHeldPaths']
+            if guard_model(plan['safeguards']) is not None:descriptive['heldLogObservations']=rotating_log_observations(layout,actual)
         except (OSError,ValueError):guards_unchanged=False;missing=None
         if status=='completed' and not guards_unchanged:raise ValueError('Completion guard fence changed')
         after_capacity=resources(layout) if status in ('completed','failed') else None
-        durable(p,dict(schema='pow-audit30-ui-storage-progress-v1',status=status,atUtc=utc(),planSha256=plan_sha,intentPath=str(intent),intentSha256=hash_read(intent,MAX_JSON)[0],completed=completed,currentPath=current,phase=phase,errorClass=error,missingHeldPaths=missing,holdsAndMasksUnchanged=guards_unchanged,guardBaselinePlanSha256=plan_sha,guardBaseline='fresh-explicitly-reconciled-plan' if 'reconciliation' in plan else 'original-plan',reconciliation=plan.get('reconciliation'),beforeCapacity=before_capacity,afterCapacity=after_capacity,observedAvailableRootBytesChange=after_capacity['availableRootBytes']-before_capacity['availableRootBytes'] if after_capacity else None))
+        durable(p,dict(schema='pow-audit30-ui-storage-progress-v1',status=status,atUtc=utc(),planSha256=plan_sha,intentPath=str(intent),intentSha256=hash_read(intent,MAX_JSON)[0],completed=completed,currentPath=current,phase=phase,errorClass=error,missingHeldPaths=missing,holdsAndMasksUnchanged=guards_unchanged,guardBaselinePlanSha256=plan_sha,guardBaseline='fresh-explicitly-reconciled-plan' if 'reconciliation' in plan else 'original-plan',reconciliation=plan.get('reconciliation'),beforeCapacity=before_capacity,afterCapacity=after_capacity,observedAvailableRootBytesChange=after_capacity['availableRootBytes']-before_capacity['availableRootBytes'] if after_capacity else None,**descriptive))
         return p
     try:
         durable(intent,dict(schema='pow-audit30-ui-storage-intent-v1',plan=plan,planSha256=plan_sha,atUtc=utc(),status='approved-intent',beforeCapacity=before_capacity))
