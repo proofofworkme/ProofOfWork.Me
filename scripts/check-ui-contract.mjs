@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 import { getSurfaceSeo, resolvePageMetadata } from "../src/app/seoMetadata.mjs";
+import { compactChartValue, createChartScale } from "../src/shared/charts/chartScale.mjs";
 
 const files = [
   "README.md",
@@ -1192,15 +1193,15 @@ expect(
 );
 expect(
   "bond supply charts preserve exact domains until coordinate conversion",
-  /function infinityBondChartNumericValue[\s\S]*Exclude<InfinityBondChartMetric, "supply">/.test(
-    app,
-  ) &&
-    /const exactSupplyByPoint = new Map[\s\S]*exactIntegerBigInt\(point\.confirmedSupply\)/.test(
-      app,
-    ) &&
-    /const observedRange = rawYMax - rawYMin[\s\S]*exactBondChartPadding\(domainRange\)[\s\S]*exactBondChartRatio\(value, yMin, yMax\)/.test(
-      app,
-    ) &&
+  /function InfinityBondChart[\s\S]*metric\s*===\s*"supply"\s*\?\s*exactIntegerText\(point\.confirmedSupply\)[\s\S]*<LedgerChart/.test(app) &&
+    (() => {
+      const low = "90071992547409931234567890";
+      const high = "90071992547409931234567891";
+      const scale = createChartScale([low, high], { mode: "linear" });
+      return scale.minimum === low && scale.maximum === high &&
+        scale.position(high) > scale.position(low) &&
+        scale.position("unavailable") === null;
+    })() &&
     !/exactIntegerNumber\(point\.confirmedSupply\)/.test(app),
 );
 expect(
@@ -3099,34 +3100,39 @@ expect(
       refreshWorkFloorBlock,
     ),
 );
+const sharedChart = read("src/shared/charts/LedgerChart.tsx");
 const workFloorChartBlock =
-  app.match(
-    /const WORK_FLOOR_LOG_SCALE_RATIO[\s\S]*?const INFINITY_BOND_CHART_OPTIONS/u,
-  )?.[0] ?? "";
+  app.match(/function WorkFloorChart[\s\S]*?const INFINITY_BOND_CHART_OPTIONS/u)?.[0] ?? "";
 expect(
-  "WORK floor chart switches to a disclosed logarithmic scale for extreme confirmed ranges",
-  /WORK_FLOOR_LOG_SCALE_RATIO = 100/.test(workFloorChartBlock) &&
-    /rawMin > 0 && rawMax \/ rawMin >= WORK_FLOOR_LOG_SCALE_RATIO/.test(
-      workFloorChartBlock,
-    ) &&
-    /Math\.log10\(rawMin\)/.test(workFloorChartBlock) &&
-    /mode: "logarithmic"/.test(workFloorChartBlock) &&
-    /on a logarithmic scale/.test(workFloorChartBlock) &&
-    /Price \/ WORK[\s\S]*\(log scale\)/.test(workFloorChartBlock),
+  "shared WORK floor chart discloses Auto log at the exact 100-fold boundary and permits explicit scales",
+  /<LedgerChart/.test(workFloorChartBlock) &&
+    createChartScale(["1", "100"]).effective === "log" &&
+    createChartScale(["1", "99.9999999999999999"]).effective === "linear" &&
+    createChartScale(["1", "100"], { mode: "linear" }).effective === "linear" &&
+    createChartScale(["1", "2"], { mode: "log" }).effective === "log" &&
+    /Auto · /.test(sharedChart) &&
+    /Log · equal proportional changes/.test(sharedChart) &&
+    /aria-pressed=\{[\s\S]{0,100}mode[\s\S]{0,100}=== option\}/.test(sharedChart),
 );
 expect(
-  "WORK floor chart preserves a safe linear fallback",
-  /mode: "linear"/.test(workFloorChartBlock) &&
-    /ticks: \[domainMin, \(domainMin \+ domainMax\) \/ 2, domainMax\]/.test(
-      workFloorChartBlock,
-    ),
+  "shared chart preserves zero and negative observations with a disclosed linear fallback",
+  ["0", "-1"].every((value) => {
+    const scale = createChartScale([value, "100"], { mode: "log" });
+    return scale.effective === "linear" && !scale.logAvailable &&
+      Number.isFinite(scale.position(value)) &&
+      scale.ticks.length > 1 && scale.ticks.every((tick) => Number.isFinite(tick.position));
+  }) &&
+    /Log requires every available value to be greater than zero/.test(sharedChart),
 );
 expect(
-  "WORK floor chart keeps high-value ticks inside a wider compact-label gutter",
-  /const padLeft = 112/.test(workFloorChartBlock) &&
-    /growthCompactNumber\(value, 1\)/.test(workFloorChartBlock) &&
-    /workFloorChartAxisPriceLabel\(tick, unit\)/.test(workFloorChartBlock) &&
-    !/workFloorAxisPriceLabel\(tick, unit\)/.test(workFloorChartBlock),
+  "shared charts measure their container and use compact axes while retaining exact data",
+  /ResizeObserver/.test(sharedChart) &&
+    /getBoundingClientRect\(\)\.width/.test(sharedChart) &&
+    /formatTick\(tick\.axisValue \?\? tick\.value\)/.test(sharedChart) &&
+    /View data/.test(sharedChart) &&
+    /point\.valueLabel \?\? point\.value/.test(sharedChart) &&
+    compactChartValue("1000000000000") === "1T" &&
+    compactChartValue("90071992547409931234567890").length <= 10,
 );
 expect(
   "livenet WORK and Growth normalizers preserve and require canonical miner-fee proof",

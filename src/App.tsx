@@ -2,6 +2,7 @@ import { ReviewDialog } from "./shared/components/ReviewDialog";
 import { ActionTransactionReview, type ActionReview } from "./shared/components/ActionTransactionReview";
 import { ActionRecoveryPanel } from "./shared/components/ActionRecoveryPanel";
 import { BrandMark } from "./shared/components/BrandMark";
+import { LedgerChart, type ChartPoint, type ChartSeries } from "./shared/charts/LedgerChart";
 import { APP_ICONS } from "./app/appIcons";
 import type { PagesPublicationDraft, PagesDnsLinkRequest, PagesViewState, PagesBrowserTarget } from "./features/pages/PagesWorkspace";
 import type { CodeViewState } from "./features/code/CodeRoot";
@@ -1128,6 +1129,10 @@ type TokenMarketPricePoint = {
   kind: "ask" | "mint" | "sale";
   label: string;
   priceSats: number;
+  txid?: string;
+  network?: BitcoinNetwork;
+  detail?: string;
+  sealed?: boolean;
 };
 
 type PowTokenHolder = {
@@ -2518,6 +2523,7 @@ type WorkMarketplaceV4Status = {
 
 type WorkFloorPoint = {
   floorSats: number;
+  floorSatsExact?: string;
   floorQ8?: string;
   label: string;
   networkValueSats: number;
@@ -2744,6 +2750,9 @@ type InfinityActualValue = {
 
 type InfinityBondChartPoint = {
   bondActions: number;
+  blockHeight?: number;
+  blockIndex?: number;
+  blockHash?: string;
   confirmedSupply: ExactIntegerValue;
   createdAt: string;
   floorQ8?: string;
@@ -18515,20 +18524,19 @@ function normalizeWorkFloorQuote(
     chartPoints: Array.isArray(payload.chartPoints)
       ? payload.chartPoints
           .map((point) => ({
-            floorSats: Number(point.floorSats) || 0,
+            floorSats: exactDecimalText(point.floorSatsExact ?? point.floorSats)
+              ? Number(point.floorSatsExact ?? point.floorSats)
+              : NaN,
+            floorSatsExact: exactDecimalText(point.floorSatsExact ?? point.floorSats) || undefined,
             floorQ8: exactIntegerText(point.floorQ8) || undefined,
             label: String(point.label ?? "point"),
             networkValueSats: Number(point.networkValueSats) || 0,
             networkValueQ8:
               exactIntegerText(point.networkValueQ8) || undefined,
-            years: Number(point.years) || 0,
+            years: typeof point.years === "number" && Number.isFinite(point.years)
+              ? point.years
+              : NaN,
           }))
-          .filter(
-            (point) =>
-              Number.isFinite(point.floorSats) &&
-              Number.isFinite(point.networkValueSats) &&
-              Number.isFinite(point.years),
-          )
       : [],
     indexedAt:
       typeof payload.indexedAt === "string"
@@ -19484,27 +19492,20 @@ function normalizeInfinityBondChartPoint(
     Number.isFinite(Date.parse(payload.createdAt))
       ? payload.createdAt
       : "";
-  if (!createdAt) {
-    return null;
-  }
-
   return {
     bondActions: Number(payload?.bondActions) || 0,
+    blockHeight: Number.isSafeInteger(payload?.blockHeight) ? payload?.blockHeight : undefined,
+    blockIndex: Number.isSafeInteger(payload?.blockIndex) ? payload?.blockIndex : undefined,
+    blockHash: typeof payload?.blockHash === "string" ? payload.blockHash : undefined,
     confirmedSupply:
-      typeof payload?.confirmedSupply === "string"
-        ? exactIntegerText(payload.confirmedSupply) || 0
-        : exactIntegerNumber(payload?.confirmedSupply),
+      exactIntegerText(payload?.confirmedSupply),
     createdAt,
     floorQ8: exactIntegerText(payload?.floorQ8) || undefined,
     floorSats:
-      typeof payload?.floorSats === "string"
-        ? exactDecimalText(payload.floorSats) || 0
-        : exactDecimalNumber(payload?.floorSats),
+      exactDecimalText(payload?.floorSats),
     networkValueQ8: exactIntegerText(payload?.networkValueQ8) || undefined,
     networkValueSats:
-      typeof payload?.networkValueSats === "string"
-        ? exactDecimalText(payload.networkValueSats) || 0
-        : exactDecimalNumber(payload?.networkValueSats),
+      exactDecimalText(payload?.networkValueSats),
     txid: typeof payload?.txid === "string" ? payload.txid : "",
   };
 }
@@ -38918,9 +38919,7 @@ export default function App() {
             setSelectedTokenId={setTokenSelectedId}
             setTokenDetailTarget={setTokenDetailTarget}
             submitMint={mintToken}
-            tokenDetailTarget={
-              activeFolder === "work" ? WORK_TOKEN_TICKER : ""
-            }
+            tokenDetailTarget={effectiveTokenDetailTarget}
             tokenIndexAddress={tokenIndexAddressForNetwork("livenet")}
             historySummary={tokenSummary}
             ledgerLoading={tokenLedgerLoading}
@@ -41281,45 +41280,13 @@ function InfinityApp({
   const infinityChartPoints = summary?.chartPoints ?? [];
   const infinityLatestChartPoint =
     infinityChartPoints[infinityChartPoints.length - 1];
-  const infinityChartSupplyValues = infinityChartPoints
-    .map((point) => exactIntegerBigInt(point.confirmedSupply))
-    .filter((value): value is bigint => value !== null && value >= 0n);
-  const infinityChartNumericValues =
-    infinityChartMetric === "supply"
-      ? []
-      : infinityChartPoints.map((point) =>
-          infinityBondChartNumericValue(point, infinityChartMetric),
-        );
-  const infinityChartMinLabel =
-    infinityChartMetric === "supply"
-      ? `${formatExactInteger(
-          infinityChartSupplyValues.length
-            ? infinityChartSupplyValues.reduce((minimum, value) =>
-                value < minimum ? value : minimum,
-              )
-            : 0n,
-        )} ${bondConfig.ticker}`
-      : infinityBondAxisLabel(
-          infinityChartNumericValues.length
-            ? Math.min(...infinityChartNumericValues)
-            : 0,
-          infinityChartMetric,
-        );
-  const infinityChartMaxLabel =
-    infinityChartMetric === "supply"
-      ? `${formatExactInteger(
-          infinityChartSupplyValues.length
-            ? infinityChartSupplyValues.reduce((maximum, value) =>
-                value > maximum ? value : maximum,
-              )
-            : 0n,
-        )} ${bondConfig.ticker}`
-      : infinityBondAxisLabel(
-          infinityChartNumericValues.length
-            ? Math.max(...infinityChartNumericValues)
-            : 0,
-          infinityChartMetric,
-        );
+  const latestChartSupply = exactIntegerText(
+    infinityLatestChartPoint ? infinityLatestChartPoint.confirmedSupply : confirmedSupply,
+  );
+  const latestChartFloor = infinityLatestChartPoint
+    ? chartProofDecimal(infinityLatestChartPoint.floorSats, infinityLatestChartPoint.floorQ8)
+    : chartProofDecimal(floorSats, floorQ8);
+
   const recipientText = bondRecipient.trim()
     ? bondRecipientResolution.error
       ? bondRecipientResolution.error
@@ -41524,7 +41491,7 @@ function InfinityApp({
             </div>
             <div>
               <p>{bondConfig.ticker} history</p>
-              <h2>{bondConfig.displayName} Chart</h2>
+              <h2>{bondConfig.displayName} history</h2>
               <span>
                 {inceptionAccounting
                   ? `Fixed send-time issuance value, ${bondConfig.ticker} supply, sales, transfers, and mutation fees.`
@@ -41532,77 +41499,52 @@ function InfinityApp({
               </span>
             </div>
           </div>
-          <div
-            className="id-launch-stats token-floor-stats"
-            aria-label={`${bondConfig.displayName} chart stats`}
-          >
-            <div>
-              <span>Chart points</span>
-              <strong>{infinityChartPoints.length.toLocaleString()}</strong>
-            </div>
-            <div>
-              <span>Bond events</span>
-              <strong>
-                {(infinityLatestChartPoint?.bondActions ?? 0).toLocaleString()}
-              </strong>
-            </div>
-            <div>
-              <span>Latest supply</span>
-              <strong>
-                {formatExactInteger(
-                  infinityLatestChartPoint?.confirmedSupply ?? confirmedSupply,
-                )}{" "}
-                {bondConfig.ticker}
-              </strong>
-            </div>
-            <div>
-              <span>Latest floor</span>
-              <strong>
-                {bondProofAmountDisplay(
-                  infinityLatestChartPoint?.floorSats ?? floorSats,
-                  infinityLatestChartPoint?.floorQ8 ?? floorQ8,
-                )}{" "}
-                proofs / {bondConfig.ticker}
-              </strong>
-            </div>
-          </div>
-          <div className="work-floor-chart-toolbar">
-            <div
-              className="network-tabs work-floor-chart-toggle"
-              aria-label={`${bondConfig.displayName} chart metric`}
-            >
-              {INFINITY_BOND_CHART_OPTIONS.map((option) => (
-                <button
-                  aria-pressed={infinityChartMetric === option.value}
-                  key={option.value}
-                  onClick={() => setInfinityChartMetric(option.value)}
-                  type="button"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
+
+
           {infinityChartPoints.length ? (
-            <>
-              <InfinityBondChart
-                bondConfig={bondConfig}
-                metric={infinityChartMetric}
-                points={infinityChartPoints}
-              />
-              <div className="work-floor-chart-meta">
-                <span>Low {infinityChartMinLabel}</span>
-                <span>High {infinityChartMaxLabel}</span>
-                <span>
-                  Refreshed {formatDate(summary?.indexedAt ?? new Date().toISOString())}
-                </span>
-              </div>
-            </>
+            <InfinityBondChart
+              bondConfig={bondConfig}
+              metric={infinityChartMetric}
+              points={infinityChartPoints}
+              onMetricChange={setInfinityChartMetric}
+              network={network}
+              indexedAt={summary?.indexedAt}
+            />
           ) : (
             <p className="field-note">
               Bond chart appears after confirmed {bondConfig.ticker} bond events index.
             </p>
           )}
+          <details className="chart-accounting-details">
+            <summary>Bond history details</summary>
+            <div
+              className="id-launch-stats token-floor-stats"
+              aria-label={`${bondConfig.displayName} chart stats`}
+            >
+              <div>
+                <span>Chart points</span>
+                <strong>{infinityChartPoints.length.toLocaleString()}</strong>
+              </div>
+              <div>
+                <span>Bond events</span>
+                <strong>
+                  {(infinityLatestChartPoint?.bondActions ?? 0).toLocaleString()}
+                </strong>
+              </div>
+              <div>
+                <span>Latest supply</span>
+                <strong>
+                  {latestChartSupply ? `${formatExactInteger(latestChartSupply)} ${bondConfig.ticker}` : "Unavailable"}
+                </strong>
+              </div>
+              <div>
+                <span>Latest floor</span>
+                <strong>
+                  {latestChartFloor ? `${formatExactDecimal(latestChartFloor)} proofs / ${bondConfig.ticker}` : "Unavailable"}
+                </strong>
+              </div>
+            </div>
+          </details>
         </section>
 
         </>}
@@ -44518,14 +44460,7 @@ function TokenWorkspace({
   const workCreditMinerFeeFlowSats =
     workFloorQuote?.actualValue?.creditMinerFeeFlowSats ?? 0;
   const workFloorChartPoints = workFloorQuote?.chartPoints ?? [];
-  const workFloorMinSats =
-    workFloorChartPoints.length > 0
-      ? Math.min(...workFloorChartPoints.map((point) => point.floorSats))
-      : 0;
-  const workFloorMaxSats =
-    workFloorChartPoints.length > 0
-      ? Math.max(...workFloorChartPoints.map((point) => point.floorSats))
-      : 0;
+
   const detailMatchingHolders = detailHolders.filter((holder) =>
     tokenHolderMatchesSearch(holder, holderQuery),
   );
@@ -44631,12 +44566,7 @@ function TokenWorkspace({
   const detailConfirmedMarketChartPoints = detailMarketChartPoints.filter(
     (point) => point.confirmed,
   );
-  const detailMarketChartMinSats = detailConfirmedMarketChartPoints.length
-    ? Math.min(...detailConfirmedMarketChartPoints.map((point) => point.priceSats))
-    : 0;
-  const detailMarketChartMaxSats = detailConfirmedMarketChartPoints.length
-    ? Math.max(...detailConfirmedMarketChartPoints.map((point) => point.priceSats))
-    : 0;
+
   const detailLowestAskSats = detailMarketListings.reduce((lowest, listing) => {
     const unit = tokenListingUnitPriceSats(listing);
     if (!listing.confirmed || unit <= 0) {
@@ -45576,182 +45506,146 @@ function TokenWorkspace({
                         <strong>{workFloorLastGoodStatus}</strong>
                       </p>
                     ) : null}
-                    <div
-                      className="id-launch-stats token-floor-stats"
-                      aria-label="Live WORK floor"
-                    >
-                      <div>
-                        <span>Floor</span>
-                        <MetricValue
-                          exactValue={bondProofAmountDisplay(
-                            liveWorkFloorSats,
-                            liveWorkFloorQ8,
-                          )}
-                          label="Live WORK floor"
-                          unit="proofs / WORK"
-                        />
-                      </div>
-                      <div>
-                        <span>USD/WORK</span>
-                        <strong>{tokenUsd(liveWorkFloorUsd)}</strong>
-                      </div>
-                      <div>
-                        <span>Live network value</span>
-                        <MetricValue
-                          exactValue={bondProofAmountDisplay(
-                            workFloorQuote.liveNetworkValueSats ??
-                              workFloorQuote.networkValueSats,
-                            liveWorkNetworkValueQ8,
-                          )}
-                          label="Live network value"
-                          unit="proofs"
-                        />
-                      </div>
-                      <div>
-                        <span>Network USD</span>
-                        <strong>{tokenUsd(liveWorkNetworkUsd)}</strong>
-                      </div>
-                      {frozenWorkNetworkValueSats > 0 ? (
-                        <>
-                          <div>
-                            <span>Frozen network value</span>
-                            <MetricValue
-                              exactValue={bondProofAmountDisplay(
-                                frozenWorkNetworkValueSats,
-                                frozenWorkNetworkValueQ8,
-                              )}
-                              label="Frozen network value"
-                              unit="proofs"
-                            />
-                          </div>
-                          <div>
-                            <span>Frozen floor</span>
-                            <MetricValue
-                              exactValue={bondProofAmountDisplay(
-                                frozenWorkFloorSats,
-                                frozenWorkFloorQ8,
-                              )}
-                              label="Frozen WORK floor"
-                              unit="proofs / WORK"
-                            />
-                          </div>
-                        </>
-                      ) : null}
-                      {(exactIntegerBigInt(workCreditNetworkValueQ8) ?? 0n) >
-                      0n ? (
-                        <>
-                          <div>
-                            <span>Live WORK event value</span>
-                            <strong>
-                              {bondProofAmountDisplay(
-                                workCreditNetworkValueSats,
-                                workCreditNetworkValueQ8,
-                              )} proofs
-                            </strong>
-                          </div>
-                          <div>
-                            <span>Frozen WORK event value</span>
-                            <strong>
-                              {bondProofAmountDisplay(
-                                workCreditEventFrozenValueSats,
-                                workCreditEventFrozenValueQ8,
-                              )} proofs
-                            </strong>
-                          </div>
-                          <div>
-                            <span>Live WORK mark</span>
-                            <strong>
-                              {bondProofAmountDisplay(
-                                workCreditMovementLiveValueSats,
-                                workCreditMovementLiveValueQ8,
-                              )} proofs
-                            </strong>
-                          </div>
-                          <div>
-                            <span>Frozen WORK mark</span>
-                            <strong>
-                              {bondProofAmountDisplay(
-                                workCreditMovementFrozenValueSats,
-                                workCreditMovementFrozenValueQ8,
-                              )} proofs
-                            </strong>
-                          </div>
-                          <div>
-                            <span>Sale proofs</span>
-                            <strong>
-                              {Math.round(
-                                workCreditSalePaymentFlowSats,
-                              ).toLocaleString()}{" "}
-                              proofs
-                            </strong>
-                          </div>
-                          <div>
-                            <span title={WORK_MINER_FEES_EXPLANATION}>
-                              Bitcoin miner fees paid
-                            </span>
-                            <strong>
-                              {Math.round(
-                                workCreditMinerFeeFlowSats,
-                              ).toLocaleString()}{" "}
-                              proofs
-                            </strong>
-                          </div>
-                        </>
-                      ) : null}
-                    </div>
-                    {workFloorChartPoints.length > 1 ? (
+                    {workFloorChartPoints.length > 0 ? (
                       <>
-                        <div className="work-floor-chart-toolbar">
-                          <div
-                            className="network-tabs work-floor-chart-toggle"
-                            aria-label="WORK floor chart unit"
-                          >
-                            {(
-                              [
-                                ["sats", "Proofs"],
-                                ["usd", "USD"],
-                              ] as const
-                            ).map(([unit, label]) => (
-                              <button
-                                aria-pressed={workFloorChartUnit === unit}
-                                key={unit}
-                                onClick={() => setWorkFloorChartUnit(unit)}
-                                type="button"
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
+
                         <WorkFloorChart
                           btcUsd={btcUsd}
                           points={workFloorChartPoints}
                           unit={workFloorChartUnit}
+                          onUnitChange={setWorkFloorChartUnit}
+                          quote={workFloorQuote ?? undefined}
                         />
-                        <div className="work-floor-chart-meta">
-                          <span>
-                            Low{" "}
-                            {workFloorPriceLabel(
-                              workFloorMinSats,
-                              btcUsd,
-                              workFloorChartUnit,
-                            )}
-                          </span>
-                          <span>
-                            High{" "}
-                            {workFloorPriceLabel(
-                              workFloorMaxSats,
-                              btcUsd,
-                              workFloorChartUnit,
-                            )}
-                          </span>
-                          <span>
-                            {workFloorChartPoints.length.toLocaleString()}{" "}
-                            confirmed points
-                          </span>
-                        </div>
+
                       </>
                     ) : null}
+                    <details className="chart-accounting-details">
+                      <summary>Network value details</summary>
+                      <div
+                        className="id-launch-stats token-floor-stats"
+                        aria-label="Live WORK floor"
+                      >
+                        <div>
+                          <span>Floor</span>
+                          <MetricValue
+                            exactValue={bondProofAmountDisplay(
+                              liveWorkFloorSats,
+                              liveWorkFloorQ8,
+                            )}
+                            label="Live WORK floor"
+                            unit="proofs / WORK"
+                          />
+                        </div>
+                        <div>
+                          <span>USD/WORK</span>
+                          <strong>{tokenUsd(liveWorkFloorUsd)}</strong>
+                        </div>
+                        <div>
+                          <span>Live network value</span>
+                          <MetricValue
+                            exactValue={bondProofAmountDisplay(
+                              workFloorQuote.liveNetworkValueSats??
+                              workFloorQuote.networkValueSats,
+                              liveWorkNetworkValueQ8,
+                            )}
+                            label="Live network value"
+                            unit="proofs"
+                          />
+                        </div>
+                        <div>
+                          <span>Network USD</span>
+                          <strong>{tokenUsd(liveWorkNetworkUsd)}</strong>
+                        </div>
+                        {frozenWorkNetworkValueSats>0? (
+                          <>
+                            <div>
+                              <span>Frozen network value</span>
+                              <MetricValue
+                                exactValue={bondProofAmountDisplay(
+                                  frozenWorkNetworkValueSats,
+                                  frozenWorkNetworkValueQ8,
+                                )}
+                                label="Frozen network value"
+                                unit="proofs"
+                              />
+                            </div>
+                            <div>
+                              <span>Frozen floor</span>
+                              <MetricValue
+                                exactValue={bondProofAmountDisplay(
+                                  frozenWorkFloorSats,
+                                  frozenWorkFloorQ8,
+                                )}
+                                label="Frozen WORK floor"
+                                unit="proofs / WORK"
+                              />
+                            </div>
+                          </>
+                        ):null}
+                        {(exactIntegerBigInt(workCreditNetworkValueQ8)??0n)>
+                          0n? (
+                          <>
+                            <div>
+                              <span>Live WORK event value</span>
+                              <strong>
+                                {bondProofAmountDisplay(
+                                  workCreditNetworkValueSats,
+                                  workCreditNetworkValueQ8,
+                                )} proofs
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Frozen WORK event value</span>
+                              <strong>
+                                {bondProofAmountDisplay(
+                                  workCreditEventFrozenValueSats,
+                                  workCreditEventFrozenValueQ8,
+                                )} proofs
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Live WORK mark</span>
+                              <strong>
+                                {bondProofAmountDisplay(
+                                  workCreditMovementLiveValueSats,
+                                  workCreditMovementLiveValueQ8,
+                                )} proofs
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Frozen WORK mark</span>
+                              <strong>
+                                {bondProofAmountDisplay(
+                                  workCreditMovementFrozenValueSats,
+                                  workCreditMovementFrozenValueQ8,
+                                )} proofs
+                              </strong>
+                            </div>
+                            <div>
+                              <span>Sale proofs</span>
+                              <strong>
+                                {Math.round(
+                                  workCreditSalePaymentFlowSats,
+                                ).toLocaleString()}{" "}
+                                proofs
+                              </strong>
+                            </div>
+                            <div>
+                              <span title={WORK_MINER_FEES_EXPLANATION}>
+                                Bitcoin miner fees paid
+                              </span>
+                              <strong>
+                                {Math.round(
+                                  workCreditMinerFeeFlowSats,
+                                ).toLocaleString()}{" "}
+                                proofs
+                              </strong>
+                            </div>
+                          </>
+                        ):null}
+                      </div>
+                    </details>
+
                     <p className="field-note">
                       Mint price remains{" "}
                       {detailToken.mintPriceSats.toLocaleString()} proofs for{" "}
@@ -45831,58 +45725,15 @@ function TokenWorkspace({
                 </div>
                 {detailConfirmedMarketChartPoints.length > 0 ? (
                   <>
-                    <div className="work-floor-chart-toolbar">
-                      <div
-                        className="network-tabs work-floor-chart-toggle"
-                        aria-label={`${detailToken.ticker} chart unit`}
-                      >
-                        {(
-                          [
-                            ["sats", "Proofs"],
-                            ["usd", "USD"],
-                          ] as const
-                        ).map(([unit, label]) => (
-                          <button
-                            aria-pressed={tokenMarketChartUnit === unit}
-                            key={unit}
-                            onClick={() => setTokenMarketChartUnit(unit)}
-                            type="button"
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+
                     <TokenMarketPriceChart
                       btcUsd={btcUsd}
                       points={detailConfirmedMarketChartPoints}
                       ticker={detailToken.ticker}
                       unit={tokenMarketChartUnit}
+                      onUnitChange={setTokenMarketChartUnit}
                     />
-                    <div className="work-floor-chart-meta">
-                      <span>
-                        Low{" "}
-                        {tokenMarketPriceLabel(
-                          detailMarketChartMinSats,
-                          btcUsd,
-                          detailToken.ticker,
-                          tokenMarketChartUnit,
-                        )}
-                      </span>
-                      <span>
-                        High{" "}
-                        {tokenMarketPriceLabel(
-                          detailMarketChartMaxSats,
-                          btcUsd,
-                          detailToken.ticker,
-                          tokenMarketChartUnit,
-                        )}
-                      </span>
-                      <span>
-                        {detailConfirmedMarketChartPoints.length.toLocaleString()}{" "}
-                        confirmed points
-                      </span>
-                    </div>
+
                   </>
                 ) : (
                   <p className="field-note">
@@ -47900,295 +47751,61 @@ function GrowthLineChart({
   );
 }
 
-function workFloorChartValue(
-  point: WorkFloorPoint,
-  btcUsd: number,
-  unit: WorkFloorChartUnit,
-) {
-  return unit === "usd" ? satsToUsd(point.floorSats, btcUsd) : point.floorSats;
+// These adapters format existing read-model values for plotting only. They never
+// participate in floor, issuance, balance, price, or transaction calculations.
+function chartProofDecimal(value: unknown, valueQ8?: unknown) {
+  const q8 = exactIntegerText(valueQ8, { signed: true });
+  return q8 ? formatExactQ8(q8).replace(/,/gu, "") : exactDecimalText(value);
 }
 
-function workFloorPriceLabel(
-  floorSats: number,
-  btcUsd: number,
-  unit: WorkFloorChartUnit,
-) {
-  if (unit === "usd") {
-    return `${tokenUsd(satsToUsd(floorSats, btcUsd))} / WORK`;
-  }
-
-  return `${tokenSatsPerUnit(floorSats)} proofs / WORK`;
-}
-
-function workFloorAxisPriceLabel(value: number, unit: WorkFloorChartUnit) {
-  if (unit === "usd") {
-    if (!Number.isFinite(value) || value <= 0) {
-      return "$0";
-    }
-
-    return value < 0.01 ? `$${value.toFixed(5)}` : tokenUsd(value);
-  }
-
-  if (!Number.isFinite(value) || value <= 0) {
-    return "0 proofs";
-  }
-
-  const decimals = value < 10 ? 3 : value < 100 ? 2 : 0;
-  return `${value.toLocaleString(undefined, {
-    maximumFractionDigits: decimals,
-    minimumFractionDigits: decimals,
-  })} proofs`;
-}
-
-const WORK_FLOOR_LOG_SCALE_RATIO = 100;
-
-function workFloorChartAxisPriceLabel(
-  value: number,
-  unit: WorkFloorChartUnit,
-) {
-  if (!Number.isFinite(value) || value < 1_000) {
-    return workFloorAxisPriceLabel(value, unit);
-  }
-
-  const compactValue = growthCompactNumber(value, 1);
-  return unit === "usd" ? `$${compactValue}` : `${compactValue} proofs`;
-}
-
-function workFloorChartScale(values: number[], fallbackRange: number) {
-  const rawMin = Math.min(...values);
-  const rawMax = Math.max(...values);
-  const rawRange = rawMax - rawMin;
-  const useLogarithmicScale =
-    rawMin > 0 && rawMax / rawMin >= WORK_FLOOR_LOG_SCALE_RATIO;
-
-  if (useLogarithmicScale) {
-    const encodedRawMin = Math.log10(rawMin);
-    const encodedRawMax = Math.log10(rawMax);
-    const encodedRange = Math.max(0.000001, encodedRawMax - encodedRawMin);
-    const encodedPadding = encodedRange * 0.08;
-
-    return {
-      domainMax: encodedRawMax + encodedPadding,
-      domainMin: encodedRawMin - encodedPadding,
-      encode: (value: number) => Math.log10(value),
-      mode: "logarithmic" as const,
-      ticks: [
-        rawMin,
-        10 ** ((encodedRawMin + encodedRawMax) / 2),
-        rawMax,
-      ],
-    };
-  }
-
-  const yRange = rawRange > 0 ? rawRange : fallbackRange;
-  const yPadding = yRange * 0.22;
-  const domainMin = Math.max(0, rawMin - yPadding);
-  const domainMax = Math.max(rawMax + yPadding, domainMin + fallbackRange);
-
-  return {
-    domainMax,
-    domainMin,
-    encode: (value: number) => value,
-    mode: "linear" as const,
-    ticks: [domainMin, (domainMin + domainMax) / 2, domainMax],
-  };
+function ChartUnitControl({ unit, onChange, label }: {
+  unit: WorkFloorChartUnit;
+  onChange: (unit: WorkFloorChartUnit) => void;
+  label: string;
+}) {
+  return <div className="ledger-chart-options" role="group" aria-label={label}>
+    {([["sats", "Proofs"], ["usd", "USD"]] as const).map(([value, text]) => (
+      <button type="button" key={value} aria-pressed={unit === value}
+        onClick={() => onChange(value)}>{text}</button>
+    ))}
+  </div>;
 }
 
 function workFloorPointTimeMs(point: WorkFloorPoint) {
   return GROWTH_MODEL_START_MS + point.years * MS_PER_MODEL_YEAR;
 }
 
-function workFloorTimeLabel(point: WorkFloorPoint) {
-  const createdMs = workFloorPointTimeMs(point);
-  if (!Number.isFinite(createdMs)) {
-    return point.label;
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    month: "short",
-  }).format(new Date(createdMs));
-}
-
-function compactWorkFloorChartPoints(points: WorkFloorPoint[]) {
-  const compacted: WorkFloorPoint[] = [];
-  const sorted = [...points].sort((left, right) => {
-    const timeSort = left.years - right.years;
-    return timeSort || left.label.localeCompare(right.label);
-  });
-
-  for (const point of sorted) {
-    const previous = compacted[compacted.length - 1];
-    if (
-      previous &&
-      Math.abs(previous.years - point.years) < 0.000000001 &&
-      Math.abs(previous.floorSats - point.floorSats) < 0.000000001
-    ) {
-      continue;
-    }
-
-    compacted.push(point);
-  }
-
-  return compacted;
-}
-
-function WorkFloorChart({
-  btcUsd,
-  points,
-  unit,
-}: {
+function WorkFloorChart({ btcUsd, points, unit, onUnitChange, quote }: {
   btcUsd: number;
   points: WorkFloorPoint[];
   unit: WorkFloorChartUnit;
+  onUnitChange: (unit: WorkFloorChartUnit) => void;
+  quote?: WorkFloorQuote;
 }) {
-  const visiblePoints = compactWorkFloorChartPoints(
-    points.filter(
-      (point) => Number.isFinite(point.floorSats) && point.floorSats >= 0,
-    ),
-  );
-  if (visiblePoints.length < 2) {
-    return null;
-  }
-
-  const width = 920;
-  const height = 260;
-  const padLeft = 112;
-  const padRight = 24;
-  const padTop = 28;
-  const padBottom = 52;
-  const plotWidth = width - padLeft - padRight;
-  const plotHeight = height - padTop - padBottom;
-  const minYear = Math.min(...visiblePoints.map((point) => point.years));
-  const maxYear = Math.max(...visiblePoints.map((point) => point.years));
-  const pointValue = (point: WorkFloorPoint) =>
-    workFloorChartValue(point, btcUsd, unit);
-  const pointValues = visiblePoints.map(pointValue);
-  const rawYMax = Math.max(...pointValues);
-  const fallbackYRange =
-    unit === "usd"
-      ? Math.max(0.000001, Math.abs(rawYMax) * 0.02)
-      : Math.max(0.01, Math.abs(rawYMax) * 0.02);
-  const yScale = workFloorChartScale(pointValues, fallbackYRange);
-  const xRange = Math.max(0.000001, maxYear - minYear);
-  const xFor = (years: number) =>
-    padLeft + ((years - minYear) / xRange) * plotWidth;
-  const yFor = (value: number) =>
-    padTop +
-    (1 -
-      Math.max(
-        0,
-        Math.min(
-          1,
-          (yScale.encode(value) - yScale.domainMin) /
-            (yScale.domainMax - yScale.domainMin),
-        ),
-      )) *
-      plotHeight;
-  const firstPoint = visiblePoints[0];
-  const middlePoint = visiblePoints[Math.floor((visiblePoints.length - 1) / 2)];
-  const latestPoint = visiblePoints[visiblePoints.length - 1];
-  const yTicks = yScale.ticks;
-  const middleTickHasRoom =
-    middlePoint !== firstPoint &&
-    middlePoint !== latestPoint &&
-    Math.abs(xFor(middlePoint.years) - xFor(firstPoint.years)) >= 170 &&
-    Math.abs(xFor(latestPoint.years) - xFor(middlePoint.years)) >= 170;
-  const xTicks = [
-    firstPoint,
-    ...(middleTickHasRoom ? [middlePoint] : []),
-    latestPoint,
-  ].filter((point, index, list) => point && list.indexOf(point) === index);
-
-  return (
-    <svg
-      className="work-floor-chart"
-      role="img"
-      viewBox={`0 0 ${width} ${height}`}
-      aria-label={`Confirmed WORK floor history in ${
-        unit === "usd" ? "USD" : "proofs"
-      } per WORK${
-        yScale.mode === "logarithmic" ? " on a logarithmic scale" : ""
-      }`}
-    >
-      <rect
-        className="growth-chart-bg"
-        x="0"
-        y="0"
-        width={width}
-        height={height}
-        rx="14"
-      />
-      <text
-        className="growth-chart-label work-floor-axis-title"
-        x={padLeft}
-        y="18"
-        textAnchor="start"
-      >
-        Price / WORK{yScale.mode === "logarithmic" ? " (log scale)" : ""}
-      </text>
-      {yTicks.map((tick) => (
-        <g key={`floor-y-${tick}`}>
-          <line
-            className="growth-chart-grid"
-            x1={padLeft}
-            x2={width - padRight}
-            y1={yFor(tick)}
-            y2={yFor(tick)}
-          />
-          <text
-            className="growth-chart-label"
-            x={padLeft - 12}
-            y={yFor(tick) + 4}
-            textAnchor="end"
-          >
-            {workFloorChartAxisPriceLabel(tick, unit)}
-          </text>
-        </g>
-      ))}
-      {xTicks.map((point, index) => (
-        <text
-          className="growth-chart-label"
-          key={`floor-x-${point.label}-${index}`}
-          x={xFor(point.years)}
-          y={height - 16}
-          textAnchor={
-            index === 0 ? "start" : index === xTicks.length - 1 ? "end" : "middle"
-          }
-        >
-          {workFloorTimeLabel(point)}
-        </text>
-      ))}
-      <text
-        className="growth-chart-label work-floor-axis-title"
-        x={width - padRight}
-        y={height - 6}
-        textAnchor="end"
-      >
-        time
-      </text>
-      <polyline
-        className="work-floor-chart-line"
-        points={visiblePoints
-          .map(
-            (point) =>
-              `${xFor(point.years).toFixed(2)},${yFor(pointValue(point)).toFixed(2)}`,
-          )
-          .join(" ")}
-      />
-      {visiblePoints.map((point, index) => (
-        <circle
-          className="work-floor-chart-dot"
-          cx={xFor(point.years)}
-          cy={yFor(pointValue(point))}
-          key={`${point.label}-${index}`}
-          r={index === visiblePoints.length - 1 ? 5.5 : 3.5}
-        />
-      ))}
-    </svg>
-  );
+  const usdAvailable = Number.isFinite(btcUsd) && btcUsd > 0;
+  const observations: ChartPoint[] = points.map((point, index) => {
+    const proofs = chartProofDecimal(point.floorSatsExact ?? point.floorSats, point.floorQ8);
+    const value = unit === "usd"
+      ? proofs && usdAvailable ? exactDecimalText(satsToUsd(Number(proofs), btcUsd)) : ""
+      : proofs;
+    return {
+      id: `${point.label}-${index}`,
+      time: workFloorPointTimeMs(point),
+      value,
+      valueLabel: value ? `${formatExactDecimal(value)} ${unit === "usd" ? "USD" : "proofs"} / WORK` : "Unavailable",
+      approximate: unit === "usd" || !point.floorQ8,
+      detail: unit === "usd" ? `${proofs ? `${formatExactDecimal(proofs)} proofs / WORK` : "Proof value unavailable"} · ${point.label}` : point.label,
+    };
+  });
+  return <LedgerChart
+    title="WORK floor history"
+    unitLabel={`${unit === "usd" ? "USD" : "Proofs"} / WORK`}
+    controls={<ChartUnitControl unit={unit} onChange={onUnitChange} label="WORK chart unit" />}
+    series={unit === "usd" && !usdAvailable ? [] : [{ id: "floor", label: "Confirmed floor", style: "line", points: observations }]}
+    coverage={`Sampled confirmed history · ${points.length.toLocaleString()} supplied observations${quote?.indexedThroughBlock ? ` · Snapshot through block ${quote.indexedThroughBlock.toLocaleString()}` : ""}${quote?.indexedAt ? ` · Updated ${formatDate(quote.indexedAt)}` : ""}`}
+    quoteNote={unit === "usd" ? `USD at current rate · display estimate, not historical exchange rates${quote?.btcUsdIndexedAt ? ` · Quote ${formatDate(quote.btcUsdIndexedAt)}` : " · Quote time unavailable"}` : undefined}
+    emptyMessage={unit === "usd" && !usdAvailable ? "USD quote unavailable. Choose Proofs to inspect the confirmed history." : "Confirmed floor history is unavailable for this snapshot."}
+  />;
 }
 
 const INFINITY_BOND_CHART_OPTIONS: Array<{
@@ -48196,27 +47813,13 @@ const INFINITY_BOND_CHART_OPTIONS: Array<{
   value: InfinityBondChartMetric;
 }> = [
   { label: "Supply", value: "supply" },
-  { label: "Backing", value: "value" },
+  { label: "Network value", value: "value" },
   { label: "Floor", value: "floor" },
 ];
 
 function infinityBondPointTimeMs(point: InfinityBondChartPoint) {
   const createdMs = Date.parse(point.createdAt);
   return Number.isFinite(createdMs) ? createdMs : 0;
-}
-
-function infinityBondTimeLabel(point: InfinityBondChartPoint) {
-  const createdMs = infinityBondPointTimeMs(point);
-  if (!createdMs) {
-    return shortAddress(point.txid);
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    month: "short",
-  }).format(new Date(createdMs));
 }
 
 function bondDecimalNumber(value: unknown, valueQ8?: unknown) {
@@ -48253,81 +47856,6 @@ function bondProofAmountDisplay(
     : formatExactDecimal(value, { maximumFractionDigits });
 }
 
-function infinityBondChartNumericValue(
-  point: InfinityBondChartPoint,
-  metric: Exclude<InfinityBondChartMetric, "supply">,
-) {
-  if (metric === "floor") {
-    return bondDecimalNumber(point.floorSats, point.floorQ8);
-  }
-
-  return bondDecimalNumber(point.networkValueSats, point.networkValueQ8);
-}
-
-function infinityBondAxisLabel(
-  value: number,
-  metric: Exclude<InfinityBondChartMetric, "supply">,
-) {
-  if (metric === "floor") {
-    return value > 0 ? `${tokenSatsPerUnit(value)} proofs` : "0 proofs";
-  }
-
-  return `${growthCompactNumber(value, 1)} proofs`;
-}
-
-function compactExactBondSupply(value: bigint, exactRange: bigint) {
-  if (exactRange < 1_000n || value < 1_000n) {
-    return formatExactInteger(value);
-  }
-
-  const units = [
-    { label: "Q", size: 1_000_000_000_000_000n },
-    { label: "T", size: 1_000_000_000_000n },
-    { label: "B", size: 1_000_000_000n },
-    { label: "M", size: 1_000_000n },
-    { label: "K", size: 1_000n },
-  ];
-  const unit = units.find((candidate) => value >= candidate.size);
-  if (!unit) {
-    return formatExactInteger(value);
-  }
-
-  const tenths = (value * 10n + unit.size / 2n) / unit.size;
-  const whole = tenths / 10n;
-  const fraction = tenths % 10n;
-  return `${whole}${fraction ? `.${fraction}` : ""}${unit.label}`;
-}
-
-function exactBondChartRatio(value: bigint, minimum: bigint, maximum: bigint) {
-  if (maximum <= minimum) {
-    return 0.5;
-  }
-
-  const clamped = value < minimum ? minimum : value > maximum ? maximum : value;
-  const scale = 1_000_000_000n;
-  return (
-    Number(((clamped - minimum) * scale) / (maximum - minimum)) /
-    Number(scale)
-  );
-}
-
-function exactBondChartPadding(range: bigint) {
-  return (range * 22n + 99n) / 100n;
-}
-
-function exactBondChartFallbackRange(maximum: bigint) {
-  const twoPercent = (maximum * 2n + 99n) / 100n;
-  return twoPercent > 0n ? twoPercent : 1n;
-}
-
-function infinityBondSupplyAxisLabel(
-  value: bigint,
-  exactRange: bigint,
-  ticker = POWB_TOKEN_TICKER,
-) {
-  return `${compactExactBondSupply(value, exactRange)} ${ticker}`;
-}
-
 function infinityBondMetricTitle(
   metric: InfinityBondChartMetric,
   ticker = POWB_TOKEN_TICKER,
@@ -48337,231 +47865,48 @@ function infinityBondMetricTitle(
   }
 
   if (metric === "value") {
-    return "Backing proofs";
+    return "Network value (proofs)";
   }
 
   return `${ticker} supply`;
 }
 
-function InfinityBondChart({
-  bondConfig,
-  metric,
-  points,
-}: {
+function InfinityBondChart({ bondConfig, metric, points, onMetricChange, network, indexedAt }: {
   bondConfig: BondUiConfig;
   metric: InfinityBondChartMetric;
   points: InfinityBondChartPoint[];
+  onMetricChange: (metric: InfinityBondChartMetric) => void;
+  network: BitcoinNetwork;
+  indexedAt?: string;
 }) {
-  const exactSupplyByPoint = new Map(
-    points.map((point) => [
-      point,
-      exactIntegerBigInt(point.confirmedSupply),
-    ] as const),
-  );
-  const visiblePoints = [...points]
-    .filter((point) => {
-      if (infinityBondPointTimeMs(point) <= 0) {
-        return false;
-      }
-      if (metric === "supply") {
-        const exactSupply = exactSupplyByPoint.get(point);
-        return exactSupply !== null && exactSupply !== undefined && exactSupply >= 0n;
-      }
-      const numericValue = infinityBondChartNumericValue(point, metric);
-      return Number.isFinite(numericValue) && numericValue >= 0;
-    })
-    .sort(
-      (left, right) =>
-        infinityBondPointTimeMs(left) - infinityBondPointTimeMs(right) ||
-        left.bondActions - right.bondActions ||
-        left.txid.localeCompare(right.txid),
-    );
-  if (visiblePoints.length === 0) {
-    return null;
-  }
-
-  const width = 920;
-  const height = 260;
-  const padLeft = 106;
-  const padRight = 24;
-  const padTop = 28;
-  const padBottom = 52;
-  const plotWidth = width - padLeft - padRight;
-  const plotHeight = height - padTop - padBottom;
-  const minTime = Math.min(...visiblePoints.map(infinityBondPointTimeMs));
-  const maxTime = Math.max(...visiblePoints.map(infinityBondPointTimeMs));
-  const xRange = Math.max(1, maxTime - minTime);
-  const xFor = (point: InfinityBondChartPoint) =>
-    visiblePoints.length === 1
-      ? padLeft + plotWidth / 2
-      : padLeft + ((infinityBondPointTimeMs(point) - minTime) / xRange) *
-          plotWidth;
-  let yForPoint: (point: InfinityBondChartPoint) => number;
-  let yTicks: Array<{ key: string; label: string; y: number }>;
-  if (metric === "supply") {
-    const exactValues = visiblePoints.map(
-      (point) => exactSupplyByPoint.get(point) ?? 0n,
-    );
-    const rawYMin = exactValues.reduce(
-      (minimum, value) => (value < minimum ? value : minimum),
-      exactValues[0],
-    );
-    const rawYMax = exactValues.reduce(
-      (maximum, value) => (value > maximum ? value : maximum),
-      exactValues[0],
-    );
-    const observedRange = rawYMax - rawYMin;
-    const domainRange =
-      observedRange > 0n
-        ? observedRange
-        : exactBondChartFallbackRange(rawYMax);
-    const padding = exactBondChartPadding(domainRange);
-    const yMin = rawYMin > padding ? rawYMin - padding : 0n;
-    const yMaxCandidate = rawYMax + padding;
-    const yMax =
-      yMaxCandidate > yMin ? yMaxCandidate : yMin + domainRange;
-    const exactRange = yMax - yMin;
-    const yForExact = (value: bigint) =>
-      padTop +
-      (1 - exactBondChartRatio(value, yMin, yMax)) * plotHeight;
-    yForPoint = (point) => yForExact(exactSupplyByPoint.get(point) ?? 0n);
-    const exactTicks = [yMin, (yMin + yMax) / 2n, yMax].filter(
-      (tick, index, list) => list.indexOf(tick) === index,
-    );
-    yTicks = exactTicks.map((tick) => ({
-      key: tick.toString(),
-      label: infinityBondSupplyAxisLabel(
-        tick,
-        exactRange,
-        bondConfig.ticker,
-      ),
-      y: yForExact(tick),
-    }));
-  } else {
-    const pointValue = (point: InfinityBondChartPoint) =>
-      infinityBondChartNumericValue(point, metric);
-    const pointValues = visiblePoints.map(pointValue);
-    const rawYMin = Math.min(...pointValues);
-    const rawYMax = Math.max(...pointValues);
-    const rawYRange = rawYMax - rawYMin;
-    const fallbackYRange =
-      metric === "floor"
-        ? Math.max(0.01, Math.abs(rawYMax) * 0.02)
-        : Math.max(1, Math.abs(rawYMax) * 0.02);
-    const yRange = rawYRange > 0 ? rawYRange : fallbackYRange;
-    const yPadding = yRange * 0.22;
-    const yMin = Math.max(0, rawYMin - yPadding);
-    const yMax = Math.max(rawYMax + yPadding, yMin + fallbackYRange);
-    const yForNumeric = (value: number) =>
-      padTop +
-      (1 - Math.max(0, Math.min(1, (value - yMin) / (yMax - yMin)))) *
-        plotHeight;
-    yForPoint = (point) => yForNumeric(pointValue(point));
-    yTicks = [yMin, (yMin + yMax) / 2, yMax].map((tick) => ({
-      key: tick.toString(),
-      label: infinityBondAxisLabel(tick, metric),
-      y: yForNumeric(tick),
-    }));
-  }
-  const firstPoint = visiblePoints[0];
-  const middlePoint = visiblePoints[Math.floor((visiblePoints.length - 1) / 2)];
-  const latestPoint = visiblePoints[visiblePoints.length - 1];
-  const middleTickHasRoom =
-    middlePoint !== firstPoint &&
-    middlePoint !== latestPoint &&
-    Math.abs(xFor(middlePoint) - xFor(firstPoint)) >= 170 &&
-    Math.abs(xFor(latestPoint) - xFor(middlePoint)) >= 170;
-  const xTicks = [
-    firstPoint,
-    ...(middleTickHasRoom ? [middlePoint] : []),
-    latestPoint,
-  ].filter((point, index, list) => point && list.indexOf(point) === index);
-
-  return (
-    <svg
-      className="work-floor-chart token-market-price-chart"
-      role="img"
-      viewBox={`0 0 ${width} ${height}`}
-      aria-label={`Confirmed ${bondConfig.displayName} ${infinityBondMetricTitle(metric, bondConfig.ticker)} history`}
-    >
-      <rect
-        className="growth-chart-bg"
-        x="0"
-        y="0"
-        width={width}
-        height={height}
-        rx="14"
-      />
-      <text
-        className="growth-chart-label work-floor-axis-title"
-        x={padLeft}
-        y="18"
-        textAnchor="start"
-      >
-        {infinityBondMetricTitle(metric, bondConfig.ticker)}
-      </text>
-      {yTicks.map((tick) => (
-        <g key={`infinity-y-${tick.key}`}>
-          <line
-            className="growth-chart-grid"
-            x1={padLeft}
-            x2={width - padRight}
-            y1={tick.y}
-            y2={tick.y}
-          />
-          <text
-            className="growth-chart-label"
-            x={padLeft - 12}
-            y={tick.y + 4}
-            textAnchor="end"
-          >
-            {tick.label}
-          </text>
-        </g>
-      ))}
-      {xTicks.map((point, index) => (
-        <text
-          className="growth-chart-label"
-          key={`infinity-x-${point.txid}-${index}`}
-          x={xFor(point)}
-          y={height - 16}
-          textAnchor={
-            index === 0 ? "start" : index === xTicks.length - 1 ? "end" : "middle"
-          }
-        >
-          {infinityBondTimeLabel(point)}
-        </text>
-      ))}
-      <text
-        className="growth-chart-label work-floor-axis-title"
-        x={width - padRight}
-        y={height - 6}
-        textAnchor="end"
-      >
-        time
-      </text>
-      {visiblePoints.length > 1 ? (
-        <polyline
-          className="token-market-chart-line"
-          points={visiblePoints
-            .map(
-              (point) =>
-                `${xFor(point).toFixed(2)},${yForPoint(point).toFixed(2)}`,
-            )
-            .join(" ")}
-        />
-      ) : null}
-      {visiblePoints.map((point, index) => (
-        <circle
-          className="token-market-chart-dot sale"
-          cx={xFor(point)}
-          cy={yForPoint(point)}
-          key={`${point.txid}-${point.bondActions}-${index}`}
-          r={index === visiblePoints.length - 1 ? 5.5 : 3.5}
-        />
-      ))}
-    </svg>
-  );
+  const units = metric === "supply" ? bondConfig.ticker : metric === "floor" ? `proofs / ${bondConfig.ticker}` : "proofs";
+  // The API provides canonical accumulation order. Keep it even if block
+  // timestamps move backwards; the shared renderer breaks that connecting line.
+  const observations: ChartPoint[] = points.map((point, index) => {
+    const value = metric === "supply" ? exactIntegerText(point.confirmedSupply)
+      : metric === "floor" ? chartProofDecimal(point.floorSats, point.floorQ8)
+        : chartProofDecimal(point.networkValueSats, point.networkValueQ8);
+    return {
+      id: `${point.txid}-${point.bondActions}-${index}`,
+      time: infinityBondPointTimeMs(point),
+      value,
+      valueLabel: value ? `${formatExactDecimal(value)} ${units}` : "Unavailable",
+      block: point.blockHeight,
+      detail: `Confirmed record ${point.bondActions.toLocaleString()}${point.blockIndex !== undefined ? ` · Transaction position ${point.blockIndex}` : ""}${point.blockHash ? ` · Block hash ${point.blockHash}` : ""} · TXID ${point.txid}`,
+      href: /^[a-f0-9]{64}$/u.test(point.txid) ? explorerTxUrl(point.txid, network) : undefined,
+    };
+  });
+  return <LedgerChart
+    title={`${bondConfig.ticker} ${metric === "supply" ? "supply" : metric === "floor" ? "floor" : "network value"} history`}
+    unitLabel={units}
+    controls={<div className="ledger-chart-options" role="group" aria-label={`${bondConfig.displayName} chart metric`}>
+      {INFINITY_BOND_CHART_OPTIONS.map(option => <button type="button" key={option.value}
+        aria-pressed={metric === option.value} onClick={() => onMetricChange(option.value)}>{option.label}</button>)}
+    </div>}
+    series={[{ id: "bond", label: infinityBondMetricTitle(metric, bondConfig.ticker), style: "line", points: observations }]}
+    coverage={`Latest ${points.length.toLocaleString()} supplied records · History response limited to 500${indexedAt ? ` · Updated ${formatDate(indexedAt)}` : ""}`}
+    emptyMessage={`Confirmed ${bondConfig.ticker} history is unavailable for this snapshot.`}
+  />;
 }
 
 function tokenMarketPointTimeMs(point: TokenMarketPricePoint) {
@@ -48569,51 +47914,21 @@ function tokenMarketPointTimeMs(point: TokenMarketPricePoint) {
   return Number.isFinite(createdMs) ? createdMs : 0;
 }
 
-function tokenMarketTimeLabel(point: TokenMarketPricePoint) {
-  const createdMs = tokenMarketPointTimeMs(point);
-  if (!createdMs) {
-    return point.label;
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    month: "short",
-  }).format(new Date(createdMs));
-}
-
-function tokenMarketPriceLabel(
-  priceSats: number,
-  btcUsd: number,
-  ticker: string,
-  unit: WorkFloorChartUnit,
-) {
-  if (unit === "usd") {
-    return `${tokenUsd(satsToUsd(priceSats, btcUsd))} / ${ticker}`;
-  }
-
-  return `${tokenSatsPerUnit(priceSats)} proofs / ${ticker}`;
-}
-
-function tokenMarketAxisPriceLabel(value: number, unit: WorkFloorChartUnit) {
-  return workFloorAxisPriceLabel(value, unit);
-}
-
 function compactTokenMarketPricePoints(points: TokenMarketPricePoint[]) {
-  const compacted: TokenMarketPricePoint[] = [];
-  const sorted = [...points].sort((left, right) => {
-    const timeSort = tokenMarketPointTimeMs(left) - tokenMarketPointTimeMs(right);
-    return timeSort || left.kind.localeCompare(right.kind);
+  const compacted: TokenMarketPricePoint[]=[];
+  const sorted=[...points].sort((left, right) => {
+    const timeSort=tokenMarketPointTimeMs(left)-tokenMarketPointTimeMs(right);
+    return timeSort||left.kind.localeCompare(right.kind);
   });
 
-  for (const point of sorted) {
-    const previous = compacted[compacted.length - 1];
-    if (
-      previous &&
-      previous.kind === point.kind &&
-      previous.label === point.label &&
-      Math.abs(previous.priceSats - point.priceSats) < 0.000000001
+  for(const point of sorted) {
+    const previous=compacted[compacted.length-1];
+    if(
+      previous&&
+      previous.kind===point.kind&&
+      previous.txid===point.txid&&
+      previous.label===point.label&&
+      previous.priceSats===point.priceSats
     ) {
       continue;
     }
@@ -48629,31 +47944,34 @@ function tokenMarketPricePointsFor(
   listings: PowTokenListing[],
   sales: PowTokenSale[],
 ) {
-  if (isWorkToken(token)) {
+  if(isWorkToken(token)) {
     return [];
   }
-  const points: TokenMarketPricePoint[] = [];
-  const mintPrice =
-    token.mintAmount > 0 ? token.mintPriceSats / token.mintAmount : 0;
+  const points: TokenMarketPricePoint[]=[];
+  const mintPrice=
+    token.mintAmount>0? token.mintPriceSats/token.mintAmount:0;
 
-  if (mintPrice > 0) {
+  if(mintPrice>0) {
     points.push({
       confirmed: token.confirmed,
       createdAt: token.createdAt,
       kind: "mint",
       label: "deploy",
       priceSats: mintPrice,
+      txid: token.txid,
+      network: token.network,
+      detail: `Mint reference · ${formatExactInteger(token.mintPriceSats)} proofs per ${formatExactInteger(token.mintAmount)} ${token.ticker}`,
     });
   }
 
-  for (const sale of sales) {
-    const unitSats = tokenUnitPriceSats(
+  for(const sale of sales) {
+    const unitSats=tokenUnitPriceSats(
       sale,
       sale.amount,
       sale.amountAtoms,
       sale.priceSats,
     );
-    if (!sale.confirmed || unitSats <= 0) {
+    if(!sale.confirmed||unitSats<=0) {
       continue;
     }
 
@@ -48663,12 +47981,15 @@ function tokenMarketPricePointsFor(
       kind: "sale",
       label: shortAddress(sale.txid),
       priceSats: unitSats,
+      txid: sale.txid,
+      network: sale.network,
+      detail: `Confirmed sale · Seller payment ${formatExactInteger(sale.priceSats)} proofs · Quantity ${tokenAmountDisplay(sale, sale.amount, sale.amountAtoms, sale.amountSubatoms)} ${token.ticker}`,
     });
   }
 
-  for (const listing of listings) {
-    const unitSats = tokenListingUnitPriceSats(listing);
-    if (!listing.confirmed || unitSats <= 0) {
+  for(const listing of listings) {
+    const unitSats=tokenListingUnitPriceSats(listing);
+    if(!listing.confirmed||unitSats<=0) {
       continue;
     }
 
@@ -48678,172 +47999,59 @@ function tokenMarketPricePointsFor(
       kind: "ask",
       label: shortAddress(listing.listingId),
       priceSats: unitSats,
+      txid: listing.listingId,
+      network: listing.network,
+      sealed: tokenListingHasConfirmedSaleTicketSeal(listing),
+      detail: `${tokenListingHasConfirmedSaleTicketSeal(listing)? "Confirmed seal":tokenListingHasPendingSaleTicketSeal(listing)? "Seal pending":"Unsealed intent"} · Seller ask ${formatExactInteger(listing.priceSats)} proofs · Quantity ${tokenAmountDisplay(listing, listing.amount, listing.amountAtoms, listing.amountSubatoms)} ${token.ticker}`,
     });
   }
 
   return compactTokenMarketPricePoints(points);
 }
 
-function TokenMarketPriceChart({
-  btcUsd,
-  points,
-  ticker,
-  unit,
-}: {
+function TokenMarketPriceChart({ btcUsd, points, ticker, unit, onUnitChange }: {
   btcUsd: number;
   points: TokenMarketPricePoint[];
   ticker: string;
   unit: WorkFloorChartUnit;
+  onUnitChange: (unit: WorkFloorChartUnit) => void;
 }) {
-  const visiblePoints = compactTokenMarketPricePoints(
-    points.filter(
-      (point) =>
-        point.confirmed &&
-        Number.isFinite(point.priceSats) &&
-        point.priceSats >= 0,
-    ),
-  );
-  if (visiblePoints.length === 0) {
-    return null;
-  }
-
-  const width = 920;
-  const height = 260;
-  const padLeft = 92;
-  const padRight = 24;
-  const padTop = 28;
-  const padBottom = 52;
-  const plotWidth = width - padLeft - padRight;
-  const plotHeight = height - padTop - padBottom;
-  const pointTime = (point: TokenMarketPricePoint) =>
-    tokenMarketPointTimeMs(point);
-  const minTime = Math.min(...visiblePoints.map(pointTime));
-  const maxTime = Math.max(...visiblePoints.map(pointTime));
-  const pointValue = (point: TokenMarketPricePoint) =>
-    unit === "usd" ? satsToUsd(point.priceSats, btcUsd) : point.priceSats;
-  const pointValues = visiblePoints.map(pointValue);
-  const rawYMin = Math.min(...pointValues);
-  const rawYMax = Math.max(...pointValues);
-  const rawYRange = rawYMax - rawYMin;
-  const fallbackYRange =
-    unit === "usd"
-      ? Math.max(0.000001, Math.abs(rawYMax) * 0.02)
-      : Math.max(0.01, Math.abs(rawYMax) * 0.02);
-  const yRange = rawYRange > 0 ? rawYRange : fallbackYRange;
-  const yPadding = yRange * 0.22;
-  const yMin = Math.max(0, rawYMin - yPadding);
-  const yMax = Math.max(rawYMax + yPadding, yMin + fallbackYRange);
-  const xRange = Math.max(1, maxTime - minTime);
-  const xFor = (point: TokenMarketPricePoint) =>
-    visiblePoints.length === 1
-      ? padLeft + plotWidth / 2
-      : padLeft + ((pointTime(point) - minTime) / xRange) * plotWidth;
-  const yFor = (value: number) =>
-    padTop +
-    (1 - Math.max(0, Math.min(1, (value - yMin) / (yMax - yMin)))) *
-      plotHeight;
-  const firstPoint = visiblePoints[0];
-  const middlePoint = visiblePoints[Math.floor((visiblePoints.length - 1) / 2)];
-  const latestPoint = visiblePoints[visiblePoints.length - 1];
-  const yTicks = [yMin, (yMin + yMax) / 2, yMax];
-  const middleTickHasRoom =
-    middlePoint !== firstPoint &&
-    middlePoint !== latestPoint &&
-    Math.abs(xFor(middlePoint) - xFor(firstPoint)) >= 170 &&
-    Math.abs(xFor(latestPoint) - xFor(middlePoint)) >= 170;
-  const xTicks = [
-    firstPoint,
-    ...(middleTickHasRoom ? [middlePoint] : []),
-    latestPoint,
-  ].filter((point, index, list) => point && list.indexOf(point) === index);
-
-  return (
-    <svg
-      className="work-floor-chart token-market-price-chart"
-      role="img"
-      viewBox={`0 0 ${width} ${height}`}
-      aria-label={`Confirmed ${ticker} market history in ${
-        unit === "usd" ? "USD" : "proofs"
-      } per ${ticker}`}
-    >
-      <rect
-        className="growth-chart-bg"
-        x="0"
-        y="0"
-        width={width}
-        height={height}
-        rx="14"
-      />
-      <text
-        className="growth-chart-label work-floor-axis-title"
-        x={padLeft}
-        y="18"
-        textAnchor="start"
-      >
-        Price / {ticker}
-      </text>
-      {yTicks.map((tick) => (
-        <g key={`token-y-${tick}`}>
-          <line
-            className="growth-chart-grid"
-            x1={padLeft}
-            x2={width - padRight}
-            y1={yFor(tick)}
-            y2={yFor(tick)}
-          />
-          <text
-            className="growth-chart-label"
-            x={padLeft - 12}
-            y={yFor(tick) + 4}
-            textAnchor="end"
-          >
-            {tokenMarketAxisPriceLabel(tick, unit)}
-          </text>
-        </g>
-      ))}
-      {xTicks.map((point, index) => (
-        <text
-          className="growth-chart-label"
-          key={`token-x-${point.label}-${index}`}
-          x={xFor(point)}
-          y={height - 16}
-          textAnchor={
-            index === 0 ? "start" : index === xTicks.length - 1 ? "end" : "middle"
-          }
-        >
-          {tokenMarketTimeLabel(point)}
-        </text>
-      ))}
-      <text
-        className="growth-chart-label work-floor-axis-title"
-        x={width - padRight}
-        y={height - 6}
-        textAnchor="end"
-      >
-        time
-      </text>
-      {visiblePoints.length > 1 ? (
-        <polyline
-          className="token-market-chart-line"
-          points={visiblePoints
-            .map(
-              (point) =>
-                `${xFor(point).toFixed(2)},${yFor(pointValue(point)).toFixed(2)}`,
-            )
-            .join(" ")}
-        />
-      ) : null}
-      {visiblePoints.map((point, index) => (
-        <circle
-          className={`token-market-chart-dot ${point.kind}`}
-          cx={xFor(point)}
-          cy={yFor(pointValue(point))}
-          key={`${point.label}-${point.kind}-${index}`}
-          r={index === visiblePoints.length - 1 ? 5.5 : 3.5}
-        />
-      ))}
-    </svg>
-  );
+  const usdAvailable=Number.isFinite(btcUsd)&&btcUsd>0;
+  const specifications=[
+    { id: "sale", label: "Confirmed sales", style: "points" as const },
+    { id: "sealed", label: "Sealed asks", style: "points" as const },
+    { id: "unsealed", label: "Unsealed asks", style: "points" as const },
+    { id: "mint", label: "Mint reference", style: "reference" as const },
+  ];
+  const series: ChartSeries[]=specifications.map(spec => ({
+    ...spec,
+    points: points.filter(point => point.confirmed&&(
+      spec.id==="sale"? point.kind==="sale":spec.id==="mint"? point.kind==="mint"
+        :point.kind==="ask"&&(spec.id==="sealed"? point.sealed:!point.sealed)
+    )).map((point, index) => {
+      const value=unit==="usd"
+        ? usdAvailable? exactDecimalText(satsToUsd(point.priceSats, btcUsd)):""
+        :exactDecimalText(point.priceSats);
+      return {
+        id: `${point.txid??point.label}-${spec.id}-${index}`,
+        time: tokenMarketPointTimeMs(point),
+        value,
+        valueLabel: value? `${formatExactDecimal(value)} ${unit==="usd"? "USD":"proofs"} / ${ticker}`:"Unavailable",
+        approximate: true,
+        detail: `${point.detail??point.label}${point.txid? ` · TXID ${point.txid}`:""}`,
+        href: point.txid&&/^[a-f0-9]{64}$/u.test(point.txid)? explorerTxUrl(point.txid, point.network??"livenet"):undefined,
+      };
+    }),
+  }));
+  return <LedgerChart
+    title={`${ticker} market observations`}
+    unitLabel={`${unit==="usd"? "USD":"Proofs"} / ${ticker}`}
+    controls={<ChartUnitControl unit={unit} onChange={onUnitChange} label={`${ticker} chart unit`} />}
+    series={unit==="usd"&&!usdAvailable? []:series}
+    coverage="Loaded confirmed records · Sales and offers are separate observations; asks are positioned at listing time. This view does not establish complete market history or current buyability."
+    quoteNote={unit==="usd"? "USD at current rate · Display estimate, not historical exchange rates. Exact proof payments and credit quantities remain in each observation.":"Sale and ask unit prices use the existing whole-proof display calculation. Inspect the original payment and quantity for exact terms."}
+    emptyMessage={unit==="usd"&&!usdAvailable? "USD quote unavailable. Choose Proofs to inspect market observations.":"No confirmed market observations are available in the loaded records."}
+  />;
 }
 
 function GrowthProductCard({
@@ -54084,14 +53292,7 @@ function TokenMarketplacePanel({
     workRelicRows.length,
   ]);
   const workFloorChartPoints = workFloorQuote?.chartPoints ?? [];
-  const workFloorMinSats =
-    workFloorChartPoints.length > 0
-      ? Math.min(...workFloorChartPoints.map((point) => point.floorSats))
-      : 0;
-  const workFloorMaxSats =
-    workFloorChartPoints.length > 0
-      ? Math.max(...workFloorChartPoints.map((point) => point.floorSats))
-      : 0;
+
   const selectedMarketChartPoints =
     selectedMarketToken && !selectedMarketTokenIsWork
       ? tokenMarketPricePointsFor(
@@ -54106,12 +53307,7 @@ function TokenMarketplacePanel({
           ),
         ).filter((point) => point.confirmed)
       : [];
-  const selectedMarketChartMinSats = selectedMarketChartPoints.length
-    ? Math.min(...selectedMarketChartPoints.map((point) => point.priceSats))
-    : 0;
-  const selectedMarketChartMaxSats = selectedMarketChartPoints.length
-    ? Math.max(...selectedMarketChartPoints.map((point) => point.priceSats))
-    : 0;
+
   return (
     <>
       <div className="ids-content marketplace-content token-market-content">
@@ -54147,138 +53343,154 @@ function TokenMarketplacePanel({
             workFloorQuote &&
             workMarketFloorSats > 0 ? (
               <>
-                <div
-                  className="id-launch-stats token-floor-stats"
-                  aria-label="WORK market price"
-                >
-                  <div>
-                    <span>Live network floor</span>
-                    <MetricValue
-                      exactValue={bondProofAmountDisplay(
-                        workMarketFloorSats,
-                        workMarketFloorQ8,
-                      )}
-                      label="Live network floor"
-                      unit="proofs / WORK"
+                {workFloorChartPoints.length > 0 ? (
+                  <>
+
+                    <WorkFloorChart
+                      btcUsd={btcUsd}
+                      points={workFloorChartPoints}
+                      unit={workFloorChartUnit}
+                          onUnitChange={setWorkFloorChartUnit}
+                          quote={workFloorQuote ?? undefined}
                     />
-                  </div>
-                  <div>
-                    <span>USD/WORK</span>
-                    <strong>{tokenUsd(workMarketFloorUsd)}</strong>
-                  </div>
-                  <div>
-                    <span>Live network value</span>
-                    <MetricValue
-                      exactValue={bondProofAmountDisplay(
-                        workFloorQuote.liveNetworkValueSats ??
-                          workFloorQuote.networkValueSats,
-                        workMarketLiveNetworkValueQ8,
-                      )}
-                      label="Live network value"
-                      unit="proofs"
-                    />
-                  </div>
-                  <div>
-                    <span>Network USD</span>
-                    <strong>{tokenUsd(workMarketNetworkUsd)}</strong>
-                  </div>
-                  {workMarketFrozenNetworkValueSats > 0 ? (
-                    <>
+
+                  </>
+                ) : null}
+                  <details className="chart-accounting-details">
+                    <summary>Network value details</summary>
+                    <div
+                      className="id-launch-stats token-floor-stats"
+                      aria-label="WORK market price"
+                    >
                       <div>
-                        <span>Frozen network value</span>
+                        <span>Live network floor</span>
                         <MetricValue
                           exactValue={bondProofAmountDisplay(
-                            workMarketFrozenNetworkValueSats,
-                            workMarketFrozenNetworkValueQ8,
+                            workMarketFloorSats,
+                            workMarketFloorQ8,
                           )}
-                          label="Frozen network value"
+                          label="Live network floor"
+                          unit="proofs / WORK"
+                        />
+                      </div>
+                      <div>
+                        <span>USD/WORK</span>
+                        <strong>{tokenUsd(workMarketFloorUsd)}</strong>
+                      </div>
+                      <div>
+                        <span>Live network value</span>
+                        <MetricValue
+                          exactValue={bondProofAmountDisplay(
+                            workFloorQuote.liveNetworkValueSats??
+                            workFloorQuote.networkValueSats,
+                            workMarketLiveNetworkValueQ8,
+                          )}
+                          label="Live network value"
                           unit="proofs"
                         />
                       </div>
                       <div>
-                        <span>Frozen floor</span>
-                        <MetricValue
-                          exactValue={bondProofAmountDisplay(
-                            workMarketFrozenFloorSats,
-                            workMarketFrozenFloorQ8,
-                          )}
-                          label="Frozen network floor"
-                          unit="proofs / WORK"
-                        />
+                        <span>Network USD</span>
+                        <strong>{tokenUsd(workMarketNetworkUsd)}</strong>
                       </div>
-                    </>
-                  ) : null}
-                  <div>
-                    <span>Best ask</span>
-                    <strong>
-                      {bestWorkAmoBuyerArb
-                        ? `${formatExactRational(
-                            bestWorkAmoBuyerArb,
-                          )} proofs arb`
-                        : "No sealed asks"}
-                    </strong>
-                  </div>
-                  {(exactIntegerBigInt(workCreditNetworkValueQ8) ?? 0n) > 0n ? (
-                    <>
+                      {workMarketFrozenNetworkValueSats>0? (
+                        <>
+                          <div>
+                            <span>Frozen network value</span>
+                            <MetricValue
+                              exactValue={bondProofAmountDisplay(
+                                workMarketFrozenNetworkValueSats,
+                                workMarketFrozenNetworkValueQ8,
+                              )}
+                              label="Frozen network value"
+                              unit="proofs"
+                            />
+                          </div>
+                          <div>
+                            <span>Frozen floor</span>
+                            <MetricValue
+                              exactValue={bondProofAmountDisplay(
+                                workMarketFrozenFloorSats,
+                                workMarketFrozenFloorQ8,
+                              )}
+                              label="Frozen network floor"
+                              unit="proofs / WORK"
+                            />
+                          </div>
+                        </>
+                      ):null}
                       <div>
-                        <span>Live WORK event value</span>
+                        <span>Best ask</span>
                         <strong>
-                          {bondProofAmountDisplay(
-                            workCreditNetworkValueSats,
-                            workCreditNetworkValueQ8,
-                          )} proofs
+                          {bestWorkAmoBuyerArb
+                            ? `${formatExactRational(
+                              bestWorkAmoBuyerArb,
+                            )} proofs arb`
+                            :"No sealed asks"}
                         </strong>
                       </div>
-                      <div>
-                        <span>Frozen WORK event value</span>
-                        <strong>
-                          {bondProofAmountDisplay(
-                            workCreditEventFrozenValueSats,
-                            workCreditEventFrozenValueQ8,
-                          )} proofs
-                        </strong>
-                      </div>
-                      <div>
-                        <span>Live WORK mark</span>
-                        <strong>
-                          {bondProofAmountDisplay(
-                            workCreditMovementLiveValueSats,
-                            workCreditMovementLiveValueQ8,
-                          )} proofs
-                        </strong>
-                      </div>
-                      <div>
-                        <span>Frozen WORK mark</span>
-                        <strong>
-                          {bondProofAmountDisplay(
-                            workCreditMovementFrozenValueSats,
-                            workCreditMovementFrozenValueQ8,
-                          )} proofs
-                        </strong>
-                      </div>
-                      <div>
-                        <span>Sale proofs</span>
-                        <strong>
-                          {Math.round(
-                            workCreditSalePaymentFlowSats,
-                          ).toLocaleString()}{" "}
-                          proofs
-                        </strong>
-                      </div>
-                      <div>
-                        <span title={WORK_MINER_FEES_EXPLANATION}>
-                          Bitcoin miner fees paid
-                        </span>
-                        <strong>
-                          {Math.round(
-                            workCreditMinerFeeFlowSats,
-                          ).toLocaleString()}{" "}
-                          proofs
-                        </strong>
-                      </div>
-                    </>
-                  ) : null}
-                  </div>
+                      {(exactIntegerBigInt(workCreditNetworkValueQ8)??0n)>0n? (
+                        <>
+                          <div>
+                            <span>Live WORK event value</span>
+                            <strong>
+                              {bondProofAmountDisplay(
+                                workCreditNetworkValueSats,
+                                workCreditNetworkValueQ8,
+                              )} proofs
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Frozen WORK event value</span>
+                            <strong>
+                              {bondProofAmountDisplay(
+                                workCreditEventFrozenValueSats,
+                                workCreditEventFrozenValueQ8,
+                              )} proofs
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Live WORK mark</span>
+                            <strong>
+                              {bondProofAmountDisplay(
+                                workCreditMovementLiveValueSats,
+                                workCreditMovementLiveValueQ8,
+                              )} proofs
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Frozen WORK mark</span>
+                            <strong>
+                              {bondProofAmountDisplay(
+                                workCreditMovementFrozenValueSats,
+                                workCreditMovementFrozenValueQ8,
+                              )} proofs
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Sale proofs</span>
+                            <strong>
+                              {Math.round(
+                                workCreditSalePaymentFlowSats,
+                              ).toLocaleString()}{" "}
+                              proofs
+                            </strong>
+                          </div>
+                          <div>
+                            <span title={WORK_MINER_FEES_EXPLANATION}>
+                              Bitcoin miner fees paid
+                            </span>
+                            <strong>
+                              {Math.round(
+                                workCreditMinerFeeFlowSats,
+                              ).toLocaleString()}{" "}
+                              proofs
+                            </strong>
+                          </div>
+                        </>
+                      ):null}
+                    </div>
+                  </details>
 
                   <div className="work-amo-quote-control">
                     <div>
@@ -54301,59 +53513,7 @@ function TokenMarketplacePanel({
                     </p>
                   </div>
 
-                  {workFloorChartPoints.length > 1 ? (
-                  <>
-                    <div className="work-floor-chart-toolbar">
-                      <div
-                        className="network-tabs work-floor-chart-toggle"
-                        aria-label="WORK market chart unit"
-                      >
-                        {(
-                          [
-                            ["sats", "Proofs"],
-                            ["usd", "USD"],
-                          ] as const
-                        ).map(([unit, label]) => (
-                          <button
-                            aria-pressed={workFloorChartUnit === unit}
-                            key={unit}
-                            onClick={() => setWorkFloorChartUnit(unit)}
-                            type="button"
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <WorkFloorChart
-                      btcUsd={btcUsd}
-                      points={workFloorChartPoints}
-                      unit={workFloorChartUnit}
-                    />
-                    <div className="work-floor-chart-meta">
-                      <span>
-                        Low{" "}
-                        {workFloorPriceLabel(
-                          workFloorMinSats,
-                          btcUsd,
-                          workFloorChartUnit,
-                        )}
-                      </span>
-                      <span>
-                        High{" "}
-                        {workFloorPriceLabel(
-                          workFloorMaxSats,
-                          btcUsd,
-                          workFloorChartUnit,
-                        )}
-                      </span>
-                      <span>
-                        {workFloorChartPoints.length.toLocaleString()}{" "}
-                        confirmed points
-                      </span>
-                    </div>
-                  </>
-                ) : null}
+
 
                 <p className="field-note">
                   Refreshed {formatDate(workFloorQuote.indexedAt)} from
@@ -54406,10 +53566,9 @@ function TokenMarketplacePanel({
                 <TrendingUp size={24} />
               </div>
               <div>
-                <h3>{selectedMarketToken.ticker} Market Chart</h3>
+                <h3>{selectedMarketToken.ticker} market history</h3>
                 <p>
-                  Confirmed deploy price, sale prices, and active asks for this
-                  credit market.
+                  Mint reference, confirmed sales, and loaded asks shown separately.
                 </p>
               </div>
             </div>
@@ -54453,58 +53612,15 @@ function TokenMarketplacePanel({
             </div>
             {selectedMarketChartPoints.length > 0 ? (
               <>
-                <div className="work-floor-chart-toolbar">
-                  <div
-                    className="network-tabs work-floor-chart-toggle"
-                    aria-label={`${selectedMarketToken.ticker} market chart unit`}
-                  >
-                    {(
-                      [
-                        ["sats", "Proofs"],
-                        ["usd", "USD"],
-                      ] as const
-                    ).map(([unit, label]) => (
-                      <button
-                        aria-pressed={tokenMarketChartUnit === unit}
-                        key={unit}
-                        onClick={() => setTokenMarketChartUnit(unit)}
-                        type="button"
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+
                 <TokenMarketPriceChart
                   btcUsd={btcUsd}
                   points={selectedMarketChartPoints}
                   ticker={selectedMarketToken.ticker}
                   unit={tokenMarketChartUnit}
+                      onUnitChange={setTokenMarketChartUnit}
                 />
-                <div className="work-floor-chart-meta">
-                  <span>
-                    Low{" "}
-                    {tokenMarketPriceLabel(
-                      selectedMarketChartMinSats,
-                      btcUsd,
-                      selectedMarketToken.ticker,
-                      tokenMarketChartUnit,
-                    )}
-                  </span>
-                  <span>
-                    High{" "}
-                    {tokenMarketPriceLabel(
-                      selectedMarketChartMaxSats,
-                      btcUsd,
-                      selectedMarketToken.ticker,
-                      tokenMarketChartUnit,
-                    )}
-                  </span>
-                  <span>
-                    {selectedMarketChartPoints.length.toLocaleString()} confirmed
-                    points
-                  </span>
-                </div>
+
               </>
             ) : (
               <p className="field-note">

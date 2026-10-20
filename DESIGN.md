@@ -181,6 +181,30 @@ system type. These defaults apply only when generating new document source.
 Existing drafts and imported or published HTML retain their authored styles and
 exact source; the shell's appearance preference never rewrites document content.
 
+## Credit and bond charts
+
+WORK, credit markets, POWB and INCB share one chart frame across standalone
+products and Computer. Keep the chart prominent; detailed accounting remains
+available in a labeled disclosure. Use neutral lines, subtle grids,
+sentence-case labels, tabular values, and container-sized axes with readable
+text instead of shrinking a fixed desktop canvas.
+
+Expose Auto, Linear and Log explicitly and name the effective scale. Log
+requires positive values; zero, negative and unavailable observations must not
+be replaced with invented positive values. Exact source decimals and integers
+remain inspectable through keyboard, touch and pointer selection and a data
+table. Pixel coordinates and display estimates never become protocol arithmetic.
+Missing values break connected lines, and canonical cumulative observations
+retain their supplied order even where block timestamps move backward.
+
+Keep confirmed sales, sealed asks, unsealed intents and the mint reference
+visually distinct with labeled shapes or line styles. An ask marker does not
+establish current buyability. State the supplied history's coverage and sampling
+limits; a bounded response is not complete history. Historical proofs converted
+with the current quote are labeled “USD at current rate,” with quote time when
+available. Unavailable USD stays unavailable. Appearance, scale and observation
+changes never sign, submit, or change ledger state.
+
 ## Acceptance before shipping
 
 For each affected feature, inspect its standalone surface and its Computer

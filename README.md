@@ -790,6 +790,17 @@ Current production behavior:
 - Only canonical WORK receives credit movement network value. Other credits can still add confirmed proof payments, registry mutations, marketplace sale payments, marketplace mutation fees, and miner-fee buckets where tracked, but they do not reprice network value from their own listing floors.
 - The cumulative WORK miner-fee bucket counts the Bitcoin transaction fee for each confirmed canonical WORK transaction once by txid, derived from complete full-node input value minus output value. It records historical blockspace/security cost; it is not platform revenue, retained reserves, or spendable backing.
 - The WORK dashboard shows the live floor beside the mint panel: floor proofs per WORK, USD per WORK, live and frozen network value in proofs/USD, a confirmed floor-history chart, and the refresh time. This is separate from the 1 proof/WORK launch mint price. WORK and Growth must use the same node-backed BTC/USD quote and the same confirmed network-value payload so proofs and USD totals agree across surfaces.
+- WORK, credit-market, POWB and INCB charts share responsive Auto/Linear/Log
+  controls, pointer/touch/keyboard observation inspection, and a source-data
+  table in standalone apps and Computer. Exact proof and supply strings remain
+  available independently of compact axis labels. WORK history is identified as
+  sampled; bond history identifies its 500-record response limit. USD history is
+  labeled as a display estimate at the current quote, not historical exchange
+  rates. Unavailable observations remain inspectable instead of becoming zero.
+  Credit sales, sealed asks, unsealed intents and mint references use separate
+  marks; chart observations do not authorize a purchase or establish complete
+  market inventory. The upgrade changes presentation only, not floor, issuance,
+  balances, settlement, fees or local signing.
 - `work-floor`, `work-summary`, `growth-summary`, and `marketplace-summary` expose current USD from the live first-party BTC/USD quote. `actualValue.totalUsd` is live current USD; `actualValue.modelTotalUsd` is the Growth model USD projection. Consumers that publish current numbers should use `actualValue.totalUsd` plus the response's `btcUsd`, `btcUsdIndexedAt`, and `usdSource` metadata, not `modelTotalUsd`.
 - AMO flow in WORK/Growth accounting is seller sale volume plus market mutation fees from valid listing, seal, delisting, and buy events. For WORK sales, the sale price remains a trade metric and also contributes confirmed proof flow, while the WORK amount moved contributes live/frozen credit movement value. Seller sale volume remains separate from mutation-fee flow, and market mutation fees are excluded from generic Computer event flow to avoid double counting.
 - The WORK floor announcement is part of project history as ProofOfWork mail tx `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`: `$work now has a permanent ProofOfWork Computer floor.` Live indexers determine whether that tx is pending or confirmed; once confirmed, ProofOfWork history is the permanent source.

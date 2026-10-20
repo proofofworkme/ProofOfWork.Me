@@ -1,0 +1,76 @@
+@layer interface {
+  .ledger-chart {
+    width: 100%;
+    min-width: 0;
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    container-type: inline-size;
+  }
+  .ledger-chart :where(p, h4) { margin: 0; }
+  .ledger-chart-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .ledger-chart-heading-copy { min-width: 0; flex: 1 1 200px; }
+  .ledger-chart h4 { font-size: 14px; font-weight: 500; letter-spacing: 0; line-height: 1.5; }
+  .ledger-chart .ledger-chart-current { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-top: 8px; font-size: 28px; font-weight: 500; line-height: 1.2; overflow-wrap: anywhere; }
+  .ledger-chart-current .ledger-chart-unit { font-size: 14px; font-weight: 400; color: var(--text-muted); }
+  .ledger-chart .ledger-chart-latest { margin-top: 8px; color: var(--text-muted); font-size: 12px; }
+  .ledger-chart-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; max-width: 100%; }
+  .ledger-chart-scale, .ledger-chart-options { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface-soft); max-width: 100%; }
+  .ledger-chart .ledger-chart-scale button, .ledger-chart .ledger-chart-options button {
+    min-height: 44px; min-width: 52px; padding: 8px 12px; margin: 0;
+    border: 0; border-radius: var(--radius-pill); background: transparent;
+    color: var(--text-muted); font-size: 14px; font-weight: 400; cursor: pointer; box-shadow: none;
+  }
+  .ledger-chart .ledger-chart-scale button[aria-pressed="true"], .ledger-chart .ledger-chart-options button[aria-pressed="true"] { background: var(--action); color: var(--text-on-action); }
+  .ledger-chart .ledger-chart-scale button:hover:not(:disabled):not([aria-pressed="true"]), .ledger-chart .ledger-chart-options button:hover:not(:disabled):not([aria-pressed="true"]) { background: var(--hover); color: var(--text); }
+  .ledger-chart-options { flex-wrap: wrap; }
+  .ledger-chart .ledger-chart-options button { white-space: nowrap; flex: 0 0 auto; }
+  .ledger-chart .ledger-chart-scale button:disabled { color: var(--text-soft); cursor: not-allowed; text-decoration: line-through; }
+  .ledger-chart .ledger-chart-scale-note { color: var(--text-muted); margin-top: 12px; font-size: 12px; line-height: 1.6; }
+  .ledger-chart-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 0; margin: 12px 0 0; font-size: 12px; color: var(--text-muted); }
+  .ledger-chart-legend li { display: flex; align-items: center; gap: 6px; }
+  .ledger-chart-legend svg { flex: 0 0 24px; }
+  .ledger-chart-frame { width: 100%; min-width: 0; margin-top: 12px; }
+  .ledger-chart-svg { display: block; width: 100%; height: 280px; overflow: visible; touch-action: pan-y; }
+  .ledger-chart-axis text, .ledger-chart-time { fill: var(--text-muted); font-family: var(--font-ui); font-size: 12px; font-weight: 400; }
+  .ledger-chart-grid { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .ledger-chart-line { fill: none; stroke: var(--text); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .ledger-chart-line.is-reference { stroke: var(--text-muted); stroke-dasharray: 5 5; }
+  .ledger-chart-point { fill: var(--surface); stroke: var(--text); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .ledger-chart-point.is-solid { fill: var(--text); }
+  .ledger-chart-point.is-selected { fill: var(--text); stroke: var(--surface); stroke-width: 2; }
+  .ledger-chart-cursor { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 5; }
+  .ledger-chart .ledger-chart-empty { min-height: 220px; display: grid; place-items: center; padding: 24px; color: var(--text-muted); text-align: center; }
+  .ledger-chart-inspection { display: grid; grid-template-columns: minmax(0, 1fr); border-top: 1px solid var(--border); padding-top: 16px; gap: 12px; }
+  .ledger-chart-inspector { display: grid; align-content: start; gap: 4px; min-width: 0; font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
+  .ledger-chart .ledger-chart-exact { color: var(--text); font-family: var(--font-mono); font-size: 14px; line-height: 1.6; }
+  .ledger-chart-inspector a, .ledger-chart-data a { display: inline-flex; align-items: center; width: fit-content; min-height: 44px; color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+  .ledger-chart-scrubber { min-width: 0; }
+  .ledger-chart-scrubber label { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 12px; }
+  .ledger-chart-scrubber-controls { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+  .ledger-chart-scrubber-controls button { flex: 0 0 44px; width: 44px; min-height: 44px; padding: 0; color: var(--text); background: var(--surface); border: 1px solid var(--border-interactive); border-radius: var(--radius-sm); }
+  .ledger-chart-scrubber-controls button:hover:not(:disabled) { background: var(--hover); }
+  .ledger-chart-scrubber-controls button:disabled { border-color: var(--border); color: var(--text-soft); }
+  .ledger-chart-scrubber-controls input[type="range"] { flex: 1; min-width: 0; width: 100%; height: 44px; padding: 0; margin: 0; border: 0; accent-color: var(--action); background: transparent; box-shadow: none; }
+  .ledger-chart-notes { display: grid; gap: 4px; margin-top: 12px; color: var(--text-muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+  .ledger-chart-data { margin-top: 12px; border-top: 1px solid var(--border); }
+  .ledger-chart-data summary { display: list-item; min-height: 44px; padding: 12px 0; font-size: 14px; cursor: pointer; color: var(--text); }
+  .ledger-chart-data summary span { color: var(--text-muted); }
+  .ledger-chart-table-scroll { max-width: 100%; max-height: 420px; overflow: auto; margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .ledger-chart-data table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: auto; }
+  .ledger-chart-data caption { text-align: left; color: var(--text-muted); padding: 12px; }
+  .ledger-chart-data th, .ledger-chart-data td { text-align: left; vertical-align: top; padding: 12px; border-top: 1px solid var(--border); font-weight: 400; min-width: 130px; }
+  .ledger-chart-data thead th { color: var(--text-muted); background: var(--surface-soft); position: sticky; top: 0; z-index: 1; }
+  .ledger-chart-data td:last-child { min-width: 240px; overflow-wrap: anywhere; }
+  .ledger-chart-data .ledger-chart-data-value { font-family: var(--font-mono); color: var(--text); overflow-wrap: anywhere; max-width: 360px; min-width: 180px; }
+  @container (min-width: 700px) {
+    .ledger-chart-inspection { grid-template-columns: minmax(0, 1fr) minmax(220px, .6fr); gap: 24px; }
+  }
+  @container (max-width: 360px) {
+    .ledger-chart-heading-copy { flex-basis: 100%; }
+    .ledger-chart-toolbar { width: 100%; }
+    .ledger-chart .ledger-chart-current { font-size: 24px; }
+    .ledger-chart .ledger-chart-scale button, .ledger-chart .ledger-chart-options button { min-width: 48px; padding-inline: 10px; }
+  }
+}
