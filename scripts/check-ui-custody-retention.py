@@ -616,6 +616,21 @@ class CompletionConfigTransitionTests(unittest.TestCase):
   value=json.loads(self.records[binding['path']]);change(value);updated=self.put(binding['path'],value);binding['sha256']=updated['sha256']
  def test_single_sealed_upgrade_accepts_without_rewriting_plan(self):
   original=C.encoded(self.plan);result=self.verify();self.assertTrue(result['ok']);self.assertFalse(result['holdsAndTimersUnchanged']);self.assertTrue(result['holdsAndTimersVerified']);self.assertEqual(original,C.encoded(self.plan))
+ def test_access_time_repair_remains_bound_in_normal_post_upgrade_status(self):
+  link=self.transitions[0];intent=json.loads(self.records[link['intent']['path']]);request=intent['plan']['request'];review=intent['plan']['before']['completedReview']
+  before=copy.deepcopy(self.plan['holds'][0]);current=copy.deepcopy(before);current['identity']['st_atime_ns']+=1
+  access=dict(schema='pow-ui-completed-config-access-time-v1',configSha256=request['configSha256'],stateSha256=request['stateSha256'],cycleId='cycle1',planSha256=self.plan_sha,resultSha256=self.result_sha,before=before,current=current)
+  raw=C.encoded(dict(accessTimeReconciliation=access));request.update(mode='completed-config-repair',guardRefusal=dict(base64=C.base64.b64encode(raw).decode(),binding=dict(path='/reviewed/refusal.json',sha256=E.digest(raw))))
+  review['accessTimeReconciliation']=access
+  link['intent']=self.put(link['intent']['path'],intent);self.state['lastUpgrade']['intentSha256']=link['intent']['sha256']
+  completed=json.loads(self.records[link['completed']['path']]);completed['intent']=link['intent'];completed['state']['sha256']=E.digest(C.encoded(self.state));completed['completionVerification']['verifiedAccessTimeReconciliation']=access
+  link['completed']=self.put(link['completed']['path'],completed)
+  self.assertTrue(self.verify()['ok'])
+  original=copy.deepcopy(link['completed']);saved=self.records[original['path']]
+  for mutation in (lambda p:p.pop('verifiedAccessTimeReconciliation'),lambda p:p['verifiedAccessTimeReconciliation'].update(stateSha256='f'*64)):
+   value=json.loads(saved);mutation(value['completionVerification']);link['completed']=self.put(original['path'],value)
+   with self.assertRaisesRegex(ValueError,'access-time'):self.verify()
+   link['completed']=copy.deepcopy(original);self.records[original['path']]=saved
  def test_multiple_complete_preserving_upgrades_join(self):
   self.add_upgrade();self.assertTrue(self.verify()['ok'])
  def test_wrong_status_seal_path_refuses(self):
@@ -677,6 +692,65 @@ class CompletionConfigTransitionTests(unittest.TestCase):
   with self.assertRaisesRegex(ValueError,'argument'):self.verify({'from':'old','to':'new'})
 
 
-suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls) for cls in (FileGroupTests,ArtifactQualificationTests,ClosedOrdinaryAliasTests,OffhostCapacityTests,BatchPreservationTests,RetirementBudgetTests,RetirementDiagnosticsTests,CompletionConfigTransitionTests))
+
+class CompletionConfigAccessTimeTests(unittest.TestCase):
+ def setUp(self):
+  ident={k:1 for k in E.STAT_FIELDS};ident.update(st_mode=stat.S_IFREG|0o600,st_uid=0,st_gid=0,st_nlink=1,st_atime_ns=100)
+  self.before=dict(path=str(C.LIFECYCLE_CONFIG),sha256='a'*64,identity=ident,xattrs=[])
+  self.current=copy.deepcopy(self.before);self.current['identity']['st_atime_ns']=200
+  self.other=dict(path='/etc/proofofwork-retention/other.json',sha256='b'*64,identity=dict(ident),xattrs=[])
+  self.plan=dict(holds=[self.before,self.other],timers={'exact':'timers'},candidates=[],lifecycle={'exact':'authority'})
+  self.plan_sha=E.digest(C.encoded(self.plan));self.result=dict(ok=True,planSha256=self.plan_sha,completed=[]);self.result_sha=E.digest(C.encoded(self.result))
+  self.proof=dict(schema='pow-ui-completed-config-access-time-v1',configSha256='a'*64,stateSha256='c'*64,cycleId='completed-cycle',planSha256=self.plan_sha,resultSha256=self.result_sha,before=copy.deepcopy(self.before),current=copy.deepcopy(self.current))
+  self.addCleanup(patch.stopall)
+  patch.object(E,'hold_snapshot',side_effect=lambda:copy.deepcopy([self.current,self.other])).start()
+  patch.object(E,'timer_snapshot',return_value=self.plan['timers']).start()
+  patch.object(C,'protected_fence').start();patch.object(C,'discover',return_value=[]).start()
+ def verify(self,proof=None):
+  return C.verify_final_result(self.plan,self.plan_sha,self.result,self.result_sha,config_access_time_reconciliation=self.proof if proof is None else proof)
+ def test_exact_observed_atime_passes_without_rewriting_any_evidence(self):
+  before=C.encoded(dict(plan=self.plan,result=self.result,proof=self.proof));out=self.verify()
+  self.assertTrue(out['ok']);self.assertFalse(out['holdsAndTimersUnchanged']);self.assertTrue(out['holdsAndTimersVerified'])
+  self.assertEqual(out['verifiedAccessTimeReconciliation'],self.proof)
+  self.assertEqual(before,C.encoded(dict(plan=self.plan,result=self.result,proof=self.proof)))
+ def test_default_completion_and_writer_remain_strict(self):
+  with self.assertRaisesRegex(ValueError,'holds/timers'):C.verify_final_result(self.plan,self.plan_sha,self.result,self.result_sha)
+  with self.assertRaisesRegex(ValueError,'holds/timers'):C.fence(self.plan,full=True)
+  with self.assertRaises(TypeError):C.fence(self.plan,access_time_reconciliation=self.proof)
+ def test_every_non_atime_identity_field_remains_exact(self):
+  for key in E.STAT_FIELDS:
+   if key=='st_atime_ns':continue
+   proof=copy.deepcopy(self.proof);proof['current']['identity'][key]+=1
+   with self.subTest(field=key),self.assertRaises(ValueError):self.verify(proof)
+ def test_hash_path_xattrs_and_other_holds_cannot_change(self):
+  for key,value in [('sha256','d'*64),('path','/etc/other.json'),('xattrs',[['user.changed','00']])]:
+   proof=copy.deepcopy(self.proof);proof['current'][key]=value
+   with self.subTest(field=key),self.assertRaises(ValueError):self.verify(proof)
+  self.other['identity']['st_ino']+=1
+  # The original plan remains independent of the live snapshot.
+  self.plan['holds'][1]=dict(self.other,identity=dict(self.other['identity'],st_ino=self.other['identity']['st_ino']-1))
+  with self.assertRaisesRegex(ValueError,'another hold'):self.verify()
+ def test_only_exact_forward_integer_access_time_is_accepted(self):
+  for value in (99,100,201,200.0,True,'200'):
+   proof=copy.deepcopy(self.proof);proof['current']['identity']['st_atime_ns']=value
+   with self.subTest(value=value),self.assertRaises((ValueError,TypeError)):self.verify(proof)
+ def test_plan_result_config_and_original_hold_bindings_remain_exact(self):
+  for key in ('planSha256','resultSha256','configSha256'):
+   proof=copy.deepcopy(self.proof);proof[key]='f'*64
+   with self.subTest(field=key),self.assertRaises(ValueError):self.verify(proof)
+  proof=copy.deepcopy(self.proof);proof['before']['identity']['st_atime_ns']=99
+  with self.assertRaisesRegex(ValueError,'Original config hold'):self.verify(proof)
+ def test_timer_drift_and_combined_transition_proofs_refuse(self):
+  with patch.object(E,'timer_snapshot',return_value={'changed':True}),self.assertRaisesRegex(ValueError,'timers'):self.verify()
+  with self.assertRaisesRegex(ValueError,'combine config transitions'):
+   C.verify_final_result(self.plan,self.plan_sha,self.result,self.result_sha,config_transitions=[{}],config_access_time_reconciliation=self.proof)
+ def test_further_access_time_change_between_fences_refuses(self):
+  first=copy.deepcopy([self.current,self.other]);second=copy.deepcopy(first);second[0]['identity']['st_atime_ns']+=1
+  with patch.object(E,'hold_snapshot',side_effect=[first,second]),self.assertRaisesRegex(ValueError,'Observed config access time'):self.verify()
+ def test_missing_duplicated_or_extra_hold_rows_refuse(self):
+  for holds in ([self.other],[self.current,self.current,self.other],[self.current,self.other,dict(self.other,path='/extra')]):
+   with patch.object(E,'hold_snapshot',return_value=holds),self.assertRaises(ValueError):self.verify()
+
+suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls) for cls in (FileGroupTests,ArtifactQualificationTests,ClosedOrdinaryAliasTests,OffhostCapacityTests,BatchPreservationTests,RetirementBudgetTests,RetirementDiagnosticsTests,CompletionConfigTransitionTests,CompletionConfigAccessTimeTests))
 result=unittest.TextTestRunner(verbosity=1).run(suite)
 if not result.wasSuccessful():raise SystemExit(1)

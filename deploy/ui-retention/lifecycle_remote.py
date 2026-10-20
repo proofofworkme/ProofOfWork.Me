@@ -158,7 +158,8 @@ def validate_config(path, expected):
 
 
 class Runtime:
-    def __init__(self, config, config_sha, storage, policy, custody=None, layout=None, *, verify_upgrade=False):
+    def __init__(self, config, config_sha, storage, policy, custody=None, layout=None, *, verify_upgrade=False,
+                 completion_access_time_reconciliation=None):
         self.config = config
         self.config_sha = config_sha
         self.S = storage
@@ -170,6 +171,9 @@ class Runtime:
         # Only the installer calls this constructor keyword, while holding the
         # deployment lock. The public dispatcher never accepts a bypass frame.
         self.verify_upgrade = verify_upgrade
+        # Only an authenticated completed-config repair supplies this exact proof.
+        # Normal status and every public mutation frame remain strict.
+        self.completion_access_time_reconciliation = completion_access_time_reconciliation
 
     def current(self):
         cache = {}
@@ -369,6 +373,7 @@ class Runtime:
         state, digest = self.state()
         _, context = self.current()
         unfinished = self.unfinished_intents()
+        completion_verification = None
         complete = bool(state and state.get('status') == 'complete' and not state.get('pending')
                         and not state.get('activePhase') and not unfinished and state.get('completedContext') == context)
         if state and state.get('index'):
@@ -387,11 +392,19 @@ class Runtime:
                 result, _ = read_json(result_binding['path'], result_binding['sha256'])
                 require(plan.get('lifecycle') == self.completion_lifecycle(state, index), 'Completed custody index differs')
                 transitions = self.completion_transitions(state)
-                self.C.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'],
-                                           **({'config_transitions': transitions} if transitions else {}))
+                access_time = self.completion_access_time_reconciliation
+                if access_time is not None:
+                    require(access_time['stateSha256'] == digest and access_time['configSha256'] == self.config_sha
+                            and access_time['cycleId'] == state['lastCompleted']['cycleId'],
+                            'Access-time repair no longer binds the completed state')
+                completion_verification = self.C.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'],
+                                           **({'config_transitions': transitions} if transitions else {}),
+                                           **({'config_access_time_reconciliation': access_time} if access_time is not None else {}))
         if frame.get('requireComplete'):
             require(complete, 'Published UI is healthy; retention-incomplete blocks another upload')
         return {'ok': True, 'initialized': state is not None, 'retentionComplete': complete,
+                **({'verifiedAccessTimeReconciliation': completion_verification['verifiedAccessTimeReconciliation']}
+                   if self.completion_access_time_reconciliation is not None and completion_verification else {}),
                 'publicationHealthy': True, 'configSha256': self.config_sha, 'stateSha256': digest,
                 'pair': context['pair'], 'context': context, 'index': state.get('index') if state else None,
                 'pending': state.get('pending') if state else None,

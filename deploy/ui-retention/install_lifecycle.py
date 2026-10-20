@@ -479,10 +479,12 @@ def completed_review(runtime, request):
     return {'state': state, 'stateSha256': state_sha, 'context': status['context'],
             'completionIntent': intent_binding,
             'completionReceipt': {'path': str(receipt_path), 'sha256': sha(receipt_raw)},
-            'lastCompleted': state['lastCompleted'], 'fullCompletionVerified': True}
+            'lastCompleted': state['lastCompleted'], 'fullCompletionVerified': True,
+            **({'accessTimeReconciliation': status['verifiedAccessTimeReconciliation']}
+               if getattr(runtime, 'completion_access_time_reconciliation', None) is not None else {})}
 
 
-def repair_verifier_runtime(payload, old_runtime):
+def repair_verifier_runtime(payload, old_runtime, access_time_reconciliation=None):
     """Use only reviewed new verifier bytes; never patch the installed module."""
     validate_payload(payload)
     package = Path(old_runtime.config['package']['path'])
@@ -501,7 +503,8 @@ def repair_verifier_runtime(payload, old_runtime):
     coordinator = module('repair_new_coordinator', 'deploy/ui-retention/lifecycle_remote.py')
     require(hasattr(coordinator.Runtime, 'completion_transitions'), 'Reviewed coordinator lacks explicit transition verification')
     return coordinator.Runtime(old_runtime.config, old_runtime.config_sha, old_runtime.S, old_runtime.P, custody,
-                               layout=old_runtime.layout)
+                               layout=old_runtime.layout,
+                               completion_access_time_reconciliation=access_time_reconciliation)
 
 
 def local_guard_refusal(binding, payload):
@@ -542,6 +545,18 @@ def validate_guard_refusal(request, runtime):
     require(value['completedUpgrade']['receipt']['path'] == state['lastUpgrade']['completionPath'],
             'Guard refusal upgrade receipt differs')
     read_bound(value['completedUpgrade']['receipt']['path'], value['completedUpgrade']['receipt']['sha256'])
+    access_time = value.get('accessTimeReconciliation')
+    if access_time is not None:
+        require(access_time.get('schema') == 'pow-ui-completed-config-access-time-v1'
+                and access_time.get('configSha256') == runtime.config_sha
+                and access_time.get('stateSha256') == state_sha
+                and access_time.get('cycleId') == state['lastCompleted']['cycleId']
+                and access_time.get('planSha256') == state['lastCompleted']['custodyPlan']['sha256']
+                and access_time.get('resultSha256') == state['lastCompleted']['custodyResult']['sha256']
+                and access_time.get('before') == value['guardDifference'].get('oldLifecycleConfig')
+                and access_time.get('current') == value['guardDifference'].get('currentLifecycleConfig'),
+                'Access-time refusal does not bind the exact completed evidence')
+    return access_time
 
 
 def completed_package_review(payload, package, old_runtime, review):
@@ -566,13 +581,17 @@ def completed_package_review(payload, package, old_runtime, review):
     # Approval content is identical, but its immutable package path changes.
     # The preserved plan intentionally retains its original approval binding.
     transitions = runtime.completion_transitions(state)
-    custody.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'],
-                                **({'config_transitions': transitions} if transitions else {}))
+    access_time = review.get('accessTimeReconciliation')
+    verified = custody.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'],
+                                **({'config_transitions': transitions} if transitions else {}),
+                                **({'config_access_time_reconciliation': access_time} if access_time is not None else {}))
     storage.compare_guards(runtime.layout, context['guards'], [])
     return {'context': context, 'index': index, 'lastCompleted': state['lastCompleted'],
             'custodyLifecycle': plan['lifecycle'],
             'verifiedConfigTransitions': transitions,
-            'fullCompletionVerified': True}
+            'fullCompletionVerified': True,
+            **({'verifiedAccessTimeReconciliation': verified['verifiedAccessTimeReconciliation']}
+               if access_time is not None else {})}
 
 
 def upgrade_inventory_locked(request, prefix):
@@ -587,8 +606,8 @@ def upgrade_inventory_locked(request, prefix):
         if repair:
             require(runtime.state()[0].get('lastUpgrade', {}).get('preservedCompletedCycleId'),
                     'Config repair requires a sealed completion-preserving upgrade')
-            validate_guard_refusal(request, runtime)
-            runtime = repair_verifier_runtime(request['verificationPayload'], runtime)
+            access_time = validate_guard_refusal(request, runtime)
+            runtime = repair_verifier_runtime(request['verificationPayload'], runtime, access_time)
         config_raw = read_bound(prefix / CONFIG.lstrip('/'), request['configSha256'])
         state_raw = read_bound(prefix / STATE.lstrip('/'), request['stateSha256'])
         return {'guards': guard_inventory(prefix), 'completedReview': completed_review(runtime, request),

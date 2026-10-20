@@ -318,6 +318,12 @@ class RemoteTests(unittest.TestCase):
         out = self.runtime.dispatch('complete-cycle', final)
         self.assertTrue(out['retentionComplete'])
         self.assertTrue(self.runtime.dispatch('status', {'requireComplete': True})['retentionComplete'])
+        with patch.object(custody, 'verify_final_result', return_value={'ok': True}) as verify:
+            self.runtime.dispatch('status', {'requireComplete': True,
+                'completion_access_time_reconciliation': {'untrusted': 'frame'},
+                'config_access_time_reconciliation': {'untrusted': 'frame'}})
+            self.assertEqual(verify.call_args.kwargs, {})
+            self.assertIsNone(self.runtime.completion_access_time_reconciliation)
         # A newly published pair cannot borrow the prior cycle's completion.
         self.fixture.publish_policy_fixture('aaaaaa000003-20261016T040000Z', F.S.V5_SURFACES, 'proofofwork-ui-release-v5')
         with self.assertRaisesRegex(ValueError, 'retention-incomplete'):
@@ -936,7 +942,8 @@ class PackagingTests(unittest.TestCase):
                 cycle_receipt = base / 'cycle.json'; upgrade_receipt = base / 'upgrade.json'
                 cycle_receipt.write_bytes(b'cycle'); upgrade_receipt.write_bytes(b'upgrade')
                 state = {'revision': 14, 'status': 'complete', 'lastCompleted': {
-                    'cycleId': 'completed-cycle', 'custodyPlan': {'sha256': 'a' * 64}},
+                    'cycleId': 'completed-cycle', 'custodyPlan': {'sha256': 'a' * 64},
+                    'custodyResult': {'sha256': 'e' * 64}},
                     'lastUpgrade': {'completionPath': str(upgrade_receipt)}}
                 runtime = types.SimpleNamespace(config_sha='b' * 64, config={'sourceCommit': 'c' * 40},
                                                 state=lambda: (state, 'd' * 64))
@@ -955,6 +962,17 @@ class PackagingTests(unittest.TestCase):
                         'guardRefusal': {'base64': base64.b64encode(raw).decode(),
                             'binding': {'path': '/reviewed/refusal.json', 'sha256': I.sha(raw)}}}
                 I.validate_guard_refusal(request(value), runtime)
+                proof = {'schema': 'pow-ui-completed-config-access-time-v1',
+                         'configSha256': 'b' * 64, 'stateSha256': 'd' * 64,
+                         'cycleId': 'completed-cycle', 'planSha256': 'a' * 64, 'resultSha256': 'e' * 64,
+                         'before': {'exact': 'old hold'}, 'current': {'exact': 'observed hold'}}
+                access_refusal = dict(value, accessTimeReconciliation=proof,
+                    guardDifference=dict(value['guardDifference'], oldLifecycleConfig=proof['before'], currentLifecycleConfig=proof['current']))
+                self.assertEqual(I.validate_guard_refusal(request(access_refusal), runtime), proof)
+                for key in ('stateSha256', 'configSha256', 'cycleId', 'planSha256', 'resultSha256', 'before', 'current'):
+                    changed = dict(access_refusal, accessTimeReconciliation=dict(proof, **{key: 'wrong'}))
+                    with self.subTest(access_field=key), self.assertRaisesRegex(ValueError, 'exact completed evidence'):
+                        I.validate_guard_refusal(request(changed), runtime)
                 for key, wrong in [('qualifiedPlan', {'sha256': '0' * 64}),
                                    ('config', {'path': I.CONFIG, 'sha256': '0' * 64}),
                                    ('guardDifference', {'onlyChangedPaths': [I.CONFIG, '/unrelated'],
@@ -979,6 +997,11 @@ class PackagingTests(unittest.TestCase):
                 self.assertIsNot(verifier.C, old.C); self.assertIs(verifier.C.E, old.C.E)
                 self.assertIsNot(type(verifier), R.Runtime)
                 self.assertEqual(verifier.config, old.config)
+                self.assertIsNone(verifier.completion_access_time_reconciliation)
+                proof = {'exact': 'authenticated explicit refusal'}
+                repaired = I.repair_verifier_runtime(payload, old, proof)
+                self.assertEqual(repaired.completion_access_time_reconciliation, proof)
+                self.assertFalse(hasattr(old, 'completion_access_time_reconciliation'))
                 changed = json.loads(json.dumps(manifest))
                 changed['files']['deploy/ui-retention/removal.py']['sha256'] = '0' * 64
                 (base / 'package.json').write_bytes(I.encoded(changed))

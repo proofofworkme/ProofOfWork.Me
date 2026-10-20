@@ -1,0 +1,187 @@
+{
+  "accessTimeReconciliation": {
+    "before": {
+      "identity": {
+        "st_atime_ns": 1792309767479864966,
+        "st_blksize": 4096,
+        "st_blocks": 8,
+        "st_ctime_ns": 1792309767522868732,
+        "st_dev": 2049,
+        "st_gid": 0,
+        "st_ino": 129082,
+        "st_mode": 33152,
+        "st_mtime_ns": 1792309767480865054,
+        "st_nlink": 1,
+        "st_size": 1165,
+        "st_uid": 0
+      },
+      "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+      "sha256": "e64a695a68e0ecdd9928463c17215288dce50ce99529d93de6c08449e4f99af8",
+      "xattrs": []
+    },
+    "configSha256": "e64a695a68e0ecdd9928463c17215288dce50ce99529d93de6c08449e4f99af8",
+    "current": {
+      "identity": {
+        "st_atime_ns": 1792499996470078282,
+        "st_blksize": 4096,
+        "st_blocks": 8,
+        "st_ctime_ns": 1792309767522868732,
+        "st_dev": 2049,
+        "st_gid": 0,
+        "st_ino": 129082,
+        "st_mode": 33152,
+        "st_mtime_ns": 1792309767480865054,
+        "st_nlink": 1,
+        "st_size": 1165,
+        "st_uid": 0
+      },
+      "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+      "sha256": "e64a695a68e0ecdd9928463c17215288dce50ce99529d93de6c08449e4f99af8",
+      "xattrs": []
+    },
+    "cycleId": "release-f82b79ab241c-20261018T083313Z",
+    "planSha256": "c45873869cb7cf8e42ffd7e20c5bfb181e52827230653a4ad4a1b916d70d9ac6",
+    "resultSha256": "89cd0b77cbebac19e51c1b2243864a445a6dc59fb40d1884405a072bcff4a8a4",
+    "schema": "pow-ui-completed-config-access-time-v1",
+    "stateSha256": "462e51503fcfe37eb2b06e67cb807ad603952caf130a190a10764271b2628276"
+  },
+  "completedCycle": {
+    "cycleId": "release-f82b79ab241c-20261018T083313Z",
+    "local": {
+      "bytes": 11633,
+      "path": "/tmp/pow-ui-retention-atime-repair-20261020/cycle-completed.json",
+      "sha256": "0e7bd301971d30cfb2e35452d005ea965a043195975f1bb3bb024998cf2d454e"
+    },
+    "receipt": {
+      "bytes": 11633,
+      "path": "/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-complete-f82b79ab241c-20261018T083313Z-receipt1-completed.json",
+      "sha256": "0e7bd301971d30cfb2e35452d005ea965a043195975f1bb3bb024998cf2d454e"
+    },
+    "retentionComplete": true
+  },
+  "completedUpgrade": {
+    "plan": {
+      "bytes": 1286410,
+      "path": "/tmp/ui-retention-config-guard-repair-20261018/plan.json",
+      "sha256": "b6c32654eb6b0c7c925b49477a1373ae75c8d293083f61366415513482bf757c"
+    },
+    "receipt": {
+      "bytes": 36654,
+      "path": "/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-upgrade-5e502b8d903f5fa3bbad5a0b1a3b5509e30160cd0dd8134555116f329e184044/completed.json",
+      "sha256": "4e14d940ff43dbef0c7676dbf71571fc872c3184c9a1dc91a9f0e5476447b4c5"
+    },
+    "result": {
+      "bytes": 40914,
+      "path": "/tmp/ui-retention-config-guard-repair-20261018/upgrade.log",
+      "sha256": "2004ba517885aed271e7a6bee931896ee9779fc2e883af8892391c765ac0961f"
+    }
+  },
+  "config": {
+    "bytes": 1165,
+    "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+    "sha256": "e64a695a68e0ecdd9928463c17215288dce50ce99529d93de6c08449e4f99af8"
+  },
+  "custodyResult": {
+    "bytes": 3617125,
+    "path": "/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-complete-f82b79ab241c-20261018T083313Z-receipt1-custody-result.json",
+    "sha256": "89cd0b77cbebac19e51c1b2243864a445a6dc59fb40d1884405a072bcff4a8a4"
+  },
+  "disposition": "completed-cycle-preserved-exact-config-access-time-reconciliation-required",
+  "failure": {
+    "emptyOutput": {
+      "bytes": 0,
+      "path": "/tmp/pow-ui-retention-atime-repair-20261020/preflight.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "error": "Retention holds/timers changed",
+    "exitCode": 1,
+    "invocationReceipt": {
+      "bytes": 466,
+      "path": "/tmp/pow-ui-retention-atime-repair-20261020/preflight-refusal.json",
+      "sha256": "cf7f676d1b51ae135a3ddf0398b773ebc0e262e41b8e4df40f5f5c1591f3fa3c"
+    },
+    "log": {
+      "bytes": 2797,
+      "path": "/tmp/pow-ui-retention-atime-repair-20261020/preflight.stderr",
+      "sha256": "709dfcc03b0b407dc6d1aae6f0f63521f7a22eaa58aaa48c9cf47f7af4ca3b79"
+    },
+    "normalStatusVerified": false,
+    "operation": "normal-status-require-complete"
+  },
+  "guardDifference": {
+    "currentLifecycleConfig": {
+      "identity": {
+        "st_atime_ns": 1792499996470078282,
+        "st_blksize": 4096,
+        "st_blocks": 8,
+        "st_ctime_ns": 1792309767522868732,
+        "st_dev": 2049,
+        "st_gid": 0,
+        "st_ino": 129082,
+        "st_mode": 33152,
+        "st_mtime_ns": 1792309767480865054,
+        "st_nlink": 1,
+        "st_size": 1165,
+        "st_uid": 0
+      },
+      "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+      "sha256": "e64a695a68e0ecdd9928463c17215288dce50ce99529d93de6c08449e4f99af8",
+      "xattrs": []
+    },
+    "oldLifecycleConfig": {
+      "identity": {
+        "st_atime_ns": 1792309767479864966,
+        "st_blksize": 4096,
+        "st_blocks": 8,
+        "st_ctime_ns": 1792309767522868732,
+        "st_dev": 2049,
+        "st_gid": 0,
+        "st_ino": 129082,
+        "st_mode": 33152,
+        "st_mtime_ns": 1792309767480865054,
+        "st_nlink": 1,
+        "st_size": 1165,
+        "st_uid": 0
+      },
+      "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+      "sha256": "e64a695a68e0ecdd9928463c17215288dce50ce99529d93de6c08449e4f99af8",
+      "xattrs": []
+    },
+    "onlyChangedPaths": [
+      "/etc/proofofwork-retention/ui-lifecycle.json"
+    ],
+    "otherHoldRowsUnchanged": true,
+    "timersUnchanged": true
+  },
+  "guardObservation": {
+    "bytes": 4046,
+    "path": "/tmp/pow-ui-retention-atime-repair-20261020/observation.json",
+    "sha256": "a901e6e56f0183b60bac7822875b8100c483101c81c242a541a8dfe14d2668c2"
+  },
+  "installedSourceCommit": "589b005437a6e5aa8c8c86eae65452ec410a0b14",
+  "originalPlansAndReceiptsMustRemainUnchanged": true,
+  "qualification": "The initial release preflight had already refused before diagnosis. An initial diagnostic used an ordinary configuration read and may have advanced access time again; subsequent captured observations use O_NOATIME. This evidence binds the exact observed before/current access-time-only difference and the fresh separately captured refusal. It does not attribute the initial access-time change to a specific process or authorize restoring timestamps, rewriting historical plans, replaying retirement, or accepting any further timestamp change.",
+  "qualifiedPlan": {
+    "bytes": 21887445,
+    "path": "/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-complete-f82b79ab241c-20261018T083313Z-receipt1-custody-plan.json",
+    "sha256": "c45873869cb7cf8e42ffd7e20c5bfb181e52827230653a4ad4a1b916d70d9ac6"
+  },
+  "recordedAtUtc": "2026-10-20T12:44:12.718278+00:00",
+  "retirementReplayAllowed": false,
+  "schema": "pow-ui-custody-completed-config-guard-refusal-v1",
+  "scopeApprovalSha256": "df166edb2d9817dd4f8af24819880b6bf08b396b6aa483adaa141415fc709379",
+  "state": {
+    "activePhase": null,
+    "bytes": 35206,
+    "path": "/var/lib/proofofwork-ui-retention/state.json",
+    "pending": null,
+    "revision": 23,
+    "sha256": "462e51503fcfe37eb2b06e67cb807ad603952caf130a190a10764271b2628276",
+    "status": "complete"
+  },
+  "stateObservation": {
+    "bytes": 4046,
+    "path": "/tmp/pow-ui-retention-atime-repair-20261020/observation.json",
+    "sha256": "a901e6e56f0183b60bac7822875b8100c483101c81c242a541a8dfe14d2668c2"
+  }
+}

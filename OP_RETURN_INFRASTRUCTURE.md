@@ -7815,6 +7815,17 @@ an authenticated chain of sealed completed-cycle upgrades for that one row.
 Original custody plans retain their exact bytes, and qualification, export and
 deletion continue to use strict guards. A corrective package upgrade must verify
 normal completed status after switching configuration as well as before it.
+A later [access-time-only refusal](audits/2026-10-20-ui-retention-access-time-refusal.json)
+uses that same completed-config repair envelope with an explicit exact observation.
+Only the recorded forward access-time change of `ui-lifecycle.json` is admitted
+by the transient completion verifier. Its bytes, inode, ctime, mtime, ownership,
+mode, links, allocation fields and xattrs, all other held rows, and timers must
+remain exact. A second access-time change also refuses. The committed refusal
+binds the config, state, completed cycle, custody plan and result; both pre-switch
+verification and the sealed upgrade chain retain that proof. Normal status has
+no request-frame opt-in, custody writer fences remain strict, and no retirement
+or historical receipt is replayed or rewritten.
+
 New completed-cycle upgrades require a separate immutable status-verification
 receipt before ordinary lifecycle operations can proceed. The installer performs
 the first verification while holding the deployment lock, seals that receipt,

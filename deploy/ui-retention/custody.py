@@ -259,6 +259,19 @@ def completion_config_holds(plan, plan_sha, result_sha, transitions):
         require(proof.get('fullCompletionVerified') is True and proof.get('context')==prior_state['completedContext'] and proof.get('index')==prior_state['index']
             and proof.get('lastCompleted')==last_completed and proof.get('custodyLifecycle')==plan['lifecycle']
             and proof.get('verifiedConfigTransitions',[])==transitions[:position],'completion-transition','Upgrade completion verification differs from historical custody authority')
+        access_time=review.get('accessTimeReconciliation')
+        require(proof.get('verifiedAccessTimeReconciliation')==access_time,
+            'completion-transition','Upgrade access-time verification differs')
+        if access_time is not None:
+            require(position==0 and request.get('mode')=='completed-config-repair',
+                'completion-transition','Access-time repair is not the original completed repair')
+            refusal=request.get('guardRefusal',{});refusal_raw=base64.b64decode(refusal.get('base64',''),validate=True)
+            require(E.digest(refusal_raw)==refusal.get('binding',{}).get('sha256')
+                and json.loads(refusal_raw).get('accessTimeReconciliation')==access_time
+                and access_time.get('stateSha256')==prior_state_binding['sha256']
+                and access_time.get('configSha256')==config_sha and access_time.get('cycleId')==cycle,
+                'completion-transition','Sealed access-time refusal authority differs')
+            completion_access_time_rows(plan,plan_sha,result_sha,access_time)
         if last_proof is not None:
             require(all(proof[k]==last_proof[k] for k in ('context','index','lastCompleted','custodyLifecycle')),'completion-transition','Upgrade completion proof changed across chain')
         config_sha=new_sha;last_state=final;last_proof=proof;last_config=config
@@ -276,7 +289,50 @@ def completion_config_holds(plan, plan_sha, result_sha, transitions):
     return holds
 
 
-def completion_fence(plan, plan_sha, result_sha, transitions, expected_holds=None):
+def completion_access_time_rows(plan, plan_sha, result_sha, proof):
+    """One reviewed config read may advance atime; no writer accepts this proof."""
+    keys={'schema','configSha256','stateSha256','cycleId','planSha256','resultSha256','before','current'}
+    require(isinstance(proof,dict) and set(proof)==keys
+        and proof['schema']=='pow-ui-completed-config-access-time-v1'
+        and proof['planSha256']==plan_sha and proof['resultSha256']==result_sha
+        and all(re.fullmatch('[0-9a-f]{64}',proof[k] or '') for k in ('configSha256','stateSha256'))
+        and isinstance(proof['cycleId'],str) and bool(proof['cycleId']),
+        'completion-access-time','Access-time repair authority differs')
+    before,current=proof['before'],proof['current'];config_path=str(LIFECYCLE_CONFIG)
+    for row in (before,current):
+        require(isinstance(row,dict) and set(row)=={'path','sha256','identity','xattrs'}
+            and row['path']==config_path and row['sha256']==proof['configSha256']
+            and isinstance(row['identity'],dict) and set(row['identity'])==set(E.STAT_FIELDS)
+            and all(type(value)is int for value in row['identity'].values()),
+            'completion-access-time','Access-time config hold shape differs')
+        ident=row['identity']
+        require(ident['st_mode']==stat.S_IFREG|0o600 and ident['st_uid']==ident['st_gid']==0
+            and ident['st_nlink']==1,'completion-access-time','Access-time config hold authority differs')
+    require(current['identity']['st_atime_ns']>before['identity']['st_atime_ns']>=0
+        and dict(current,identity=dict(current['identity'],st_atime_ns=before['identity']['st_atime_ns']))==before,
+        'completion-access-time','Repair must be only the exact forward config access time')
+    require([r for r in plan['holds'] if r['path']==config_path]==[before]
+        and plan.get('lifecycle'),'completion-access-time','Original config hold differs')
+    return before,current
+
+
+def completion_access_time_holds(plan, plan_sha, result_sha, proof):
+    before,current=completion_access_time_rows(plan,plan_sha,result_sha,proof)
+    config_path=str(LIFECYCLE_CONFIG);holds=E.hold_snapshot()
+    require([r for r in holds if r['path']==config_path]==[current]
+        and [before if r['path']==config_path else r for r in holds]==plan['holds'],
+        'completion-access-time','Observed config access time or another hold changed')
+    return holds
+
+
+def completion_fence(plan, plan_sha, result_sha, transitions, expected_holds=None, access_time_reconciliation=None):
+    if access_time_reconciliation is not None:
+        require(not transitions,'completion-access-time','Access-time repair cannot combine config transitions')
+        holds=completion_access_time_holds(plan,plan_sha,result_sha,access_time_reconciliation)
+        require((expected_holds is None or holds==expected_holds) and E.timer_snapshot()==plan['timers'],
+            'completion-access-time','Access-time completion holds/timers changed during verification')
+        protected_fence(plan,full=True)
+        return holds
     if not transitions:
         fence(plan,full=True)
         return None
@@ -999,12 +1055,13 @@ def retire(plan_path,custody,output,*,expected_sources=None):
     save(output,{'ok':True,'completed':completed,'planSha256':digest(plan_path)})
 
 
-def verify_final_result(plan, plan_sha, result, result_sha, *, config_transitions=None):
+def verify_final_result(plan, plan_sha, result, result_sha, *, config_transitions=None, config_access_time_reconciliation=None):
     """Read-only terminal proof for the lifecycle coordinator; no inferred retries."""
     require(config_transitions is None or type(config_transitions)is list,'completion-transition','Invalid completion transition argument')
     require(E.digest(encoded(plan))==plan_sha and E.digest(encoded(result))==result_sha,'completion-mismatch','Custody plan/result canonical bytes differ')
     require(result.get('ok') is True and result.get('planSha256')==plan_sha,'completion-mismatch','Custody result is not bound to the completed plan')
-    completion_holds=completion_fence(plan,plan_sha,result_sha,config_transitions)
+    completion_holds=completion_fence(plan,plan_sha,result_sha,config_transitions,
+        access_time_reconciliation=config_access_time_reconciliation)
     wanted=[r for r in plan['candidates'] if r.get('eligible') is True and r.get('retirementMethod','custody')=='custody']
     completed=result.get('completed',[])
     require([r.get('path') for r in completed]==[r['path'] for r in wanted] and len({r['path'] for r in wanted})==len(wanted),'completion-mismatch','Custody completion omitted, duplicated, reordered or expanded scope')
@@ -1043,10 +1100,12 @@ def verify_final_result(plan, plan_sha, result, result_sha, *, config_transition
         proofs.append(dict(path=str(path),receipt=binding,intent=ib,journal=jb))
     remaining=[qualify_candidate(p,plan) for p in discover(plan)]
     require(not [r for r in remaining if r.get('eligible')],'retention-incomplete','Qualified bulk artifacts remain after the custody cycle')
-    completion_fence(plan,plan_sha,result_sha,config_transitions,completion_holds)
+    completion_fence(plan,plan_sha,result_sha,config_transitions,completion_holds,config_access_time_reconciliation)
     verified=dict(ok=True,planSha256=plan_sha,resultSha256=result_sha,completedCount=len(completed),receipts=proofs,
-        remaining=[{k:r[k] for k in ('path','eligible','artifactClass','retirementMethod','rejectionCategory','reason') if k in r} for r in remaining],protectedPairVerified=True,holdsAndTimersUnchanged=not bool(config_transitions))
+        remaining=[{k:r[k] for k in ('path','eligible','artifactClass','retirementMethod','rejectionCategory','reason') if k in r} for r in remaining],protectedPairVerified=True,holdsAndTimersUnchanged=not bool(config_transitions or config_access_time_reconciliation))
     if config_transitions:verified.update(holdsAndTimersVerified=True,verifiedConfigTransitions=config_transitions)
+    if config_access_time_reconciliation is not None:
+        verified.update(holdsAndTimersVerified=True,verifiedAccessTimeReconciliation=config_access_time_reconciliation)
     return verified
 
 
