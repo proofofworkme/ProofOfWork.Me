@@ -4160,6 +4160,19 @@ function isOutboxStatus(status: BroadcastStatus) {
   return status === "pending" || status === "dropped";
 }
 
+function MailFolderCount({ count, verified }: { count: number; verified: boolean }) {
+  const label = verified
+    ? `${count} items`
+    : count > 0
+      ? `${count} known items; mailbox scan incomplete`
+      : "Item count unknown; mailbox scan incomplete";
+  return (
+    <strong aria-label={label} title={label}>
+      {verified ? count : count > 0 ? `${count}+` : "—"}
+    </strong>
+  );
+}
+
 function mailHeaderLifecycleCounts(
   incoming: Array<Pick<InboxMessage, "confirmed"> | Pick<SentMessage, "status">>,
   sent: Pick<SentMessage, "status">[],
@@ -38145,7 +38158,7 @@ export default function App() {
                 <Inbox size={17} />
                 <span>Inbox</span>
               </span>
-              <strong>{mailAccountReadVerified ? inboxMail.length : "—"}</strong>
+              <MailFolderCount count={inboxMail.length} verified={mailAccountReadVerified} />
             </button>
             <button
               aria-current={activeFolder === "incoming"}
@@ -38156,7 +38169,7 @@ export default function App() {
                 <Mail size={17} />
                 <span>Incoming</span>
               </span>
-              <strong>{mailAccountReadVerified ? incomingMail.length : "—"}</strong>
+              <MailFolderCount count={incomingMail.length} verified={mailAccountReadVerified} />
             </button>
             <button
               aria-current={activeFolder === "sent"}
@@ -38167,7 +38180,7 @@ export default function App() {
                 <Send size={17} />
                 <span>Sent</span>
               </span>
-              <strong>{mailAccountReadVerified ? sentMail.length : "—"}</strong>
+              <MailFolderCount count={sentMail.length} verified={mailAccountReadVerified} />
             </button>
             <button
               aria-current={activeFolder === "outbox"}
@@ -38178,7 +38191,7 @@ export default function App() {
                 <Clock size={17} />
                 <span>Outbox</span>
               </span>
-              <strong>{mailAccountReadVerified ? outboxMail.length : "—"}</strong>
+              <MailFolderCount count={outboxMail.length} verified={mailAccountReadVerified} />
             </button>
             <button
               aria-current={activeFolder === "drafts"}
@@ -38200,7 +38213,7 @@ export default function App() {
                 <Star size={17} />
                 <span>Favorites</span>
               </span>
-              <strong>{mailAccountReadVerified ? favoritesMail.length : "—"}</strong>
+              <MailFolderCount count={favoritesMail.length} verified={mailAccountReadVerified} />
             </button>
             <button
               aria-current={activeFolder === "archive"}
@@ -38211,7 +38224,7 @@ export default function App() {
                 <Archive size={17} />
                 <span>Archive</span>
               </span>
-              <strong>{mailAccountReadVerified ? archiveMail.length : "—"}</strong>
+              <MailFolderCount count={archiveMail.length} verified={mailAccountReadVerified} />
             </button>
             {customFolders.map((folder) => (
               <div className="custom-folder-row" key={folder.id}>

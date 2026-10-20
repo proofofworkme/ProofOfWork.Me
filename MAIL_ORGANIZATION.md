@@ -301,9 +301,12 @@ mailbox or Contacts state; inspecting them does not initiate a paid action.
 ## Account Read State and Embedded Navigation
 
 Computer does not treat a disconnected or unverified account as an empty
-mailbox. Mail and Files counts stay unknown until a successful scan for the
-current address and network; clearing or switching the account clears that
-read evidence. Computer IDs distinguishes disconnected, verifying, unavailable,
+mailbox. Mail folder badges show known items immediately, with a `+` and an
+accessible incomplete-scan description until a successful scan for the current
+address and network. An unverified empty folder remains unknown, not zero.
+Files counts stay unknown until a successful scan. Clearing or switching the
+account clears that read evidence; normal refresh retains accepted counts.
+Computer IDs distinguishes disconnected, verifying, unavailable,
 last-verified, and verified-empty owned collections. Local organization remains
 browser state and does not change confirmed chain history.
 
