@@ -8,6 +8,7 @@ import * as projection from "../server/boost-projection.mjs";
 import { verifiedBoostTicketClosures } from "../server/boost-marketplace-proof.mjs";
 import { decimalValueToQ8, formatWorkSubatoms, q8ToCanonicalDecimal, q8ToNumber, WORK_SUBATOM_UNIT_SCALE } from "../server/work-units.mjs";
 import { parseBoostText, parsePowDnsText, boostTextMatchesTag } from "../src/shared/protocol/boostText.mjs";
+import { normalizePublishArticleMetadata, PUBLISH_ARTICLE_VERIFICATION } from "../src/shared/protocol/publishArticle.mjs";
 
 const apiSource = await readFile(new URL("../server/proof-api.mjs", import.meta.url), "utf8");
 function definition(name) {
@@ -56,6 +57,7 @@ function reader(events, mutate = (page) => page) {
 }
 function server(readPage, overrides = {}) {
   const context = vm.createContext({ console, URLSearchParams, ...projection, verifiedBoostTicketClosures, boostTextMatchesTag,
+    normalizePublishArticleMetadata, PUBLISH_ARTICLE_VERIFICATION,
     decimalValueToQ8, formatWorkSubatoms, q8ToCanonicalDecimal, q8ToNumber,
     WORK_SUBATOM_UNIT_SCALE, WORK_TOKEN_MAX_SUPPLY: 21_000_000,
     proofIndexReadFeatureEnabled: () => true, proofIndexEventHistoryPayload: readPage,
@@ -327,6 +329,118 @@ test("profile routes resolve confirmed owners, not another user's display name o
   assert.deepEqual(Array.from(payload.items, item => item.txid), [txid(1)]);
   assert.ok(payload.provenance.applicationRejectedIdentityClaims.some(row => row.eventId === 4));
   assert.equal(payload.provenance.identityRegistry.confirmedOwnerCount, 2);
+});
+
+function retainedIdentityServer(events, { registry, rpc, overrides } = {}) {
+  const currentRegistry = registry ?? {
+    ...identityRegistry([{ id: "alice", ownerAddress: "new-owner", confirmed: true }]),
+    snapshotId: "advanced-registry", indexedThroughBlock: 965012, indexedThroughBlockHash: "b".repeat(64),
+  };
+  const registryReads = [], rpcReads = [];
+  const api = server(reader(events).read, {
+    proofIndexRegistryPayload: async (_network, options) => {
+      registryReads.push(options);
+      return options.expectedHeight === undefined ? currentRegistry : null;
+    },
+    bitcoinRpc: async (method, params) => {
+      rpcReads.push([method, Array.from(params)]);
+      return rpc ? rpc(method, params, rpcReads.length) : {
+        ok: true, result: params[0] === 965000 ? "a".repeat(64) : "b".repeat(64),
+      };
+    },
+    ...overrides,
+  });
+  return { api, registryReads, rpcReads };
+}
+
+test("retained Boost and Publish feeds suppress ID claims when a complete canonical registry has advanced", async () => {
+  const article = { v: 1, title: "Exact article title", source: "same-tx-pwm1-message", size: 5, sha256: "c".repeat(64) };
+  const events = [
+    event(1, "boost-post", { profileId: "alice", text: "Exact authored text @alice", payload: "exact raw carrier",
+      article, articleVerification: PUBLISH_ARTICLE_VERIFICATION }),
+    event(2, "boost-profile", { profileId: "alice", displayName: "alice@proofofwork.me",
+      profile: { id: "alice", profileId: "alice", handle: "alice", name: "alice@proofofwork.me" } }),
+    event(3, "boost-post", { authorAddress: "custom-owner", authorId: "bob" }),
+    event(4, "boost-profile", { authorAddress: "custom-owner", profileId: "bob",
+      profile: { id: "bob", name: "A name chosen by the author" } }),
+  ];
+  const original = JSON.stringify(events);
+  for (const format of ["", "article"]) {
+    const { api, registryReads, rpcReads } = retainedIdentityServer(events);
+    const payload = await api.boostFeedPayload("livenet", new URLSearchParams({ sort: "oldest", ...(format ? { format } : {}) }));
+    assert.equal(payload.complete, true);
+    assert.equal(payload.snapshotId, identityCheckpoint.snapshotId);
+    assert.equal(payload.indexedThroughBlock, 965000);
+    assert.equal(payload.items[0].authorAddress, "owner");
+    assert.equal(payload.items[0].authorId, "");
+    assert.equal(payload.items[0].profileId, "");
+    assert.equal(payload.items[0].authorDisplay, "owner");
+    assert.equal(payload.items[0].text, "Exact authored text @alice");
+    assert.equal(payload.items[0].article.title, article.title);
+    if (!format) assert.equal(payload.items.find(item => item.authorAddress === "custom-owner").authorDisplay, "A name chosen by the author");
+    assert.equal(payload.provenance.identityRegistry.model, "boost-address-only-retained-history-v1");
+    assert.equal(payload.provenance.identityRegistry.status, "unavailable");
+    assert.equal(payload.provenance.identityRegistry.confirmedOwnerCount, 0);
+    assert.equal(payload.provenance.identityRegistry.registryCheckpoint.indexedThroughBlock, 965012);
+    assert.equal(registryReads.length, 2, "one matched read and one complete current-registry proof");
+    assert.deepEqual(rpcReads, [
+      ["getblockhash", [965000]], ["getblockhash", [965012]],
+      ["getblockhash", [965000]], ["getblockhash", [965012]],
+    ], "both checkpoint hashes are checked before and after projection");
+  }
+  assert.equal(JSON.stringify(events), original, "canonical evidence and authored names/text remain untouched");
+  const withheld = projection.withholdBoostIdentityClaims(events, identityNormalizer);
+  assert.equal(withheld.items[0].payload, "exact raw carrier");
+  assert.equal(withheld.items[1].displayName, undefined);
+  assert.equal(withheld.items[1].profile.name, undefined);
+  assert.equal(withheld.items[3].profile.name, "A name chosen by the author");
+});
+
+test("retained identity fallback never admits fresh actions, marketplace, pending, or name-based profile reads", async () => {
+  const events = [event(1, "boost-post", { profileId: "alice" })];
+  for (const [params, fresh] of [
+    [{}, true], [{ listings: "1" }, false], [{ pending: "1" }, false], [{ profile: "alice" }, false],
+  ]) {
+    const { api, registryReads, rpcReads } = retainedIdentityServer(events);
+    await assert.rejects(api.boostFeedPayload("livenet", new URLSearchParams(params), fresh),
+      /complete registry at the same checkpoint/u);
+    assert.equal(registryReads.length, 1);
+    assert.equal(rpcReads.length, 0);
+  }
+  const owner = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH";
+  const { api } = retainedIdentityServer([event(1, "boost-post", { authorAddress: owner, profileId: "alice" })]);
+  const profile = await api.boostFeedPayload("livenet", new URLSearchParams({ profile: owner }));
+  assert.equal(profile.profileSubject.address, owner);
+  assert.equal(profile.profileSubject.id, undefined);
+  assert.equal(profile.profileSubject.displayName, owner);
+});
+
+test("retained identity fallback rejects absent, incomplete, malformed, wrong-network, and non-advanced registry evidence", async () => {
+  const registry = { ...identityRegistry([{ id: "alice", ownerAddress: "owner", confirmed: true }]),
+    indexedThroughBlock: 965012, indexedThroughBlockHash: "b".repeat(64) };
+  for (const bad of [
+    {}, { ...registry, network: "testnet" }, { ...registry, snapshotId: "" },
+    { ...registry, collectionHasMore: { records: true } }, { ...registry, stats: { total: 2 } },
+    { ...registry, records: [...registry.records, ...registry.records], stats: { total: 2 } },
+    { ...registry, records: [{ ...registry.records[0], confirmed: undefined }] },
+    { ...registry, indexedThroughBlock: 965000 }, { ...registry, indexedThroughBlock: 964999 },
+    { ...registry, indexedThroughBlockHash: "invalid" },
+  ]) {
+    const { api } = retainedIdentityServer([event(1, "boost-post", { profileId: "alice" })], { registry: bad });
+    await assert.rejects(api.boostFeedPayload("livenet", new URLSearchParams()));
+  }
+});
+
+test("retained identity fallback rejects unavailable or reorganized Core checkpoints before and after projection", async () => {
+  const events = [event(1, "boost-post", { profileId: "alice" })];
+  for (const failureAt of [1, 2, 3, 4]) {
+    const { api } = retainedIdentityServer(events, { rpc: async (_method, params, call) => ({
+      ok: true, result: call === failureAt ? "f".repeat(64) : params[0] === 965000 ? "a".repeat(64) : "b".repeat(64),
+    }) });
+    await assert.rejects(api.boostFeedPayload("livenet", new URLSearchParams()), /no longer match the full node/u);
+  }
+  const { api } = retainedIdentityServer(events, { rpc: async () => ({ ok: false }) });
+  await assert.rejects(api.boostFeedPayload("livenet", new URLSearchParams()), /no longer match the full node/u);
 });
 
 test("complete projection handles 250+ actions, 125 posts, old listings and canonical ownership across pages", async () => {

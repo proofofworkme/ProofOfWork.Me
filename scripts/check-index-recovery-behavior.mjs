@@ -59,6 +59,7 @@ import {
 } from "../server/proof-index-mail-projection.mjs";
 import {
   compareProofIndexRegistryPayloads,
+  rowsWithCanonicalMintPayments,
   rowsWithCanonicalTransferFees,
   workPrecisionV2CurrentPayloadIsExact,
   workPrecisionV2ProjectCurrentPayload,
@@ -1312,6 +1313,7 @@ function isolatedFunction(path, name, globals = {}) {
     },
     canonicalPostgresSafeJsonValue,
     INCB_TOKEN_ID,
+    rowsWithCanonicalMintPayments,
     rowsWithCanonicalTransferFees,
     WORK_ATOMIC_PROJECTION_MODEL,
     WORK_DECIMALS,
@@ -14902,7 +14904,20 @@ check("wallet holder overlays preserve WORK and POWB for one address", () => {
     /accountUtxoAvailability\(\s*accountUtxos,\s*connectedWalletReservedOutpoints,\s*\)/u,
   );
   assert.match(appSource, /activeListingAnchorOutpointsForAddress\(\[\.\.\.idListings, \.\.\.accountIdReservations\.listings\]/u);
-  assert.match(appSource, /accountUtxosLoaded && connectedWalletReservationsReady/u);
+  assert.match(appSource, /connectedWalletProofReadReady && connectedWalletReservationsReady/u);
+  const proofReadExpression = appSource.match(
+    /const connectedWalletProofReadReady\s*=\s*([^;]+);/u,
+  )?.[1];
+  assert.ok(proofReadExpression, "proof availability must have an explicit read-readiness fence");
+  for (const accountUtxosLoaded of [false, true]) {
+    for (const accountUtxosError of ["", "read unavailable"]) {
+      for (const accountUtxosRefreshing of [false, true]) {
+        assert.equal(vm.runInNewContext(proofReadExpression, {
+          accountUtxosLoaded, accountUtxosError, accountUtxosRefreshing,
+        }), accountUtxosLoaded && !accountUtxosError && !accountUtxosRefreshing);
+      }
+    }
+  }
   assert.match(appSource, /activeTokenListingAnchorOutpointsForAddress/u);
 
   const accountUtxoAvailability = isolatedTypeScriptFunction(
@@ -59713,7 +59728,9 @@ check("exact ID API lifecycle feeds every ID marketplace preflight", async () =>
   ]) {
     assert.match(actionSource, /fetchIdRecordState\(network,/u);
     assert.match(actionSource, /replaceExactPowIdStateItems\(/u);
-    assert.match(actionSource, /latestState\.pendingEvents/u);
+    assert.match(actionSource, /fetchIdRecordState\(network, (?:listing|authorization)\.id, undefined, "confirmed-ownership"\)/u);
+    assert.doesNotMatch(actionSource, /setIdPendingEvents\(/u,
+      "confirmed ownership cannot erase a pending view it did not verify");
     assert.match(actionSource, /latestState\.sales/u);
     assert.match(actionSource, /latestState\.listings\.find\(/u);
   }

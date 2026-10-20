@@ -414,3 +414,40 @@ export function qualifyBoostIdentityClaims(items, registry, checkpoint, normaliz
   });
   return { items: qualified, owners, rejected, registrySnapshotId: registry.snapshotId };
 }
+
+// A retained feed can keep its confirmed address-based records without claiming
+// that an ID owner at an older checkpoint is still the current owner. Only
+// application copies change: authored text, names, and protocol evidence survive.
+export function withholdBoostIdentityClaims(items, normalizeId) {
+  const rejected = [];
+  const qualified = items.map(item => {
+    const copy = { ...item };
+    const claimedIds = new Set([
+      item.profileId, item.authorId, item.currentOwnerId, item.targetId,
+      item.followedId, item.profile?.id, item.profile?.profileId, item.profile?.handle,
+    ].map(value => normalizeId(String(value ?? ""))).filter(Boolean));
+    const generatedName = value => typeof value === "string" &&
+      [...claimedIds].some(id => value.trim().toLowerCase() === `${id}@proofofwork.me`);
+    for (const field of ["profileId", "authorId", "currentOwnerId", "targetId", "followedId"]) {
+      if (copy[field] != null && copy[field] !== "") {
+        rejected.push({ eventId: item.eventId, field, id: normalizeId(String(copy[field])),
+          reason: "current-identity-checkpoint-unavailable" });
+      }
+      delete copy[field];
+    }
+    if (generatedName(copy.displayName)) delete copy.displayName;
+    if (item.profile && typeof item.profile === "object" && !Array.isArray(item.profile)) {
+      copy.profile = { ...item.profile };
+      for (const field of ["id", "profileId", "handle"]) {
+        if (copy.profile[field] != null && copy.profile[field] !== "") {
+          rejected.push({ eventId: item.eventId, field: `profile.${field}`,
+            id: normalizeId(String(copy.profile[field])), reason: "current-identity-checkpoint-unavailable" });
+        }
+        delete copy.profile[field];
+      }
+      if (generatedName(copy.profile.name)) delete copy.profile.name;
+    }
+    return copy;
+  });
+  return { items: qualified, owners: new Map(), rejected };
+}

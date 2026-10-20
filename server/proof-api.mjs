@@ -95,6 +95,7 @@ import {
   qualifyBoostPaidActions,
   boostHasIdentityClaims,
   qualifyBoostIdentityClaims,
+  withholdBoostIdentityClaims,
 } from "./boost-projection.mjs";
 import {
   electrumAddressHistoryCoverage,
@@ -55550,7 +55551,69 @@ async function boostCanonicalArticleBody(network, item) {
   return body;
 }
 
+async function verifyBoostRetainedIdentityCheckpoints(network, history, registry) {
+  if (network !== "livenet" ||
+      !Number.isSafeInteger(history?.indexedThroughBlock) ||
+      !Number.isSafeInteger(registry?.indexedThroughBlock) ||
+      history.indexedThroughBlock < 1 ||
+      registry.indexedThroughBlock <= history.indexedThroughBlock ||
+      !/^[0-9a-f]{64}$/u.test(history.indexedThroughBlockHash ?? "") ||
+      !/^[0-9a-f]{64}$/u.test(registry.indexedThroughBlockHash ?? "")) {
+    throw boostProjectionError("Retained Boost identity checkpoints are unavailable.");
+  }
+  const [historyHash, registryHash] = await Promise.all([
+    bitcoinRpc("getblockhash", [history.indexedThroughBlock]),
+    bitcoinRpc("getblockhash", [registry.indexedThroughBlock]),
+  ]);
+  if (!historyHash?.ok || historyHash.result !== history.indexedThroughBlockHash ||
+      !registryHash?.ok || registryHash.result !== registry.indexedThroughBlockHash) {
+    throw boostProjectionError("Retained Boost identity checkpoints no longer match the full node.", 409);
+  }
+}
+
+async function boostFeedIdentityClaims(network, items, checkpoint, allowAddressOnly) {
+  const registryOptions = { registryAddress: registryAddressForNetwork(network) };
+  const matchingRegistry = await proofIndexRegistryPayload(network, {
+    ...registryOptions,
+    expectedHeight: checkpoint.indexedThroughBlock,
+    expectedHash: checkpoint.indexedThroughBlockHash,
+  });
+  if (matchingRegistry || !allowAddressOnly) {
+    return qualifyBoostIdentityClaims(items, matchingRegistry, checkpoint, normalizePowId);
+  }
+
+  // This is not a generic registry-error fallback. A complete, internally
+  // consistent current registry and two Core-authenticated checkpoints must
+  // prove that the scan advanced beyond the retained confirmed feed.
+  const currentRegistry = await proofIndexRegistryPayload(network, registryOptions);
+  if (currentRegistry?.network !== network || items.some(item => item.confirmed !== true)) {
+    throw boostProjectionError("Complete confirmed Boost identity evidence is unavailable.");
+  }
+  qualifyBoostIdentityClaims([], currentRegistry, currentRegistry ?? {}, normalizePowId);
+  await verifyBoostRetainedIdentityCheckpoints(network, checkpoint, currentRegistry);
+  return {
+    ...withholdBoostIdentityClaims(items, normalizePowId),
+    registrySnapshotId: currentRegistry.snapshotId,
+    unavailable: true,
+    registryCheckpoint: {
+      indexedThroughBlock: currentRegistry.indexedThroughBlock,
+      indexedThroughBlockHash: currentRegistry.indexedThroughBlockHash,
+    },
+  };
+}
+
 async function boostFeedPayload(network, searchParams, fresh = false) {
+  const payload = await projectedBoostFeedPayload(network, searchParams, fresh);
+  const identities = payload.provenance?.identityRegistry;
+  if (identities?.model === "boost-address-only-retained-history-v1") {
+    // Projection includes asynchronous Core and valuation reads. Recheck after
+    // all of them, before a retained response or cursor leaves the server.
+    await verifyBoostRetainedIdentityCheckpoints(network, payload, identities.registryCheckpoint);
+  }
+  return payload;
+}
+
+async function projectedBoostFeedPayload(network, searchParams, fresh = false) {
   const detail = String(searchParams.get("detail") ?? "").trim().toLowerCase();
   const format = String(searchParams.get("format") ?? "").trim().toLowerCase();
   const connections = searchParams.get("connections") ?? "";
@@ -55611,17 +55674,20 @@ async function boostFeedPayload(network, searchParams, fresh = false) {
   );
   const needsIdentities = Boolean(detail || connections) || boostHasIdentityClaims(qualification.accepted) ||
     (profile && !(boostLooksLikeAddress(profile) && isValidBitcoinAddress(profile, network)));
-  const identityQualification = needsIdentities ? qualifyBoostIdentityClaims(
-    qualification.accepted,
-    await proofIndexRegistryPayload(network, {
-      registryAddress: registryAddressForNetwork(network),
-      expectedHeight: indexedPayload.indexedThroughBlock,
-      expectedHash: indexedPayload.indexedThroughBlockHash,
-    }),
-    indexedPayload, normalizePowId,
+  const identityQualification = needsIdentities ? await boostFeedIdentityClaims(
+    network, qualification.accepted, indexedPayload,
+    !fresh && !includePending && !listingsOnly &&
+      (!profile || (boostLooksLikeAddress(profile) && isValidBitcoinAddress(profile, network))),
   ) : { items: qualification.accepted, owners: new Map(), rejected: [] };
   const identityProvenance = needsIdentities ? {
-    model: "boost-current-confirmed-id-owners-v1",
+    model: identityQualification.unavailable
+      ? "boost-address-only-retained-history-v1"
+      : "boost-current-confirmed-id-owners-v1",
+    ...(identityQualification.unavailable ? {
+      status: "unavailable",
+      reason: "registry-checkpoint-ahead-of-retained-history",
+      registryCheckpoint: identityQualification.registryCheckpoint,
+    } : {}),
     snapshotId: indexedPayload.snapshotId,
     registrySnapshotId: identityQualification.registrySnapshotId,
     confirmedOwnerCount: identityQualification.owners.size,

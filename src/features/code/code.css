@@ -49,7 +49,7 @@
 .code-empty h3 { color: var(--text); font: 500 21px var(--font-display); }
 .code-empty p { max-width: 450px; margin: 12px auto 24px; }
 .code-load-more { display: flex !important; margin: 24px auto; }
-.code-saved-draft { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--surface); padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; overflow-wrap: anywhere; }
+.code-saved-draft { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--surface); padding: 18px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; overflow-wrap: anywhere; }
 .code-repository { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface-soft); min-width: 0; }
 .code-repository-meta { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 20px 24px; color: var(--text-muted); font-size: 12px; }
 .code-repository-meta > span:first-child { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; margin-right: auto; }

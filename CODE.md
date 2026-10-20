@@ -207,6 +207,14 @@ content resumes from the existing network/address-scoped local draft; source,
 comparison baseline and signing authority are verified again. Prepared
 transactions and review consent are never retained as navigation state.
 
+The repository page exposes its saved source draft after reload and reconnect.
+Starting Add file or Edit for that same task resumes its exact source, path,
+parent, message and fee. Starting a different task keeps the saved draft until
+an explicit discard; canceling the choice changes nothing. An unavailable or
+unreadable local draft cannot be silently replaced. Resuming rechecks the
+comparison source without rebasing the saved parent or restoring signing
+consent. Preparation errors appear beside Review and receive keyboard focus.
+
 For a verified HTML file, **Continue in Pages** passes the exact network,
 repository, confirmed version, path, SHA-256 and byte size. Pages independently
 rechecks the confirmed tree and source before creating a local draft. Code keeps

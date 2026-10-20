@@ -97,6 +97,10 @@ chain state; existing Mail, Code and Pages draft storage remains separate.
   editor/source-or-diff view. An editor resumes from its scoped local draft;
   source and the comparison baseline must be verified again. Prepared
   transactions and review consent are not part of the snapshot.
+  Repository detail also exposes the saved draft after reload/reconnect.
+  Starting another Code action resumes the matching draft or requires an
+  explicit discard before replacing it. Failed preparation preserves the draft
+  and reveals its error beside Review.
 - Pages retains its source-or-preview view, publication format, import fields,
   identity input and DNS link fields. Its existing local draft collection owns
   the active draft and exact HTML. Failed storage that would lose edited source

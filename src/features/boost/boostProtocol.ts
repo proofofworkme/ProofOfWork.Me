@@ -123,7 +123,16 @@ export type BoostFeedPayload = {
   snapshotId?: string;
   indexedThroughBlock?: number;
   indexedThroughBlockHash?: string;
-  provenance?: { model?: string; eventCount?: number; pages?: number };
+  provenance?: {
+    model?: string;
+    eventCount?: number;
+    pages?: number;
+    identityRegistry?: {
+      model?: string;
+      status?: string;
+      reason?: string;
+    } | null;
+  };
   hasMore?: boolean;
   nextCursor?: string;
   start?: number;

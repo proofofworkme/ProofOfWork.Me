@@ -162,6 +162,14 @@ register, transfer or change its receiver. Address authors remain supported.
 Only the bridge route permits framing by the exact Boost, Publish and Computer
 origins; ordinary Computer pages retain their embedding restrictions.
 
+Stable confirmed reading remains available when a retained Boost history checkpoint
+is older than the current ID registry, provided both checkpoints are verified
+against the canonical chain and the newer registry is complete. That view uses
+addresses, withholds unverified ID labels, and explains the identity limitation.
+Authored text, custom profile names, and raw protocol evidence remain exact.
+Named-profile, fresh, pending, and marketplace reads still require matching
+identity evidence; publication preparation and signing keep their fresh checks.
+
 Likes, replies and reboosts use the existing `pwb1:like`, `pwb1:reply` and
 `pwb1:reboost` events against the same article transaction ID. Their existing
 546-proof minimum payment goes to the current confirmed owner. Both surfaces

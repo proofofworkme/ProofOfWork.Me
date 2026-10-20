@@ -4,6 +4,7 @@ import { AppHeader } from "../../shared/components/AppHeader";
 import { followInternalLink, useVerifiedDocumentMetadata } from "../../app/documentMetadata";
 import { ActionTransactionReview } from "../../shared/components/ActionTransactionReview";
 import { ActionRecoveryPanel } from "../../shared/components/ActionRecoveryPanel";
+import { ReviewDialog } from "../../shared/components/ReviewDialog";
 import { FeeRateControl } from "../../shared/components/FeeRateControl";
 import { SocialFooter } from "../../shared/components/SocialFooter";
 import { explorerTxUrl, type BitcoinNetwork } from "../../shared/bitcoin/networks";
@@ -47,6 +48,10 @@ function initialNetwork(fallback?: BitcoinNetwork): BitcoinNetwork {
   return value === "testnet" || value === "testnet4" || value === "livenet" ? value : fallback ?? "livenet";
 }
 function errorText(error: unknown) { return error instanceof Error ? error.message : "Code is temporarily unavailable. Try again in a moment."; }
+function hasCodeDraft(draft: CodeDraft) {
+  return Boolean(draft.name || draft.description || draft.path || draft.message || draft.content || draft.sourceTxid);
+}
+function codeDraftLabel(draft: CodeDraft) { return draft.kind === "repo" ? draft.name || "New repository" : draft.path || "Source commit"; }
 function compactTx(txid: string) { return `${txid.slice(0, 8)}…${txid.slice(-6)}`; }
 function eventApplied(event: CodeEvent) { return event.applied === true || event.accepted === true || event.status === "applied" || event.status === "accepted"; }
 function eventReason(event: CodeEvent) { return event.reason || event.validationErrors?.join(" · ") || (eventApplied(event) ? "Confirmed main history" : "Unapplied record; inspect transaction evidence"); }
@@ -93,6 +98,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   const [actionError, setActionError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
   const [prepared, setPrepared] = useState<PreparedCode>();
+  const [pendingEditor, setPendingEditor] = useState<{ draft: CodeDraft; file?: Source; scope: string }>();
   const [editorPreview, setEditorPreview] = useState<"source" | "diff">(initialViewState?.editorPreview === "diff" ? "diff" : "source");
   const [baseline, setBaseline] = useState("");
   const [baselineReady, setBaselineReady] = useState(true);
@@ -111,6 +117,8 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   const flight = useRef(false);
   const alive = useRef(true);
   const returnFocus = useRef<HTMLElement | null>(null);
+  const editorElement = useRef<HTMLElement | null>(null);
+  const actionErrorElement = useRef<HTMLDivElement | null>(null);
   const readSequence = useRef(0);
   const draftKey = `proofofwork.code.draft.v1:${network}:${address || "disconnected"}`;
   const scope = JSON.stringify([address, network, identity?.id ?? "", draft]);
@@ -159,7 +167,12 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   useEffect(() => { setAddress(initialAddress); }, [initialAddress]);
   useEffect(() => { if (initialNetworkProp) setNetworkState(initialNetworkProp); }, [initialNetworkProp]);
   useEffect(() => { setPrepared(undefined); setIdentity(undefined); }, [address, network]);
-  useEffect(() => { setPrepared(undefined); }, [scope]);
+  useEffect(() => { setPrepared(undefined); setPendingEditor(undefined); }, [scope]);
+  useEffect(() => {
+    if (!actionError) return;
+    actionErrorElement.current?.focus({ preventScroll: true });
+    actionErrorElement.current?.scrollIntoView({ block: "nearest" });
+  }, [actionError]);
   useEffect(() => { pageSourceSequence.current++; setPageSource(undefined); setPageSourceBusy(false); }, [address, network, draft.sourceTxid]);
   const selectedPageSource = pageSource && pageSource.sourceTxid === draft.sourceTxid
     ? pageSource.sources.find(item => item.kind === draft.sourceKind && item.vout === draft.sourceVout && item.content === draft.content)
@@ -249,7 +262,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   const navigate = useCallback((next: Route) => {
     if (!preserveDraft()) return;
     window.history.pushState({}, "", routeHref(next));
-    setRoute(next); setCopied(false); setDiffEvent(undefined); setHistoryDiff(undefined); setEditor(false);
+    setRoute(next); setCopied(false); setDiffEvent(undefined); setHistoryDiff(undefined); setEditor(false); setPendingEditor(undefined);
   }, []);
   useEffect(() => {
     const controller = new AbortController();
@@ -300,8 +313,8 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   }, [diffEvent, detail, network]);
 
   useEffect(() => {
-    if (editor && draft.kind === "reference") { setBaseline(""); setBaselineReady(false); setBaselineError(""); }
-  }, [editor, draft.kind, draft.repo, draft.parent, draft.path]);
+    if (editor && draft.kind !== "repo") { setBaseline(""); setBaselineReady(false); setBaselineError(""); }
+  }, [editor, draft.kind, draft.repo, draft.parent, draft.path, network]);
   useEffect(() => {
     const controller = new AbortController();
     if (!editor || baselineReady || draft.kind === "repo" || !draft.repo || !draft.parent || !draft.path) return;
@@ -310,7 +323,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
       .then(value => {
         if (controller.signal.aborted) return;
         setBaseline(value.file ? verifiedCodeSource(value.file).source : "");
-        setPathLocked(draft.kind === "reference" ? false : Boolean(value.file)); setBaselineReady(true);
+        setBaselineReady(true);
       }).catch(error => { if (!controller.signal.aborted) setBaselineError(errorText(error)); });
     return () => controller.abort();
   }, [editor, baselineReady, draft.kind, draft.repo, draft.parent, draft.path, network]);
@@ -333,16 +346,43 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
     setNetworkState(value); setPrepared(undefined); setEditor(false);
     const url = new URL(window.location.href); url.searchParams.set("network", value); window.history.replaceState(window.history.state, "", url);
   }
-  function beginEditor(kind: CodeDraft["kind"], file?: Source) {
-    if (flight.current || !preserveDraft()) return;
-    returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setActionError(""); setPrepared(undefined); setPageSource(undefined); setEditorPreview("source"); setBaselineReady(true); setBaselineError(""); setPathLocked(Boolean(file));
-    if (kind === "repo") { setDraft({ ...emptyCodeDraft, feeRate: draft.feeRate }); setBaseline(""); }
-    else if (repo) {
-      setDraft({ ...emptyCodeDraft, kind, repo: codeRepoId(repo), parent: repo.headTxid, path: file?.file.path ?? "", content: file?.content ?? "", feeRate: draft.feeRate });
-      setBaseline(file?.content ?? "");
+  function draftReady() {
+    if (draftKeyLoaded !== draftKey || draftError) {
+      setActionError(draftError || "The local draft is still loading.");
+      return false;
     }
-    setEditor(true);
+    return true;
+  }
+  function editorFocus() {
+    return editorElement.current?.querySelector<HTMLElement>("input:not(:disabled), textarea:not(:disabled)") ?? null;
+  }
+  function openEditor(next: CodeDraft, file?: Source) {
+    setActionError(""); setPrepared(undefined); setPendingEditor(undefined); setPageSource(undefined);
+    setEditorPreview("source"); setBaseline(""); setBaselineReady(next.kind === "repo"); setBaselineError("");
+    setPathLocked(next.kind === "delete" || Boolean(file));
+    setDraft(next); setEditor(true);
+    window.requestAnimationFrame(() => editorFocus()?.focus());
+  }
+  function resumeDraft() {
+    if (flight.current || !draftReady() || !preserveDraft()) return;
+    if (!pendingEditor) returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    openEditor(draft);
+  }
+  function beginEditor(kind: CodeDraft["kind"], file?: Source) {
+    if (flight.current || !draftReady() || !preserveDraft()) return;
+    returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (kind !== "repo" && !repo) return;
+    const next: CodeDraft = kind === "repo" ? { ...emptyCodeDraft, feeRate: draft.feeRate }
+      : { ...emptyCodeDraft, kind, repo: codeRepoId(repo!), parent: repo!.headTxid, path: file?.file.path ?? "", content: file?.content ?? "", feeRate: draft.feeRate };
+    if (hasCodeDraft(draft)) {
+      if (kind !== "repo" && draft.kind === kind && draft.repo === next.repo && (!file || draft.path === next.path)) {
+        openEditor(draft);
+      } else {
+        setPendingEditor({ draft: next, file, scope });
+      }
+      return;
+    }
+    openEditor(next, file);
   }
   function updateDraft(patch: Partial<CodeDraft>) { setDraft(value => ({ ...value, ...patch })); setActionError(""); setPrepared(undefined); }
   async function assertNoDuplicate(planKey: string, ownSignedTxid?: string) {
@@ -521,11 +561,11 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
       </div>
       {embedded && <div className="code-embedded-account"><span>{network === "livenet" ? "Mainnet" : network === "testnet" ? "Testnet3" : "Testnet4"} · {identity ? `${identity.id}@proofofwork.me` : address ? shortAddress(address) : "Read without a wallet"}</span>{!address && <button type="button" className="secondary" onClick={() => void connect()} disabled={actionBusy}>Connect UniSat</button>}</div>}
       {status && <div className="code-notice" role="status"><Check size={17} /><span>{status}</span><button type="button" aria-label="Dismiss status" onClick={() => setStatus("")}><X size={16} /></button></div>}
-      {actionError && <div className="code-notice is-error" role="alert">{actionError}</div>}
+      {actionError && !editor && <div ref={actionErrorElement} className="code-notice is-error" role="alert" tabIndex={-1}>{actionError}</div>}
       <ActionRecoveryPanel receipts={visibleReceipts} error={recoveryError} checking={checking} restoringDisabled={actionBusy}
         canRestore={item => Boolean(restoredCodeDraft(item.fields))} onRestore={item => { if (!preserveDraft()) return; const restored = restoredCodeDraft(item.fields); if (restored) { setDraft(restored); setBaseline(""); setBaselineReady(restored.kind === "repo"); setPathLocked(restored.kind === "delete"); setPrepared(undefined); setEditor(true); setStatus("Retained task restored. Check the confirmed main head and review before retrying."); } }}
         onCheck={() => void checkReceipts()} workspaceHref={recoveryWorkspaceHref} />
-      {editor ? <section className="code-editor" aria-label="Code editor"><form onSubmit={prepare}>
+      {editor ? <section ref={editorElement} className="code-editor" aria-label="Code editor"><form onSubmit={prepare}>
         <div className="code-editor-owner"><ShieldCheck size={17} /><span>Creating wallet · {identity ? `${identity.id}@proofofwork.me` : address ? shortAddress(address) : "Connect to publish"}</span></div>
         {draft.kind === "repo" ? <div className="code-form-grid"><label>Repository name<input required maxLength={200} value={draft.name} onChange={event => updateDraft({ name: event.target.value })} disabled={actionBusy} placeholder="my-first-repository" autoComplete="off" /></label><label>Description<textarea maxLength={1000} rows={3} value={draft.description} onChange={event => updateDraft({ description: event.target.value })} disabled={actionBusy} placeholder="What does this repository contain?" /></label><p className="code-muted">Public, with one main history. The creating wallet owns this repository permanently. Names are display labels; the creation transaction is its unique address.</p></div> : <>
           <div className="code-editor-reference"><span>Repository <code>{draft.repo}</code></span><span>Parent <code>{draft.parent}</code></span></div>
@@ -533,7 +573,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
           {draft.kind === "put" && <><div className="code-editor-toolbar"><div className="code-tabs"><button type="button" aria-pressed={editorPreview === "source"} onClick={() => setEditorPreview("source")}>Source</button><button type="button" aria-pressed={editorPreview === "diff"} onClick={() => setEditorPreview("diff")}>Changes</button></div><label className="code-upload">Upload UTF-8 file<input type="file" disabled={actionBusy} onChange={event => { void uploadSource(event.target.files?.[0]); event.target.value = ""; }} /></label></div>
             {editorPreview === "source" ? <label className="code-source-label"><span className="sr-only">Source text</span><textarea className="code-source-editor" spellCheck={false} value={draft.content} onChange={event => {
               const value = event.target.value;
-              const uniformCRLF = baseline.includes("\r\n") && !/[\r\n]/u.test(baseline.replace(/\r\n/gu, ""));
+              const uniformCRLF = draft.content.includes("\r\n") && !/[\r\n]/u.test(draft.content.replace(/\r\n/gu, ""));
               updateDraft({ content: uniformCRLF ? value.replace(/\r\n|\r|\n/gu, "\r\n") : value });
             }} disabled={actionBusy} placeholder="Write the exact source to commit…" /></label> : baselineReady ? <CodeDiff before={baseline} after={draft.content} /> : <p className="code-notice" role={baselineError ? "alert" : "status"}>{baselineError || "Verifying source at the retained parent before showing changes…"}</p>}
             <div className={`code-byte-budget${new TextEncoder().encode(draft.content).length > 60000 ? " is-over" : ""}`}><span>{new TextEncoder().encode(draft.content).length.toLocaleString()} / 60,000 UTF-8 bytes</span><progress max={60000} value={Math.min(60000, new TextEncoder().encode(draft.content).length)} aria-label="Source byte budget" /></div>
@@ -556,6 +596,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
         {draftError && <p className="code-notice is-error" role="alert">{draftError}</p>}
         {network !== "livenet" && <p className="code-notice is-warning">Code publishing uses mainnet. Switch to mainnet to prepare a transaction.</p>}
         {!planResult.plan && Boolean(draft.name || draft.description || draft.path || draft.message || draft.content) && <p className="code-muted">{planResult.error}</p>}
+        {actionError && <div ref={actionErrorElement} className="code-notice is-error" role="alert" tabIndex={-1}>{actionError}</div>}
         <div className="code-editor-actions"><span className="code-muted">{draftError ? "Draft autosave unavailable" : draftKeyLoaded !== draftKey ? "Loading local draft…" : "Draft saved in this browser"}{planResult.plan ? ` · ${planResult.plan.carrierBytes.toLocaleString()} record bytes` : ""}</span>
           {!address ? <button type="button" className="primary" disabled={actionBusy} onClick={() => void connect()}>Connect to review</button> : <button type="submit" className="primary" disabled={actionBusy || pageSourceBusy || !referenceReady || !planResult.plan || Boolean(draftError) || draftKeyLoaded !== draftKey || network !== "livenet"}>{actionBusy ? <RefreshCw className="refresh-spin" size={17} /> : <GitCommitHorizontal size={17} />}{actionBusy ? "Preparing wallet action…" : draft.kind === "repo" ? "Review repository" : "Review commit"}</button>}
         </div>
@@ -570,8 +611,8 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
           {list.repositories.length > 0 && !listedRepositories.length && <p className="code-empty">No loaded repository matches this filter.</p>}
           {list.pagination.hasMore && <button type="button" className="secondary code-load-more" disabled={pageBusy} onClick={() => void loadMore()}>{pageBusy ? "Reading more repositories…" : "Load more repositories"}</button>}
           <p className="code-muted">{list.repositories.length.toLocaleString()} repositories loaded{list.pagination.total !== undefined ? ` of ${list.pagination.total.toLocaleString()}` : ""}. Filters apply to loaded repositories.</p>
-          {draftKeyLoaded === draftKey && (draft.name || draft.path || draft.content) && <div className="code-saved-draft"><span>Saved {draft.kind === "repo" ? "repository" : "source commit"} draft · {draft.name || draft.path}</span><button type="button" className="secondary" onClick={() => { setEditor(true); setActionError(""); setBaseline(""); setBaselineReady(draft.kind === "repo"); setPathLocked(false); }}>Resume draft</button></div>}
         </>}
+        {draftKeyLoaded === draftKey && hasCodeDraft(draft) && (!route.repo || draft.repo === route.repo) && <div className="code-saved-draft"><span>Saved {draft.kind === "repo" ? "repository" : "source commit"} draft · {codeDraftLabel(draft)}</span><button type="button" className="secondary" onClick={resumeDraft}>Resume draft</button></div>}
         {detail && repo && <section className="code-repository" aria-label="Repository">
           <div className="code-repository-meta"><span><ShieldCheck size={16} /> Owner <code title={repo.ownerAddress}>{repo.ownerId ? `${repo.ownerId}@proofofwork.me` : shortAddress(repo.ownerAddress)}</code>{owner && <span className="code-pill">Your wallet</span>}</span><span className="code-pill">Public</span><span className="code-pill">main</span><span>{treeFiles.length.toLocaleString()} files</span><span>{repo.commitCount.toLocaleString()} commits</span></div>
           <div className="code-repository-tools"><div className="code-tabs" aria-label="Repository views"><button type="button" aria-pressed={route.tab === "code"} onClick={() => navigate({ ...route, tab: "code" })}><Code2 size={16} /> Code</button><button type="button" aria-pressed={route.tab === "history"} onClick={() => navigate({ ...route, tab: "history" })}><History size={16} /> History</button></div><div className="code-actions"><button type="button" className="secondary" onClick={() => { void navigator.clipboard.writeText(window.location.href).then(() => setCopied(true)).catch(() => setActionError("Clipboard unavailable. Copy this page's URL from the browser.")); }}><Copy size={15} /> {copied ? "Copied" : "Copy link"}</button><button type="button" className="secondary" disabled={archiveBusy} onClick={() => void downloadRepository()}><Download size={16} /> {archiveBusy ? "Verifying files…" : "Download ZIP"}</button>{canWrite && <><button type="button" className="secondary" onClick={() => beginEditor("reference")}>Add existing page</button><button type="button" className="primary" onClick={() => beginEditor("put")}><FilePlus2 size={16} /> Add file</button></>}</div></div>
@@ -592,6 +633,13 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
       </>}
     </main>
     {!embedded && <SocialFooter />}
+    {pendingEditor && <ReviewDialog title="Keep your saved draft?" closeLabel="Keep draft" onCancel={() => setPendingEditor(undefined)} returnFocus={returnFocus.current} fallbackFocus={editorFocus}>
+      <p>Your saved draft, <strong>{codeDraftLabel(draft)}</strong>, is still in this browser. Resume it, or discard it to start the selected action.</p>
+      <div className="review-actions"><button className="secondary" type="button" onClick={resumeDraft}>Resume saved draft</button><button className="primary" type="button" onClick={() => {
+        if (pendingEditor.scope !== currentScope.current || flight.current || !draftReady() || !preserveDraft()) return;
+        openEditor(pendingEditor.draft, pendingEditor.file);
+      }}>Discard draft and continue</button></div>
+    </ReviewDialog>}
     {prepared && <ActionTransactionReview review={prepared.review} returnFocus={returnFocus.current} onCancel={() => { if (!flight.current) setPrepared(undefined); }} onApprove={() => void sign()} />}
   </div>;
 }

@@ -199,3 +199,159 @@ test("wallet account change invalidates an exact review before any signature", a
   await expect(page.getByText("Wallet account changed. Review Code actions again.", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => window.codeSignatureCalls)).toBe(0);
 });
+
+const savedDraftKey = `proofofwork.code.draft.v1:livenet:${owner}`;
+async function savedDraft(page) {
+  return page.evaluate(key => JSON.parse(localStorage.getItem(key) ?? "{}"), savedDraftKey);
+}
+async function writeSourceDraft(page) {
+  await page.getByRole("button", { name: "Add file", exact: true }).click();
+  await page.getByRole("textbox", { name: "Exact file path", exact: true }).fill("src/retained.ts");
+  await page.getByRole("textbox", { name: "Source text", exact: true }).fill("\ufeff// Exact unsent café\nconst retained = true;  \n");
+  await page.getByRole("textbox", { name: "Commit message", exact: true }).fill("Keep every unsent byte");
+  await page.getByRole("spinbutton", { name: "Fee proofs/vB", exact: true }).fill("0.2");
+  await expect.poll(async () => (await savedDraft(page)).feeRate).toBe(0.2);
+  return savedDraft(page);
+}
+
+for (const surface of ["code=1", "folder=code"]) {
+  test(`${surface} restores the exact repository draft after back and reload without replacing its parent`, async ({ page }) => {
+    await fixture(page, { wallet: true });
+    await page.goto(`/?${surface}&repo=${id(1)}`);
+    await page.getByRole("button", { name: "Connect UniSat", exact: true }).first().click();
+    const retained = await writeSourceDraft(page);
+    await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Resume draft", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Add file", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: "Source text", exact: true })).toHaveValue(retained.content);
+    expect(await savedDraft(page)).toEqual(retained);
+    await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+    await page.reload();
+    await page.getByRole("button", { name: "Connect UniSat", exact: true }).first().click();
+    await expect(page.getByRole("button", { name: "Resume draft", exact: true })).toBeVisible();
+    const freshBaseline = page.waitForRequest(request => {
+      const url = new URL(request.url());
+      return url.pathname.endsWith("/api/v1/code-repository") && url.searchParams.get("fresh") === "1" &&
+        url.searchParams.get("version") === retained.parent && url.searchParams.get("path") === retained.path;
+    });
+    await page.getByRole("button", { name: "Resume draft", exact: true }).click();
+    await freshBaseline;
+    await expect(page.getByRole("textbox", { name: "Exact file path", exact: true })).toHaveValue(retained.path);
+    await expect(page.getByRole("textbox", { name: "Source text", exact: true })).toHaveValue(retained.content);
+    await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveValue(retained.message);
+    await expect(page.getByRole("spinbutton", { name: "Fee proofs/vB", exact: true })).toHaveValue("0.2");
+    expect(await savedDraft(page)).toEqual(retained);
+    await page.getByRole("button", { name: "Changes", exact: true }).click();
+    await expect(page.locator(".code-diff-added")).toContainText("const retained = true;");
+    expect(await page.evaluate(() => window.codeSignatureCalls)).toBe(0);
+  });
+
+  test(`${surface} keeps a saved draft until an explicit replacement decision`, async ({ page }) => {
+    const standalone = surface === "code=1";
+    await page.setViewportSize({ width: standalone ? 320 : 800, height: 480 });
+    await page.emulateMedia({ colorScheme: standalone ? "dark" : "light", reducedMotion: "reduce" });
+    await fixture(page, { wallet: true });
+    await page.goto(`/?${surface}&repo=${id(1)}`);
+    await page.getByRole("button", { name: "Connect UniSat", exact: true }).first().click();
+    const retained = await writeSourceDraft(page);
+    await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+    const edit = page.getByRole("button", { name: "Edit", exact: true });
+    await edit.click();
+    const decision = page.getByRole("dialog", { name: "Keep your saved draft?", exact: true });
+    await expect(decision).toBeVisible();
+    await expect(decision.getByRole("button", { name: "Keep draft", exact: true })).toBeFocused();
+    await expect(decision.getByRole("button", { name: "Discard draft and continue", exact: true })).toBeInViewport();
+    await page.screenshot({ path: `/tmp/proofofwork-code-draft-decision-${standalone ? "standalone-dark" : "computer-light"}.png` });
+    expect(await savedDraft(page)).toEqual(retained);
+    await page.keyboard.press("Escape");
+    await expect(decision).toHaveCount(0);
+    await expect(edit).toBeFocused();
+    await page.getByRole("button", { name: "New repository", exact: true }).click();
+    await expect(decision).toBeVisible();
+    await decision.getByRole("button", { name: "Resume saved draft", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: "Source text", exact: true })).toHaveValue(retained.content);
+    expect(await savedDraft(page)).toEqual(retained);
+    await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+    await page.getByRole("button", { name: "New repository", exact: true }).click();
+    await decision.getByRole("button", { name: "Discard draft and continue", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: "Repository name", exact: true })).toHaveValue("");
+    await expect.poll(async () => (await savedDraft(page)).content).toBe("");
+    await page.getByRole("textbox", { name: "Repository name", exact: true }).fill("Another saved repository");
+    await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+    await page.getByRole("button", { name: "New repository", exact: true }).click();
+    await expect(decision).toBeVisible();
+    await decision.getByRole("button", { name: "Keep draft", exact: true }).click();
+    expect((await savedDraft(page)).name).toBe("Another saved repository");
+    expect(await page.evaluate(() => window.codeSignatureCalls)).toBe(0);
+  });
+
+  test(`${surface} shows reservation failures at the review action and preserves the draft`, async ({ page }) => {
+    const standalone = surface === "code=1";
+    const unavailableMessage = "Fresh wallet credit state is temporarily unavailable for d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8.";
+    await page.setViewportSize({ width: standalone ? 320 : 1440, height: 480 });
+    await page.emulateMedia({ colorScheme: standalone ? "light" : "dark", reducedMotion: "reduce" });
+    await fixture(page, { wallet: true });
+    await page.route("**/api/v1/token?**", route => route.fulfill({ status: 503,
+      json: { error: unavailableMessage } }));
+    await page.goto(`/?${surface}&repo=${id(1)}`);
+    await page.getByRole("button", { name: "Connect UniSat", exact: true }).first().click();
+    const retained = await writeSourceDraft(page);
+    await page.getByRole("button", { name: "Review commit", exact: true }).click();
+    const failure = page.getByRole("alert").filter({ hasText: unavailableMessage });
+    await expect(failure).toBeVisible();
+    await expect(failure).toBeFocused();
+    await expect(failure).toBeInViewport();
+    await expect(page.getByRole("button", { name: "Review commit", exact: true })).toBeInViewport();
+    expect(await savedDraft(page)).toEqual(retained);
+    expect(await page.evaluate(() => window.codeSignatureCalls)).toBe(0);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    await page.screenshot({ path: `/tmp/proofofwork-code-review-failure-${standalone ? "standalone-light" : "computer-dark"}.png` });
+  });
+}
+
+test("a restored CRLF draft keeps its exact bytes while its old parent is being verified", async ({ page }) => {
+  await fixture(page, { wallet: true });
+  await page.goto(`/?code=1&repo=${id(1)}`);
+  const retained = { kind: "put", name: "", description: "", repo: id(1), parent: id(2),
+    path: "README.md", message: "Unsent older-parent change", content, feeRate: 0.2 };
+  await page.evaluate(({ key, retained }) => localStorage.setItem(key, JSON.stringify(retained)), { key: savedDraftKey, retained });
+  await page.getByRole("button", { name: "Connect UniSat", exact: true }).click();
+  let releaseBaseline;
+  const baselineGate = new Promise(resolve => { releaseBaseline = resolve; });
+  await page.route("**/api/v1/code-repository?**", async route => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("version") === id(2) && url.searchParams.get("path") === "README.md") await baselineGate;
+    await route.fallback();
+  });
+  await page.getByRole("button", { name: "Resume draft", exact: true }).click();
+  const editor = page.getByRole("textbox", { name: "Source text", exact: true });
+  await expect(editor).toHaveValue(content.replace(/\r\n/gu, "\n"));
+  expect(await savedDraft(page)).toEqual(retained);
+  await editor.fill(`${content.replace(/\r\n/gu, "\n")}Another line.\n`);
+  expect((await savedDraft(page)).content).toBe(`${content}Another line.\r\n`);
+  expect((await savedDraft(page)).parent).toBe(id(2));
+  releaseBaseline();
+  await page.getByRole("button", { name: "Changes", exact: true }).click();
+  await expect(page.locator(".code-diff-added")).toContainText("Another line.");
+});
+
+test("a wallet change dismisses replacement consent and preserves both scoped drafts", async ({ page }) => {
+  await fixture(page, { wallet: true });
+  await page.goto(`/?code=1&repo=${id(1)}`);
+  await page.getByRole("button", { name: "Connect UniSat", exact: true }).click();
+  const retained = await writeSourceDraft(page);
+  const other = { ...retained, path: "foreign.ts", content: "Other wallet's exact draft\n" };
+  await page.evaluate(({ foreign, other }) => localStorage.setItem(`proofofwork.code.draft.v1:livenet:${foreign}`, JSON.stringify(other)), { foreign, other });
+  await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+  await page.getByRole("button", { name: "New repository", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Keep your saved draft?", exact: true })).toBeVisible();
+  await page.evaluate(address => window.codeWalletEvent("accountsChanged", [address]), foreign);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Resume draft", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Source text", exact: true })).toHaveValue(other.content);
+  expect(await savedDraft(page)).toEqual(retained);
+  await page.evaluate(address => window.codeWalletEvent("accountsChanged", [address]), owner);
+  await expect(page.getByRole("textbox", { name: "Source text", exact: true })).toHaveValue(retained.content);
+  expect(await page.evaluate(address => JSON.parse(localStorage.getItem(`proofofwork.code.draft.v1:livenet:${address}`)), foreign)).toEqual(other);
+});

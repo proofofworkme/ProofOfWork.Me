@@ -1000,6 +1000,7 @@ Rules to preserve:
 - Boost uses ProofFrame cards instead of mutable social-preview frames. A ProofFrame renders from indexed `pwb1:` state, Files metadata, AMO listing state, profile/owner addresses, proof/WORK signal, and txids.
 - Every original post broadcast opens a Twitter/X share intent with the post text and mempool.space tx link. Every Boost feed row also exposes a share link.
 - Authors can hide their own Boost from default app/profile indexing with `pwb1:hide`. This is a visibility tombstone, not deletion from ProofOfWork.
+- A stable retained Boost/Publish feed can remain readable by address when a complete current registry has advanced beyond its history checkpoint. Both checkpoints must verify against the full node before and after projection. Current ID labels are withheld and the retained checkpoint is disclosed; authored content stays exact. Fresh reads, named profiles, pending views and active listings retain their existing strict requirements.
 - Confirmed ProofOfWork history is canonical. Pending Boost records are visibility only.
 - Wallet signing stays local; the API reads, indexes, verifies, and broadcasts already-signed transactions only.
 

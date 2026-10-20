@@ -1,0 +1,263 @@
+{
+  "payload": {
+    "kind": "token-mint",
+    "txid": "80324e829c5213135a53da8934261a88c981a92d642943e1a4e31c2414866916",
+    "valid": true,
+    "amount": "1000",
+    "parsed": {
+      "kind": "mint",
+      "amount": 1000,
+      "payload": "pwt1:mint:eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9:1000",
+      "tokenId": "eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9"
+    },
+    "status": "confirmed",
+    "derived": [],
+    "dropped": false,
+    "network": "livenet",
+    "payload": "pwt1:mint:eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9:1000",
+    "tokenId": "eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9",
+    "position": {
+      "blockHash": "00000000000000000001cf62750c8fe40a513a3ca6cae6640afbeeb00b624038",
+      "blockHeight": 972028,
+      "protocolVout": 1,
+      "recordOrdinal": 0,
+      "blockTransactionIndex": 2186
+    },
+    "protocol": "pwt1",
+    "blockHash": "00000000000000000001cf62750c8fe40a513a3ca6cae6640afbeeb00b624038",
+    "blockTime": "2026-10-18T17:01:02.000Z",
+    "confirmed": true,
+    "createdAt": "2026-10-18T17:01:02.000Z",
+    "dataBytes": 79,
+    "timestamp": "2026-10-18T17:01:02.000Z",
+    "amountSats": 0,
+    "blockIndex": 2186,
+    "reasonCode": "",
+    "recipients": [
+      {
+        "vout": 0,
+        "address": "bc1q5tcu3rssms66qth42upe5savm7npqztznclslj",
+        "amountSats": "555"
+      }
+    ],
+    "blockHeight": 972028,
+    "indexedFrom": "token-mints",
+    "participants": [
+      "bc1q5tcu3rssms66qth42upe5savm7npqztznclslj"
+    ],
+    "protocolVout": 1,
+    "minterAddress": "bc1q5tcu3rssms66qth42upe5savm7npqztznclslj",
+    "recordOrdinal": 0,
+    "senderAddress": "bc1q5tcu3rssms66qth42upe5savm7npqztznclslj",
+    "_powEventIndex": 0,
+    "validationMode": "canonical-first-party-state",
+    "recipientAddress": "bc1q5tcu3rssms66qth42upe5savm7npqztznclslj",
+    "canonicalVerifier": "/api/v1/internal/work-amo-v5-block-verifier",
+    "_workAmoV5ReplayBound": true,
+    "workAmoV5RawCandidate": true,
+    "workAmoV5ReplayOutput": {
+      "amount": "1000",
+      "tokenId": "eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9",
+      "projection": {
+        "kind": "token-mint",
+        "txid": "80324e829c5213135a53da8934261a88c981a92d642943e1a4e31c2414866916",
+        "valid": true,
+        "amount": "1000",
+        "parsed": {
+          "kind": "mint",
+          "amount": 1000,
+          "payload": "pwt1:mint:eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9:1000",
+          "tokenId": "eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9"
+        },
+        "derived": [],
+        "tokenId": "eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9",
+        "position": {
+          "blockHash": "00000000000000000001cf62750c8fe40a513a3ca6cae6640afbeeb00b624038",
+          "blockHeight": 972028,
+          "protocolVout": 1,
+          "recordOrdinal": 0,
+          "blockTransactionIndex": 2186
+        },
+        "protocol": "pwt1",
+        "reasonCode": "",
+        "recipientAddress": "bc1q5tcu3rssms66qth42upe5savm7npqztznclslj"
+      },
+      "recipientAddress": "bc1q5tcu3rssms66qth42upe5savm7npqztznclslj"
+    },
+    "workAmoV5ReplayOutcome": {
+      "kind": "pwt1-valid",
+      "valid": true,
+      "reasonCode": ""
+    },
+    "workAmoV5RawDecodeValid": true,
+    "workAmoV5RawScriptWitness": {
+      "payloadHex": "707774313a6d696e743a656162353064666563323232623464333037363962396533656235316431366139633538633236323730333237356263643564333734636139363461376261393a31303030",
+      "reasonCode": "",
+      "decodeValid": true,
+      "decodeDetail": "",
+      "scriptPubKeyHex": "6a4c4f707774313a6d696e743a656162353064666563323232623464333037363962396533656235316431366139633538633236323730333237356263643564333734636139363461376261393a31303030"
+    },
+    "workAmoV5ReplayRawWitness": {
+      "model": "canonical-raw-protocol-record-v1",
+      "rawRecordParts": [
+        {
+          "text": "pwt1:mint:eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9:1000",
+          "prefix": "pwt1:",
+          "payloadHex": "707774313a6d696e743a656162353064666563323232623464333037363962396533656235316431366139633538633236323730333237356263643564333734636139363461376261393a31303030",
+          "reasonCode": "",
+          "decodeValid": true,
+          "decodeDetail": "",
+          "protocolVout": 1,
+          "scriptPubKeyHex": "6a4c4f707774313a6d696e743a656162353064666563323232623464333037363962396533656235316431366139633538633236323730333237356263643564333734636139363461376261393a31303030"
+        }
+      ]
+    },
+    "workAmoV5RawDecodeReasonCode": "",
+    "firstInputPrevoutScriptpubkey": "0014a2f1c88e10dc35a02ef557039a43acdfa6100962"
+  },
+  "evidence": {
+    "txid": "80324e829c5213135a53da8934261a88c981a92d642943e1a4e31c2414866916",
+    "traces": [
+      {
+        "kind": "protocol-record",
+        "txid": "80324e829c5213135a53da8934261a88c981a92d642943e1a4e31c2414866916",
+        "valid": true,
+        "output": {
+          "amount": "1000",
+          "tokenId": "eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9",
+          "projection": {
+            "kind": "token-mint",
+            "txid": "80324e829c5213135a53da8934261a88c981a92d642943e1a4e31c2414866916",
+            "valid": true,
+            "amount": "1000",
+            "parsed": {
+              "kind": "mint",
+              "amount": 1000,
+              "payload": "pwt1:mint:eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9:1000",
+              "tokenId": "eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9"
+            },
+            "derived": [],
+            "tokenId": "eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9",
+            "position": {
+              "blockHash": "00000000000000000001cf62750c8fe40a513a3ca6cae6640afbeeb00b624038",
+              "blockHeight": 972028,
+              "protocolVout": 1,
+              "recordOrdinal": 0,
+              "blockTransactionIndex": 2186
+            },
+            "protocol": "pwt1",
+            "reasonCode": "",
+            "recipientAddress": "bc1q5tcu3rssms66qth42upe5savm7npqztznclslj"
+          },
+          "recipientAddress": "bc1q5tcu3rssms66qth42upe5savm7npqztznclslj"
+        },
+        "position": {
+          "blockHash": "00000000000000000001cf62750c8fe40a513a3ca6cae6640afbeeb00b624038",
+          "blockHeight": 972028,
+          "protocolVout": 1,
+          "recordOrdinal": 0,
+          "blockTransactionIndex": 2186
+        },
+        "rawWitness": {
+          "model": "canonical-raw-protocol-record-v1",
+          "rawRecordParts": [
+            {
+              "text": "pwt1:mint:eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9:1000",
+              "prefix": "pwt1:",
+              "payloadHex": "707774313a6d696e743a656162353064666563323232623464333037363962396533656235316431366139633538633236323730333237356263643564333734636139363461376261393a31303030",
+              "reasonCode": "",
+              "decodeValid": true,
+              "decodeDetail": "",
+              "protocolVout": 1,
+              "scriptPubKeyHex": "6a4c4f707774313a6d696e743a656162353064666563323232623464333037363962396533656235316431366139633538633236323730333237356263643564333734636139363461376261393a31303030"
+            }
+          ]
+        },
+        "reasonCode": "",
+        "stateDelta": {
+          "creditFixedQ8": "0",
+          "creditFixedSats": "0",
+          "economicOutputs": [
+            {
+              "role": "pwt-token-registry",
+              "vout": 0,
+              "address": "bc1q5tcu3rssms66qth42upe5savm7npqztznclslj",
+              "outputSats": "555",
+              "attributedSats": "555"
+            }
+          ],
+          "baseContributions": [
+            {
+              "field": "tokenMintFlowSats",
+              "value": "555"
+            }
+          ]
+        },
+        "bondContributionQ8": "2573285101432",
+        "networkValueAfterQ8": "3001454804788662833562154446",
+        "networkValueBeforeQ8": "3001454804788660260277053014",
+        "transitionChainCommitmentAfter": {
+          "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+          "sha256": "2f3fa08251d5245ec5d75023b6adfee47de8dbe2baeddc0efed5712008ff751a",
+          "payloadBytes": 1839
+        }
+      }
+    ],
+    "network": "livenet",
+    "outputs": [
+      {
+        "vout": 0,
+        "address": "bc1q5tcu3rssms66qth42upe5savm7npqztznclslj",
+        "value_sats": "555"
+      },
+      {
+        "vout": 1,
+        "address": null,
+        "value_sats": "0"
+      },
+      {
+        "vout": 2,
+        "address": "bc1q5tcu3rssms66qth42upe5savm7npqztznclslj",
+        "value_sats": "654"
+      }
+    ],
+    "event_id": 5053953,
+    "raw_txid": "80324e829c5213135a53da8934261a88c981a92d642943e1a4e31c2414866916",
+    "token_id": "eab50dfec222b4d30769b9e3eb51d16a9c58c262703275bcd5d374ca964a7ba9",
+    "block_hash": "00000000000000000001cf62750c8fe40a513a3ca6cae6640afbeeb00b624038",
+    "raw_marker": {
+      "height": 972028,
+      "network": "livenet",
+      "blockHash": "00000000000000000001cf62750c8fe40a513a3ca6cae6640afbeeb00b624038",
+      "blockIndex": 2186
+    },
+    "block_index": 2186,
+    "mint_amount": "1000",
+    "block_height": 972028,
+    "carrier_output": {
+      "n": 1,
+      "value": 0,
+      "scriptPubKey": {
+        "asm": "OP_RETURN 707774313a6d696e743a656162353064666563323232623464333037363962396533656235316431366139633538633236323730333237356263643564333734636139363461376261393a31303030",
+        "hex": "6a4c4f707774313a6d696e743a656162353064666563323232623464333037363962396533656235316431366139633538633236323730333237356263643564333734636139363461376261393a31303030",
+        "desc": "raw(6a4c4f707774313a6d696e743a656162353064666563323232623464333037363962396533656235316431366139633538633236323730333237356263643564333734636139363461376261393a31303030)#ffz46rlc",
+        "type": "nulldata"
+      }
+    },
+    "op_return_vout": 1,
+    "record_ordinal": 0,
+    "mint_price_sats": "555",
+    "registry_address": "bc1q5tcu3rssms66qth42upe5savm7npqztznclslj"
+  },
+  "canonical": true,
+  "transitionModel": "canonical-work-amo-full-position-block-sequencer-v4",
+  "transitionAtomic": true,
+  "transitionFeeOnce": true,
+  "transitionComplete": true,
+  "transitionCommitment": {
+    "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+    "sha256": "1662d940be247117b6819a96602f913d06fa0f569d753ad90f320b93f173b27f",
+    "payloadBytes": 1024
+  },
+  "transitionInvalidZero": true
+}

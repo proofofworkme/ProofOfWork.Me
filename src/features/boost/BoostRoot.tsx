@@ -3148,7 +3148,10 @@ export default function BoostRoot({
           titleAs={verifiedArticleHeading ? "span" : "h1"}
         />
       )}
-      <AppStatusRow persistent status={status} />
+      <AppStatusRow persistent status={status}
+        secondaryStatus={payload?.provenance?.identityRegistry?.model === "boost-address-only-retained-history-v1"
+          ? { tone: "idle", text: `Showing confirmed history through block ${payload.indexedThroughBlock?.toLocaleString()}. Current ID labels are unavailable while the registry and history checkpoints differ; authors are identified by address. Actions still require fresh verification.` }
+          : undefined} />
       <ActionRecoveryPanel receipts={tipReceipts} error={tipRecoveryError} checking={tipRecoveryChecking}
         restoringDisabled={Boolean(actionBusy)} canRestore={() => false} onRestore={() => { setStatus({ tone: "idle", text: "Inspect the tip transaction and its status. Open the target content to review a new tip." }); }}
         onCheck={() => void checkTipReceipts()} workspaceHref={receipt => isPublish ? publishHref({ txid: receipt.fields.find(field => field[0] === "Target")?.[1], network: receipt.network, embedded }) : boostTimelineHref(embedded, receipt.network)} />

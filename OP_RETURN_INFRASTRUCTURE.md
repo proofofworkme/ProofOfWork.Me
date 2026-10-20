@@ -8151,3 +8151,42 @@ with a later Search-restoration failure stays installed with its exact recovery
 evidence; an uncertain transport or recovery result requires reconciliation,
 never a blind retry. This scoped maintenance does not reset runtime Git or
 replace accepted overlays to match the UI source checkout.
+
+### Screencast availability and draft recovery
+
+Confirmed native generic credit mints retain their original immutable event
+payloads. The reader verifies every native mint payment and derives missing
+display payment aliases from the accepted raw transition's exact `tokenMintFlowSats`
+contribution and attributed registry outputs. The carrier, token definition,
+amount, recipient, canonical position and transaction evidence must agree;
+change and unattributed overpayments do not enter that amount. Canonical
+activity and token mint views share this projection. Missing or contradictory
+evidence fails closed; summary reconciliation remains exact. The ORDI mint
+`80324e829c5213135a53da8934261a88c981a92d642943e1a4e31c2414866916`
+at block 972028 is the regression witness: its accepted 555-proof payment must
+not become zero merely because its stored display alias is absent.
+
+Stable confirmed Boost and Publish reads may retain an address-only feed when
+complete current registry evidence proves that its checkpoint is newer than
+the retained feed. Both hashes are checked against Core before and after
+projection. This path withholds current ID claims and discloses the retained
+checkpoint; it does not rewrite user text or grant fresh identity or spending
+authority. Fresh, pending, active-listing and name-profile requests retain their
+strict path. Malformed, incomplete or reorganized evidence cannot enable the
+fallback.
+
+`deploy/screencast-recovery/release.py` captures, plans and installs only
+`server/proof-api.mjs`, `server/boost-projection.mjs` and
+`server/db/proof-index-reader.mjs`, using source base
+`f82b79ab241c83643bc82ec2098895af9e94760b`. Its three-way merge preserves accepted
+runtime overlays, exact source metadata, dependency closure and rollback bytes.
+The scoped controller retains the shared operations lock, Search hold/restore,
+authority-service and gateway fences. Interrupted installation retains Search
+unless a manifest-bound terminal receipt verifies installation or rollback;
+missing or incomplete recovery evidence remains held for supervised recovery.
+It changes no database rows, protocol history, configuration or runtime Git HEAD.
+Run both accompanying controller test suites before planning. Final verification
+must prove renewed summary
+publication, fresh wallet evidence, affected standalone/Computer surfaces and
+the mandatory release synchronization gate; installing the overlay alone does
+not establish recovery.

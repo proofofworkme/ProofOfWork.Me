@@ -16884,6 +16884,234 @@ export async function rowsWithCanonicalTransferFees(pool, rows, network) {
     : row);
 }
 
+// Raw generic replay commits registry attribution in its transition delta.
+// Older mint display rows omitted payment aliases; recover them without rewriting
+// the event or substituting a protocol constant for the committed attribution.
+export function canonicalMintPaymentProjection(payload, evidence) {
+  const fail = () => {
+    throw new Error(`Canonical mint payment attribution is unavailable or divergent for ${String(payload?.txid ?? "unknown")}.`);
+  };
+  const exact = (value, positive = false) => {
+    const text = canonicalIntegerText(value, { allowZero: !positive });
+    return text || null;
+  };
+  const txid = normalizedTxid(payload?.txid);
+  const tokenId = normalizedTxid(payload?.tokenId);
+  const position = payload?.position ?? {
+    blockHash: payload?.blockHash,
+    blockHeight: payload?.blockHeight,
+    blockTransactionIndex: payload?.blockIndex,
+    protocolVout: payload?.protocolVout,
+    recordOrdinal: payload?.recordOrdinal,
+  };
+  const matchesPosition = (value) => value &&
+    value.blockHash === position.blockHash &&
+    ["blockHeight", "blockTransactionIndex", "protocolVout", "recordOrdinal"]
+      .every((key) => Number.isSafeInteger(position[key]) &&
+        position[key] >= (key === "blockHeight" ? 1 : 0) &&
+        value[key] === position[key]);
+  const traces = Array.isArray(evidence?.traces) ? evidence.traces : [];
+  const trace = traces.length === 1 ? traces[0] : null;
+  const projected = trace?.output?.projection;
+  const marker = evidence?.raw_marker;
+  const replay = payload?.workAmoV5ReplayOutcome;
+  const topLevelPosition = {
+    blockHash: payload?.blockHash, blockHeight: payload?.blockHeight,
+    blockTransactionIndex: payload?.blockIndex, protocolVout: payload?.protocolVout,
+    recordOrdinal: payload?.recordOrdinal,
+  };
+  if (!txid || !tokenId || isWorkTokenId(tokenId) || isBondTokenId(tokenId) ||
+    payload?.network !== "livenet" || payload?.protocol !== "pwt1" ||
+    payload?.kind !== "token-mint" || payload?.confirmed !== true ||
+    !/^[0-9a-f]{64}$/u.test(String(position.blockHash ?? "")) ||
+    position.blockHeight < WORK_AMO_V5_ACTIVATION_HEIGHT ||
+    !matchesPosition(topLevelPosition) ||
+    payload?.valid !== true || payload?._workAmoV5ReplayBound !== true ||
+    payload?.workAmoV5RawCandidate !== true || replay?.valid !== true ||
+    !payload?.workAmoV5ReplayOutput ||
+    typeof payload.workAmoV5ReplayOutput !== "object" ||
+    Array.isArray(payload.workAmoV5ReplayOutput) ||
+    replay?.kind !== "pwt1-valid" || replay?.reasonCode !== "" ||
+    evidence?.txid !== txid || evidence?.token_id !== tokenId ||
+    evidence?.network !== payload.network ||
+    evidence?.block_hash !== position.blockHash ||
+    exact(evidence?.block_height, true) !== String(position.blockHeight) ||
+    exact(evidence?.block_index) !== String(position.blockTransactionIndex) ||
+    exact(evidence?.op_return_vout) !== String(position.protocolVout) ||
+    exact(evidence?.record_ordinal) !== String(position.recordOrdinal) ||
+    evidence?.raw_txid !== txid ||
+    marker?.network !== payload.network || marker?.blockHash !== position.blockHash ||
+    marker?.height !== position.blockHeight ||
+    marker?.blockIndex !== position.blockTransactionIndex ||
+    trace?.kind !== "protocol-record" || trace?.valid !== true ||
+    trace?.reasonCode !== "" || trace?.txid !== txid ||
+    !matchesPosition(trace?.position) || !matchesPosition(projected?.position) ||
+    projected?.txid !== txid || projected?.tokenId !== tokenId ||
+    projected?.protocol !== "pwt1" || projected?.kind !== "token-mint" ||
+    projected?.valid !== true || projected?.reasonCode !== "" ||
+    projected?.parsed?.kind !== "mint" ||
+    projected?.parsed?.tokenId !== tokenId ||
+    (!exact(payload?.amount, true) ||
+      exact(projected?.amount, true) !== exact(payload?.amount, true) ||
+      exact(projected?.parsed?.amount, true) !== exact(payload?.amount, true) ||
+      exact(evidence?.mint_amount, true) !== exact(payload?.amount, true)) ||
+    !isWorkAmoV5LivenetAddress(evidence?.registry_address) ||
+    (payload.registryAddress !== undefined &&
+      payload.registryAddress !== evidence.registry_address) ||
+    (payload.recipientAddress !== undefined &&
+      payload.recipientAddress !== payload.minterAddress) ||
+    (!isWorkAmoV5LivenetAddress(payload?.minterAddress) ||
+      projected?.recipientAddress !== payload?.minterAddress ||
+      trace?.output?.recipientAddress !== payload?.minterAddress ||
+      exact(trace?.output?.amount, true) !== exact(payload?.amount, true) ||
+      trace?.output?.tokenId !== tokenId) ||
+    trace?.transitionChainCommitmentAfter?.model !== WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL ||
+    !Number.isSafeInteger(trace?.transitionChainCommitmentAfter?.payloadBytes) ||
+    trace.transitionChainCommitmentAfter.payloadBytes < 1 ||
+    !/^[0-9a-f]{64}$/u.test(String(trace?.transitionChainCommitmentAfter?.sha256 ?? ""))) {
+    fail();
+  }
+  if (workAmoV5CanonicalPayloadCommitment(payload.workAmoV5ReplayOutput).sha256 !==
+    workAmoV5CanonicalPayloadCommitment(trace.output).sha256) fail();
+  const carrier = decodeCanonicalOpReturnOutput(evidence.carrier_output);
+  if (carrier?.decodeValid !== true || carrier?.text !== projected.parsed.payload ||
+    carrier?.text !== payload.payload || carrier?.prefix !== "pwt1:") fail();
+  const contributions = trace?.stateDelta?.baseContributions;
+  if (!Array.isArray(contributions) || contributions.length !== 1 ||
+    contributions[0]?.field !== "tokenMintFlowSats") fail();
+  const payment = exact(contributions[0].value, true);
+  if (!payment || payment !== exact(evidence?.mint_price_sats, true)) fail();
+  const outputs = Array.isArray(evidence.outputs) ? evidence.outputs : [];
+  const claims = trace?.stateDelta?.economicOutputs;
+  if (!Array.isArray(claims) || claims.length === 0) fail();
+  const seen = new Set();
+  let total = 0n;
+  for (const claim of claims) {
+    const attributed = exact(claim?.attributedSats, true);
+    const physical = exact(claim?.outputSats, true);
+    const matches = outputs.filter((output) => output.vout === claim?.vout);
+    if (!Number.isSafeInteger(claim?.vout) || claim.vout < 0 ||
+      claim.vout >= position.protocolVout || seen.has(claim.vout) ||
+      claim.role !== "pwt-token-registry" || !attributed || !physical ||
+      BigInt(attributed) > BigInt(physical) ||
+      claim.address !== evidence.registry_address || matches.length !== 1 ||
+      matches[0].address !== claim.address || matches[0].value_sats !== physical) fail();
+    seen.add(claim.vout);
+    total += BigInt(attributed);
+  }
+  if (total !== BigInt(payment) || total > BigInt(Number.MAX_SAFE_INTEGER)) fail();
+  for (const field of ["paidSats", "proofPaymentSats", "amountSats"]) {
+    const present = payload[field];
+    if (present !== undefined && present !== null && present !== "") {
+      const value = exact(present);
+      if (value === null || (value !== "0" && value !== payment)) fail();
+    }
+  }
+  return {
+    ...payload,
+    paidSats: Number(total),
+    proofPaymentSats: Number(total),
+    registryAddress: evidence.registry_address,
+  };
+}
+
+export async function rowsWithCanonicalMintPayments(pool, rows, network) {
+  if (network !== "livenet") return rows;
+  const candidates = rows.filter((row) => {
+    const p = canonicalEventPayload(row.payload);
+    return (row.status === "confirmed" || p.confirmed === true) &&
+      p.kind === "token-mint" && p.protocol === "pwt1" &&
+      p.valid === true && p._workAmoV5ReplayBound === true &&
+      p.workAmoV5RawCandidate === true && !isWorkTokenId(p.tokenId) &&
+      !isBondTokenId(p.tokenId);
+  });
+  if (candidates.length === 0) return rows;
+  const evidenceById = new Map();
+  for (let offset = 0; offset < candidates.length; offset += 100) {
+    const eventIds = candidates.slice(offset, offset + 100).map((row) => {
+      const id = Number(row.event_id);
+      if (!Number.isSafeInteger(id) || id < 1) {
+        throw new Error("Canonical mint payment attribution has no event identity.");
+      }
+      return id;
+    });
+    const result = await pool.query(`
+      /* canonical_mint_payment_attribution */
+      SELECT e.event_id, e.network, e.txid, e.block_height, e.block_index,
+        e.op_return_vout, e.record_ordinal, tx.block_hash,
+        cd.token_id, cd.registry_address,
+        cd.mint_amount::text AS mint_amount,
+        cd.mint_price_sats::text AS mint_price_sats,
+        tx.raw_tx->>'txid' AS raw_txid,
+        tx.raw_tx->'canonicalBlockScan' AS raw_marker,
+        tx.raw_tx->'vout'->e.op_return_vout AS carrier_output,
+        (
+          SELECT jsonb_agg(candidate.trace)
+          FROM (
+            SELECT trace FROM jsonb_array_elements(
+              CASE WHEN jsonb_typeof(transition.payload->'traces') = 'array'
+                THEN transition.payload->'traces' ELSE '[]'::jsonb END
+            ) trace
+            WHERE trace->>'kind' = 'protocol-record'
+              AND trace->>'txid' = e.txid
+              AND trace->'position'->>'blockHeight' = e.block_height::text
+              AND trace->'position'->>'blockTransactionIndex' = e.block_index::text
+              AND trace->'position'->>'protocolVout' = e.op_return_vout::text
+              AND trace->'position'->>'recordOrdinal' = e.record_ordinal::text
+            LIMIT 2
+          ) candidate
+        ) AS traces,
+        (
+          SELECT jsonb_agg(jsonb_build_object('vout', output.vout,
+            'address', output.address, 'value_sats', output.value_sats::text))
+          FROM proof_indexer.tx_outputs output
+          WHERE output.network = e.network AND output.txid = e.txid
+            AND output.vout < e.op_return_vout
+        ) AS outputs
+      FROM proof_indexer.events e
+      JOIN proof_indexer.transactions tx ON tx.network = e.network
+        AND tx.txid = e.txid AND tx.status = 'confirmed'
+        AND tx.block_height = e.block_height AND tx.block_index = e.block_index
+      JOIN proof_indexer.blocks block ON block.network = tx.network
+        AND block.height = tx.block_height AND block.block_hash = tx.block_hash
+        AND block.canonical = true
+      JOIN proof_indexer.credit_definitions cd ON cd.network = e.network
+        AND cd.token_id = e.payload->>'tokenId'
+      JOIN proof_indexer.work_amo_block_transitions transition
+        ON transition.network = tx.network AND transition.block_height = tx.block_height
+        AND transition.block_hash = tx.block_hash
+        AND transition.previous_block_hash = block.previous_block_hash
+        AND transition.model IN ('${WORK_AMO_V5_BLOCK_SEQUENCER_MODEL}',
+          '${WORK_AMO_V8_BLOCK_SEQUENCER_MODEL}')
+        AND transition.state_commitment_model = '${WORK_AMO_V5_STATE_COMMITMENT_MODEL}'
+        AND transition.event_set_model = '${WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL}'
+        AND transition.payload->>'transitionChainModel' = '${WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL}'
+        AND transition.payload->'transitionChainCommitment'->>'model' = '${WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL}'
+        AND transition.payload->'transitionChainCommitment'->>'sha256' ~ '^[0-9a-f]{64}$'
+        AND transition.payload->'transitionChainCommitment'->>'payloadBytes' ~ '^[1-9][0-9]*$'
+        AND transition.complete = true AND transition.block_atomic = true
+        AND transition.fee_once = true AND transition.invalid_zero = true
+      WHERE e.network = $1 AND e.event_id = ANY($2::bigint[])
+        AND e.protocol = 'pwt1' AND e.kind = 'token-mint'
+        AND e.valid = true AND e.status = 'confirmed'
+      ORDER BY e.event_id
+    `, [network, eventIds]);
+    for (const evidence of result.rows) {
+      const id = Number(evidence.event_id);
+      if (evidenceById.has(id)) {
+        throw new Error("Canonical mint payment attribution is ambiguous.");
+      }
+      evidenceById.set(id, evidence);
+    }
+  }
+  const candidateIds = new Set(candidates.map((row) => Number(row.event_id)));
+  return rows.map((row) => candidateIds.has(Number(row.event_id))
+    ? { ...row, payload: canonicalMintPaymentProjection(
+        canonicalEventPayload(row.payload), evidenceById.get(Number(row.event_id)),
+      ) }
+    : row);
+}
+
 function tokenTransferFromEventPayload(payload, row = {}) {
   const ticker = String(row.ticker ?? payload?.ticker ?? "").trim();
   const tokenId = String(payload?.tokenId ?? row.token_id ?? "")
@@ -19781,7 +20009,9 @@ async function proofIndexTokenMintRows(
   // and ordering the canonical rows in JavaScript here
   // avoids carrying the large event payload through two PostgreSQL sorts while
   // preserving the same winner rules as the paginated history query.
-  return canonicalTokenMintCandidateRows(result.rows);
+  return rowsWithCanonicalMintPayments(
+    pool, canonicalTokenMintCandidateRows(result.rows), network,
+  );
 }
 
 export async function proofIndexTokenMintStatsPayload(
@@ -20122,7 +20352,8 @@ async function exactTokenMintHistoryPage(
     `,
     rowParams,
   );
-  const items = rowsResult.rows
+  const mintRows = await rowsWithCanonicalMintPayments(pool, rowsResult.rows, network);
+  const items = mintRows
     .map((row) => tokenMintFromEventPayload(objectRecord(row.payload), row))
     .filter(
       (item) =>
@@ -38541,7 +38772,9 @@ export async function proofIndexCanonicalActivityPayload(
     ? null
     : boundSnapshot ??
       (await latestProofIndexScanMetadata(pool, network).catch(() => null));
-  const activityRows = await rowsWithCanonicalTransferFees(pool, result.rows, network);
+  const activityRows = await rowsWithCanonicalMintPayments(
+    pool, await rowsWithCanonicalTransferFees(pool, result.rows, network), network,
+  );
   const items = normalizeHistoryEventRows(activityRows, network);
   if (items.length === 0) {
     return null;
