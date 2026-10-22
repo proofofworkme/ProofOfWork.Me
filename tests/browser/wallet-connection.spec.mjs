@@ -345,7 +345,7 @@ test("a disconnected Boost follow preserves a pending-provider error through its
   await page.goto("/?boost=1");
   const follow = page.getByRole("button", { name: "Follow", exact: true });
   await follow.click();
-  await expect(page.locator(".boost-public-app .status-text")).toHaveText("Another approval request is already pending (code -32603)");
+  await expect(page.locator(".boost-public-app .status-text")).toHaveText("Another approval request is already pending (code -32603). Finish or close that prompt in UniSat, then retry this site's connection. No transaction was requested.");
   await expect(follow).toBeEnabled();
   await expect(page.getByRole("button", { name: "Connect UniSat", exact: true })).toBeEnabled();
   expect(await page.evaluate(() => window.__walletFixture.promptCount)).toBe(1);

@@ -8,13 +8,16 @@ import { PUBLISH_DATA_CARRIER_LIMIT } from "../../shared/protocol/publishArticle
 import { buildPublishPlan, type PreparedPublish, type PublishPlan } from "./publishProtocol";
 import type { BoostIdentityIntent } from "../boost/boostProtocol";
 import "./publish.css";
+import { isMobileWalletBrowser } from "../../shared/wallet/walletLinks";
+import { UnisatMobileHandoff } from "../../shared/components/UnisatMobileHandoff";
 
 type Draft = { title: string; body: string; signal: number; feeRate: number };
 const emptyDraft: Draft = { title: "", body: "", signal: 546, feeRate: 1 };
 
-export function PublishComposer({ address, network, identity, connecting = false, onConnect, onClose, onPrepare, onSign, restoreDraft, returnLabel = "Articles", onLeaveGuardChange }: {
+export function PublishComposer({ address, network, identity, connecting = false, hasUnisat = true, onConnect, onClose, onPrepare, onSign, restoreDraft, returnLabel = "Articles", onLeaveGuardChange }: {
   address: string; network: BitcoinNetwork; identity?: BoostIdentityIntent;
   connecting?: boolean;
+  hasUnisat?: boolean;
   onConnect: () => void; onClose: () => void;
   onPrepare: (plan: PublishPlan, feeRate: number) => Promise<PreparedPublish>;
   onSign: (prepared: PreparedPublish, assertCurrent: () => void) => Promise<string>;
@@ -188,7 +191,7 @@ export function PublishComposer({ address, network, identity, connecting = false
       {error || overBudget ? <p className="field-note bad" role="alert">{error || "This article exceeds the available transaction budget. Shorten it before publishing."}</p> : null}
       {network !== "livenet" ? <p className="field-note">Article publishing uses mainnet. Switch to mainnet to prepare a review.</p> : null}
       <div className="publish-editor-actions"><button className="secondary" onClick={leaveWriter} type="button" disabled={busy}><ArrowLeft size={16} /> Save draft and back</button>
-        {!address ? <button className="primary" onClick={onConnect} type="button" disabled={connecting}>{connecting ? <RefreshCw className="refresh-spin" size={16} /> : <BookOpen size={16} />} {connecting ? "Connecting…" : "Connect to publish"}</button> : <button className="primary" type="submit" disabled={busy || connecting || !budget.plan || overBudget || network !== "livenet" || loadedKey !== storageKey}>
+        {!address ? !hasUnisat && isMobileWalletBrowser(navigator) ? <UnisatMobileHandoff /> : <button className="primary" onClick={onConnect} type="button" disabled={connecting}>{connecting ? <RefreshCw className="refresh-spin" size={16} /> : <BookOpen size={16} />} {connecting ? "Connecting…" : "Connect to publish"}</button> : <button className="primary" type="submit" disabled={busy || connecting || !budget.plan || overBudget || network !== "livenet" || loadedKey !== storageKey}>
           {busy ? <RefreshCw className="refresh-spin" size={16} /> : <Send size={16} />} {busy ? "Preparing…" : "Review publication"}</button>}
       </div>
     </form>

@@ -4,7 +4,8 @@ import { HOME_APP_URL, LOCAL_HOME_APP_URL } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
 import { shortAddress } from "../../functions";
 import type { BitcoinNetwork } from "../bitcoin/networks";
-import { UNISAT_DOWNLOAD_URL } from "../wallet/walletLinks";
+import { isMobileWalletBrowser, UNISAT_DOWNLOAD_URL } from "../wallet/walletLinks";
+import { UnisatMobileHandoff } from "./UnisatMobileHandoff";
 import { DomainNav } from "./DomainNav";
 import { BrandMark } from "./BrandMark";
 import { HeaderActionsMenu } from "./HeaderActionsMenu";
@@ -185,6 +186,8 @@ export function AppHeader({
               <Wallet size={15} />
               <span>Connect UniSat</span>
             </button>
+          ) : !hasUnisat && isMobileWalletBrowser(navigator) ? (
+            <UnisatMobileHandoff className="topbar-action-button topbar-wallet-button" />
           ) : !hasUnisat ? (
             <a
               aria-label="Install UniSat"

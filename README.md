@@ -4,6 +4,20 @@ The ProofOfWork Computer: local-first, agent-readable identity, mail, files,
 pages, AMO markets, credits, wallet transfers, bonds, logs, and growth records
 written to ProofOfWork OP_RETURN outputs and signed locally with UniSat.
 
+## Mobile wallet access
+
+Mobile browsers without an injected UniSat provider offer **Open in UniSat**.
+The handoff uses UniSat's `openDapp` app link to open the current public page
+and workspace inside the wallet browser. Users connect there through the
+existing provider approval flow; the original Chrome/Safari tab remains
+disconnected. Desktop extension connection and the desktop install link retain
+their existing behavior. An install/update fallback remains available.
+Only allowlisted public route parameters cross browsers; URL fragments and
+unknown parameters are omitted. Local drafts, contacts, and transaction
+recovery records are not transferred. Backup/import covers only its existing
+supported local-data groups. An app launch is never evidence of connection,
+spendability, signing, or a completed transaction.
+
 ## License
 
 The ProofOfWork.Me source code is released under the [MIT License](LICENSE),

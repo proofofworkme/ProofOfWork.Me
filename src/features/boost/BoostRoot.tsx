@@ -49,6 +49,8 @@ import { appHref } from "../../app/routeRegistry";
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import { createInFlightRequestPool } from "../../shared/api/inFlightRequestPool";
 import { useUnisatPresence } from "../../shared/wallet/useUnisatPresence";
+import { isMobileWalletBrowser } from "../../shared/wallet/walletLinks";
+import { UnisatMobileHandoff } from "../../shared/components/UnisatMobileHandoff";
 import { createWalletConnectionController } from "../../shared/wallet/walletConnection.mjs";
 import { explorerTxUrl } from "../../shared/bitcoin/networks";
 import {
@@ -3007,7 +3009,7 @@ export default function BoostRoot({
             <span className="button-content"><Send size={15} /><span>{actionBusy === "profile" ? "Publishing" : "Publish"}</span></span>
           </button>}
         </div>
-      </> : <p className="field-note">This wallet has no confirmed IDs.</p> :
+      </> : <p className="field-note">This wallet has no confirmed IDs.</p> : !hasUnisat && isMobileWalletBrowser(navigator) ? <UnisatMobileHandoff className="secondary small" /> :
         <button className="secondary small" disabled={Boolean(actionBusy)} onClick={() => void connectWallet()} type="button">
           <span className="button-content"><UserCircle size={15} /><span>Connect</span></span>
         </button>}
@@ -3169,7 +3171,7 @@ export default function BoostRoot({
         <PublishComposer address={address} network={network} identity={activeIdentity} connecting={actionBusy === "connect"}
           returnLabel={publishWriterReturn?.returnLabel}
           restoreDraft={publishRestoreDraft && sameBoostWalletAddress(publishRestoreDraft.address, address) && publishRestoreDraft.network === network ? publishRestoreDraft.draft : undefined}
-          onConnect={() => void connectWallet()} onClose={closePublishWriter}
+          hasUnisat={hasUnisat} onConnect={() => void connectWallet()} onClose={closePublishWriter}
           onLeaveGuardChange={guard => { publishWriterLeaveGuard.current = guard; }}
           onPrepare={preparePublishArticle} onSign={signPublishArticle} />
       </section> : <>
@@ -3933,7 +3935,7 @@ export default function BoostRoot({
                   {postAttachment ? <span>{postAttachment.name} · {formatBytes(postAttachment.size)}</span> : null}
                 </details>
                 <p className="field-note">Review and sign in your wallet. Original posts have no Boost registry fee. A WORK transfer adds its existing {BOOST_WORK_MUTATION_PROOFS}-proof mutation fee, plus the miner fee.</p>
-                {!address ? <button className="secondary" disabled={Boolean(actionBusy)} onClick={() => void connectWallet()} type="button">Connect to post</button> : null}
+                {!address ? !hasUnisat && isMobileWalletBrowser(navigator) ? <UnisatMobileHandoff className="secondary" /> : <button className="secondary" disabled={Boolean(actionBusy)} onClick={() => void connectWallet()} type="button">Connect to post</button> : null}
                 <button
                   className="primary"
                   disabled={

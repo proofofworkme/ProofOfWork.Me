@@ -1045,3 +1045,13 @@ A local timeout cannot close an
 extension prompt. Connection and cached display data do not authorize spending;
 existing fresh admission, reservation and local signing checks remain required.
 Drafts, contacts, folders, backups and local recovery evidence are unchanged.
+
+Mobile browsers without an injected provider offer Open in UniSat in the shared
+header and Mail onboarding. The public page opens in UniSat's browser through
+its `openDapp` app link; approval then uses the same provider connection flow.
+The original browser stays disconnected. The handoff sends only the page path
+and allowlisted public route parameters, never local drafts, contacts, recovery
+records or URL fragments. These browsers have separate local storage; existing
+backup/import support remains the explicit way to move supported local data.
+No automatic signing, replay of a pending action, or inference of wallet
+authority accompanies the navigation. Desktop extension behavior is unchanged.

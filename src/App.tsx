@@ -204,6 +204,8 @@ import {
   type WalletUtxoSelection as UtxoSelection,
 } from "./walletUtxos";
 import { useUnisatPresence } from "./shared/wallet/useUnisatPresence";
+import { isMobileWalletBrowser, UNISAT_DOWNLOAD_URL } from "./shared/wallet/walletLinks";
+import { UnisatMobileHandoff } from "./shared/components/UnisatMobileHandoff";
 import {
   AppHeader,
   type AppHeaderAccountStat,
@@ -1893,7 +1895,6 @@ const TOKEN_PENDING_SEALS_KEY = "proofofwork.tokenPendingSeals.v1";
 const BACKUP_APP = "ProofOfWork.Me";
 const BACKUP_VERSION = 1;
 const BACKUP_MAX_BYTES = 5 * 1024 * 1024;
-const UNISAT_DOWNLOAD_URL = "https://unisat.io/download";
 const CANONICAL_WELCOME_TXID =
   "8c2fd17b10a6550896035b9f725054d3c6e10c314911808d8f7aaa2955c3015b";
 const MAX_ATTACHMENT_PARTS = 1_024;
@@ -59660,6 +59661,7 @@ function OnboardingPane({
   network: BitcoinNetwork;
   onConnect: () => void;
 }) {
+  const mobileHandoff = !hasUnisat && isMobileWalletBrowser(navigator);
   return (
     <section className="onboarding-pane">
       <div className="onboarding-panel">
@@ -59667,7 +59669,7 @@ function OnboardingPane({
           <Mail size={30} />
         </div>
         <div>
-          <h2>{hasUnisat ? "Open ProofOfWork.Me" : "Install UniSat"}</h2>
+          <h2>{hasUnisat ? "Open ProofOfWork.Me" : mobileHandoff ? "Continue in UniSat" : "Install UniSat"}</h2>
           <p>
             {hasUnisat
               ? `Connect UniSat to read and send ProofOfWork mail on ${networkLabel(network)}.`
@@ -59700,6 +59702,8 @@ function OnboardingPane({
               <span>{busy ? "Connecting" : "Connect UniSat"}</span>
             </span>
           </button>
+        ) : mobileHandoff ? (
+          <UnisatMobileHandoff />
         ) : (
           <a
             className="primary link-button"

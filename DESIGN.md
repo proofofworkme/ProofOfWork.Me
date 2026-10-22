@@ -163,6 +163,12 @@ recovery actions. Preserve wallet/network scope and draft recovery when changing
 layout or presentation. No visual cleanup may silently sign, send, retry, clear
 data, or broaden authority.
 
+Mobile wallet handoff is labeled Open in UniSat when no provider is present.
+Explain that connection continues inside the wallet browser and local drafts,
+contacts and recovery records do not follow. Keep an explicit install/update
+fallback and a cancellable, focus-contained handoff disclosure. App launch must
+never appear as connection success. Desktop provider/install behavior is retained.
+
 Apply this system to first-party chrome and first-party reading views. Preserve
 user-authored content, verified article text and hash commitments, supplied
 media, source code, and sandboxed HTML/app output. Do not impose our typography

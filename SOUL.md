@@ -79,6 +79,9 @@ inert source, local signing and exact-checkpoint dependency evidence.
 1. The source of truth is the chain.
 2. Confirmed records are canonical. Pending mempool visibility is useful gossip.
 3. Wallet signing stays local. The app must never hold seed phrases or private keys.
+   Mobile web access can hand off a public page to UniSat's browser through
+   `openDapp`; opening the app never connects the original browser or moves
+   browser-local drafts and recovery evidence. Approval and signing stay explicit.
 4. Agents can propose, construct, verify, and summarize. Humans approve and sign.
 5. Spam becomes expensive when attention requires payment.
 6. The inbox should respect value. Highest proofs is a first-class sort.
