@@ -23,6 +23,16 @@ async function fixture(page, { unknown = false, changeOwner = false, signed = fa
       signPsbt: async psbt => { window.tipPsbtCalls.push(psbt); if (signed) return window.tipFixtureSign(psbt); throw new Error("Fixture signing rejected"); } };
     if (unknown) localStorage.setItem("proofofwork-action-receipts-v1", JSON.stringify([{ address: wallet, txid: "d".repeat(64), network: "livenet", key: `boost-tip:${otherTarget ? "e".repeat(64) : target}`, title: "Content tip", status: "unknown", createdAt: new Date().toISOString(), fields: [["Target", target], ["Tip amount", "546"], ...(receiptCurrency ? [["Currency", receiptCurrency]] : [])] }]));
   }, { wallet, utxo, unknown, target: txid, signed, receiptCurrency, otherTarget });
+  // Client-reader fixtures use the application shell; SSR has separate tests.
+  await page.route("**/*", async route => {
+    const url = new URL(route.request().url());
+    if (route.request().isNavigationRequest() && ["localhost", "127.0.0.1"].includes(url.hostname) &&
+        url.searchParams.get("publish") === "1" && url.searchParams.has("article")) {
+      const response = await route.fetch({ url: `${url.origin}/app.html?publish=1` });
+      return route.fulfill({ response });
+    }
+    return route.fallback();
+  });
   await page.route("**/api/v1/**", async route => {
     if (route.request().method() !== "GET") {
       if (!signed) throw new Error("Browser fixtures must never broadcast.");
@@ -266,3 +276,37 @@ test("exact WORK tipping and prepared review fit the mobile Publish reader", asy
   await review.getByRole("button", { name: "Back to task" }).click();
   await expect(page.getByRole("textbox", { name: "Tip amount (WORK)" })).toHaveValue("1.0000000000000001");
 });
+
+for (const surface of ["boost", "publish"]) {
+  test(`${surface} header contains brand and navigation across zoom widths`, async ({ page }, info) => {
+    await fixture(page);
+    for (const theme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      for (const width of [320, 600, 768, 901, 960, 1024, 1180, 1181, 1440]) {
+        await page.setViewportSize({ width, height: 480 });
+        await page.goto(`/?${surface}=1`);
+        await expect(page.locator(".boost-post").first()).toBeVisible();
+        const geometry = await page.locator(".topbar").evaluate(header => {
+          const rect = element => { const r = element.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+          return { header: rect(header), brand: rect(header.querySelector(".brand")),
+            title: rect(header.querySelector(".app-brand-title")),
+            subtitle: rect(header.querySelector(".brand > div:last-child > span:not(.app-brand-title)")),
+            nav: rect(header.querySelector(".domain-nav")), actions: rect(header.querySelector(".topbar-actions")) };
+        });
+        expect(geometry.brand.bottom).toBeLessThanOrEqual(geometry.header.bottom);
+        expect(geometry.title.right).toBeLessThanOrEqual(geometry.nav.left);
+        expect(geometry.subtitle.bottom).toBeLessThanOrEqual(geometry.header.bottom);
+        expect(geometry.nav.right).toBeLessThanOrEqual(geometry.actions.left + 1);
+        expect(geometry.actions.right).toBeLessThanOrEqual(width);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
+        const card = page.locator(".publish-article-card").first();
+        const label = await card.locator(".publish-card-label").boundingBox();
+        const title = await card.locator("h2").boundingBox();
+        const metadata = await card.locator("p").boundingBox();
+        expect(title.y - (label.y + label.height)).toBeGreaterThanOrEqual(7);
+        expect(metadata.y - (title.y + title.height)).toBeGreaterThanOrEqual(7);
+        if (width === 960) await page.screenshot({ path: info.outputPath(`${surface}-${theme}-960.png`), fullPage: true });
+      }
+    }
+  });
+}

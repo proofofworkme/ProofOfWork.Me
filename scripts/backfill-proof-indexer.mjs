@@ -8253,7 +8253,7 @@ function preparedProtocolItemsWithCanonicalWorkTipReplay(preparedItems, replayRe
   return entries.map(entry => {
     const item = entry?.item ?? entry;
     if (item?.protocol !== "pwb1" || item?.kind !== "boost-tip" || item?.tipCurrency !== "WORK") return entry;
-    const tip = parseBoostWorkTip(item.payload), bound = item.tipWorkTransfer;
+    const tip = parseBoostWorkTip(item.payload);
     const siblings = recordsByTxid.get(item.txid) ?? [];
     const candidates = siblings.filter(record => record.protocol === "pwt1");
     const boostCarriers = siblings.filter(record => record.protocol === "pwb1");
@@ -8266,8 +8266,27 @@ function preparedProtocolItemsWithCanonicalWorkTipReplay(preparedItems, replayRe
     const contribution = replay?.stateDelta?.baseContributions;
     const movement = replay?.stateDelta?.movement;
     const commitment = replay?.transitionChainCommitmentAfter;
+    // Raw block replay is authoritative and can bypass token-verifier preparation.
+    // Build the association from its accepted transfer, then verify every binding
+    // below; absence of an optional preparation hint must not discard a real tip.
+    const bound = item.tipWorkTransfer ?? {
+      txid: item.txid, tokenId: output?.tokenId, amountSubatoms: output?.amountSubatoms,
+      senderAddress: output?.senderAddress, recipientAddress: output?.recipientAddress,
+      transferVersion: "send3", amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      protocolVout: position?.protocolVout, recordOrdinal: position?.recordOrdinal,
+      blockHeight: position?.blockHeight, blockHash: position?.blockHash,
+      blockIndex: position?.blockTransactionIndex,
+      registryAddress: WORK_TOKEN_REGISTRY_ADDRESS, registryVout: economic?.[0]?.vout,
+      paidSats: "546", rawPayload: parsed?.payload, confirmed: true, valid: true,
+    };
     const accepted = tip && bound && item.confirmed === true && item.valid === true &&
-      item.workSignalVerification === "canonical-same-tx-work-tip-transfer-v1" &&
+      item.tokenId === WORK_TOKEN_ID && item.tipWorkSubatoms === tip.amountSubatoms &&
+      item.targetTxid === tip.targetTxid && item.recordOrdinal === 0 &&
+      Number.isSafeInteger(item.protocolVout) && item.protocolVout >= 0 &&
+      Number.isSafeInteger(bound.protocolVout) && bound.protocolVout > item.protocolVout &&
+      Number.isSafeInteger(bound.registryVout) && bound.registryVout > item.protocolVout &&
+      bound.registryVout < bound.protocolVout &&
+      Array.isArray(item.recipients) && item.recipients.length === 0 &&
       item._workAmoV5ReplayBound === true && item.workAmoV5ReplayOutcome?.valid === true &&
       boostCarrierCountsByTxid.get(item.txid) === 1 && boostReplay?.rawCandidate === true &&
       boostReplay.outcome?.valid === true && boostReplay.outcome.kind === "pwb1-valid" && boostReplay.outcome.reasonCode === "" &&
@@ -8310,7 +8329,10 @@ function preparedProtocolItemsWithCanonicalWorkTipReplay(preparedItems, replayRe
         tipWorkVerificationReason: "WORK tip canonical block replay did not accept its sole exact same-transaction transfer and Boost carrier." };
       return entry?.item ? { ...entry, item: rejected } : rejected;
     }
-    const next = { ...item, tipWorkVerificationReason: undefined, tipWorkTransfer: { ...bound,
+    const next = { ...item, tipWorkVerificationReason: undefined,
+      recipientAddress: bound.recipientAddress,
+      workSignalVerification: "canonical-same-tx-work-tip-transfer-v1",
+      tipWorkTransfer: { ...bound,
       canonicalVerifier: "/api/v1/internal/work-amo-v5-block-verifier",
       canonicalReplay: { outcome: replay.outcome, rawRecordParts: parts, transitionChainCommitmentAfter: commitment,
         boostCarrierCount: 1, pwtCarrierCount: 1 } } };

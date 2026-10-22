@@ -92,6 +92,10 @@ Standalone headers and shared footers use these groups in order:
 | Finance | Wallet, AMO, Credit, WORK, Infinity, Inception |
 | Insights | Log, Growth, Search |
 
+Standalone headers use the compact Applications menu at 1180 CSS pixels and
+below, including browser zoom. Brand subtitles stay on one line within the
+header; they must not spill into status or content rows.
+
 The brand opens Home. ID remains the menu label for the existing IDs product.
 Keep canonical routes and local-preview routing intact. All first-class products
 must remain discoverable; [README.md](README.md) records their destinations.

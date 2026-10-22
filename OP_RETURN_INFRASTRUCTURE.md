@@ -7384,7 +7384,20 @@ A WORK tip must match exactly one accepted same-transaction canonical
 `pwt1:send3` transfer with the same payer, exact Q16 amount and historical current
 content owner as recipient. Final canonical raw block replay must accept the
 transfer, exact registry output and movement claim; token-verifier preparation
-alone cannot grant the association. A WORK-tip transaction has exactly one
+alone cannot grant the association. The association is derived from final replay
+evidence even when the raw replay path bypasses preliminary token-verifier
+preparation. Missing preparation metadata does not invalidate an otherwise fully
+verified association. Existing rejected projections require a scoped replay-backed
+repair; changing the worker alone does not rewrite indexed history.
+`scripts/plan-boost-work-tip-repair.mjs` plans the explicitly reported
+`45986377795f670e33b7173e8d7a4d15d7842e1acfe4a623379af2013692585a`
+association repair from retained block replay and matching first-party Core bytes.
+It checks the event-set commitment and exact historical rows, then emits a
+serializable, compare-and-set SQL transaction changing only the tip application
+payload and its update timestamp. Canonical rows, token balances, transition
+evidence and payment amounts remain unchanged. Its public chain-evidence fixture
+and rejection tests are included in `npm run check:boost-tips`.
+A WORK-tip transaction has exactly one
 `pwb1:` carrier and one `pwt1:` carrier, preventing the same WORK transfer from
 signaling another Boost action. Decoded bytes alone cannot establish accepted
 transfer or tip validity. An association rejection clears its application signal

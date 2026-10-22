@@ -43,7 +43,7 @@ function linkIsActive(link: AppLink, current: string) {
 }
 
 const MOBILE_SHEET_QUERY = "(max-width: 620px)";
-const COMPACT_HEADER_QUERY = "(max-width: 900px)";
+const COMPACT_HEADER_QUERY = "(max-width: 1180px)";
 
 type DomainNavProps = {
   onNavigate?: (label: string) => boolean | void;

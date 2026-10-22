@@ -66,7 +66,7 @@
     "check:client-read-containment": "node scripts/check-client-read-containment.mjs",
     "check:api-client-timeouts": "node --test scripts/check-proof-api-client.test.mjs",
     "check:read-projections": "node --test server/read-projections.test.mjs server/amo-listing-read.test.mjs",
-    "check:boost-tips": "node --test scripts/check-boost-tips.test.mjs scripts/check-boost-tip-work-capacity.test.mjs && node scripts/check-boost-regressions.mjs",
+    "check:boost-tips": "node --test scripts/check-boost-tips.test.mjs scripts/check-boost-tip-work-capacity.test.mjs scripts/plan-boost-work-tip-repair.test.mjs && node scripts/check-boost-regressions.mjs",
     "check:boost-regressions": "node scripts/check-inflight-request-pool.mjs && node --test scripts/check-boost-regressions.mjs src/shared/media/youtubeLinks.test.mjs",
     "check:publish": "node --test scripts/check-publish-articles.mjs server/mail-article-projection.test.mjs && node scripts/check-social-identity.test.mjs && node scripts/check-publish-recovery.test.mjs",
     "check:publish:ssr": "node --test server/publish-render/*.test.mjs scripts/check-publish-ssr-live.test.mjs && python3 -I -B deploy/publish-render/check-install.test.py",

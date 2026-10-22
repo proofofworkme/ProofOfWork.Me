@@ -64,6 +64,8 @@
 
 @layer interface {
 /* Reading and writing keep an editorial measure within the shared theme. */
+.publish-article-card { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); min-width: 0; }
+.publish-article-card :is(h2, p) { margin: 0; }
 .publish-public-app { --publish-paper: var(--surface); }
 .publish-public-app :is(.publish-reader, .publish-writer-workspace, .publish-reading) { color: var(--text); }
 .publish-article-card h2, .publish-writer-head h1, .publish-reading h1 { color: var(--text); font-family: var(--font-ui); font-weight: 500; letter-spacing: -.035em; line-height: 1.2; }

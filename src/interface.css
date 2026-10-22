@@ -251,6 +251,16 @@
   }
   .app-header-stack { background: var(--bg); }
   .brand { gap: 11px; }
+  .brand > div:last-child > span:not(.app-brand-title) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Collapse before grouped navigation crowds the brand at split-screen/zoom widths. */
+  @media (max-width: 1180px) {
+    .topbar .grouped-domain-nav .domain-nav-groups { display: none; }
+    .topbar .grouped-domain-nav .app-menu-trigger { display: inline-flex; }
+  }
   .brand :is(h1, .app-brand-title) { color: var(--text); font: 500 16px/1.25 var(--font-ui); letter-spacing: -.02em; }
   .brand span { color: var(--text-muted); font-size: var(--text-xs); font-weight: 400; }
   .brand .app-brand-title { display: block; margin: 0; color: var(--text); font-weight: 500; }

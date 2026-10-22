@@ -2089,7 +2089,7 @@ async function assertTopbarGeometry(page, label, width, { hasActions = true } = 
 
   const links = nav.locator(".domain-nav-groups");
   const menu = nav.locator(".app-menu-trigger");
-  if (width <= 900) {
+  if (width <= 1180) {
     await expect(menu, `${label} compact app menu is missing`).toBeVisible();
     await expect(
       links,
@@ -2353,13 +2353,13 @@ async function assertMarketplaceGeometry(page, mode, width) {
 test("shared header and footer menus preserve approved products and keyboard navigation", async ({ page }) => {
   await installApiFixtures(page);
   const baseUrl = COMPUTER_BASE_URL || MARKETPLACE_BASE_URL;
-  for (const width of [390, 900, 901, 1440]) {
+  for (const width of [390, 900, 960, 1180, 1181, 1440]) {
     await page.setViewportSize({ height: VIEWPORT_HEIGHT, width });
     await openFixtureRoute(page, surfaceUrl(baseUrl, "/?landing=1"), `menus at ${width}px`);
     await expect(page.locator(".landing-app")).toBeVisible();
     await assertTopbarGeometry(page, "Home menu navigation", width, { hasActions: false });
     if (width <= 620) await assertMobileDomainNav(page, "Home");
-    if (width > 620 && width <= 900) {
+    if (width > 620 && width <= 1180) {
       const trigger = page.locator(".topbar .app-menu-trigger");
       await trigger.click();
       const popup = page.locator(".grouped-domain-popover:visible");
@@ -2370,7 +2370,7 @@ test("shared header and footer menus preserve approved products and keyboard nav
     }
 
     const navs = [page.locator(".app-footer .domain-nav")];
-    if (width > 900) navs.unshift(page.locator(".topbar .domain-nav"));
+    if (width > 1180) navs.unshift(page.locator(".topbar .domain-nav"));
     for (const nav of navs) {
       const triggers = nav.locator(".domain-nav-groups").getByRole("button");
       await expect(triggers).toHaveCount(PUBLIC_APP_MENUS.length);

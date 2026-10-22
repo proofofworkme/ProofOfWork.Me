@@ -232,7 +232,7 @@ function cssContrastRatio(foregroundName, backgroundName) {
 }
 
 const max1100Css = cssMediaBlock("max-width: 1100px");
-const max900Css = cssMediaBlock("max-width: 900px");
+
 const topbarActionsBlock = cssBlock(".topbar-actions");
 const mailSendBlock = cssBlock(".mail-send-button");
 const mailSendReadyBlock = cssBlock('.mail-send-button[data-state="ready"]', interfaceCss);
@@ -3172,9 +3172,10 @@ expect(
   ),
 );
 expect(
-  "compact header uses the full categorized menu at the shared 900px breakpoint",
-  /display:\s*none/.test(cssSelectorBlock(".topbar .grouped-domain-nav .domain-nav-groups", max900Css)) &&
-    /display:\s*inline-flex/.test(cssSelectorBlock(".topbar .grouped-domain-nav .app-menu-trigger", max900Css)),
+  "compact header uses the full categorized menu before the brand is crowded",
+  /display:\s*none/.test(cssSelectorBlock(".topbar .grouped-domain-nav .domain-nav-groups", interfaceCss)) &&
+    /display:\s*inline-flex/.test(cssSelectorBlock(".topbar .grouped-domain-nav .app-menu-trigger", interfaceCss)) &&
+    /const COMPACT_HEADER_QUERY = "\(max-width: 1180px\)"/.test(domainNav),
 );
 expect(
   "footer categories remain visible when standalone Boost styles load",

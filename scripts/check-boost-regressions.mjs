@@ -1757,6 +1757,21 @@ test("final WORK tip evidence follows actual canonical Q16 replay and preserves 
   Object.assign(tip.tipWorkTransfer,{txid:transaction.txid,senderAddress:sender,blockHash,blockIndex:1,protocolVout:2,registryVout:1,
     rawPayload:sendPayload,canonicalVerifier:"/api/v1/internal/token-verifier",canonicalReplay:undefined});
   const close=(records,items=[tip])=>context.close(items.map(item=>({item})),records)[0].item;
+  // Production raw replay has no token-verifier preparation association.
+  const rawTip = structuredClone(tip);
+  delete rawTip.tipWorkTransfer;
+  delete rawTip.workSignalVerification;
+  delete rawTip.recipientAddress;
+  const rawAccepted = close(acceptedRecords, [rawTip]);
+  assert.equal(rawAccepted.tipWorkTransfer.amountSubatoms, amount);
+  assert.equal(rawAccepted.recipientAddress, owner);
+  assert.equal(projection.qualifyBoostPaidActions([rawAccepted], [], new Map([["2", owner]])).accepted[0].applicationBoostOwnerWorkSubatoms, amount);
+  const rawApi = server(reader([
+    event(1, "boost-post", { authorAddress: owner, currentOwnerAddress: owner, blockHeight: height - 1 }), rawAccepted,
+  ]).read, { proofIndexRegistryPayload: async () => identityRegistry([]) });
+  const rawFeed = await rawApi.boostFeedPayload("livenet", new URLSearchParams());
+  assert.equal(rawFeed.items[0].tipCount, 1);
+  assert.equal(rawFeed.items[0].tipWorkSubatomsExact, amount);
   const accepted=close(acceptedRecords);
   assert.equal(accepted.tipWorkTransfer.canonicalVerifier,"/api/v1/internal/work-amo-v5-block-verifier");
   assert.deepEqual(accepted.tipWorkTransfer.canonicalReplay.transitionChainCommitmentAfter,
@@ -1767,6 +1782,7 @@ test("final WORK tip evidence follows actual canonical Q16 replay and preserves 
     openingEconomicState:{...economic,tokenStateCommitment:v8.workAmoV8CanonicalTokenStateCommitment(emptyWork)}}));
   assert.equal(rejectedRecords.find(record=>record.protocol==="pwb1").outcome.valid,true);
   assert.equal(rejectedRecords.find(record=>record.protocol==="pwt1").outcome.valid,false);
+  assert.equal(close(rejectedRecords, [rawTip]).tipWorkTransfer, undefined);
   const rejected=close(rejectedRecords);
   assert.equal(rejected.valid,true);assert.equal(rejected.workAmoV5ReplayOutcome.valid,true);
   assert.equal(rejected.tipWorkTransfer,undefined);assert.equal(rejected.workSignalVerification,undefined);
@@ -1782,6 +1798,7 @@ test("final WORK tip evidence follows actual canonical Q16 replay and preserves 
   ]) {
     const bad=structuredClone(acceptedRecords);mutate(bad.find(record=>record.protocol==="pwt1"));
     assert.equal(close(bad).tipWorkTransfer,undefined);
+    assert.equal(close(bad, [rawTip]).tipWorkTransfer,undefined);
     assert.equal(close(bad).valid,true);
   }
   assert.equal(close(acceptedRecords.filter(record=>record.protocol!=="pwt1")).tipWorkTransfer,undefined);
