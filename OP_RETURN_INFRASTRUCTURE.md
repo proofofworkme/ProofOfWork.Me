@@ -7663,6 +7663,14 @@ requirements and preservation of all evidence remain mandatory. Promote the
 exact reviewed helper with retained predecessor/candidate/approval receipts and
 bind subsequent release plans to that helper's hash and committed source.
 
+Surface custody fingerprints use the same POSIX path-component ordering as
+`deploy/publish/remote_transport.py`; lexical ordering of whole path strings
+changes hashes when a directory shares a prefix with a sibling file. The
+2026-10-22 correction preserves original incoming receipt bytes and requires
+exact metadata/content agreement. Newly qualified bundles still require verified
+off-host custody and independent restoration before guarded retirement. Storage
+ceilings, protected releases, holds and sealed historical receipts stay unchanged.
+
 The desired recovery set is the live release and one verified immediate-prior
 rollback, with unique historical evidence in verified independent custody.
 `deploy/ui-retention/custody.py` preserves qualified exact directories off host,

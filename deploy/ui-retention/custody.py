@@ -11,7 +11,7 @@ import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import select
 import shlex
@@ -379,7 +379,9 @@ def terminal_publication(release):
 
 def payload_fingerprint(inventory):
     rows=[]
-    for r in sorted(inventory['records'],key=lambda r:r['path']):
+    # Match remote_transport: pathlib compares path components, not whole strings.
+    # Sealed incoming receipts must remain byte-for-byte authoritative.
+    for r in sorted(inventory['records'],key=lambda r:PurePosixPath(r['path'])):
         s=r['identity'];require(r['kind'] in ('directory','file') and (r['kind']!='file' or s['st_nlink']==1),'source-evidence','Surface input has links/special members')
         rows.append([r['path'],r['kind'],stat.S_IMODE(s['st_mode']),s['st_uid'],s['st_gid'],s['st_size'] if r['kind']=='file' else 0,r.get('sha256')])
     return dict(sha256=hashlib.sha256(json.dumps(rows,separators=(',',':')).encode()).hexdigest(),entries=len(rows),regularBytes=sum(r[5] for r in rows))

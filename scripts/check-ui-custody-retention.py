@@ -176,6 +176,26 @@ class ArtifactQualificationTests(unittest.TestCase):
   (parent/'incoming-intent.json').write_text(json.dumps(dict(common,oldPath=str(self.scratch/p.name))))
   (parent/'incoming-receipt.json').write_text(json.dumps(dict(common,format='proof-of-work-ui-incoming-evidence-v1',commit=self.commit,tree=self.tree,receiverReceipt=receiver,movePreservedInodes=True,allPriorEvidencePreserved=True)))
   return p,inv
+ def test_surface_fingerprint_matches_transport_path_order_and_detects_tampering(self):
+  root=self.base/'payload';root.mkdir();(root/'landing').mkdir()
+  (root/'landing/index.html').write_bytes(b'index');(root/'landing-banner.svg').write_bytes(b'banner')
+  (root/'landing.json').write_bytes(b'metadata')
+  # Independent producer algorithm: the exact ordering used by remote_transport.
+  rows=[]
+  for path in [root,*sorted(root.rglob('*'))]:
+   info=path.lstat();kind='directory' if path.is_dir() else 'file'
+   rows.append([path.relative_to(root).as_posix(),kind,stat.S_IMODE(info.st_mode),info.st_uid,info.st_gid,
+                info.st_size if kind=='file' else 0,hashlib.sha256(path.read_bytes()).hexdigest() if kind=='file' else None])
+  receipt=dict(sha256=hashlib.sha256(json.dumps(rows,separators=(',',':')).encode()).hexdigest(),entries=len(rows),regularBytes=sum(row[5] for row in rows))
+  self.assertNotEqual(rows,sorted(rows,key=lambda row:row[0]))
+  inventory=E.inventory(root,os.geteuid(),require_manifest=False)
+  self.assertEqual(C.payload_fingerprint(inventory),receipt)
+  inventory['records'].reverse()
+  self.assertEqual(C.payload_fingerprint(inventory),receipt)
+  for field,value in [('sha256','0'*64),('st_mode',0o100640),('st_size',999)]:
+   changed=copy.deepcopy(inventory);member=next(row for row in changed['records'] if row['kind']=='file')
+   (member if field=='sha256' else member['identity'])[field]=value
+   self.assertNotEqual(C.payload_fingerprint(changed),receipt)
  def managed_archive(self):
   primary=self.backups/'releases'/('proofofwork-ui-release-'+self.rid+'.tgz')
   fields=dict(format='proofofwork-ui-release-v5',release_id=self.rid,commit=self.commit,source_tree=self.tree,archive_name=primary.name)
