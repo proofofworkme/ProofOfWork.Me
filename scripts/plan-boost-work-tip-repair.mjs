@@ -15,7 +15,11 @@ const TARGET = 'd424e548b339c95901581a6381ed1606ee3125707931bfd6c425bcdcb4682c32
 const OWNER = '1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH';
 const REGISTRY = '1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV';
 const sha = value => createHash('sha256').update(value).digest('hex');
-export async function planBoostWorkTipRepair(evidence, core, source) {
+export async function planBoostWorkTipRepair(evidence, core, source, evidenceJson) {
+  // PostgreSQL numeric values can exceed JavaScript's exact integer range.
+  // Keep original JSON for database guards; parsed objects are validation only.
+  assert.equal(typeof evidenceJson, 'string');
+  assert.deepEqual(JSON.parse(evidenceJson), evidence);
   const { events, transaction, transition, block, ownership } = evidence;
   assert.equal(ownership.length, 2);
   assert.deepEqual(ownership.map(e => e.kind), ['boost-post', 'mail']);
@@ -99,21 +103,25 @@ export async function planBoostWorkTipRepair(evidence, core, source) {
   assert.deepEqual(rest(after), rest(tip.payload));
   return { format: 'boost-work-tip-association-repair-v1', txid: TXID, eventId: tip.event_id,
     blockHash: HASH, blockHeight: 972381, sourceSha256: sha(source),
-    evidenceSha256: sha(JSON.stringify(evidence)), before: tip.payload, after, evidence };
+    evidenceSha256: sha(evidenceJson), evidenceJson, before: tip.payload, after, evidence };
 }
 export function repairSql(plan) {
   assert.equal(plan.format, 'boost-work-tip-association-repair-v1'); assert.equal(plan.txid, TXID);
   const literal = value => `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`;
   const { events, transaction, transition, block } = plan.evidence;
-  const guards = [...events, ...plan.evidence.ownership].map(row => [`events`, `event_id=${row.event_id}`, row]);
-  guards.push(['transactions', `network='livenet' AND txid='${TXID}'`, transaction],
-    ['work_amo_block_transitions', `network='livenet' AND block_height=972381 AND block_hash='${HASH}'`, transition],
-    ['blocks', `network='livenet' AND height=972381 AND block_hash='${HASH}'`, block]);
-  const guardSql = guards.map(([table, where, row]) => `SELECT to_jsonb(t) INTO actual FROM proof_indexer.${table} t WHERE ${where} FOR UPDATE;\nIF actual IS DISTINCT FROM ${literal(row)} THEN RAISE EXCEPTION 'Repair evidence changed: ${table}'; END IF;`).join('\n');
+  assert.equal(sha(plan.evidenceJson), plan.evidenceSha256);
+  const guards = [
+    ...events.map((row, i) => ['events', `event_id=${row.event_id}`, `expected->'events'->${i}`]),
+    ...plan.evidence.ownership.map((row, i) => ['events', `event_id=${row.event_id}`, `expected->'ownership'->${i}`]),
+  ];
+  guards.push(['transactions', `network='livenet' AND txid='${TXID}'`, `expected->'transaction'`],
+    ['work_amo_block_transitions', `network='livenet' AND block_height=972381 AND block_hash='${HASH}'`, `expected->'transition'`],
+    ['blocks', `network='livenet' AND height=972381 AND block_hash='${HASH}'`, `expected->'block'`]);
+  const guardSql = guards.map(([table, where, row]) => `SELECT to_jsonb(t) INTO actual FROM proof_indexer.${table} t WHERE ${where} FOR UPDATE;\nIF actual IS DISTINCT FROM (${row}) THEN RAISE EXCEPTION 'Repair evidence changed: ${table}'; END IF;`).join('\n');
   return `BEGIN ISOLATION LEVEL SERIALIZABLE;
 SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='30s';
 DO $repair$
-DECLARE actual jsonb; changed integer;
+DECLARE actual jsonb; changed integer; expected jsonb := '${plan.evidenceJson.replaceAll("'", "''")}'::jsonb;
 BEGIN
 ${guardSql}
 IF EXISTS (SELECT 1 FROM proof_indexer.events WHERE network='livenet' AND status='confirmed' AND valid=true AND kind IN ('boost-transfer','boost-buy') AND (block_height,block_index)<=(972381,1266)) THEN RAISE EXCEPTION 'Historical ownership evidence changed'; END IF;
@@ -122,7 +130,7 @@ WHERE event_id=5054119 AND network='livenet' AND txid='${TXID}' AND payload=${li
 GET DIAGNOSTICS changed = ROW_COUNT;
 IF changed <> 1 THEN RAISE EXCEPTION 'Repair must update exactly one tip'; END IF;
 SELECT to_jsonb(t)-'payload'-'updated_at' INTO actual FROM proof_indexer.events t WHERE event_id=5054119;
-IF actual IS DISTINCT FROM (${literal(events.find(e=>e.event_id===5054119))}-'payload'-'updated_at') THEN RAISE EXCEPTION 'Repair changed canonical event fields'; END IF;
+IF actual IS DISTINCT FROM ((expected->'events'->${events.findIndex(e=>e.event_id===5054119)})-'payload'-'updated_at') THEN RAISE EXCEPTION 'Repair changed canonical event fields'; END IF;
 END $repair$;
 COMMIT;
 `;
@@ -130,7 +138,8 @@ COMMIT;
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [evidencePath, corePath, output] = process.argv.slice(2); assert.ok(evidencePath && corePath && output);
   const source = await readFile(new URL('./backfill-proof-indexer.mjs', import.meta.url), 'utf8');
-  const plan = await planBoostWorkTipRepair(JSON.parse(await readFile(evidencePath)), JSON.parse(await readFile(corePath)), source);
+  const evidenceJson = await readFile(evidencePath, 'utf8');
+  const plan = await planBoostWorkTipRepair(JSON.parse(evidenceJson), JSON.parse(await readFile(corePath)), source, evidenceJson);
   await writeFile(`${output}.json`, JSON.stringify(plan, null, 2)+'\n', { flag:'wx', mode:0o600 });
   await writeFile(`${output}.sql`, repairSql(plan), { flag:'wx', mode:0o600 });
   console.log(JSON.stringify({eventId:plan.eventId, txid:plan.txid, amount:plan.after.tipWorkTransfer.amountSubatoms, output, sourceSha256:plan.sourceSha256}));
