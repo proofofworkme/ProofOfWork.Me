@@ -9,6 +9,9 @@ import type { CodeViewState } from "./features/code/CodeRoot";
 import type { CodeLocation, CodeSourceReference } from "./features/code/codeNavigation";
 import { BrowserWindow, type BrowserSession, type BrowserTemplateDraft } from "./features/browser/BrowserWindow";
 import { ComputerControls, ComputerShell } from "./features/computer/ComputerShell";
+import { NotificationsButton } from "./features/notifications/NotificationsButton";
+import { notificationDestination } from "./features/notifications/notificationNavigation.mjs";
+import type { ComputerNotification, NotificationTarget } from "./features/notifications/notificationsApi";
 import { computerShellStatus, type ComputerWorkspaceStatus } from "./features/computer/computerStatus.mjs";
 import { COMPUTER_LAYOUT_STORAGE_KEY, computerAppForWorkspace, type ComputerLayout } from "./features/computer/computerNavigation";
 import { AdvancedDns } from "./features/dns/AdvancedDns";
@@ -24259,6 +24262,15 @@ export default function App() {
   }, [network]);
   const loadAdvancedDnsState = useCallback((query: string, signal?: AbortSignal) =>
     fetchProofApiJson<unknown>(`/api/v1/dns/${encodeURIComponent(query)}?current=1&fresh=1`, network, { signal }), [network]);
+  const resolveNotificationIdentity = useCallback(async (input: string, signal: AbortSignal) => {
+    if (!registryAddressForNetwork(network)) throw new Error("Confirmed ProofOfWork IDs are unavailable on this network.");
+    const { record } = await fetchIdRecordState(network, input, signal, "confirmed-ownership");
+    if (!record?.confirmed || record.network !== network ||
+      !isValidBitcoinAddress(record.ownerAddress, network) || !isValidBitcoinAddress(record.receiveAddress, network)) {
+      throw new Error("This ID has no confirmed owner and receiver. Pending IDs cannot establish a notification address.");
+    }
+    return { id: normalizePowId(record.id), ownerAddress: record.ownerAddress, receiveAddress: record.receiveAddress };
+  }, [network]);
   async function reviewAndSendAction({ prepared, title, fields, payload, expectedRecords, returnedSelfPayment = false, registry, registryProofs,
     key, context, revalidate, marketplace }: {
     prepared: Awaited<ReturnType<typeof buildPaymentPsbt>>; title: string; fields: [string, string][];
@@ -28365,6 +28377,30 @@ export default function App() {
     url.searchParams.set("network", network);
     for (const [key, value] of Object.entries(values)) if (value) url.searchParams.set(key, value);
     return url.href;
+  }
+
+  function openNotificationRecord(target: NotificationTarget, notification: ComputerNotification) {
+    if (!canLeavePublishWriter()) return false;
+    const destination = notificationDestination(target, notification.txid);
+    if (destination.workspace === "browser") {
+      if (computerTasks.browser && computerTasks.browser.tabs.length >= 12) {
+        setStatus({ tone: "bad", text: "Browser has 12 tabs open. Close a tab before opening this record." });
+        return false;
+      }
+      openBrowserFromPages({ network, txid: destination.params.txid });
+      return true;
+    }
+    const url = new URL(window.location.origin + window.location.pathname);
+    url.searchParams.set("folder", destination.workspace);
+    url.searchParams.set("network", network);
+    for (const [key, value] of Object.entries(destination.params)) url.searchParams.set(key, value);
+    if (destination.workspace === "code" && computerTasks.code) computerTasks.code = { ...computerTasks.code, editor: false };
+    const sameWorkspace = activeFolder === destination.workspace;
+    openFolder(destination.workspace, { href: url.href });
+    if (sameWorkspace && destination.workspace !== "publish") {
+      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+    }
+    return true;
   }
 
   function canOpenComputerReference(referenceNetwork: BitcoinNetwork) {
@@ -37995,7 +38031,10 @@ export default function App() {
     <main className="mail-app computer-shell" data-computer-layout={computerLayout} data-computer-theme="system" data-computer-mail={computerMailWorkspace ? "true" : "false"} data-computer-navigation-open={computerNavigationOverlay && sidebarExpanded ? "true" : "false"}>
       <AppHeader
         afterHeader={actionUi}
-        navigationControls={<ComputerControls layout={computerLayout} onLayoutChange={changeComputerLayout} onOpenWorkspace={openFolder} onOpenLocalData={() => {
+        navigationControls={<ComputerControls layout={computerLayout} onLayoutChange={changeComputerLayout} onOpenWorkspace={openFolder}
+          notifications={<NotificationsButton network={network} address={address} resolveIdentity={resolveNotificationIdentity}
+            validateAddress={input => isValidBitcoinAddress(input, network)} onOpenRecord={openNotificationRecord} />}
+          onOpenLocalData={() => {
           computerLocalDataTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
           setComputerLocalDataOpen(true);
           setSidebarExpanded(true);

@@ -160,6 +160,13 @@ component using deliberate reveal, copy, or local scrolling. Never hide document
 overflow to conceal clipped evidence. Compact display labels must not change
 canonical values or accessible exact-value descriptions.
 
+Computer notifications use the shared header bell and an accessible contained
+inbox. Address/network scope, registration-bound ID history and current
+owner/receiver choices stay visible. A compound transaction has one unread marker with every constituent
+action's status and exact evidence inspectable. Filters state when they cover
+loaded rows; incomplete counts remain qualified. Notification navigation must
+preserve the departing draft and existing signing/navigation guards.
+
 Disconnected, loading, empty, pending, unavailable, stale, and confirmed states
 are distinct product states. An unverified read is not a confirmed zero. A calm
 interface must still explain errors, uncertainty, incomplete coverage, and

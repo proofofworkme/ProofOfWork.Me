@@ -782,6 +782,91 @@ Continuation rechecks the fence and the exact rank of the prior boundary;
 insertion, deletion, status/update mutation, reorg, filter mismatch, or malformed
 cursor returns 409. Pageable event history is database-authoritative and never
 merges the mutable recovery overlay or silently falls back after a cursor error.
+
+`GET /api/v1/notifications` builds the read-only
+`proof-computer-notifications-v1` projection over that same indexed history.
+It takes `network`, one validated `address` or confirmed `id`, a bounded `limit` and an optional
+snapshot cursor. Transactions are selected and counted before pagination;
+siblings are hydrated in the same repeatable-read transaction so Mail, Files,
+social records and attached credits do not create duplicate unread entries.
+Direct participants and typed event-time relationships determine inclusion;
+current ID mappings and free-text mentions do not establish historic recipients.
+Historical routing replay includes prior ID/DNS receivers, inherited child
+resolvers and content-link clear, replacement and ownership invalidation
+events. Missing canonical positions, incomplete replay or a bounded-history
+overflow fails visibly rather than inventing recipients or hiding gaps.
+Existing protocol qualification and checkpoint checks still determine whether
+each action was accepted. Unavailable source verification cannot become an
+accepted empty result. No schema migration, wallet authority or protocol fee
+change is introduced.
+
+An address read unions this projection with complete first-party Electrum
+history before pagination. Core-bound input/output evidence covers ordinary
+payments and carrierless balance-preparation transactions absent from the
+protocol index. Indexed Core-shaped transactions use the existing canonical
+undo conversion; coin units are never treated as proofs. Every otherwise
+unrepresented transaction is fully verified before publishing complete coverage.
+A governed carrier missing its indexed protocol actions refuses the entire
+snapshot instead of disguising the gap as a generic payment. The complete union
+is bounded to 10,000 transactions, 500 unindexed Core hydrations and two concurrent
+builds; exceeding a bound returns unavailable. Shared inputs remain explicit,
+and change outputs do not turn outgoing payments into self-transfers.
+
+ID reads bind `scopeKey` to the accepted registration transaction and match raw
+typed ID references plus the verified ID lifecycle. Current profile/participant
+ID enrichments, former-owner wallet unions and free-text mentions are excluded.
+Address-only records cannot prove the selected ID. Owner/receiver addresses
+remain separate selectable histories. This adds no protocol fields or migration.
+
+Responses include all constituent actions and their evidence, a stable
+`network:txid` identifier, exact checkpoint/hash, snapshot cursor, coverage
+qualification and transaction first-seen/event-id read boundaries. Carrierless
+transactions without an indexed observation use explicit transaction IDs for
+aggregate read operations; they never receive a fabricated event counter. Cursor
+continuation rejects changed snapshots with 409. Pending, dropped, orphaned,
+invalid and unavailable evidence remains distinct from accepted confirmed
+state. The API never persists read/unread preferences. Browser-local activity
+without chain records is outside indexed coverage.
+
+`npm run check:notifications` runs projection, historical relationship and local
+read-state tests. The PostgreSQL reader integration additionally accepts
+`POW_NOTIFICATION_TEST_PGLITE` pointing to an isolated installation of
+`@electric-sql/pglite`; without that path its SQL execution case is explicitly
+skipped. `tests/browser/notifications.spec.mjs` exercises the UI with synthetic
+read-only protocol fixtures, including production-bundle CSP, address isolation,
+pagination, compound evidence, keyboard access and draft-preserving navigation.
+These tests do not establish live-node history completeness or production
+latency.
+
+On 2026-10-23, a separately authorized temporary candidate process ran against
+the live node with read-only PostgreSQL, Core and Electrum access. It matched
+all 745 transactions for the audited address, including 27 absent from the
+protocol index, and checked exact input/output amounts and fees for all 745.
+A registration-scoped ID traversal retained ten historical transactions across
+owners: seven accepted and three invalid. Four further address histories
+contained all 22 selected action witnesses, including Jobs, Permission, Code,
+Publish, DNS Page, both bonds and incoming/outgoing Mail and credits. Historical
+ID/DNS decoder labels require exact canonical lifecycle qualification; the
+original decoder evidence remains inspectable.
+
+This was live-data correctness validation, not a production load test. It did
+not broadcast or fabricate missing examples: unobserved Boost marketplace and
+mutation actions, ID delisting, DNS update/transfer/purchase/delist and child
+records, remaining Jobs actions and Permission replacement/revocation remain
+fixture-tested. Browser-local actions and address-only records without explicit
+ID references retain the coverage boundaries above. These candidate receipts
+do not substitute for post-deployment production verification.
+
+The [notification release controller](deploy/notifications/README.md) installs
+only the two existing API/reader modules and ten new notification runtime
+helpers. It merges from the pre-notification released source, preserves accepted
+node overlays and complete dependency/source hashes, and retains rollback
+evidence under the normal operations lock and Search hold. It changes no
+database schema, protocol records, wallet authority, configuration or runtime
+Git identity. Release verification requires the public address/ID histories and
+Computer inbox, all 22 managed UI surfaces, and the mandatory synchronization
+gate against GitHub main, primary local main and its rebuilt preview.
+
 `address-mail`
 serves connected-wallet mailbox reads from the indexed mail projection,
 including confirmed Inbox/Sent and indexed pending Incoming/Outbox visibility.

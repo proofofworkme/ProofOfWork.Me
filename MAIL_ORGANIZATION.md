@@ -135,6 +135,57 @@ or broadcasts. Pages publication still uses Mail's existing exact review and
 must not overwrite an unsent Mail draft. No carrier, fee, registry rule, canonical
 record, or accounting contribution changes.
 
+## Computer notifications
+
+Computer's header bell opens address or ID activity across its workspaces. The
+inbox uses `GET /api/v1/notifications` with complete verified address and
+protocol history.
+Mail and Files, Boost and Publish, IDs and DNS, marketplace and credit actions,
+Infinity/Inception bonds, Jobs, Permission, Code and Pages share this inbox.
+Workspace views such as Wallet, Log, Growth and Search do not create duplicate
+actions. One transaction is one notification; compound transactions retain
+every protocol action, exact amount, qualification and record link. Address
+history also includes ordinary payments and carrierless self-transfers, such as
+balance preparation. A transaction's shape alone does not establish which app
+created it or prove the purpose of a self-transfer.
+
+The connected address is the default. Public lookup accepts a valid address or
+a confirmed ProofOfWork ID. ID history follows explicit wire references and the
+verified registration lifecycle across ownership changes. Its identity is the
+registration transaction, not today's owner or receiver. Current owner and
+receiver address views remain separate alternatives. Address-only payments and
+messages do not record which ID was selected; they cannot establish ID intent,
+and former owners' unrelated wallet history is excluded. Incoming, outgoing, self and
+related actions remain distinguishable. Typed references can establish related
+activity; free-text mentions do not establish a protocol recipient.
+
+Pending visibility is best effort. Confirmed, not-applied, invalid, dropped,
+orphaned and unavailable records keep their own labels and evidence. A failure
+retains the last verified rows with an error; it never becomes an empty inbox.
+Older activity is paginated under a pinned snapshot. Snapshot changes require
+refreshing from the beginning. Filters apply to loaded activity, and the badge
+uses `+` when older unread activity may remain unloaded.
+
+Read/unread preferences are browser-local under
+`pow:notifications:v1:<network>:<encoded-address>`, separate from Mail read
+state and existing local backup formats. Mark all read applies through the
+server's transaction first-seen and event-id boundaries, including older unloaded rows. Raw
+transactions without an immutable indexed observation are marked by an explicit
+complete snapshot of transaction IDs, never an invented event-id boundary. ID
+read state uses a separate registration-scoped key. New
+transactions remain unread and pending-to-confirmed updates retain their read
+state. Concurrent tabs merge explicit read/unread choices. Invalid saved state
+is preserved and reported rather than silently overwritten.
+
+Opening a record stays inside Computer, preserves existing drafts and navigation
+guards, and uses the exact referenced transaction/version. Unsupported record
+views open exact transaction Search with all statuses. A transaction without a
+protocol record keeps exact inputs, outputs and fees inspectable in the inbox;
+its explicit explorer link avoids pretending an unindexed Search result exists.
+Notification reading and navigation never request signatures or broadcast. Browser views, local edits,
+drafts, navigation, imports/exports and other actions without chain records are
+local activity, not fabricated on-chain notifications.
+
 ## Computer navigation on short screens
 
 At viewport heights of 480px or less, Computer uses document scrolling instead

@@ -1886,16 +1886,19 @@ expect(
 );
 expect(
   "API pending WORK verifier stages bind the direct V8 transition closing token state",
-  /import \{[\s\S]*?WORK_AMO_V8_BLOCK_SEQUENCER_MODEL[\s\S]*?\} from "\.\/work-amo-v8\.mjs";/u.test(
-    server,
-  ) &&
-    /async function pendingWorkVerifierStageConfirmedTransitionCommitment[\s\S]*?proofIndexWorkAmoBlockTransition\([\s\S]*?workAmoV8CanonicalTokenStateCommitment\(\s*transition\?\.payload\?\.closingTokenState,?\s*\)[\s\S]*?transition\.workTokenStateModel !==[\s\S]*?WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL/u.test(
-    server,
-  ) &&
-    /const \[\s*initialTokenPayload,\s*initialTransitionCommitment,\s*transactions,\s*\] = await Promise\.all\([\s\S]*?pendingWorkVerifierStageConfirmedTransitionCommitment\([\s\S]*?const initialBase = pendingWorkVerifierStageConfirmedBase\([\s\S]*?initialTransitionCommitment/u.test(
+  /async function pendingWorkVerifierStageConfirmedBaseResponsive\(\.\.\.args\)[\s\S]*?return pendingBaseValidationLane\.run\(\.\.\.args\);/u.test(server) &&
+    /workerData: \{ kind: "pending-work-confirmed-base-v1" \}/u.test(server) &&
+    /workerData\?\.kind === "pending-work-confirmed-base-v1"\) \{\s*startPendingBaseValidationWorker\(parentPort, pendingWorkVerifierStageConfirmedBase\);/u.test(server) &&
+    /import \{[\s\S]*?WORK_AMO_V8_BLOCK_SEQUENCER_MODEL[\s\S]*?\} from "\.\/work-amo-v8\.mjs";/u.test(
       server,
     ) &&
-    /const \[\s*finalTokenPayload,\s*finalTransitionCommitment,\s*\] = await Promise\.all\([\s\S]*?pendingWorkVerifierStageConfirmedTransitionCommitment\([\s\S]*?const finalBase = pendingWorkVerifierStageConfirmedBase\([\s\S]*?finalTransitionCommitment/u.test(
+    /async function pendingWorkVerifierStageConfirmedTransitionCommitment[\s\S]*?proofIndexWorkAmoBlockTransition\([\s\S]*?workAmoV8CanonicalTokenStateCommitment\(\s*transition\?\.payload\?\.closingTokenState,?\s*\)[\s\S]*?transition\.workTokenStateModel !==[\s\S]*?WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL/u.test(
+      server,
+    ) &&
+    /const \[\s*initialTokenPayload,\s*initialTransitionCommitment,\s*transactions,\s*\] = await Promise\.all\([\s\S]*?pendingWorkVerifierStageConfirmedTransitionCommitment\([\s\S]*?const initialBase = await pendingWorkVerifierStageConfirmedBaseResponsive\([\s\S]*?initialTransitionCommitment/u.test(
+      server,
+    ) &&
+    /const \[\s*finalTokenPayload,\s*finalTransitionCommitment,\s*\] = await Promise\.all\([\s\S]*?pendingWorkVerifierStageConfirmedTransitionCommitment\([\s\S]*?const finalBase = await pendingWorkVerifierStageConfirmedBaseResponsive\([\s\S]*?finalTransitionCommitment/u.test(
       server,
     ),
 );

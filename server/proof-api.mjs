@@ -81,6 +81,15 @@ import {
 import { verifiedBoostTicketClosures } from "./boost-marketplace-proof.mjs";
 import { readCoreOutpointBatches } from "./core-outpoint-batches.mjs";
 import { readCompleteEventHistoryPages } from "./event-history-pages.mjs";
+import { notificationPayload, notificationPermissionCandidate } from "./notifications.mjs";
+import { notificationAddressKey } from "./notification-query.mjs";
+import { notificationDnsHistoryRelations, notificationIdHistoryRelations } from "./notification-dns-history.mjs";
+import { notificationProjectionCache } from "./notification-cache.mjs";
+import { createAddressNotificationReader } from "./notification-address-history.mjs";
+import { indexedNotificationTransactions } from "./notification-address-reader.mjs";
+import { notificationIdScopeFromRegistry, notificationIdLifecycleTxids } from "./notification-id-scope.mjs";
+import { qualifyNotificationIds } from "./notification-id-authority.mjs";
+import { qualifyNotificationDns } from "./notification-dns-authority.mjs";
 import { createBoostGrowthObservationLoader, withBoostGrowthObservation } from "./boost-growth.mjs";
 import {
   assertBoostValuationCheckpoint,
@@ -35434,7 +35443,7 @@ const discoverPermissions = createPermissionDiscovery({
   },
 });
 
-async function verifiedPermissionPayload(network, params, detail) {
+async function verifiedPermissionPayload(network, params, detail, options = {}) {
   const checkpoint = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
   if (network !== "livenet" || !checkpoint) throw permissionReadError("Permission requires an exact livenet Core tip.");
   const requested = permissionSnapshotRequest(params, network).snapshot;
@@ -35448,7 +35457,9 @@ async function verifiedPermissionPayload(network, params, detail) {
     feeRateAdmissionVerified: discovery.coverage.feeRateAdmissionVerified === true });
   state.discoveryWitnessSha256 = discovery.coverage.witnessSha256 ?? discovery.coverage.witnessHash ?? null;
   state.pendingWarnings = discovery.pendingWarnings ?? [];
-  const payload = detail ? permissionPayload(state, params) : permissionsPayload(state, params);
+  const payload = options.events === true
+    ? { events: state.events, pendingEvents: state.pendingEvents, snapshot: state.snapshot, complete: true }
+    : detail ? permissionPayload(state, params) : permissionsPayload(state, params);
   const finalTip = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
   if (finalTip?.height !== checkpoint.height || finalTip.blockHash !== checkpoint.blockHash) {
     throw permissionReadError("The Core tip changed during Permission verification.");
@@ -35748,7 +35759,7 @@ async function dnsRegistryPayload(network) {
   }, state, checkpoint, network);
 }
 
-async function logPayloadWithDnsSubdomainAuthority(payload, network) {
+async function logPayloadWithDnsSubdomainAuthority(payload, network, options = {}) {
   if (jobsLogPayloadHasCandidates(payload)) {
     const params = new URLSearchParams();
     const checkpointHeight = Number(payload.indexedThroughBlock);
@@ -35791,13 +35802,209 @@ async function logPayloadWithDnsSubdomainAuthority(payload, network) {
   const childPages = dnsSubdomainPageLinkLogPayloadHasLinks(payload);
   if (!children && !pages && !childPages) return payload;
   try {
-    const dns = await dnsRegistryPayload(network);
+    const dns = options.dns ?? await dnsRegistryPayload(network);
+    if (options.notifications === true) return qualifyNotificationDns(payload, dns);
     const qualified = children ? qualifyDnsSubdomainLogPayload(payload, dns) : payload;
     const rootQualified = pages ? qualifyDnsPageLinkLogPayload(qualified, dns) : qualified;
     return childPages ? qualifyDnsSubdomainPageLinkLogPayload(rootQualified, dns) : rootQualified;
   } catch (error) {
     throw freshDataUnavailableError(`DNS ${pages ? "page-link" : "subdomain"} Log authority unavailable: ${errorSummary(error)}`);
   }
+}
+
+function notificationBoostQualification(candidates, registryItems, closures, network) {
+  // Owner-independent registry fees are checked before a transfer can affect
+  // any social payment. Rejected attempts get an observation-only marker: it
+  // records the target owner at that position without creating an asset.
+  const mutationKinds = new Set(["boost-hide", "boost-transfer", "boost-list", "boost-seal", "boost-delist", "boost-buy"]);
+  let accepted = qualifyBoostPaidActions(candidates, registryItems).accepted;
+  const feeAdmittedMutations = new Set(accepted.filter(item => mutationKinds.has(item.kind)).map(item => String(item.eventId)));
+  const signatures = new Set();
+  for (let pass = 0; pass < 16; pass += 1) {
+    const acceptedIds = new Set(accepted.map(item => String(item.eventId)));
+    const signature = JSON.stringify([...acceptedIds].sort());
+    if (signatures.has(signature)) throw freshDataUnavailableError("Boost notification admission did not settle.");
+    signatures.add(signature);
+    const timeline = candidates.flatMap(item => {
+      if (acceptedIds.has(String(item.eventId)) || feeAdmittedMutations.has(String(item.eventId))) return [item];
+      const targetTxid = item.kind === "boost-post" ? boostQuoteTxid(item)
+        : ["boost-like", "boost-tip", "boost-reply", "boost-reboost"].includes(item.kind) ? boostTargetTxid(item) : "";
+      return targetTxid ? [{ txid: item.txid, eventId: item.eventId, kind: "boost-like", valid: true,
+        confirmed: item.confirmed, blockHeight: item.blockHeight, blockIndex: item.blockIndex,
+        protocolVout: item.protocolVout, recordOrdinal: item.recordOrdinal, createdAt: item.createdAt, targetTxid }] : [];
+    });
+    const ownership = boostOwnershipState(timeline, closures, network);
+    const result = qualifyBoostPaidActions(candidates, registryItems, ownership.actionOwners);
+    result.accepted = result.accepted.filter(item => {
+      if (item.confirmed !== true || !mutationKinds.has(item.kind) || ownership.appliedMutationIds.has(String(item.eventId))) return true;
+      result.rejected.push({ eventId: item.eventId, txid: item.txid, applied: false, reason: "boost-asset-mutation-not-applied" });
+      return false;
+    });
+    const next = JSON.stringify(result.accepted.map(item => String(item.eventId)).sort());
+    if (next === signature) return { ownership, result };
+    accepted = result.accepted;
+  }
+  throw freshDataUnavailableError("Boost notification dependencies exceed the bounded admission replay.");
+}
+
+async function notificationBoostProjection(network, checkpoint) {
+  const boostHistory = await readCompleteBoostHistory(network, proofIndexEventHistoryPayload, { snapshotId: checkpoint.snapshotId, includePending: true });
+  if (boostHistory.indexedThroughBlock !== checkpoint.indexedThroughBlock || boostHistory.indexedThroughBlockHash !== checkpoint.indexedThroughBlockHash) {
+    throw Object.assign(new Error("Boost notification checkpoint changed. Refresh to continue."), { statusCode: 409 });
+  }
+  const candidates = boostHistory.items.filter(item => item.valid !== false && (item.confirmed === true ||
+    (item.confirmed === false && !["orphaned", "dropped"].includes(item.confirmationStatus ?? item.status))));
+  const registry = boostNeedsRegistryHistory(candidates)
+    ? await readBoostRegistryHistory(network, proofIndexEventHistoryPayload, boostHistory) : null;
+  const closures = await verifiedBoostTicketClosures(candidates, item => boostCanonicalMarketTransaction(network, item));
+  const { ownership, result } = notificationBoostQualification(candidates, registry?.items ?? [], closures, network);
+  const authority = new Map([
+    ...result.accepted.map(item => [String(item.eventId), { ready: true, valid: true,
+      ...(ownership.appliedMutationIds.has(String(item.eventId)) ? { applied: true } : {}),
+      historicalTargetOwner: ownership.actionOwners.get(String(item.eventId)), model: "boost-historical-payment-projection-v1" }]),
+    ...result.rejected.map(item => [String(item.eventId), { ready: true, valid: false, applied: false, reason: item.reason,
+      historicalTargetOwner: ownership.actionOwners.get(String(item.eventId)), model: "boost-historical-payment-projection-v1" }]),
+  ]);
+  return { authority, related: candidates.map(item => ({ txid: item.txid, owner: ownership.actionOwners.get(String(item.eventId)) })).filter(item => item.owner) };
+}
+
+const readNotificationAuthority = notificationProjectionCache();
+
+async function notificationAuthorityProjection(network, checkpoint, { idOnly = false } = {}) {
+  const key = JSON.stringify([network, checkpoint.snapshotId, checkpoint.indexedThroughBlock,
+    checkpoint.indexedThroughBlockHash, checkpoint.sourceFingerprint, idOnly]);
+  return readNotificationAuthority(key, async () => {
+    const [boost, dns, ids] = await Promise.all([
+      notificationBoostProjection(network, checkpoint),
+      network === "livenet" && !idOnly ? strictPublicDnsRegistryPayload(network) : null,
+      strictPublicRegistryPayload(network),
+    ]);
+    if (!ids || !Array.isArray(ids.activity)) {
+      throw freshDataUnavailableError("Notifications require complete accepted ID history at their checkpoint.");
+    }
+    if (ids.indexedThroughBlock !== checkpoint.indexedThroughBlock || ids.indexedThroughBlockHash !== checkpoint.indexedThroughBlockHash) {
+      throw Object.assign(new Error("ID notification checkpoint changed. Refresh to continue."), { statusCode: 409 });
+    }
+    if (dns && (dns.indexedThroughBlock !== checkpoint.indexedThroughBlock || dns.checkpointHash !== checkpoint.indexedThroughBlockHash)) {
+      throw Object.assign(new Error("DNS notification checkpoint changed. Refresh to continue."), { statusCode: 409 });
+    }
+    if (network === "livenet" && !idOnly && (!dns || dns.coverage?.complete !== true ||
+        (checkpoint.indexedThroughBlock >= DNS_SUBDOMAIN_ACTIVATION_HEIGHT && dns.subdomainCoverage?.complete !== true) ||
+        (checkpoint.indexedThroughBlock >= DNS_PAGE_LINK_ACTIVATION_HEIGHT && dns.pageLinkCoverage?.complete !== true) ||
+        (checkpoint.indexedThroughBlock >= DNS_SUBDOMAIN_PAGE_LINK_ACTIVATION_HEIGHT && dns.subdomainPageLinkCoverage?.complete !== true))) {
+      throw freshDataUnavailableError("Notifications require complete DNS lifecycle coverage at their checkpoint.");
+    }
+    return { boost, dns, ids };
+  });
+}
+
+async function computerProtocolNotificationsPayload(network, params, options = {}) {
+  const idScope = options.idScope ?? null;
+  const requestedAddress = String(params.get("address") ?? "").trim();
+  if (!idScope && (!requestedAddress || !isValidBitcoinAddress(requestedAddress, network))) {
+    throw Object.assign(new Error("Notifications require a valid address on the selected network."), { statusCode: 400 });
+  }
+  const address = idScope ? null : notificationAddressKey(requestedAddress);
+  const rawLimit = params.get("limit") ?? "50";
+  if (!/^[1-9]\d{0,2}$/u.test(rawLimit) || Number(rawLimit) > (options.internal === true ? 500 : 100)) {
+    throw Object.assign(new Error("Notification limit must be from 1 to 100."), { statusCode: 400 });
+  }
+  if (!proofIndexReadFeatureEnabled("event-history,events")) {
+    throw freshDataUnavailableError("Indexed notifications are unavailable.");
+  }
+  const search = new URLSearchParams({ limit: rawLimit, status: "all" });
+  if (params.get("cursor")) search.set("cursor", params.get("cursor"));
+  let authorityProjection = null, historicalParticipants = [];
+  const history = await proofIndexEventHistoryPayload(network, search, {
+    ...(idScope ? { notificationIdScope: idScope } : { notificationAddress: address }),
+    relatedTransactionIds: async checkpoint => {
+      authorityProjection = await notificationAuthorityProjection(network, checkpoint, { idOnly: Boolean(idScope) });
+      const { boost, dns, ids } = authorityProjection;
+      if (idScope) {
+        const verifiedScope = notificationIdScopeFromRegistry(ids, idScope.id);
+        if (verifiedScope.registrationTxid !== idScope.registrationTxid) throw freshDataUnavailableError("ID registration identity changed during notification verification.");
+        return { txids: notificationIdLifecycleTxids(ids, idScope), references: [] };
+      }
+      const dnsRelations = dns ? notificationDnsHistoryRelations(dns, address) : { txids: [], references: [], participants: [] };
+      const idRelations = notificationIdHistoryRelations(ids.activity, address);
+      historicalParticipants = [...dnsRelations.participants, ...idRelations.participants];
+      return { txids: [...dnsRelations.txids, ...idRelations.txids,
+        ...boost.related.filter(item => notificationAddressKey(item.owner) === address).map(item => item.txid)], references: dnsRelations.references };
+    },
+  });
+  if (!history) throw freshDataUnavailableError("Indexed notifications are unavailable.");
+  const checkpoint = await bitcoinRpc("getblockhash", [history.indexedThroughBlock]);
+  if (!checkpoint?.ok || checkpoint.result !== history.indexedThroughBlockHash) {
+    throw freshDataUnavailableError("Notification checkpoint is no longer canonical.");
+  }
+  let qualified = await logPayloadWithDnsSubdomainAuthority({ ...history,
+    items: history.notificationGroups.flatMap(group => group.events) }, network, { dns: authorityProjection?.dns, notifications: true });
+  if (qualified.items.some(notificationPermissionCandidate)) {
+    let authority = null;
+    try {
+      authority = await verifiedPermissionPayload(network, new URLSearchParams(), false, { events: true });
+      if (authority.snapshot.checkpointHeight !== history.indexedThroughBlock ||
+          authority.snapshot.checkpointHash !== history.indexedThroughBlockHash) authority = null;
+    } catch { /* Preserve inspectable records without inventing Permission authority. */ }
+    const byTxid = new Map([...(authority?.events ?? []), ...(authority?.pendingEvents ?? [])].map(event => [event.txid, event]));
+    qualified.items = qualified.items.map(item => {
+      if (!notificationPermissionCandidate(item)) return item;
+      const event = byTxid.get(item.txid);
+      return { ...item, permission: event && item.confirmed === true
+        ? { ready: true, valid: event.valid, applied: event.applied, action: event.action,
+          rootTxid: event.rootTxid, walletAddress: event.walletAddress,
+          validationErrors: event.validationErrors, model: "canonical-permission-lifecycle-replay-v1",
+          checkpointHeight: history.indexedThroughBlock, checkpointHash: history.indexedThroughBlockHash }
+        : { ready: false, reason: item.confirmed === true ? "permission-discovery-unavailable" : "pending-best-effort" } };
+    });
+  }
+  qualified.items = qualifyNotificationIds(qualified.items, authorityProjection?.ids, history);
+  qualified.items = qualified.items.map(item => ({ ...item,
+    notificationParticipants: [...(item.notificationParticipants ?? []), ...historicalParticipants.filter(person =>
+      person.txid === item.txid && person.protocolVout === item.protocolVout && person.recordOrdinal === item.recordOrdinal)],
+    ...(item.protocol === "pwb1" ? { boostAuthority: authorityProjection?.boost.authority.get(String(item.eventId)) ??
+      { ready: false, reason: item.confirmed === true ? "boost-history-unavailable" : "pending-best-effort" } } : {}),
+  }));
+  const byEventId = new Map(qualified.items.map(item => [String(item.eventId), item]));
+  const groups = history.notificationGroups.map(group => ({ ...group,
+    events: group.events.map(item => byEventId.get(String(item.eventId)) ?? item) }));
+  const finalCheckpoint = await bitcoinRpc("getblockhash", [history.indexedThroughBlock]);
+  if (!finalCheckpoint?.ok || finalCheckpoint.result !== history.indexedThroughBlockHash) {
+    throw freshDataUnavailableError("Notification checkpoint changed during verification.");
+  }
+  return notificationPayload({ ...history, notificationGroups: groups }, address);
+}
+
+const readCompleteAddressNotifications = createAddressNotificationReader({
+  readProtocolPage: (network, address, cursor) => computerProtocolNotificationsPayload(network,
+    new URLSearchParams({ address, limit: "500", ...(cursor ? { cursor } : {}) }), { internal: true }),
+  readAddressHistory: fetchExactAddressHistoryFromElectrum,
+  verifyCheckpoint: async checkpoint => {
+    const result = await bitcoinRpc("getblockhash", [checkpoint.height]);
+    if (!result?.ok || result.result !== checkpoint.blockHash) throw freshDataUnavailableError("Address notification checkpoint is no longer canonical.");
+    await registryAuditElectrumCheckpoint(checkpoint);
+  },
+  hydrateTransaction: (txid, network) => hydrateCanonicalAddressHistoryTransaction({ txid }, network, { bypassCache: true }),
+  canonicalHash: async height => { const result = await bitcoinRpc("getblockhash", [height]); return result?.ok ? result.result : null; },
+  indexedTransactions: async (network, txids) => {
+    const rows = await indexedNotificationTransactions(network, txids);
+    return new Map([...rows].map(([txid, row]) => [txid, { ...row,
+      raw_tx: canonicalCoreUndoTransaction(row.raw_tx, { hash: row.block_hash, height: row.block_height,
+        time: Math.floor(new Date(row.block_time).getTime() / 1000) }) }]));
+  },
+});
+
+async function computerNotificationsPayload(network, params) {
+  if (params.has("id")) {
+    if (params.has("address")) throw Object.assign(new Error("Choose one notification address or ID."), { statusCode: 400 });
+    const scope = notificationIdScopeFromRegistry(await strictPublicRegistryPayload(network), params.get("id"));
+    return computerProtocolNotificationsPayload(network, params, { idScope: scope });
+  }
+  const address = String(params.get("address") ?? "").trim();
+  if (!address || !isValidBitcoinAddress(address, network)) throw Object.assign(new Error("Notifications require a valid address on the selected network."), { statusCode: 400 });
+  const result = await readCompleteAddressNotifications(network, notificationAddressKey(address), params);
+  if (Buffer.byteLength(JSON.stringify(result)) > 8 * 1024 * 1024) throw freshDataUnavailableError("Notification page exceeds the response budget; request a smaller limit.");
+  return result;
 }
 
 async function strictPublicDnsRegistryPayload(network, options = {}) {
@@ -54756,6 +54963,7 @@ function boostPriceSats(item) {
 function boostOwnershipState(items, verifiedClosures = new Set(), network = "livenet") {
   const states = new Map();
   const actionOwners = new Map();
+  const appliedMutationIds = new Set();
   const listingAssets = new Map();
   const counts = new Map();
   const followStates = new Map();
@@ -54823,8 +55031,8 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
       continue;
     }
 
-    if (["boost-tip", "boost-like", "boost-reply", "boost-reboost"].includes(kind)) {
-      const targetState = ensureState(boostTargetTxid(item));
+    if (["boost-tip", "boost-like", "boost-reply", "boost-reboost"].includes(kind) || (kind === "boost-post" && boostQuoteTxid(item))) {
+      const targetState = ensureState(kind === "boost-post" ? boostQuoteTxid(item) : boostTargetTxid(item));
       const owner = boostAddress(targetState?.ownerAddress);
       if (owner) {
         actionOwners.set(String(item.eventId ?? item.txid), owner);
@@ -54948,7 +55156,10 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
 
     if (kind === "boost-hide") {
       const sender = boostAddress(item?.senderAddress ?? item?.authorAddress ?? item?.actor);
-      if (state.authorAddress && sender === state.authorAddress) state.hidden = true;
+      if (state.authorAddress && sender === state.authorAddress) {
+        state.hidden = true;
+        appliedMutationIds.add(String(item.eventId ?? item.txid));
+      }
       continue;
     }
 
@@ -54964,13 +55175,17 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
         if (kind === "boost-seal" && priceSats !== state.listing.priceSats) continue;
         state.listing = { listingTxid, priceSats, sellerAddress: seller };
         listingAssets.set(listingTxid, boostTxid);
+        appliedMutationIds.add(String(item.eventId ?? item.txid));
       }
       continue;
     }
 
     if (kind === "boost-delist") {
       const sender = boostAddress(item?.senderAddress ?? item?.authorAddress ?? item?.actor);
-      if (verifiedClosures.has(String(item.eventId)) && state.ownerAddress && sender === state.ownerAddress && state.listing?.listingTxid === referencedListing) state.listing = null;
+      if (verifiedClosures.has(String(item.eventId)) && state.ownerAddress && sender === state.ownerAddress && state.listing?.listingTxid === referencedListing) {
+        state.listing = null;
+        appliedMutationIds.add(String(item.eventId ?? item.txid));
+      }
       continue;
     }
 
@@ -54997,6 +55212,7 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
       if (!isValidBitcoinAddress(recipient, network)) continue;
       state.listing = null;
       state.ownerAddress = recipient;
+      appliedMutationIds.add(String(item.eventId ?? item.txid));
     }
   }
 
@@ -55006,8 +55222,8 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
   for (const item of items) {
     if (item?.confirmed !== false || item?.valid === false) continue;
     const kind = String(item?.kind ?? "").trim().toLowerCase();
-    if (!["boost-tip", "boost-like", "boost-reply", "boost-reboost"].includes(kind)) continue;
-    const owner = boostAddress(states.get(boostTargetTxid(item))?.ownerAddress);
+    if (!["boost-tip", "boost-like", "boost-reply", "boost-reboost"].includes(kind) && !(kind === "boost-post" && boostQuoteTxid(item))) continue;
+    const owner = boostAddress(states.get(kind === "boost-post" ? boostQuoteTxid(item) : boostTargetTxid(item))?.ownerAddress);
     if (owner) actionOwners.set(String(item.eventId ?? item.txid), owner);
   }
 
@@ -55030,6 +55246,7 @@ function boostOwnershipState(items, verifiedClosures = new Set(), network = "liv
   return {
     counts,
     actionOwners,
+    appliedMutationIds,
     followersByTarget,
     followingByFollower,
     followStates,
@@ -82001,6 +82218,11 @@ async function handleRequest(request, response) {
         }
       }
       errorResponse(response, 404, "Database event history is not available.");
+      return;
+    }
+
+    if (url.pathname === "/api/v1/notifications") {
+      jsonResponse(response, 200, await computerNotificationsPayload(network, url.searchParams), "no-store");
       return;
     }
 

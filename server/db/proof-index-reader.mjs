@@ -1,4 +1,7 @@
 import { canonicalSealTime } from "../canonical-seal-time.mjs";
+import { notificationDnsRelation } from "../notification-dns-relations.mjs";
+import { NOTIFICATION_QUERY_MODEL, notificationAddressKey, notificationAddressSql, notificationTransactionSql } from "../notification-query.mjs";
+import { normalizeNotificationIdScope, notificationIdMatches, notificationIdTransactionSql } from "../notification-id-scope.mjs";
 import {
   SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows,
   scopedIncbOracleLedgerPayload, storedScopedIncbOracle,
@@ -41446,29 +41449,147 @@ export async function proofIndexAddressMailPayload(network, address) {
   };
 }
 
-export async function proofIndexEventHistoryPayload(network, searchParams) {
-  const pool = proofIndexPool();
+async function notificationAdditiveDnsMatches(client, network, address, checkpointHeight) {
+  const candidates = await client.query(`
+    SELECT e.txid, e.payload, e.status, e.block_height, e.block_index, e.op_return_vout, e.record_ordinal
+    FROM proof_indexer.events e
+    JOIN proof_indexer.transactions t ON t.network=e.network AND t.txid=e.txid AND t.status=e.status
+    LEFT JOIN proof_indexer.blocks b ON b.network=t.network AND b.height=t.block_height
+      AND b.block_hash=t.block_hash AND b.canonical=true
+    WHERE e.network=$1 AND e.protocol='pwdns1'
+      AND (e.payload->>'payload' LIKE 'pwdns1:page1:%' OR e.payload->>'payload' LIKE 'pwdns1:subpage1:%'
+        OR e.payload->>'payload' LIKE 'pwdns1:sub1:%')
+      AND (e.status <> 'confirmed' OR (e.block_height=t.block_height AND e.block_height <= $2 AND b.block_hash IS NOT NULL))
+    ORDER BY e.block_height, e.block_index, e.op_return_vout, e.record_ordinal
+    LIMIT 10001`, [network, checkpointHeight]);
+  if (candidates.rows.length > 10000) throw Object.assign(new Error("Additive DNS notification discovery exceeds the bounded read budget."), { statusCode: 503 });
+  const relations = candidates.rows.map(row => notificationDnsRelation(row, isWorkAmoV5LivenetAddress));
+  const matches = new Set(relations.filter(row => row.resolver === address).map(row => row.txid));
+  const targets = [...new Set(relations.map(row => row.pageTxid).filter(Boolean))];
+  if (targets.length) {
+    const sources = await client.query(`
+      SELECT DISTINCT e.txid, e.block_height, e.block_index, e.op_return_vout, e.record_ordinal
+      FROM proof_indexer.events e
+      JOIN proof_indexer.event_participants p ON p.event_id=e.event_id AND p.role IN ('sender','author','actor','creator')
+      JOIN proof_indexer.transactions t ON t.network=e.network AND t.txid=e.txid AND t.status='confirmed' AND t.block_height=e.block_height
+      JOIN proof_indexer.blocks b ON b.network=t.network AND b.height=t.block_height AND b.block_hash=t.block_hash AND b.canonical=true
+      WHERE e.network=$1 AND e.txid=ANY($2::text[]) AND e.status='confirmed' AND e.valid=true
+        AND e.block_height <= $3 AND ${notificationAddressSql("p.address", "$4")}
+      LIMIT 10001`, [network, targets, checkpointHeight, address]);
+    if (sources.rows.length > 10000) throw Object.assign(new Error("DNS notification source evidence exceeds the bounded read budget."), { statusCode: 503 });
+    for (const relation of relations) {
+      if (sources.rows.some(source => source.txid === relation.pageTxid &&
+          (relation.status !== 'confirmed' || Number(source.block_height) < relation.blockHeight))) matches.add(relation.txid);
+    }
+  }
+  return [...matches].sort();
+}
+
+async function notificationTransactionGroups(client, network, txids) {
+  if (txids.length === 0) return [];
+  const result = await client.query(`
+    SELECT e.*, t.status AS transaction_status, t.status AS effective_status,
+      t.block_height AS transaction_block_height, t.block_index AS transaction_block_index,
+      t.block_hash, cb.block_hash AS canonical_block_hash,
+      t.first_seen_at AS transaction_first_seen_at,
+      (e.status = 'confirmed' AND e.block_height >= ${WORK_AMO_V5_ACTIVATION_HEIGHT}) AS canonical_position_required,
+      t.fee_sats AS transaction_fee_sats,
+      CASE WHEN e.kind = 'token-event-invalid' THEN t.raw_tx ELSE NULL END AS transaction_raw_tx,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('address', p.address, 'role', p.role, 'powid', p.powid)
+        ORDER BY p.role, p.address) FROM proof_indexer.event_participants p WHERE p.event_id = e.event_id), '[]'::jsonb) AS notification_participants,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('refType', r.ref_type, 'refValue', r.ref_value)
+        ORDER BY r.ref_type, r.ref_value) FROM proof_indexer.event_refs r WHERE r.event_id = e.event_id), '[]'::jsonb) AS notification_refs
+    FROM proof_indexer.events e
+    JOIN proof_indexer.transactions t ON t.network = e.network AND t.txid = e.txid AND t.status = e.status
+    LEFT JOIN proof_indexer.blocks cb ON cb.network = t.network AND cb.height = t.block_height
+      AND cb.block_hash = t.block_hash AND cb.canonical = true
+    WHERE e.network = $1 AND e.txid = ANY($2::text[])
+      AND (e.status <> 'confirmed' OR (e.block_height = t.block_height AND cb.block_hash IS NOT NULL))
+    ORDER BY e.txid, e.op_return_vout, e.record_ordinal, e.event_id
+    LIMIT 10001`, [network, txids]);
+  if (result.rows.length > 10000) throw Object.assign(new Error("Notification transaction evidence exceeds the bounded page budget."), { statusCode: 503 });
+  const groups = new Map(txids.map(txid => [txid, { txid, firstSeenAt: null, events: [] }]));
+  for (const row of result.rows) {
+    const item = normalizeHistoryEventItem(eventRowPayload(row, network), network);
+    if (!item) throw Object.assign(new Error("Notification evidence cannot be represented exactly."), { statusCode: 503 });
+    item.valid = row.valid === true;
+    item.notificationParticipants = row.notification_participants ?? [];
+    item.notificationRefs = row.notification_refs ?? [];
+    const group = groups.get(item.txid);
+    group.firstSeenAt = dateIso(row.transaction_first_seen_at);
+    group.events.push(item);
+  }
+  if ([...groups.values()].some(group => group.events.length === 0)) throw Object.assign(new Error("Notification transaction evidence is incomplete."), { statusCode: 503 });
+  return [...groups.values()];
+}
+
+async function notificationSourceFence(client, network) {
+  const result = await client.query(`SELECT
+    (SELECT count(*) FROM proof_indexer.events WHERE network=$1) AS event_count,
+    (SELECT count(*) FROM proof_indexer.transactions WHERE network=$1) AS transaction_count,
+    (SELECT max(event_id) FROM proof_indexer.events WHERE network=$1) AS max_event_id,
+    (SELECT max(updated_at)::text FROM proof_indexer.events WHERE network=$1) AS events_updated_at,
+    (SELECT max(updated_at)::text FROM proof_indexer.transactions WHERE network=$1) AS transactions_updated_at`, [network]);
+  return historyV2Sha256(result.rows[0] ?? {});
+}
+
+// Release the preflight connection before protocol readers run. Holding it
+// while their own readers acquire clients can deadlock even a multi-client pool.
+async function notificationReadBasis(pool, network, requestedSnapshotId, readSnapshot) {
+  const client = await pool.connect();
+  let open = false;
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"); open = true;
+    await client.query("SET LOCAL statement_timeout = '15000ms'");
+    const snapshot = await readSnapshot(client, network, requestedSnapshotId);
+    const snapshotId = normalizedSnapshotId(snapshot?.snapshot_id);
+    const indexedThroughBlock = rowNumber(snapshot ?? {}, "indexed_through_block");
+    const indexedThroughBlockHash = normalizedLowerText(snapshot?.payload?.indexedThroughBlockHash ?? snapshot?.payload?.summaryRefresh?.indexedThroughBlockHash);
+    if (!snapshotId || indexedThroughBlock < 1 || !/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash)) {
+      throw historyV2CursorConflict("Notification source snapshot is unavailable; restart from page one.");
+    }
+    const sourceFingerprint = await notificationSourceFence(client, network);
+    await client.query("COMMIT"); open = false;
+    return { snapshotId, indexedThroughBlock, indexedThroughBlockHash, sourceFingerprint };
+  } finally {
+    if (open) await client.query("ROLLBACK").catch(() => {});
+    client.release();
+  }
+}
+
+export async function proofIndexEventHistoryPayload(network, searchParams, options = {}) {
+  const pool = options.pool ?? proofIndexPool();
   if (!pool) {
     return null;
   }
 
   const request = eventHistoryV2Request(searchParams);
-  const filterFingerprint = eventHistoryFilterFingerprint(
-    network,
-    searchParams,
-    request,
-  );
+  const notificationAddress = notificationAddressKey(options.notificationAddress);
+  const notificationIdScope = options.notificationIdScope ? normalizeNotificationIdScope(options.notificationIdScope) : null;
+  if (notificationAddress && notificationIdScope) {
+    throw Object.assign(new Error("Choose one notification address or ID scope."), { statusCode: 400 });
+  }
+  const notificationMode = Boolean(notificationAddress || notificationIdScope);
+  let idMatches = [];
+  const baseFingerprint = eventHistoryFilterFingerprint(network, searchParams, request);
+  let filterFingerprint = notificationMode
+    ? historyV2Sha256({ baseFingerprint, notificationAddress, notificationIdScope, model: NOTIFICATION_QUERY_MODEL })
+    : baseFingerprint;
   const requestedSnapshotId =
     request.cursor?.snapshotId ??
     normalizedSnapshotId(
       searchParams?.get("snapshot") ?? searchParams?.get("snapshotId") ?? "",
     );
+  const basis = notificationMode && options.relatedTransactionIds
+    ? await notificationReadBasis(pool, network, requestedSnapshotId, options.readSnapshot ?? strictEventHistoryLedgerSnapshot) : null;
+  const relatedResult = basis ? await options.relatedTransactionIds(basis) : [];
   const client = await pool.connect();
   let transactionOpen = false;
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     transactionOpen = true;
-    const snapshot = await strictEventHistoryLedgerSnapshot(
+    if (notificationMode) await client.query("SET LOCAL statement_timeout = '15000ms'");
+    const snapshot = await (options.readSnapshot ?? strictEventHistoryLedgerSnapshot)(
       client,
       network,
       requestedSnapshotId,
@@ -41485,6 +41606,10 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
         snapshot?.payload?.summaryRefresh?.indexedThroughBlockHash,
     );
     const generatedAt = dateIso(snapshot.generated_at);
+    if (basis && (snapshotId !== basis.snapshotId || checkpointHeight !== basis.indexedThroughBlock ||
+        checkpointHash !== basis.indexedThroughBlockHash || await notificationSourceFence(client, network) !== basis.sourceFingerprint)) {
+      throw historyV2CursorConflict("Notification source evidence changed during verification; restart from page one.");
+    }
     if (
       !snapshotId ||
       checkpointHeight < 1 ||
@@ -41524,6 +41649,70 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
     );
     values.push(checkpointHeight);
     const checkpointParam = `$${values.length}`;
+    if (notificationAddress) {
+      const dnsSupplemental = await notificationAdditiveDnsMatches(client, network, notificationAddress, checkpointHeight);
+      const related = Array.isArray(relatedResult) ? relatedResult : relatedResult?.txids;
+      const references = Array.isArray(relatedResult) ? [] : relatedResult?.references ?? [];
+      if (!Array.isArray(related) || related.length > 100000 || related.some(txid => !/^[0-9a-f]{64}$/u.test(txid)) ||
+          !Array.isArray(references) || references.length > 10000 || references.some(ref => !/^[0-9a-f]{64}$/u.test(ref.txid) || !/^[0-9a-f]{64}$/u.test(ref.sourceTxid))) {
+        throw Object.assign(new Error("Notification related history is incomplete or exceeds its bounded read budget."), { statusCode: 503 });
+      }
+      const sourceMatches = references.length ? await client.query(`
+        SELECT DISTINCT e.txid, p.address FROM proof_indexer.events e
+        JOIN proof_indexer.event_participants p ON p.event_id=e.event_id AND p.role IN ('sender','author','actor','creator')
+        JOIN proof_indexer.transactions t ON t.network=e.network AND t.txid=e.txid AND t.status='confirmed' AND t.block_height=e.block_height
+        JOIN proof_indexer.blocks b ON b.network=t.network AND b.height=t.block_height AND b.block_hash=t.block_hash AND b.canonical=true
+        WHERE e.network=$1 AND e.txid=ANY($2::text[]) AND e.status='confirmed' AND e.valid=true
+          AND e.block_height <= $3`,
+        [network, [...new Set(references.map(ref => ref.sourceTxid))], checkpointHeight]) : { rows: [] };
+      const representedSources = new Set(sourceMatches.rows.map(row => row.txid));
+      if (references.some(ref => !representedSources.has(ref.sourceTxid))) {
+        throw Object.assign(new Error("Notification referenced Page authorship is not completely represented in this indexed snapshot."), { statusCode: 503 });
+      }
+      const sourceTxids = new Set(sourceMatches.rows.filter(row => notificationAddressKey(row.address) === notificationAddress).map(row => row.txid));
+      const supplemental = [...new Set([...dnsSupplemental, ...related,
+        ...references.filter(ref => sourceTxids.has(ref.sourceTxid)).map(ref => ref.txid)])].sort();
+      if (supplemental.length) {
+        const membership = await client.query(`
+          SELECT count(DISTINCT e.txid) AS count FROM proof_indexer.events e
+          JOIN proof_indexer.transactions t ON t.network=e.network AND t.txid=e.txid AND t.status=e.status
+          LEFT JOIN proof_indexer.blocks b ON b.network=t.network AND b.height=t.block_height
+            AND b.block_hash=t.block_hash AND b.canonical=true
+          WHERE e.network=$1 AND e.txid=ANY($2::text[])
+            AND (e.kind NOT LIKE 'token-%' OR e.protocol='pwt1')
+            AND (e.status <> 'confirmed' OR (e.block_height=t.block_height AND e.block_height <= $3 AND b.block_hash IS NOT NULL))`,
+          [network, supplemental, checkpointHeight]);
+        if (Number(membership.rows[0]?.count) !== supplemental.length) {
+          throw Object.assign(new Error("Notification related history is not completely represented in this indexed snapshot."), { statusCode: 503 });
+        }
+      }
+      filterFingerprint = historyV2Sha256({ filterFingerprint, supplemental, sourceFingerprint: basis?.sourceFingerprint ?? null });
+      values.push(notificationAddress, supplemental);
+      filters.push(notificationTransactionSql(`$${values.length - 1}`, checkpointParam, `$${values.length}`));
+    }
+    if (notificationIdScope) {
+      const candidates = await client.query(`
+        SELECT e.event_id,e.txid,e.protocol,e.kind,e.status,e.valid,e.raw_payload,e.payload,
+          e.block_height,e.block_index,e.op_return_vout,e.record_ordinal
+        FROM proof_indexer.events e
+        JOIN proof_indexer.transactions t ON t.network=e.network AND t.txid=e.txid AND t.status=e.status
+        LEFT JOIN proof_indexer.blocks b ON b.network=t.network AND b.height=t.block_height
+          AND b.block_hash=t.block_hash AND b.canonical=true
+        WHERE e.network=$1 AND e.protocol IN ('pwid1','pwb1')
+          AND (e.status <> 'confirmed' OR (e.block_height=t.block_height AND e.block_height <= $2 AND b.block_hash IS NOT NULL))
+        ORDER BY e.block_height,e.block_index,e.op_return_vout,e.record_ordinal,e.event_id LIMIT 100001`,
+        [network, checkpointHeight]);
+      const discovered = notificationIdMatches(candidates.rows, notificationIdScope);
+      idMatches = discovered.matches;
+      const related = Array.isArray(relatedResult) ? relatedResult : relatedResult?.txids ?? [];
+      const discoveredTxids = new Set(discovered.txids);
+      if (!Array.isArray(related) || related.length > 100000 || related.some(txid => !discoveredTxids.has(txid))) {
+        throw Object.assign(new Error("Accepted ID history is not completely represented by immutable indexed evidence."), { statusCode: 503 });
+      }
+      filterFingerprint = historyV2Sha256({ filterFingerprint, discovered, sourceFingerprint: basis?.sourceFingerprint ?? null });
+      values.push(discovered.txids);
+      filters.push(notificationIdTransactionSql(`$${values.length}`));
+    }
     const whereClause = [
       "e.network = $1",
       "(e.kind NOT LIKE 'token-%' OR e.protocol = 'pwt1')",
@@ -41546,11 +41735,12 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
       `
         SELECT
           count(*) AS total_count,
-          max(e.event_id) AS max_event_id,
+          ${notificationMode ? `(SELECT max(nf.event_id) FROM proof_indexer.events nf WHERE nf.network = $1)` : "max(e.event_id)"} AS max_event_id,
+          max(t.first_seen_at) AS notification_max_first_seen_at,
           to_char(
             max(
               GREATEST(
-                e.updated_at,
+                ${notificationMode ? `(SELECT max(nf.updated_at) FROM proof_indexer.events nf WHERE nf.network = $1)` : "e.updated_at"},
                 COALESCE(t.updated_at, e.updated_at)
               )
             ) AT TIME ZONE 'UTC',
@@ -41758,6 +41948,16 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
       error.statusCode = 503;
       throw error;
     }
+    const notificationGroups = notificationMode
+      ? await notificationTransactionGroups(client, network, items.map(item => item.txid))
+      : undefined;
+    if (notificationIdScope) {
+      const matchesByEvent = new Map(idMatches.map(match => [match.eventId, match]));
+      for (const group of notificationGroups) for (const item of group.events) {
+        const match = matchesByEvent.get(String(item.eventId));
+        if (match) item.notificationIdMatch = match;
+      }
+    }
     const finalRow = pageRows.at(-1);
     const finalKey = finalRow
       ? {
@@ -41796,6 +41996,9 @@ export async function proofIndexEventHistoryPayload(network, searchParams) {
       indexedThroughBlock: checkpointHeight,
       indexedThroughBlockHash: checkpointHash,
       items,
+      ...(notificationIdScope ? { scope: notificationIdScope, scopeKey: `id:${notificationIdScope.registrationTxid}` } : {}),
+      ...(notificationGroups ? { notificationGroups,
+        notificationMaxFirstSeenAt: dateIso(fenceRow.notification_max_first_seen_at) } : {}),
       kind: "events",
       latestEventBlock: observedIndexedThroughBlock || undefined,
       limit: request.limit,

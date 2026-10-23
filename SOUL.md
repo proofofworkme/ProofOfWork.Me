@@ -385,6 +385,13 @@ Future agents must preserve these unless the user explicitly asks for a migratio
   partial progress namespace authority. Local UI and fixtures never establish
   real-chain authority. The Browser/DNS release must verify the hostname and all
   22 managed surfaces under the V5 contract documented in `PAGES.md`.
+- Computer notifications encompass complete address transactions and indexed actions
+  across every protocol workspace. Keep one notification per transaction with
+  each compound action inspectable, including carrierless transfers. ID history
+  follows explicit ID references and its registration across owners; do not
+  import former owners' unrelated activity or infer an ID from address-only
+  payments. Keep current owner/receiver views separate. Read/unread is local
+  preference; pending visibility and missing history must stay qualified. Local views and drafts are not chain events.
 - `boost.proofofwork.me` is the public Proof-ranked social feed over confirmed `pwb1:` records; original posts reuse Mail/Files, and paid actions and asset trades use the Boost protocol. The feed leads with people and posts; proof evidence and exact signal lanes remain inspectable through disclosures. Compact display quantities never become ranking, payment, or signing authority.
 - `publish.proofofwork.me` is text-only blogging over that same social record. Give writers a dedicated page, the remaining OP_RETURN script budget, private drafts, exact review and local signing. Mail Compose opens the shared writer while preserving its separate Mail draft; article self-sends appear in Inbox and Sent with verified full text. Boost and Publish share selected confirmed PowIDs, public profiles, likes, replies, reboosts and follows; preserve one transaction ID and count shared payments once. [PUBLISH.md](PUBLISH.md) specifies the article and identity bridge.
 - Public Publish articles are readable in their initial HTML, before JavaScript. The server reader consumes the existing confirmed evidence and rechecks exact body bytes; discovery metadata cannot create authority. Preserve original authorship, expose real article links, and return an unavailable response when proof cannot be verified instead of publishing a stale or invented document.

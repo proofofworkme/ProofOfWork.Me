@@ -91,6 +91,11 @@ Production app roles:
 - `dns.proofofwork.me` is the focused ProofOfWork DNS `.pow` claim/search app.
 - `domain.proofofwork.me` and `domains.proofofwork.me` redirect to `https://dns.proofofwork.me/`.
 - `computer.proofofwork.me` is the full ProofOfWork.Me mail/computer app.
+  Computer notifications add address transaction history and
+  explicit ID-linked history across owners, with separate current owner/receiver
+  views, compound transaction evidence, incoming/outgoing filters and local read
+  state, backed by the matching indexed notifications API.
+  See [Computer notifications](MAIL_ORGANIZATION.md#computer-notifications).
 - `desktop.proofofwork.me` is the standalone public read-only file search engine for addresses or confirmed ProofOfWork IDs.
 - `browser.proofofwork.me` is the standalone public HTML renderer for ProofOfWork message bodies or verified file attachments by txid.
 - `pages.proofofwork.me` is HTML page/app authoring with local drafts, isolated preview, and reviewed publication; the same workspace lives at Computer `/?folder=pages`. See [PAGES.md](PAGES.md).

@@ -1086,7 +1086,7 @@ export default function BoostRoot({
 }: BoostRootProps = {}) {
   const isPublish = surface === "publish";
   const surfaceName = isPublish ? "Publish" : "Boost";
-  const [articleRoute] = useState(() => isPublish && !isPublishWriterLocation() ? initialSearchParam("article") : "");
+  const [articleRoute, setArticleRoute] = useState(() => isPublish && !isPublishWriterLocation() ? initialSearchParam("article") : "");
   const articleTxid = normalizeBoostTxid(articleRoute);
   const [verifiedArticleHeading, setVerifiedArticleHeading] = useState(false);
   const [publishWriterOpen, setPublishWriterOpen] = useState(() => isPublish && isPublishWriterLocation());
@@ -1158,6 +1158,7 @@ export default function BoostRoot({
   >();
   const [directPostOpen, setDirectPostOpen] = useState(false);
   const [expandedItem, setExpandedItem] = useState<BoostFeedItem | undefined>();
+  const [notificationDetail, setNotificationDetail] = useState(() => embedded && !isPublish ? normalizeBoostTxid(initialSearchParam("detail")) : "");
   const [postText, setPostText] = useState("");
   const [postSignalSats, setPostSignalSats] = useState(546);
   const [postWorkAmount, setPostWorkAmount] = useState("0");
@@ -1276,7 +1277,7 @@ export default function BoostRoot({
   currentTipScope.current = tipScope;
   const tipWorkSubatoms = workAtomsFromDecimal(tipWorkAmountText);
   const modalOpen = !preparedTip && Boolean(
-    directPostOpen || expandedItem || pendingPaidAction || replyTarget,
+    directPostOpen || expandedItem || notificationDetail || pendingPaidAction || replyTarget,
   );
   useEffect(() => {
     if (pendingPaidAction?.action !== "tip" || tipCurrency !== "WORK" || !address || network !== "livenet") {
@@ -2557,6 +2558,7 @@ export default function BoostRoot({
         return;
       }
       setPublishWriterOpen(nextWriting);
+      setArticleRoute(nextWriting ? "" : initialSearchParam("article"));
       setPublishWriterReturn(readPublishWriterReturn(window.history.state));
       setPublishRestoreDraft(undefined);
       setToolsOpen(false);
@@ -2572,6 +2574,13 @@ export default function BoostRoot({
       window.removeEventListener("proofofwork:before-publish-writer-leave", beforeWriterLeave);
     };
   }, [isPublish, embedded]);
+
+  useEffect(() => {
+    if (!embedded || isPublish) return;
+    const restoreNotificationDetail = () => setNotificationDetail(normalizeBoostTxid(initialSearchParam("detail")));
+    window.addEventListener("popstate", restoreNotificationDetail);
+    return () => window.removeEventListener("popstate", restoreNotificationDetail);
+  }, [embedded, isPublish]);
 
   useEffect(() => {
     if (!listQuery || listingTarget || items.length === 0) {
@@ -2742,6 +2751,7 @@ export default function BoostRoot({
         if (publishSigning.current) return;
         setDirectPostOpen(false);
         setExpandedItem(undefined);
+        closeNotificationDetail();
         setPendingPaidAction(undefined);
         setReplyTarget(undefined);
         setTransferTarget(undefined);
@@ -2977,8 +2987,18 @@ export default function BoostRoot({
     setImageEditorOpen(false);
     setDirectPostOpen(false);
     setExpandedItem(undefined);
+    closeNotificationDetail();
     setPendingPaidAction(undefined);
     setReplyTarget(undefined);
+  }
+
+  function closeNotificationDetail() {
+    setNotificationDetail("");
+    if (embedded && !isPublish && new URLSearchParams(window.location.search).has("detail")) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("detail");
+      window.history.replaceState(window.history.state, "", url);
+    }
   }
 
   function closePublishWriter() {
@@ -3807,6 +3827,7 @@ export default function BoostRoot({
               if (publishSigning.current) return;
               setDirectPostOpen(false);
               setExpandedItem(undefined);
+              closeNotificationDetail();
               setPendingPaidAction(undefined);
               setReplyTarget(undefined);
             }}
@@ -4100,7 +4121,7 @@ export default function BoostRoot({
                 </button>
               </div>
             </section>
-          ) : expandedItem ? (
+          ) : expandedItem || notificationDetail ? (
             <section
               aria-labelledby="boost-detail-dialog-title"
               aria-modal="true"
@@ -4115,21 +4136,22 @@ export default function BoostRoot({
                 <button
                   aria-label="Close Boost detail"
                   className="secondary small"
-                  onClick={() => setExpandedItem(undefined)}
+                  onClick={() => { setExpandedItem(undefined); closeNotificationDetail(); }}
                   type="button"
                 >
                   <span className="button-content"><ArrowLeft size={16} /><span>Back</span></span>
                 </button>
               </div>
-              <BoostActivity key={expandedItem.txid}
-                txid={expandedItem.txid}
+              <BoostActivity key={expandedItem?.txid ?? notificationDetail}
+                txid={expandedItem?.txid ?? notificationDetail}
                 network={network} viewer={address} renderPost={renderBoostPost} />
-              <button
+              {expandedItem ? <button
                 className="primary"
                 onClick={() => {
                   setReplyTarget(expandedItem);
                   setReplyText("");
                   setExpandedItem(undefined);
+                  closeNotificationDetail();
                 }}
                 type="button"
               >
@@ -4137,7 +4159,7 @@ export default function BoostRoot({
                   <MessageCircle size={16} />
                   <span>Post your reply</span>
                 </span>
-              </button>
+              </button> : null}
             </section>
           ) : null}
         </div>

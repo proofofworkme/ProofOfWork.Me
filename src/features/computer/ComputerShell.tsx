@@ -131,9 +131,10 @@ export type ComputerControlsProps = ComputerNavigationProps & {
   layout: ComputerLayout;
   onLayoutChange: (layout: ComputerLayout) => void;
   onOpenLocalData?: () => void;
+  notifications?: ReactNode;
 };
 
-export function ComputerControls({ layout, onLayoutChange, onOpenWorkspace, onOpenLocalData }: ComputerControlsProps) {
+export function ComputerControls({ layout, onLayoutChange, onOpenWorkspace, onOpenLocalData, notifications }: ComputerControlsProps) {
   const launcher = useComputerLauncher();
 
   useEffect(() => {
@@ -161,6 +162,7 @@ export function ComputerControls({ layout, onLayoutChange, onOpenWorkspace, onOp
       <button aria-label="Find an app" aria-haspopup="dialog" className="computer-launcher-button" onClick={launcher.show} type="button">
         <Search aria-hidden="true" size={18} /><span>Apps</span><kbd>⌘ / Ctrl K</kbd>
       </button>
+      {notifications}
       {onOpenLocalData ? <button aria-label="Local data" className="computer-local-data-button" onClick={onOpenLocalData} title="Local data" type="button"><PanelLeft aria-hidden="true" size={18} /><span>Local data</span></button> : null}
       <ComputerAppLauncher open={launcher.open} onClose={launcher.close} onOpenWorkspace={onOpenWorkspace} returnFocus={launcher.returnFocus.current} />
     </div>
