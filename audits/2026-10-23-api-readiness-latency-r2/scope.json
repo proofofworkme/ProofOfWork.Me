@@ -1,0 +1,93 @@
+{
+  "status": "prepared-awaiting-approval-not-deployed",
+  "releasedSourceCommit": "946946aa624e2a58da167cc384d1cc0424e5d29e",
+  "preservedLocalParentCommit": "5275a9a34a110f942a3670d239d92fe12358a045",
+  "cause": "Pending verifier confirmed-base canonicalization, commitment hashing and cloning synchronously block the shared event loop. Isolated accepted-source reproduction: 3067.075504 ms maximum lag; incident pending verification took 13907 ms overlapping the failed 2-second health probe.",
+  "fix": "Retain prior listing hash fix. Move only the two unchanged pure confirmed-base validations to one bounded CPU worker; one active plus one queued job, 20-second queue-inclusive deadline, 768 MiB worker heap limit. Errors, overload and unverified termination fail closed; no synchronous fallback. Database/RPC admission and initial/final epoch authority checks remain on main thread.",
+  "runtimeWrites": [
+    {
+      "path": "/opt/proofofwork-api/server/proof-api.mjs",
+      "beforeSha256": "3374a0f1324f8252b10d2d7d3d306c806169b9a3453869c3d72d4d95d9e58252",
+      "afterSha256": "31376369e94ca0ddfda51b249f3d4b3760a29f4f75feab25d4638daa8cffb75f",
+      "repositoryCandidateSha256": "decaa6af66fba5590616c460cb5f3758a26d141a67b85e0ae7b5f418e9552bc5",
+      "merge": "Clean three-way merge against released main, retaining accepted runtime overlays."
+    }
+  ],
+  "localChanges": [
+    "server/proof-api.mjs",
+    "scripts/check-pending-base-worker.test.mjs",
+    "OP_RETURN_INFRASTRUCTURE.md",
+    "audits/2026-10-23-api-readiness-latency-r2/"
+  ],
+  "priorCommit": "Preserve and integrate 5275a9a, including its listing fix, scoped controller, tests and historical evidence; do not replay its failed deployment or merge the seal recovery branch.",
+  "validation": {
+    "regressions": "43 JavaScript tests passed",
+    "isolatedLatency": {
+      "healthProbes": 24,
+      "allHTTP200": true,
+      "maxHealthMs": 907.932,
+      "maxEventLoopLagMs": 796.5868,
+      "stageOutcome": "Final epoch fence correctly rejected concurrent production-worker epoch change."
+    },
+    "parity": {
+      "exactFullStateAndCommitmentComparisons": 2,
+      "stageCompleted": true,
+      "responseBytes": 3075,
+      "note": "Reference validator intentionally runs synchronously in this separate parity harness; its health timeouts are not candidate latency measurements."
+    },
+    "controllerTests": "20 scoped-controller and 19 release tests passed; release suite requires python3 -I -B. Initial non-isolated invocation correctly refused.",
+    "unchangedValidators": {
+      "pendingWorkVerifierStageConfirmedBase": {
+        "byteIdentical": true,
+        "sha256": "2632cd17dbfa6a2020e38e8e697fcb90bf2d33670a22f66675e9da2283c040ed"
+      },
+      "loadHealthPayload": {
+        "byteIdentical": true,
+        "sha256": "5d5ed73348ba4b38d24c06c8ae1f1608dbfed5ca2d526cfebb26a95bb23675cd"
+      }
+    }
+  },
+  "preservation": {
+    "databaseOperations": [],
+    "imports": false,
+    "databaseCutover": false,
+    "healthChecks": "Unchanged predicates, cache, deadlines and first-failure abort.",
+    "runtime": "Preserve all 219 captured sources except the one authorized API path; no config, reader, backfill, Boost, Core, Electrs or PostgreSQL changes; no runtime Git reset.",
+    "recovery": "Preserve every database, failed target and committed private recovery write. Never repeat committed writes.",
+    "otherFixes": "Preserve charts, Android, Boost and all accepted runtime overlays."
+  },
+  "approvalScope": [
+    "Commit only the listed local changes on top of preserved 5275a9a after hygiene; fetch and reconcile concurrent main without resetting dirty work.",
+    "Fresh capture and pinned one-file scoped deployment; stop on source/dependency drift. Temporarily hold/restore Search, drain/restore gateway, restart API and its PartOf indexer worker. Retain exact rollback bytes.",
+    "Qualify with 60 seconds of fresh unchanged-deadline health probes covering ordinary pending-worker progress and overlapping listing reads; require renewed worker readiness/summary and exact hashes. Abort on first failure.",
+    "On failure restore captured API through a fresh hash-fenced inverse manifest; reconcile unknown outcomes before retry.",
+    "Only after live qualification, synchronize the same committed release across GitHub main, primary main, local preview and existing production product roots; require npm run check:release-sync before announcement."
+  ],
+  "exclusions": [
+    "No import or database creation/cutover",
+    "No seal replay or repeated committed writes",
+    "No new product/UI behavior",
+    "No weakened health gates"
+  ],
+  "evidence": {
+    "pending-profile3.json": "17756a2334d2b924f29b53324ad80339790dd5eccbe7c7a09e71ef85339a4875",
+    "release-tests.log": "8619a1504a1ef005609dc477476bfe57c964d48239e1ce026b8fa890bb0dd817",
+    "incident-phases.json": "e0984e27a29765a1b851e912518c861cff92a70c0ead0fee169e3df98c8be5fa",
+    "tests.log": "46c9ac525484d2186e36c84e4baa9c83b7a901ae08d294984282c1d4486e4963",
+    "pending-health-final.json": "3794aef5071ed1a8d13365e0669a6f1076f91a781671e0970cbbb7f777fe859c",
+    "hygiene-check.log": "c501942de5d3c65c2445bb7178083e0794cc7491a71a7ba3a354acef2a10a8bb",
+    "hygiene-fix.log": "3625b06a86ce72bd70cd42b6f328f5327f46a45eb22028f2707d2836ed98d14f",
+    "final-preservation.json": "982694567a121a89db272c437db105a4780d92ff9e66ed262b770eca1cdc4ede",
+    "controller-tests.log": "8ab861d011f684def609597f873d869d8e4b594af4b5154d7bc7f4fc393c5f58",
+    "pending-base-worker.patch": "31e397314f7248d2498bfe5047d3cf7adb8e85ace628433465b98d0415503535",
+    "release-tests-isolated.log": "980bcee8ffb94a188ff99ea0df63a4bea3570c13a44c9f3036ced8642823477b",
+    "pending-parity.json": "b1dcd6dc89d2be0cd21ed5d8134cd050718c1362b5989ac692d1f398fbb2686d",
+    "unchanged-validators.json": "e68c4445298423b4bfcbda44d01d35331573d5555dfb4c01ef41c0f7f69d61ca"
+  },
+  "hygiene": "fix/check passed; only empty allowlisted node_modules/.vite-temp removed. SOUL and canonical docs reviewed; infrastructure doc updated, protocol/product behavior unchanged. Historical receipts and all committed work preserved. No existing tracked deletions.",
+  "sourceHashes": {
+    "server/proof-api.mjs": "decaa6af66fba5590616c460cb5f3758a26d141a67b85e0ae7b5f418e9552bc5",
+    "scripts/check-pending-base-worker.test.mjs": "dfc60bb30c873be4aad5d7bd4a2d610007b30b22556cc9f7dbb4a0e634be5fc5",
+    "OP_RETURN_INFRASTRUCTURE.md": "0a29a33cc3c37cd557b3701a7e73fa10832fb787ed5cd045bfe909b23c388384"
+  }
+}

@@ -8257,3 +8257,26 @@ approved installation, fresh live health, ordinary listing/display/cursor reads,
 worker readiness and `npm run check:release-sync` must pass before release is
 announced. The seal recovery targets and private committed recovery remain
 preserved and stopped; this API-only scope does not authorize another import.
+
+### Pending verifier readiness-latency revision (2026-10-23; awaiting approval)
+
+The listing-only API deployment was rolled back after a fresh two-second health
+probe failed. The released source remains `946946aa624e`; the local listing fix
+commit `5275a9a` and all deployment/rollback receipts remain preserved. A separate
+read-only reproduction identified synchronous pending confirmed-base validation
+blocking the API event loop for 3.07 seconds.
+
+The revised candidate retains the listing fix and moves only the two pure
+confirmed-base validations to a bounded worker thread. It preserves the original
+validator, database/RPC admission and initial/final authority fences. One active
+job and one queued job share a 20-second queue-inclusive deadline; worker failure
+or overload fails closed, without an inline fallback. Health checks are unchanged.
+
+The isolated candidate answered all 24 health probes within 908 milliseconds.
+Its final epoch fence correctly rejected concurrent worker publication; a separate
+parity run completed and proved exact full-state/commitment equality at both
+validation points. These are candidate tests, not live deployment qualification.
+The exact one-file runtime scope, hashes, service activation, rollback and release
+synchronization requirements are recorded in
+`audits/2026-10-23-api-readiness-latency-r2/scope.json`. No additional import,
+database change or replay of committed recovery writes is authorized.

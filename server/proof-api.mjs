@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { performance } from "node:perf_hooks";
 import { setImmediate as yieldToIo } from "node:timers/promises";
 import { createPermissionVerificationStore } from "./permission-verification-store.mjs";
@@ -72628,6 +72629,157 @@ function proofIndexTokenStateTablesSource(source) {
     .includes("proof-indexer-token-state-tables");
 }
 
+// Only pure confirmed-base validation runs here. Database/RPC access, request
+// authentication and all before/after authority fences remain in the API lane.
+function createPendingBaseValidationLane({
+  createWorker,
+  timeoutMs = 20_000,
+  maxQueued = 1,
+} = {}) {
+  let worker = null;
+  let active = null;
+  let retiring = null;
+  let closed = false;
+  let sequence = 0;
+  const queue = [];
+  const unavailable = (reason) => pendingWorkVerifierStageError(
+    "PENDING_WORK_STAGE_CPU_UNAVAILABLE",
+    "Pending WORK confirmed-base validation is unavailable.",
+    { reason },
+  );
+  const settle = (entry, error, value) => {
+    clearTimeout(entry.timer);
+    if (error) entry.reject(error);
+    else entry.resolve(value);
+  };
+  const retire = (instance, reason) => {
+    if (instance !== worker || retiring) return;
+    worker = null;
+    const failed = active;
+    active = null;
+    retiring = Promise.resolve().then(() => instance.terminate()).catch(() => {
+      // An unverified termination must never permit a replacement worker.
+      closed = true;
+      for (const entry of queue.splice(0)) settle(entry, unavailable("termination-unverified"));
+    });
+    retiring.finally(() => {
+      retiring = null;
+      if (failed) settle(failed, unavailable(reason));
+      pump();
+    });
+  };
+  function pump() {
+    if (closed || active || retiring || queue.length === 0) return;
+    active = queue.shift();
+    if (!worker) {
+      let instance;
+      try { instance = createWorker(); }
+      catch {
+        const failed = active;
+        active = null;
+        settle(failed, unavailable("worker-start"));
+        queueMicrotask(pump);
+        return;
+      }
+      worker = instance;
+      instance.on("error", () => retire(instance, "worker-error"));
+      instance.on("exit", () => retire(instance, "worker-exit"));
+      instance.on("message", (message) => {
+        if (instance !== worker) return;
+        if (!active || message?.id !== active.id ||
+            !["result", "error"].includes(message?.type)) {
+          retire(instance, "worker-protocol");
+          return;
+        }
+        const finished = active;
+        active = null;
+        if (message.type === "error") {
+          const error = new Error(String(message.error?.message ?? "Confirmed-base validation failed."));
+          error.name = String(message.error?.name ?? "Error");
+          error.statusCode = message.error?.statusCode;
+          error.details = message.error?.details;
+          settle(finished, error);
+        } else {
+          settle(finished, null, message.value);
+        }
+        instance.unref();
+        pump();
+      });
+    }
+    worker.ref();
+    try { worker.postMessage({ id: active.id, args: active.args }); }
+    catch { retire(worker, "worker-input"); }
+  }
+  return {
+    run(...args) {
+      if (closed || (active || retiring) && queue.length >= maxQueued) {
+        return Promise.reject(unavailable(closed ? "closed" : "queue-full"));
+      }
+      return new Promise((resolve, reject) => {
+        const entry = { id: ++sequence, args, resolve, reject, timer: null };
+        entry.timer = setTimeout(() => {
+          const index = queue.indexOf(entry);
+          if (index >= 0) {
+            queue.splice(index, 1);
+            settle(entry, unavailable("queue-deadline"));
+          } else if (active === entry) {
+            retire(worker, "execution-deadline");
+          }
+        }, timeoutMs);
+        queue.push(entry);
+        pump();
+      });
+    },
+    async close() {
+      closed = true;
+      for (const entry of queue.splice(0)) settle(entry, unavailable("closed"));
+      if (worker) retire(worker, "closed");
+      if (retiring) await retiring;
+    },
+  };
+}
+
+const pendingBaseValidationLane = isMainThread
+  ? createPendingBaseValidationLane({
+      createWorker: () => new Worker(new URL(import.meta.url), {
+        workerData: { kind: "pending-work-confirmed-base-v1" },
+        resourceLimits: { maxOldGenerationSizeMb: 768, stackSizeMb: 8 },
+      }),
+    })
+  : null;
+
+async function pendingWorkVerifierStageConfirmedBaseResponsive(...args) {
+  if (!pendingBaseValidationLane) {
+    throw pendingWorkVerifierStageError(
+      "PENDING_WORK_STAGE_CPU_UNAVAILABLE",
+      "Confirmed-base validation must be dispatched by the API.",
+    );
+  }
+  return pendingBaseValidationLane.run(...args);
+}
+
+function startPendingBaseValidationWorker(port, validate) {
+  let active = false;
+  port.on("message", async (message) => {
+    if (active || !Number.isSafeInteger(message?.id) || message.id <= 0 ||
+        !Array.isArray(message.args) || message.args.length !== 3) {
+      throw new Error("Invalid confirmed-base worker request.");
+    }
+    active = true;
+    try {
+      const value = validate(...message.args);
+      port.postMessage({ id: message.id, type: "result", value });
+    } catch (error) {
+      port.postMessage({ id: message.id, type: "error", error: {
+        name: error.name, message: error.message,
+        statusCode: error.statusCode, details: error.details,
+      } });
+    } finally {
+      active = false;
+    }
+  });
+}
+
 function pendingWorkVerifierStageConfirmedBase(
   payload,
   tip,
@@ -74233,7 +74385,7 @@ async function pendingWorkVerifierStagePayload(value) {
       },
     ),
   ]);
-  const initialBase = pendingWorkVerifierStageConfirmedBase(
+  const initialBase = await pendingWorkVerifierStageConfirmedBaseResponsive(
     initialTokenPayload,
     initialTip,
     initialTransitionCommitment,
@@ -74351,7 +74503,7 @@ async function pendingWorkVerifierStagePayload(value) {
       "Confirmed WORK departure evidence changed while the pending stage was built.",
     );
   }
-  const finalBase = pendingWorkVerifierStageConfirmedBase(
+  const finalBase = await pendingWorkVerifierStageConfirmedBaseResponsive(
     finalTokenPayload,
     finalTip,
     finalTransitionCommitment,
@@ -83316,6 +83468,7 @@ function prewarmExpensiveReadCaches() {
   }, BACKGROUND_STARTUP_REFRESH_DELAY_MS);
 }
 
+if (isMainThread) {
 server.listen(PORT, HOST, () => {
   console.log(`ProofOfWork OP_RETURN API listening on http://${HOST}:${PORT}`);
   console.log(`Mainnet mempool source: ${MEMPOOL_BASE_MAINNET}`);
@@ -83323,3 +83476,8 @@ server.listen(PORT, HOST, () => {
   prewarmExpensiveReadCaches();
   setTimeout(() => { void warmDnsVerifiedCoverage(); }, 5_000).unref();
 });
+} else if (workerData?.kind === "pending-work-confirmed-base-v1") {
+  startPendingBaseValidationWorker(parentPort, pendingWorkVerifierStageConfirmedBase);
+} else {
+  throw new Error("Unsupported API worker entrypoint.");
+}

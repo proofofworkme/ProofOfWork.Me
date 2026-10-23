@@ -1,0 +1,268 @@
+TAP version 13
+# Subtest: mixed cold load reserves verifier headroom, alternates classes and drains without leaks
+ok 1 - mixed cold load reserves verifier headroom, alternates classes and drains without leaks
+  ---
+  duration_ms: 7.570981
+  type: 'test'
+  ...
+# Subtest: timed-out queue entries never consume a later permit
+ok 2 - timed-out queue entries never consume a later permit
+  ---
+  duration_ms: 7.593214
+  type: 'test'
+  ...
+# Subtest: failed verifier batch stops scheduling and waits for admitted work; success retains order
+ok 3 - failed verifier batch stops scheduling and waits for admitted work; success retains order
+  ---
+  duration_ms: 3.748363
+  type: 'test'
+  ...
+# Subtest: diagnostics accept fixed causes/classes, are rate limited and cannot change errors
+ok 4 - diagnostics accept fixed causes/classes, are rate limited and cannot change errors
+  ---
+  duration_ms: 4.898254
+  type: 'test'
+  ...
+# Subtest: nested parent reads bypass the held hydration permit; canonical values and cache fences survive
+ok 5 - nested parent reads bypass the held hydration permit; canonical values and cache fences survive
+  ---
+  duration_ms: 3.719812
+  type: 'test'
+  ...
+# Subtest: local raw admission retains cause and producer; genuine absence remains fail closed
+ok 6 - local raw admission retains cause and producer; genuine absence remains fail closed
+  ---
+  duration_ms: 2.391643
+  type: 'test'
+  ...
+# Subtest: failed parent fanout holds its permit until remaining parents drain
+ok 7 - failed parent fanout holds its permit until remaining parents drain
+  ---
+  duration_ms: 4.16165
+  type: 'test'
+  ...
+# Subtest: malformed raw bytes and raw/verbose disagreement still reject without caching
+ok 8 - malformed raw bytes and raw/verbose disagreement still reject without caching
+  ---
+  duration_ms: 7.987523
+  type: 'test'
+  ...
+# Subtest: combined background and verifier hydration uses actual raw admission within four slots
+ok 9 - combined background and verifier hydration uses actual raw admission within four slots
+  ---
+  duration_ms: 55.950697
+  type: 'test'
+  ...
+# Subtest: stage separates local admission from malformed chain evidence without bypassing initial tip fence
+ok 10 - stage separates local admission from malformed chain evidence without bypassing initial tip fence
+  ---
+  duration_ms: 5.119212
+  type: 'test'
+  ...
+# Subtest: pending transaction observations are re-read and never become confirmed cache entries
+ok 11 - pending transaction observations are re-read and never become confirmed cache entries
+  ---
+  duration_ms: 3.052185
+  type: 'test'
+  ...
+# Subtest: three classes retain FIFO, rotate fairly, and reserve 8 + 2 within total64
+ok 12 - three classes retain FIFO, rotate fairly, and reserve 8 + 2 within total64
+  ---
+  duration_ms: 4.375293
+  type: 'test'
+  ...
+# Subtest: reduced queue caps never enlarge total reservations and timed-out declarations leak no permit
+ok 13 - reduced queue caps never enlarge total reservations and timed-out declarations leak no permit
+  ---
+  duration_ms: 25.559789
+  type: 'test'
+  ...
+# Subtest: fixed declarations share only overlapping hydration, clone all evidence, then re-read
+ok 14 - fixed declarations share only overlapping hydration, clone all evidence, then re-read
+  ---
+  duration_ms: 4.117403
+  type: 'test'
+  ...
+# Subtest: distinct declarations have separate flights and fixed options cannot be downgraded
+ok 15 - distinct declarations have separate flights and fixed options cannot be downgraded
+  ---
+  duration_ms: 3.157982
+  type: 'test'
+  ...
+# Subtest: rejected declaration flights evict, preserve errors, and retry fresh
+ok 16 - rejected declaration flights evict, preserve errors, and retry fresh
+  ---
+  duration_ms: 2.249786
+  type: 'test'
+  ...
+# Subtest: generic caller cannot forge declaration admission with a label or foreign transaction
+ok 17 - generic caller cannot forge declaration admission with a label or foreign transaction
+  ---
+  duration_ms: 2.671514
+  type: 'test'
+  ...
+# Subtest: shared hydration cannot share a caller's canonical block-position verdict
+ok 18 - shared hydration cannot share a caller's canonical block-position verdict
+  ---
+  duration_ms: 4.465392
+  type: 'test'
+  ...
+# Subtest: one active validation and one queued validation; excess work fails closed
+ok 19 - one active validation and one queued validation; excess work fails closed
+  ---
+  duration_ms: 4.666325
+  type: 'test'
+  ...
+# Subtest: validation errors preserve exact fail-closed status and evidence
+ok 20 - validation errors preserve exact fail-closed status and evidence
+  ---
+  duration_ms: 0.559656
+  type: 'test'
+  ...
+# Subtest: a timed-out worker is terminated before another can start
+ok 21 - a timed-out worker is terminated before another can start
+  ---
+  duration_ms: 30.822888
+  type: 'test'
+  ...
+# Subtest: worker exit and invalid correlation fail closed without synchronous fallback
+ok 22 - worker exit and invalid correlation fail closed without synchronous fallback
+  ---
+  duration_ms: 3.397893
+  type: 'test'
+  ...
+# Subtest: CPU work runs off the caller event loop and returns the unchanged value
+ok 23 - CPU work runs off the caller event loop and returns the unchanged value
+  ---
+  duration_ms: 367.055571
+  type: 'test'
+  ...
+# Subtest: unverified termination closes admission and cannot spawn a replacement
+ok 24 - unverified termination closes admission and cannot spawn a replacement
+  ---
+  duration_ms: 0.967135
+  type: 'test'
+  ...
+# Subtest: planner regards the prior red witness as structurally reusable
+ok 25 - planner regards the prior red witness as structurally reusable
+  ---
+  duration_ms: 3.129962
+  type: 'test'
+  ...
+# Subtest: original condition fails health-only 1→0 against its old published-stage fence
+ok 26 - original condition fails health-only 1→0 against its old published-stage fence
+  ---
+  duration_ms: 3.621233
+  type: 'test'
+  ...
+# Subtest: health-only 1→0 creates a running fence and passes unchanged persistence guards
+ok 27 - health-only 1→0 creates a running fence and passes unchanged persistence guards
+  ---
+  duration_ms: 18.185638
+  type: 'test'
+  ...
+# Subtest: health-only 0→1 records red scan health honestly and same-health 0→0 still reuses
+ok 28 - health-only 0→1 records red scan health honestly and same-health 0→0 still reuses
+  ---
+  duration_ms: 2.380226
+  type: 'test'
+  ...
+# Subtest: incomplete Q16 or bounded scan never enters persistence despite a new running fence
+ok 29 - incomplete Q16 or bounded scan never enters persistence despite a new running fence
+  ---
+  duration_ms: 3.410056
+  type: 'test'
+  ...
+# Subtest: parent, epoch and concurrent-attempt drift remain fail-closed
+ok 30 - parent, epoch and concurrent-attempt drift remain fail-closed
+  ---
+  duration_ms: 4.409235
+  type: 'test'
+  ...
+# Subtest: membership changes retain their existing running-attempt path
+ok 31 - membership changes retain their existing running-attempt path
+  ---
+  duration_ms: 1.572032
+  type: 'test'
+  ...
+# Subtest: streamed evidence retains existing cursor bytes across value types
+ok 32 - streamed evidence retains existing cursor bytes across value types
+  ---
+  duration_ms: 4.522608
+  type: 'test'
+  ...
+# Subtest: UTF-8 hash chunks preserve astral characters and escaped surrogates
+ok 33 - UTF-8 hash chunks preserve astral characters and escaped surrogates
+  ---
+  duration_ms: 9.834808
+  type: 'test'
+  ...
+# Subtest: overlapping complete evidence digests yield to I/O and preserve hashes
+ok 34 - overlapping complete evidence digests yield to I/O and preserve hashes
+  ---
+  duration_ms: 641.755643
+  type: 'test'
+  ...
+# Subtest: overlapping identical AMO reads materialize once, isolate mutations, and never reuse settled results
+ok 35 - overlapping identical AMO reads materialize once, isolate mutations, and never reuse settled results
+  ---
+  duration_ms: 6.226443
+  type: 'test'
+  ...
+# Subtest: network, asset and exact listing scopes remain separate
+ok 36 - network, asset and exact listing scopes remain separate
+  ---
+  duration_ms: 2.433243
+  type: 'test'
+  ...
+# Subtest: shared failure is removed so subsequent reads can recover
+ok 37 - shared failure is removed so subsequent reads can recover
+  ---
+  duration_ms: 3.647092
+  type: 'test'
+  ...
+# Subtest: registry counts preserve full registration state and checkpoint without transporting IDs
+ok 38 - registry counts preserve full registration state and checkpoint without transporting IDs
+  ---
+  duration_ms: 2.749677
+  type: 'test'
+  ...
+# Subtest: unknown, truncated and malformed registry state never becomes a successful zero count
+ok 39 - unknown, truncated and malformed registry state never becomes a successful zero count
+  ---
+  duration_ms: 0.944682
+  type: 'test'
+  ...
+# Subtest: directory qualification keeps exact supply and distinguishes complete, empty, unknown and preview
+ok 40 - directory qualification keeps exact supply and distinguishes complete, empty, unknown and preview
+  ---
+  duration_ms: 0.517313
+  type: 'test'
+  ...
+# Subtest: display listing removes only replay transport fields while preserving frozen terms, authorization and evidence references
+ok 41 - display listing removes only replay transport fields while preserving frozen terms, authorization and evidence references
+  ---
+  duration_ms: 2.13727
+  type: 'test'
+  ...
+# Subtest: directory-only transport preserves exact aggregates while explicitly omitting history authority
+ok 42 - directory-only transport preserves exact aggregates while explicitly omitting history authority
+  ---
+  duration_ms: 2.735503
+  type: 'test'
+  ...
+# Subtest: display-v2 removes internal envelopes without changing signed terms or full evidence
+ok 43 - display-v2 removes internal envelopes without changing signed terms or full evidence
+  ---
+  duration_ms: 1.364494
+  type: 'test'
+  ...
+1..43
+# tests 43
+# suites 0
+# pass 43
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1704.318704

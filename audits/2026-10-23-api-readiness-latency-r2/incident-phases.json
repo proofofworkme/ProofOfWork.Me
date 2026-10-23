@@ -1,0 +1,257 @@
+[
+  {
+    "at": "1792763109185768",
+    "pid": "434584",
+    "data": {
+      "event": "http-response-observation",
+      "method": "GET",
+      "route": "/health",
+      "status": 200,
+      "elapsedMs": 132,
+      "payloadBytes": 3876,
+      "slow": false,
+      "requestId": "38fd4ce65d4dfd6b95226ab6287304e1",
+      "work": "request"
+    }
+  },
+  {
+    "at": "1792763109804461",
+    "pid": "434584",
+    "data": {
+      "event": "private-wallet-worker-phase-timing",
+      "requestId": "5083599ae7067afd93b03c744d7b330d",
+      "work": "request",
+      "phases": {
+        "full-audit-queue-wait": {
+          "count": 1,
+          "elapsedMs": 0.0036469995975494385
+        }
+      }
+    }
+  },
+  {
+    "at": "1792763111867301",
+    "pid": "434584",
+    "data": {
+      "event": "private-wallet-worker-phase-timing",
+      "requestId": "5083599ae7067afd93b03c744d7b330d",
+      "work": "request",
+      "phases": {
+        "full-audit-execution": {
+          "count": 1,
+          "elapsedMs": 2062.8253529965878
+        }
+      }
+    }
+  },
+  {
+    "at": "1792763112542522",
+    "pid": "434584",
+    "data": {
+      "event": "http-response-observation",
+      "method": "GET",
+      "route": "/api/v1/work-summary",
+      "status": 200,
+      "elapsedMs": 3487,
+      "payloadBytes": 1595858,
+      "slow": false,
+      "requestId": "5083599ae7067afd93b03c744d7b330d",
+      "work": "request"
+    }
+  },
+  {
+    "at": "1792763114701662",
+    "pid": "434584",
+    "data": {
+      "event": "private-wallet-worker-phase-timing",
+      "requestId": "42736576f63bf018fe352525fddb7115",
+      "work": "request",
+      "phases": {
+        "full-audit-queue-wait": {
+          "count": 1,
+          "elapsedMs": 0.005210012197494507
+        }
+      }
+    }
+  },
+  {
+    "at": "1792763116743011",
+    "pid": "434584",
+    "data": {
+      "event": "private-wallet-worker-phase-timing",
+      "requestId": "42736576f63bf018fe352525fddb7115",
+      "work": "request",
+      "phases": {
+        "full-audit-execution": {
+          "count": 1,
+          "elapsedMs": 2041.330597013235
+        }
+      }
+    }
+  },
+  {
+    "at": "1792763116940362",
+    "pid": "434584",
+    "data": {
+      "event": "private-wallet-worker-phase-timing",
+      "requestId": "42736576f63bf018fe352525fddb7115",
+      "work": "request",
+      "phases": {
+        "full-audit-queue-wait": {
+          "count": 1,
+          "elapsedMs": 0.004397988319396973
+        }
+      }
+    }
+  },
+  {
+    "at": "1792763118642249",
+    "pid": "434584",
+    "data": {
+      "event": "private-wallet-worker-phase-timing",
+      "requestId": "42736576f63bf018fe352525fddb7115",
+      "work": "request",
+      "phases": {
+        "full-audit-execution": {
+          "count": 1,
+          "elapsedMs": 1701.8128050267696
+        }
+      }
+    }
+  },
+  {
+    "at": "1792763118870176",
+    "pid": "434584",
+    "data": {
+      "event": "http-response-observation",
+      "method": "GET",
+      "route": "/api/v1/marketplace-summary",
+      "status": 200,
+      "elapsedMs": 9813,
+      "payloadBytes": 1984986,
+      "slow": false,
+      "requestId": "42736576f63bf018fe352525fddb7115",
+      "work": "request"
+    }
+  },
+  {
+    "at": "1792763118923202",
+    "pid": "434584",
+    "data": {
+      "event": "http-response-observation",
+      "method": "GET",
+      "route": "/api/v1/internal/canonical-summary",
+      "status": 200,
+      "elapsedMs": 439,
+      "payloadBytes": 85929,
+      "slow": false,
+      "requestId": "07bb4f1581230075892630a3220c8524",
+      "work": "request"
+    }
+  },
+  {
+    "at": "1792763159587553",
+    "pid": "2704643",
+    "data": {
+      "event": "http-response-observation",
+      "method": "GET",
+      "route": "/api/v1/internal/canonical-summary",
+      "status": 200,
+      "elapsedMs": 782,
+      "payloadBytes": 85929,
+      "slow": false,
+      "requestId": "ee718cf65c121d9bef5945f2f25073ce",
+      "work": "request"
+    }
+  },
+  {
+    "at": "1792763160057812",
+    "pid": "2704643",
+    "data": {
+      "event": "http-response-observation",
+      "method": "GET",
+      "route": "other",
+      "status": 200,
+      "elapsedMs": 7,
+      "payloadBytes": 394,
+      "slow": false,
+      "requestId": "274ee61c73e4043dd1e030ba01660163",
+      "work": "request"
+    }
+  },
+  {
+    "at": "1792763164906546",
+    "pid": "2704643",
+    "data": {
+      "event": "private-wallet-worker-phase-timing",
+      "requestId": "7320d484fb83432c823b0b981ce4cb97",
+      "work": "request",
+      "phases": {
+        "full-audit-queue-wait": {
+          "count": 1,
+          "elapsedMs": 0.013736000000790227
+        }
+      }
+    }
+  },
+  {
+    "at": "1792763166637294",
+    "pid": "2704643",
+    "data": {
+      "event": "private-wallet-worker-phase-timing",
+      "requestId": "7320d484fb83432c823b0b981ce4cb97",
+      "work": "request",
+      "phases": {
+        "full-audit-execution": {
+          "count": 1,
+          "elapsedMs": 1730.6603180000002
+        }
+      }
+    }
+  },
+  {
+    "at": "1792763176194266",
+    "pid": "2704643",
+    "data": {
+      "event": "http-response-observation",
+      "method": "POST",
+      "route": "/api/v1/internal/pending-work-verifier-stage",
+      "status": 200,
+      "elapsedMs": 13907,
+      "payloadBytes": 6931,
+      "slow": true,
+      "requestId": "7320d484fb83432c823b0b981ce4cb97",
+      "work": "request"
+    }
+  },
+  {
+    "at": "1792763176376229",
+    "pid": "2704643",
+    "data": {
+      "event": "http-response-observation",
+      "method": "GET",
+      "route": "other",
+      "status": 200,
+      "elapsedMs": 210,
+      "payloadBytes": 3901,
+      "slow": false,
+      "requestId": "fd777bb5f1e2ce85402bb505ebaced74",
+      "work": "request"
+    }
+  },
+  {
+    "at": "1792763214284624",
+    "pid": "2704643",
+    "data": {
+      "event": "http-response-observation",
+      "method": "GET",
+      "route": "/api/v1/internal/canonical-summary",
+      "status": 200,
+      "elapsedMs": 800,
+      "payloadBytes": 85929,
+      "slow": false,
+      "requestId": "05fb0845b8d02385788dbe9526fe1ea4",
+      "work": "request"
+    }
+  }
+]

@@ -1,0 +1,39 @@
+{
+  "reason": "Lossless packaging of patch evidence whose context lines trigger whitespace hooks; approved scope hashes refer to original bytes.",
+  "original": "pending-base-worker.patch",
+  "originalSha256": "31e397314f7248d2498bfe5047d3cf7adb8e85ace628433465b98d0415503535",
+  "archive": "pending-base-worker.patch.gz",
+  "archiveSha256": "53da874b003ad34680edafe8f63aca10d82d83d0737aa010cc7a7ea734f2ce2c",
+  "renamedLogs": [
+    {
+      "original": "release-tests.log",
+      "stored": "release-tests.txt",
+      "sha256": "8619a1504a1ef005609dc477476bfe57c964d48239e1ce026b8fa890bb0dd817"
+    },
+    {
+      "original": "tests.log",
+      "stored": "tests.txt",
+      "sha256": "46c9ac525484d2186e36c84e4baa9c83b7a901ae08d294984282c1d4486e4963"
+    },
+    {
+      "original": "hygiene-check.log",
+      "stored": "hygiene-check.txt",
+      "sha256": "c501942de5d3c65c2445bb7178083e0794cc7491a71a7ba3a354acef2a10a8bb"
+    },
+    {
+      "original": "hygiene-fix.log",
+      "stored": "hygiene-fix.txt",
+      "sha256": "3625b06a86ce72bd70cd42b6f328f5327f46a45eb22028f2707d2836ed98d14f"
+    },
+    {
+      "original": "controller-tests.log",
+      "stored": "controller-tests.txt",
+      "sha256": "8ab861d011f684def609597f873d869d8e4b594af4b5154d7bc7f4fc393c5f58"
+    },
+    {
+      "original": "release-tests-isolated.log",
+      "stored": "release-tests-isolated.txt",
+      "sha256": "980bcee8ffb94a188ff99ea0df63a4bea3570c13a44c9f3036ced8642823477b"
+    }
+  ]
+}

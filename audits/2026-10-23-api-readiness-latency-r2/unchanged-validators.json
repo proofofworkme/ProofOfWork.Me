@@ -1,0 +1,10 @@
+{
+  "pendingWorkVerifierStageConfirmedBase": {
+    "byteIdentical": true,
+    "sha256": "2632cd17dbfa6a2020e38e8e697fcb90bf2d33670a22f66675e9da2283c040ed"
+  },
+  "loadHealthPayload": {
+    "byteIdentical": true,
+    "sha256": "5d5ed73348ba4b38d24c06c8ae1f1608dbfed5ca2d526cfebb26a95bb23675cd"
+  }
+}

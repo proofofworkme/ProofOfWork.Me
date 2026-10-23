@@ -1,0 +1,6 @@
+
+> proofofwork-me@0.1.0 hygiene:fix
+> node scripts/repository-hygiene.mjs clean
+
+Removed node_modules/.vite-temp (0 B)
+Repository hygiene removed 1 path(s), 0 B total.

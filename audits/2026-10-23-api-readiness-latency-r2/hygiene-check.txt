@@ -1,0 +1,5 @@
+
+> proofofwork-me@0.1.0 hygiene:check
+> node scripts/repository-hygiene.mjs check
+
+Repository hygiene: repository state check passed.

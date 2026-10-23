@@ -1,0 +1,66 @@
+............FF..FEE
+======================================================================
+ERROR: test_success_restores_search_after_exact_overlay (__main__.RolloutTests.test_success_restores_search_after_exact_overlay)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/sixer/.codex/worktrees/api-response-latency/ProofOfWork.Me/deploy/api-response-latency/check-release.test.py", line 39, in test_success_restores_search_after_exact_overlay
+    result,calls=self.run_rollout([{'held':True},{'installed':True},{'restored':True}])
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sixer/.codex/worktrees/api-response-latency/ProofOfWork.Me/deploy/api-response-latency/check-release.test.py", line 36, in run_rollout
+    result=S.rollout(self.plan())
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sixer/.codex/worktrees/api-response-latency/ProofOfWork.Me/deploy/api-response-latency/rollout-node.py", line 38, in rollout
+    raise ValueError('Exact rollout plan, root and isolated Python required')
+ValueError: Exact rollout plan, root and isolated Python required
+
+======================================================================
+ERROR: test_unfinished_controller_rollback_retains_search_hold (__main__.RolloutTests.test_unfinished_controller_rollback_retains_search_hold)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/sixer/.codex/worktrees/api-response-latency/ProofOfWork.Me/deploy/api-response-latency/check-release.test.py", line 52, in test_unfinished_controller_rollback_retains_search_hold
+    with self.assertRaises(S.ControllerStillRunning):S.rollout(self.plan())
+                                                     ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sixer/.codex/worktrees/api-response-latency/ProofOfWork.Me/deploy/api-response-latency/rollout-node.py", line 38, in rollout
+    raise ValueError('Exact rollout plan, root and isolated Python required')
+ValueError: Exact rollout plan, root and isolated Python required
+
+======================================================================
+FAIL: test_bad_controller_hash_refuses_before_hold (__main__.RolloutTests.test_bad_controller_hash_refuses_before_hold)
+----------------------------------------------------------------------
+ValueError: Exact rollout plan, root and isolated Python required
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/sixer/.codex/worktrees/api-response-latency/ProofOfWork.Me/deploy/api-response-latency/check-release.test.py", line 76, in test_bad_controller_hash_refuses_before_hold
+    with self.assertRaisesRegex(ValueError,'Changed controller'):S.rollout(value)
+AssertionError: "Changed controller" does not match "Exact rollout plan, root and isolated Python required"
+
+======================================================================
+FAIL: test_changed_commit_refuses_before_hold (__main__.RolloutTests.test_changed_commit_refuses_before_hold)
+----------------------------------------------------------------------
+ValueError: Exact rollout plan, root and isolated Python required
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/sixer/.codex/worktrees/api-response-latency/ProofOfWork.Me/deploy/api-response-latency/check-release.test.py", line 81, in test_changed_commit_refuses_before_hold
+    with self.assertRaisesRegex(ValueError,'provenance'):S.rollout(value)
+AssertionError: "provenance" does not match "Exact rollout plan, root and isolated Python required"
+
+======================================================================
+FAIL: test_overlay_failure_still_restores_search_and_never_returns_success (__main__.RolloutTests.test_overlay_failure_still_restores_search_and_never_returns_success)
+----------------------------------------------------------------------
+ValueError: Exact rollout plan, root and isolated Python required
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/sixer/.codex/worktrees/api-response-latency/ProofOfWork.Me/deploy/api-response-latency/check-release.test.py", line 48, in test_overlay_failure_still_restores_search_and_never_returns_success
+    with self.assertRaisesRegex(ValueError,'install refusal'):S.rollout(self.plan())
+AssertionError: "install refusal" does not match "Exact rollout plan, root and isolated Python required"
+
+----------------------------------------------------------------------
+Ran 19 tests in 0.124s
+
+FAILED (failures=3, errors=2)
