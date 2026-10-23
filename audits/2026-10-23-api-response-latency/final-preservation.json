@@ -1,0 +1,50 @@
+{
+  "checkedAt": "2026-10-23T13:41:51.556092+00:00",
+  "databases": [
+    {
+      "name": "proof_indexer",
+      "oid": "789821",
+      "connectionLimit": -1
+    },
+    {
+      "name": "proof_indexer_id_seal_20261018",
+      "oid": "200442992",
+      "connectionLimit": 0
+    },
+    {
+      "name": "proof_indexer_id_seal_20261023",
+      "oid": "201608697",
+      "connectionLimit": 0
+    },
+    {
+      "name": "proof_indexer_id_seal_20261023_r2",
+      "oid": "202776335",
+      "connectionLimit": 0
+    }
+  ],
+  "sha256": {
+    "/opt/proofofwork-api/server/proof-api.mjs": "3374a0f1324f8252b10d2d7d3d306c806169b9a3453869c3d72d4d95d9e58252",
+    "/opt/proofofwork-api/server/db/proof-index-reader.mjs": "185deec57ecd8fcf0f5fc34d88724fd6a98c7e83d1f9cc3a1b973cd0bc3c50a2",
+    "/opt/proofofwork-api/scripts/backfill-proof-indexer.mjs": "26798df77d5a6b57fd34922c7d13b8642af5b44d103fc27aac81d3921bb462f2",
+    "/opt/proofofwork-api/server/boost-projection.mjs": "ab373f09f3d90e4bb80856b9bfc8d66bf0d2ba01e311e22ef81da4ad2d87b3e1",
+    "/etc/proofofwork-api/proof-indexer-db.env": "54dc2f8030a139078d872939ab174d61bcefebcaa9761548372c154ec1ff4332"
+  },
+  "services": {
+    "proofofwork-api.service": [
+      "MainPID=434584",
+      "ActiveState=active"
+    ],
+    "proofofwork-indexer-worker.service": [
+      "MainPID=2470249",
+      "ActiveState=active"
+    ],
+    "proofofwork-id-seal-promotion-20261023T150000Z.service": [
+      "MainPID=0",
+      "ActiveState=failed"
+    ],
+    "proofofwork-id-seal-replay-20261018T041419Z-promotion-source-attempt4.service": [
+      "MainPID=0",
+      "ActiveState=inactive"
+    ]
+  }
+}

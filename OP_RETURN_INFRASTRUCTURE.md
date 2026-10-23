@@ -8222,3 +8222,38 @@ must prove renewed summary
 publication, fresh wallet evidence, affected standalone/Computer surfaces and
 the mandatory release synchronization gate; installing the overlay alone does
 not establish recovery.
+
+### API response-latency candidate (2026-10-23; not deployed)
+
+Complete listing-history cursor evidence previously serialized and hashed the
+whole book synchronously on the shared API event loop. Read-only reproduction
+with 1,170 WORK listings measured a 1.46-second event-loop stall and a
+1.32-second health response. This establishes a latency source; it does not
+prove that this was the sole cause of the earlier import's two-second timeout.
+
+The prepared API delta streams the same canonical UTF-8 evidence into SHA-256
+and yields to I/O after a four-millisecond processing budget. Full-book coverage,
+Core reconciliation, cursor/hash semantics, display evidence and all health
+predicates, deadlines and cache behavior remain unchanged. The final isolated
+candidate completed two overlapping reads with a 137-millisecond maximum
+observed event-loop lag; all 21 real health-handler probes returned 200 within
+239 milliseconds. These are isolated read-only measurements, not production
+release readiness. Total completion of the two reads was 9.59 seconds versus
+8.51 seconds for the baseline: the change prioritizes responsiveness of other
+requests while full evidence is processed. Eight hashes over actual complete
+listing evidence matched the previous implementation exactly.
+
+`deploy/api-response-latency/` prepares a single-file overlay of
+`server/proof-api.mjs` against released source
+`946946aa624e2a58da167cc384d1cc0424e5d29e`. It retains the existing controller's
+source/dependency/metadata fences, shared operations lock, Search hold/restore,
+gateway drain, API/dependent-worker restart, authority preservation and exact
+rollback custody. It performs no database creation/import, replay, configuration
+change or runtime Git reset. The complete before/after hashes and approval
+boundary are in `audits/2026-10-23-api-response-latency/scope.json`.
+
+This candidate requires approval before commit, push or deployment. After an
+approved installation, fresh live health, ordinary listing/display/cursor reads,
+worker readiness and `npm run check:release-sync` must pass before release is
+announced. The seal recovery targets and private committed recovery remain
+preserved and stopped; this API-only scope does not authorize another import.

@@ -1,0 +1,17 @@
+{
+  "reason": "Lossless archives preserve original whitespace-bearing evidence while satisfying commit whitespace checks; approved source bytes unchanged.",
+  "files": [
+    {
+      "original": "api-fix.patch",
+      "originalSha256": "010954ddfa7b31f1c41fc69fc4fa367f1991436f4664aa8efa81878288e33f87",
+      "losslessArchive": "api-fix.patch.gz",
+      "archiveSha256": "b83a0727068af917ecc12563ad3c13d63c61c7fe919d5acb83f40c9940054a8c"
+    },
+    {
+      "original": "perf-report-flat.txt",
+      "originalSha256": "4a93c615ca341dd0345f7cea6cd5f0fba2fe8b61e51eda45cb19c7e19f98fe33",
+      "losslessArchive": "perf-report-flat.txt.gz",
+      "archiveSha256": "b8a091a30fd9ba880155be0e61e894bd7c693faa09a16dffccf547692fc7d644"
+    }
+  ]
+}

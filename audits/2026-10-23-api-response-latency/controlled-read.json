@@ -1,0 +1,1790 @@
+{
+  "apiPid": "434584",
+  "requestPath": "/api/v1/token-history?asset=WORK&kind=listings&projection=display-v2&limit=1",
+  "baseline": {
+    "at": "2026-10-23T13:18:19.497451+00:00",
+    "exit": 0,
+    "timing": "200 0.000069 0.132880 0.132917 3895",
+    "stderr": ""
+  },
+  "health": [
+    {
+      "at": "2026-10-23T13:18:20.326834+00:00",
+      "exit": 0,
+      "timing": "200 0.000057 0.002981 0.003028 3895",
+      "stderr": ""
+    },
+    {
+      "at": "2026-10-23T13:18:25.004574+00:00",
+      "exit": 0,
+      "timing": "200 0.000080 0.569722 0.569777 3902",
+      "stderr": ""
+    }
+  ],
+  "samples": [
+    {
+      "cpu": {
+        "at": 14428143.814511372,
+        "ticks": 7037310,
+        "rssPages": 681122
+      },
+      "db": [
+        {
+          "age": 0.004,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.002,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "88a63cfc87cae49874506582ca9ca1a4",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.545,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4bae198873701bb31b1f29594d0d54f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 25.808,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "526256a1b1cc0bb3208a9a80439c6ea4",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.535,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 25.81,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "655617a0ce382799ead75132f83cffcf",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 16.316,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "ef8d63105f0c030bbbb3afb3841010fa",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.496,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.519,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.519,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.52,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428144.224828996,
+        "ticks": 7037311,
+        "rssPages": 681122
+      },
+      "db": [
+        {
+          "age": 0.146,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "655617a0ce382799ead75132f83cffcf",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.011,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "e1b687c3d158366954cf49413b96bf6e",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.955,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4bae198873701bb31b1f29594d0d54f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.218,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "526256a1b1cc0bb3208a9a80439c6ea4",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.945,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.221,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "655617a0ce382799ead75132f83cffcf",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 16.726,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "ef8d63105f0c030bbbb3afb3841010fa",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.906,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.929,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.929,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.93,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428144.635985537,
+        "ticks": 7037315,
+        "rssPages": 675784
+      },
+      "db": [
+        {
+          "age": 0.557,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "655617a0ce382799ead75132f83cffcf",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.422,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "e1b687c3d158366954cf49413b96bf6e",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.366,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4bae198873701bb31b1f29594d0d54f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.629,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "526256a1b1cc0bb3208a9a80439c6ea4",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.356,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 26.631,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "655617a0ce382799ead75132f83cffcf",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 17.137,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "ef8d63105f0c030bbbb3afb3841010fa",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.317,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.34,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.34,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.341,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428145.047294997,
+        "ticks": 7037403,
+        "rssPages": 673022
+      },
+      "db": [
+        {
+          "age": 0.004,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.004,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "1d0ba376e273b9d622641124d8c59264",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.777,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4bae198873701bb31b1f29594d0d54f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.04,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "526256a1b1cc0bb3208a9a80439c6ea4",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.767,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.043,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "655617a0ce382799ead75132f83cffcf",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 17.548,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "ef8d63105f0c030bbbb3afb3841010fa",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.728,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.751,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.752,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 27.752,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428145.460784916,
+        "ticks": 7037439,
+        "rssPages": 673066
+      },
+      "db": [
+        {
+          "age": 0.352,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "15c7ee90972d4e3027b54a2013213422",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.001,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "acd3d863015505162bcc7c26610460e2",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.19,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4bae198873701bb31b1f29594d0d54f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.0,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "655617a0ce382799ead75132f83cffcf",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.18,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.003,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.002,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.141,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.164,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.165,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.165,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428145.871613,
+        "ticks": 7037467,
+        "rssPages": 673066
+      },
+      "db": [
+        {
+          "age": 0.255,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.0,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.602,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4bae198873701bb31b1f29594d0d54f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.003,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "acd3d863015505162bcc7c26610460e2",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.591,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.002,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "acd3d863015505162bcc7c26610460e2",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.001,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.553,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.576,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.576,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.577,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428146.281905167,
+        "ticks": 7037495,
+        "rssPages": 673066
+      },
+      "db": [
+        {
+          "age": 0.666,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.001,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "acd3d863015505162bcc7c26610460e2",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.012,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4bae198873701bb31b1f29594d0d54f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.002,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.002,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.0,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "655617a0ce382799ead75132f83cffcf",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.0,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "acd3d863015505162bcc7c26610460e2",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.963,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.986,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.987,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 28.987,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428146.694199959,
+        "ticks": 7037522,
+        "rssPages": 673066
+      },
+      "db": [
+        {
+          "age": 1.077,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.002,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.424,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4bae198873701bb31b1f29594d0d54f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.001,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.413,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.002,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "acd3d863015505162bcc7c26610460e2",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.0,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "acd3d863015505162bcc7c26610460e2",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.375,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.398,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.398,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.399,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428147.1038948,
+        "ticks": 7037550,
+        "rssPages": 673066
+      },
+      "db": [
+        {
+          "age": 1.488,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.002,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.835,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4bae198873701bb31b1f29594d0d54f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.002,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.824,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.002,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "acd3d863015505162bcc7c26610460e2",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.003,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.785,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.808,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.809,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 29.809,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428147.515281295,
+        "ticks": 7037575,
+        "rssPages": 673066
+      },
+      "db": [
+        {
+          "age": 1.899,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.022,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.023,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.021,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.024,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "acd3d863015505162bcc7c26610460e2",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428147.92561518,
+        "ticks": 7037613,
+        "rssPages": 673066
+      },
+      "db": [
+        {
+          "age": 2.31,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.432,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.433,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.431,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.435,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "acd3d863015505162bcc7c26610460e2",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428148.334979512,
+        "ticks": 7037653,
+        "rssPages": 682068
+      },
+      "db": [
+        {
+          "age": 2.719,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.842,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.843,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.841,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.844,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "acd3d863015505162bcc7c26610460e2",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428148.746006573,
+        "ticks": 7037696,
+        "rssPages": 691881
+      },
+      "db": [
+        {
+          "age": 3.13,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.252,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.253,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.251,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "75acad02df9c12a9443ab1de5b6051b9",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.255,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "acd3d863015505162bcc7c26610460e2",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428149.157240309,
+        "ticks": 7037726,
+        "rssPages": 709801
+      },
+      "db": [
+        {
+          "age": 0.106,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.107,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.106,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "12c028a4abd0798058640b9ddc68191b",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.103,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "88a63cfc87cae49874506582ca9ca1a4",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.104,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "88a63cfc87cae49874506582ca9ca1a4",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428149.56815112,
+        "ticks": 7037801,
+        "rssPages": 673721
+      },
+      "db": [
+        {
+          "age": 0.518,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.518,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "33068237491a9f4635e777f33f9802bb",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.518,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "12c028a4abd0798058640b9ddc68191b",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.251,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "907cb2e77cefa91536a26029e206121e",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.251,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "0734bc244706c5054555be9b5db9503e",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428149.9778399,
+        "ticks": 7037838,
+        "rssPages": 673659
+      },
+      "db": [
+        {
+          "age": 0.371,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.387,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.38,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.36,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "a1102f2bccac21461dc8a14a96900051",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.38,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.388,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.387,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "fe0c4becba3a302afcb4d8c1097b407e",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428150.387186611,
+        "ticks": 7037865,
+        "rssPages": 674064
+      },
+      "db": [
+        {
+          "age": 0.78,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.796,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.789,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.769,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "a1102f2bccac21461dc8a14a96900051",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.789,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.797,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.125,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "526256a1b1cc0bb3208a9a80439c6ea4",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428150.798010899,
+        "ticks": 7037903,
+        "rssPages": 674064
+      },
+      "db": [
+        {
+          "age": 1.191,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.207,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.2,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.18,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "a1102f2bccac21461dc8a14a96900051",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.2,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.208,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.535,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "526256a1b1cc0bb3208a9a80439c6ea4",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428151.214131365,
+        "ticks": 7037948,
+        "rssPages": 674192
+      },
+      "db": [
+        {
+          "age": 1.607,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.623,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.616,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.596,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "a1102f2bccac21461dc8a14a96900051",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.616,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.624,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.951,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "526256a1b1cc0bb3208a9a80439c6ea4",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428151.623918973,
+        "ticks": 7037995,
+        "rssPages": 674438
+      },
+      "db": [
+        {
+          "age": 2.017,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.033,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.026,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.067,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "655617a0ce382799ead75132f83cffcf",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.026,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.034,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.361,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "526256a1b1cc0bb3208a9a80439c6ea4",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428152.033024147,
+        "ticks": 7038009,
+        "rssPages": 674438
+      },
+      "db": [
+        {
+          "age": 2.426,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.442,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.435,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.285,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "81bb4414ea8ad5eefdced866fc9a2960",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.435,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.443,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 1.77,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "526256a1b1cc0bb3208a9a80439c6ea4",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428152.442881105,
+        "ticks": 7038058,
+        "rssPages": 674043
+      },
+      "db": [
+        {
+          "age": 2.836,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.852,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.845,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.05,
+          "wait": null,
+          "state": "active",
+          "blocked": 0,
+          "queryHash": "aceeb5757f3693938140ae54becfe92d",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.845,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.853,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.18,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "526256a1b1cc0bb3208a9a80439c6ea4",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428152.85393218,
+        "ticks": 7038094,
+        "rssPages": 675066
+      },
+      "db": [
+        {
+          "age": 3.246,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 3.262,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 3.255,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.46,
+          "wait": "Client",
+          "state": "idle in transaction",
+          "blocked": 0,
+          "queryHash": "aceeb5757f3693938140ae54becfe92d",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 3.255,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 3.263,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 2.591,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "526256a1b1cc0bb3208a9a80439c6ea4",
+          "application": "proof-index-reader"
+        }
+      ]
+    },
+    {
+      "cpu": {
+        "at": 14428153.265202856,
+        "ticks": 7038139,
+        "rssPages": 674862
+      },
+      "db": [
+        {
+          "age": 3.658,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "e9948d51297e8bd2958802692639802f",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 3.674,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "b4c12d5db7987499e8bc7c2051d3e72c",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 3.667,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "943e7c27a73f6baf2b09187385adad46",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 0.872,
+          "wait": "Client",
+          "state": "idle in transaction",
+          "blocked": 0,
+          "queryHash": "aceeb5757f3693938140ae54becfe92d",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 3.667,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "c5501271dcea2f4e186722924b5418fe",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 3.675,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "bc7b6bad0fb4e09619f06370e9804850",
+          "application": "proof-index-reader"
+        },
+        {
+          "age": 3.002,
+          "wait": "Client",
+          "state": "idle",
+          "blocked": 0,
+          "queryHash": "526256a1b1cc0bb3208a9a80439c6ea4",
+          "application": "proof-index-reader"
+        }
+      ]
+    }
+  ],
+  "normalRead": {
+    "at": "2026-10-23T13:18:24.741214+00:00",
+    "exit": 0,
+    "timing": "200 0.000062 5.237988 5.238017 12058",
+    "stderr": ""
+  },
+  "after": {
+    "at": "2026-10-23T13:18:29.619760+00:00",
+    "exit": 0,
+    "timing": "200 0.000082 0.255166 0.255210 3901",
+    "stderr": ""
+  }
+}

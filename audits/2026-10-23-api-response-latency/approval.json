@@ -1,0 +1,6 @@
+{
+  "approvedAt": "2026-10-23T13:43:52.020601+00:00",
+  "scopeSha256": "c427595250f19f1e9e8e565ea8a39c9bc66d652b86ac23f892f9484fc5639f49",
+  "authorization": "Yes, deploy the API-only fix. Preserve all databases and other fixes, keep health checks unchanged, and only release after fresh live readiness and release sync pass. Don\u2019t try another import yet.",
+  "anotherImportAuthorized": false
+}

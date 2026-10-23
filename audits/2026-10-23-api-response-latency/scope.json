@@ -1,0 +1,111 @@
+{
+  "format": "proof-of-work-api-response-latency-approval-scope-v1",
+  "status": "prepared-not-approved-not-deployed",
+  "baseSourceCommit": "946946aa624e2a58da167cc384d1cc0424e5d29e",
+  "runtimeBaselineHead": "92eb5fbdaacfd05955dae6d994586850f93944b9",
+  "runtimeWrites": [
+    {
+      "path": "/opt/proofofwork-api/server/proof-api.mjs",
+      "beforeSha256": "3374a0f1324f8252b10d2d7d3d306c806169b9a3453869c3d72d4d95d9e58252",
+      "afterSha256": "328c39389b7bb6c0ecd3560112c36226c926e03ede7b367cbdb93919ac0311c6",
+      "repositoryCandidateSha256": "149a065066f4f20f8d03b34dbcaafa9b7f60fa0c9a12339abe51f17dd4d4d3a7",
+      "cleanThreeWayMerge": true
+    }
+  ],
+  "patchSha256": "010954ddfa7b31f1c41fc69fc4fa367f1991436f4664aa8efa81878288e33f87",
+  "captureSha256": "94e713c90a8b95a677b54acb22e450477853c93e2f60573056f507713ee09ef3",
+  "sourceFiles": {
+    "server/proof-api.mjs": "149a065066f4f20f8d03b34dbcaafa9b7f60fa0c9a12339abe51f17dd4d4d3a7",
+    "scripts/checkpoint-canonical-digest.test.mjs": "e4b725e9a60359a203d7b7c152b5084e49116c05e9357be85279b2f5b277a355",
+    "OP_RETURN_INFRASTRUCTURE.md": "fe4b562387179a0c15a274657af37b76bd1e65991e788f8fa71864d87d22a25c",
+    "deploy/api-response-latency/capture-node.py": "c36914695944d3b4dc8786cbd683c4fc568066c71ad48b2c6bb6276f70e25a98",
+    "deploy/api-response-latency/check-release.test.py": "3048dc0b7ac15d75acb58632c7f2d0fd12c8e9088fb937450289188702acdc5c",
+    "deploy/api-response-latency/check-scoped-node.test.py": "e15254ef27431e58c6d31d36d113c3c6e4d6a761a3e3572ea42c3ee22225b695",
+    "deploy/api-response-latency/release.py": "dc2d50e7ccb56f95296ea1ed217b7cb28eb6586a7125bfcb835014446e8e0a8b",
+    "deploy/api-response-latency/rollout-node.py": "09bd5dd8501980226ec5f735358c22b82ca0964466d874c6d23c5b14b5c21c5d",
+    "deploy/api-response-latency/scoped-node.py": "b57c699d8b5179f184b9b9f9f0f0b63927918ceb692048fd0412b1ee4d1aa4b2"
+  },
+  "evidenceFiles": {
+    "api-health-candidate.json": "c4d731d103d8a5386aabb270dc0c3a9a269321c3f9ce05fcddaabebe8ad53c8a",
+    "api-health-final.json": "0a14975f8c04b08801e2f8e83f3def30566579965214e67191d7d1e7ed84bd3d",
+    "cgroups.json": "054cc9028658be50bea7fc299db8d2d348f76bb2043f0c3443750c50188543b7",
+    "components.json": "5a8fc2929de652da820ee016672f34c0661946e378a8f4b45fa6e4e3b9d4461f",
+    "api-health-baseline.json": "f77d41851f7355a222334fec1d545e42ebb81eb2123467e7a0c93ffc5500f8f8",
+    "api-fix.patch": "010954ddfa7b31f1c41fc69fc4fa367f1991436f4664aa8efa81878288e33f87",
+    "controlled-read.json": "406bcc563f7c4ab8572b5ebd35d3cd13e3cb6a6019c741004299e36c0c46bdad",
+    "profile-summary.json": "dd8c075bee15db7edb375120ebf6bf35b40870186860265cbdb622f07aafc6b3",
+    "runtime-preservation.json": "51e18e9f517557a7d8dacc80a805658cff35df75cc9af24bff0e43cbc2f36d7e",
+    "perf-report-flat.txt": "4a93c615ca341dd0345f7cea6cd5f0fba2fe8b61e51eda45cb19c7e19f98fe33",
+    "final-preservation.json": "eda68a592fb5ea1213e17cc88798a1f02070de13735e9feb9f537a019a37039c"
+  },
+  "preservation": {
+    "databaseOperations": [],
+    "databases": [
+      "proof_indexer",
+      "proof_indexer_id_seal_20261018",
+      "proof_indexer_id_seal_20261023",
+      "proof_indexer_id_seal_20261023_r2",
+      "proof_indexer_id_seal_shadow_971938"
+    ],
+    "committedRecoveryWrites": "Never replay or rerun; private source and all failed targets retained.",
+    "healthChecks": "Unchanged predicates, 2s cache, 1s connect and 2s import-guard response limit; first failure abort; no bypass.",
+    "runtimeSources": "All 219 captured sources are hash fenced; only proof-api.mjs may change.",
+    "configuration": "No change; no database URL switch; no runtime Git reset.",
+    "otherReleasedFixes": "Preserve released charts, Android, Boost, accepted native-storage and other runtime overlays."
+  },
+  "deploymentScope": {
+    "localGit": "After approval only: create codex/api-response-latency from the pinned released main, commit exactly this fix/controller/docs/evidence, integrate and push preserving concurrent work. Never merge the seal recovery branch.",
+    "runtime": "Use the scoped controller and freshly captured, hash-fenced committed candidate; retain rollback bytes. Stop on any source or dependency drift.",
+    "serviceActivation": [
+      "temporarily hold and restore Search using its pinned controller",
+      "drain and restore API gateway socket/service",
+      "restart proofofwork-api.service and its PartOf dependent proofofwork-indexer-worker.service"
+    ],
+    "protectedServices": [
+      "bitcoind.service",
+      "electrs.service",
+      "postgresql@16-main.service"
+    ],
+    "verification": [
+      "60 seconds of fresh live health probes at the unchanged deadline",
+      "two overlapping ordinary listing reads plus display evidence and cursor continuity checks",
+      "fresh ordinary worker readiness and renewed summary publication",
+      "verify installed runtime hash and preserved dependency/source hashes",
+      "publish same committed source to the existing product roots, synchronize primary main and local preview, pass npm run check:release-sync before announcing"
+    ],
+    "rollback": "On failed installation use controller exact rollback; on failed live qualification restore captured API bytes through a separately hash-fenced inverse manifest and restore service activation. Reconcile unknown outcome before retrying.",
+    "announcement": "Only after production verification and full release sync, per standing repository instructions.",
+    "anotherImportAuthorized": false
+  },
+  "findings": {
+    "confirmed": "Synchronous complete-book cursor serialization/hash blocks the shared API event loop.",
+    "historicalTimeout": "Not conclusively attributed solely to this path; no two-second timeout reproduced in the isolated baseline.",
+    "baseline": {
+      "maxEventLoopLagMs": 1460.792335,
+      "maxCompletedHealthMs": 1320.419,
+      "twoReadsMs": 8511.087471,
+      "shutdownProbe": "Final curl 52 was process teardown, not a health-timeout measurement."
+    },
+    "candidate": {
+      "maxEventLoopLagMs": 137.152306,
+      "healthProbes": 21,
+      "allHealth200": true,
+      "maxHealthMs": 238.496,
+      "twoReadsMs": 9585.750179
+    },
+    "hashParity": "8/8 complete real-data hashes identical",
+    "tests": "12 JavaScript regressions; 20 scoped controller tests; 19 release tests passed"
+  },
+  "approvalRequired": [
+    "commit/push the exact listed local scope",
+    "deploy the one-file runtime overlay and perform the listed service activation/release synchronization"
+  ],
+  "exclusions": [
+    "No import, target creation or database cutover",
+    "No seal replay or committed writes repeated",
+    "No UI/product behavior changes",
+    "No weakened readiness or health gates"
+  ],
+  "hygiene": "hygiene:fix found no rebuildable cleanup; hygiene:check passed; semantic review found no protocol/product or SOUL change needed; infrastructure documentation updated; no deletions of existing tracked files.",
+  "localPreparation": "Detached worktree based on released main; no commit or push. Recovery branch preserved separately."
+}

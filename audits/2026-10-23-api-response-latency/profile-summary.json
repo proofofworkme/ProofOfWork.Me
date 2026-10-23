@@ -1,0 +1,26 @@
+{
+  "api-isolated-profile.json": {
+    "artifactSha256": "5948cc5d1620aef59406463a8779c95823e30f16d1683b84b01aaa5a052aa3e9",
+    "exit": 0,
+    "stdout": "{\"result\":{\"elapsedMs\":4799.320045,\"bytes\":12058},\"maxEventLoopLagMs\":1381.6267749999997}\n",
+    "stderrBytes": 0
+  },
+  "api-overlap-profile.json": {
+    "artifactSha256": "a9f3280ddd23f55edacf5d866478e69ad41c66203ce9e55f091cbdf19d01e70e",
+    "exit": 0,
+    "stdout": "{\"result\":{\"elapsedMs\":8456.118548999999,\"bytes\":24119},\"maxEventLoopLagMs\":1405.4243369999995}\n",
+    "stderrBytes": 0
+  },
+  "api-candidate-v2-profile.json": {
+    "artifactSha256": "535281533c174c82b457468f7347978b5b30e641ff3b3a92f4427e29aedfb4b5",
+    "exit": 0,
+    "stdout": "{\"result\":{\"elapsedMs\":9398.307911,\"bytes\":24119},\"maxEventLoopLagMs\":128.39342499999998}\n",
+    "stderrBytes": 0
+  },
+  "api-parity-candidate.json": {
+    "artifactSha256": "d1a7aae40ac9e2cd8ff65295de1d90fdc7a3de14abe45bb6777da6587d0426c1",
+    "exit": 0,
+    "stdout": "{\"result\":{\"elapsedMs\":12618.005373,\"bytes\":24119},\"maxEventLoopLagMs\":497.039463000001,\"parityChecks\":8}\n",
+    "stderrBytes": 0
+  }
+}

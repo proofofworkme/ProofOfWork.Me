@@ -1,0 +1,137 @@
+{
+  "proofofwork-api.service": {
+    "ControlGroup": "/system.slice/proofofwork-api.service",
+    "CPUUsageNSec": "70351318468000",
+    "CPUWeight": "[not set]",
+    "CPUQuotaPerSecUSec": "infinity",
+    "IOWeight": "[not set]",
+    "MemoryHigh": "infinity",
+    "MemoryMax": "infinity",
+    "hierarchy": [
+      {
+        "path": "/sys/fs/cgroup/system.slice/proofofwork-api.service",
+        "stats": {
+          "cpu.max": "max 100000\n",
+          "cpu.stat": "usage_usec 70351318468\nuser_usec 67518516575\nsystem_usec 2832801893\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+          "cpu.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=19695020\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=17373831\n",
+          "io.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=46540\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=45977\n",
+          "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n"
+        }
+      },
+      {
+        "path": "/sys/fs/cgroup/system.slice",
+        "stats": {
+          "cpu.max": "max 100000\n",
+          "cpu.stat": "usage_usec 56292915796294\nuser_usec 45746395602292\nsystem_usec 10546520194002\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+          "cpu.pressure": "some avg10=0.00 avg60=0.00 avg300=0.02 total=30588665358\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=17219853204\n",
+          "io.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=1333349647\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1318730808\n",
+          "memory.events": "low 0\nhigh 2935504\nmax 1429888\noom 0\noom_kill 0\noom_group_kill 0\n"
+        }
+      },
+      {
+        "path": "/sys/fs/cgroup",
+        "stats": {
+          "cpu.stat": "usage_usec 56533763270000\nuser_usec 45798075555000\nsystem_usec 10735687715000\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+          "cpu.pressure": "some avg10=0.00 avg60=0.00 avg300=0.03 total=39202120794\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+          "io.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=1522434780\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1475017011\n"
+        }
+      }
+    ]
+  },
+  "postgresql@16-main.service": {
+    "ControlGroup": "/system.slice/system-postgresql.slice/postgresql@16-main.service",
+    "CPUUsageNSec": "11270423441000",
+    "CPUWeight": "[not set]",
+    "CPUQuotaPerSecUSec": "infinity",
+    "IOWeight": "[not set]",
+    "MemoryHigh": "infinity",
+    "MemoryMax": "infinity",
+    "hierarchy": [
+      {
+        "path": "/sys/fs/cgroup/system.slice/system-postgresql.slice/postgresql@16-main.service",
+        "stats": {
+          "cpu.stat": "usage_usec 11270423441\nuser_usec 9525256589\nsystem_usec 1745166851\ncore_sched.force_idle_usec 0\n",
+          "cpu.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=1946859\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1751728\n",
+          "io.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=724609\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=722014\n",
+          "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n"
+        }
+      },
+      {
+        "path": "/sys/fs/cgroup/system.slice/system-postgresql.slice",
+        "stats": {
+          "cpu.max": "max 100000\n",
+          "cpu.stat": "usage_usec 7282115313204\nuser_usec 4807826412950\nsystem_usec 2474288900254\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+          "cpu.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=1090976223\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1019400507\n",
+          "io.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=171483857\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=170446089\n",
+          "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n"
+        }
+      },
+      {
+        "path": "/sys/fs/cgroup/system.slice",
+        "stats": {
+          "cpu.max": "max 100000\n",
+          "cpu.stat": "usage_usec 56292915801304\nuser_usec 45746395606299\nsystem_usec 10546520195004\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+          "cpu.pressure": "some avg10=0.00 avg60=0.00 avg300=0.02 total=30588665358\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=17219853204\n",
+          "io.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=1333349647\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1318730808\n",
+          "memory.events": "low 0\nhigh 2935504\nmax 1429888\noom 0\noom_kill 0\noom_group_kill 0\n"
+        }
+      },
+      {
+        "path": "/sys/fs/cgroup",
+        "stats": {
+          "cpu.stat": "usage_usec 56533763279000\nuser_usec 45798075561000\nsystem_usec 10735687718000\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+          "cpu.pressure": "some avg10=0.00 avg60=0.00 avg300=0.03 total=39202120805\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+          "io.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=1522434780\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1475017011\n"
+        }
+      }
+    ]
+  },
+  "proofofwork-indexer-worker.service": {
+    "ControlGroup": "/system.slice/proofofwork-indexer-worker.service",
+    "CPUUsageNSec": "3090982149000",
+    "CPUWeight": "[not set]",
+    "CPUQuotaPerSecUSec": "infinity",
+    "IOWeight": "[not set]",
+    "MemoryHigh": "infinity",
+    "MemoryMax": "infinity",
+    "hierarchy": [
+      {
+        "path": "/sys/fs/cgroup/system.slice/proofofwork-indexer-worker.service",
+        "stats": {
+          "cpu.max": "max 100000\n",
+          "cpu.stat": "usage_usec 3090982149\nuser_usec 2682581886\nsystem_usec 408400262\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+          "cpu.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=1863636\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1803280\n",
+          "io.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=417\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=417\n",
+          "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n"
+        }
+      },
+      {
+        "path": "/sys/fs/cgroup/system.slice",
+        "stats": {
+          "cpu.max": "max 100000\n",
+          "cpu.stat": "usage_usec 56292915805294\nuser_usec 45746395610290\nsystem_usec 10546520195004\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+          "cpu.pressure": "some avg10=0.00 avg60=0.00 avg300=0.02 total=30588665358\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=17219853204\n",
+          "io.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=1333349647\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1318730808\n",
+          "memory.events": "low 0\nhigh 2935504\nmax 1429888\noom 0\noom_kill 0\noom_group_kill 0\n"
+        }
+      },
+      {
+        "path": "/sys/fs/cgroup",
+        "stats": {
+          "cpu.stat": "usage_usec 56533763288000\nuser_usec 45798075567000\nsystem_usec 10735687721000\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0\n",
+          "cpu.pressure": "some avg10=0.00 avg60=0.00 avg300=0.03 total=39202120812\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+          "io.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=1522434780\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1475017011\n"
+        }
+      }
+    ]
+  },
+  "proofofwork-id-seal-promotion-20261023T150000Z.service": {
+    "ControlGroup": "",
+    "CPUUsageNSec": "7354924000",
+    "CPUWeight": "10",
+    "CPUQuotaPerSecUSec": "1s",
+    "IOWeight": "10",
+    "MemoryHigh": "536870912",
+    "MemoryMax": "1073741824"
+  }
+}

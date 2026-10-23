@@ -1,0 +1,1486 @@
+{
+  "format": "proof-of-work-api-response-latency-runtime-capture-v1",
+  "capturedAt": "2026-10-23T13:38:20.205173+00:00",
+  "root": "/opt/proofofwork-api",
+  "baselineHead": "92eb5fbdaacfd05955dae6d994586850f93944b9",
+  "controllerSha256": "b57c699d8b5179f184b9b9f9f0f0b63927918ceb692048fd0412b1ee4d1aa4b2",
+  "dependencyPaths": [
+    "WORK_MARKET_V1_REFUNDS_959061.json",
+    "WORK_MARKET_V2_STALE_REFUND_REVIEW_959301.json",
+    "package-lock.json",
+    "package.json",
+    "scripts/backfill-proof-indexer.mjs",
+    "scripts/backfill-proof-search.mjs",
+    "scripts/restore-incb-oracle-snapshots.mjs",
+    "scripts/run-proof-indexer-worker.mjs",
+    "server/address-chain-pagination.mjs",
+    "server/bitcoin-message-verifier.mjs",
+    "server/bond-units.mjs",
+    "server/boost-growth.mjs",
+    "server/boost-marketplace-proof.mjs",
+    "server/boost-projection.mjs",
+    "server/canonical-op-return.mjs",
+    "server/canonical-order.mjs",
+    "server/canonical-seal-time.mjs",
+    "server/canonical-summary-budget.mjs",
+    "server/code-repositories.mjs",
+    "server/core-outpoint-batches.mjs",
+    "server/db/boost-growth-reader.mjs",
+    "server/db/code-reader.mjs",
+    "server/db/jobs-reader.mjs",
+    "server/db/native-transition-storage.mjs",
+    "server/db/permission-reader.mjs",
+    "server/db/postgres.mjs",
+    "server/db/proof-index-reader.mjs",
+    "server/db/read-only-snapshot.mjs",
+    "server/db/search-reader.mjs",
+    "server/dns-page-link-discovery.mjs",
+    "server/dns-subdomain-discovery.mjs",
+    "server/dns-subdomain-page-links.mjs",
+    "server/dns-verification-store.mjs",
+    "server/electrum-client.mjs",
+    "server/event-history-pages.mjs",
+    "server/http/responses.mjs",
+    "server/id-registry-audit-contract.mjs",
+    "server/incb-post-v5-repair.mjs",
+    "server/incb-range-replay-witness.mjs",
+    "server/incb-replay-baseline.mjs",
+    "server/incb-replay-components.mjs",
+    "server/incb-scoped-oracle.mjs",
+    "server/jobs.mjs",
+    "server/permission-discovery.mjs",
+    "server/permission-verification-store.mjs",
+    "server/permissions.mjs",
+    "server/proof-api.mjs",
+    "server/proof-index-event-relations.mjs",
+    "server/proof-index-mail-projection.mjs",
+    "server/read-projections.mjs",
+    "server/replay-token-table-bridge.mjs",
+    "server/search-generation-sharing.mjs",
+    "server/search-projection.mjs",
+    "server/token-listing-lifecycle.mjs",
+    "server/token-listing-query-scope.mjs",
+    "server/wallet-read-observation.mjs",
+    "server/work-amo-v5-bip141.mjs",
+    "server/work-amo-v5-raw.mjs",
+    "server/work-amo-v5-seed-evidence.mjs",
+    "server/work-amo-v5.mjs",
+    "server/work-amo-v6-declaration.mjs",
+    "server/work-amo-v6.mjs",
+    "server/work-amo-v7.mjs",
+    "server/work-amo-v8-activation-latch.mjs",
+    "server/work-amo-v8-declaration.mjs",
+    "server/work-amo-v8-worker-readiness.mjs",
+    "server/work-amo-v8.mjs",
+    "server/work-market-v2.mjs",
+    "server/work-precision-v2-marker.mjs",
+    "server/work-precision-v2-schema.mjs",
+    "server/work-q16-pending-projection.mjs",
+    "server/work-units.mjs",
+    "server/work-wallet-capacity.mjs",
+    "src/features/identity/bitcoinMessageVerifier.mjs",
+    "src/shared/protocol/boostText.mjs",
+    "src/shared/protocol/boostTip.mjs",
+    "src/shared/protocol/codeRepository.mjs",
+    "src/shared/protocol/dnsPages.mjs",
+    "src/shared/protocol/dnsSubdomainPages.mjs",
+    "src/shared/protocol/dnsSubdomains.mjs",
+    "src/shared/protocol/jobs.mjs",
+    "src/shared/protocol/ownerOutputCommitment.mjs",
+    "src/shared/protocol/permissions.mjs",
+    "src/shared/protocol/publishArticle.mjs"
+  ],
+  "nodePath": "/opt/node-v24.18.0-linux-x64/bin/node",
+  "nodeSha256": "41a74efb34cbde5c7632cdac0cf8bd1a14d0b8d73dc1e82755014d9a9ce70f5c",
+  "gateway": {
+    "files": {
+      "proofofwork-api-wg.socket": "667a5e37200eecb870ce093cb814b3a9c8c2f6613e124465c5c614acc0cf1e7e",
+      "proofofwork-api-wg.service": "502808a45617eed2aeecc6385ef8d7a2597891ef7d164cb06a952b3f48d6315a"
+    },
+    "active": {
+      "proofofwork-api-wg.socket": "active",
+      "proofofwork-api-wg.service": "active"
+    },
+    "unitFileStates": {
+      "proofofwork-api-wg.socket": "enabled",
+      "proofofwork-api-wg.service": "static"
+    }
+  },
+  "searchFiles": {
+    "proofofwork-search-index.service": "75e664047a4739e7d9215aa21e34a9206240c0dc7c13b588dab5b955ab6d5931",
+    "proofofwork-search-index.timer": "7150e04654cc4c2b29b01c41c632380af31dc3541ac6f9ebd2d441dd0c8f4108"
+  },
+  "services": {
+    "proofofwork-api.service": {
+      "MainPID": "434584",
+      "WorkingDirectory": "/opt/proofofwork-api",
+      "ActiveState": "active"
+    },
+    "proofofwork-indexer-worker.service": {
+      "MainPID": "2470249",
+      "WorkingDirectory": "/opt/proofofwork-api",
+      "ActiveState": "active"
+    }
+  },
+  "authority": {
+    "bitcoind.service": {
+      "MainPID": "1324302",
+      "WorkingDirectory": "",
+      "ActiveState": "active"
+    },
+    "electrs.service": {
+      "MainPID": "1324320",
+      "WorkingDirectory": "",
+      "ActiveState": "active"
+    },
+    "postgresql@16-main.service": {
+      "MainPID": "2470111",
+      "WorkingDirectory": "",
+      "ActiveState": "active"
+    }
+  },
+  "search": {
+    "proofofwork-search-index.service": {
+      "MainPID": "0",
+      "WorkingDirectory": "/opt/proofofwork-api",
+      "ActiveState": "inactive"
+    },
+    "proofofwork-search-index.timer": {
+      "ActiveState": "active"
+    }
+  },
+  "protectedServices": {
+    "files": {
+      "proofofwork-api.service": "db8958c1d908f6c507e78cf7b28b50850b460efecf7bead461b550f80a402850",
+      "proofofwork-indexer-worker.service": "61027b08156c657758a9170df6484d33f69dae6ca2387a26402769ff607bfd57"
+    },
+    "states": {
+      "proofofwork-api.service": {
+        "MainPID": "434584",
+        "WorkingDirectory": "/opt/proofofwork-api",
+        "ActiveState": "active"
+      },
+      "proofofwork-indexer-worker.service": {
+        "MainPID": "2470249",
+        "WorkingDirectory": "/opt/proofofwork-api",
+        "ActiveState": "active"
+      }
+    }
+  },
+  "sources": {
+    "WORK_MARKET_V1_REFUNDS_959061.json": {
+      "sha256": "4777943cc0ddc56b62e3b71a02667d87cba667e57cf3c0f62d5cead8399c611f",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "WORK_MARKET_V2_STALE_REFUND_REVIEW_959301.json": {
+      "sha256": "56e69f136f2855d6f6a4c140c94c1f4df6cfcd1307e53c6650ecf7b50e5f5713",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "package-lock.json": {
+      "sha256": "1f6d39daa9d62f3ce75e804333f04031a934f6f50690734df7f00effb7f3f4b6",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "package.json": {
+      "sha256": "8e57f68c453c749fc85f7cd8095e54f5a3b913ed973105fa0af986e395797fa5",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/apply-proof-indexer-schema.mjs": {
+      "sha256": "06e172f6b96ec75cc0b87acbf2a00a9ce0ba30def8be30e95bf771de1290e822",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/audit-computer-events.mjs": {
+      "sha256": "a5a82730ab8d7edde3d617362c960aa64155dbb090e5676a0906306d6a6d0bce",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/audit-id-registry.mjs": {
+      "sha256": "d7bbe914e3db45fcebac174dc182146f988547fb8d94ffa65f8286cebd50a825",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/audit-ledger-consistency.mjs": {
+      "sha256": "9180446b7cca24d36071d7c2992ecb3ff14b8572c8fb1fd13e2f6b3861c68e41",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/audit-production-surfaces.mjs": {
+      "sha256": "d1991e2e35b4bdad8e584642bbc223797cfdc3c8145194bf66417a05c1b88193",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/backfill-proof-indexer.mjs": {
+      "sha256": "26798df77d5a6b57fd34922c7d13b8642af5b44d103fc27aac81d3921bb462f2",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/backfill-proof-search.mjs": {
+      "sha256": "7f52a01e705fff7ec4740428a248fee71f8266f905854557cb38ddb53bb3f7cb",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/backfill-proof-search.test.mjs": {
+      "sha256": "de48a4cb2894cd6cfad8ff5b0d678c32508e34d2098e71eebdad98457fc9b810",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/build-bond-hard-price-declaration.mjs": {
+      "sha256": "39af18527a090e6bba173d091cc345e2df47d6b5eee0566d22a437a0f19ab112",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/build-general-deck.mjs": {
+      "sha256": "18a241fb0a18260da8d6aaa8e5214a43ccde4c6fb8b00c2151d2d507031c734f",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/build-work-amo-v6-declaration.mjs": {
+      "sha256": "890886b7f88146fba9dd5a7ba1f2a02a40de6e953f26553a79d85f800740e507",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/build-work-amo-v7-declaration.mjs": {
+      "sha256": "a760a56bae269fb31833a378bfc305301c25dd42251d89306733d48235767f1d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/build-work-amo-v8-declaration.mjs": {
+      "sha256": "77d418ee5cbac67b14a5920f41993e2db3d8504b260c97db6aa01aa356d8fbb1",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-api-truth-contract.mjs": {
+      "sha256": "cd7da22a353b3dee5a5f84523ccb79df3c6d9ce3b0dbc7a67b84fbcbfa40a500",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-audit28-regressions.mjs": {
+      "sha256": "c0c698ffe8f7e96325531400dfc3b1a2e9c85ffd4a8b720647cec2ce102cc86d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-audit29-ui-regressions.test.mjs": {
+      "sha256": "921deb605c796d5c2b69534c4a3cbec978cb2bfa887b49160d9111f36a69059a",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-audit5-candidate-probe.mjs": {
+      "sha256": "484a791e64f91e0e859b49cb91a90df6be083b92adbe5b706cda36874b88092e",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-audit5-data-repair-fixtures.mjs": {
+      "sha256": "d9a539e3198ff230df5e9969651a62f0b3b4f715eba5153be4f98cea043f3881",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-audit5-data-repair.mjs": {
+      "sha256": "b475050441ed3828becb613ca7db16390a1560cd922846c7fdaeb34fd326fb57",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-audit5-private-launcher.mjs": {
+      "sha256": "513a4d9d90e8e1b8f61d7b84ec87b8e7736322ecc27fe122a19fb3f465c0a65d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-bitcoin-message-signatures.mjs": {
+      "sha256": "9ffc0c920190325b28cc3b054a12a3620924dc015a1dab543ba4b7fb655723b4",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-bond-exact-arithmetic.mjs": {
+      "sha256": "c6189afc48a0f8e62998707bb8cd3627b719377cbc779ccedfa02752d1154fa2",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-boost-growth-client.test.mjs": {
+      "sha256": "e487cfc44417dd6587c0f64ad81a29e248c15e6dc27d2e4241d1bfdbd3b70a62",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-boost-growth.mjs": {
+      "sha256": "179bb3935a9f7cc851f41cc5a09b054067551066d45dc4fb451c412bf5e41eaf",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-boost-regressions.mjs": {
+      "sha256": "46da6ed749aac1f2d328c3e443dfd0c78c9e7a782d5d15338ab8ae7bacfc7114",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-canonical-order.mjs": {
+      "sha256": "871657c0162d082e3bb757eda43a5e0cc5a3ecbc552a88ad55e972bc8eb50948",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-client-read-containment.mjs": {
+      "sha256": "33fd7083d063335cdaac75f4f2c940aa4f04b074a49cc74a444b45070a651ea4",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-credit-mint-regressions.mjs": {
+      "sha256": "320f5bba394924c64f335495c299e882b2f2080c51501d7b72a679856e7e176b",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-dns-subdomain-raw.test.mjs": {
+      "sha256": "e5e374483f7c5b2998b4d0780155824ac4196f63e9b9b1db175d1890b5a07b51",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-dns-subdomains.mjs": {
+      "sha256": "06d8d084cad5d2a5f6a4eb39309f89cdc6713d85f7272e87bd7d9d1b8b482712",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-electrum-client.mjs": {
+      "sha256": "0ed9b63b53a6ece43ad8e491c64034a0a153ec4381e4bec2a59ac4ff33725402",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-fee-exact-arithmetic.mjs": {
+      "sha256": "18fadb3ea12548472c62839791128e868de867ef79b5ad8a556b1d602e993074",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-fee-rate-precision.mjs": {
+      "sha256": "e217b7148152fc812da335cb0be50ad723543dea836b887da7f3a67b7f45af0c",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-growth-archive.test.mjs": {
+      "sha256": "174dc9340d468e2dc274f5e1c169f7cfac2dac531493d7be56be1ce0cac19ee1",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-growth-forecast.test.mjs": {
+      "sha256": "8b409791041c3efb72a1870a09d786fae3d22565c8412dcfd48f92bfaf4cdafa",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-h19-work-capacity-admission.mjs": {
+      "sha256": "dd0a66cccaf133efea22342a94e3504142995e49f0596c34f6ffea1e21900a4e",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-h19-work-capacity-client.mjs": {
+      "sha256": "fe51a9a94ebe2dc9f7bbcc67d60e6314b18d8443ff24012e7ab54b6ea3c94e6b",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-hardening-contract.mjs": {
+      "sha256": "6f1567d93155b0e89b265b1b8cfe98ce7f534295f8d04ac50b5ef79cd983e34a",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-id-address-route.mjs": {
+      "sha256": "a81fe1977cc2298e4fd8bee06cb9b74065806c79ef3bf488ec166a6267f942c3",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-id-audit-current-context.test.mjs": {
+      "sha256": "0e0a8ede45a33a8660abb425c2ee5280441434c561553844e753cbdc5d095711",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-id-audit-loopback-transport.test.mjs": {
+      "sha256": "e4a2bc51eae9a9713cb3c5e75172ddf627f06f84d1cdd08c2569d5803643987d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-id-registry-audit.mjs": {
+      "sha256": "2bff10ad0a9e09583454f0b340dd9cf3c74370a2e2e7ecab47750adf02e50150",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-incb-post-v5-repair.mjs": {
+      "sha256": "fc257fdaa58b14e7c625a29e6fcfcd0af13ca43dffcaee17ecb60215fe877ca4",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-incb-range-replay-witness.mjs": {
+      "sha256": "b041864cc72ab28a2f6f75d0b3a385918604977bfde5364a8644496059b51605",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-incb-scoped-oracle.mjs": {
+      "sha256": "03812bc2b7d6b1ff3385e25a83f2ca19aba26750e57e3fb1142d44983e9a2d98",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-index-recovery-behavior.mjs": {
+      "sha256": "04b95b25f37353391bebbadad76c9835a1288d6cfa85c69843fe1bce5d71568a",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-inflight-request-pool.mjs": {
+      "sha256": "3351407e6582187eddb945f0050e076922a4407cb446174b7c7d3aca5fa8eede",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-live-data-contract.mjs": {
+      "sha256": "0f8f2e92684676055955887e72595122a15c83df3ceacc4bf2b8007f255ee475",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-local-review.mjs": {
+      "sha256": "c8f906e72abf0287bc9473a17d280006e6dbb1f75a98e551fef796a7f7351f10",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-mail-body-preservation.mjs": {
+      "sha256": "7cfdd68d97fdb1221d9a0c0358cf5c8394ba538d1de1c69b0ac05551ce53025d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-mail-regressions.mjs": {
+      "sha256": "16ff9ad1fc17f26087ee0980c64e666dc4c9320a68b479f3dc126a926a400c22",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-marketplace-read-budget.test.mjs": {
+      "sha256": "0fb4a6df3fd4634dc71a8765f998b28271c300773c9c0e1d0e97f131a637c6ab",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-marketplace-regressions.mjs": {
+      "sha256": "401d8c0b89a673ffb41b2f1a1fc70343bc2804f9d31ea2ffa940ba6b251a3b95",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-node-ops-contract.mjs": {
+      "sha256": "e6b6c4c62f027c8fd837fd9c732b68c502a897aa955fef7ab94bcbac127ffda5",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-pending-readiness-diagnostics.test.mjs": {
+      "sha256": "ddba1d9e6b252a6c07923e690d5ecc9fa69a46e521ec44582cd62a0531ac59c2",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-post-v5-incb-h1-import.mjs": {
+      "sha256": "658216a41d961ba25ba1bff2cc75ee1a42969b36adaa7d7f6921befc6d3ee4c7",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-production-observability.mjs": {
+      "sha256": "5791547ddcc4a12bdc5efccc9ddd41e316f586e1a051210dfeff8f94f83e40cd",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-proof-api-client.test.mjs": {
+      "sha256": "0abbedd0633632a1346226c6ed70a1074b55c2a58b460a5ec5052057537b50cb",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-proof-indexer-parity.mjs": {
+      "sha256": "450e5361ae5ecdd8dde6e434723366e3d4cc1cafae4675e9e7760c3d1cac90ac",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-publish-articles.mjs": {
+      "sha256": "6bc569f63a24599eb16e56bd8a8914c708f56e060f4980f01753290f0a97606d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-publish-recovery.test.mjs": {
+      "sha256": "55bfbd693b7ac13a452c2a7fe90c47f61ac647a1e187ae453e8c3fa4c5dce735",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-recursive-assurance.test.mjs": {
+      "sha256": "2d94e2fbab0221cdabbfddbf817f9e7d672d51b2188f583f6063170bc5b6a759",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-replay-token-table-bridge.mjs": {
+      "sha256": "ce5b29245057d941d360f021ed06df3e4d895b714c2c3b2665713eb771bca739",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-restore-incb-oracle-snapshots.mjs": {
+      "sha256": "65b0217fb7649c9d53a2490c0f806a2d58f06b1fd0d610cc8f424aca39177963",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-send-prep-fixtures.mjs": {
+      "sha256": "c640be40b125dd59affb6cc8b2c6c4169491c5d6de05fa85435701eb6e39a644",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-send-prep-regressions.mjs": {
+      "sha256": "c676df4ec95ad3f1cd3d2c80cef617e45bb0bc70c4882493b8f43fe5cf92a2db",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-server-free-identifiers.mjs": {
+      "sha256": "316bb6afbc24340d8a43239cc47648d4b3f64595bb830a5103967432d865117e",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-social-identity.test.mjs": {
+      "sha256": "9ee3af9f5c30e4901ec878c4ab0f1177f22d2dfac9c2c314ad20e5b10c530825",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-summary-route-latency.test.mjs": {
+      "sha256": "85ddf882fed18e59867d0b758b4ab39e7ff1b7cac7d16ae06e31499aaebf7a90",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-summary-route-readiness.mjs": {
+      "sha256": "149c74a1c53d63cd41b6c0d39ea8461cbb64749226b996de9a60924e4f56010a",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 488
+    },
+    "scripts/check-surface-read-state.mjs": {
+      "sha256": "017042659e5cb0d79af50d3bc0b697f1ba62bc5047cdee96f8939ca6a613a2a2",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-ui-contract.mjs": {
+      "sha256": "1b2e5295777ae4a0b6b6a79a96843dd993adf142f3bf3003ce24bda593980d75",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-ui-ops-contract.mjs": {
+      "sha256": "fa589e40e51e0d958a7b5fcee54c612eaa45c4fa25c2bbd0949870a71e1f366e",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-wallet-utxo-refresh.mjs": {
+      "sha256": "cbad3c5ee7109d35258f6cfb22b118e5f3b0b7333595877f2021d8a1d1255305",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-amo-v5-peak.mjs": {
+      "sha256": "2c45b39450a41347414fe7009de1013159821a769090c0d6abc7c9453296bd5d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-amo-v5.mjs": {
+      "sha256": "b99905eef7c4f5c6c64ddb79c396304a29d9ebb1675a7580885b57ad89899f14",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-amo-v6-peak.mjs": {
+      "sha256": "07d6ea53cf82f7baa93e03365ec11d3a7ea06d08fbd085fdd7fcd92bb9d8414f",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-amo-v6.mjs": {
+      "sha256": "350f63667e080b60c6b6a553a9947ab7fa6289a0f63a3b1dadd87fbcf40eace0",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-amo-v7-gates.mjs": {
+      "sha256": "77b2c015b6a8ca121a833220c533ee8436f1042b82d71b42588a767b23d4eb66",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-amo-v7-peak.mjs": {
+      "sha256": "23cbae9524317e71e4b13be306121aa102301f952bc7a4b1be88c60debd42efa",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-amo-v7.mjs": {
+      "sha256": "1b08e487a82004733a8d4c29cb0538a1a6fa40c309f1feb115b617ebb5f5ed63",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-amo-v8-gates.mjs": {
+      "sha256": "0e177ba6c1988b0f9ac3a3ef55484f4f5dc753a76949bcb5bdd79422c85eb1df",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-amo-v8-peak.mjs": {
+      "sha256": "0e1ece9af5d03ffcee9326ebbd6591dcf42e17296e53fe6e4e91358ae0876878",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-amo-v8.mjs": {
+      "sha256": "c9efc2d6fc2b5c78c9124e7e5254d10b594342c42b3a73fd47074e9c34db599e",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-market-v2.mjs": {
+      "sha256": "8c2193cb0c4714c5c2b2b4dc03e726c3a7cad316da3e92340bd1c53120870b3b",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-participant-regression.mjs": {
+      "sha256": "d2a12f70d47480033df7332f0588e4024ff6c1290f56f1312a67ed471f8f9436",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-precision-contract.mjs": {
+      "sha256": "ddba9fad8af82d2890977f913a72e5e2c1125ae97d172b25e18cd8fa291bf363",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-work-precision-v2.mjs": {
+      "sha256": "add0eba0ec59220050fd237885e803f803e23dc41e0759345772af227a37a014",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/check-worker-containment.mjs": {
+      "sha256": "547e1789df2ef5453dcef57c0741178db072fe023bdb0254d3935dcfa7d24ab9",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/complete-token-history-pages.mjs": {
+      "sha256": "52ec0e660bae07752cc7e62a613fd683627559782c49ca6d68ac7b24b227138e",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/complete-token-history-pages.test.mjs": {
+      "sha256": "fdffb88b2742731f5fafe6ccfd5b4e39b96acbb27197dc0a82ed21d2ab33226b",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/fixtures/h19-work-wallet-reservations.json": {
+      "sha256": "6781bda24f6d256af57b63eb1696e9206f141ed3f6da7f9fc9d477de6c819e9c",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/fixtures/incb-replay-baseline-963782.json": {
+      "sha256": "7ad4496c74bbff8e2f9a5b1b74fd5862ab6873553db5dddd69a429f57001dab1",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/fixtures/incb-replay-completion-post-v5.json": {
+      "sha256": "c2d317a311220164576f42398a2cc2900799842cf93655e384d0223bd7f4a3be",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/fixtures/incb-replay-components-963782.json": {
+      "sha256": "70b57448ce42fed45a64604ff5fc6b0b34b5537bf614fd96df6e498fe1244f48",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/fixtures/incb-replay-cutover-963781.json": {
+      "sha256": "cd12c9dd6ff7118cb9b67c22c890efabade0b935008c0237f0e50ae5b61ad9a3",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/fixtures/post-v5-h1-fixture.mjs": {
+      "sha256": "db2f7a49f0699146cfed4ca26e090583636c695f2c9f213f8ceb0a7ac211960e",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/fixtures/retention-approved-ui-relocations.json": {
+      "sha256": "72feaee22e9adf747f9aa16bec536f95b9c74392d81270c9dfeeeff154b9bcad",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/generate-growth-forecast.mjs": {
+      "sha256": "dc2f2721d0932360ff4add32a79406045c2a98a347d0efda70753c66bfe41ce6",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/generate-proofofwork-computer-model.mjs": {
+      "sha256": "db8412802a3998b45f904ff2906b0b5d1a5eafc7e14e36e0bf44c90ca4f5e94a",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/import-post-v5-incb-h1-summaries.mjs": {
+      "sha256": "68fdf9cd9813e19738bf82870a2175d7de035b975b6d324333233c9d3fdd14c9",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/import-scoped-incb-oracle.mjs": {
+      "sha256": "7e8391f2cebcbfc347b34dba2c6c5dcc71b1a81bf1c56d5e5eea0f31ff6235ed",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/install-repository-hooks.mjs": {
+      "sha256": "27d0183b4c99f6a48ffa0750e4617e975407da561ac2c8c3c02a29f422720c20",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 488
+    },
+    "scripts/ledger-audit-exact.mjs": {
+      "sha256": "d4c9c04b5f89c0cc8fd0afbbe93835aa6e661d6c07e90a52103a6bda17df93a0",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/ledger-audit-snapshot.mjs": {
+      "sha256": "90717fc35842e45a8febdc63bb0d499121c843c1d00d031ccdaf7c3a696dcff1",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/marketplace-canonical-convergence.mjs": {
+      "sha256": "ec9a8d189f3565bb0fa36094fa043fca51ab3d946cd5c36ce57b3198d041ead7",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/migrate-work-amo-v5.mjs": {
+      "sha256": "beb04cb90481547c15cc44d6ea9a50653bcce938655310d24d4a9d8e765da98d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/migrate-work-amo-v6.mjs": {
+      "sha256": "176396069f005cc587fc9b8800a138e71464ef907c9408961861faabed5ae843",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/migrate-work-market-v2-cutover.mjs": {
+      "sha256": "a9ae3a9cc12ac5fc30695a4a6702654c2850a3d183d8236b2be6ebea0e5286ce",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/migrate-work-precision-v2.mjs": {
+      "sha256": "9fef243894c929116f38109bd75fb0e8441344d01e1c011d8ff98bdd22037da2",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/prepare-bond-hard-price-declaration.mjs": {
+      "sha256": "009015d9bd7ef5962b73ad9a7fae1e3e2e271395e34362ac543daffff04340fe",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/rank-powid-transactions.mjs": {
+      "sha256": "83c1f55a159535b302754d5fe0674326a1b74f5fdb0c1e8f022fbac77040f7b1",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/render-growth-charts.mjs": {
+      "sha256": "4babfdb17c5e2a2a424fb0300c556ef8ff90a4fee89ab59036644cdb3eb0a40b",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/repository-hygiene.mjs": {
+      "sha256": "25658b19e6e6b5d2e3029a9a1dea5c52b570a986e0b41bb101465f253e53acdd",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 488
+    },
+    "scripts/repository-hygiene.test.mjs": {
+      "sha256": "7387adfec960bdcb8858e7535f76b72e248ecb216378320dadea0fff7717d55f",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/restore-incb-oracle-snapshots.mjs": {
+      "sha256": "5c60e07fb9708ab19733a283a2432fe986fe3cdbbfe60e301d066732709859fa",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/run-proof-indexer-worker.mjs": {
+      "sha256": "7f43fb67ccd615f7c7488c09cd92a84183e6ee7092754292ebc6ab3423047706",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "scripts/snapshot-work-v1-refunds.mjs": {
+      "sha256": "a30353d36c99eefee4796333e148bb3fdac97b0452573dd8d4ffdeb1f63e8d78",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/address-chain-pagination.mjs": {
+      "sha256": "eaac31f241867b13cdfef527604f3cfd2ee6de690892cd4fafdb04b0adcb76e8",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/bitcoin-message-verifier.mjs": {
+      "sha256": "60459a03d9d5f33c792860d4c229d29852cf99d96d10ac3a50a9445fbdf460d2",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/bond-hard-price-declaration.mjs": {
+      "sha256": "c7b4105d54d2f7ab40f602bb0a4a9af5af0a0a4767ddbba59622ac5c3a8e2098",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/bond-units.mjs": {
+      "sha256": "6c97871d025ba95dfc82e77a9208afef85637f23d561fce2d6e8b43f03a18bf1",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/boost-growth.mjs": {
+      "sha256": "11bece7d2570841bee26b0ce009e96fc9a24889fd87e0119fec88942f4cff276",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/boost-marketplace-proof.mjs": {
+      "sha256": "6e50152e26da384fbdeea658dcd42f6914911336fae8888e2b594eaab26f76b5",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/boost-projection.mjs": {
+      "sha256": "ab373f09f3d90e4bb80856b9bfc8d66bf0d2ba01e311e22ef81da4ad2d87b3e1",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/canonical-credit-aggregates.test.mjs": {
+      "sha256": "182945fb9805741b002c3c47f1e1064ff821a1c313a119d453205c0a5616a98a",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/canonical-op-return.mjs": {
+      "sha256": "8b38db805042c4cf13e956ef2861096bb01db57f57c8bda20145c2fd495e80f7",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/canonical-order.mjs": {
+      "sha256": "20b917a52321179e9b1cbe7a055ba05a5078cb80f3fdf93039890b9807f2b946",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/canonical-seal-time.mjs": {
+      "sha256": "93703ab62b0c9e527569e8baefaa01e09037ce1b82e4667fe838b04fb0dfa4db",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/canonical-seal-time.test.mjs": {
+      "sha256": "aca359b8656ad452a8e838579882301ec796042e31d13afa4bcd3a7c7b76e47d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/canonical-summary-budget.mjs": {
+      "sha256": "92a158d35dbd870f4e950e924db0e87064d49a23518e9317994f8f0c12ad0ad4",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/code-repositories.mjs": {
+      "sha256": "284a867481edf4ccc55944ea628ac967eca8f65252b99a00cc543de1260df333",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/core-outpoint-batches.mjs": {
+      "sha256": "d792add0cbf6bf856c8c75fbf48e9ff148731ac9fa2fc1d52faac162bf066be5",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/core-outpoint-batches.test.mjs": {
+      "sha256": "146c125697208c246544a29a3aeb581de91b15ee8df2455e3f01d43e587ad411",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/db/boost-growth-reader.mjs": {
+      "sha256": "963988390cd861a899a4c4946abf4329dfc129c91e0ce965a0ca0af3ec4ae753",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/db/canonical-transfer-fee.test.mjs": {
+      "sha256": "dff6c9dc859fe61bb36731f9ce8f67bd7f78c012293c7ccf47d42b88e28f34f8",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/db/code-reader.mjs": {
+      "sha256": "ccf0a6b39496e76670cb7ef4f581b464165451847877cc6df97285c1b9232bf1",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/db/jobs-reader.mjs": {
+      "sha256": "5fe17823eaf0b50e39ab1a2ac759ed189eaef7efb03afdd9497eb4bb6c1a9461",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/db/native-transition-storage.mjs": {
+      "sha256": "7e3393953864a68cdd72f43b7f3ae8e7eb4a24502ff2b260320790ee9be7f584",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/db/permission-reader.mjs": {
+      "sha256": "8477080c4c581555868d2592e9e50ba80da25b7b9e3808234ae6acdd00152628",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/db/postgres.mjs": {
+      "sha256": "73a835421ee51f51c87e5b25a4b9614db4e4c06ca3df79a2ca16b2c713c42041",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/db/proof-index-reader.mjs": {
+      "sha256": "185deec57ecd8fcf0f5fc34d88724fd6a98c7e83d1f9cc3a1b973cd0bc3c50a2",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/db/read-only-snapshot.mjs": {
+      "sha256": "68559f94ede25461c25fe7e8fdf19789643331dad8b005b149960ed29f1183ae",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/db/search-reader.mjs": {
+      "sha256": "e09664218b78aeb2364db8fab7083065665bfa5092cb79761a28cc75b96195e6",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/dns-page-link-discovery.mjs": {
+      "sha256": "b15627fc6cd125ac72c1c4b73efa3fc2e7fa487f867bc554681a74d7f8d2a303",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/dns-subdomain-discovery.mjs": {
+      "sha256": "37f294009cf88ec20423427b24f6c82b68cc158153a53e70784a58d61630a3d7",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/dns-subdomain-discovery.test.mjs": {
+      "sha256": "89e3ff7d2923fc6d41bf896a304f6bad6e953a87993e7b18c8f972ba867858bf",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/dns-subdomain-page-links.mjs": {
+      "sha256": "83eaba5baaaa725f5efa95caefe3d834df799a89714e88ee48ecc3805342a147",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/dns-verification-store.mjs": {
+      "sha256": "daa9f5683ff49bcff9eea54833b04167f4e3604fa8dd1329849f4576f0bb3f18",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/electrum-client.mjs": {
+      "sha256": "6e00121b2a4012e0a2e3b87c82a2f94e1d446b4c2883d96f930ce28b39b72101",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/event-history-pages.mjs": {
+      "sha256": "7d191a85a535f128c85e10796d74c55586c13a886224217dd141a704d27d3a76",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/event-history-pages.test.mjs": {
+      "sha256": "a636e46bfda84b71abafae58eaff3ff0fc73ee44a3660b436bc5cf7e2d4be05d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/exact-q8.test.mjs": {
+      "sha256": "5386be92b6cb62af0733f3ba3f32541bd0a9da6f3606ee963178dbe79afe777e",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/http/responses.mjs": {
+      "sha256": "26001c5eeb3ca66cbc287562314ece1af8a8629b9de0f6e133352b4af0d784e7",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/http/responses.test.mjs": {
+      "sha256": "97bf9d2a3eecae8ab8586de52452d04ffd277459f04f9914cccf3b89f748ef21",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/id-registry-audit-contract.mjs": {
+      "sha256": "2cffffe1fe259de29fb18aa615c905936ccd18e6f2a4a30439d18dde38a04469",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/incb-post-v5-repair.mjs": {
+      "sha256": "649b41e665fbfab72e852eef6efc450acf6edbc82de25b68f95646c351b1a59b",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/incb-range-replay-witness.mjs": {
+      "sha256": "9c46fcedd20ccb0194444e731bc53683bac1574907f3d5e5d2e29d2a4e13b25e",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/incb-replay-baseline.mjs": {
+      "sha256": "49006dfafcd337a0733e2b08f2df2916052fea127aad0fa5fdbf6800c8efbba1",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/incb-replay-components.mjs": {
+      "sha256": "05ce18a66c4ce2e8089e8f2f2727774c08cc600fef2db52f140efaeeec7584c7",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/incb-scoped-oracle.mjs": {
+      "sha256": "1e356a209449b0793ba607af088a12648fb58aeaa1614c61c9660080b3bedb50",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/jobs.mjs": {
+      "sha256": "75799118b5b5885b98d0381f2ecbdf6a44768210494bab356a0533477ea03644",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/mail-article-projection.test.mjs": {
+      "sha256": "a306027bc324d5a9527c1dd96dd1a0dded90b98d24926f877cd9a4789cef7403",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/permission-discovery.mjs": {
+      "sha256": "35da3596150284d7f4f7f6e073ed9313a592b6f68170fe6c149127c5db6ff67b",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/permission-verification-store.mjs": {
+      "sha256": "cee8642d4e4368741d00c5c8c1a969b9c5e327b8654b40151a825587bab27d2b",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/permissions.mjs": {
+      "sha256": "f8b4b883e19f543b8b138aa8e12804bfd1a032f7938af0601e3fb86a2fdf7b7e",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/proof-api.mjs": {
+      "sha256": "3374a0f1324f8252b10d2d7d3d306c806169b9a3453869c3d72d4d95d9e58252",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/proof-index-event-relations.mjs": {
+      "sha256": "271d54b8f4a77f2c7cba21ada5e019726d80f0720533fc28856cace772117511",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/proof-index-mail-projection.mjs": {
+      "sha256": "bc3c4efa87e3a9b7c0918d340d5626ca08491d7c6695f8951ce2c817c88f900c",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/read-projections.mjs": {
+      "sha256": "2a87b39ac8714ea243b9f5e6855b4e8848979a2d6b3e2b360a24e0158fc86128",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/read-projections.test.mjs": {
+      "sha256": "390d00453e3807e6824f58d1aca8cb3230906f1c14f91033468e407dbfed77be",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/registry-pending-times.test.mjs": {
+      "sha256": "01eebf55ef07434a1e969499a1da51136e2c56ecb581ac8a802073ff948409b6",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/replay-token-table-bridge.mjs": {
+      "sha256": "00c7fcf6c39708b008b1be01f0ab8ab049aeda1f4fcfa61090059a598ad7e2cd",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/search-generation-sharing.mjs": {
+      "sha256": "457a3484c9e88dc33c96ae3f26455125b6755bc09943adae844066bca6c505f7",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/search-projection.mjs": {
+      "sha256": "6c6e1cdb027828a2cbd8966dd821e0b459855882eaeaaa03cdfc8f8a3a7e5e97",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/search-projection.test.mjs": {
+      "sha256": "c830de1fbbc184697902e6a028af7c434a75adb2da743bf168e8168737d94439",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/sql/proof-indexer-v1.sql": {
+      "sha256": "830970ee14618a6356b0f7acebe2e188dbdced589c8eb9f1c53677d92ada5987",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/sql/proof-search-v1.sql": {
+      "sha256": "a7b9426b0cb1241aee86e04d6082755c9b5c823ef49b23cfadf880126b7010e4",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/token-listing-lifecycle.mjs": {
+      "sha256": "509f8cde69be1403fe87b8d61ea2eaa7d8131968cbcb5fe1733323ef29e9a71b",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/token-listing-query-scope.mjs": {
+      "sha256": "fe1dc4674477abf130ff8bc3995266405f1bc9cb51b72c9a07c072f2f59c3f6a",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/token-listing-query-scope.test.mjs": {
+      "sha256": "8cac1cfacf2b8a24df445ac2220629aa94cb06b288f868a608f4fe6feaa1b97e",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/transaction-detail.test.mjs": {
+      "sha256": "3f3bb9464e6f8814350c23f5ff763cbab1dca927548791ac082d913c7430cc6e",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/wallet-read-observation.mjs": {
+      "sha256": "b43f41d320b4b4daa51551402b6d6c5b7b165a72cf2f2349ebfd667127bbd694",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-amo-v5-bip141.mjs": {
+      "sha256": "9805104d912930aa54f43665b793949bccc20572fcbba01a0eb50a5b259c7d98",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-amo-v5-raw.mjs": {
+      "sha256": "c7e8d2998aa2fb722d3cd84f12c278b8055604985c28750bc98ae9a53b2d79a7",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-amo-v5-seed-evidence.mjs": {
+      "sha256": "bc74df76c1ba87215083e64bb957642bcbf99677ef0d4292973aafdd6c5d70b3",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-amo-v5.mjs": {
+      "sha256": "1353c19f6a5aa0420679fdb744d40f21133d12939efe8bea8df236ab95a15e81",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-amo-v6-declaration.mjs": {
+      "sha256": "7e68ec4b993a394311f35a6f355b6356764b314e2b2a23bcc6c772a3ea5b7e66",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-amo-v6.mjs": {
+      "sha256": "eef3a110610243690a40cd4a8b60bdd5bd144e0d1c8ef265138c911b2124073e",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-amo-v7-declaration.mjs": {
+      "sha256": "bf5fc1502d0662f7bc4cd97aec9a6614d6fd8efa1b43b173d17d83e96057357d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-amo-v7.mjs": {
+      "sha256": "2bfb29cdfc8728efdbaa696eedb3fb213da5872a279740868d3cf955977f103d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-amo-v8-activation-latch.mjs": {
+      "sha256": "24ae1655a99ede63e3122829c737d00728ac250d9f1cbf3aacfa60ea050a3fe9",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-amo-v8-declaration.mjs": {
+      "sha256": "e4058b07eb7d7a92b3efccd544cf53dcd2a91983e7a052a6e0d3b666fb0dc612",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-amo-v8-worker-readiness.mjs": {
+      "sha256": "6b358c6e5b3b779532bd3366475552a19bedcd713a6d6d45ad7de76340ab4df6",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-amo-v8.mjs": {
+      "sha256": "0ea9108b969e91aa92b8782798af5ba845d0640a8cecd1b039d232ed7849bc2f",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-floor-response.test.mjs": {
+      "sha256": "06efe6cfa8e1f971a4a14a74b9f8cc1b7c7fee83b117322a1664e5c8c9a151f9",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-market-v2.mjs": {
+      "sha256": "3e059e86ccdf80451d3467fcb979db88873dbdd5128977033fe9203f438e36c6",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-precision-v2-marker.mjs": {
+      "sha256": "d161a4b8bd647367e46499d29b9b611f2c5ca0a79fdcc1af85160b6d835e1952",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-precision-v2-schema.mjs": {
+      "sha256": "ce79e4e20c0e609f0dfc73fe41d38f7a14b0a788492415390e0b4610a3c62f49",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-q16-pending-projection.mjs": {
+      "sha256": "e97b8cf4d4c7232483bc383cdd1522cd230499f0d8d2c87a616723c94cea2ace",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-units.mjs": {
+      "sha256": "5ff7f54e018d40ab8ef6eeec39c8189f82a03c758a4f1d5e69f6c70c89884c25",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-wallet-capacity.mjs": {
+      "sha256": "98d9ad4071d6b34b8439c59b461eae073584d58ce43140f4214ea129ebce2d86",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "server/work-wallet-capacity.test.mjs": {
+      "sha256": "385145fbbfd1125d53ba02c8439749e7aed28b3dbf442d1c8eaad41bd060d88d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "src/features/identity/bitcoinMessageVerifier.mjs": {
+      "sha256": "13bd649fba1f84e8a437fdda5bb13bfe4fb61e35d5c0b40955348d2a892fdba7",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "src/features/identity/socialIdentityCore.mjs": {
+      "sha256": "66ee897819e65d2354182f15c16dffa6aab139f3c7dde830f161caef3e9ed454",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "src/shared/protocol/boostText.mjs": {
+      "sha256": "69fe45495510cc6dab0cf5243ca9568f866b1238027d96141261aa6c7b2c30b8",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "src/shared/protocol/boostTip.mjs": {
+      "sha256": "4ef2b6b9854064a924f38fcd6be15bb283fa8d009276b8d3f64f5307deb40048",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "src/shared/protocol/codeRepository.mjs": {
+      "sha256": "98021446324da7a633b62f7d8467e5729ef05d9c061735dc5f12fc77a70acea9",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "src/shared/protocol/dnsPages.mjs": {
+      "sha256": "c55162ca5da151064d75ec8d8c2426d65301ef1327a4b541a2575c7f7e463587",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "src/shared/protocol/dnsSubdomainPages.mjs": {
+      "sha256": "c4264807f778a051d9faa93a8eed46ce0b98a514d721f802867610ecac32c121",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "src/shared/protocol/dnsSubdomains.mjs": {
+      "sha256": "c43a0ca934ae9b8d08983420ce1e7a0bca2da0d8749cab0172422d66c0c7cf9d",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "src/shared/protocol/jobs.mjs": {
+      "sha256": "4e28eeb291b83ff2bcc53724253c735a2f33be5929d670fcbdff30d98e31bc3c",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "src/shared/protocol/ownerOutputCommitment.mjs": {
+      "sha256": "eea47098c27151243166ece4b1320fa1a31b7c99f7b497b98e325bc6295135df",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "src/shared/protocol/permissions.mjs": {
+      "sha256": "f4c1d174a301cfe62809f61a26ebe588634c1256dde15ab53f92a807001ec77b",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    },
+    "src/shared/protocol/publishArticle.mjs": {
+      "sha256": "b324e7d9124a86bf2d88326f8d1e22e560d29102c96e59c60695abd134a41543",
+      "uid": 1000,
+      "gid": 1000,
+      "mode": 416
+    }
+  }
+}

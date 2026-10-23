@@ -1,0 +1,51 @@
+{
+  "databaseProbeExit": 0,
+  "databaseProbe": [
+    {
+      "canonicalMeta": {
+        "elapsedMs": 9.691851999999997,
+        "present": true
+      },
+      "operational": {
+        "elapsedMs": 150.677946,
+        "present": true
+      }
+    },
+    {
+      "canonicalMeta": {
+        "elapsedMs": 0.8463110000000142,
+        "present": true
+      },
+      "operational": {
+        "elapsedMs": 128.11972300000002,
+        "present": true
+      }
+    },
+    {
+      "canonicalMeta": {
+        "elapsedMs": 0.9533420000002479,
+        "present": true
+      },
+      "operational": {
+        "elapsedMs": 126.78144699999984,
+        "present": true
+      }
+    }
+  ],
+  "stderrBytes": 0,
+  "backendOrigin": "http://127.0.0.1:8080",
+  "backendTimings": [
+    {
+      "exit": 0,
+      "timing": "200 0.000076 0.001237 0.001277"
+    },
+    {
+      "exit": 0,
+      "timing": "200 0.000098 0.001354 0.001379"
+    },
+    {
+      "exit": 0,
+      "timing": "200 0.000057 0.000807 0.000846"
+    }
+  ]
+}

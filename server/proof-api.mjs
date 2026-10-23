@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { performance } from "node:perf_hooks";
+import { setImmediate as yieldToIo } from "node:timers/promises";
 import { createPermissionVerificationStore } from "./permission-verification-store.mjs";
 import { createDnsVerificationStore } from "./dns-verification-store.mjs";
 import {
@@ -2839,6 +2841,77 @@ function checkpointCursorCanonicalJson(value) {
       .join(",")}}`;
   }
   return "null";
+}
+
+// Match checkpointCursorCanonicalJson, including BigInt and sparse-array
+// behavior. Stream the same UTF-8 bytes without building one full JSON string.
+function* canonicalTokens(value) {
+  if (value === null) {
+    yield "null";
+  } else if (typeof value === "bigint") {
+    yield JSON.stringify(value.toString());
+  } else if (["boolean", "number", "string"].includes(typeof value)) {
+    yield JSON.stringify(value);
+  } else if (Array.isArray(value)) {
+    yield "[";
+    for (let index = 0; index < value.length; index += 1) {
+      if (index > 0) yield ",";
+      // Array.map skips holes; Array.join retains their empty separators.
+      if (index in value) yield* canonicalTokens(value[index]);
+    }
+    yield "]";
+  } else if (value && typeof value === "object") {
+    yield "{";
+    let first = true;
+    for (const key of Object.keys(value).sort(compareCanonicalUtf8)) {
+      if (!first) yield ",";
+      first = false;
+      yield JSON.stringify(key);
+      yield ":";
+      yield* canonicalTokens(value[key]);
+    }
+    yield "}";
+  } else {
+    yield "null";
+  }
+}
+
+// Large history membership digests must let the shared API event loop serve
+// health and other requests. This changes scheduling, not evidence or caching.
+async function checkpointCanonicalSha256(value) {
+  const hash = createHash("sha256");
+  let parts = [];
+  let characters = 0;
+  let tokens = 0;
+  let deadline = performance.now() + 4;
+  const flush = () => {
+    if (parts.length) hash.update(parts.join(""), "utf8");
+    parts = [];
+    characters = 0;
+  };
+  for (const token of canonicalTokens(value)) {
+    for (let start = 0; start < token.length;) {
+      let end = Math.min(start + 16_384, token.length);
+      // Never split a UTF-16 surrogate pair across hash.update calls.
+      const last = token.charCodeAt(end - 1);
+      if (end < token.length && last >= 0xd800 && last <= 0xdbff) end -= 1;
+      parts.push(token.slice(start, end));
+      characters += end - start;
+      start = end;
+      tokens += 1;
+      if (characters >= 16_384) flush();
+      if (tokens >= 64) {
+        tokens = 0;
+        if (performance.now() >= deadline) {
+          flush();
+          await yieldToIo();
+          deadline = performance.now() + 4;
+        }
+      }
+    }
+  }
+  flush();
+  return hash.digest("hex");
 }
 
 function encodedCheckpointCursor(prefix, payload) {
@@ -59351,13 +59424,13 @@ async function completeTokenListingHistoryPayload(
     ));
   const digest = (value) => createHash("sha256")
     .update(checkpointCursorCanonicalJson(value), "utf8").digest("hex");
-  const filterFingerprint = digest({
+  const filterFingerprint = await checkpointCanonicalSha256({
     addresses: [...addresses].sort(compareCanonicalUtf8), network,
     query: request.query, scope: scope || "all",
     ...(itemProjection !== "full" ? { itemProjection } : {}),
     ...(exactListingId ? { exactListingId } : {}),
   });
-  const membershipSha256 = digest(filtered.map((entry) => ({
+  const membershipSha256 = await checkpointCanonicalSha256(filtered.map((entry) => ({
     item: entry.item,
     key: entry.key,
   })));
@@ -59367,8 +59440,8 @@ async function completeTokenListingHistoryPayload(
   })).sort((left, right) => compareCanonicalUtf8(
     checkpointCursorCanonicalJson(left.key), checkpointCursorCanonicalJson(right.key),
   ));
-  const sourceSha256 = digest(relationalEntries);
-  const protocolMembershipSha256 = digest(
+  const sourceSha256 = await checkpointCanonicalSha256(relationalEntries);
+  const protocolMembershipSha256 = await checkpointCanonicalSha256(
     protocolAuthorityListings.map((item) => ({
       item,
       key: tokenListingHistoryStableKey(item),
