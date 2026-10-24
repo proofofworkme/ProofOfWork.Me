@@ -660,7 +660,7 @@ allowlist; HTML download/import provides source portability. See
 
 Boost's Profile images picker reuses confirmed Inbox/Sent attachments, including images received from another sender. It deduplicates self-sends by file transaction/hash and excludes pending or dropped mail. PNG, JPEG, GIF, WebP, and AVIF previews require matching hash, size, MIME, and name. A missing file library offers guidance to send an image to the connected address and wait for confirmation.
 
-Avatar and banner selection, crop position, and removal publish `pwb1:profile` metadata referencing existing Files; they do not duplicate the file bytes or alter mailbox organization. A 546-proof self-payment plus miner fee is reviewed and signed in the local wallet. The picker includes the shared Boost miner-fee presets (0.1, 0.5, 1, and 2 sat/vB) and a custom rate of at least 0.1 sat/vB. The selected rate determines transaction preparation; fee controls lock while publishing. Public profile rendering waits for confirmation, independently verifies the referenced file transaction and bytes, and falls back safely when unavailable. Clicking a verified profile picture or banner opens the full, uncropped image in a contained overlay on Boost and Computer. Close, Escape, or clicking outside the image dismisses it and returns focus to the image button; unavailable images remain non-interactive fallbacks.
+Avatar and banner selection, crop position, and removal publish `pwb1:profile` metadata referencing existing Files; they do not duplicate the file bytes or alter mailbox organization. A 546-proof self-payment plus miner fee is reviewed and signed in the local wallet. The picker includes the shared Boost miner-fee presets (0.1, 0.5, 1, and 2 proofs/vB) and a custom rate of at least 0.1 proofs/vB. The selected rate determines transaction preparation; fee controls lock while publishing. Public profile rendering waits for confirmation, independently verifies the referenced file transaction and bytes, and falls back safely when unavailable. Clicking a verified profile picture or banner opens the full, uncropped image in a contained overlay on Boost and Computer. Close, Escape, or clicking outside the image dismisses it and returns focus to the image button; unavailable images remain non-interactive fallbacks.
 
 ## Outbox
 
@@ -1041,6 +1041,12 @@ refreshes coalesce, and obsolete account/network requests are aborted and cannot
 commit late results.
 
 ### Content tip Mail records
+
+Boost and Publish engagement in Computer uses the same remembered social miner
+fee preference as the standalone products. The preference carries no wallet or
+signing authority, does not rewrite Mail drafts, and cannot change an open
+social draft or prepared review in the background. Fractional rates, economical
+change selection and explicit remainder-fee review follow [PUBLISH.md](PUBLISH.md#miner-fee-selection).
 
 Boost, Publish and Computer share tips in proofs or canonical WORK. A proof tip
 writes its target and exact amount in the unchanged `pwb1:tip` plus one ordinary

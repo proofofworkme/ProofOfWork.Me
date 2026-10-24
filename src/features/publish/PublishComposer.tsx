@@ -10,11 +10,12 @@ import type { BoostIdentityIntent } from "../boost/boostProtocol";
 import "./publish.css";
 import { isMobileWalletBrowser } from "../../shared/wallet/walletLinks";
 import { UnisatMobileHandoff } from "../../shared/components/UnisatMobileHandoff";
+import { socialFeeRateFromInput, validSocialFeeRate } from "../boost/socialFeePreference";
 
 type Draft = { title: string; body: string; signal: number; feeRate: number };
-const emptyDraft: Draft = { title: "", body: "", signal: 546, feeRate: 1 };
+const emptyDraft = (feeRate: number): Draft => ({ title: "", body: "", signal: 546, feeRate: validSocialFeeRate(feeRate) ? feeRate : 1 });
 
-export function PublishComposer({ address, network, identity, connecting = false, hasUnisat = true, onConnect, onClose, onPrepare, onSign, restoreDraft, returnLabel = "Articles", onLeaveGuardChange }: {
+export function PublishComposer({ address, network, identity, connecting = false, hasUnisat = true, onConnect, onClose, onPrepare, onSign, restoreDraft, initialFeeRate = 1, onFeeRateChange, returnLabel = "Articles", onLeaveGuardChange }: {
   address: string; network: BitcoinNetwork; identity?: BoostIdentityIntent;
   connecting?: boolean;
   hasUnisat?: boolean;
@@ -22,12 +23,17 @@ export function PublishComposer({ address, network, identity, connecting = false
   onPrepare: (plan: PublishPlan, feeRate: number) => Promise<PreparedPublish>;
   onSign: (prepared: PreparedPublish, assertCurrent: () => void) => Promise<string>;
   restoreDraft?: Draft;
+  initialFeeRate?: number;
+  onFeeRateChange?: (feeRate: number) => void;
   returnLabel?: "Articles" | "Mail";
   onLeaveGuardChange?: (guard?: () => boolean) => void;
 }) {
   const identityId = identity?.id ?? "";
   const storageKey = `proofofwork.publish.draft.v1:${network}:${address || "disconnected"}`;
-  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const sharedFeeRate = useRef(initialFeeRate);
+  sharedFeeRate.current = initialFeeRate;
+  const [draft, setDraft] = useState<Draft>(() => emptyDraft(initialFeeRate));
+  const [feeInput, setFeeInput] = useState(() => String(emptyDraft(initialFeeRate).feeRate));
   const [loadedKey, setLoadedKey] = useState("");
   const [preview, setPreview] = useState(false);
   const [prepared, setPrepared] = useState<PreparedPublish>();
@@ -38,7 +44,7 @@ export function PublishComposer({ address, network, identity, connecting = false
   const [draftNotice, setDraftNotice] = useState("");
   const flight = useRef(false);
   const alive = useRef(true);
-  const scope = JSON.stringify([storageKey, identity, draft]);
+  const scope = JSON.stringify([storageKey, identity, draft, feeInput]);
   const currentScope = useRef(scope);
   currentScope.current = scope;
 
@@ -51,7 +57,7 @@ export function PublishComposer({ address, network, identity, connecting = false
     setDraftNotice("");
     try {
       const raw = localStorage.getItem(storageKey);
-      let candidate = raw ? JSON.parse(raw) : emptyDraft;
+      let candidate = raw ? JSON.parse(raw) : emptyDraft(sharedFeeRate.current);
       if (typeof candidate.title !== "string" || typeof candidate.body !== "string" ||
           !Number.isSafeInteger(candidate.signal) || !Number.isFinite(candidate.feeRate)) {
         throw new Error("The saved draft could not be read. Preserve local storage before repairing it.");
@@ -64,9 +70,13 @@ export function PublishComposer({ address, network, identity, connecting = false
         }
         candidate = draft;
       }
-      setDraft(restoreDraft ?? candidate);
+      const loaded = restoreDraft ?? candidate;
+      setDraft(loaded);
+      setFeeInput(String(loaded.feeRate));
     } catch (cause) {
-      setDraft(emptyDraft);
+      const cleared = emptyDraft(sharedFeeRate.current);
+      setDraft(cleared);
+      setFeeInput(String(cleared.feeRate));
       const message = cause instanceof Error ? cause.message : "The saved draft could not be read.";
       setLoadError(message);
       setSaveError(message);
@@ -125,10 +135,16 @@ export function PublishComposer({ address, network, identity, connecting = false
   async function prepare(event: FormEvent) {
     event.preventDefault();
     if (flight.current || !budget.plan || overBudget || !address || network !== "livenet") return;
+    const selectedFeeRate = socialFeeRateFromInput(feeInput);
+    if (selectedFeeRate === undefined) {
+      setError("Choose a miner fee of at least 0.1 proofs/vB with up to 8 decimal places.");
+      return;
+    }
     const expectedScope = scope;
     flight.current = true; setBusy(true); setError("");
     try {
-      const next = await onPrepare(budget.plan, draft.feeRate);
+      onFeeRateChange?.(selectedFeeRate);
+      const next = await onPrepare(budget.plan, selectedFeeRate);
       if (alive.current && currentScope.current === expectedScope) setPrepared(next);
     } catch (cause) {
       if (alive.current && currentScope.current === expectedScope) setError(cause instanceof Error ? cause.message : "Article could not be prepared.");
@@ -146,7 +162,9 @@ export function PublishComposer({ address, network, identity, connecting = false
       await onSign(prepared, assertCurrent);
       assertCurrent();
       localStorage.removeItem(storageKey);
-      setDraft(emptyDraft);
+      const cleared = emptyDraft(sharedFeeRate.current);
+      setDraft(cleared);
+      setFeeInput(String(cleared.feeRate));
       onClose();
     } catch (cause) {
       if (alive.current) { setPrepared(undefined); setError(cause instanceof Error ? cause.message : "Article signing failed."); }
@@ -183,7 +201,14 @@ export function PublishComposer({ address, network, identity, connecting = false
         <small>Includes your title, article metadata, text, and all OP_RETURN script overhead.</small>
       </div>
       <div className="publish-publishing-options"><label>Proof signal<input type="number" aria-label="Article proof signal" min={546} step={1} value={draft.signal} onChange={event => update({ signal: Number(event.target.value) })} disabled={busy} /></label>
-        <FeeRateControl feeRate={draft.feeRate} setFeeRate={value => update({ feeRate: value })} />
+        <FeeRateControl feeRate={draft.feeRate} disabled={busy} inputValue={feeInput}
+          setFeeRate={value => update({ feeRate: value })} setInputValue={value => {
+            if (flight.current) return;
+            setFeeInput(value);
+            const parsed = socialFeeRateFromInput(value);
+            update({ feeRate: parsed ?? 0 });
+            if (parsed !== undefined) onFeeRateChange?.(parsed);
+          }} />
       </div>
       <p className="field-note">Your draft stays in this browser. Publishing makes the exact text public and permanent. Proof signal returns to your wallet; the miner fee is spent. {identityId ? "Your selected PowID is published as your shared Boost profile in this transaction." : "Your public byline uses your confirmed Boost profile or address."}</p>
       {saveError ? <p className="field-note bad" role="alert">{saveError}</p> : null}

@@ -80,6 +80,36 @@ for (const [input, fee, change, dust] of [[100000, 77, 99377, 0], [1169, 77, 546
 assert.throws(() => wallet.selectUtxos([utxo(613)], 546, 0.28, 71, 34), /Need about 623 proofs/);
 assert.equal(wallet.selectSmallestSingleConfirmedUtxo([utxo(1169), utxo(100000)], 546, 0.28, 71, 34).changeSats, 546);
 
+// Social actions opt into recovering dust only when the additional input fees
+// are cheaper than the already-funded no-change transaction. Independent
+// expected sizes below use the existing 160-vB input estimate and output bytes.
+const socialSelection = (values, rate = 0.15) => wallet.selectUtxos(
+  values.map((value, index) => ({ ...utxo(value), txid: String(index + 1).padStart(64, "0") })),
+  546, rate, 71, 34, 0, 546, { preferChange: true },
+);
+const selectionFacts = selected => [selected.selected.length, selected.feeSats, selected.changeSats, selected.dustFeeSats];
+assert.deepEqual(selectionFacts(wallet.selectUtxos([utxo(546), utxo(546), utxo(546)], 546, 0.15, 71, 34)),
+  [2, 546, 0, 485], "default callers retain their existing dust policy");
+assert.deepEqual(selectionFacts(socialSelection([546, 546])), [2, 546, 0, 485],
+  "unavoidable dust remains explicit for caller review when there is no extra coin");
+assert.deepEqual(selectionFacts(socialSelection([546, 546, 546])), [3, 90, 1002, 0],
+  "a third coin avoids 485 proofs of absorbed dust at 0.15 proofs/vB");
+assert.deepEqual(selectionFacts(socialSelection([583, 100000])), [1, 37, 0, 0],
+  "exact no-change funding does not add another input");
+assert.deepEqual(selectionFacts(socialSelection([900, 100000], 1)), [1, 354, 0, 113],
+  "a 435-proof change transaction must not replace a 354-proof fallback");
+assert.deepEqual(selectionFacts(socialSelection([981, 100000], 1)), [1, 435, 0, 194],
+  "equal miner fees do not justify an extra input");
+assert.deepEqual(selectionFacts(socialSelection([1000, 200, 100000], 1)), [1, 454, 0, 213],
+  "the search stops before a third input would exceed its original fee budget");
+assert.deepEqual(selectionFacts(socialSelection([1000, ...Array(1000).fill(1), 100000], 1)), [2, 435, 100019, 0],
+  "uneconomic extra coins do not consume the fee budget or hide a useful later coin");
+assert.throws(() => socialSelection([546]), /Insufficient funds/);
+assert.throws(() => socialSelection([]), /Insufficient funds/);
+for (const rate of [0.123456789, NaN, Infinity, -0.15]) {
+  assert.throws(() => socialSelection([546, 546, 546], rate), /up to 8 decimal places/);
+}
+
 function sourceTree(path) {
   const source = read(path);
   return { source, tree: ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX) };
@@ -119,11 +149,14 @@ let fixture;
 const dependencies = {
   bitcoin, Buffer, DUST_SATS: 546, MAX_DATA_CARRIER_BYTES: 100000,
   ...wallet, ...boostNumeric,
-  fetchUtxos: async () => [fixture.utxo],
+  fetchUtxos: async () => fixture.entries.map(entry => entry.utxo),
   fetchFreshProofOfWorkListingAnchorOutpoints: async () => [],
   mergeListingAnchorOutpoints: (left, right) => [...left, ...right],
-  loadUtxoPreviousOutput: async (input) => ({ ...input,
-    previousOutput: fixture.previous.outs[0], previousTxHex: fixture.previous.toHex() }),
+  loadUtxoPreviousOutput: async (input) => {
+    const entry = fixture.entries.find(entry => entry.utxo.txid === input.txid);
+    assert.ok(entry, "Selected input must have matching previous transaction evidence");
+    return { ...input, previousOutput: entry.previous.outs[0], previousTxHex: entry.previous.toHex() };
+  },
 };
 const sharedNames = ["bitcoinNetwork", "networkLabel", "scriptForAddress", "varIntSize",
   "outputVbytesForScript", "opReturnScriptForPayload", "isNativeWitnessScript", "utxoInputData"];
@@ -131,13 +164,17 @@ const app = functions(appSource, [...sharedNames, "protocolOutputScripts", "buil
   "chainedMintInputData", "buildChainedMintPsbt"], dependencies);
 const boost = functions(boostSource, [...sharedNames, "normalizeOutput", "buildBoostPaymentPsbt"], dependencies);
 const fromScript = bitcoin.address.toOutputScript(fromAddress, bitcoin.networks.bitcoin);
-function setFixture(value) {
-  const previous = new bitcoin.Transaction();
-  previous.version = 2;
-  previous.addInput(Buffer.alloc(32, 2), 0, 0xfffffffd);
-  previous.addOutput(fromScript, BigInt(value));
-  fixture = { previous, utxo: { ...utxo(value), txid: previous.getId() } };
+function setFixtures(values) {
+  const entries = values.map((value, index) => {
+    const previous = new bitcoin.Transaction();
+    previous.version = 2;
+    previous.addInput(Buffer.alloc(32, index + 2), 0, 0xfffffffd);
+    previous.addOutput(fromScript, BigInt(value));
+    return { previous, utxo: { ...utxo(value), txid: previous.getId() } };
+  });
+  fixture = { ...entries[0], entries };
 }
+function setFixture(value) { setFixtures([value]); }
 function verifyPsbt(prepared, input, expectedFee, expectedOutputs) {
   const psbt = bitcoin.Psbt.fromHex(prepared.psbtHex, { network: bitcoin.networks.bitcoin });
   assert.deepEqual(psbt.txOutputs.map((output) => Number(output.value)), expectedOutputs);
@@ -158,6 +195,38 @@ for (const [input, fee, outputs] of [[100000, 77, [546, 0, 99377]], [1169, 77, [
     inputs: [{ ...fixture.utxo, previousOutput: fixture.previous.outs[0], previousTxHex: fixture.previous.toHex() }],
     fixedOutputs: [{ address: toAddress, amountSats: 546 }, { script: app.opReturnScriptForPayload(payload), amountSats: 0 }] });
   verifyPsbt(chained, input, fee, outputs);
+  unsignedFixtures++;
+}
+// Exercise the actual Boost/Publish PSBT builder as well as the shared selector.
+// Its default remains unchanged for Permission and every other existing caller.
+for (const [values, preferChange, fee, outputValues, size] of [
+  [[546, 546], true, 546, [546, 0], 401],
+  [[546, 546, 546], true, 90, [546, 0, 1002], 595],
+  [[546, 546, 546], false, 546, [546, 0], 401],
+  [[583, 100000], true, 37, [546, 0], 241],
+]) {
+  setFixtures(values);
+  const prepared = await boost.buildBoostPaymentPsbt({ feeRate: 0.15, preferChange,
+    fromAddress, network: "livenet", payments: [{ address: toAddress, amountSats: 546 }], protocolPayloads: [payload] });
+  const psbt = bitcoin.Psbt.fromHex(prepared.psbtHex);
+  const selectedValue = psbt.txInputs.reduce((sum, input) => {
+    const entry = fixture.entries.find(entry => entry.utxo.txid === Buffer.from(input.hash).reverse().toString("hex"));
+    assert.ok(entry); return sum + entry.utxo.value;
+  }, 0);
+  verifyPsbt(prepared, selectedValue, fee, outputValues);
+  assert.equal(prepared.estimatedVbytes, size);
+  assert.equal(prepared.estimatedEffectiveFeeRate, fee / size);
+  unsignedFixtures++;
+}
+for (const exclusion of ["reserved", "pending"]) {
+  setFixtures([546, 546, 546]);
+  const extra = fixture.entries[2].utxo;
+  if (exclusion === "pending") extra.status.confirmed = false;
+  const prepared = await boost.buildBoostPaymentPsbt({ feeRate: 0.15, preferChange: true,
+    excludeOutpoints: exclusion === "reserved" ? [{ txid: extra.txid, vout: extra.vout }] : [],
+    fromAddress, network: "livenet", payments: [{ address: toAddress, amountSats: 546 }], protocolPayloads: [payload] });
+  verifyPsbt(prepared, 1092, 546, [546, 0]);
+  assert.equal(prepared.inputCount, 2, "change preference cannot spend reserved or unconfirmed funds");
   unsignedFixtures++;
 }
 setFixture(1168);

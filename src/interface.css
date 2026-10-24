@@ -653,16 +653,21 @@
     .compose-pane .compose-grid { grid-template-columns: minmax(0, 1fr); }
   }
 
+  /* Social action dialogs must let fields and exact quoted text fit their track. */
+  .boost-modal, .boost-modal > form { grid-template-columns: minmax(0, 1fr); }
+  .boost-modal > *, .boost-modal > form > * { min-width: 0; }
+  .boost-modal .boost-quoted-post { min-width: 0; overflow-wrap: anywhere; }
+
   /* Presets follow the space available to their field, including embedded forms. */
-  :is(.compose-pane, .boost-post-composer, .publish-composer) .fee-control { align-content: start; container: composer-fee / inline-size; }
-  :is(.compose-pane, .boost-post-composer, .publish-composer) .fee-control label { align-content: start; gap: var(--space-2); min-width: 0; font-size: var(--text-sm); line-height: 1.5; }
-  :is(.compose-pane, .boost-post-composer, .publish-composer) .fee-presets { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  :is(.compose-pane, .boost-post-composer, .publish-composer) .fee-presets button { min-width: 0; overflow-wrap: anywhere; }
+  :is(.compose-pane, .boost-modal, .boost-post-composer, .publish-composer) .fee-control { align-content: start; container: composer-fee / inline-size; }
+  :is(.compose-pane, .boost-modal, .boost-post-composer, .publish-composer) .fee-control label { align-content: start; gap: var(--space-2); min-width: 0; font-size: var(--text-sm); line-height: 1.5; }
+  :is(.compose-pane, .boost-modal, .boost-post-composer, .publish-composer) .fee-presets { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  :is(.compose-pane, .boost-modal, .boost-post-composer, .publish-composer) .fee-presets button { min-width: 0; overflow-wrap: anywhere; }
   @container composer-fee (max-width: 440px) {
-    :is(.compose-pane, .boost-post-composer, .publish-composer) .fee-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    :is(.compose-pane, .boost-modal, .boost-post-composer, .publish-composer) .fee-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @container composer-fee (max-width: 220px) {
-    :is(.compose-pane, .boost-post-composer, .publish-composer) .fee-presets { grid-template-columns: minmax(0, 1fr); }
+    :is(.compose-pane, .boost-modal, .boost-post-composer, .publish-composer) .fee-presets { grid-template-columns: minmax(0, 1fr); }
   }
 
   /* Transaction and recovery review are part of the product design system. */

@@ -66,6 +66,7 @@ import {
   type AppStatusState,
 } from "../../shared/components/AppStatusRow";
 import { FeeRateControl } from "../../shared/components/FeeRateControl";
+import { useSocialFeeRate, validSocialFeeRate } from "./socialFeePreference";
 import { SocialFooter } from "../../shared/components/SocialFooter";
 import { errorMessage, formatBytes, formatDate, shortAddress } from "../../functions";
 import { formatExactDecimal } from "../../exactAmount";
@@ -223,7 +224,6 @@ const PROFILE_TABS: Array<{ label: string; value: BoostProfileTab }> = [
   { label: "Replies To", value: "replies-to" },
 ];
 
-const DEFAULT_FEE_RATE = 1;
 const DEFAULT_LIST_PRICE_SATS = 1_000;
 
 function initialSearchParam(name: string) {
@@ -487,10 +487,12 @@ function confirmDustFeeAbsorption({
   dustFeeSats,
   feeRate,
   feeSats,
+  estimatedVbytes,
 }: {
   dustFeeSats?: number;
   feeRate: number;
   feeSats: number;
+  estimatedVbytes: number;
 }) {
   const extraFeeSats = Math.max(0, Math.floor(dustFeeSats ?? 0));
   if (extraFeeSats <= 0) {
@@ -500,8 +502,9 @@ function confirmDustFeeAbsorption({
     [
       `${extraFeeSats.toLocaleString()} proofs of below-dust change will be added to the miner fee.`,
       `Selected fee rate: ${feeRate} proofs/vB.`,
-      `Estimated fee: ${feeSats.toLocaleString()} proofs.`,
-      "Use a larger confirmed UTXO or batch payments to avoid this. Continue signing?",
+      `Total miner fee: ${feeSats.toLocaleString()} proofs.`,
+      `Estimated effective rate: ${(feeSats / estimatedVbytes).toLocaleString("en-US", { maximumFractionDigits: 8, useGrouping: false })} proofs/vB (${estimatedVbytes} estimated vB).`,
+      "The final rate depends on signed transaction size. The total miner fee includes the extra change above. Continue signing?",
     ].join("\n\n"),
   );
 }
@@ -1157,6 +1160,7 @@ export default function BoostRoot({
     BoostIdentityIntent | undefined
   >();
   const [directPostOpen, setDirectPostOpen] = useState(false);
+  const [composerDraftRetained, setComposerDraftRetained] = useState(false);
   const [expandedItem, setExpandedItem] = useState<BoostFeedItem | undefined>();
   const [notificationDetail, setNotificationDetail] = useState(() => embedded && !isPublish ? normalizeBoostTxid(initialSearchParam("detail")) : "");
   const [postText, setPostText] = useState("");
@@ -1191,7 +1195,7 @@ export default function BoostRoot({
   const [listingPriceSats, setListingPriceSats] = useState(
     DEFAULT_LIST_PRICE_SATS,
   );
-  const [feeRate, setFeeRate] = useState(DEFAULT_FEE_RATE);
+  const [feeRate, setFeeRate] = useSocialFeeRate({ locked: Boolean(actionBusy || directPostOpen || composerDraftRetained || replyTarget || pendingPaidAction || preparedTip || publishWriterOpen || imageEditorOpen || transferTarget || listingTarget || postText || postAttachment) });
   const [toolsOpen, setToolsOpen] = useState(false);
   const boostSurfaceRef = useRef<HTMLDivElement>(null);
   const compactNavRef = useRef<HTMLElement>(null);
@@ -1497,6 +1501,7 @@ export default function BoostRoot({
     setActionBusy(action);
     setStatus({ tone: "idle", text: `Preparing ${paymentLabel}...` });
     try {
+      if (!validSocialFeeRate(feeRate)) throw new Error("Choose a miner fee of at least 0.1 proofs/vB with up to 8 decimal places.");
       const reservedOutpoints = await fetchReservedAmoAnchorOutpoints(
         walletAddress,
         "livenet",
@@ -1504,6 +1509,7 @@ export default function BoostRoot({
       );
       const paymentPsbt = await buildBoostPaymentPsbt({
         excludeOutpoints: reservedOutpoints,
+        preferChange: true,
         feeRate,
         fromAddress: walletAddress,
         network: "livenet",
@@ -1517,6 +1523,7 @@ export default function BoostRoot({
           dustFeeSats: paymentPsbt.dustFeeSats,
           feeRate,
           feeSats: paymentPsbt.feeSats,
+          estimatedVbytes: paymentPsbt.estimatedVbytes,
         })
       ) {
         setStatus({ tone: "idle", text: "Boost transaction canceled." });
@@ -1559,7 +1566,9 @@ export default function BoostRoot({
       });
       return false;
     } finally {
-      setActionBusy("");
+      // An action that owns the full preflight/signing lifetime releases this
+      // state itself, after its result and draft cleanup have completed.
+      if (!paidActionInFlight.current) setActionBusy("");
     }
   }
 
@@ -1731,9 +1740,10 @@ export default function BoostRoot({
 
   async function publishReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!replyTarget) {
-      return;
-    }
+    if (!replyTarget || paidActionInFlight.current || actionBusy || publishSigning.current) return;
+    paidActionInFlight.current = true;
+    setActionBusy("reply");
+    setStatus({ tone: "idle", text: "Preparing Boost reply..." });
     try {
       const ownerAddress = boostOwnerAddress(replyTarget);
       if (!ownerAddress || !isValidBitcoinAddress(ownerAddress, "livenet")) {
@@ -1765,6 +1775,9 @@ export default function BoostRoot({
         tone: "bad",
         text: error instanceof Error ? error.message : "Boost reply failed.",
       });
+    } finally {
+      paidActionInFlight.current = false;
+      setActionBusy(current => current === "reply" ? "" : current);
     }
   }
 
@@ -1837,7 +1850,7 @@ export default function BoostRoot({
   async function preparePublishArticle(plan: PublishPlan, articleFeeRate: number): Promise<PreparedPublish> {
     if (publishSigning.current || actionBusy) throw new Error("Another wallet action is in progress.");
     requirePublishBudget(plan);
-    if (network !== "livenet" || !address || !Number.isFinite(articleFeeRate) || articleFeeRate < 0.1) {
+    if (network !== "livenet" || !address || !validSocialFeeRate(articleFeeRate)) {
       throw new Error("Connect your mainnet wallet and choose a miner fee of at least 0.1 proofs/vB.");
     }
     const expectedScope = writerScope;
@@ -1848,7 +1861,7 @@ export default function BoostRoot({
       assertPublishRecovery(plan);
       await verifyPublishWriter(address, identityId, expectedScope, plan.identity);
       const exclusions = await fetchReservedAmoAnchorOutpoints(address, network, boostListingAnchorOutpoints(items));
-      const paymentPsbt = await buildBoostPaymentPsbt({ excludeOutpoints: exclusions,
+      const paymentPsbt = await buildBoostPaymentPsbt({ excludeOutpoints: exclusions, preferChange: true,
         feeRate: articleFeeRate, fromAddress: address, network,
         payments: [{ address, amountSats: plan.proofSignalSats }], protocolPayloads: plan.payloads });
       const evidence = inspectPreparedPayment({ psbtHex: paymentPsbt.psbtHex,
@@ -1858,7 +1871,7 @@ export default function BoostRoot({
       await verifyPublishWriter(address, identityId, expectedScope, plan.identity);
       return { plan, address, network, identityId, feeRate: articleFeeRate, paymentPsbt,
         review: { title: "Publish article", networkLabel: "Mainnet", feeRate: String(articleFeeRate),
-          dustFeeProofs: String(paymentPsbt.dustFeeSats), evidence, paymentLabels: ["Article proof signal returned to your wallet"],
+          dustFeeProofs: String(paymentPsbt.dustFeeSats), estimatedVbytes: paymentPsbt.estimatedVbytes, evidence, paymentLabels: ["Article proof signal returned to your wallet"],
           walletSpendProofs: evidence.feeProofs,
           fields: [["Title", plan.article.title], ["Selected identity", identityId ? `${identityId}@proofofwork.me` : address],
             ["Text size", `${plan.article.size} UTF-8 bytes`], ["SHA-256", plan.article.sha256],
@@ -1994,7 +2007,8 @@ export default function BoostRoot({
       const records = currency === "WORK" ? [tip.payload] : [tip.payload, buildBoostTip(targetTxid, amountSats).mailPayload];
       const exclusions = await fetchReservedAmoAnchorOutpoints(ready.walletAddress, "livenet",
         [...boostListingAnchorOutpoints(items), ...(workCapacity?.anchorOutpoints ?? [])]);
-      const payment = await buildBoostPaymentPsbt({ excludeOutpoints: exclusions, feeRate,
+      if (!validSocialFeeRate(feeRate)) throw new Error("Choose a miner fee of at least 0.1 proofs/vB with up to 8 decimal places.");
+      const payment = await buildBoostPaymentPsbt({ excludeOutpoints: exclusions, preferChange: true, feeRate,
         fromAddress: ready.walletAddress, network: "livenet",
         payments: currency === "proofs" ? [{ address: ownerAddress, amountSats }] : [],
         protocolPayloads: records,
@@ -2008,7 +2022,7 @@ export default function BoostRoot({
       const prepared: PreparedContentTip = { scope, targetTxid, ownerAddress, walletAddress: ready.walletAddress,
         currency, amountText, amountSats, workSubatoms, feeRate, payment,
         review: { title: "Review content tip", networkLabel: "Mainnet", feeRate: String(feeRate),
-          dustFeeProofs: String(payment.dustFeeSats), evidence,
+          dustFeeProofs: String(payment.dustFeeSats), estimatedVbytes: payment.estimatedVbytes, evidence,
           paymentLabels: [currency === "WORK" ? "WORK registry mutation payment" : "Tip paid to current content owner"],
           fields: [["Content transaction", targetTxid], ["Current confirmed owner", ownerAddress], ["Tip", `${amountText} ${currency}`],
             ...(currency === "WORK" ? [["Exact WORK subatoms", workSubatoms.toString()] as [string, string]] : [])],
@@ -2053,6 +2067,7 @@ export default function BoostRoot({
 
   async function publishBoostPost(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (paidActionInFlight.current || actionBusy || publishSigning.current) return;
     const signalSats = postSignalSats;
     const workSubatoms = workAtomsFromDecimal(postWorkAmount);
     if (!Number.isSafeInteger(signalSats) || signalSats < 0) {
@@ -2067,6 +2082,10 @@ export default function BoostRoot({
       setStatus({ tone: "bad", text: "Add Proof or WORK signal to publish a Boost." });
       return;
     }
+    paidActionInFlight.current = true;
+    setActionBusy("post");
+    composerStateRef.current.busy = true;
+    setStatus({ tone: "idle", text: "Preparing Boost post..." });
     try {
       const ready = await ensureBoostWriterReady(false);
       const workCapacity = workSubatoms > 0n
@@ -2130,6 +2149,9 @@ export default function BoostRoot({
         tone: "bad",
         text: error instanceof Error ? error.message : "Boost post failed.",
       });
+    } finally {
+      paidActionInFlight.current = false;
+      setActionBusy(current => current === "post" ? "" : current);
     }
   }
 
@@ -2949,10 +2971,12 @@ export default function BoostRoot({
     // Dismissal is not discard. Preserve every field and an existing quote on
     // ordinary reopen; choosing Quote explicitly updates only its target.
     if (quote) setQuoteTarget(quote);
+    setComposerDraftRetained(true);
     setDirectPostOpen(true);
   }
 
   function closeBoostComposer(completed = false) {
+    if (completed) setComposerDraftRetained(false);
     if ((!completed && composerStateRef.current.busy) || composerNavigationPending.current) return;
     if (composerHistoryRef.current && window.history.state?.boostComposer === composerHistoryRef.current) {
       composerNavigationPending.current = true;
@@ -3189,6 +3213,7 @@ export default function BoostRoot({
       {isPublish && publishWriterOpen ? <section className="publish-writer-workspace" aria-label="Article writer" role={embedded ? undefined : "main"}>
         {address ? <details className="publish-writer-identity"><summary>Byline identity · {activeIdentity?.id ? `${activeIdentity.id}@proofofwork.me` : shortAddress(address)}</summary>{renderIdentityControls()}</details> : null}
         <PublishComposer address={address} network={network} identity={activeIdentity} connecting={actionBusy === "connect"}
+          initialFeeRate={feeRate} onFeeRateChange={setFeeRate}
           returnLabel={publishWriterReturn?.returnLabel}
           restoreDraft={publishRestoreDraft && sameBoostWalletAddress(publishRestoreDraft.address, address) && publishRestoreDraft.network === network ? publishRestoreDraft.draft : undefined}
           hasUnisat={hasUnisat} onConnect={() => void connectWallet()} onClose={closePublishWriter}
@@ -3337,7 +3362,7 @@ export default function BoostRoot({
                   value={listingPriceSats}
                 />
               </label>
-              <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+              <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} disabled={Boolean(actionBusy)} />
               <button
                 className="primary"
                 disabled={Boolean(actionBusy)}
@@ -3948,7 +3973,7 @@ export default function BoostRoot({
                 <p className="field-note">
                   Add Proof, WORK, or both. Proof signal is a self-send; WORK signal is a verified same-transaction WORK self-transfer. Files can be attached in that transaction. Choose the miner fee rate below.
                 </p>
-                <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+                <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} disabled={Boolean(actionBusy)} />
                 <details className="boost-composer-preview">
                   <summary>Preview Boost</summary>
                   <p>{postText || "Attachment-only Boost"}</p>
@@ -4016,7 +4041,7 @@ export default function BoostRoot({
                 <p className="field-note">
                   The 546-proof reply signal goes to the original Boost owner. Select the transaction miner fee rate below.
                 </p>
-                <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+                <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} disabled={Boolean(actionBusy)} />
                 <button
                   className="primary"
                   disabled={Boolean(actionBusy) || !replyText.trim() || !address}
@@ -4078,7 +4103,7 @@ export default function BoostRoot({
                 </label>
                 {tipCurrency === "WORK" ? <p className="field-note" role="status">{tipWorkStatus || `Spendable WORK: ${tipWorkSpendable === undefined ? "Unavailable" : formatWorkAmount(tipWorkSpendable, true)}`}</p> : null}
               </> : null}
-              <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
+              <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} disabled={Boolean(actionBusy)} />
               <div className="boost-modal-action-row">
                 <button
                   className="secondary"

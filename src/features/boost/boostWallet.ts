@@ -3,6 +3,7 @@ import * as ecc from "@bitcoinerlab/secp256k1";
 import { Buffer } from "buffer";
 import {
   enrichWalletCuratedUtxoConfirmations,
+  estimateTxVbytes,
   normalizeWalletUtxos,
   selectUtxos,
   type WalletUtxo,
@@ -80,6 +81,8 @@ export type BoostPaymentPsbt = {
   changeSats: number;
   dustFeeSats: number;
   feeSats: number;
+  estimatedVbytes: number;
+  estimatedEffectiveFeeRate: number;
   inputCount: number;
   outputCount: number;
   psbtHex: string;
@@ -491,6 +494,7 @@ export async function buildBoostPaymentPsbt({
   postProtocolPayments = [],
   postProtocolPayloads = [],
   protocolPayloads,
+  preferChange = false,
   requireP2pkhAllInputs = false,
 }: {
   excludeOutpoints?: BoostSpentOutpoint[];
@@ -501,6 +505,7 @@ export async function buildBoostPaymentPsbt({
   postProtocolPayments?: BoostPaymentOutput[];
   postProtocolPayloads?: string[];
   protocolPayloads: string[];
+  preferChange?: boolean;
   requireP2pkhAllInputs?: boolean;
 }): Promise<BoostPaymentPsbt> {
   const requiredFundingScript = requireP2pkhAllInputs
@@ -590,6 +595,9 @@ export async function buildBoostPaymentPsbt({
     feeRate,
     fixedOutputVbytes,
     changeOutputVbytes,
+    0,
+    DUST_SATS,
+    { preferChange },
   );
   const selectedWithPreviousTx = checkedUtxos
     ? selection.selected.map(utxo => checkedUtxos.find(item => item.txid === utxo.txid && item.vout === utxo.vout)!)
@@ -641,10 +649,16 @@ export async function buildBoostPaymentPsbt({
       value: BigInt(selection.changeSats),
     });
   }
+  const estimatedVbytes = estimateTxVbytes(
+    selection.selected.length,
+    fixedOutputVbytes + (selection.changeSats >= DUST_SATS ? changeOutputVbytes : 0),
+  );
   return {
     changeSats: selection.changeSats,
     dustFeeSats: selection.dustFeeSats,
     feeSats: selection.feeSats,
+    estimatedVbytes,
+    estimatedEffectiveFeeRate: selection.feeSats / estimatedVbytes,
     inputCount: selection.selected.length,
     outputCount:
       normalizedPayments.length +

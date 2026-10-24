@@ -188,6 +188,27 @@ an uncertain outcome requires a first-party status check before another publish
 attempt. Receipts do not establish confirmed article state. Article text is
 immutable once confirmed; local editing is draft editing.
 
+### Miner fee selection
+
+Boost, Publish and their Computer workspaces remember the last valid selected
+miner rate (at least 0.1 proofs/vB, up to eight decimal places). A browser
+preference shares that rate between the three canonical product hosts; blocked
+storage still permits a session choice. Existing article drafts retain their
+saved rate. Editing it or explicitly reviewing the article adopts that choice
+for subsequent engagement. External preference changes never rewrite an open
+draft or a prepared review. Likes, replies, reboosts and both tip currencies
+keep the same visible presets and custom entry before signing, reachable in
+narrow dialogs.
+
+Social transaction funding prefers returning valid change when additional
+eligible confirmed inputs reduce the total miner fee. It never adds inputs
+whose extra fee would erase that saving, and reserved sale tickets remain
+excluded. If change cannot be returned economically, below-dust remainder is
+still part of the miner fee and requires the existing explicit review. Reviews
+show the selected rate, exact total fee, absorbed remainder and estimated
+effective rate; final virtual size depends on the signed transaction. A chosen
+fractional rate is not rounded up to 1 proof/vB.
+
 ## Integration and accounting
 
 Shared navigation, the landing page, Computer, public Log, Growth, route maps,

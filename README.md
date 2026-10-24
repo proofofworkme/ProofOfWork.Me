@@ -603,7 +603,7 @@ discovery, and replay rules.
 - Recognizes the canonical `Welcome to ProofOfWork.Me.html` transaction by txid only after its body or attachment has been returned and verified from chain-backed API data; the client does not synthesize replacement file contents.
   Public Desktop fetches the canonical welcome transaction independently for every mainnet address lookup, including empty addresses. Its confirmed HTML appears as a shared system reference, separate from the address-owned public file count. Failed verification shows an explicit unavailable notice and Refresh retries; other networks do not inherit the mainnet reference. The original transaction bytes, sender, timestamp, proof value, and Browser link are preserved.
 - Projects Browser-readable HTML message bodies into Files/Desktop as virtual `.html` files, so users can send HTML as a message body without needing an attachment.
-- Supports fractional miner fee rates, including sub-1 sat/vB values like `0.1`.
+- Supports fractional miner fee rates, including sub-1 proofs/vB values like `0.15`. Boost, Publish and Computer share the remembered social fee choice. Social funding prefers economical change over unnecessary remainder absorption; unavoidable extra fees and the estimated effective rate remain explicit before signing.
 - Uses the correct external explorer path for the connected chain, including `/testnet4`.
 - Registers and scans mainnet ProofOfWork IDs through the canonical registry address.
 - Registers and scans mainnet ProofOfWork DNS `.pow` names through the `domains@proofofwork.me` registry address. The focused DNS app accepts the bare prefix and implies `.pow`; DNS records do not carry PGP keys.

@@ -46,7 +46,7 @@
     "dev:prod-api": "vite --host 0.0.0.0 --mode prod-api",
     "build": "tsc && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "check:fee-rate-precision": "node scripts/check-fee-rate-precision.mjs",
+    "check:fee-rate-precision": "node scripts/check-fee-rate-precision.mjs && node --test scripts/check-social-fee-preference.test.mjs",
     "check:ui": "node scripts/check-ui-contract.mjs",
     "check:notifications": "node --test server/notification*.test.mjs src/features/notifications/*.test.mjs",
     "check:seo": "node --test scripts/check-seo-metadata.test.mjs scripts/check-seo-build.test.mjs",

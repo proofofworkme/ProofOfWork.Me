@@ -93,22 +93,38 @@ export function selectUtxos(
   changeOutputVbytes: number,
   baseInputCount = 0,
   dustSats = DEFAULT_DUST_SATS,
+  options: { preferChange?: boolean } = {},
 ): WalletUtxoSelection {
   assertFeeRatePrecision(feeRate);
   const selected: WalletUtxo[] = [];
   let selectedValue = 0;
+  let noChangeFallback: WalletUtxoSelection | undefined;
 
   for (const utxo of utxos) {
-    selected.push(utxo);
-    selectedValue += utxo.value;
-
     const feeWithChange = feeForEstimatedVbytes(
       estimateTxVbytes(
-        selected.length + baseInputCount,
+        selected.length + 1 + baseInputCount,
         fixedOutputVbytes + changeOutputVbytes,
       ),
       feeRate,
     );
+    if (noChangeFallback) {
+      // More inputs are useful only while change can cost less than the funded
+      // fallback. Bound added inputs by that fee budget, and skip coins whose
+      // value cannot cover their own marginal fee instead of shrinking change.
+      if (feeWithChange >= noChangeFallback.feeSats) return noChangeFallback;
+      const marginalInputFee = feeWithChange - feeForEstimatedVbytes(
+        estimateTxVbytes(
+          selected.length + baseInputCount,
+          fixedOutputVbytes + changeOutputVbytes,
+        ),
+        feeRate,
+      );
+      if (utxo.value <= marginalInputFee) continue;
+    }
+    selected.push(utxo);
+    selectedValue += utxo.value;
+
     const changeWithChange = selectedValue - amountSats - feeWithChange;
     if (changeWithChange >= dustSats) {
       return {
@@ -128,14 +144,19 @@ export function selectUtxos(
     );
     const remainder = selectedValue - amountSats - feeWithoutChange;
     if (remainder >= 0) {
-      return {
-        selected,
+      const noChange = {
+        selected: [...selected],
         dustFeeSats: remainder,
         feeSats: feeWithoutChange + remainder,
         changeSats: 0,
       };
+      if (!options.preferChange || remainder === 0) return noChange;
+      // Keep the first (cheapest) funded candidate intact while examining more
+      // inputs. If change is unavailable, the caller can review its dust fee.
+      noChangeFallback ??= noChange;
     }
   }
+  if (noChangeFallback) return noChangeFallback;
 
   const lastInputCount = Math.max(selected.length, 1) + baseInputCount;
   const estimatedFee = feeForEstimatedVbytes(

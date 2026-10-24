@@ -843,3 +843,10 @@ DNS verification survives API restarts through private authenticated verificatio
 receipts, rebound to the current chain before use. Durable progress is performance
 state; only complete exact-checkpoint coverage authorizes name-to-page routing.
 Never make a slow or unavailable verification look like a missing page link.
+
+Social fee selection belongs to the human. Boost, Publish and Computer remember
+the last valid browser choice, preserve rates in existing drafts, and never
+replace an open draft or reviewed transaction through a background preference
+refresh. Fractional rates remain fractional. Prefer economical change over
+unnecessary miner-fee absorption; when below-dust remainder cannot be returned,
+show the exact extra fee and estimated effective rate before local signing.
