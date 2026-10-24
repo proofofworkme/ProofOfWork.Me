@@ -1697,3 +1697,11 @@ restarts, with chain-bound tail catch-up and reorg recovery. Complete current
 coverage remains required for page routing. Operational custody and fail-closed
 recovery are documented in [OP_RETURN_INFRASTRUCTURE.md](OP_RETURN_INFRASTRUCTURE.md)
 and [deploy/dns-verification/README.md](deploy/dns-verification/README.md).
+
+## WORK batch sends (staged)
+
+Wallet and Computer include a staged **Send to many** WORK flow for 2–256
+recipients, with one 546-proof registry payment per transaction plus miner fee.
+It remains disabled until its exact additive declaration and canonical replay
+are verified. See [WORK Batch Sends V1](WORK_BATCH_SENDS.md) for wire rules,
+atomic accounting and activation. Existing Mail and send3 behavior is unchanged.

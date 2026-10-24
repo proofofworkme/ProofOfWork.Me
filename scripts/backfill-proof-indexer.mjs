@@ -1,3 +1,12 @@
+import { parseWorkBatchPayload } from "../src/shared/protocol/workBatch.mjs";
+import { verifiedWorkBatchEventIds, assertNoSealedWorkBatchAuthority } from "../server/db/work-batch-reader.mjs";
+import { validateWorkBatchV1PendingDecision } from "../server/work-batch-transaction.mjs";
+import {
+  WORK_BATCH_ACTIVATION_META_KEY,
+  normalizeWorkBatchDeclarationPins,
+  validateWorkBatchActivationMarker,
+  workBatchActivationMarkerFromTransition,
+} from "../server/work-batch-declaration.mjs";
 import { JOBS_ACTIVATION_HEIGHT, JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH } from "../src/shared/protocol/jobs.mjs";
 import { parseBoostTip, parseBoostWorkTip } from "../src/shared/protocol/boostTip.mjs";
 import { verifyCodeTransaction } from "../src/shared/protocol/codeRepository.mjs";
@@ -467,6 +476,7 @@ const PUBLIC_LOG_EVENT_KINDS = new Set([
   "token-mint",
   "token-sale",
   "token-transfer",
+  "token-transfer-batch",
   "work-usd-quote",
 ]);
 const PAGE_LIMIT = Number(process.env.POW_INDEX_BACKFILL_LIMIT ?? 200);
@@ -5552,6 +5562,22 @@ function protocolItemsFromTx(tx, message) {
     return [baseProtocolItem(tx, message, `${message.prefix.replace(/:$/u, "")}-event`)];
   }
 
+  if (action === "batch1") {
+    const base = baseProtocolItem(tx, message, "token-transfer-batch");
+    const batch = parseWorkBatchPayload(message.text, { network: NETWORK });
+    if (!batch) return [invalidProtocolItem(base, "Malformed WORK batch carrier.")];
+    return [{
+      ...base,
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      amountSubatoms: batch.totalAmountSubatoms,
+      totalAmountSubatoms: batch.totalAmountSubatoms,
+      recipientCount: batch.recipientCount,
+      recipients: batch.recipients,
+      senderAddress: senderAddressFromTx(tx),
+      tokenId: batch.tokenId,
+      transferVersion: "batch1",
+    }];
+  }
   if (action === "create") {
     return [
       {
@@ -5721,6 +5747,9 @@ function sourceLabelForProtocolItem(item) {
   if (kind === "token-transfer") {
     return "token-transfers";
   }
+  if (kind === "token-transfer-batch") {
+    return "token-transfer-batches";
+  }
   if (kind === "token-sale") {
     return "token-sales";
   }
@@ -5753,7 +5782,7 @@ function tokenScopesForProtocolMessage(txid, text) {
     scopes.add(txid);
   }
   if (
-    ["mint", "send", "send2", WORK_AMO_V8_TRANSFER_VERSION].includes(
+    ["mint", "send", "send2", "batch1", WORK_AMO_V8_TRANSFER_VERSION].includes(
       action,
     ) &&
     isHexTxid(parts[2])
@@ -5847,6 +5876,7 @@ function recoveryEndpointSpecs(txid, message) {
         "mint",
         "send",
         "send2",
+        "batch1",
         WORK_AMO_V8_TRANSFER_VERSION,
         "list5",
         "seal5",
@@ -7093,6 +7123,7 @@ function canonicalKindForSourceLabel(sourceLabel, item) {
     tokens: "token-create",
     "token-mints": "token-mint",
     "token-transfers": "token-transfer",
+    "token-transfer-batches": "token-transfer-batch",
     "token-listings": "token-listing",
     "token-closed-listings": "token-listing-closed",
     "token-sales": "token-sale",
@@ -7978,6 +8009,8 @@ function preparedProtocolItemsWithCanonicalMailAttachments(
         verifiedMailAttachmentsByTxid.set(txid, attachments);
       }
     }
+    // Batch receipts are standalone transfers, never Mail/Boost/bond attachments.
+    if (item?.transferVersion === "batch1") continue;
     const nativeQ16 =
       item?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL ||
       item?.transferVersion === WORK_AMO_V8_TRANSFER_VERSION;
@@ -8993,7 +9026,7 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
         AND e.protocol = 'pwt1'
         AND e.valid = true
         AND e.status = 'confirmed'
-        AND e.kind IN ('token-mint', 'token-transfer', 'token-sale')
+        AND e.kind IN ('token-mint', 'token-transfer', 'token-transfer-batch', 'token-sale')
         ${
           scopedReplay
             ? "AND lower(COALESCE(e.payload->>'tokenId', '')) = ANY($2::text[])"
@@ -9008,6 +9041,10 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
     `,
     scopedReplay ? [NETWORK, requestedTokenIds] : [NETWORK],
   );
+  // Qualify the complete recipient set even when every child of a parent is
+  // missing; the parent itself never applies a second credit balance delta.
+  const verifiedBatchEvents = await verifiedWorkBatchEventIds(client, eventsResult.rows, NETWORK);
+  eventsResult.rows = eventsResult.rows.filter(row => row.kind !== "token-transfer-batch");
   const existingResult = await client.query(
     `
       SELECT token_id, COALESCE(sum(confirmed_balance), 0) AS confirmed_supply
@@ -9351,6 +9388,14 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
       }
     }
     let amount;
+    const verifiedBatch = verifiedBatchEvents.has(Number(row.event_id));
+    const batchClaim = payload.transferVersion === "batch1" || payload.amountVersion === "batch1" ||
+      payload.batchRecipientIndex !== undefined;
+    if (batchClaim && (!verifiedBatch || !isWorkTokenId(tokenId) ||
+        activeWorkProjection.state === WORK_PROJECTION_STATE_Q8 ||
+        position.blockHeight < workPrecisionV2ActivationHeight)) {
+      throw new Error("Canonical WORK batch replay requires an active exact parent-bound Q16 recipient.");
+    }
     if (isWorkTokenId(tokenId)) {
       if (activeWorkProjection.state === WORK_PROJECTION_STATE_Q8) {
         amount = workQ8ReplayAmount(payload, eventLabel);
@@ -9376,10 +9421,11 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
         if (
           !preactivation &&
           row.kind === "token-transfer" &&
-          transferVersion !== WORK_AMO_V8_TRANSFER_VERSION
+          transferVersion !== WORK_AMO_V8_TRANSFER_VERSION &&
+          !verifiedBatch
         ) {
           throw new Error(
-            `Canonical WORK replay requires send3 after precision activation at ${eventLabel}.`,
+            `Canonical WORK replay requires send3 or an accepted batch recipient after precision activation at ${eventLabel}.`,
           );
         }
         const nativeQ16 =
@@ -9387,6 +9433,7 @@ async function rebuildConfirmedCreditBalancesFromCanonicalEvents(
           (
             row.kind === "token-mint" ||
             transferVersion === WORK_AMO_V8_TRANSFER_VERSION ||
+            verifiedBatch ||
             authorizationVersion === WORK_AMO_V8_AUTH_VERSION
           );
         if (nativeQ16) {
@@ -25445,6 +25492,55 @@ async function workAmoV5CanonicalBlockEventSet(client, transition) {
   return workAmoV5EventSetCommitment(events);
 }
 
+async function persistWorkBatchActivationMarker(client, transition) {
+  if (NETWORK !== "livenet") return null;
+  const proposed = workBatchActivationMarkerFromTransition(transition);
+  const context = transition.payload?.workBatchV1;
+  const existing = await client.query(
+    "SELECT value FROM proof_indexer.meta WHERE key = $1 FOR UPDATE",
+    [WORK_BATCH_ACTIVATION_META_KEY],
+  );
+  if (existing.rows.length > 0) {
+    const verified = existing.rows.length === 1
+      ? validateWorkBatchActivationMarker(existing.rows[0].value) : null;
+    if (!verified?.valid) throw new Error("Persistent WORK batch activation marker is malformed.");
+    const marker = verified.marker;
+    if (context || transition.blockHeight >= marker.activationHeight) {
+      if (!context) throw new Error("Canonical transition omitted active WORK batch authority.");
+      const declaration = normalizeWorkBatchDeclarationPins({
+        ...context.declaration, activationHeight: context.activationHeight,
+      });
+      const matches = (left, right) => workAmoV5CanonicalPayloadCommitment(left).sha256 ===
+        workAmoV5CanonicalPayloadCommitment(right).sha256;
+      if (!declaration || !matches(declaration, marker.declaration) ||
+          !matches(context.evidenceCommitment, marker.evidenceCommitment) ||
+          (proposed && !matches(proposed.activationBlock, marker.activationBlock))) {
+        throw new Error("Canonical transition conflicts with immutable WORK batch activation.");
+      }
+    }
+    return marker;
+  }
+  if (!context) {
+    // The proposed row is already inserted in this transaction. Inspect only its
+    // predecessor, otherwise that new context-free row could hide an active era.
+    await assertNoSealedWorkBatchAuthority(client, NETWORK, { beforeBlockHeight: transition.blockHeight });
+    return null;
+  }
+  if (!proposed) throw new Error("WORK batch activation marker is missing after the exact D+1 boundary.");
+  // This runs inside the canonical block transaction after its complete transition
+  // row was checked, so the first active seal and marker commit or roll back together.
+  await client.query(
+    "INSERT INTO proof_indexer.meta (key, value, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT DO NOTHING",
+    [WORK_BATCH_ACTIVATION_META_KEY, JSON.stringify(proposed)],
+  );
+  const exact = await client.query(
+    "SELECT value FROM proof_indexer.meta WHERE key = $1 AND value = $2::jsonb FOR UPDATE",
+    [WORK_BATCH_ACTIVATION_META_KEY, JSON.stringify(proposed)],
+  );
+  if (exact.rows.length !== 1) throw new Error("WORK batch activation marker did not persist exactly.");
+  return proposed;
+}
+
 async function persistWorkAmoV5BlockTransition(client, transition) {
   const eventSet = await workAmoV5CanonicalBlockEventSet(client, transition);
   if (
@@ -25555,6 +25651,7 @@ async function persistWorkAmoV5BlockTransition(client, transition) {
       `Canonical AMO V5 transition changed at block ${transition.blockHeight}.`,
     );
   }
+  await persistWorkBatchActivationMarker(client, transition);
 }
 
 async function advanceCodeDiscoveryCheckpoint(client, { height, blockHash, previousBlockHash, candidates }) {
@@ -30588,7 +30685,7 @@ async function pendingWorkQ16StageCandidate(client, messages, txid = "") {
       continue;
     }
     if (
-      ["mint", "send", "send2", WORK_AMO_V8_TRANSFER_VERSION].includes(
+      ["mint", "send", "send2", "batch1", WORK_AMO_V8_TRANSFER_VERSION].includes(
         action,
       )
     ) {
@@ -31535,11 +31632,17 @@ async function preparedWorkQ16PendingStageDecisions(stageResponse) {
         rawPositions.add(position);
         rawRecordsByPosition.set(position, record);
       }
+      const batchDecision = validateWorkBatchV1PendingDecision({ transaction: hydrated, items: decision.items });
+      if (!batchDecision.valid) {
+        throw new Error(`WORK batch pending decision is not bound to its complete signed carrier: ${batchDecision.reasonCode}`);
+      }
       const coveredPositions = new Set();
       for (const item of decision.items) {
         const protocolVout = Number(item?.protocolVout);
         const recordOrdinal = Number(item?.recordOrdinal);
-        const position = `${protocolVout}:${recordOrdinal}`;
+        const position = batchDecision.applicable && item.rawCandidate === false
+          ? `${item.containerPosition.protocolVout}:${item.containerPosition.recordOrdinal}`
+          : `${protocolVout}:${recordOrdinal}`;
         if (
           !Number.isSafeInteger(protocolVout) ||
           protocolVout < 0 ||

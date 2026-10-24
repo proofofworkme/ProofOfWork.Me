@@ -19,8 +19,9 @@ async function load(path, imports = {}) {
   return exports;
 }
 const amounts = await load("src/workAmount.ts");
-const capacity = await load("src/shared/work/canonicalWorkCapacity.ts");
 const recovery = await load("src/shared/wallet/actionRecovery.ts");
+const batchRecovery = await load("src/shared/work/workBatchRecovery.ts", { "../wallet/actionRecovery": recovery });
+const capacity = await load("src/shared/work/canonicalWorkCapacity.ts", { "./workBatchRecovery": batchRecovery });
 const existing = await load("src/features/jobs/jobsWorkCapacity.ts", {
   "../../shared/api/proofApiClient": {}, "../../shared/work/canonicalWorkCapacity": capacity,
   "../../shared/wallet/actionRecovery": recovery, "../../shared/protocol/jobs.mjs": jobs, "../../workAmount": amounts,

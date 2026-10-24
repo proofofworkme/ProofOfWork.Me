@@ -59,6 +59,9 @@ const context = vm.createContext({
     assert.equal(options.force, true);
     return gate;
   },
+  // This fixture isolates legacy send3 capacity; batch admission has its own suite.
+  signedTransactionOutputs: () => [],
+  decodedOpReturnMessages: () => [],
   signedTransactionInputOutpoints: () => inputs,
   fetchTransactionFromBitcoinRpc: async (_txid, _network, options) => {
     assert.equal(options.bypassCache, true);

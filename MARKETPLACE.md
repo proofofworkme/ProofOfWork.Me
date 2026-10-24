@@ -1731,3 +1731,11 @@ accepted prior balances are labeled last verified during refresh. A clean
 dedicated lane takes precedence over a clean all-account fallback, matching the
 account balance merge. This display correction changes no confirmed balance,
 reservation, sellable capacity, fee, listing terms or protocol arithmetic.
+
+## Additive WORK batch transfer lane (staged)
+
+[WORK Batch Sends V1](WORK_BATCH_SENDS.md) defines a standalone wallet operation
+with one 546-proof registry payment for 2–256 recipients. It requires a new
+confirmed declaration and D+1 activation. It does not alter AMO V8 sale-ticket
+terms, listings, reservations or send3 payments. Its derived recipient rows
+never authorize marketplace settlements or charge separate fees.

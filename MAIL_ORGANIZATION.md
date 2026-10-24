@@ -1113,3 +1113,10 @@ records or URL fragments. These browsers have separate local storage; existing
 backup/import support remains the explicit way to move supported local data.
 No automatic signing, replay of a pending action, or inference of wallet
 authority accompanies the navigation. Desktop extension behavior is unchanged.
+
+## WORK batch sends and Mail
+
+The staged [WORK batch](WORK_BATCH_SENDS.md) flow lives in Wallet transfers,
+including Computer's Wallet workspace. It is a standalone credit operation;
+Mail keeps its current recipient limit, proof payments and separately charged
+WORK attachments. A batch is not an attachment receipt for Mail, Boost or Jobs.

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
+import { parseWorkBatchPayload } from "../../src/shared/protocol/workBatch.mjs";
 import { composerAppearance, composerViewports, expectAlignedFields, expectComposerContained, expectFeePresetsContained } from "../fixtures/composerGeometry.mjs";
 
 const NOW = "2026-08-01T12:00:00.000Z";
@@ -44,6 +45,130 @@ fundingTransaction.addOutput(
 );
 const FUNDING_TXID = fundingTransaction.getId();
 const FUNDING_HEX = fundingTransaction.toHex();
+
+function batchStatusFixture(active = true) {
+  return { protocol: "work-batch-v1", network: "livenet", active, writeEnabled: active, ready: active,
+    reasonCode: active ? null : "declaration-unconfirmed", declarationTxid: active ? "d".repeat(64) : null,
+    activationHeight: active ? 960000 : null, checkedTipHeight: LISTING_CHECKPOINT_HEIGHT, checkedTipHash: HASH,
+    registryFeeProofs: 546, limits: { minRecipients: 2, maxRecipients: 256, maxPayloadBytes: 65536 } };
+}
+function batchFixtureAddresses(count) {
+  return Array.from({ length: count }, (_, index) => bitcoin.payments.p2wpkh({ hash: Buffer.from((index + 1).toString(16).padStart(40, "0"), "hex") }).address);
+}
+
+test("WORK batch remains unavailable before declared activation and preserves its checked draft", async ({ page }) => {
+  await installWallet(page); await installApiFixtures(page);
+  await page.route("**/api/v1/work-batch-status**", route => route.fulfill({ json: batchStatusFixture(false) }));
+  await openConnectedWallet(page);
+  await page.getByText("Send WORK to many", { exact: true }).click();
+  const panel = page.locator(".work-batch-panel");
+  await panel.getByLabel("Recipients", { exact: true }).fill(batchFixtureAddresses(78).join(", "));
+  await panel.getByLabel("WORK each", { exact: true }).fill("1");
+  await panel.getByRole("button", { name: "Check recipients", exact: true }).click();
+  await expect(panel).toContainText("78 wallets");
+  await expect(panel).toContainText("78 WORK total");
+  await expect(panel.getByRole("button", { name: "Review WORK batch" })).toBeDisabled();
+  await expect(panel).toContainText("declaration-unconfirmed");
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+test("WORK batch reviews 78 exact recipients with one 546-proof output and no Mail payments", async ({ page }) => {
+  await installWallet(page); await installApiFixtures(page);
+  await page.route("**/api/v1/work-batch-status**", route => route.fulfill({ json: batchStatusFixture() }));
+  await openConnectedWallet(page);
+  await page.getByText("Send WORK to many", { exact: true }).click();
+  const panel = page.locator(".work-batch-panel"), recipients = batchFixtureAddresses(78);
+  await panel.getByLabel("Recipients", { exact: true }).fill(recipients.join(", "));
+  await panel.getByLabel("WORK each", { exact: true }).fill("0.0000000000000001");
+  await panel.getByRole("button", { name: "Check recipients", exact: true }).click();
+  await expect(panel).toContainText("78 wallets");
+  await panel.getByRole("button", { name: "Review WORK batch" }).click();
+  const review = page.getByRole("dialog", { name: "Review WORK batch" });
+  await expect(review).toContainText(recipients[77]);
+  await expect(review).toContainText("0.0000000000000078 WORK");
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+  await review.getByRole("button", { name: "Continue to wallet" }).click();
+  await expect.poll(() => page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(1);
+  const psbt = bitcoin.Psbt.fromHex(await page.evaluate(() => window.__mailComposeFixture.psbtHexes[0]));
+  const payments = psbt.txOutputs.filter(output => output.address && output.address !== SENDER);
+  expect(payments).toHaveLength(1); expect(payments[0].address).toBe(WORK_REGISTRY); expect(payments[0].value).toBe(546n);
+  const carriers = psbt.txOutputs.filter(output => output.script[0] === 0x6a).map(output => Buffer.from(bitcoin.script.decompile(output.script)[1]).toString("utf8"));
+  expect(carriers).toHaveLength(1);
+  const batch = parseWorkBatchPayload(carriers[0]);
+  expect(batch.recipientCount).toBe(78); expect(batch.totalAmountSubatoms).toBe("78");
+  expect(batch.recipients.map(row => row.recipientAddress)).toEqual(recipients);
+  expect(psbt.data.inputs.every(input => input.sighashType === bitcoin.Transaction.SIGHASH_ALL)).toBe(true);
+});
+
+test("WORK batch rechecks ID receiver changes before opening the signing wallet", async ({ page }) => {
+  await installWallet(page); await installApiFixtures(page);
+  await page.route("**/api/v1/work-batch-status**", route => route.fulfill({ json: batchStatusFixture() }));
+  let changed = false;
+  const destinations = batchFixtureAddresses(3);
+  await page.route("**/api/v1/ids/**", route => {
+    const id = decodeURIComponent(new URL(route.request().url()).pathname.split("/").pop());
+    const record = { id, network: "livenet", confirmed: true, ownerAddress: destinations[id === "alice" ? 0 : 1],
+      receiveAddress: destinations[id === "alice" ? changed ? 2 : 0 : 1], txid: "a".repeat(64), blockHeight: 960000 };
+    return route.fulfill({ json: { ...registryState(), record, records: [record] } });
+  });
+  await openConnectedWallet(page);
+  await page.getByText("Send WORK to many", { exact: true }).click();
+  const panel = page.locator(".work-batch-panel");
+  await panel.getByLabel("Recipients", { exact: true }).fill("alice@proofofwork.me,bob@proofofwork.me");
+  await panel.getByRole("button", { name: "Check recipients", exact: true }).click();
+  await panel.getByRole("button", { name: "Review WORK batch" }).click();
+  const review = page.getByRole("dialog", { name: "Review WORK batch" }); await expect(review).toBeVisible();
+  changed = true;
+  await review.getByRole("button", { name: "Continue to wallet" }).click();
+  await expect(page.locator(".status-text")).toContainText("recipient route or amount changed");
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+});
+
+
+for (const surface of ["standalone", "computer"]) {
+  for (const theme of ["light", "dark"]) {
+    for (const viewport of [{ width: 320, height: 640 }, { width: 1440, height: 900 }]) {
+      test(`WORK batch layout stays usable in ${surface} ${theme} ${viewport.width}px`, async ({ page }, testInfo) => {
+        await page.setViewportSize(viewport);
+        await composerAppearance(page, theme);
+        await installWallet(page); await installApiFixtures(page);
+        await page.route("**/api/v1/work-batch-status**", route => route.fulfill({ json: batchStatusFixture() }));
+        if (surface === "standalone") await openConnectedWallet(page);
+        else {
+          await page.goto("/?folder=wallet", { waitUntil: "domcontentloaded" });
+          const connect = page.getByRole("button", { name: "Connect UniSat", exact: true }).first();
+          if (await connect.isVisible({ timeout: 1000 }).catch(() => false)) await connect.click();
+          await expect(page.locator(".topbar-wallet-button")).toContainText("1BPVvi1G");
+          await expect(page.locator(".token-wallet-workspace")).toBeVisible();
+        }
+        await page.getByText("Send WORK to many", { exact: true }).click();
+        const panel = page.locator(".work-batch-panel");
+        await panel.getByLabel("Recipients", { exact: true }).fill(batchFixtureAddresses(78).join(", "));
+        await panel.getByLabel("WORK each", { exact: true }).fill("0.0000000000000001");
+        await panel.getByRole("button", { name: "Check recipients", exact: true }).click();
+        await expect(panel).toContainText("78 wallets");
+        await expect(panel.locator("tbody tr")).toHaveCount(78);
+        await expectComposerContained(page, panel, viewport);
+        await expectFeePresetsContained(panel);
+        const controls = await panel.locator("summary, textarea, input, button").evaluateAll(nodes => nodes.map(node => ({ height: node.getBoundingClientRect().height, fontSize: Number.parseFloat(getComputedStyle(node).fontSize), textField: node.matches("textarea,input") })));
+        for (const control of controls) {
+          expect(control.height).toBeGreaterThanOrEqual(44);
+          if (viewport.width === 320 && control.textField) expect(control.fontSize).toBeGreaterThanOrEqual(16);
+        }
+        const destinations = panel.locator(".work-batch-destinations");
+        await destinations.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: testInfo.outputPath("verified-recipients.png") });
+        await panel.getByRole("button", { name: "Review WORK batch" }).click();
+        const review = page.getByRole("dialog", { name: "Review WORK batch" });
+        await expect(review).toBeVisible();
+        await expectComposerContained(page, review, viewport);
+        await expect(review.getByRole("button", { name: "Continue to wallet" })).toBeVisible();
+        await page.screenshot({ path: testInfo.outputPath("transaction-review.png") });
+        expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+      });
+    }
+  }
+}
 
 test("Mail Compose opens the shared Publish page and restores the complete private Mail draft", async ({ page }) => {
   await installWallet(page);

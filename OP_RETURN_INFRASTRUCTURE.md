@@ -8527,3 +8527,35 @@ The exact one-file runtime scope, hashes, service activation, rollback and relea
 synchronization requirements are recorded in
 `audits/2026-10-23-api-readiness-latency-r2/scope.json`. No additional import,
 database change or replay of committed recovery writes is authorized.
+
+## WORK batch runtime (staged)
+
+The additive [WORK Batch Sends V1](WORK_BATCH_SENDS.md) lane keeps official writes
+disabled by default. Confirmed reads discover the earliest exact Core-verified
+declaration at or after block 972965 from the sealed H−1 prefix and activate at
+D+1, independently of operator pins or the write switch. The D+1 transition
+atomically persists its activation marker; marker recovery and the missing-marker
+sealed-history guard preserve the confirmed era. Canonical indexing continues
+while the authority's locally signed declaration awaits confirmation.
+
+The uncached /api/v1/work-batch-status gate requires exact declaration evidence,
+complete earliest-declaration discovery, current Q16 readiness and a stored
+batch-aware transition at the exact tip. Official writes additionally require
+verified pins and the independent write switch in the API-only activation
+drop-in, installed through the separate
+[activation controller](deploy/work-batch-activation/README.md). The canonical
+worker remains unpinned and derives read authority from confirmed records.
+Malformed or conflicting requested pins fail closed; absent pins never enable
+writes. Keep verified API pins when disabling writes, and preserve batch-aware
+replay and the marker after activation. A source deployment or enabled environment
+flag alone is not activation evidence.
+The dormant installation uses the fixed-scope
+[batch deployment controller](deploy/work-batch-sends/README.md), preserving
+accepted runtime overlays and keeping capture, plan and rollback evidence on the VPS.
+
+The C3 metadata path keeps the outer readiness read that identifies shared
+in-flight work. Its recursive owner skips only its unused preliminary read and
+cache-key construction; the final independent readiness sweep remains
+authoritative, including when evidence fails. Forced reads, pending expiry,
+reader freshness fences and snapshot validation are unchanged. The focused
+`check:work-amo-v8-metadata-readiness` suite covers this boundary.

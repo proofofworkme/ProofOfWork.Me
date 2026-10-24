@@ -27,8 +27,9 @@ async function loadClient(path, imports = {}, extras = {}) {
   return exports;
 }
 const amount = await loadClient('src/workAmount.ts');
-const capacity = await loadClient('src/shared/work/canonicalWorkCapacity.ts');
-const recovery = await loadClient('src/shared/wallet/actionRecovery.ts');
+const recovery = await loadClient("src/shared/wallet/actionRecovery.ts");
+const batchRecovery = await loadClient("src/shared/work/workBatchRecovery.ts", { "../wallet/actionRecovery": recovery });
+const capacity = await loadClient("src/shared/work/canonicalWorkCapacity.ts", { "./workBatchRecovery": batchRecovery });
 let response, requests, duringRead;
 const adapter = await loadClient('src/features/jobs/jobsWorkCapacity.ts', {
   '../../workAmount': amount,

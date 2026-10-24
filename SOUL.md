@@ -850,3 +850,13 @@ replace an open draft or reviewed transaction through a background preference
 refresh. Fractional rates remain fractional. Prefer economical change over
 unnecessary miner-fee absorption; when below-dust remainder cannot be returned,
 show the exact extra fee and estimated effective rate before local signing.
+
+## WORK batch transfer posture (staged)
+
+Standalone WORK batch sends make one signal payment for one atomic transaction:
+546 proofs to the registry, plus the miner fee, for up to 256 recipients. Keep
+the entire recipient list reviewable, every signature local and unknown signed
+transactions recoverable. The new lane needs its own confirmed declaration;
+existing Mail, transfer and market history stays replayable under its original
+rules. Derived recipient rows never manufacture extra payments or movement.
+[WORK_BATCH_SENDS.md](WORK_BATCH_SENDS.md) records the staged protocol and gates.

@@ -14,6 +14,7 @@ import {
 } from "../../src/shared/protocol/publishArticle.mjs";
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
+import { readWorkBatchDeclarationCandidates, readWorkBatchDiscoveryCheckpoint, readWorkBatchActivationMarker, verifiedWorkBatchEventIds } from "./work-batch-reader.mjs";
 import { readCodeSnapshot, readCodePageSource } from "./code-reader.mjs";
 import { readJobsSnapshot } from "./jobs-reader.mjs";
 import { createPermissionIndexDiscovery } from "./permission-reader.mjs";
@@ -616,6 +617,7 @@ export const PUBLIC_LOG_EVENT_KINDS = new Set([
   "token-mint",
   "token-sale",
   "token-transfer",
+  "token-transfer-batch",
   "work-usd-quote",
 ]);
 const SMALL_EVENT_HISTORY_NORMALIZE_LIMIT = 2_000;
@@ -16505,6 +16507,7 @@ const SNAPSHOT_TOKEN_ACTIVITY_KINDS = new Set([
   "token-mint",
   "token-sale",
   "token-transfer",
+  "token-transfer-batch",
 ]);
 
 function snapshotTokenActivityCanonicalExemption(item) {
@@ -16971,6 +16974,10 @@ export function canonicalTransferFeeProjection(payload, evidence) {
 
 export async function rowsWithCanonicalTransferFees(pool, rows, network) {
   if (network !== "livenet") return rows;
+  await verifiedWorkBatchEventIds(pool, rows
+    .map(row => ({ ...row, payload: canonicalEventPayload(row.payload) }))
+    .filter(row => (row.status === "confirmed" || row.payload.confirmed === true) && row.payload.valid === true),
+  network);
   const candidates = rows.filter((row) => {
     const p = canonicalEventPayload(row.payload);
     return (row.status === "confirmed" || p.confirmed === true) &&
@@ -17293,6 +17300,23 @@ export async function rowsWithCanonicalMintPayments(pool, rows, network) {
     : row);
 }
 
+function tokenBatchFromEventPayload(payload, row = {}) {
+  return {
+    ...payload,
+    ...canonicalEventIdentityDetails({ ...payload, eventId: payload?.eventId ?? row.event_id }),
+    ...canonicalMovementPositionFromEventRow(payload, row),
+    ...workAmountProjectionMetadataForAmount(workAmountProjection(payload)),
+    kind: "token-transfer-batch",
+    protocol: "pwt1",
+    transferVersion: "batch1",
+    confirmed: row.status === "confirmed" || payload.confirmed === true,
+    createdAt: dateIso(payload.createdAt ?? row.event_time ?? row.block_time ?? row.created_at),
+    paidSats: 546,
+    registryMutationFeeSats: 546,
+    batchRegistryPaymentSats: 546,
+  };
+}
+
 function tokenTransferFromEventPayload(payload, row = {}) {
   const ticker = String(row.ticker ?? payload?.ticker ?? "").trim();
   const tokenId = String(payload?.tokenId ?? row.token_id ?? "")
@@ -17361,6 +17385,28 @@ function tokenTransferFromEventPayload(payload, row = {}) {
     ticker,
     tokenId,
     txid: String(payload?.txid ?? row.txid ?? "").trim().toLowerCase(),
+    ...(payload?.transferVersion === "batch1" ? {
+      amountVersion: "batch1",
+      transferVersion: "batch1",
+      batchRecipientIndex: payload.batchRecipientIndex,
+      batchRecipientCount: payload.batchRecipientCount,
+      batchTotalAmountSubatoms: payload.batchTotalAmountSubatoms,
+      batchPayloadCommitment: payload.batchPayloadCommitment,
+      containerPosition: payload.containerPosition,
+      derived: true,
+      derivedId: payload.derivedId,
+      parentTransitionChainCommitmentAfter: payload.parentTransitionChainCommitmentAfter,
+      rawCandidate: false,
+      chargesTransactionFee: false,
+      claimsEconomicOutputs: false,
+      economicDelta: false,
+      paidSats: 0,
+      registryMutationFeeSats: 0,
+      minerFeeSats: 0,
+      creditAmountMoved: 0,
+      creditValueAtConfirmSats: 0,
+      creditLiveValueSats: 0,
+    } : {}),
   };
 }
 
@@ -21357,7 +21403,8 @@ function workAmountProjectionMetadata(record, metadata = {}) {
     tokenId === WORK_TOKEN_ID &&
     (
       metadataVersion === WORK_AMO_V8_AUTH_VERSION ||
-      metadataVersion === WORK_AMO_V8_TRANSFER_VERSION
+      metadataVersion === WORK_AMO_V8_TRANSFER_VERSION ||
+      metadataVersion === "batch1"
     )
       ? WORK_SUBATOM_PROJECTION_MODEL
       : "";
@@ -26266,6 +26313,7 @@ function tokenStateStats(payload, tokens, mints, transfers, invalidEvents) {
       tokens.length +
       mints.length +
       transfers.length +
+      (Array.isArray(payload?.transferBatches) ? payload.transferBatches.length : 0) +
       (Array.isArray(payload?.listings) ? payload.listings.length : 0) +
       (Array.isArray(payload?.closedListings)
         ? payload.closedListings.length
@@ -26777,6 +26825,18 @@ export async function proofIndexWorkAmoV8WorkerStatusPayload(network) {
         }
       : null,
   };
+}
+
+export async function proofIndexWorkBatchActivationMarker(network) {
+  return readWorkBatchActivationMarker(proofIndexPool(), network);
+}
+
+export async function proofIndexWorkBatchDiscoveryCheckpoint(network, options = {}) {
+  return readWorkBatchDiscoveryCheckpoint(proofIndexPool(), network, options);
+}
+
+export async function proofIndexWorkBatchDeclarationCandidates(network, options = {}) {
+  return readWorkBatchDeclarationCandidates(proofIndexPool(), network, options);
 }
 
 export async function proofIndexWorkAmoV8DeclarationCandidates(
@@ -31673,7 +31733,7 @@ async function proofIndexTokenTransferEventsFromTables(pool, network, scope) {
       WHERE e.network = $1
         AND e.protocol = 'pwt1'
         AND e.valid IS DISTINCT FROM false
-        AND e.kind = 'token-transfer'
+        AND e.kind IN ('token-transfer', 'token-transfer-batch')
         ${tokenStateScopeSql(scope, "COALESCE(cd.token_id, lower(e.payload->>'tokenId'))", "cd.ticker")}
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
@@ -31684,7 +31744,12 @@ async function proofIndexTokenTransferEventsFromTables(pool, network, scope) {
     scoped ? [network, scope] : [network],
   );
   const transferRows = await rowsWithCanonicalTransferFees(pool, result.rows, network);
-  return transferRows
+  const transferBatches = transferRows
+    .filter(row => canonicalEventPayload(row.payload).kind === "token-transfer-batch")
+    .map(row => tokenBatchFromEventPayload(normalizeEventPayload(canonicalEventPayload(row.payload), row), row))
+    .sort(compareTokenItemsByTime);
+  const transfers = transferRows
+    .filter(row => canonicalEventPayload(row.payload).kind !== "token-transfer-batch")
     .map((row) =>
       tokenTransferFromEventPayload(
         normalizeEventPayload(canonicalEventPayload(row.payload), row),
@@ -31699,6 +31764,7 @@ async function proofIndexTokenTransferEventsFromTables(pool, network, scope) {
         (item.senderAddress || item.recipientAddress),
     )
     .sort(compareTokenItemsByTime);
+  return { transfers, transferBatches };
 }
 
 function canonicalRawTransactionMinerFeeSats(rawTx) {
@@ -32820,7 +32886,7 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     holders,
     mintRows,
     listingProjection,
-    transfers,
+    transferProjection,
     invalidEvents,
     marketEvents,
     scan,
@@ -32846,6 +32912,7 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     latestProofIndexScanMetadata(pool, network),
   ]);
 
+  const { transfers, transferBatches } = transferProjection;
   const mints = mintRows
     .map((row) =>
       tokenMintFromEventPayload(
@@ -33176,6 +33243,7 @@ async function proofIndexTokenPayloadFromCurrentTables(pool, network, scope) {
     source: "proof-indexer-token-state-tables",
     tokens: enrichedTokens,
     transfers,
+    ...(transferBatches.length ? { transferBatches } : {}),
   };
   return applyWorkMarketV2CutoverToTokenState(
     await payloadWithVerifiedWorkMarketV4Activation(pool, network, {
@@ -33638,6 +33706,7 @@ async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) 
     );
   const mints = scopedItems(allPayload.mints);
   const transfers = scopedItems(allPayload.transfers);
+  const transferBatches = scopedItems(allPayload.transferBatches);
   const listings = scopedItems(allPayload.listings);
   const closedListings = scopedItems(allPayload.closedListings);
   const sales = scopedItems(allPayload.sales);
@@ -33757,6 +33826,7 @@ async function scopedTokenStateFromAllPayload(pool, network, scope, allPayload) 
     sales,
     tokens: scopedTokens,
     transfers,
+    ...(allPayload.transferBatches ? { transferBatches } : {}),
   };
   return {
     ...payload,
@@ -34261,6 +34331,7 @@ export async function proofIndexWalletTokenOverlayPayload(
       WHERE ${eventWhere}
         AND e.kind IN (
           'token-transfer',
+          'token-transfer-batch',
           'token-sale',
           'token-listings',
           'token-listing',
@@ -34759,6 +34830,7 @@ export async function proofIndexWalletTokenOverlayPayload(
     })
     .sort(compareTokenHolderBalances);
   const transfers = [];
+  const transferBatches = [];
   const sales = [];
   const listings = [];
   const legacySealEvents = [];
@@ -34776,6 +34848,10 @@ export async function proofIndexWalletTokenOverlayPayload(
       if (activeTokenListingHistoryItem(listing)) {
         listings.push(listing);
       }
+      continue;
+    }
+    if (payload?.kind === "token-transfer-batch") {
+      transferBatches.push(tokenBatchFromEventPayload(payload, row));
       continue;
     }
     if (payload?.kind === "token-transfer") {
@@ -35056,6 +35132,7 @@ export async function proofIndexWalletTokenOverlayPayload(
       tokenScope: scope,
       tokens,
       transfers: transfers.sort(compareTokenItemsByTime),
+      ...(transferBatches.length ? { transferBatches: transferBatches.sort(compareTokenItemsByTime) } : {}),
     },
   );
   const currentMarketPayload = applyWorkMarketV2CutoverToTokenState(
@@ -41448,6 +41525,7 @@ export async function proofIndexAddressMailPayload(network, address) {
         WHERE transfer_event.network = $1
           AND transfer_event.protocol = 'pwt1'
           AND transfer_event.kind = 'token-transfer'
+          AND COALESCE(transfer_event.payload->>'transferVersion', '') <> 'batch1'
           AND transfer_event.status = 'confirmed'
           AND transfer_event.valid = true
           AND lower(COALESCE(transfer_event.payload->>'tokenId', '')) = $4

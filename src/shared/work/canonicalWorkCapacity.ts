@@ -1,3 +1,5 @@
+import { assertNoUnresolvedWorkBatch } from "./workBatchRecovery";
+
 export type CanonicalWorkCapacity = {
   model: "canonical-work-wallet-capacity-v1";
   network: string;
@@ -32,8 +34,12 @@ export function requireCanonicalWorkCapacity(
     indexedThroughBlock?: number;
     indexedThroughBlockHash?: string;
     confirmedBalanceSubatoms: bigint;
+    ownSignedTxid?: string;
   },
 ) {
+  if (expected.network === "livenet" && typeof localStorage !== "undefined") {
+    assertNoUnresolvedWorkBatch(localStorage, expected.address, expected.ownSignedTxid);
+  }
   const unavailable = () => {
     throw new Error("Canonical WORK capacity is unavailable or inconsistent. Refresh the wallet before spending WORK.");
   };

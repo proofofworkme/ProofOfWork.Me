@@ -9,12 +9,23 @@ import * as icons from "lucide-react";
 import ts from "typescript";
 
 const root = new URL("../", import.meta.url);
+const tsModuleCache = new Map();
 async function loadTypeScript(path) {
-  const source = readFileSync(new URL(path, root), "utf8");
-  const compiled = ts.transpileModule(source, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-  }).outputText;
-  return import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+  function load(file) {
+    if (tsModuleCache.has(file.href)) return tsModuleCache.get(file.href);
+    const source = readFileSync(file, "utf8");
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+    }).outputText;
+    const exports = {};
+    tsModuleCache.set(file.href, exports);
+    vm.runInNewContext(compiled, { exports, require: name => {
+      if (!name.startsWith(".")) throw new Error("Unexpected fixture dependency: " + name);
+      return load(new URL(name + ".ts", file));
+    } }, { filename: file.pathname });
+    return exports;
+  }
+  return load(new URL(path, root));
 }
 const work = await loadTypeScript("src/workAmount.ts");
 const exact = await loadTypeScript("src/exactAmount.ts");

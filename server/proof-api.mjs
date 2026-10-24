@@ -62,6 +62,11 @@ import { URL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
+import { parseWorkBatchPayload, WORK_BATCH_PROTOCOL_PREFIX } from "../src/shared/protocol/workBatch.mjs";
+import { workBatchConfiguration, resolveWorkBatchReadConfiguration, loadWorkBatchActivation, workBatchPublicStatus } from "./work-batch-runtime.mjs";
+import { WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, workBatchDeclarationCommitment, workBatchDeclarationEvidenceFromTransaction } from "./work-batch-declaration.mjs";
+import { validateWorkBatchV1RawTransaction } from "./work-batch-transaction.mjs";
+import { completeWorkBatchDeclarationDiscovery, discoverWorkBatchDeclaration, verifyWorkBatchDeclarationSelection } from "./work-batch-selection.mjs";
 import { verifyBitcoinMessageSignature } from "./bitcoin-message-verifier.mjs";
 import {
   CANONICAL_OP_RETURN_SCRIPT_MALFORMED,
@@ -414,6 +419,9 @@ import {
   isProofIndexWalletReadinessUnavailable,
   proofIndexWithWalletRequestReadiness,
   proofIndexWorkWalletCapacities,
+  proofIndexWorkBatchDeclarationCandidates,
+  proofIndexWorkBatchDiscoveryCheckpoint,
+  proofIndexWorkBatchActivationMarker,
   proofIndexWorkAmoBlockTransition,
   proofIndexWorkAmoGenericTokenStatePreimage,
   proofIndexWorkAmoV5HMinusOneSeedEvidence,
@@ -433,6 +441,9 @@ import {
 bitcoin.initEccLib(ecc);
 dns.setDefaultResultOrder("ipv4first");
 assertCanonicalUnicodeCaseMappingVersion();
+
+const WORK_BATCH_CONFIGURATION = workBatchConfiguration(process.env);
+const workBatchSelectionCache = new Map();
 
 const HOST = process.env.HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PORT ?? 8081);
@@ -10471,6 +10482,159 @@ async function discoverExactWorkAmoV8Declaration(
   }
 }
 
+async function workBatchCoreResult(method, params) {
+  const result = await bitcoinRpc(method, params);
+  if (!result?.ok) throw new Error(`work-batch-core-${method}-unavailable`);
+  return result.result;
+}
+
+async function workBatchValidateDeclarationCandidate(candidate, maximumBlockHeight) {
+  const commitment = workBatchDeclarationCommitment();
+  // Core membership is checked before generic prevout hydration. A canonical
+  // coinbase cannot spend declaration authority, and its null outpoint is not
+  // a normal hydrated input. Never infer this exemption from the stored index.
+  const block = await workBatchCoreResult("getblock", [candidate.blockHash, 1]);
+  const height = block?.height;
+  const index = block?.tx?.indexOf(candidate.txid);
+  if (!Number.isSafeInteger(height) || height < WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT || height > maximumBlockHeight ||
+      !Number.isSafeInteger(index) || index < 0 || block.hash !== candidate.blockHash ||
+      candidate.blockHeight !== height || candidate.blockTransactionIndex !== index ||
+      await workBatchCoreResult("getblockhash", [height]) !== block.hash) {
+    throw new Error("work-batch-declaration-candidate-canonical-mismatch");
+  }
+  if (index === 0) return null;
+  const transaction = await fetchTransactionFromBitcoinRpc(candidate.txid, "livenet", {
+    bypassCache: true, cacheResult: false, includeRawHex: true, requireCanonicalPrevouts: true,
+  });
+  if (!transaction || transaction.status?.confirmed !== true) {
+    throw new Error("work-batch-declaration-candidate-unavailable");
+  }
+  const hash = transactionBlockHash(transaction);
+  if (candidate.txid !== transaction.txid || hash !== block.hash ||
+      (transaction.status.block_height !== undefined && transaction.status.block_height !== height) ||
+      await workBatchCoreResult("getblockhash", [height]) !== hash) {
+    throw new Error("work-batch-declaration-candidate-canonical-mismatch");
+  }
+  const protocolVouts = transaction.vout.flatMap((output, vout) =>
+    canonicalProtocolCandidateFromOutput(output)?.text === commitment.protocolRecord ? [vout] : []);
+  const registryVouts = transaction.vout.flatMap((output, vout) =>
+    addressFromVout(output) === WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS && output.value >= 546 ? [vout] : []);
+  if (protocolVouts.length !== 1 || registryVouts.length !== 1) return null;
+  const candidatePins = { txid: transaction.txid, blockHeight: height, blockHash: hash,
+    blockTransactionIndex: index, protocolVout: protocolVouts[0], recordOrdinal: 0,
+    registryPaymentVout: registryVouts[0], activationHeight: height + 1 };
+  const evidence = workBatchDeclarationEvidenceFromTransaction(
+    { ...transaction, status: { ...transaction.status, block_height: height },
+      _powBlockIndex: index }, candidatePins, { canonical: true },
+  );
+  return evidence.evidenceComplete === true ? candidatePins : null;
+}
+
+async function workBatchVerifyDeclarationSelection(pins) {
+  await verifyWorkBatchDeclarationSelection({
+    pins, cache: workBatchSelectionCache, completeDiscovery: true,
+    readCandidates: options => proofIndexWorkBatchDeclarationCandidates("livenet", options),
+    validateCandidate: candidate => workBatchValidateDeclarationCandidate(candidate, pins.blockHeight),
+    verifyCheckpoint: async checkpoint =>
+      await workBatchCoreResult("getblockhash", [checkpoint.blockHeight]) === checkpoint.blockHash,
+  });
+}
+
+async function workBatchDiscoverDeclaration(maximumBlockHeight, { completeDiscovery = false } = {}) {
+  const checkpoint = await proofIndexWorkBatchDiscoveryCheckpoint("livenet", { maximumBlockHeight });
+  if (checkpoint?.complete !== true || (maximumBlockHeight !== null &&
+      checkpoint.blockHeight !== maximumBlockHeight)) {
+    throw new Error("work-batch-discovery-checkpoint-unavailable");
+  }
+  const canonical = async value =>
+    await workBatchCoreResult("getblockhash", [value.blockHeight]) === value.blockHash;
+  if (!await canonical(checkpoint)) throw new Error("work-batch-discovery-checkpoint-mismatch");
+  const discover = completeDiscovery ? completeWorkBatchDeclarationDiscovery : discoverWorkBatchDeclaration;
+  const pins = await discover({
+    checkpoint, cache: workBatchSelectionCache,
+    readCandidates: options => proofIndexWorkBatchDeclarationCandidates("livenet", options),
+    validateCandidate: candidate => workBatchValidateDeclarationCandidate(candidate, checkpoint.blockHeight),
+    verifyCheckpoint: canonical,
+  });
+  if (!await canonical(checkpoint)) throw new Error("work-batch-discovery-checkpoint-changed");
+  return pins;
+}
+
+async function workBatchReadConfiguration(network, maximumBlockHeight = null, options = {}) {
+  if (network !== "livenet") return WORK_BATCH_CONFIGURATION;
+  return resolveWorkBatchReadConfiguration({
+    configuration: WORK_BATCH_CONFIGURATION, maximumBlockHeight,
+    // Includes the sealed-history guard: lost authority cannot be rediscovered
+    // as permission to recreate its activation marker at a later height.
+    readMarker: () => proofIndexWorkBatchActivationMarker(network),
+    discover: () => workBatchDiscoverDeclaration(maximumBlockHeight, options),
+  });
+}
+
+async function workBatchReplayContext(network, blockHeight, blockHash) {
+  if (network !== "livenet") return null;
+  if (!Number.isSafeInteger(blockHeight) || blockHeight < 2) {
+    throw new Error("work-batch-replay-checkpoint-required");
+  }
+  // D is durably sealed before D+1 is prepared, including while Core is ahead.
+  // Never require the global scan to be current at the external node tip.
+  const configuration = await workBatchReadConfiguration(network, blockHeight - 1, { completeDiscovery: true });
+  if (!configuration.requested) return null;
+  const pins = configuration.pins;
+  if (!pins) throw new Error("work-batch-declaration-pins-invalid");
+  if (blockHeight < pins.activationHeight) return null;
+  const checkpointHash = blockHash || await workBatchCoreResult("getblockhash", [blockHeight]);
+  // Selection is independent of the write switch and uses the complete canonical prefix.
+  await workBatchVerifyDeclarationSelection(pins);
+  const activation = await loadWorkBatchActivation({
+    configuration, blockHeight, blockHash: checkpointHash,
+    getBlockHash: height => workBatchCoreResult("getblockhash", [height]),
+    getBlock: hash => workBatchCoreResult("getblock", [hash, 1]),
+    getTransaction: txid => fetchTransactionFromBitcoinRpc(txid, network, {
+      bypassCache: true, cacheResult: false, includeRawHex: true, requireCanonicalPrevouts: true,
+    }),
+  });
+  return activation.active ? activation : null;
+}
+
+async function workBatchMetadata(network) {
+  let tip = null;
+  let activation = null;
+  let replayReady = false;
+  let exactTipReady = false;
+  let reasonCode = null;
+  let configuration = WORK_BATCH_CONFIGURATION;
+  try {
+    if (network !== "livenet") throw new Error("work-batch-livenet-required");
+    tip = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
+    if (!tip) throw new Error("work-batch-exact-tip-unavailable");
+    configuration = await workBatchReadConfiguration(network, tip.height - 1);
+    if (!configuration.pins) {
+      throw new Error(configuration.requested ?
+        "work-batch-declaration-pins-invalid" : "work-batch-declaration-unconfigured");
+    }
+    activation = await workBatchReplayContext(network, tip.height, tip.blockHash);
+    if (activation?.active) {
+      const [v8, transition] = await Promise.all([
+        workAmoV8Metadata(network, { force: true }),
+        proofIndexWorkAmoBlockTransition(network, tip.height, tip.blockHash),
+      ]);
+      const persisted = transition?.payload?.workBatchV1;
+      if (v8?.writeAdmission !== true) reasonCode = "work-batch-work-writes-paused";
+      replayReady = v8?.protocolReady === true && v8?.evidenceComplete === true &&
+        v8?.indexReady === true && v8.tipHeight === tip.height && v8.tipHash === tip.blockHash &&
+        persisted?.evidenceCommitment?.sha256 === activation.evidenceCommitment.sha256 &&
+        persisted?.declaration?.txid === activation.declaration.txid;
+      const finalTip = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
+      exactTipReady = finalTip?.height === tip.height && finalTip?.blockHash === tip.blockHash;
+    }
+  } catch (error) {
+    reasonCode = String(error?.message || "work-batch-evidence-unavailable");
+  }
+  return workBatchPublicStatus({ configuration,
+    activation, tip, replayReady, exactTipReady, reasonCode });
+}
+
 async function workAmoV8ReplayPrecisionOptions(
   network,
   replayCoverageHeight,
@@ -10493,6 +10657,7 @@ async function workAmoV8ReplayPrecisionOptions(
       "WORK replay cannot choose a precision era with an invalid canonical checkpoint hash.",
     );
   }
+  const workBatchV1 = await workBatchReplayContext(network, coverageHeight, coverageHash);
   const persistentActivationLatch =
     await proofIndexWorkAmoV8ActivationLatch(
       network,
@@ -10518,11 +10683,13 @@ async function workAmoV8ReplayPrecisionOptions(
         );
       }
       return {
+        ...(workBatchV1 ? { workBatchV1 } : {}),
         workAmoV8ActivationHeight: persistentActivationHeight,
         workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
       };
     }
     return {
+      ...(workBatchV1 ? { workBatchV1 } : {}),
       workAmoV8ActivationHeight: persistentActivationHeight,
       workAmountStorageModel: WORK_ATOMIC_PROJECTION_MODEL,
     };
@@ -10568,6 +10735,7 @@ async function workAmoV8ReplayPrecisionOptions(
     );
   }
   return {
+    ...(workBatchV1 ? { workBatchV1 } : {}),
     ...(discovery?.declaration
       ? { workAmoV8ActivationHeight: activationHeight }
       : {}),
@@ -11264,24 +11432,28 @@ async function workAmoV8Metadata(
       force !== true
     ) {
       workAmoV8ReachedLatch = true;
-      migrationReadiness =
-        await proofIndexWorkPrecisionV2MigrationReadiness(
-          network,
-          expectedDeclaration,
-          { force },
-        ).catch(() => null);
+      if (singleFlightBypass !== true) {
+        migrationReadiness =
+          await proofIndexWorkPrecisionV2MigrationReadiness(
+            network,
+            expectedDeclaration,
+            { force },
+          ).catch(() => null);
+      }
     }
-    readinessCacheKey = workAmoV8StatusCacheKey({
-      expectedDeclaration,
-      liveMempoolSnapshot,
-      migrationReadinessIdentity:
-        workAmoV8MigrationReadinessIdentity(migrationReadiness),
-      network,
-      networkValueBeforeQ8,
-      tipHash,
-      tipHeight,
-      workerReadiness,
-    });
+    if (singleFlightBypass !== true) {
+      readinessCacheKey = workAmoV8StatusCacheKey({
+        expectedDeclaration,
+        liveMempoolSnapshot,
+        migrationReadinessIdentity:
+          workAmoV8MigrationReadinessIdentity(migrationReadiness),
+        network,
+        networkValueBeforeQ8,
+        tipHash,
+        tipHeight,
+        workerReadiness,
+      });
+    }
     if (
       force !== true &&
       singleFlightBypass !== true &&
@@ -13399,11 +13571,55 @@ async function assertCanonicalWorkTransferCapacity(txHex, network, transfers) {
   }
 }
 
+async function assertWorkBatchBroadcastAllowed(txHex, network, options = {}) {
+  const outputs = signedTransactionOutputs(txHex);
+  const batchVouts = outputs.flatMap((output, protocolVout) =>
+    decodedOpReturnMessages([output]).some(message => message.startsWith("pwt1:batch1")) ? [protocolVout] : []);
+  if (batchVouts.length === 0) return false;
+  const fail = (reasonCode, statusCode = 400) => {
+    const error = new Error(`WORK batch send is unavailable: ${reasonCode}.`);
+    error.statusCode = statusCode;
+    error.details = { code: "WORK_BATCH_REJECTED", reasonCode };
+    throw error;
+  };
+  if (network !== "livenet" || batchVouts.length !== 1) fail("work-batch-v1-transaction-shape-invalid");
+  await options.beforeSubmit?.();
+  const metadata = await workBatchMetadata(network);
+  if (!metadata.ready) fail(metadata.reasonCode || "work-batch-evidence-unavailable", 503);
+  const inputs = signedTransactionInputOutpoints(txHex);
+  if (inputs.length === 0 || inputs.length > 128) fail("work-batch-input-limit");
+  const vin = await mapWithConcurrency(inputs, 4, async input => {
+    const previous = await fetchTransactionFromBitcoinRpc(input.txid, network, {
+      bypassCache: true, includePrevouts: false, includeRawHex: true,
+      cacheResult: false, requireCanonicalPrevouts: true,
+    });
+    if (!previous?.vout?.[input.vout]) fail("work-batch-prevout-unavailable", 503);
+    return { ...input, prevout: previous.vout[input.vout] };
+  });
+  const transaction = { txid: bitcoin.Transaction.fromHex(txHex).getId(), hex: txHex, vin, vout: outputs };
+  const validation = validateWorkBatchV1RawTransaction({ transaction, protocolVout: batchVouts[0] });
+  if (!validation.valid) fail(validation.reasonCode);
+  // Require the entire opening sum, including any self-recipient, in one check.
+  await assertCanonicalWorkTransferCapacity(txHex, network, [{
+    amountSubatoms: validation.parsed.totalAmountSubatoms,
+    recipientAddress: "", protocolVout: batchVouts[0],
+  }]);
+  const finalMetadata = await workBatchMetadata(network);
+  if (!finalMetadata.ready || finalMetadata.checkedTipHash !== metadata.checkedTipHash ||
+      finalMetadata.checkedTipHeight !== metadata.checkedTipHeight) {
+    fail(finalMetadata.reasonCode || "work-batch-tip-changed-during-admission", 503);
+  }
+  return true;
+}
+
 async function assertWorkMarketplaceBroadcastAllowed(
   txHex,
   network,
   options = {},
 ) {
+  const batchAttempt = signedTransactionOutputs(txHex).some(output =>
+    decodedOpReturnMessages([output]).some(message => message.startsWith("pwt1:batch1")));
+  if (batchAttempt && await assertWorkBatchBroadcastAllowed(txHex, network, options)) return;
   if (network !== "livenet") {
     return;
   }
@@ -21631,6 +21847,9 @@ async function tokenPayloadWithSpendableActiveListings(payload, network, options
 }
 
 function parseTokenPayload(message, network) {
+  if (message.startsWith(WORK_BATCH_PROTOCOL_PREFIX)) {
+    return network === "livenet" ? parseWorkBatchPayload(message) : null;
+  }
   if (!message.startsWith(TOKEN_PROTOCOL_PREFIX)) {
     return null;
   }
@@ -22443,6 +22662,98 @@ function tokenReplayCoverageHeight(registryTxsByAddress, options = {}) {
   );
 }
 
+function workBatchReadContextActive(context, height) {
+  return context?.canonical === true && context?.confirmed === true &&
+    context?.evidenceComplete === true && Number.isSafeInteger(context.activationHeight) && context.activationHeight > 1 &&
+    Number.isSafeInteger(context.declaration?.blockHeight) && context.declaration.blockHeight > 0 &&
+    context.activationHeight === context.declaration.blockHeight + 1 &&
+    /^[0-9a-f]{64}$/u.test(String(context.declaration?.txid ?? "")) &&
+    /^[0-9a-f]{64}$/u.test(String(context.declaration?.blockHash ?? "")) &&
+    ["blockTransactionIndex", "protocolVout", "recordOrdinal", "registryPaymentVout"].every(field =>
+      Number.isSafeInteger(context.declaration?.[field]) && context.declaration[field] >= 0) &&
+    context.declaration.recordOrdinal === 0 && context.declaration.registryPaymentVout < context.declaration.protocolVout &&
+    /^[0-9a-f]{64}$/u.test(String(context.evidenceCommitment?.sha256 ?? "")) &&
+    typeof context.evidenceCommitment?.model === "string" && context.evidenceCommitment.model.length > 0 &&
+    Number.isSafeInteger(context.evidenceCommitment?.payloadBytes) && context.evidenceCommitment.payloadBytes > 0 &&
+    Number.isSafeInteger(height) && height >= context.activationHeight;
+}
+
+function workBatchProjectionRecords({ parsed, transaction, message, protocolVout, recordOrdinal = 0,
+  network, senderAddress, consensusOutcome = null }) {
+  const txid = transactionTxid(transaction);
+  const confirmed = transactionConfirmed(transaction);
+  const containerPosition = {
+    blockHash: transactionBlockHash(transaction),
+    blockHeight: transactionBlockHeight(transaction),
+    blockTransactionIndex: transactionBlockIndex(transaction),
+    protocolVout,
+    recordOrdinal,
+  };
+  const batchPayloadCommitment = workAmoV5CanonicalPayloadCommitment({ payload: message });
+  const common = {
+    blockHash: containerPosition.blockHash,
+    blockHeight: containerPosition.blockHeight,
+    blockIndex: containerPosition.blockTransactionIndex,
+    confirmed,
+    createdAt: new Date(tokenTransactionTime(transaction)).toISOString(),
+    network,
+    protocol: "pwt1",
+    protocolVout,
+    registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS,
+    senderAddress,
+    ticker: WORK_TOKEN_TICKER,
+    tokenId: WORK_TOKEN_ID,
+    transferVersion: "batch1",
+    amountVersion: "batch1",
+    txid,
+    batchPayloadCommitment,
+  };
+  const parent = {
+    ...common,
+    ...workAmountFieldsFromSubatoms(parsed.totalAmountSubatoms),
+    batchRegistryPaymentSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+    dataBytes: proofProtocolDataBytesForVout(transaction.vout),
+    kind: "token-transfer-batch",
+    minerFeeSats: transactionMinerFeeSats(transaction),
+    movementAmountSubatoms: parsed.recipients.reduce((sum, recipient) => sum +
+      (recipient.recipientAddress === senderAddress ? 0n : BigInt(recipient.amountSubatoms)), 0n).toString(),
+    paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+    recipientCount: parsed.recipientCount,
+    recipients: parsed.recipients,
+    recordOrdinal,
+    totalAmountSubatoms: parsed.totalAmountSubatoms,
+    ...(consensusOutcome?.transitionChainCommitmentAfter
+      ? { transitionChainCommitmentAfter: consensusOutcome.transitionChainCommitmentAfter } : {}),
+  };
+  const children = parsed.recipients.map((recipient, batchRecipientIndex) => {
+    const canonicalChild = consensusOutcome?.derived?.find(child => child.kind === "token-transfer" &&
+      child.transferVersion === "batch1" && child.batchRecipientIndex === batchRecipientIndex);
+    return {
+      ...common,
+      ...workAmountFieldsFromSubatoms(recipient.amountSubatoms),
+      batchRecipientCount: parsed.recipientCount,
+      batchRecipientIndex,
+      batchTotalAmountSubatoms: parsed.totalAmountSubatoms,
+      chargesTransactionFee: false,
+      claimsEconomicOutputs: false,
+      containerPosition,
+      dataBytes: 0,
+      derivedId: canonicalChild?.derivedId ?? `${txid}:${protocolVout}:${recordOrdinal}:${batchRecipientIndex}`,
+      economicDelta: false,
+      kind: "token-transfer",
+      minerFeeSats: 0,
+      paidSats: 0,
+      ...(canonicalChild?.parentTransitionChainCommitmentAfter
+        ? { parentTransitionChainCommitmentAfter: canonicalChild.parentTransitionChainCommitmentAfter } : {}),
+      rawCandidate: false,
+      recipientAddress: recipient.recipientAddress,
+      recordOrdinal: canonicalChild?.projectionPosition?.recordOrdinal ?? recordOrdinal + 1 + batchRecipientIndex,
+      registryMutationFeeSats: 0,
+    };
+  });
+  return { parent, children };
+}
+
 function tokenStateFromTransactions(
   indexTxs,
   registryTxsByAddress,
@@ -22600,6 +22911,7 @@ function tokenStateFromTransactions(
   const invalidEvents = [];
   const sales = [];
   const transfers = [];
+  const transferBatches = [];
   const declarationTransaction = [...registryTxsByAddress.values()]
     .flat()
     .find(
@@ -23470,6 +23782,48 @@ function tokenStateFromTransactions(
             tokenId: mintedToken.tokenId,
             txid,
           });
+          acceptedTxMessage = true;
+          continue;
+        }
+
+        if (parsed.kind === "batch") {
+          const sentToken = tokensById.get(WORK_TOKEN_ID);
+          const authority = validateWorkBatchV1RawTransaction({ transaction: tx, protocolVout, recordOrdinal });
+          const amount = BigInt(parsed.totalAmountSubatoms);
+          const senderBalanceKey = balanceKeyFor(WORK_TOKEN_ID, actorAddress);
+          const senderBalance = balances.get(senderBalanceKey) ?? 0n;
+          const ready = network === "livenet" && workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+            workBatchReadContextActive(options.workBatchV1, confirmed ? blockHeight : replayCoverageHeight);
+          let reasonCode = !ready ? "work-batch-v1-not-active" : authority.valid !== true ? authority.reasonCode :
+            authority.senderAddress !== actorAddress ? "work-batch-v1-sender-witness-mismatch" :
+            !sentToken || sentToken.registryAddress !== registryAddress ? "work-batch-v1-token-state-invalid" :
+            spendableBalanceFor(WORK_TOKEN_ID, actorAddress) < amount ? "work-batch-v1-insufficient-spendable-balance" : "";
+          const consensusOutcome = notifyTokenProtocolRecordOutcome({
+            accepted: !reasonCode, parsed, protocolVout, recordOrdinal, tx,
+          });
+          if (!reasonCode && workAmoV5ConsensusRequiredFor(WORK_TOKEN_ID) && consensusOutcome?.valid !== true) {
+            reasonCode = consensusOutcome?.reasonCode ?? "work-batch-v1-canonical-replay-required";
+          }
+          if (reasonCode) {
+            rejectedTxMessages.push({
+              ...workAmountFieldsFromSubatoms(parsed.totalAmountSubatoms),
+              kind: "batch", protocolVout, recordOrdinal, reason: reasonCode, reasonCode,
+              ticker: WORK_TOKEN_TICKER, tokenId: WORK_TOKEN_ID,
+            });
+            continue;
+          }
+          remainingRegistrySats -= TOKEN_MIN_MUTATION_PRICE_SATS;
+          if (confirmed) {
+            balances.set(senderBalanceKey, senderBalance - amount);
+            for (const recipient of parsed.recipients) {
+              const key = balanceKeyFor(WORK_TOKEN_ID, recipient.recipientAddress);
+              balances.set(key, (balances.get(key) ?? 0n) + BigInt(recipient.amountSubatoms));
+            }
+          }
+          const projected = workBatchProjectionRecords({ parsed, transaction: tx, message, protocolVout,
+            recordOrdinal, network, senderAddress: actorAddress, consensusOutcome });
+          transferBatches.push(projected.parent);
+          transfers.push(...projected.children);
           acceptedTxMessage = true;
           continue;
         }
@@ -24495,6 +24849,7 @@ function tokenStateFromTransactions(
         Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
         compareCanonicalUtf8(left.txid, right.txid),
     ),
+    ...(transferBatches.length ? { transferBatches } : {}),
     tokens,
   };
 }
@@ -70092,6 +70447,7 @@ async function completeWorkAmoV5BlockProjection(
       context,
       requiredBlockHeight,
     );
+  const workBatchV1 = await workBatchReplayContext(network, requiredBlockHeight, blockHash);
   const v7ActivationHeight = Number(
     v7ReplayInputs.workAmoV8?.activationHeight,
   );
@@ -70136,6 +70492,7 @@ async function completeWorkAmoV5BlockProjection(
     records: protocolEnvelope.records,
     workAmoV6: v6ReplayInputs.workAmoV6,
     workAmoV8: v7ReplayInputs.workAmoV8,
+    workBatchV1,
   });
   const bip141Witness = normalizedWorkAmoV5Bip141Witness(
     replay.bip141Witness,
@@ -70402,6 +70759,7 @@ async function completeWorkAmoV5BlockProjection(
     rawProtocolCandidateCount: replay.rawProtocolCandidateCount,
     replayDescriptorCommitment,
     replayRecords,
+    ...(workBatchV1 ? { workBatchV1: replay.workBatchV1 } : {}),
     ...(v6ReplayInputs.workAmoV6
       ? {
           referenceBlockWitnesses:
@@ -70465,7 +70823,7 @@ function cachedWorkAmoV5BlockProjection(
     .trim()
     .toLowerCase();
   return cachedInternalVerifierState(
-    `work-amo-v5-block:${network}:h${requiredBlockHeight}:${previousBlockHash}:${blockHash}`,
+    `work-amo-v5-block:${network}:h${requiredBlockHeight}:${previousBlockHash}:${blockHash}:batch:${WORK_BATCH_CONFIGURATION.pins?.txid ?? "disabled"}`,
     () =>
       completeWorkAmoV5BlockProjection(
         context,
@@ -71665,6 +72023,11 @@ function tokenVerifierItemsFromState(state, txid, options = {}) {
   for (const transfer of Array.isArray(state?.transfers) ? state.transfers : []) {
     if (String(transfer?.txid ?? "").toLowerCase() === normalizedTxid) {
       add(transfer, "token-transfer");
+    }
+  }
+  for (const batch of Array.isArray(state?.transferBatches) ? state.transferBatches : []) {
+    if (String(batch?.txid ?? "").toLowerCase() === normalizedTxid) {
+      add(batch, "token-transfer-batch");
     }
   }
   for (const listing of Array.isArray(state?.listings) ? state.listings : []) {
@@ -73762,13 +74125,14 @@ function pendingWorkVerifierStageParsedMessage(message, network) {
       TOKEN_SEND_ACTION,
       TOKEN_SEND_ATOMS_ACTION,
       TOKEN_SEND_SUBATOMS_ACTION,
+      "batch1",
     ].includes(action)
   ) {
     const tokenId = String(parts[1] ?? "").trim().toLowerCase();
     return tokenId === WORK_TOKEN_ID
       ? {
           kind:
-            action === TOKEN_MINT_ACTION ? "mint" : "send",
+            action === TOKEN_MINT_ACTION ? "mint" : action === "batch1" ? "batch" : "send",
           pendingWorkStageMalformed: true,
           rawAction: action,
           tokenId,
@@ -74131,7 +74495,7 @@ function pendingWorkVerifierStageProveWorkScope(
   for (const record of transactionRecords) {
     for (const parsed of record.parsedMessages) {
       let tokenId = "";
-      if (parsed.kind === "mint" || parsed.kind === "send") {
+      if (parsed.kind === "mint" || parsed.kind === "send" || parsed.kind === "batch") {
         tokenId = String(parsed.tokenId ?? "").trim().toLowerCase();
       } else if (parsed.kind === "list" || parsed.kind === "seal") {
         tokenId = String(parsed.saleAuthorization?.tokenId ?? "")
@@ -74198,7 +74562,42 @@ function pendingWorkVerifierStageProveWorkScope(
   }
 }
 
-function pendingWorkVerifierStageReplayState(state, transaction, network) {
+function pendingWorkVerifierStageReplayState(state, transaction, network, workBatchV1 = null) {
+  const batchRecord = canonicalRawProtocolRecordSetFromTransaction(transaction).records.find(record =>
+    parseTokenPayload(record.message, network)?.kind === "batch");
+  if (batchRecord) {
+    if ((state.transferBatches ?? []).some(batch => batch.txid === transactionTxid(transaction))) return state;
+    if (state?.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+        !workBatchReadContextActive(workBatchV1, Number(state.coverageHeight))) return state;
+    const authority = validateWorkBatchV1RawTransaction({ transaction, protocolVout: batchRecord.protocolVout,
+      recordOrdinal: batchRecord.recordOrdinal });
+    if (!authority.valid) return state;
+    const { parsed, senderAddress } = authority;
+    const total = BigInt(parsed.totalAmountSubatoms);
+    const holders = new Map((state.holders ?? []).map(holder => [holder.address, { ...holder }]));
+    const senderBalance = BigInt(holders.get(senderAddress)?.balanceSubatoms ?? "0");
+    const reserved = (state.listings ?? []).filter(listing => listing.tokenId === WORK_TOKEN_ID &&
+      listing.sellerAddress === senderAddress && !tokenListingIsExpired(listing))
+      .reduce((sum, listing) => sum + BigInt(listing.amountSubatoms), 0n);
+    if (senderBalance - reserved < total) return state;
+    const setBalance = (address, amount) => holders.set(address, {
+      ...holders.get(address), address, ...workBalanceFieldsFromSubatoms(amount),
+      pendingDelta: formatWorkSubatoms(0n), pendingDeltaSubatoms: "0",
+      registryAddress: WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS, ticker: WORK_TOKEN_TICKER, tokenId: WORK_TOKEN_ID,
+    });
+    setBalance(senderAddress, senderBalance - total);
+    for (const recipient of parsed.recipients) {
+      setBalance(recipient.recipientAddress, BigInt(holders.get(recipient.recipientAddress)?.balanceSubatoms ?? "0") +
+        BigInt(recipient.amountSubatoms));
+    }
+    const projected = workBatchProjectionRecords({ parsed, transaction, message: batchRecord.message,
+      protocolVout: batchRecord.protocolVout, recordOrdinal: batchRecord.recordOrdinal, network, senderAddress });
+    return { ...state, canonicalCoverage: true,
+      holders: [...holders.values()].filter(holder => BigInt(holder.balanceSubatoms) > 0n),
+      transferBatches: [...(state.transferBatches ?? []), projected.parent],
+      transfers: [...(state.transfers ?? []), ...projected.children],
+    };
+  }
   const replayed = workTokenStateWithDeltaTransactions(
     state,
     [transaction],
@@ -74312,6 +74711,7 @@ function pendingWorkVerifierStageInvalidEvidence(
   const participants = [...new Set([
     actor,
     recipientAddress,
+    ...(parsed?.kind === "batch" ? parsed.recipients?.map(recipient => recipient.recipientAddress) ?? [] : []),
     sellerAddress,
     buyerAddress,
   ].filter(Boolean))];
@@ -74323,6 +74723,8 @@ function pendingWorkVerifierStageInvalidEvidence(
     ...(parsed?.kind === "mint" && actor ? { minterAddress: actor } : {}),
     ...(participants.length > 0 ? { participants } : {}),
     ...(recipientAddress ? { recipientAddress } : {}),
+    ...(parsed?.kind === "batch" ? { recipients: parsed.recipients, recipientCount: parsed.recipientCount,
+      totalAmountSubatoms: parsed.totalAmountSubatoms, transferVersion: "batch1" } : {}),
     ...(authorization ? { saleAuthorization: authorization } : {}),
     ...(sellerAddress ? { sellerAddress } : {}),
     ...(historicalListingScopes.length > 0
@@ -74359,7 +74761,19 @@ async function pendingWorkVerifierStageTransactionInvalidReason(
   record,
   network,
   tipHeight,
+  workBatchV1 = null,
 ) {
+  if (record.parsedMessages.some(parsed => parsed.kind === "batch")) {
+    if (!workBatchReadContextActive(workBatchV1, tipHeight)) return "work-batch-v1-not-active";
+    const batchRecord = record.records.find(raw => parseTokenPayload(raw.message, network)?.kind === "batch");
+    if (!batchRecord) return "work-batch-v1-payload-invalid";
+    const authority = validateWorkBatchV1RawTransaction({ transaction: record.transaction,
+      protocolVout: batchRecord.protocolVout, recordOrdinal: batchRecord.recordOrdinal });
+    if (!authority.valid) return authority.reasonCode;
+    return tokenVerifierDeterministicInvalidReason(network, state, record.txid, false, {
+      exactPendingCoreState: true, transaction: record.transaction, workBatchV1,
+    });
+  }
   let admissionDeferredToReplay = false;
   try {
     const shape = workAmoV8SignedMutationShape(
@@ -74466,6 +74880,22 @@ function pendingWorkVerifierStageCanonicalItem(
   const stableMempoolCreatedAt = pendingWorkVerifierStageCanonicalIso(
     mempoolCreatedAt,
   );
+  const rawRecord = records.find(record => record.protocolVout === protocolVout &&
+    record.recordOrdinal === recordOrdinal);
+  const batchSource = item?.transferVersion === "batch1" && item?.rawCandidate === false
+    ? records.find(record => record.protocolVout === item.containerPosition?.protocolVout &&
+      record.recordOrdinal === item.containerPosition?.recordOrdinal) : null;
+  const batch = batchSource ? parseTokenPayload(batchSource.message, "livenet") : null;
+  const recipientIndex = item?.batchRecipientIndex;
+  const derivedBatchValid = batch?.kind === "batch" && item.kind === "token-transfer" &&
+    Number.isSafeInteger(recipientIndex) && recipientIndex >= 0 && recipientIndex < batch.recipientCount &&
+    protocolVout === batchSource.protocolVout && recordOrdinal === batchSource.recordOrdinal + 1 + recipientIndex &&
+    item.recipientAddress === batch.recipients[recipientIndex].recipientAddress &&
+    item.amountSubatoms === batch.recipients[recipientIndex].amountSubatoms &&
+    item.batchRecipientCount === batch.recipientCount && item.batchTotalAmountSubatoms === batch.totalAmountSubatoms &&
+    item.amountVersion === "batch1" && item.economicDelta === false && item.claimsEconomicOutputs === false &&
+    item.chargesTransactionFee === false && item.paidSats === 0 && item.registryMutationFeeSats === 0 &&
+    isDeepStrictEqual(item.batchPayloadCommitment, workAmoV5CanonicalPayloadCommitment({ payload: batchSource.message }));
   if (
     tokenId !== WORK_TOKEN_ID ||
     typeof item?.valid !== "boolean" ||
@@ -74474,11 +74904,7 @@ function pendingWorkVerifierStageCanonicalItem(
     protocolVout < 0 ||
     !Number.isSafeInteger(recordOrdinal) ||
     recordOrdinal < 0 ||
-    !records.some(
-      (record) =>
-        record.protocolVout === protocolVout &&
-        record.recordOrdinal === recordOrdinal,
-    )
+    (!rawRecord && !derivedBatchValid)
   ) {
     throw pendingWorkVerifierStageError(
       "PENDING_WORK_STAGE_DECISION_INVALID",
@@ -74493,11 +74919,7 @@ function pendingWorkVerifierStageCanonicalItem(
     ),
     confirmed: false,
     network: "livenet",
-    payload: records.find(
-      (record) =>
-        record.protocolVout === protocolVout &&
-        record.recordOrdinal === recordOrdinal,
-    )?.message,
+    payload: (rawRecord ?? batchSource)?.message,
     protocol: "pwt1",
     status: "pending",
     tokenId: WORK_TOKEN_ID,
@@ -74580,6 +75002,8 @@ async function pendingWorkVerifierStageDecisions(
   historicalScopes = [],
 ) {
   let state = baseState;
+  const workBatchV1 = transactionRecords.some(record => record.parsedMessages.some(parsed => parsed.kind === "batch"))
+    ? await workBatchReplayContext(network, tipHeight, baseState.blockHash) : null;
   const decisions = [];
   const historicalListings =
     pendingWorkVerifierStageHistoricalListingScopeMap(historicalScopes);
@@ -74598,6 +75022,7 @@ async function pendingWorkVerifierStageDecisions(
             record,
             network,
             tipHeight,
+            workBatchV1,
           );
     const nextState = transactionInvalidReason
       ? priorState
@@ -74605,6 +75030,7 @@ async function pendingWorkVerifierStageDecisions(
           priorState,
           record.transaction,
           network,
+          workBatchV1,
         );
     const items = (transactionInvalidReason
       ? []
@@ -74637,6 +75063,7 @@ async function pendingWorkVerifierStageDecisions(
             {
               exactPendingCoreState: true,
               transaction: record.transaction,
+              workBatchV1,
             },
           )
         : "");
@@ -75468,6 +75895,28 @@ async function tokenVerifierDeterministicInvalidReason(
   );
   const indexAddress = tokenIndexAddressForNetwork(network);
   for (const parsed of parsedMessages) {
+    if (parsed.kind === "batch") {
+      const height = requireConfirmed ? transactionBlockHeight(tx) : Number(state?.coverageHeight);
+      const batchContext = Object.hasOwn(options, "workBatchV1") ? options.workBatchV1 :
+        await workBatchReplayContext(network, height, requireConfirmed ? transactionBlockHash(tx) : state?.blockHash);
+      if (!workBatchReadContextActive(batchContext, height) ||
+          state?.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL) return "work-batch-v1-not-active";
+      const raw = canonicalRawProtocolRecordSetFromTransaction(tx).records.find(record =>
+        parseTokenPayload(record.message, network)?.kind === "batch");
+      const authority = validateWorkBatchV1RawTransaction({ transaction: tx,
+        protocolVout: raw?.protocolVout, recordOrdinal: raw?.recordOrdinal });
+      if (!authority.valid) return authority.reasonCode;
+      if (!requireConfirmed && exactBalanceState) {
+        const holder = (state.holders ?? []).find(row => row.address === authority.senderAddress &&
+          row.tokenId === WORK_TOKEN_ID);
+        const balance = BigInt(holder?.balanceSubatoms ?? "0");
+        const reserved = (state.listings ?? []).filter(listing => listing.tokenId === WORK_TOKEN_ID &&
+          listing.sellerAddress === authority.senderAddress && !tokenListingIsExpired(listing))
+          .reduce((sum, listing) => sum + BigInt(listing.amountSubatoms), 0n);
+        if (balance - reserved < BigInt(parsed.totalAmountSubatoms)) return "work-batch-v1-insufficient-spendable-balance";
+      }
+      continue;
+    }
     let registryAddress = "";
     let minimumPayment = TOKEN_MIN_MUTATION_PRICE_SATS;
     let mintedToken = null;
@@ -81859,6 +82308,11 @@ async function handleRequest(request, response) {
 
     if (request.method !== "GET") {
       errorResponse(response, 405, "Method not allowed.");
+      return;
+    }
+
+    if (url.pathname === "/api/v1/work-batch-status") {
+      jsonResponse(response, 200, await workBatchMetadata(networkFromSearch(url.searchParams)), "no-store");
       return;
     }
 

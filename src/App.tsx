@@ -2,6 +2,10 @@ import { ReviewDialog } from "./shared/components/ReviewDialog";
 import { ActionTransactionReview, type ActionReview } from "./shared/components/ActionTransactionReview";
 import { ActionRecoveryPanel } from "./shared/components/ActionRecoveryPanel";
 import { BrandMark } from "./shared/components/BrandMark";
+import { WorkBatchPanel } from "./features/work-batch/WorkBatchPanel";
+import { assertSameWorkBatchRoutes, assertWorkBatchReady, resolveWorkBatchDraft, type WorkBatchDraft } from "./features/work-batch/workBatchClient.mjs";
+import { buildWorkBatchPayload, WORK_BATCH_REGISTRY_FEE_PROOFS } from "./shared/protocol/workBatch.mjs";
+import { assertNoUnresolvedWorkBatch, WORK_BATCH_RECEIPT_MARKER } from "./shared/work/workBatchRecovery";
 import { LedgerChart, type ChartPoint, type ChartSeries } from "./shared/charts/LedgerChart";
 import { APP_ICONS } from "./app/appIcons";
 import type { PagesPublicationDraft, PagesDnsLinkRequest, PagesViewState, PagesBrowserTarget } from "./features/pages/PagesWorkspace";
@@ -12289,6 +12293,7 @@ function tokenSpendabilityForWallet(
   localClosedListings: PowTokenClosedListing[] = [],
   localTransfers: PowTokenTransfer[] = [],
   localSales: PowTokenSale[] = [],
+  ownSignedTxid?: string,
 ) {
   const canonicalWork = tokenRequiresCanonicalWorkCapacity(token, state);
   const normalizedAddress = canonicalWork
@@ -12341,6 +12346,7 @@ function tokenSpendabilityForWallet(
         indexedThroughBlock: state.indexedThroughBlock,
         indexedThroughBlockHash: state.indexedThroughBlockHash,
         confirmedBalanceSubatoms: confirmedBalanceAtoms!,
+        ownSignedTxid,
       })
     : undefined;
   const isSelfTransfer = (transfer: PowTokenTransfer) => canonicalCapacity
@@ -17062,10 +17068,11 @@ async function requireFreshWorkCapacityBeforeBroadcast(
   localTransfers: PowTokenTransfer[],
   localSales: PowTokenSale[],
   pendingListing = false,
+  ownSignedTxid?: string,
 ) {
   const state = await fetchFreshWalletTokenPreflightState(walletAddress, token.tokenId);
   const spendability = tokenSpendabilityForWallet(
-    walletAddress, token, state, localListings, localClosedListings, localTransfers, localSales,
+    walletAddress, token, state, localListings, localClosedListings, localTransfers, localSales, ownSignedTxid,
   );
   const available = exactIntegerBigInt(spendability.spendableBalanceSubatoms);
   const required = pendingListing
@@ -21821,6 +21828,7 @@ async function signAndBroadcastPsbtDetailed({
   allowedReservedListingAnchorOutpoints,
   beforeBroadcast,
   onBroadcastAttempt,
+  onSigned,
   broadcastStrategy = "mempool",
   inputCount,
   network,
@@ -21833,6 +21841,7 @@ async function signAndBroadcastPsbtDetailed({
   allowedReservedListingAnchorOutpoints?: PowIdSpentOutpoint[];
   beforeBroadcast?: () => Promise<void>;
   onBroadcastAttempt?: (txid: string) => void;
+  onSigned?: (txid: string) => void;
   broadcastStrategy?: BroadcastStrategy;
   inputCount: number;
   network: BitcoinNetwork;
@@ -21927,6 +21936,7 @@ async function signAndBroadcastPsbtDetailed({
   }
   const rawTx = signedTransaction.toHex();
 
+  onSigned?.(signedTransaction.getId());
   await beforeBroadcast?.();
   await assertTransactionIntentDoesNotSpendReservedListingAnchors({
     allowedOutpoints: allowedReservedListingAnchorOutpoints,
@@ -22134,6 +22144,17 @@ export default function App() {
   const [tokenTransferTokenId, setTokenTransferTokenId] = useState("");
   const [tokenTransferAmount, setTokenTransferAmount] = useState("1");
   const [tokenTransferRecipient, setTokenTransferRecipient] = useState("");
+  const [workBatchRecipients, setWorkBatchRecipients] = useState("");
+  const [workBatchAmountEach, setWorkBatchAmountEach] = useState("1");
+  const workBatchInFlightRef = useRef(false);
+  const loadWorkBatchStatus = useCallback((signal?: AbortSignal) =>
+    fetchProofApiJson<unknown>("/api/v1/work-batch-status?fresh=1", "livenet", { signal }), []);
+  const resolveWorkBatchRecipients = useCallback((recipients: string, amountEach: string, signal?: AbortSignal) =>
+    resolveWorkBatchDraft(recipients, amountEach, {
+      signal,
+      validateAddress: value => isValidBitcoinAddress(value, "livenet"),
+      resolveId: async (id, requestSignal) => (await fetchIdRecordState("livenet", id, requestSignal, "confirmed-ownership")).record,
+    }), []);
   const [tokenListAmount, setTokenListAmount] = useState(
     String(WORK_TOKEN_MINT_AMOUNT),
   );
@@ -24164,7 +24185,7 @@ export default function App() {
   const actionContext = JSON.stringify([address, network, feeRate, activeFolder,
     idName, idReceiveAddress, idPgpKey, managedIdName, idUpdateReceiveAddress,
     idTransferOwnerAddress, idTransferReceiveAddress, dnsName, dnsReceiveAddress,
-    tokenTransferTokenId, tokenTransferAmount, tokenTransferRecipient, tokenDetailTarget,
+    tokenTransferTokenId, tokenTransferAmount, tokenTransferRecipient, tokenDetailTarget, workBatchRecipients, workBatchAmountEach,
     idSalePriceSats, idSaleBuyerAddress, idSaleReceiveAddress, idSaleAuthorization, idSelectedListingId, idPurchaseOwnerAddress, idPurchaseReceiveAddress,
     managedDnsName, dnsSubdomainDraft, dnsSalePriceSats, dnsSaleBuyerAddress, dnsSaleReceiveAddress, dnsSaleAuthorization, dnsSelectedListingId, dnsPurchaseOwnerAddress, dnsPurchaseReceiveAddress,
     tokenListAmount, tokenListPriceSats, tokenListBuyerAddress, tokenListFaceProofs]);
@@ -24282,11 +24303,12 @@ export default function App() {
     return { id: normalizePowId(record.id), ownerAddress: record.ownerAddress, receiveAddress: record.receiveAddress };
   }, [network]);
   async function reviewAndSendAction({ prepared, title, fields, payload, expectedRecords, returnedSelfPayment = false, registry, registryProofs,
-    key, context, revalidate, marketplace }: {
+    key, context, revalidate, marketplace, retainSignedReceipt = false }: {
     prepared: Awaited<ReturnType<typeof buildPaymentPsbt>>; title: string; fields: [string, string][];
     payload: string; registry: string; registryProofs: number; key: string;
     expectedRecords?: string[]; returnedSelfPayment?: boolean;
-    context: ReturnType<typeof captureActionContext>; revalidate: () => Promise<void>;
+    context: ReturnType<typeof captureActionContext>; revalidate: (ownSignedTxid?: string) => Promise<void>;
+    retainSignedReceipt?: boolean;
     marketplace?: { payments: PaymentOutputSpec[]; labels: string[]; allowedAnchors?: PowIdSpentOutpoint[]; signInputIndexes?: number[]; foreignAnchor?: PowIdSpentOutpoint; explanation: string };
   }): Promise<string> {
     if (actionInFlightRef.current) throw new Error("Another transaction is being reviewed or signed. Finish that task first.");
@@ -24331,7 +24353,7 @@ export default function App() {
         context.assertCurrent();
         await ensureWalletNetwork(context.wallet!, network, address);
         await assertActiveWalletAddress(context.wallet!, address);
-        await revalidate();
+        await revalidate(attempted?.txid);
         const funding = await fetchAddressApiUtxos(address, network);
         if (evidence.inputs.filter(input => input !== foreignInput).some(input => !funding.some(utxo => utxo.status?.confirmed &&
           `${utxo.txid}:${utxo.vout}` === input.outpoint && Number.isSafeInteger(utxo.value) && String(utxo.value) === input.proofs))) {
@@ -24342,15 +24364,20 @@ export default function App() {
       setStatus({ tone: "idle", text: "Rechecking current registry, balances, and confirmed funding…" });
       await preflight();
       setStatus({ tone: "idle", text: "Waiting for your local wallet signature…" });
+      const retainAttempt = (txid: string, requireCurrent = true) => {
+        if (requireCurrent) context.assertCurrent();
+        const receipt: ActionReceipt = { txid, address, network, title, fields, key, createdAt: new Date().toISOString(), status: "unknown" };
+        setActionReceipts(saveActionReceipt(localStorage, receipt));
+        attempted = receipt;
+      };
       const result = await signAndBroadcastPsbtDetailed({ ...prepared, network, signingAddress: address,
         strictOwnerOutputCommitment: prepared.strictOwnerOutputCommitment, wallet: context.wallet!, beforeBroadcast: preflight,
         allowedReservedListingAnchorOutpoints: marketplace?.allowedAnchors, signInputIndexes: marketplace?.signInputIndexes,
-        onBroadcastAttempt: txid => {
-          context.assertCurrent();
-          const receipt: ActionReceipt = { txid, address, network, title, fields, key, createdAt: new Date().toISOString(), status: "unknown" };
-          setActionReceipts(saveActionReceipt(localStorage, receipt));
-          attempted = receipt;
-        },
+        // A returned signature belongs to the captured wallet even if the UI
+        // changed during signing. Preserve it before the context check stops
+        // broadcast; never lose the resulting WORK recovery hold.
+        onSigned: retainSignedReceipt ? txid => retainAttempt(txid, false) : undefined,
+        onBroadcastAttempt: txid => { context.assertCurrent(); if (!attempted || attempted.txid !== txid) retainAttempt(txid); },
       });
       if (attempted) {
         try { setActionReceipts(saveActionReceipt(localStorage, { ...attempted, status: "pending" })); }
@@ -35778,6 +35805,85 @@ export default function App() {
     }
   }
 
+  async function transferWorkBatch(checked: WorkBatchDraft) {
+    if (workBatchInFlightRef.current || actionInFlightRef.current) return;
+    if (!address || network !== "livenet" || !window.unisat?.signPsbt || !walletTransferToken || !isWorkToken(walletTransferToken)) {
+      setStatus({ tone: "bad", text: "Connect UniSat on Mainnet and select WORK before preparing a batch." });
+      return;
+    }
+    workBatchInFlightRef.current = true;
+    const actionAddress = address;
+    const recipientInput = workBatchRecipients;
+    const amountEach = workBatchAmountEach;
+    const context = captureActionContext();
+    const token = WORK_TOKEN_DEFINITION;
+    const walletAction = beginWalletScopedTokenAction("transfer", { tone: "idle", text: "Checking WORK batch activation and recipients…" });
+    try {
+      assertNoUnresolvedWorkBatch(localStorage, actionAddress);
+      await ensureWalletNetwork(window.unisat, "livenet", actionAddress);
+      context.assertCurrent();
+      const admission = assertWorkBatchReady(await loadWorkBatchStatus());
+      const draft = await resolveWorkBatchRecipients(recipientInput, amountEach);
+      context.assertCurrent();
+      assertSameWorkBatchRoutes(checked, draft);
+      const amountSubatoms = BigInt(draft.totalAmountSubatoms);
+      const freshState = await fetchFreshWalletTokenPreflightState(actionAddress, WORK_TOKEN_ID);
+      context.assertCurrent();
+      const spendability = tokenSpendabilityForWallet(actionAddress, token, freshState, tokenListings, tokenClosedListings, tokenTransfers, tokenSales);
+      const available = exactIntegerBigInt(spendability.spendableBalanceSubatoms);
+      if (available === null || amountSubatoms > available) throw new Error("Insufficient verified spendable WORK for the entire batch. No transaction was created.");
+      await freshWorkWriteMode("native-q16");
+      assertWorkBatchReady(await loadWorkBatchStatus(), admission);
+      context.assertCurrent();
+      const payload = buildWorkBatchPayload(draft.recipients, { network: "livenet" });
+      const prepared = await buildPaymentPsbt({
+        amountSats: WORK_BATCH_REGISTRY_FEE_PROOFS,
+        toAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+        excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(spendability.activeListings, actionAddress, { network: "livenet" }),
+        feeRate, fromAddress: actionAddress, network: "livenet", protocolPayloads: [payload],
+        requireConfirmedUtxos: true, strictOwnerOutputCommitment: true,
+        utxoSelectionStrategy: "smallest-single-confirmed",
+      });
+      context.assertCurrent();
+      const fields: [string, string][] = [
+        ["Transfer mode", WORK_BATCH_RECEIPT_MARKER], ["Credit", "WORK"], ["Credit ID", WORK_TOKEN_ID],
+        ["Sender", actionAddress], ["Recipient wallets", String(draft.recipientCount)],
+        ["WORK each", workDecimalFromAtoms(draft.recipients[0].amountSubatoms)],
+        ["Exact quantity", `${workDecimalFromAtoms(draft.totalAmountSubatoms)} WORK`],
+        ["Total subatoms", draft.totalAmountSubatoms], ["Batch recipients", recipientInput],
+        ["Declaration transaction", admission.declarationTxid!],
+        ...draft.destinations.map((row, index): [string, string] => [`Recipient ${index + 1}${row.id ? ` · ${row.id}@proofofwork.me` : ""}`, `${row.recipientAddress} · ${workDecimalFromAtoms(row.amountSubatoms)} WORK`]),
+      ];
+      const txid = await reviewAndSendAction({
+        prepared, title: "Review WORK batch", fields, payload,
+        registry: WORK_TOKEN_REGISTRY_ADDRESS, registryProofs: WORK_BATCH_REGISTRY_FEE_PROOFS,
+        key: `credit-transfer:${WORK_TOKEN_ID}`, context, retainSignedReceipt: true,
+        revalidate: async ownSignedTxid => {
+          context.assertCurrent();
+          if (!walletAction.isCurrent()) throw new Error("Wallet task changed. Review the batch again.");
+          assertNoUnresolvedWorkBatch(localStorage, actionAddress, ownSignedTxid);
+          assertWorkBatchReady(await loadWorkBatchStatus(), admission);
+          await freshWorkWriteMode("native-q16");
+          const current = await resolveWorkBatchRecipients(recipientInput, amountEach);
+          assertSameWorkBatchRoutes(draft, current);
+          await requireFreshWorkCapacityBeforeBroadcast(actionAddress, token, amountSubatoms, tokenListings, tokenClosedListings, tokenTransfers, tokenSales, false, ownSignedTxid);
+          assertWorkBatchReady(await loadWorkBatchStatus(), admission);
+          context.assertCurrent();
+        },
+      });
+      if (!walletAction.isCurrent()) return;
+      // The durable receipt protects the whole batch until first-party status
+      // resolves it. Never synthesize ordinary per-recipient send3 projections.
+      walletAction.setStatus(goodBroadcastStatus(`WORK batch broadcast to ${draft.recipientCount} wallets: ${shortAddress(txid)}.`, txid, "livenet"));
+      void refreshToken(true);
+    } catch (error) {
+      walletAction.setStatus({ tone: "bad", text: errorMessage(error, "WORK batch transfer failed.") });
+    } finally {
+      workBatchInFlightRef.current = false;
+      walletAction.finish();
+    }
+  }
+
   async function listToken(event: FormEvent<HTMLFormElement>) {
     const marketContext = captureActionContext();
     event.preventDefault();
@@ -37216,6 +37322,9 @@ export default function App() {
       if (field("New owner")) { setIdTransferOwnerAddress(field("New owner")); setIdTransferReceiveAddress(field("Mail receiver after transfer")); }
       else setIdUpdateReceiveAddress(field("New mail receiver"));
       openFolder("ids");
+    } else if (receipt.key.startsWith("credit-transfer:") && field("Transfer mode") === WORK_BATCH_RECEIPT_MARKER) {
+      setTokenTransferTokenId(WORK_TOKEN_ID); setWorkBatchRecipients(field("Batch recipients")); setWorkBatchAmountEach(field("WORK each"));
+      if (!walletMode) openFolder("wallet");
     } else if (receipt.key.startsWith("credit-transfer:")) {
       setTokenTransferTokenId(field("Credit ID")); setTokenTransferAmount(field("Exact quantity").split(" ")[0]); setTokenTransferRecipient(field("Recipient"));
       if (!walletMode && !tokenMode && !workTokenMode && !standaloneBondConfig) openFolder("wallet");
@@ -37494,10 +37603,17 @@ export default function App() {
     );
   }
 
+  const workBatchUi = <WorkBatchPanel address={address} network={network}
+    recipients={workBatchRecipients} amountEach={workBatchAmountEach}
+    setRecipients={setWorkBatchRecipients} setAmountEach={setWorkBatchAmountEach}
+    busy={busy || Boolean(tokenAction)} feeControl={<FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />}
+    loadStatus={loadWorkBatchStatus} resolveDraft={resolveWorkBatchRecipients} onPrepare={transferWorkBatch} />;
+
   if (walletMode) {
     return (
       <>
       <TokenWalletApp
+        batchUi={workBatchUi}
         recoveryUi={actionUi}
         onRefreshRecovery={() => void refreshActionRecovery()}
         accountStats={connectedAccountStats}
@@ -38827,6 +38943,7 @@ export default function App() {
           />
         ) : activeFolder === "wallet" ? (
           <TokenWalletWorkspace
+            batchUi={workBatchUi}
             address={address}
             balances={walletTransferBalances}
             btcUsd={tokenBtcUsd}
@@ -40983,6 +41100,7 @@ function ActivityFeed({
 }
 
 type TokenWalletAppProps = {
+  batchUi?: ReactNode;
   recoveryUi?: ReactNode;
   onRefreshRecovery?: () => void;
   accountStats?: AppHeaderAccountStat[];
@@ -41842,6 +41960,7 @@ function InfinityApp({
 }
 
 function TokenWalletApp({
+  batchUi,
   recoveryUi,
   onRefreshRecovery,
   accountStats = [],
@@ -41943,6 +42062,7 @@ function TokenWalletApp({
       />
 
       <TokenWalletWorkspace
+        batchUi={batchUi}
         address={address}
         balances={balances}
         btcUsd={btcUsd}
@@ -42117,6 +42237,7 @@ function tokenInvalidEventMovementLabel(
 }
 
 function TokenWalletWorkspace({
+  batchUi,
   address,
   balances,
   btcUsd,
@@ -42226,6 +42347,7 @@ function TokenWalletWorkspace({
   | "workFloorLoading"
   | "workFloorQuote"
 > & {
+  batchUi?: ReactNode;
   canPrepareTransferUtxos?: boolean;
   compact: boolean;
   copy?: TokenWalletWorkspaceCopy;
@@ -43181,6 +43303,7 @@ function TokenWalletWorkspace({
               <p className="field-note bad">{transferDisabledReason}</p>
             ) : null}
           </form>
+          {transferToken && isWorkToken(transferToken) ? batchUi : null}
           {transferFundingPrep}
         </section>
 

@@ -1,0 +1,14 @@
+.work-batch-panel { margin-top: 16px; border-top: 1px solid var(--border); min-width: 0; }
+.work-batch-panel > summary { display: list-item; min-height: 44px; padding: 12px 0; font-size: 16px; font-weight: 600; cursor: pointer; }
+.work-batch-panel > p { font-size: 14px; line-height: 1.5; color: var(--text-muted); }
+.work-batch-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-block: 12px; font-size: 14px; }
+.work-batch-status > span { flex: 1 1 240px; overflow-wrap: anywhere; }
+.work-batch-panel textarea { resize: vertical; min-height: 120px; width: 100%; }
+.work-batch-panel textarea, .work-batch-panel input { padding: 8px 12px; }
+.work-batch-totals { display: flex; flex-wrap: wrap; gap: 12px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.work-batch-destinations { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.work-batch-destinations table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.work-batch-destinations th, .work-batch-destinations td { padding: 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+.work-batch-destinations code { font-family: var(--font-mono); font-size: 12px; }
+.work-batch-destinations td:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .work-batch-panel textarea, .work-batch-panel input { font-size: 16px; } }

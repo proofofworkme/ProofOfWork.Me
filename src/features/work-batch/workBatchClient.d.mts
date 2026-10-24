@@ -1,0 +1,10 @@
+import type { WorkBatchRecord } from "../../shared/protocol/workBatch.mjs";
+export type WorkBatchStatus = { protocol: "work-batch-v1"; network: "livenet"; active: boolean; writeEnabled: boolean; ready: boolean; reasonCode: string | null; declarationTxid: string | null; activationHeight: number | null; checkedTipHeight: number; checkedTipHash: string; registryFeeProofs: 546; limits: { minRecipients: 2; maxRecipients: 256; maxPayloadBytes: 65536 } };
+export type WorkBatchDestination = { input: string; id: string | null; recipientAddress: string; amountSubatoms: string };
+export type WorkBatchDraft = WorkBatchRecord & { destinations: WorkBatchDestination[] };
+export function readWorkBatchStatus(value: unknown): WorkBatchStatus;
+export function assertWorkBatchReady(value: unknown, previous?: WorkBatchStatus): WorkBatchStatus;
+export function workBatchAmountSubatoms(value: string): string;
+export function splitWorkBatchInputs(value: string): string[];
+export function resolveWorkBatchDraft(input: string, amountEach: string, options: { validateAddress: (value: string) => boolean; resolveId: (id: string, signal?: AbortSignal) => Promise<{ id: string; network: string; confirmed: boolean; receiveAddress: string } | null | undefined>; signal?: AbortSignal }): Promise<WorkBatchDraft>;
+export function assertSameWorkBatchRoutes(previous: WorkBatchDraft, fresh: WorkBatchDraft): void;
