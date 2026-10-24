@@ -10,14 +10,18 @@ The user's computer must not become a backup warehouse. Keep only the most
 recent verified backup on the VPS; live runtime and source are not backups.
 Do not create or download local backup, archive, custody, or full-restoration
 payloads in home, `/tmp`, or removable disks without new explicit authorization.
-Verify backups on the VPS with bounded resources. A small Git stash or patch
+Verify backups on the VPS with bounded resources. A small patch on the VPS
 may preserve necessary unique dirty source; do not copy whole checkouts.
 Working source, browser data and wallet state remain separate from backup cleanup.
-This instruction supersedes historical local-custody requirements. Release
-verification and retention stay on the VPS; the local operator receives small
-receipts. Build full releases on the VPS with bounded resources and stream
-artifacts between the build and UI hosts. Keep the live UI and one verified
-prior release for rollback; do not accumulate local recovery copies. See [infrastructure storage policy](OP_RETURN_INFRASTRUCTURE.md#storage-policy--2026-10-24).
+This instruction supersedes historical local-custody requirements. Keep new
+profiling captures, test/build output, release plans, logs, and durable receipts
+on the VPS as well. Compact control metadata may pass through operator memory;
+do not save additional operational artifacts locally. Build full releases on
+the VPS with bounded resources and stream artifacts between the build and UI
+hosts. Update the existing primary checkout and preview for release alignment;
+install the VPS-built preview in place instead of building it locally. Keep the
+live UI and one verified prior release for rollback; do not accumulate local
+recovery copies. See [infrastructure storage policy](OP_RETURN_INFRASTRUCTURE.md#storage-policy--2026-10-24).
 
 ## Source Memory
 

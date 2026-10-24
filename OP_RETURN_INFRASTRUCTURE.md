@@ -7,7 +7,7 @@ and source are not backups. Do not create or download local backup, archive,
 custody, or full-restoration payloads under home, `/tmp`, or removable disks
 without new explicit user authorization. Verify backups on the VPS with bounded
 CPU, memory, I/O, and scratch storage. Preserve necessary unique dirty source
-with a small Git stash or patch, never a full checkout copy. This policy does
+with a small patch on the VPS, never a full checkout copy. This policy does
 not authorize deleting the working repository, browser data, or wallet state.
 
 This instruction supersedes historical retention requirements for local custody
@@ -15,9 +15,20 @@ and accumulated backup generations below. Historical procedures and receipts
 remain records of their original releases; they do not authorize recreating
 local backup trees.
 
-`deploy/publish/collect_verify.py` now runs the hash-bound HTTPS byte verifier
-against the existing archive and active manifest on the UI VPS. Only compact
-JSON receipts return to the operator. `deploy/ui-retention/lifecycle.py complete`
+New profiling captures, test/build output, release plans, logs, and durable
+receipts must also stay on the VPS. Compact control metadata may pass through
+operator memory, but do not save additional operational artifacts locally.
+Release alignment updates the existing primary checkout and preview; stream
+the verified VPS-built preview into its existing working location instead of
+running a local build. This does not authorize a second local build tree or
+archive.
+
+`deploy/publish/collect_verify.py` defines the hash-bound HTTPS verification
+against the existing archive and active manifest on the UI VPS. Its path-based
+operator wrapper writes local receipts, so the stricter operator policy requires
+dispatching the same pinned remote verifier and lifecycle frames with control
+metadata in memory and durable output on the VPS. Keep all helper, state, hash,
+lock, source, and receipt checks intact. `deploy/ui-retention/lifecycle.py complete`
 requires the installed `vps-current-and-one-prior-v1` policy, whose
 `offHostCustodyRoot` is null. Its guarded phases preserve the live release and
 one fully verified prior release on the VPS, then retire older admitted ordinary
@@ -69,6 +80,35 @@ Overlapping registry SQL reads coalesce without sharing mutable caller evidence.
 Summary reads project only the requested component from PostgreSQL while keeping
 the full canonical eligibility predicates. A fallback chain does not repeat the
 same indexed marketplace read after it has already failed in that chain.
+
+Component selection extracts the large sufficient-state, summary and totals
+JSON fields once per candidate row through a lateral SQL projection. The
+optimization retains every canonical eligibility predicate, candidate ordering,
+lookback bound and requested-component check. It does not narrow history or
+weaken rejection of malformed snapshots. The PostgreSQL equivalence test checks
+both selectors, older eligible candidates, malformed JSON shapes and spill-free
+execution against current authenticated data using read-only transactions.
+
+Wallet token response assembly owns a private readiness context. After its
+owned read-only snapshot commits successfully, only internally registered,
+settled positive readiness evidence may enter that context. Each later reuse
+still reads the compact epoch/postmaster checkpoint and observes the original
+pending-expiry bound. Forced admission, final Core and mempool sweeps retain
+their existing gates. Negative results, in-flight promises and payload flags
+cannot seed this context; separate callers and single-flight joiners do not
+inherit it. Outside owned snapshots, identical pinned full audits retain their
+existing coalescing while each request checks its own compact fingerprints.
+Response completion deactivates the context and clears its maps,
+including for delayed asynchronous continuations. The accepted node snapshot
+overlay is integrated through the reviewed, hash-bound merge and tested after
+the actual transaction commit; it is not replaced by canonical source alone.
+
+Private marketplace timings use the existing bounded observer: `snapshot-assembly`
+covers summary assembly, with nested `ledger-source-market-overlay`,
+`closing-core` and `confirmed-summary` timings for the indexed overlay, listing
+reconciliation and canonical WORK book respectively. `confirmed-barrier` covers
+the independent final summary checkpoint. These timings contain no wallet or
+listing payloads and cannot alter successful results or rejection behavior.
 
 Complete-book evidence hashing reuses canonical record bytes only within the
 current request, after fresh database and Core reconciliation. Eligible plain

@@ -2,6 +2,10 @@
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { performance } from "node:perf_hooks";
 import { setImmediate as yieldToIo } from "node:timers/promises";
+import {
+  measurePrivatePhase as measureMarketplaceReadPhase,
+  withPrivatePhaseTimings as withMarketplaceReadPhases,
+} from "./wallet-read-observation.mjs";
 import { createPermissionVerificationStore } from "./permission-verification-store.mjs";
 import { createDnsVerificationStore } from "./dns-verification-store.mjs";
 import {
@@ -407,6 +411,7 @@ import {
   proofIndexValueSummaryPayload,
   proofIndexTokenSnapshotPayload,
   proofIndexWalletTokenOverlayPayload,
+  proofIndexWithWalletRequestReadiness,
   proofIndexWorkWalletCapacities,
   proofIndexWorkAmoBlockTransition,
   proofIndexWorkAmoGenericTokenStatePreimage,
@@ -6227,7 +6232,10 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
 
   const fast = options.fast === true;
   if (fast) {
-    const overlay = await indexedTokenMarketSummaryOverlay(network);
+    const overlay = await measureMarketplaceReadPhase(
+      "ledger-source-market-overlay",
+      () => indexedTokenMarketSummaryOverlay(network),
+    );
     const missingLifecycleListingIds = overlay
       ? tokenSummaryListingIdsMissingFromMarketLifecycle(payload.token, overlay)
       : [];
@@ -6241,18 +6249,21 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
       payload.token,
       overlay,
     );
-    const tokenState = await tokenPayloadWithSpendableActiveListings(
-      overlaidTokenState,
-      network,
+    const tokenState = await measureMarketplaceReadPhase(
+      "closing-core",
+      () => tokenPayloadWithSpendableActiveListings(overlaidTokenState, network),
     );
     const currentTokenState = tokenPayloadWithCurrentWorkActiveListingPolicy(
       tokenState,
       network,
     );
     const canonicalTokenState =
-      await tokenStateWithCanonicalWorkListingBookForMarketplaceSummary(
-        currentTokenState,
-        network,
+      await measureMarketplaceReadPhase(
+        "confirmed-summary",
+        () => tokenStateWithCanonicalWorkListingBookForMarketplaceSummary(
+          currentTokenState,
+          network,
+        ),
       );
     const token = compactTokenSummaryPayload(canonicalTokenState);
     const workFloor = workFloorWithIndexedMarketSummaryOverlay(
@@ -82828,24 +82839,23 @@ async function handleRequest(request, response) {
         );
       }
       if (walletScoped) {
-        const walletPayload = await walletScopedTokenPayload(
-          network,
-          tokenScope,
-          recoveryAddresses,
-          {
-            allowLastGood: freshRead && serveFreshLastGood,
-            canonicalReadGate,
-            requireCurrent: freshRead,
-          },
-        );
+        const walletResponse = await proofIndexWithWalletRequestReadiness(async () => {
+          const walletPayload = await walletScopedTokenPayload(
+            network,
+            tokenScope,
+            recoveryAddresses,
+            {
+              allowLastGood: freshRead && serveFreshLastGood,
+              canonicalReadGate,
+              requireCurrent: freshRead,
+            },
+          );
+          return tokenReadResponsePayload(walletPayload, network, tokenScope);
+        });
         jsonResponse(
           response,
           200,
-          await tokenReadResponsePayload(
-            walletPayload,
-            network,
-            tokenScope,
-          ),
+          walletResponse,
           freshRead ? FRESH_READ_CACHE_CONTROL : TOKEN_READ_CACHE_CONTROL,
         );
         return;
@@ -83246,24 +83256,33 @@ async function handleRequest(request, response) {
 
     if (url.pathname === "/api/v1/marketplace-summary") {
       const compactRead = booleanSearchParam(url.searchParams, "compact");
-      const marketplaceSummaryResponsePayload = async () => {
-        const rawMarketplaceSummary = await deduplicatedSummaryRead(
-          `marketplace-summary:${network}:${freshRead ? "fresh" : "cached"}`,
-          () => marketplaceSummaryPayload(network, freshRead),
+      // Private timings only: assembly includes the nested market-overlay,
+      // closing-core reconciliation and confirmed-summary WORK book read.
+      // The independent final authority gate is recorded as confirmed-barrier.
+      const marketplaceSummaryResponsePayload = () => withMarketplaceReadPhases(async () => {
+        const rawMarketplaceSummary = await measureMarketplaceReadPhase(
+          "snapshot-assembly",
+          () => deduplicatedSummaryRead(
+            `marketplace-summary:${network}:${freshRead ? "fresh" : "cached"}`,
+            () => marketplaceSummaryPayload(network, freshRead),
+          ),
         );
         const marketplaceSummary = compactRead
           ? compactMarketplaceSummaryReadPayload(rawMarketplaceSummary)
           : rawMarketplaceSummary;
         return withWorkMarketplaceV4Metadata(
-          await summaryPayloadWithCanonicalProvenance(
-            marketplaceSummary,
-            network,
-            freshRead,
-            "marketplace-summary",
+          await measureMarketplaceReadPhase(
+            "confirmed-barrier",
+            () => summaryPayloadWithCanonicalProvenance(
+              marketplaceSummary,
+              network,
+              freshRead,
+              "marketplace-summary",
+            ),
           ),
           network,
         );
-      };
+      });
       if (!freshRead) {
         await cachedJsonResponse(
           response,

@@ -7,6 +7,7 @@ import {
   scopedIncbOracleLedgerPayload, storedScopedIncbOracle,
 } from "../incb-scoped-oracle.mjs";
 import { createHash } from "node:crypto";
+import { AsyncLocalStorage as WalletRequestAsyncLocalStorage } from "node:async_hooks";
 import {
   normalizePublishArticleMetadata, publishArticleBodyBytes,
   PUBLISH_ARTICLE_VERIFICATION,
@@ -280,6 +281,77 @@ const workPrecisionV2MigrationFullAuditInFlight = new Map();
 let workPrecisionV2MigrationFullAuditTail = Promise.resolve();
 const workPrecisionV2ReadinessEpochContractInFlight = new Map();
 const workPrecisionV2ReadinessEpochContractReadyCache = new Map();
+const walletRequestReadiness = new WalletRequestAsyncLocalStorage();
+const walletRequestReadinessSnapshots = new WeakMap();
+
+export async function proofIndexWithWalletRequestReadiness(read) {
+  // A new caller always owns new maps, including when a wallet payload was
+  // supplied by an existing single-flight. Nothing survives this response.
+  const scope = { maps: new Map(), active: true };
+  try {
+    return await walletRequestReadiness.run(scope, read);
+  } finally {
+    scope.active = false;
+    for (const map of scope.maps.values()) map.clear();
+    scope.maps.clear();
+  }
+}
+
+function walletRequestReadinessMap(name, shared) {
+  const scope = walletRequestReadiness.getStore();
+  if (!scope?.active) return shared;
+  if (!scope.maps.has(name)) {
+    // Existing settled positives retain their exact epoch and expiry gates.
+    // In-flight promises are never imported from another caller.
+    scope.maps.set(name, /ReadyCache$/u.test(name) ? new Map(shared) : new Map());
+  }
+  return scope.maps.get(name);
+}
+
+async function walletRequestReadinessCommittedSnapshot(read) {
+  const request = walletRequestReadiness.getStore();
+  let snapshotScope;
+  try {
+    // Registration occurs only in the owning snapshot callback. Resolution of
+    // read includes the transaction's successful COMMIT, never just assembly.
+    const result = await read((scope) => {
+      if (snapshotScope || !scope || typeof scope !== "object") {
+        throw new Error("Invalid wallet readiness snapshot scope.");
+      }
+      snapshotScope = scope;
+      if (request?.active) walletRequestReadinessSnapshots.set(scope, request);
+    });
+    promoteWalletReadSnapshotReadiness(snapshotScope);
+    return result;
+  } finally {
+    if (snapshotScope) walletRequestReadinessSnapshots.delete(snapshotScope);
+  }
+}
+
+function promoteWalletReadSnapshotReadiness(snapshotScope, now = Date.now()) {
+  // Called only after the owning read-only snapshot has committed. The scoped
+  // runtime integration must not call this from inside its callback/finally.
+  const request = walletRequestReadiness.getStore();
+  const name = "workPrecisionV2MigrationReadinessReadyCache";
+  const source = snapshotScope?.maps?.get(name);
+  if (!request?.active || !source || !Number.isFinite(now) ||
+      walletRequestReadinessSnapshots.get(snapshotScope) !== request) return;
+  const target = walletRequestReadinessMap(name, new Map());
+  for (const [key, entry] of source) {
+    if (!/^[0-9a-f]{64}$/u.test(key) ||
+        !entry || !Object.isFrozen(entry.result) ||
+        !(entry.expiresAt > now) ||
+        entry.result?.auditedReadinessFingerprintKey !== key ||
+        !workPrecisionV2MigrationReadinessResultIsReusablePositive(entry.result, now)) continue;
+    target.set(key, Object.freeze({
+      expiresAt: Math.min(entry.expiresAt, Date.parse(entry.result.pendingValidThrough)),
+      result: entry.result,
+    }));
+    while (target.size > WORK_PRECISION_V2_READINESS_CACHE_MAX_ENTRIES) {
+      target.delete(target.keys().next().value);
+    }
+  }
+}
 const INFINITY_BOND_MEMO = "powb";
 const INFINITY_BOND_KIND = "infinity-bond";
 const INCEPTION_BOND_MEMO = "incb";
@@ -7337,10 +7409,9 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
   return workPrecisionV2MigrationReadinessWithCompactCheckpoint({
     allowCanonicalSummaryBootstrap:
       requestOptions.allowCanonicalSummaryBootstrap === true,
-    bootstrapReadyCache:
-      workPrecisionV2CanonicalBootstrapReadinessReadyCache,
+    bootstrapReadyCache: walletRequestReadinessMap("workPrecisionV2CanonicalBootstrapReadinessReadyCache", workPrecisionV2CanonicalBootstrapReadinessReadyCache),
     force: requestOptions.force === true,
-    inFlight: workPrecisionV2MigrationReadinessRequestInFlight,
+    inFlight: walletRequestReadinessMap("workPrecisionV2MigrationReadinessRequestInFlight", workPrecisionV2MigrationReadinessRequestInFlight),
     loadCatalogAttestation: (fingerprint) =>
       workPrecisionV2ReadinessEpochContractAttestationWithCache({
         expectedPostmasterStartedAt:
@@ -7360,6 +7431,8 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
       ),
     loadFull: (fingerprint) =>
       workPrecisionV2MigrationFullAuditWithBound({
+        // Outside an owned wallet snapshot, callers may share the same full
+        // audit. Each request still runs its own compact epoch/expiry fences.
         inFlight: workPrecisionV2MigrationFullAuditInFlight,
         load: () =>
           proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
@@ -7369,7 +7442,7 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
           ),
         requestKey: `${requestKey}:${fingerprint.key}`,
       }),
-    readyCache: workPrecisionV2MigrationReadinessReadyCache,
+    readyCache: walletRequestReadinessMap("workPrecisionV2MigrationReadinessReadyCache", workPrecisionV2MigrationReadinessReadyCache),
     requestKey,
   });
 }
@@ -42873,7 +42946,7 @@ export async function proofIndexSnapshotPayload(network, key) {
   }
   const latestSummaryEligibility =
     workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
-      ? canonicalQ16SummarySnapshotSqlEligibility("snapshot")
+      ? canonicalQ16SummarySnapshotSqlEligibility("snapshot", "summary_parts")
       : "true";
 
   const summaryResult = await pool.query(
@@ -42883,33 +42956,42 @@ export async function proofIndexSnapshotPayload(network, key) {
         generated_at,
         indexed_through_block,
         consistency,
-        payload->'summaryPayloads'->$2 AS summary_payload
+        summary_parts."summaryPayloads"->$2 AS summary_payload
       FROM proof_indexer.ledger_snapshots snapshot
+      -- OFFSET 0 keeps each large JSON field extracted once per candidate row.
+      -- It preserves the indexed search and avoids a spilling function tuplestore.
+      CROSS JOIN LATERAL (
+        SELECT
+          snapshot.payload->'workSufficientState' AS "workSufficientState",
+          snapshot.payload->'summaryPayloads' AS "summaryPayloads",
+          snapshot.payload->'totals' AS "totals"
+        OFFSET 0
+      ) AS summary_parts
       WHERE network = $1
         AND ${latestSummaryEligibility}
         AND payload->>'workAmountStorageModel' = $3
         AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
         AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
         AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
-        AND payload->'totals'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
-        AND payload->'summaryPayloads'->'workFloor'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
-        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
-        AND payload->'totals'->>'workNetworkValueQ8' ~ '^[1-9][0-9]*$'
-        AND payload->'summaryPayloads'->'workFloor'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
-        AND payload->'summaryPayloads'->'workFloor'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
-        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
-        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
-        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'totalQ8' = payload->'totals'->>'workNetworkValueQ8'
-        AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveTotalQ8' = payload->'totals'->>'workNetworkValueQ8'
+        AND summary_parts."totals"->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+        AND summary_parts."summaryPayloads"->'workFloor'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+        AND summary_parts."summaryPayloads"->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+        AND summary_parts."totals"->>'workNetworkValueQ8' ~ '^[1-9][0-9]*$'
+        AND summary_parts."summaryPayloads"->'workFloor'->>'networkValueQ8' = summary_parts."totals"->>'workNetworkValueQ8'
+        AND summary_parts."summaryPayloads"->'workFloor'->>'liveNetworkValueQ8' = summary_parts."totals"->>'workNetworkValueQ8'
+        AND summary_parts."summaryPayloads"->'workFloor'->'actualValue'->>'networkValueQ8' = summary_parts."totals"->>'workNetworkValueQ8'
+        AND summary_parts."summaryPayloads"->'workFloor'->'actualValue'->>'liveNetworkValueQ8' = summary_parts."totals"->>'workNetworkValueQ8'
+        AND summary_parts."summaryPayloads"->'workFloor'->'actualValue'->>'totalQ8' = summary_parts."totals"->>'workNetworkValueQ8'
+        AND summary_parts."summaryPayloads"->'workFloor'->'actualValue'->>'liveTotalQ8' = summary_parts."totals"->>'workNetworkValueQ8'
         AND source_hashes ? 'canonicalSummary'
-        AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
-        AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
-        AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
-        AND jsonb_typeof(payload->'summaryPayloads'->'logSummary') = 'object'
-        AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
-        AND jsonb_typeof(payload->'summaryPayloads'->'tokenSummary') = 'object'
-        AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
-        AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+        AND jsonb_typeof(summary_parts."summaryPayloads"->'growthSummary') = 'object'
+        AND jsonb_typeof(summary_parts."summaryPayloads"->'inceptionSummary') = 'object'
+        AND jsonb_typeof(summary_parts."summaryPayloads"->'infinitySummary') = 'object'
+        AND jsonb_typeof(summary_parts."summaryPayloads"->'logSummary') = 'object'
+        AND jsonb_typeof(summary_parts."summaryPayloads"->'marketplaceSummary') = 'object'
+        AND jsonb_typeof(summary_parts."summaryPayloads"->'tokenSummary') = 'object'
+        AND jsonb_typeof(summary_parts."summaryPayloads"->'workFloor') = 'object'
+        AND jsonb_typeof(summary_parts."summaryPayloads"->'workSummary') = 'object'
         AND EXISTS (
           SELECT 1
           FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
@@ -42923,7 +43005,7 @@ export async function proofIndexSnapshotPayload(network, key) {
             AND COALESCE(check_item->>'ok', 'false') = 'true'
         )
         AND payload ? 'summaryPayloads'
-        AND payload->'summaryPayloads' ? $2
+        AND summary_parts."summaryPayloads" ? $2
       ORDER BY indexed_through_block DESC NULLS LAST, generated_at DESC
       LIMIT 1
     `,
@@ -42939,8 +43021,18 @@ export async function proofIndexSnapshotPayload(network, key) {
             generated_at,
             indexed_through_block,
             consistency,
-            payload
+            payload,
+            summary_parts."summaryPayloads" AS summary_payloads
           FROM proof_indexer.ledger_snapshots snapshot
+          -- OFFSET 0 keeps each large JSON field extracted once per candidate row.
+          -- It preserves the indexed search and avoids a spilling function tuplestore.
+          CROSS JOIN LATERAL (
+            SELECT
+              snapshot.payload->'workSufficientState' AS "workSufficientState",
+              snapshot.payload->'summaryPayloads' AS "summaryPayloads",
+              snapshot.payload->'totals' AS "totals"
+            OFFSET 0
+          ) AS summary_parts
           WHERE network = $1
             AND ${latestSummaryEligibility}
             AND payload ? 'summaryPayloads'
@@ -42948,25 +43040,25 @@ export async function proofIndexSnapshotPayload(network, key) {
             AND COALESCE(consistency->>'ok', payload->>'ok', 'false') = 'true'
             AND COALESCE(consistency->>'status', payload->>'status', '') <> 'summary-snapshot-fallback'
             AND payload->'summaryRefresh'->>'mode' = 'canonical-summary-refresh'
-            AND payload->'totals'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
-            AND payload->'summaryPayloads'->'workFloor'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
-            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
-            AND payload->'totals'->>'workNetworkValueQ8' ~ '^[1-9][0-9]*$'
-            AND payload->'summaryPayloads'->'workFloor'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
-            AND payload->'summaryPayloads'->'workFloor'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
-            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'networkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
-            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveNetworkValueQ8' = payload->'totals'->>'workNetworkValueQ8'
-            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'totalQ8' = payload->'totals'->>'workNetworkValueQ8'
-            AND payload->'summaryPayloads'->'workFloor'->'actualValue'->>'liveTotalQ8' = payload->'totals'->>'workNetworkValueQ8'
+            AND summary_parts."totals"->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+            AND summary_parts."summaryPayloads"->'workFloor'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+            AND summary_parts."summaryPayloads"->'workFloor'->'actualValue'->>'workNetworkValueAccountingModel' = 'canonical-exact-work-network-q8-v1'
+            AND summary_parts."totals"->>'workNetworkValueQ8' ~ '^[1-9][0-9]*$'
+            AND summary_parts."summaryPayloads"->'workFloor'->>'networkValueQ8' = summary_parts."totals"->>'workNetworkValueQ8'
+            AND summary_parts."summaryPayloads"->'workFloor'->>'liveNetworkValueQ8' = summary_parts."totals"->>'workNetworkValueQ8'
+            AND summary_parts."summaryPayloads"->'workFloor'->'actualValue'->>'networkValueQ8' = summary_parts."totals"->>'workNetworkValueQ8'
+            AND summary_parts."summaryPayloads"->'workFloor'->'actualValue'->>'liveNetworkValueQ8' = summary_parts."totals"->>'workNetworkValueQ8'
+            AND summary_parts."summaryPayloads"->'workFloor'->'actualValue'->>'totalQ8' = summary_parts."totals"->>'workNetworkValueQ8'
+            AND summary_parts."summaryPayloads"->'workFloor'->'actualValue'->>'liveTotalQ8' = summary_parts."totals"->>'workNetworkValueQ8'
             AND source_hashes ? 'canonicalSummary'
-            AND jsonb_typeof(payload->'summaryPayloads'->'growthSummary') = 'object'
-            AND jsonb_typeof(payload->'summaryPayloads'->'inceptionSummary') = 'object'
-            AND jsonb_typeof(payload->'summaryPayloads'->'infinitySummary') = 'object'
-            AND jsonb_typeof(payload->'summaryPayloads'->'logSummary') = 'object'
-            AND jsonb_typeof(payload->'summaryPayloads'->'marketplaceSummary') = 'object'
-            AND jsonb_typeof(payload->'summaryPayloads'->'tokenSummary') = 'object'
-            AND jsonb_typeof(payload->'summaryPayloads'->'workFloor') = 'object'
-            AND jsonb_typeof(payload->'summaryPayloads'->'workSummary') = 'object'
+            AND jsonb_typeof(summary_parts."summaryPayloads"->'growthSummary') = 'object'
+            AND jsonb_typeof(summary_parts."summaryPayloads"->'inceptionSummary') = 'object'
+            AND jsonb_typeof(summary_parts."summaryPayloads"->'infinitySummary') = 'object'
+            AND jsonb_typeof(summary_parts."summaryPayloads"->'logSummary') = 'object'
+            AND jsonb_typeof(summary_parts."summaryPayloads"->'marketplaceSummary') = 'object'
+            AND jsonb_typeof(summary_parts."summaryPayloads"->'tokenSummary') = 'object'
+            AND jsonb_typeof(summary_parts."summaryPayloads"->'workFloor') = 'object'
+            AND jsonb_typeof(summary_parts."summaryPayloads"->'workSummary') = 'object'
             AND EXISTS (
               SELECT 1
               FROM jsonb_array_elements(COALESCE(consistency->'checks', '[]'::jsonb)) AS check_item
@@ -42987,10 +43079,10 @@ export async function proofIndexSnapshotPayload(network, key) {
           generated_at,
           indexed_through_block,
           consistency,
-          payload->'summaryPayloads'->$2 AS summary_payload
+          summary_payloads->$2 AS summary_payload
         FROM recent
         WHERE payload ? 'summaryPayloads'
-          AND payload->'summaryPayloads' ? $2
+          AND summary_payloads ? $2
         ORDER BY generated_at DESC
         LIMIT 1
       `,

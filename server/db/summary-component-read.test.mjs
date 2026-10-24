@@ -20,8 +20,11 @@ test("direct and lookback reads project only the requested summary with conserva
     const pool = { async query(sql, args) {
       calls++;
       assert.equal(args[1], "marketplaceSummary");
-      const outputSelect = sql.slice(sql.lastIndexOf("\n        SELECT\n") + 1);
-      assert.match(outputSelect, /payload->'summaryPayloads'->\$2 AS summary_payload/);
+      const projection = /SELECT\s+snapshot_id,\s+generated_at,\s+indexed_through_block,\s+consistency,\s+(?:summary_parts\."summaryPayloads"|summary_payloads)->\$2 AS summary_payload\s+FROM/u.exec(sql)?.[0];
+      assert.ok(projection, "The outer SELECT returns only the requested component and metadata.");
+      assert.doesNotMatch(projection, /(?:^|,)\s*(?:snapshot\.)?payload\s*(?:,|$)|SELECT\s+\*/u);
+      assert.match(sql, /CROSS JOIN LATERAL/u);
+      assert.match(sql, /OFFSET 0/u);
       assert.match(sql, /canonical-activity-count-matches-public-log/);
       assert.match(sql, /token-components-cover-confirmed-activity/);
       assert.match(sql, /source_hashes \? 'canonicalSummary'/);
@@ -33,7 +36,11 @@ test("direct and lookback reads project only the requested summary with conserva
     const context = vm.createContext({
       proofIndexPool: () => pool, currentWorkAmountStorageModel: async () => "subatoms",
       WORK_SUBATOM_PROJECTION_MODEL: "subatoms", SUMMARY_SNAPSHOT_LOOKBACK_LIMIT: 4,
-      canonicalQ16SummarySnapshotSqlEligibility: () => "canonical_q16_eligibility",
+      canonicalQ16SummarySnapshotSqlEligibility: (snapshot, parts) => {
+        assert.equal(snapshot, "snapshot");
+        assert.equal(parts, "summary_parts");
+        return "canonical_q16_eligibility";
+      },
       safeBlockHeight: (value) => Number.isSafeInteger(value) && value > 0 ? value : 0,
       dateIso: (value) => value,
     });

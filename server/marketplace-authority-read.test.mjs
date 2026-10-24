@@ -20,6 +20,7 @@ test("asynchronous marketplace enrichment rebinds every immutable snapshot compo
   const authority = { checkpoint: { height: 100, blockHash: "a".repeat(64) } };
   const context = vm.createContext({
     Buffer,
+    measureMarketplaceReadPhase: (_name, run) => run(),
     sha256Hex: (value) => createHash("sha256").update(value).digest("hex"),
     payloadSnapshotId: (value) => value?.snapshotId ?? "",
     canonicalWorkMarketV2TokenSummary: (token) => token,
