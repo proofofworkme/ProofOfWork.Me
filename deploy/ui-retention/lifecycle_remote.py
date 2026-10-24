@@ -163,7 +163,7 @@ def validate_config(path, expected):
 
 class Runtime:
     def __init__(self, config, config_sha, storage, policy, custody=None, layout=None, *, verify_upgrade=False,
-                 completion_access_time_reconciliation=None):
+                 completion_access_time_reconciliation=None, completion_historical_bulk_preservation=None):
         self.config = config
         self.config_sha = config_sha
         self.S = storage
@@ -178,6 +178,7 @@ class Runtime:
         # Only an authenticated completed-config repair supplies this exact proof.
         # Normal status and every public mutation frame remain strict.
         self.completion_access_time_reconciliation = completion_access_time_reconciliation
+        self.completion_historical_bulk_preservation = completion_historical_bulk_preservation
 
     def current(self):
         cache = {}
@@ -395,6 +396,8 @@ class Runtime:
         return {'ok': True, 'initialized': state is not None, 'retentionComplete': complete,
                 **({'verifiedAccessTimeReconciliation': completion_verification['verifiedAccessTimeReconciliation']}
                    if self.completion_access_time_reconciliation is not None and completion_verification else {}),
+                **({'verifiedHistoricalBulkPreservation': completion_verification['verifiedHistoricalBulkPreservation']}
+                   if completion_verification and completion_verification.get('verifiedHistoricalBulkPreservation') else {}),
                 'publicationHealthy': True, 'configSha256': self.config_sha, 'stateSha256': digest,
                 'pair': context['pair'], 'context': context, 'index': state.get('index') if state else None,
                 'pending': state.get('pending') if state else None,
@@ -423,9 +426,15 @@ class Runtime:
             require(access_time['stateSha256'] == digest and access_time['configSha256'] == self.config_sha
                     and access_time['cycleId'] == state['lastCompleted']['cycleId'],
                     'Access-time repair no longer binds the completed state')
+        preserved_bulk = self.completion_historical_bulk_preservation
+        if preserved_bulk is not None:
+            require(preserved_bulk['stateSha256'] == digest and preserved_bulk['configSha256'] == self.config_sha
+                    and preserved_bulk['cycleId'] == state['lastCompleted']['cycleId'],
+                    'Historical bulk preservation no longer binds the completed state')
         return self.C.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'],
                                    **({'config_transitions': transitions} if transitions else {}),
-                                   **({'config_access_time_reconciliation': access_time} if access_time is not None else {}))
+                                   **({'config_access_time_reconciliation': access_time} if access_time is not None else {}),
+                                   **({'historical_bulk_preservation': preserved_bulk} if preserved_bulk is not None else {}))
 
     def verify_vps_completion(self, state, context):
         require(self.config.get('retentionPolicy') == VPS_POLICY

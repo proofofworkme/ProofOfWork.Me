@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -I
-"""Publish one verified VPS runtime archive; retire only nine exact superseded sets."""
+"""Publish one verified VPS runtime archive; retire exact receipt-bound prior sets."""
 import argparse
 import contextlib
 import datetime
@@ -148,14 +148,38 @@ def accept_source(args, custody, verify):
     return result
 
 
-def inventory(held, accepted):
-    need({p.name for p in MANAGED.glob('proofofwork-node-release-*.tgz')} == set(OLD),
+def previous_archive(binding, digest):
+    """Subsequent releases may replace only the last verified completion's archive."""
+    path = Path(binding)
+    need(path.name == 'completion.json' and path.parent.parent == BASE and
+         re.fullmatch(r'runtime-latest-[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', path.parent.name) and
+         re.fullmatch('[0-9a-f]{64}', digest or ''), 'Invalid prior completion binding')
+    value = json.loads(read(path, digest))
+    archive = Path(value['archive'])
+    need(value['receipt'] == str(path) and value['completedAt'] and
+         value['localBackupCreated'] is False and value['runtimeSourceModified'] is False and
+         re.fullmatch('[0-9a-f]{40}', value['sourceCommit']) and
+         path.parent.name.startswith('runtime-latest-' + value['sourceCommit'][:12] + '-') and
+         archive.parent == MANAGED and
+         re.fullmatch(r'proofofwork-node-release-[0-9a-f]{12}-accepted-overlays-[0-9]{8}T[0-9]{6}Z\.tgz', archive.name) and
+         re.fullmatch('[0-9a-f]{64}', value['archiveSha256']) and
+         type(value['archiveBytes']) is int and value['archiveBytes'] > 0,
+         'Prior completion does not bind one verified managed archive')
+    need(metadata(archive)[6] == value['archiveBytes'] and file_sha(archive) == value['archiveSha256'],
+         'Prior completed archive differs')
+    return value
+
+
+def inventory(held, accepted, previous=None):
+    names = (Path(previous['archive']).name,) if previous else OLD
+    alias_name = None if previous else ALIAS_NAME
+    need({p.name for p in MANAGED.glob('proofofwork-node-release-*.tgz')} == set(names),
          'Managed archive inventory differs; exact review required')
     protected = {row['path'] for row in held['retain'] if row['role'] == 'node'}
     evidence = {e['path'] for row in accepted['overlays'] for e in row['evidence']}
     result = []
-    for name in OLD:
-        path = MANAGED / name; links = 2 if name == ALIAS_NAME else 1
+    for name in names:
+        path = MANAGED / name; links = 2 if name == alias_name else 1
         facts = metadata(path, links)
         need(facts[6] < 256 * 1024**2, 'Old archive unexpectedly large')
         members = [path, Path(str(path)+'.sha256'), Path(str(path)+'.provenance')]
@@ -169,7 +193,10 @@ def inventory(held, accepted):
              checksum == provenance['archive_sha256'] + '  ' + name + '\n' and
              file_sha(path) == provenance['archive_sha256'], 'Old archive identity/checksum differs')
         need(metadata(path, links) == facts, 'Old archive changed')
-        if name == ALIAS_NAME:
+        if previous:
+            need(provenance['archive_sha256'] == previous['archiveSha256'] and
+                 facts[6] == previous['archiveBytes'], 'Prior provenance differs from completed archive')
+        if name == alias_name:
             need(metadata(ALIAS, 2) == facts and str(ALIAS) not in protected and str(ALIAS) not in evidence,
                  'Unexpected old custody alias')
         result.append({'path': str(path), 'identity': facts, 'sha256': provenance['archive_sha256'],
@@ -183,16 +210,20 @@ def main():
     parser.add_argument('--receipt-dir', required=True)
     parser.add_argument('--manifest-sha256', required=True)
     parser.add_argument('--source-commit', required=True)
+    parser.add_argument('--previous-completion')
+    parser.add_argument('--previous-completion-sha256')
     parser.add_argument('--create-and-retain-latest', action='store_true', required=True)
     args = parser.parse_args()
     need(os.geteuid() == 0 and sys.flags.isolated and re.fullmatch('[0-9a-f]{40}', args.source_commit) and
          re.fullmatch('[0-9a-f]{64}', args.manifest_sha256), 'Root isolated invocation and exact identities required')
+    need(bool(args.previous_completion) == bool(args.previous_completion_sha256), 'Bind both prior completion fields')
     lock = Path('/run/proofofwork-audit29-ops.lock'); metadata(lock)
     with os.fdopen(os.open(lock, os.O_RDONLY | os.O_NOFOLLOW), 'rb') as locked:
         fcntl.flock(locked, fcntl.LOCK_EX | fcntl.LOCK_NB)
         need(MANAGED.resolve(strict=True) == MANAGED and MANAGED.stat().st_uid == 0 and
              not MANAGED.stat().st_mode & 0o7022, 'Unsafe managed directory')
         need(os.statvfs(MANAGED).f_bavail * os.statvfs(MANAGED).f_frsize > 4 * 1024**3, 'Insufficient headroom')
+        previous = previous_archive(args.previous_completion, args.previous_completion_sha256) if args.previous_completion else None
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
         custody = BASE / ('runtime-latest-' + args.source_commit[:12] + '-' + stamp)
         custody.mkdir(mode=0o700)
@@ -202,7 +233,7 @@ def main():
         need(json.loads(dependency.stdout)['ok'] is True, 'Dependency custody failed')
         old = inventory(json.loads(read(Path('/etc/proofofwork-retention/audit28-held-review.json'),
                                         'c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9')),
-                        json.loads(read(ACCEPTED)))
+                        json.loads(read(ACCEPTED)), previous)
         template = {'__name__': 'reviewed_archive_controller', '__file__': str(TEMPLATE)}
         exec(compile(read(TEMPLATE, TEMPLATE_SHA), str(TEMPLATE), 'exec'), template)
         before = template['live_model']()
@@ -235,21 +266,25 @@ def main():
         subprocess.run(['/usr/local/sbin/proofofwork-node-release-health'], check=True, timeout=60)
         save(custody/'retirement-plan.json', encode({'policy': 'one-latest-verified-runtime-archive',
              'operatorApproval': '2026-10-24 latest VPS backups only', 'keep': fields, 'retire': old,
-             'retireAdditionalHardlink': str(ALIAS), 'historicalSidecarsPreservedInThisPlan': True}))
+             'retireAdditionalHardlink': None if previous else str(ALIAS),
+             'previousCompletion': {'path': args.previous_completion, 'sha256': args.previous_completion_sha256} if previous else None,
+             'historicalSidecarsPreservedInThisPlan': True}))
         # Re-fence every identity before the first unlink; no broad prune controller.
         for row in old:
-            path = Path(row['path']); links = 2 if path.name == ALIAS_NAME else 1
+            path = Path(row['path']); links = 2 if not previous and path.name == ALIAS_NAME else 1
             need(metadata(path, links) == tuple(row['identity']), 'Old archive changed before retirement')
             for suffix, expected in zip(('.sha256', '.provenance'), row['sidecarIdentities']):
                 need(metadata(Path(str(path)+suffix), links) == tuple(expected), 'Old sidecar changed')
-        need(metadata(ALIAS, 2) == metadata(MANAGED/ALIAS_NAME, 2), 'Custody alias changed')
+        if not previous:
+            need(metadata(ALIAS, 2) == metadata(MANAGED/ALIAS_NAME, 2), 'Custody alias changed')
         retired = []
         for row in old:
             path = Path(row['path'])
             for suffix in ('', '.sha256', '.provenance'):
                 target = Path(str(path)+suffix); target.unlink(); retired.append(str(target))
-        ALIAS.unlink(); retired.append(str(ALIAS))
-        sync_dir(MANAGED); sync_dir(ALIAS.parent)
+        if not previous:
+            ALIAS.unlink(); retired.append(str(ALIAS)); sync_dir(ALIAS.parent)
+        sync_dir(MANAGED)
         need({p.name for p in MANAGED.glob('proofofwork-node-release-*.tgz')} == {name}, 'Latest-only inventory failed')
         subprocess.run(['/usr/local/sbin/proofofwork-node-release-health'], check=True, timeout=60)
         subprocess.run(['/usr/local/sbin/proofofwork-retention-protection', '--role', 'node'], check=True, timeout=30)

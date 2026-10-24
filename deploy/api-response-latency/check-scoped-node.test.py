@@ -71,7 +71,7 @@ class ControllerTests(unittest.TestCase):
 
     def test_exact_api_and_reader_writes_and_dependent_worker_restart(self):
         self.assertEqual(module.ALLOWED, {'server/proof-api.mjs', 'server/db/proof-index-reader.mjs'})
-        self.assertEqual(module.BASE_SOURCE_COMMIT, '49ce8edc9747b99918f94c51ead05d756770194a')
+        self.assertEqual(module.BASE_SOURCE_COMMIT, '4386187ecd5b83173dc4e6ebb8c780a83b9decb0')
         self.assertEqual(module.NEW, frozenset())
         self.assertEqual(module.UNITS, ('proofofwork-api.service', 'proofofwork-indexer-worker.service'))
         self.assertEqual(module.PROTECTED, module.UNITS)

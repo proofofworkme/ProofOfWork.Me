@@ -491,12 +491,18 @@ def completed_review(runtime, request):
             'completionReceipt': {'path': str(receipt_path), 'sha256': sha(receipt_raw)},
             'lastCompleted': state['lastCompleted'], 'fullCompletionVerified': True,
             **({'accessTimeReconciliation': status['verifiedAccessTimeReconciliation']}
-               if getattr(runtime, 'completion_access_time_reconciliation', None) is not None else {})}
+               if getattr(runtime, 'completion_access_time_reconciliation', None) is not None else {}),
+            **({'historicalBulkPreservation': status['verifiedHistoricalBulkPreservation']}
+               if getattr(runtime, 'completion_historical_bulk_preservation', None) is not None else {})}
 
 
-def repair_verifier_runtime(payload, old_runtime, access_time_reconciliation=None):
+def repair_verifier_runtime(payload, old_runtime, access_time_reconciliation=None, historical_bulk_preservation=None):
     """Use only reviewed new verifier bytes; never patch the installed module."""
     validate_payload(payload)
+    if historical_bulk_preservation is not None:
+        require(payload['config'].get('retentionPolicy') == VPS_POLICY
+                and payload['config'].get('offHostCustodyRoot') is None,
+                'Historical bulk preservation requires committed VPS-only policy')
     package = Path(old_runtime.config['package']['path'])
     manifest = json.loads(read_bound(package / 'package.json', old_runtime.config['package']['sha256']))
     for relative in old_runtime.C.SOURCES.values():
@@ -514,7 +520,8 @@ def repair_verifier_runtime(payload, old_runtime, access_time_reconciliation=Non
     require(hasattr(coordinator.Runtime, 'completion_transitions'), 'Reviewed coordinator lacks explicit transition verification')
     return coordinator.Runtime(old_runtime.config, old_runtime.config_sha, old_runtime.S, old_runtime.P, custody,
                                layout=old_runtime.layout,
-                               completion_access_time_reconciliation=access_time_reconciliation)
+                               completion_access_time_reconciliation=access_time_reconciliation,
+                               completion_historical_bulk_preservation=historical_bulk_preservation)
 
 
 def local_guard_refusal(binding, payload):
@@ -581,6 +588,16 @@ def validate_guard_refusal(request, runtime):
                 and (not historical or (access_time.get('before') == value['guardDifference'].get('oldLifecycleConfig')
                                         and access_time.get('current') == value['guardDifference'].get('currentLifecycleConfig'))),
                 'Access-time refusal does not bind the exact completed evidence')
+    bulk = value.get('historicalBulkPreservation')
+    if bulk is not None:
+        require(value['schema'] == 'pow-ui-custody-completed-holds-guard-refusal-v1'
+                and bulk.get('schema') == 'pow-ui-completed-historical-bulk-preservation-v1'
+                and bulk.get('path') == '/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-20261002T013023Z'
+                and bulk.get('configSha256') == runtime.config_sha and bulk.get('stateSha256') == state_sha
+                and bulk.get('cycleId') == state['lastCompleted']['cycleId']
+                and bulk.get('planSha256') == state['lastCompleted']['custodyPlan']['sha256']
+                and bulk.get('resultSha256') == state['lastCompleted']['custodyResult']['sha256'],
+                'Historical bulk refusal does not bind the exact completed evidence')
     return access_time
 
 
@@ -612,16 +629,20 @@ def completed_package_review(payload, package, old_runtime, review):
     # The preserved plan intentionally retains its original approval binding.
     transitions = runtime.completion_transitions(state)
     access_time = review.get('accessTimeReconciliation')
+    bulk = review.get('historicalBulkPreservation')
     verified = custody.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'],
                                 **({'config_transitions': transitions} if transitions else {}),
-                                **({'config_access_time_reconciliation': access_time} if access_time is not None else {}))
+                                **({'config_access_time_reconciliation': access_time} if access_time is not None else {}),
+                                **({'historical_bulk_preservation': bulk} if bulk is not None else {}))
     storage.compare_guards(runtime.layout, context['guards'], [])
     return {'context': context, 'index': index, 'lastCompleted': state['lastCompleted'],
             'custodyLifecycle': plan['lifecycle'],
             'verifiedConfigTransitions': transitions,
             'fullCompletionVerified': True,
             **({'verifiedAccessTimeReconciliation': verified['verifiedAccessTimeReconciliation']}
-               if access_time is not None else {})}
+               if access_time is not None else {}),
+            **({'verifiedHistoricalBulkPreservation': verified['verifiedHistoricalBulkPreservation']}
+               if bulk is not None else {})}
 
 
 def upgrade_inventory_locked(request, prefix):
@@ -637,7 +658,9 @@ def upgrade_inventory_locked(request, prefix):
             require(runtime.state()[0].get('lastUpgrade', {}).get('preservedCompletedCycleId'),
                     'Config repair requires a sealed completion-preserving upgrade')
             access_time = validate_guard_refusal(request, runtime)
-            runtime = repair_verifier_runtime(request['verificationPayload'], runtime, access_time)
+            refusal = json.loads(base64.b64decode(request['guardRefusal']['base64'], validate=True))
+            runtime = repair_verifier_runtime(request['verificationPayload'], runtime, access_time,
+                                              refusal.get('historicalBulkPreservation'))
         config_raw = read_bound(prefix / CONFIG.lstrip('/'), request['configSha256'])
         state_raw = read_bound(prefix / STATE.lstrip('/'), request['stateSha256'])
         return {'guards': guard_inventory(prefix), 'completedReview': completed_review(runtime, request),

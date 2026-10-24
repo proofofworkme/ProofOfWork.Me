@@ -55,6 +55,9 @@ LIFECYCLE_STATE=Path('/var/lib/proofofwork-ui-retention/state.json')
 COMPLETED_ACCESS_TIME_PATHS=tuple('/etc/proofofwork-retention/'+name for name in (
     'audit28-held-review.json','audit29-approved-cleanup.json',
     'audit29-completed-retirements.json','ui-lifecycle.json'))
+COMPLETED_PRESERVED_BULK=str(BASE/'transport-evidence/historical-archives-boost-20261002T013023Z')
+VPS_POLICY={'model':'vps-current-and-one-prior-v1','localBackups':False,
+    'independentOffHostRecovery':False,'authorizedAt':'2026-10-24'}
 
 
 class QualificationError(ValueError):
@@ -202,7 +205,7 @@ def completion_config_holds(plan, plan_sha, result_sha, transitions):
     old_rows=[r for r in plan['holds'] if r['path']==config_path]
     require(len(old_rows)==1 and plan.get('lifecycle'),'completion-transition','Historical lifecycle config hold is missing or duplicated')
     original=old_rows[0];config_sha=original['sha256'];last_state=None;last_proof=None;last_config=None
-    reconciled_holds=plan['holds']
+    reconciled_holds=plan['holds'];preserved_bulk=None
     for position,link in enumerate(transitions):
         require(isinstance(link,dict) and set(link)=={'intent','completed'},'completion-transition','Invalid sealed upgrade link')
         intent,ir=bound(link['intent']);completed,_=bound(link['completed'])
@@ -278,6 +281,20 @@ def completion_config_holds(plan, plan_sha, result_sha, transitions):
             pairs=completion_access_time_pairs(plan,plan_sha,result_sha,access_time)
             replacements={before['path']:current for before,current in pairs if before['path']!=config_path}
             reconciled_holds=[replacements.get(row['path'],row) for row in plan['holds']]
+        bulk=review.get('historicalBulkPreservation')
+        require(proof.get('verifiedHistoricalBulkPreservation')==bulk,
+            'completion-transition','Upgrade historical bulk preservation differs')
+        if bulk is not None:
+            require(position==0 and request.get('mode')=='completed-config-repair'
+                and config.get('retentionPolicy')==VPS_POLICY and config.get('offHostCustodyRoot') is None,
+                'completion-transition','Historical bulk preservation is not the original VPS policy migration')
+            refusal=request.get('guardRefusal',{});refusal_raw=base64.b64decode(refusal.get('base64',''),validate=True)
+            require(E.digest(refusal_raw)==refusal.get('binding',{}).get('sha256')
+                and json.loads(refusal_raw).get('historicalBulkPreservation')==bulk
+                and bulk.get('stateSha256')==prior_state_binding['sha256']
+                and bulk.get('configSha256')==config_sha and bulk.get('cycleId')==cycle,
+                'completion-transition','Sealed historical bulk refusal authority differs')
+            preserved_bulk=bulk
         if last_proof is not None:
             require(all(proof[k]==last_proof[k] for k in ('context','index','lastCompleted','custodyLifecycle')),'completion-transition','Upgrade completion proof changed across chain')
         config_sha=new_sha;last_state=final;last_proof=proof;last_config=config
@@ -292,7 +309,7 @@ def completion_config_holds(plan, plan_sha, result_sha, transitions):
     stable=('st_dev','st_mode','st_nlink','st_uid','st_gid','st_blksize')
     require(all(current['identity'][k]==original['identity'][k] for k in stable) and current['xattrs']==original['xattrs'],'completion-transition','Lifecycle config hold stable identity/xattrs changed')
     require([r if r['path']!=config_path else original for r in holds]==reconciled_holds,'completion-transition','A non-config retention hold changed')
-    return holds
+    return holds,preserved_bulk
 
 
 def completion_access_time_rows(plan, plan_sha, result_sha, proof):
@@ -367,21 +384,56 @@ def completion_access_time_pairs(plan, plan_sha, result_sha, proof):
     return pairs
 
 
-def completion_fence(plan, plan_sha, result_sha, transitions, expected_holds=None, access_time_reconciliation=None):
+def verify_historical_bulk_preservation(plan, plan_sha, result_sha, proof):
+    """One newly unreferenced historical bundle stays remote; no writer accepts this."""
+    keys={'schema','configSha256','stateSha256','cycleId','planSha256','resultSha256',
+        'path','priorRejection','fingerprint','inventorySha256','root'}
+    require(isinstance(proof,dict) and set(proof)==keys
+        and proof['schema']=='pow-ui-completed-historical-bulk-preservation-v1'
+        and proof['path']==COMPLETED_PRESERVED_BULK
+        and proof['planSha256']==plan_sha and proof['resultSha256']==result_sha
+        and all(re.fullmatch('[0-9a-f]{64}',proof[k] or '') for k in ('configSha256','stateSha256','inventorySha256'))
+        and isinstance(proof['cycleId'],str) and bool(proof['cycleId']),
+        'completion-preserved-bulk','Historical bulk preservation authority differs')
+    original=[row for row in plan['candidates'] if row['path']==COMPLETED_PRESERVED_BULK]
+    rejection=dict(eligible=False,artifactClass='historical-archives',retirementMethod='custody',
+        rejectionCategory='active-reference',reason='Production configuration or installed operator references selected root')
+    require(len(original)==1 and {key:original[0].get(key) for key in rejection}==rejection==proof['priorRejection']
+        and scope(Path(COMPLETED_PRESERVED_BULK),plan)==('historical-archives',None,False),
+        'completion-preserved-bulk','Historical candidate was not the exact previously referenced bundle')
+    inventory=row_inventory(Path(COMPLETED_PRESERVED_BULK),'historical-archives')
+    require(inventory['fingerprint']==proof['fingerprint']
+        and E.inventory_sha(inventory['records'])==proof['inventorySha256']
+        and inventory['records'][0]==proof['root'],
+        'completion-preserved-bulk','Preserved historical bundle bytes or identity changed')
+    return proof
+
+
+def completion_fence(plan, plan_sha, result_sha, transitions, expected_holds=None, access_time_reconciliation=None, historical_bulk_preservation=None):
+    require(not (transitions and historical_bulk_preservation is not None),
+        'completion-preserved-bulk','Explicit historical preservation cannot combine config transitions')
+    bulk=historical_bulk_preservation
+    if bulk is not None:
+        require(isinstance(access_time_reconciliation,dict) and all(bulk.get(key)==access_time_reconciliation.get(key)
+            for key in ('configSha256','stateSha256','cycleId','planSha256','resultSha256')),
+            'completion-preserved-bulk','Historical preservation differs from the reviewed completed repair')
     if access_time_reconciliation is not None:
         require(not transitions,'completion-access-time','Access-time repair cannot combine config transitions')
         holds=completion_access_time_holds(plan,plan_sha,result_sha,access_time_reconciliation)
-        require((expected_holds is None or holds==expected_holds) and E.timer_snapshot()==plan['timers'],
+        require(E.timer_snapshot()==plan['timers'],
             'completion-access-time','Access-time completion holds/timers changed during verification')
         protected_fence(plan,full=True)
-        return holds
-    if not transitions:
+    elif not transitions:
         fence(plan,full=True)
-        return None
-    holds=completion_config_holds(plan,plan_sha,result_sha,transitions)
-    require((expected_holds is None or holds==expected_holds) and E.timer_snapshot()==plan['timers'],'completion-transition','Completion holds/timers changed during verification')
-    protected_fence(plan,full=True)
-    return holds
+        holds=None
+    else:
+        holds,bulk=completion_config_holds(plan,plan_sha,result_sha,transitions)
+        require(E.timer_snapshot()==plan['timers'],'completion-transition','Completion holds/timers changed during verification')
+        protected_fence(plan,full=True)
+    if bulk is not None:verify_historical_bulk_preservation(plan,plan_sha,result_sha,bulk)
+    result=dict(holds=holds,historicalBulkPreservation=bulk) if holds is not None or bulk is not None else None
+    require(expected_holds is None or expected_holds==result,'completion-transition','Completion holds/timers changed during verification')
+    return result
 
 
 def expected(row):
@@ -1099,13 +1151,14 @@ def retire(plan_path,custody,output,*,expected_sources=None):
     save(output,{'ok':True,'completed':completed,'planSha256':digest(plan_path)})
 
 
-def verify_final_result(plan, plan_sha, result, result_sha, *, config_transitions=None, config_access_time_reconciliation=None):
+def verify_final_result(plan, plan_sha, result, result_sha, *, config_transitions=None, config_access_time_reconciliation=None, historical_bulk_preservation=None):
     """Read-only terminal proof for the lifecycle coordinator; no inferred retries."""
     require(config_transitions is None or type(config_transitions)is list,'completion-transition','Invalid completion transition argument')
     require(E.digest(encoded(plan))==plan_sha and E.digest(encoded(result))==result_sha,'completion-mismatch','Custody plan/result canonical bytes differ')
     require(result.get('ok') is True and result.get('planSha256')==plan_sha,'completion-mismatch','Custody result is not bound to the completed plan')
     completion_holds=completion_fence(plan,plan_sha,result_sha,config_transitions,
-        access_time_reconciliation=config_access_time_reconciliation)
+        access_time_reconciliation=config_access_time_reconciliation,historical_bulk_preservation=historical_bulk_preservation)
+    preserved_bulk=completion_holds.get('historicalBulkPreservation') if completion_holds else None
     wanted=[r for r in plan['candidates'] if r.get('eligible') is True and r.get('retirementMethod','custody')=='custody']
     completed=result.get('completed',[])
     require([r.get('path') for r in completed]==[r['path'] for r in wanted] and len({r['path'] for r in wanted})==len(wanted),'completion-mismatch','Custody completion omitted, duplicated, reordered or expanded scope')
@@ -1143,13 +1196,17 @@ def verify_final_result(plan, plan_sha, result, result_sha, *, config_transition
             require(actual==bound,'completion-mismatch','Unique incoming/publication evidence changed after retirement')
         proofs.append(dict(path=str(path),receipt=binding,intent=ib,journal=jb))
     remaining=[qualify_candidate(p,plan) for p in discover(plan)]
-    require(not [r for r in remaining if r.get('eligible')],'retention-incomplete','Qualified bulk artifacts remain after the custody cycle')
-    completion_fence(plan,plan_sha,result_sha,config_transitions,completion_holds,config_access_time_reconciliation)
+    require(not [r for r in remaining if r.get('eligible') and (preserved_bulk is None or r['path']!=preserved_bulk['path'])],
+        'retention-incomplete','Qualified bulk artifacts remain after the custody cycle')
+    completion_fence(plan,plan_sha,result_sha,config_transitions,completion_holds,config_access_time_reconciliation,historical_bulk_preservation)
     verified=dict(ok=True,planSha256=plan_sha,resultSha256=result_sha,completedCount=len(completed),receipts=proofs,
         remaining=[{k:r[k] for k in ('path','eligible','artifactClass','retirementMethod','rejectionCategory','reason') if k in r} for r in remaining],protectedPairVerified=True,holdsAndTimersUnchanged=not bool(config_transitions or config_access_time_reconciliation))
     if config_transitions:verified.update(holdsAndTimersVerified=True,verifiedConfigTransitions=config_transitions)
     if config_access_time_reconciliation is not None:
         verified.update(holdsAndTimersVerified=True,verifiedAccessTimeReconciliation=config_access_time_reconciliation)
+    if preserved_bulk is not None:
+        verified.update(historicalBulkPreserved=True,verifiedHistoricalBulkPreservation=preserved_bulk,
+            independentOffHostRecovery=False)
     return verified
 
 

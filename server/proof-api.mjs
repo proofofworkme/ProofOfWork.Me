@@ -2843,8 +2843,7 @@ function checkpointCursorCanonicalJson(value) {
     return `[${value.map(checkpointCursorCanonicalJson).join(",")}]`;
   }
   if (value && typeof value === "object") {
-    return `{${Object.keys(value)
-      .sort(compareCanonicalUtf8)
+    return `{${Object.keys(value).sort(compareCanonicalUtf8)
       .map(
         (key) =>
           `${JSON.stringify(key)}:${checkpointCursorCanonicalJson(value[key])}`,
@@ -2856,7 +2855,139 @@ function checkpointCursorCanonicalJson(value) {
 
 // Match checkpointCursorCanonicalJson, including BigInt and sparse-array
 // behavior. Stream the same UTF-8 bytes without building one full JSON string.
-function* canonicalTokens(value) {
+function checkpointCanonicalObjectKeys(value) {
+  const keys = Object.keys(value);
+  // ASCII UTF-16 order is exactly UTF-8 order. Non-ASCII names retain the
+  // protocol comparator, including astral characters versus BMP characters.
+  return keys.every((key) => /^[\x00-\x7f]*$/u.test(key))
+    ? keys.sort()
+    : keys.sort(compareCanonicalUtf8);
+}
+
+// Bound synchronous work to one small record; larger values keep the yielding
+// token stream. This uses the same value semantics as the existing cursor.
+function checkpointBoundedCanonicalRecord(value) {
+  const budget = { nodes: 4096, characters: 131072 };
+  const parents = new Set();
+  const consume = (text) => {
+    budget.characters -= text.length;
+    if (budget.characters < 0) throw budget;
+    return text;
+  };
+  const visit = (item, depth = 0) => {
+    if (--budget.nodes < 0 || depth > 64) throw budget;
+    if (item === null) return consume("null");
+    if (typeof item === "string" && item.length > budget.characters) throw budget;
+    if (typeof item === "bigint") return consume(JSON.stringify(item.toString()));
+    if (["boolean", "number", "string"].includes(typeof item)) return consume(JSON.stringify(item));
+    if (Array.isArray(item)) {
+      if (item.length > budget.nodes || parents.has(item)) throw budget;
+      parents.add(item);
+      const parts = [consume("[")];
+      for (let index = 0; index < item.length; index += 1) {
+        if (index) parts.push(consume(","));
+        if (index in item) parts.push(visit(item[index], depth + 1));
+      }
+      parts.push(consume("]")); parents.delete(item);
+      return parts.join("");
+    }
+    if (item && typeof item === "object") {
+      const keys = Object.keys(item);
+      if (keys.length > budget.nodes || parents.has(item)) throw budget;
+      parents.add(item);
+      const parts = [consume("{")];
+      let first = true;
+      for (const key of checkpointCanonicalObjectKeys(item)) {
+        if (!first) parts.push(consume(","));
+        first = false;
+        parts.push(consume(JSON.stringify(key)), consume(":"), visit(item[key], depth + 1));
+      }
+      parts.push(consume("}")); parents.delete(item);
+      return parts.join("");
+    }
+    return consume("null");
+  };
+  try { return visit(value); } catch (error) {
+    if (error === budget) return null;
+    throw error;
+  }
+}
+
+// These records belong to one cloned relational response and fresh Core read.
+// Validate the complete small JSON tree before reading it; getters, custom
+// prototypes and sparse/inherited array members are never admitted to reuse.
+function checkpointListingRecordObjects(record) {
+  const seen = new Set();
+  const pending = [{ value: record, depth: 0 }];
+  let remaining = 4096;
+  while (pending.length) {
+    const { value, depth } = pending.pop();
+    if (!value || typeof value !== "object" || seen.has(value)) continue;
+    if (--remaining < 0 || depth > 64) return null;
+    const array = Array.isArray(value);
+    if (Object.getPrototypeOf(value) !== (array ? Array.prototype : Object.prototype)) return null;
+    seen.add(value);
+    const keys = Object.keys(value);
+    if (keys.length > remaining) return null;
+    remaining -= keys.length;
+    if (array && keys.length !== value.length) return null;
+    for (const key of keys) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !Object.hasOwn(descriptor, "value")) return null;
+      if (array && !/^(?:0|[1-9][0-9]*)$/u.test(key)) return null;
+      if (descriptor.value && typeof descriptor.value === "object") {
+        pending.push({ value: descriptor.value, depth: depth + 1 });
+      }
+    }
+  }
+  return seen;
+}
+
+function checkpointListingDigestContext({ maxBytes = 64 * 1024 ** 2, maxEntries = 5000 } = {}) {
+  const records = new WeakMap();
+  let bytes = 0;
+  let entries = 0;
+  let serializations = 0;
+  let hits = 0;
+  const cache = { get(value) {
+    const result = records.get(value);
+    if (result) hits += 1;
+    return result;
+  } };
+  return {
+    async prepare(listings) {
+      let deadline = performance.now() + 4;
+      for (const item of listings) {
+        if (item && typeof item === "object" && !records.has(item) && entries < maxEntries && bytes < maxBytes) {
+          const objects = checkpointListingRecordObjects(item);
+          const text = objects ? checkpointBoundedCanonicalRecord(item) : null;
+          if (objects) serializations += 1;
+          // Charge UTF-16 storage plus entry overhead, rather than assuming
+          // V8's smaller Latin-1 representation. Original rows are not copied.
+          const charge = text === null ? Infinity : 2 * text.length + 256;
+          if (text !== null && bytes + charge <= maxBytes) {
+            for (const object of objects) Object.freeze(object);
+            records.set(item, { text, sha256: createHash("sha256").update(text, "utf8").digest("hex") });
+            bytes += charge;
+            entries += 1;
+          }
+        }
+        if (performance.now() >= deadline) {
+          await yieldToIo(); deadline = performance.now() + 4;
+        }
+      }
+    },
+    hash(value) { return checkpointCanonicalSha256(value, cache); },
+    async recordSha256(item) {
+      const cached = cache.get(item);
+      return cached ? cached.sha256 : checkpointCanonicalSha256(item);
+    },
+    stats() { return { bytes, entries, serializations, hits }; },
+  };
+}
+function* canonicalTokens(value, recordCache = null) {
+  const cached = value && typeof value === "object" ? recordCache?.get(value) : null;
+  if (cached) { yield cached.text; return; }
   if (value === null) {
     yield "null";
   } else if (typeof value === "bigint") {
@@ -2868,18 +2999,18 @@ function* canonicalTokens(value) {
     for (let index = 0; index < value.length; index += 1) {
       if (index > 0) yield ",";
       // Array.map skips holes; Array.join retains their empty separators.
-      if (index in value) yield* canonicalTokens(value[index]);
+      if (index in value) yield* canonicalTokens(value[index], recordCache);
     }
     yield "]";
   } else if (value && typeof value === "object") {
     yield "{";
     let first = true;
-    for (const key of Object.keys(value).sort(compareCanonicalUtf8)) {
+    for (const key of checkpointCanonicalObjectKeys(value)) {
       if (!first) yield ",";
       first = false;
       yield JSON.stringify(key);
       yield ":";
-      yield* canonicalTokens(value[key]);
+      yield* canonicalTokens(value[key], recordCache);
     }
     yield "}";
   } else {
@@ -2889,7 +3020,7 @@ function* canonicalTokens(value) {
 
 // Large history membership digests must let the shared API event loop serve
 // health and other requests. This changes scheduling, not evidence or caching.
-async function checkpointCanonicalSha256(value) {
+async function checkpointCanonicalSha256(value, recordCache = null) {
   const hash = createHash("sha256");
   let parts = [];
   let characters = 0;
@@ -2900,7 +3031,7 @@ async function checkpointCanonicalSha256(value) {
     parts = [];
     characters = 0;
   };
-  for (const token of canonicalTokens(value)) {
+  for (const token of canonicalTokens(value, recordCache)) {
     for (let start = 0; start < token.length;) {
       let end = Math.min(start + 16_384, token.length);
       // Never split a UTF-16 surrogate pair across hash.update calls.
@@ -59631,15 +59762,28 @@ async function completeTokenListingHistoryPayload(
       "Canonical protocol-active WORK listing identities are unavailable.",
     );
   }
+  const listingDigests = checkpointListingDigestContext();
+  await listingDigests.prepare(canonicalItems);
+  const entriesByItem = new WeakMap();
+  const keyTextByEntry = new WeakMap();
+  const listingEntry = (item) => {
+    let entry = entriesByItem.get(item);
+    if (!entry) {
+      entry = { item, key: tokenListingHistoryStableKey(item) };
+      entriesByItem.set(item, entry);
+      keyTextByEntry.set(entry, checkpointCursorCanonicalJson(entry.key));
+    }
+    return entry;
+  };
+  const compareEntries = (left, right) => compareCanonicalUtf8(
+    keyTextByEntry.get(left), keyTextByEntry.get(right),
+  );
   const addresses = recoveryAddressesFromSearchParams(searchParams, network);
   const filtered = historyItemsMatchingQuery(
     historyItemsMatchingAddresses(protocolAuthorityListings, addresses), request.query,
   ).filter((item) => !exactListingId ||
     String(item.listingId ?? item.txid ?? "").trim().toLowerCase() === exactListingId)
-    .map((item) => ({ item, key: tokenListingHistoryStableKey(item) }))
-    .sort((left, right) => compareCanonicalUtf8(
-      checkpointCursorCanonicalJson(left.key), checkpointCursorCanonicalJson(right.key),
-    ));
+    .map(listingEntry).sort(compareEntries);
   const digest = (value) => createHash("sha256")
     .update(checkpointCursorCanonicalJson(value), "utf8").digest("hex");
   const filterFingerprint = await checkpointCanonicalSha256({
@@ -59648,25 +59792,11 @@ async function completeTokenListingHistoryPayload(
     ...(itemProjection !== "full" ? { itemProjection } : {}),
     ...(exactListingId ? { exactListingId } : {}),
   });
-  const membershipSha256 = await checkpointCanonicalSha256(filtered.map((entry) => ({
-    item: entry.item,
-    key: entry.key,
-  })));
-  const relationalEntries = canonicalItems.map((item) => ({
-    item,
-    key: tokenListingHistoryStableKey(item),
-  })).sort((left, right) => compareCanonicalUtf8(
-    checkpointCursorCanonicalJson(left.key), checkpointCursorCanonicalJson(right.key),
-  ));
-  const sourceSha256 = await checkpointCanonicalSha256(relationalEntries);
-  const protocolMembershipSha256 = await checkpointCanonicalSha256(
-    protocolAuthorityListings.map((item) => ({
-      item,
-      key: tokenListingHistoryStableKey(item),
-    })).sort((left, right) => compareCanonicalUtf8(
-      checkpointCursorCanonicalJson(left.key),
-      checkpointCursorCanonicalJson(right.key),
-    )),
+  const membershipSha256 = await listingDigests.hash(filtered);
+  const relationalEntries = canonicalItems.map(listingEntry).sort(compareEntries);
+  const sourceSha256 = await listingDigests.hash(relationalEntries);
+  const protocolMembershipSha256 = await listingDigests.hash(
+    protocolAuthorityListings.map(listingEntry).sort(compareEntries),
   );
   const cursor = request.cursor;
   const emitted = cursor ? Number(cursor.emitted) : 0;
@@ -59697,15 +59827,23 @@ async function completeTokenListingHistoryPayload(
     relationalHash, relationalHeight, relationalSourceSha256: sourceSha256,
     scope: scope || "all", total: filtered.length, v: 2,
   }) : "";
+  const pageItems = [];
+  let projectionDeadline = performance.now() + 4;
+  for (const entry of pageEntries) {
+    pageItems.push(itemProjection !== "full"
+      ? tokenListingDisplayProjection(entry.item, {
+          fullRecordSha256: await listingDigests.recordSha256(entry.item),
+          network, tokenScope: scope, projection: itemProjection,
+        })
+      : entry.item);
+    if (performance.now() >= projectionDeadline) {
+      await yieldToIo(); projectionDeadline = performance.now() + 4;
+    }
+  }
   return {
     cursor: request.cursorRaw, end, hasMore, indexedAt: relational.indexedAt,
     indexedThroughBlock: relationalHeight, indexedThroughBlockHash: relationalHash,
-    items: pageEntries.map((entry) => itemProjection !== "full"
-      ? tokenListingDisplayProjection(entry.item, {
-          fullRecordSha256: digest(entry.item), network, tokenScope: scope,
-          projection: itemProjection,
-        })
-      : entry.item), kind: "listings", limit: request.limit,
+    items: pageItems, kind: "listings", limit: request.limit,
     ...(itemProjection !== "full" ? {
       itemProjection: {
         model: `proof-token-listing-${itemProjection}`,

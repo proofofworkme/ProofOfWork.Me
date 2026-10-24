@@ -410,9 +410,12 @@ class RemoteTests(unittest.TestCase):
         with patch.object(custody, 'verify_final_result', return_value={'ok': True}) as verify:
             self.runtime.dispatch('status', {'requireComplete': True,
                 'completion_access_time_reconciliation': {'untrusted': 'frame'},
-                'config_access_time_reconciliation': {'untrusted': 'frame'}})
+                'config_access_time_reconciliation': {'untrusted': 'frame'},
+                'completion_historical_bulk_preservation': {'untrusted': 'frame'},
+                'historical_bulk_preservation': {'untrusted': 'frame'}})
             self.assertEqual(verify.call_args.kwargs, {})
             self.assertIsNone(self.runtime.completion_access_time_reconciliation)
+            self.assertIsNone(self.runtime.completion_historical_bulk_preservation)
         # A newly published pair cannot borrow the prior cycle's completion.
         self.fixture.publish_policy_fixture('aaaaaa000003-20261016T040000Z', F.S.V5_SURFACES, 'proofofwork-ui-release-v5')
         with self.assertRaisesRegex(ValueError, 'retention-incomplete'):
@@ -1084,6 +1087,15 @@ class PackagingTests(unittest.TestCase):
                 for key in ('configSha256', 'stateSha256', 'cycleId', 'planSha256', 'resultSha256'):
                     changed = dict(compact, accessTimeReconciliation=dict(compact_proof, **{key: 'wrong'}))
                     with self.subTest(compact_proof_field=key), self.assertRaises(ValueError):
+                        I.validate_guard_refusal(request(changed), runtime)
+                bulk = {key: compact_proof[key] for key in ('configSha256', 'stateSha256', 'cycleId', 'planSha256', 'resultSha256')}
+                bulk.update(schema='pow-ui-completed-historical-bulk-preservation-v1',
+                    path='/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-20261002T013023Z')
+                preserved = dict(compact, historicalBulkPreservation=bulk)
+                self.assertEqual(I.validate_guard_refusal(request(preserved), runtime), compact_proof)
+                for key in ('configSha256', 'stateSha256', 'cycleId', 'planSha256', 'resultSha256', 'path', 'schema'):
+                    changed = dict(preserved, historicalBulkPreservation=dict(bulk, **{key: 'wrong'}))
+                    with self.subTest(bulk_proof_field=key), self.assertRaisesRegex(ValueError, 'Historical bulk refusal'):
                         I.validate_guard_refusal(request(changed), runtime)
                 cycle_receipt.write_bytes(b'changed cycle')
                 with self.assertRaisesRegex(ValueError, 'SHA differs'): I.validate_guard_refusal(request(value), runtime)

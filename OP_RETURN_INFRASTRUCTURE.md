@@ -28,6 +28,14 @@ publication, deployment-lock, and receipt checks remain mandatory. The old
 `custody.py preserve` command refuses local exports. Historical custody receipts
 remain verifiable through authenticated package upgrades.
 
+The October 24 migration separately binds the four observed forward hold-file
+access times and the exact `historical-archives-boost-20261002T013023Z` bundle,
+whose former configuration reference no longer reliably blocks eligibility.
+That bundle stays on the UI VPS with its inventory digest and filesystem identity
+verified before and after migration and through later status checks. Original
+completion receipts stay unchanged; other eligible bulk still refuses, and this
+preservation proof authorizes neither deletion nor a local archive export.
+
 Run full release builds on the node VPS with bounded resources. The transport
 helper's `--bundle-host node-vps` mode streams the exact hash-bound source and
 surface artifacts to the UI VPS without storing another local copy. API
@@ -61,6 +69,14 @@ Overlapping registry SQL reads coalesce without sharing mutable caller evidence.
 Summary reads project only the requested component from PostgreSQL while keeping
 the full canonical eligibility predicates. A fallback chain does not repeat the
 same indexed marketplace read after it has already failed in that chain.
+
+Complete-book evidence hashing reuses canonical record bytes only within the
+current request, after fresh database and Core reconciliation. Eligible plain
+record trees are frozen before reuse, with bounded cache bytes and entries;
+unusual or oversized values retain the yielding serializer. ASCII object keys
+use an equivalent fast sort, while other keys keep canonical UTF-8 ordering.
+All source, membership, cursor and full-record hashes retain their exact bytes.
+No settled listing authority is cached across requests.
 
 AMO has one visible automatic refresh owner: one fresh complete read on entry,
 then another 60 seconds after the previous cycle completes. It cancels hidden or

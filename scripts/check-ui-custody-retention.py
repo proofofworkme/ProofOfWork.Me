@@ -596,6 +596,8 @@ class CompletionConfigTransitionTests(unittest.TestCase):
    for n,path in enumerate(C.COMPLETED_ACCESS_TIME_PATHS[:-1]):
     self.additional.append(dict(path=path,sha256=str(n+1)*64,identity=dict(self.identity,st_mode=stat.S_IFREG|(0o644 if n<2 else 0o600)),xattrs={}))
    self.plan['holds']+=copy.deepcopy(self.additional)
+  if getattr(self,'bulk_fixture',False):
+   self.plan['candidates']=[dict(path=C.COMPLETED_PRESERVED_BULK,eligible=False,artifactClass='historical-archives',retirementMethod='custody',rejectionCategory='active-reference',reason='Production configuration or installed operator references selected root')]
   self.plan_binding=self.put(self.evidence/'cycle-custody-plan.json',self.plan);self.plan_sha=self.plan_binding['sha256']
   self.result=dict(ok=True,planSha256=self.plan_sha,completed=[]);self.result_binding=self.put(self.evidence/'cycle-custody-result.json',self.result);self.result_sha=self.result_binding['sha256']
   phase=dict(operation='complete-cycle',configSha256=E.digest(C.encoded(self.config)));self.phase=self.put(self.evidence/'cycle-intent.json',phase)
@@ -620,7 +622,9 @@ class CompletionConfigTransitionTests(unittest.TestCase):
  def add_upgrade(self):
   old=copy.deepcopy(self.state);old_config=copy.deepcopy(self.config);number=len(self.transitions)+1
   manifest={'generation':number};package=E.digest(C.encoded(manifest));journal=self.evidence/('ui-lifecycle-upgrade-'+package)
-  self.config=dict(old_config,generation=number,package=dict(path=str(self.evidence/('ui-lifecycle-tools-'+package)),sha256=package));config_sha=E.digest(C.encoded(self.config))
+  self.config=dict(old_config,generation=number,package=dict(path=str(self.evidence/('ui-lifecycle-tools-'+package)),sha256=package))
+  if getattr(self,'bulk_fixture',False):self.config.update(retentionPolicy=C.VPS_POLICY,offHostCustodyRoot=None)
+  config_sha=E.digest(C.encoded(self.config))
   prior_config=self.put(journal/'prior-config.json',old_config);prior_state=self.put(journal/'prior-state.json',old)
   review=dict(state=old,stateSha256=prior_state['sha256'],context=old['completedContext'],lastCompleted=old['lastCompleted'],fullCompletionVerified=True,completionIntent=self.phase,completionReceipt=self.phase_receipt)
   plan=dict(schema='pow-ui-retention-upgrade-plan-v1',scopeApprovalSha256=C.REPAIR_APPROVAL_SHA,request=dict(mode='completed-cycle',configSha256=prior_config['sha256'],stateSha256=prior_state['sha256']),
@@ -652,12 +656,16 @@ class CompletionConfigTransitionTests(unittest.TestCase):
    value=json.loads(saved);mutation(value['completionVerification']);link['completed']=self.put(original['path'],value)
    with self.assertRaisesRegex(ValueError,'access-time'):self.verify()
    link['completed']=copy.deepcopy(original);self.records[original['path']]=saved
- def seal_access_proof(self,access):
+ def seal_access_proof(self,access,bulk=None):
   link=self.transitions[0];intent=json.loads(self.records[link['intent']['path']]);request=intent['plan']['request'];review=intent['plan']['before']['completedReview']
-  raw=C.encoded(dict(accessTimeReconciliation=access));request.update(mode='completed-config-repair',guardRefusal=dict(base64=C.base64.b64encode(raw).decode(),binding=dict(path='/reviewed/refusal.json',sha256=E.digest(raw))))
+  refusal=dict(accessTimeReconciliation=access)
+  if bulk is not None:refusal['historicalBulkPreservation']=bulk
+  raw=C.encoded(refusal);request.update(mode='completed-config-repair',guardRefusal=dict(base64=C.base64.b64encode(raw).decode(),binding=dict(path='/reviewed/refusal.json',sha256=E.digest(raw))))
   review['accessTimeReconciliation']=access
+  if bulk is not None:review['historicalBulkPreservation']=bulk
   link['intent']=self.put(link['intent']['path'],intent);self.state['lastUpgrade']['intentSha256']=link['intent']['sha256']
   completed=json.loads(self.records[link['completed']['path']]);completed['intent']=link['intent'];completed['state']['sha256']=E.digest(C.encoded(self.state));completed['completionVerification']['verifiedAccessTimeReconciliation']=access
+  if bulk is not None:completed['completionVerification']['verifiedHistoricalBulkPreservation']=bulk
   link['completed']=self.put(link['completed']['path'],completed)
  def test_four_hold_access_time_proof_survives_sealed_and_future_upgrades(self):
   patch.stopall();self.four_hold_fixture=True;self.setUp()
@@ -671,6 +679,22 @@ class CompletionConfigTransitionTests(unittest.TestCase):
   self.add_upgrade();self.assertTrue(self.verify()['ok'])
   self.additional[0]['identity']['st_atime_ns']+=1
   with self.assertRaisesRegex(ValueError,'non-config retention hold'):self.verify()
+ def test_bound_historical_bundle_preservation_survives_sealed_and_future_upgrades(self):
+  patch.stopall();self.four_hold_fixture=True;self.bulk_fixture=True;self.setUp()
+  request=json.loads(self.records[self.transitions[0]['intent']['path']])['plan']['request'];rows=[]
+  for path in C.COMPLETED_ACCESS_TIME_PATHS:
+   before=copy.deepcopy(next(row for row in self.plan['holds'] if row['path']==path));current=copy.deepcopy(before);current['identity']['st_atime_ns']+=1;rows.append(dict(before=before,current=current))
+   if path!=str(C.LIFECYCLE_CONFIG):next(row for row in self.additional if row['path']==path)['identity']['st_atime_ns']+=1
+  access=dict(schema='pow-ui-completed-holds-access-time-v1',configSha256=request['configSha256'],stateSha256=request['stateSha256'],cycleId='cycle1',planSha256=self.plan_sha,resultSha256=self.result_sha,rows=rows)
+  inventory=dict(fingerprint={'exact':'bytes'},records=[dict(path='.',kind='directory',identity={'exact':'root'},xattrs=[])])
+  rejection={k:v for k,v in self.plan['candidates'][0].items() if k!='path'}
+  bulk=dict(schema='pow-ui-completed-historical-bulk-preservation-v1',configSha256=request['configSha256'],stateSha256=request['stateSha256'],cycleId='cycle1',planSha256=self.plan_sha,resultSha256=self.result_sha,path=C.COMPLETED_PRESERVED_BULK,priorRejection=rejection,fingerprint=inventory['fingerprint'],inventorySha256=E.inventory_sha(inventory['records']),root=inventory['records'][0])
+  self.seal_access_proof(access,bulk)
+  with patch.object(C,'scope',return_value=('historical-archives',None,False)),patch.object(C,'row_inventory',side_effect=lambda *args:copy.deepcopy(inventory)),patch.object(C,'discover',return_value=[Path(C.COMPLETED_PRESERVED_BULK)]),patch.object(C,'qualify_candidate',return_value=dict(path=C.COMPLETED_PRESERVED_BULK,eligible=True)):
+   self.assertEqual(self.verify()['verifiedHistoricalBulkPreservation'],bulk)
+   self.add_upgrade();self.assertTrue(self.verify()['historicalBulkPreserved'])
+   inventory['records'][0]['identity']['changed']=True
+   with self.assertRaisesRegex(ValueError,'bytes or identity changed'):self.verify()
  def test_multiple_complete_preserving_upgrades_join(self):
   self.add_upgrade();self.assertTrue(self.verify()['ok'])
  def test_wrong_status_seal_path_refuses(self):
@@ -842,6 +866,42 @@ class CompletionHoldsAccessTimeTests(unittest.TestCase):
   first=[copy.deepcopy(row['current']) for row in self.rows]+[copy.deepcopy(self.other)];second=copy.deepcopy(first);second[1]['identity']['st_atime_ns']+=1
   with patch.object(E,'hold_snapshot',side_effect=[first,second]),self.assertRaisesRegex(ValueError,'Observed config access time'):self.verify()
 
-suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls) for cls in (FileGroupTests,ArtifactQualificationTests,ClosedOrdinaryAliasTests,OffhostCapacityTests,BatchPreservationTests,RetirementBudgetTests,RetirementDiagnosticsTests,CompletionConfigTransitionTests,CompletionConfigAccessTimeTests,CompletionHoldsAccessTimeTests))
+class CompletionHistoricalBulkTests(unittest.TestCase):
+ def setUp(self):
+  CompletionHoldsAccessTimeTests.setUp(self)
+  self.rejection=dict(eligible=False,artifactClass='historical-archives',retirementMethod='custody',rejectionCategory='active-reference',reason='Production configuration or installed operator references selected root')
+  self.plan['candidates']=[dict(self.rejection,path=C.COMPLETED_PRESERVED_BULK)]
+  self.plan_sha=E.digest(C.encoded(self.plan));self.result=dict(ok=True,planSha256=self.plan_sha,completed=[]);self.result_sha=E.digest(C.encoded(self.result));self.proof.update(planSha256=self.plan_sha,resultSha256=self.result_sha)
+  self.inventory=dict(fingerprint={'exact':'retained bytes'},records=[dict(path='.',kind='directory',identity={'exact':'root identity'},xattrs=[])])
+  self.bulk=dict(schema='pow-ui-completed-historical-bulk-preservation-v1',configSha256=self.proof['configSha256'],stateSha256=self.proof['stateSha256'],cycleId=self.proof['cycleId'],planSha256=self.plan_sha,resultSha256=self.result_sha,path=C.COMPLETED_PRESERVED_BULK,priorRejection=self.rejection,fingerprint=self.inventory['fingerprint'],inventorySha256=E.inventory_sha(self.inventory['records']),root=self.inventory['records'][0])
+  patch.object(C,'scope',return_value=('historical-archives',None,False)).start()
+  patch.object(C,'row_inventory',side_effect=lambda *args:copy.deepcopy(self.inventory)).start()
+  patch.object(C,'discover',return_value=[Path(C.COMPLETED_PRESERVED_BULK)]).start()
+  patch.object(C,'qualify_candidate',return_value=dict(path=C.COMPLETED_PRESERVED_BULK,eligible=True,artifactClass='historical-archives',retirementMethod='custody')).start()
+ def verify(self,bulk=None):
+  return C.verify_final_result(self.plan,self.plan_sha,self.result,self.result_sha,config_access_time_reconciliation=self.proof,historical_bulk_preservation=self.bulk if bulk is None else bulk)
+ def test_exact_bundle_stays_preserved_and_default_remains_strict(self):
+  original=C.encoded(self.plan);out=self.verify();self.assertTrue(out['historicalBulkPreserved']);self.assertFalse(out['independentOffHostRecovery']);self.assertTrue(out['remaining'][0]['eligible']);self.assertEqual(out['verifiedHistoricalBulkPreservation'],self.bulk);self.assertEqual(original,C.encoded(self.plan))
+  with self.assertRaisesRegex(ValueError,'Qualified bulk artifacts remain'):C.verify_final_result(self.plan,self.plan_sha,self.result,self.result_sha,config_access_time_reconciliation=self.proof)
+ def test_unknown_candidate_remains_blocked(self):
+  with patch.object(C,'qualify_candidate',return_value=dict(path='/unapproved',eligible=True)),self.assertRaisesRegex(ValueError,'Qualified bulk artifacts remain'):self.verify()
+ def test_proof_scope_authority_and_inventory_cannot_expand(self):
+  for key,value in [('path','/unapproved'),('schema','unknown'),('configSha256','f'*64),('stateSha256','f'*64),('cycleId','other'),('planSha256','f'*64),('resultSha256','f'*64),('inventorySha256','f'*64),('fingerprint',{}),('root',{}),('priorRejection',{})]:
+   with self.subTest(key=key),self.assertRaises(ValueError):self.verify(dict(self.bulk,**{key:value}))
+  with self.assertRaises(ValueError):self.verify(dict(self.bulk,extra=True))
+ def test_scope_and_original_rejection_remain_exact(self):
+  for value in [('historical-archives',None,True),('preserved-source',None,False)]:
+   with patch.object(C,'scope',return_value=value),self.assertRaises(ValueError):self.verify()
+  self.plan['candidates'][0]['reason']='different reference'
+  self.plan_sha=E.digest(C.encoded(self.plan));self.result['planSha256']=self.plan_sha;self.result_sha=E.digest(C.encoded(self.result));self.proof.update(planSha256=self.plan_sha,resultSha256=self.result_sha);self.bulk.update(planSha256=self.plan_sha,resultSha256=self.result_sha)
+  with self.assertRaisesRegex(ValueError,'previously referenced bundle'):self.verify()
+ def test_bundle_changes_between_fences_refuse(self):
+  changed=copy.deepcopy(self.inventory);changed['records'][0]['identity']['changed']=True
+  with patch.object(C,'row_inventory',side_effect=[copy.deepcopy(self.inventory),changed]),self.assertRaisesRegex(ValueError,'bytes or identity changed'):self.verify()
+ def test_missing_bundle_and_timers_refuse(self):
+  with patch.object(C,'row_inventory',side_effect=FileNotFoundError),self.assertRaises(FileNotFoundError):self.verify()
+  with patch.object(E,'timer_snapshot',return_value={'changed':True}),self.assertRaisesRegex(ValueError,'timers'):self.verify()
+
+suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls) for cls in (FileGroupTests,ArtifactQualificationTests,ClosedOrdinaryAliasTests,OffhostCapacityTests,BatchPreservationTests,RetirementBudgetTests,RetirementDiagnosticsTests,CompletionConfigTransitionTests,CompletionConfigAccessTimeTests,CompletionHoldsAccessTimeTests,CompletionHistoricalBulkTests))
 result=unittest.TextTestRunner(verbosity=1).run(suite)
 if not result.wasSuccessful():raise SystemExit(1)

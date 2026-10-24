@@ -92,8 +92,12 @@ match the complete current runtime and pass full release-health before any
 retirement. This proves archive contents and provenance, not an independent
 application restore or database restore.
 
-Only the nine exact superseded ordinary managed runtime archives enumerated in
-the controller may retire. The immutable held-review inventory and current
+The first migration retires only the nine exact superseded ordinary managed
+runtime archives enumerated in the controller. Subsequent releases replace only
+the single archive bound by an explicit prior completion path and SHA-256,
+using `--previous-completion` and `--previous-completion-sha256`. That receipt's
+archive identity, size, checksum, provenance and exact one-archive inventory
+must still match. The immutable held-review inventory and current
 accepted-evidence paths are exclusion gates. Each old archive, checksum,
 provenance, metadata identity, and known Oct22 custody hardlink is checked before
 unlinking. Compact historical provenance and exact retirement identities stay in
@@ -107,7 +111,7 @@ old archives available; the plan records intent before any unlink.
 Run the reviewed script using isolated root Python on the node VPS with
 `--receipt-dir`, `--manifest-sha256`, `--source-commit`, and
 `--create-and-retain-latest`. The archive inventory and receipt scope are exact;
-a different future release/archive set needs a reviewed update, not a wildcard
+unknown archives or expanded source scope require review. There is no wildcard
 prune or removal of retention masks. Its checks are:
 
 ```sh

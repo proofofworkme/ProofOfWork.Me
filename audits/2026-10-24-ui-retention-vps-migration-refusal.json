@@ -1,0 +1,477 @@
+{
+  "accessTimeReconciliation": {
+    "configSha256": "4e64e8d40ced4a8ce93dd73a6361224b4473d127baa6de9f8871b2ca1a00d2bc",
+    "cycleId": "release-49ce8edc9747-20261023T173335Z",
+    "planSha256": "3c26d81f2b56f60a55e29da8f1ce6ff45424169d6431cfdb26f29b35775a6e78",
+    "resultSha256": "79420708200f746965616e409ce4add517c416e55a94ef5951f98c54230dd490",
+    "rows": [
+      {
+        "before": {
+          "identity": {
+            "st_atime_ns": 1792296360917811468,
+            "st_blksize": 4096,
+            "st_blocks": 2016,
+            "st_ctime_ns": 1790832648181010639,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 130951,
+            "st_mode": 33188,
+            "st_mtime_ns": 1790832648175010119,
+            "st_nlink": 1,
+            "st_size": 1030164,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/audit28-held-review.json",
+          "sha256": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9",
+          "xattrs": []
+        },
+        "current": {
+          "identity": {
+            "st_atime_ns": 1792799695092815615,
+            "st_blksize": 4096,
+            "st_blocks": 2016,
+            "st_ctime_ns": 1790832648181010639,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 130951,
+            "st_mode": 33188,
+            "st_mtime_ns": 1790832648175010119,
+            "st_nlink": 1,
+            "st_size": 1030164,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/audit28-held-review.json",
+          "sha256": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9",
+          "xattrs": []
+        }
+      },
+      {
+        "before": {
+          "identity": {
+            "st_atime_ns": 1792093379990873951,
+            "st_blksize": 4096,
+            "st_blocks": 72,
+            "st_ctime_ns": 1790832648195011853,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 131057,
+            "st_mode": 33188,
+            "st_mtime_ns": 1790832648193011680,
+            "st_nlink": 1,
+            "st_size": 36034,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/audit29-approved-cleanup.json",
+          "sha256": "9aa090024effa42b31be9d4b4a4d6e072c87b5b3c50919623a418f73d2a92211",
+          "xattrs": []
+        },
+        "current": {
+          "identity": {
+            "st_atime_ns": 1792799695125818561,
+            "st_blksize": 4096,
+            "st_blocks": 72,
+            "st_ctime_ns": 1790832648195011853,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 131057,
+            "st_mode": 33188,
+            "st_mtime_ns": 1790832648193011680,
+            "st_nlink": 1,
+            "st_size": 36034,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/audit29-approved-cleanup.json",
+          "sha256": "9aa090024effa42b31be9d4b4a4d6e072c87b5b3c50919623a418f73d2a92211",
+          "xattrs": []
+        }
+      },
+      {
+        "before": {
+          "identity": {
+            "st_atime_ns": 1792093379990873951,
+            "st_blksize": 4096,
+            "st_blocks": 24,
+            "st_ctime_ns": 1790834217075597339,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 133481,
+            "st_mode": 33152,
+            "st_mtime_ns": 1790834217075597339,
+            "st_nlink": 1,
+            "st_size": 9807,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/audit29-completed-retirements.json",
+          "sha256": "2b927bca35216a21f3c92145715d36fbbbd9cb03432780bfc04dc18d17d61057",
+          "xattrs": []
+        },
+        "current": {
+          "identity": {
+            "st_atime_ns": 1792799695126818650,
+            "st_blksize": 4096,
+            "st_blocks": 24,
+            "st_ctime_ns": 1790834217075597339,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 133481,
+            "st_mode": 33152,
+            "st_mtime_ns": 1790834217075597339,
+            "st_nlink": 1,
+            "st_size": 9807,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/audit29-completed-retirements.json",
+          "sha256": "2b927bca35216a21f3c92145715d36fbbbd9cb03432780bfc04dc18d17d61057",
+          "xattrs": []
+        }
+      },
+      {
+        "before": {
+          "identity": {
+            "st_atime_ns": 1792712502230529817,
+            "st_blksize": 4096,
+            "st_blocks": 8,
+            "st_ctime_ns": 1792712502282534454,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 130464,
+            "st_mode": 33152,
+            "st_mtime_ns": 1792712502230529817,
+            "st_nlink": 1,
+            "st_size": 1165,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+          "sha256": "4e64e8d40ced4a8ce93dd73a6361224b4473d127baa6de9f8871b2ca1a00d2bc",
+          "xattrs": []
+        },
+        "current": {
+          "identity": {
+            "st_atime_ns": 1792853289951085170,
+            "st_blksize": 4096,
+            "st_blocks": 8,
+            "st_ctime_ns": 1792712502282534454,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 130464,
+            "st_mode": 33152,
+            "st_mtime_ns": 1792712502230529817,
+            "st_nlink": 1,
+            "st_size": 1165,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+          "sha256": "4e64e8d40ced4a8ce93dd73a6361224b4473d127baa6de9f8871b2ca1a00d2bc",
+          "xattrs": []
+        }
+      }
+    ],
+    "schema": "pow-ui-completed-holds-access-time-v1",
+    "stateSha256": "92a4d3e22f712e0fbc69940bef05cf7c7ed8af83955daf02cce3bc9f64f9a6e0"
+  },
+  "completedCycle": {
+    "cycleId": "release-49ce8edc9747-20261023T173335Z",
+    "receipt": {
+      "bytes": 11010,
+      "path": "/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-complete-49ce8edc9747-20261023T173335Z-completed.json",
+      "sha256": "2ebf1f7f801f124f0a7b28c5b7068894b5e58d6c3a7f8e08b21653dcfe7ebf8b"
+    },
+    "retentionComplete": true
+  },
+  "completedUpgrade": {
+    "receipt": {
+      "bytes": 36138,
+      "path": "/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-upgrade-023cdef3a4a3d932846e17221b543b14b175011983b199ead88340b7db73be68/completed.json",
+      "sha256": "921c542b0b9c1455cbcb9d84c6888c8da757ef368be13229d4b7e59f9e90ceac"
+    }
+  },
+  "config": {
+    "bytes": 1165,
+    "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+    "sha256": "4e64e8d40ced4a8ce93dd73a6361224b4473d127baa6de9f8871b2ca1a00d2bc"
+  },
+  "custodyResult": {
+    "bytes": 4544567,
+    "path": "/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-complete-49ce8edc9747-20261023T173335Z-custody-result.json",
+    "sha256": "79420708200f746965616e409ce4add517c416e55a94ef5951f98c54230dd490"
+  },
+  "failure": {
+    "error": "Retention holds/timers changed",
+    "exitCode": 1,
+    "invocation": [
+      "/usr/bin/python3",
+      "-I",
+      "-B",
+      "/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-tools-023cdef3a4a3d932846e17221b543b14b175011983b199ead88340b7db73be68/deploy/ui-retention/lifecycle_remote.py",
+      "/etc/proofofwork-retention/ui-lifecycle.json",
+      "4e64e8d40ced4a8ce93dd73a6361224b4473d127baa6de9f8871b2ca1a00d2bc",
+      "status"
+    ],
+    "normalStatusVerified": false,
+    "operation": "normal-status-require-complete",
+    "stderr": "Traceback (most recent call last):\n  File \"/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-tools-023cdef3a4a3d932846e17221b543b14b175011983b199ead88340b7db73be68/deploy/ui-retention/lifecycle_remote.py\", line 600, in <module>\n    main()\n  File \"/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-tools-023cdef3a4a3d932846e17221b543b14b175011983b199ead88340b7db73be68/deploy/ui-retention/lifecycle_remote.py\", line 595, in main\n    out = Runtime(config, config_sha, storage, policy, custody).dispatch(sys.argv[3], frame)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-tools-023cdef3a4a3d932846e17221b543b14b175011983b199ead88340b7db73be68/deploy/ui-retention/lifecycle_remote.py\", line 577, in dispatch\n    return methods[operation](frame)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-tools-023cdef3a4a3d932846e17221b543b14b175011983b199ead88340b7db73be68/deploy/ui-retention/lifecycle_remote.py\", line 400, in status\n    completion_verification = self.C.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'],\n                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-tools-023cdef3a4a3d932846e17221b543b14b175011983b199ead88340b7db73be68/deploy/ui-retention/custody.py\", line 1065, in verify_final_result\n    completion_holds=completion_fence(plan,plan_sha,result_sha,config_transitions,\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-tools-023cdef3a4a3d932846e17221b543b14b175011983b199ead88340b7db73be68/deploy/ui-retention/custody.py\", line 337, in completion_fence\n    fence(plan,full=True)\n  File \"/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-tools-023cdef3a4a3d932846e17221b543b14b175011983b199ead88340b7db73be68/deploy/ui-retention/custody.py\", line 166, in fence\n    raise ValueError('Retention holds/timers changed')\nValueError: Retention holds/timers changed\n",
+    "stderrSha256": "96c8c01076ffb817209fc37efe3de74c6c797b8dd114f60dbe611f26e8d4fa16",
+    "stdoutBytes": 0,
+    "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "guardDifference": {
+    "onlyChangedPaths": [
+      "/etc/proofofwork-retention/audit28-held-review.json",
+      "/etc/proofofwork-retention/audit29-approved-cleanup.json",
+      "/etc/proofofwork-retention/audit29-completed-retirements.json",
+      "/etc/proofofwork-retention/ui-lifecycle.json"
+    ],
+    "otherHoldRowsUnchanged": true,
+    "rows": [
+      {
+        "before": {
+          "identity": {
+            "st_atime_ns": 1792296360917811468,
+            "st_blksize": 4096,
+            "st_blocks": 2016,
+            "st_ctime_ns": 1790832648181010639,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 130951,
+            "st_mode": 33188,
+            "st_mtime_ns": 1790832648175010119,
+            "st_nlink": 1,
+            "st_size": 1030164,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/audit28-held-review.json",
+          "sha256": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9",
+          "xattrs": []
+        },
+        "current": {
+          "identity": {
+            "st_atime_ns": 1792799695092815615,
+            "st_blksize": 4096,
+            "st_blocks": 2016,
+            "st_ctime_ns": 1790832648181010639,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 130951,
+            "st_mode": 33188,
+            "st_mtime_ns": 1790832648175010119,
+            "st_nlink": 1,
+            "st_size": 1030164,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/audit28-held-review.json",
+          "sha256": "c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9",
+          "xattrs": []
+        }
+      },
+      {
+        "before": {
+          "identity": {
+            "st_atime_ns": 1792093379990873951,
+            "st_blksize": 4096,
+            "st_blocks": 72,
+            "st_ctime_ns": 1790832648195011853,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 131057,
+            "st_mode": 33188,
+            "st_mtime_ns": 1790832648193011680,
+            "st_nlink": 1,
+            "st_size": 36034,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/audit29-approved-cleanup.json",
+          "sha256": "9aa090024effa42b31be9d4b4a4d6e072c87b5b3c50919623a418f73d2a92211",
+          "xattrs": []
+        },
+        "current": {
+          "identity": {
+            "st_atime_ns": 1792799695125818561,
+            "st_blksize": 4096,
+            "st_blocks": 72,
+            "st_ctime_ns": 1790832648195011853,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 131057,
+            "st_mode": 33188,
+            "st_mtime_ns": 1790832648193011680,
+            "st_nlink": 1,
+            "st_size": 36034,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/audit29-approved-cleanup.json",
+          "sha256": "9aa090024effa42b31be9d4b4a4d6e072c87b5b3c50919623a418f73d2a92211",
+          "xattrs": []
+        }
+      },
+      {
+        "before": {
+          "identity": {
+            "st_atime_ns": 1792093379990873951,
+            "st_blksize": 4096,
+            "st_blocks": 24,
+            "st_ctime_ns": 1790834217075597339,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 133481,
+            "st_mode": 33152,
+            "st_mtime_ns": 1790834217075597339,
+            "st_nlink": 1,
+            "st_size": 9807,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/audit29-completed-retirements.json",
+          "sha256": "2b927bca35216a21f3c92145715d36fbbbd9cb03432780bfc04dc18d17d61057",
+          "xattrs": []
+        },
+        "current": {
+          "identity": {
+            "st_atime_ns": 1792799695126818650,
+            "st_blksize": 4096,
+            "st_blocks": 24,
+            "st_ctime_ns": 1790834217075597339,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 133481,
+            "st_mode": 33152,
+            "st_mtime_ns": 1790834217075597339,
+            "st_nlink": 1,
+            "st_size": 9807,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/audit29-completed-retirements.json",
+          "sha256": "2b927bca35216a21f3c92145715d36fbbbd9cb03432780bfc04dc18d17d61057",
+          "xattrs": []
+        }
+      },
+      {
+        "before": {
+          "identity": {
+            "st_atime_ns": 1792712502230529817,
+            "st_blksize": 4096,
+            "st_blocks": 8,
+            "st_ctime_ns": 1792712502282534454,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 130464,
+            "st_mode": 33152,
+            "st_mtime_ns": 1792712502230529817,
+            "st_nlink": 1,
+            "st_size": 1165,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+          "sha256": "4e64e8d40ced4a8ce93dd73a6361224b4473d127baa6de9f8871b2ca1a00d2bc",
+          "xattrs": []
+        },
+        "current": {
+          "identity": {
+            "st_atime_ns": 1792853289951085170,
+            "st_blksize": 4096,
+            "st_blocks": 8,
+            "st_ctime_ns": 1792712502282534454,
+            "st_dev": 2049,
+            "st_gid": 0,
+            "st_ino": 130464,
+            "st_mode": 33152,
+            "st_mtime_ns": 1792712502230529817,
+            "st_nlink": 1,
+            "st_size": 1165,
+            "st_uid": 0
+          },
+          "path": "/etc/proofofwork-retention/ui-lifecycle.json",
+          "sha256": "4e64e8d40ced4a8ce93dd73a6361224b4473d127baa6de9f8871b2ca1a00d2bc",
+          "xattrs": []
+        }
+      }
+    ],
+    "timersUnchanged": true
+  },
+  "historicalBulkObservation": {
+    "atimeRowsAdvancedSinceEarlierObservation": [],
+    "downloadedPayloadBytes": 0,
+    "oldAtimeRefusal": {
+      "path": "audits/2026-10-24-ui-retention-holds-atime-refusal.json",
+      "sha256": "4a435bf853a0b977b1d49305c513988446b24e04a5d4343bda80f731d2fe0320"
+    },
+    "qualification": "The exact old bundle was blocked by a production configuration/operator reference in the completed plan. Reference visibility now varies; the observed source scope, contents, inventory and root identity are bound here and must remain exact through migration and future status. It stays on the VPS; unknown eligible artifacts still refuse. Historical plan/result bytes and terminal receipts are unchanged. The four access-time rows are re-observed here; all other identity, contents and timers remain exact.",
+    "recordedAtUtc": "2026-10-24T15:36:28.590134+00:00",
+    "referenceObservation": {
+      "counters": {
+        "configurationBytes": 5009456,
+        "configurationEntries": 224,
+        "fdEntries": 437,
+        "mountNamespaceReads": 126,
+        "processes": 126
+      },
+      "eligibleReferenceCheck": true
+    },
+    "retirementAllowed": false
+  },
+  "historicalBulkPreservation": {
+    "configSha256": "4e64e8d40ced4a8ce93dd73a6361224b4473d127baa6de9f8871b2ca1a00d2bc",
+    "cycleId": "release-49ce8edc9747-20261023T173335Z",
+    "fingerprint": {
+      "classification": "retain",
+      "entries": 15,
+      "format": "proofofwork-ui-retained-root-v1",
+      "manifestSha256": null,
+      "regularBytes": 580738012,
+      "root": "/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-20261002T013023Z",
+      "treeSha256": "085d2e6ba3341fe49782e981759481ba185bb09de9e48e3aa424a5e29005551c"
+    },
+    "inventorySha256": "aeaacc7d22fb84b755f87316c627bdbbbd634b7674951389111f157c163734f7",
+    "path": "/var/backups/proofofwork-ui/transport-evidence/historical-archives-boost-20261002T013023Z",
+    "planSha256": "3c26d81f2b56f60a55e29da8f1ce6ff45424169d6431cfdb26f29b35775a6e78",
+    "priorRejection": {
+      "artifactClass": "historical-archives",
+      "eligible": false,
+      "reason": "Production configuration or installed operator references selected root",
+      "rejectionCategory": "active-reference",
+      "retirementMethod": "custody"
+    },
+    "resultSha256": "79420708200f746965616e409ce4add517c416e55a94ef5951f98c54230dd490",
+    "root": {
+      "identity": {
+        "st_atime_ns": 1792777007598581032,
+        "st_blksize": 4096,
+        "st_blocks": 8,
+        "st_ctime_ns": 1790905440496019476,
+        "st_dev": 2049,
+        "st_gid": 0,
+        "st_ino": 766923,
+        "st_mode": 16832,
+        "st_mtime_ns": 1790905440496019476,
+        "st_nlink": 2,
+        "st_size": 4096,
+        "st_uid": 0
+      },
+      "kind": "directory",
+      "path": ".",
+      "xattrs": []
+    },
+    "schema": "pow-ui-completed-historical-bulk-preservation-v1",
+    "stateSha256": "92a4d3e22f712e0fbc69940bef05cf7c7ed8af83955daf02cce3bc9f64f9a6e0"
+  },
+  "host": "77.42.91.106",
+  "installedSourceCommit": "946946aa624e2a58da167cc384d1cc0424e5d29e",
+  "originalPlansAndReceiptsMustRemainUnchanged": true,
+  "qualification": "Only four exact observed forward access-time differences are admitted by the new verifier. Bytes, all other identity fields, xattrs, every other hold, and timers remain exact. The initial diagnostic read the lifecycle config without O_NOATIME and may have advanced its access time; the other three differences predate that probe. This record does not attribute those earlier reads, restore timestamps, rewrite historical plans, replay retirement, or permit any further timestamp change. All source archives and inventories remain on the VPS; this is compact metadata evidence only.",
+  "qualifiedPlan": {
+    "bytes": 15770987,
+    "path": "/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-complete-49ce8edc9747-20261023T173335Z-custody-plan.json",
+    "sha256": "3c26d81f2b56f60a55e29da8f1ce6ff45424169d6431cfdb26f29b35775a6e78"
+  },
+  "recordedAtUtc": "2026-10-24T15:13:10.813567+00:00",
+  "retirementReplayAllowed": false,
+  "schema": "pow-ui-custody-completed-holds-guard-refusal-v1",
+  "scopeApprovalSha256": "df166edb2d9817dd4f8af24819880b6bf08b396b6aa483adaa141415fc709379",
+  "state": {
+    "activePhase": null,
+    "bytes": 35172,
+    "path": "/var/lib/proofofwork-ui-retention/state.json",
+    "pending": null,
+    "revision": 76,
+    "sha256": "92a4d3e22f712e0fbc69940bef05cf7c7ed8af83955daf02cce3bc9f64f9a6e0",
+    "status": "complete"
+  }
+}
