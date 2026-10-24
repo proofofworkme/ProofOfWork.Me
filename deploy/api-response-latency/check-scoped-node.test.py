@@ -69,8 +69,9 @@ class ControllerTests(unittest.TestCase):
         path.write_bytes(b'// drift\nexport {};\n')
         with self.assertRaisesRegex(ValueError,'Dependency changed'):module.fence(self.root,self.manifest,candidates)
 
-    def test_exact_single_write_and_api_dependent_worker_restart(self):
-        self.assertEqual(module.ALLOWED, {'server/proof-api.mjs'})
+    def test_exact_api_and_reader_writes_and_dependent_worker_restart(self):
+        self.assertEqual(module.ALLOWED, {'server/proof-api.mjs', 'server/db/proof-index-reader.mjs'})
+        self.assertEqual(module.BASE_SOURCE_COMMIT, '49ce8edc9747b99918f94c51ead05d756770194a')
         self.assertEqual(module.NEW, frozenset())
         self.assertEqual(module.UNITS, ('proofofwork-api.service', 'proofofwork-indexer-worker.service'))
         self.assertEqual(module.PROTECTED, module.UNITS)

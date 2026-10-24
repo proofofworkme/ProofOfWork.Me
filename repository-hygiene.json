@@ -257,7 +257,8 @@
       "deploy/audit30/STORAGE.md",
       "deploy/audit30/recovery/PROPOSAL.md",
       "deploy/audit30/recovery/PROPOSAL-v2.md",
-      "deploy/audit32-first-batch/README.md"
+      "deploy/audit32-first-batch/README.md",
+      "deploy/monitoring-reconciliation/README.md"
     ]
   },
   "protectedTrackedPaths": [

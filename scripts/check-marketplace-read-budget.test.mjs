@@ -37,6 +37,15 @@ test('deadline cancels an in-flight request without a new retry or partial snaps
   const result=f.run(false);f.budget.abort(new DOMException('budget exhausted','TimeoutError'));
   await assert.rejects(result,/budget exhausted/);assert.equal(calls,1);assert.equal(f.cleared(),true);
 });
+test('hiding the AMO display cancels its summary and never starts the book or a retry',async()=>{
+  let calls=0;
+  const f=fixture(async(fresh,signal)=>{calls++;return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true}));});
+  f.context.tokenStateWithCurrentCompleteMarketplaceListings=()=>assert.fail('cancelled summary hydrated');
+  const owner=new AbortController();const result=f.run(true,owner.signal);
+  owner.abort(new DOMException('Display is hidden.','AbortError'));
+  await assert.rejects(result,/Display is hidden/);
+  assert.equal(calls,1);assert.equal(f.cleared(),true);
+});
 test('same-network account change preserves an in-flight public snapshot',async()=>{
   let finish;let seen;
   const f=fixture(async(fresh,signal)=>{seen=signal;return new Promise(resolve=>{finish=resolve;});});
@@ -151,6 +160,68 @@ const summary={indexedAt:AT,indexedThroughBlock:969620,indexedThroughBlockHash:H
 function listing(tokenId,index=1){return {network:'livenet',confirmed:true,tokenId,listingId:index.toString(16).padStart(64,'0')};}
 function history(items){return {...summary,items,totalCount:items.length,snapshotId:SNAP};}
 function bind(context,name){return vm.runInNewContext(declaration(name)+`\n${name}`,context);}
+
+const loopSource=readFileSync(new URL('../src/shared/api/useVisibleReadLoop.ts',import.meta.url),'utf8');
+const {consumeDisplayRead}=await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(loopSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText).toString('base64')}`);
+function refreshFixture(){
+  const requests=[],states=[],loading=[];
+  const context={network:'livenet',consumeDisplayRead,
+    activeWorkspaceStatusKeyRef:{current:'amo'},marketplaceReadContextRef:{current:'livenet:'},
+    marketplaceSummaryRefreshInFlightRef:{current:null},marketplaceSummaryRefreshInFlightFreshRef:{current:false},marketplaceSummaryRefreshSignalRef:{current:undefined},acceptedMarketplaceSnapshotRef:{current:undefined},
+    setMarketplaceDataLoading:value=>loading.push(value),setMarketplaceSummaryReadState:value=>states.push(value),setBusyForWorkspace:()=>{},setWorkFloorLoading:()=>{},setStatusForWorkspace:()=>{},nextProofApiReadAttempt:()=>1,
+    fetchBtcUsdPrice:async()=>undefined,errorMessage:(error)=>error.message,
+    fetchCompleteMarketplaceSnapshot:(fresh,signal)=>new Promise((resolve,reject)=>{
+      requests.push({fresh,signal,reject,resolve});
+      signal?.addEventListener('abort',()=>reject(signal.reason),{once:true});
+    })};
+  return {context,requests,states,loading,run:bind(context,'refreshMarketplaceSummary')};
+}
+test('a cancelled automatic join cannot cancel or clear the active manual read',async()=>{
+  const f=refreshFixture();const manual=f.run(false,true);
+  const automatic=new AbortController();const joined=f.run(true,true,automatic.signal);
+  assert.equal(f.requests.length,1);assert.equal(f.requests[0].signal,undefined);
+  automatic.abort(new DOMException('Display is hidden.','AbortError'));
+  await assert.rejects(joined,/Display is hidden/);
+  assert.equal(f.loading.at(-1),true);assert.ok(f.context.marketplaceSummaryRefreshInFlightRef.current);
+  f.requests[0].reject(Error('unavailable fixture'));await manual;
+  assert.equal(f.context.marketplaceSummaryRefreshInFlightRef.current,null);
+  assert.equal(f.loading.at(-1),false);
+});
+test('manual refresh joined to a cancelled automatic owner gets a new request',async()=>{
+  const f=refreshFixture();const automatic=new AbortController();
+  const first=f.run(true,true,automatic.signal),manual=f.run(false,true);
+  assert.equal(f.requests.length,1);automatic.abort(new DOMException('Display is hidden.','AbortError'));
+  await first;await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.requests.length,2);assert.equal(f.requests[1].signal,undefined);
+  assert.equal(f.states.some(state=>state.status==='unavailable'),false,'cancellation must not become unavailable data');
+  f.requests[1].reject(Error('unavailable fixture'));await manual;
+  assert.equal(f.states.at(-1).status,'unavailable');
+});
+test('an already cancelled automatic cycle does not start or join a summary',async()=>{
+  const f=refreshFixture();const controller=new AbortController();controller.abort();
+  assert.equal(await f.run(true,true,controller.signal),undefined);assert.equal(f.requests.length,0);
+  assert.deepEqual(f.loading,[]);
+});
+
+function metricEffect(){
+  let callback;
+  function visit(node){
+    if(ts.isCallExpression(node)&&node.expression.getText(ast)==='useEffect'&&node.arguments[0]?.getText(ast).includes('const refreshWorkFloorMetrics')) callback=node.arguments[0].getText(ast);
+    ts.forEachChild(node,visit);
+  }
+  visit(ast);assert.ok(callback);return ts.transpileModule(`const effect=${callback};effect`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+}
+for (const standalone of [false,true]) test(`${standalone?'standalone':'Computer'} AMO uses one fresh read per visible cycle with no delayed duplicate`,async()=>{
+  const reads=[];let cycle,interval;const stopped=()=>{};
+  const context={network:'livenet',marketplaceMode:standalone,activeFolder:standalone?'inbox':'marketplace',walletMode:false,tokenRouteShowsWorkFloor:false,workTokenMode:false,
+    MARKETPLACE_LIVE_REFRESH_MS:60000,WORK_FLOOR_LIVE_REFRESH_MS:15000,
+    createVisibleReadLoop:(read,ms)=>{cycle=read;interval=ms;return stopped;},refreshMarketplaceSummary:async(...args)=>reads.push(args),
+    waitForDisplayRead:()=>assert.fail('AMO scheduled a second read'),refreshTokenBtcUsd:()=>assert.fail('AMO bypassed summary'),refreshWorkFloor:()=>assert.fail('AMO bypassed summary')};
+  assert.equal(vm.runInNewContext(metricEffect(),context)(),stopped);assert.equal(interval,60000);
+  const controller=new AbortController();await cycle(controller.signal);
+  assert.equal(reads.length,1);assert.equal(reads[0][0],true);assert.equal(reads[0][1],true);assert.equal(reads[0][2],controller.signal);
+});
+
 function bondContext(fetchBook){
   const context={completeBondListingHistoryRef:{current:new Map()},completeBondListingHistoryInFlightRef:{current:new Map()},fetchCompleteTokenListings:fetchBook};
   context.completeTokenListingHistoryMatchesCheckpoint=bind(context,'completeTokenListingHistoryMatchesCheckpoint');
@@ -172,6 +243,13 @@ function paginationFixture(items,mutate=()=>{}){
     }};
   return {context,requests,run:bind(context,'fetchCompleteTokenListings')};
 }
+for (const change of ['height','hash']) test(`a first page at a different ${change} stops before downloading the remaining book`,async()=>{
+  const f=paginationFixture(Array.from({length:1077},(_,i)=>listing(WORK,i+1)));
+  let progress=0;
+  const expectedCheckpoint={...summary,...(change==='height'?{indexedThroughBlock:summary.indexedThroughBlock-1}:{indexedThroughBlockHash:'c'.repeat(64)})};
+  await assert.rejects(f.run('livenet',{expectedCheckpoint,onVerifiedPage:()=>progress++}),/AMO summary checkpoint/);
+  assert.equal(f.requests.length,1);assert.equal(progress,0);
+});
 test('the actual bond loader reads one scoped page instead of the eleven-page whole book',async()=>{
   const book=Array.from({length:1008},(_,i)=>listing(WORK,i+1)).concat(listing(INCB,1009));
   const broad=paginationFixture(book),narrow=paginationFixture(book);

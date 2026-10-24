@@ -152,6 +152,15 @@ class ReleaseRefusals(unittest.TestCase):
                 builder.build_focused_surfaces(source, payload, builder.PAGES_SURFACES, environment, io.BytesIO())
             self.assertEqual(run.call_count, 1, 'failed source typechecking cannot produce any focused bundle')
 
+    def test_focused_builder_uses_selected_vps_node_for_every_surface(self):
+        builder = safe_module('build.py')
+        environment = {'POW_UI_BUILD_NODE': '/opt/node-v24/bin/node', 'PATH': '/opt/node-v24/bin:/usr/bin:/bin'}
+        with patch.object(subprocess, 'run') as run, contextlib.redirect_stdout(io.StringIO()):
+            builder.build_focused_surfaces(self.base/'source', self.base/'payload',
+                                           builder.PERMISSION_SURFACES, environment, io.BytesIO())
+        self.assertEqual(len(run.call_args_list), 22)
+        self.assertTrue(all(call.args[0][0] == environment['POW_UI_BUILD_NODE'] for call in run.call_args_list))
+
     def plan(self):
         return {'schema': 'proof-of-work-audit29-ui-transport-plan-v1',
                 'releaseId': RELEASE, 'commit': COMMIT, 'tree': TREE,
@@ -2646,6 +2655,68 @@ class ProvenanceLockUmask(unittest.TestCase):
                     os.close(fd)
                 except OSError:
                     pass
+
+class VpsVerificationTests(unittest.TestCase):
+    def run_collector(self, base, *, bad_identity=False, failed_remote=False):
+        plan = {'releaseId': RELEASE, 'commit': COMMIT, 'tree': TREE,
+                'httpsSmokeSha256': hashlib.sha256((ROOT/'https_smoke.py').read_bytes()).hexdigest(),
+                'retentionLifecycle': {'config': 'bound'}}
+        proof = {'ok': True, 'allPriorRootsPreserved': True, 'archiveSha256': '1'*64, 'manifestSha256': '2'*64}
+        terminal = {'releaseId': RELEASE, 'commit': COMMIT, 'tree': TREE, 'exitCode': 0, 'failure': None}
+        smoke = {'ok': True, 'releaseId': RELEASE, 'commit': 'c'*40 if bad_identity else COMMIT,
+                 'tree': TREE, 'archiveSha256': '1'*64, 'manifestSha256': '2'*64}
+        (base/'plan.json').write_text(json.dumps(plan))
+        (base/'publish.jsonl').write_text(json.dumps(terminal)+'\n'+json.dumps(proof)+'\n')
+        calls = []
+        def run(command, **kwargs):
+            calls.append(command)
+            if command[0] == 'ssh':
+                request = json.loads(kwargs['input'])
+                self.assertEqual(request['helperSha256'], plan['httpsSmokeSha256'])
+                self.assertEqual(hashlib.sha256(base64.b64decode(request['helperBase64'])).hexdigest(), request['helperSha256'])
+                return subprocess.CompletedProcess(command, 1 if failed_remote else 0,
+                    json.dumps({'receipt': smoke, 'sha256': '3'*64, 'remoteReceipt': '/vps/receipt.json'}).encode(), b'')
+            self.assertEqual(command[0:3], ['/usr/bin/python3', '-I', '-B'])
+            self.assertTrue(command[3].endswith('/ui-retention/lifecycle.py'))
+            self.assertEqual(command[4], 'complete')
+            return subprocess.CompletedProcess(command, 0)
+        argv = ['collect_verify.py', str(base/'plan.json'), str(base/'publish.jsonl'), str(base/'out')]
+        with patch.object(sys, 'argv', argv), patch.object(subprocess, 'run', side_effect=run):
+            safe_module('collect_verify.py')
+        return calls
+
+    def test_success_only_returns_compact_receipts_and_never_runs_copy(self):
+        with tempfile.TemporaryDirectory(dir='/tmp') as temporary:
+            base = Path(temporary)
+            calls = self.run_collector(base)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual({p.name for p in (base/'out').iterdir()},
+                             {'vps-verification.json', 'https-smoke-receipt.json'})
+            self.assertLess(sum(p.stat().st_size for p in (base/'out').iterdir()), 65536)
+
+    def test_wrong_release_identity_never_starts_retention(self):
+        with tempfile.TemporaryDirectory(dir='/tmp') as temporary:
+            with self.assertRaises(AssertionError):
+                self.run_collector(Path(temporary), bad_identity=True)
+
+    def test_remote_failure_never_starts_retention(self):
+        with tempfile.TemporaryDirectory(dir='/tmp') as temporary:
+            with self.assertRaises(RuntimeError):
+                self.run_collector(Path(temporary), failed_remote=True)
+
+    def test_remote_build_stream_has_no_local_artifact_path(self):
+        module = safe_module('transport_preserve.py')
+        plan = {'localBundles': {'source': '/tmp/build/proofofwork-ui-source-'+RELEASE+'.tgz'},
+                'source': {'compressedBytes': 8, 'sha256': '1'*64}}
+        child = types.SimpleNamespace(stdout=io.BytesIO(b'artifact'), wait=lambda **kw: 0,
+                                      poll=lambda: 0)
+        with patch.object(subprocess, 'Popen', return_value=child) as launch:
+            with module.bundle_source(plan, 'source', 'node-vps') as source:
+                self.assertEqual(source.read(), b'artifact')
+        argv = launch.call_args.args[0]
+        self.assertEqual(argv[0], 'ssh')
+        self.assertIn('powadmin@65.108.122.87', argv)
+        self.assertIn('StrictHostKeyChecking=yes', argv)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

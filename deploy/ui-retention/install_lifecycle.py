@@ -26,6 +26,11 @@ SSH = ['ssh', '-i', '/home/sixer/.ssh/proofofwork_me_ed25519', '-o', 'BatchMode=
 CONFIG = '/etc/proofofwork-retention/ui-lifecycle.json'
 STATE = '/var/lib/proofofwork-ui-retention/state.json'
 CUSTODY = '/home/sixer/ProofOfWork.Me.release-custody-ui-retention'
+VPS_POLICY = {'model': 'vps-current-and-one-prior-v1', 'localBackups': False,
+              'independentOffHostRecovery': False, 'authorizedAt': '2026-10-24'}
+COMPLETED_ACCESS_TIME_PATHS = ['/etc/proofofwork-retention/' + name for name in (
+    'audit28-held-review.json', 'audit29-approved-cleanup.json',
+    'audit29-completed-retirements.json', 'ui-lifecycle.json')]
 EVIDENCE = '/var/backups/proofofwork-ui/cleanup-evidence'
 APPROVAL = 'df166edb2d9817dd4f8af24819880b6bf08b396b6aa483adaa141415fc709379'
 FILES = (
@@ -162,7 +167,7 @@ def committed_payload(root=ROOT):
               'controller': {'path': package + '/deploy/ui-retention/lifecycle_remote.py',
                              'sha256': files['deploy/ui-retention/lifecycle_remote.py']['sha256']},
               'approval': {'path': package + '/' + FILES[0], 'sha256': APPROVAL},
-              'statePath': STATE, 'offHostCustodyRoot': CUSTODY}
+              'statePath': STATE, 'offHostCustodyRoot': None, 'retentionPolicy': VPS_POLICY}
     return {'manifest': manifest, 'files': files, 'config': config, 'configSha256': sha(encoded(config))}
 
 
@@ -187,6 +192,10 @@ def validate_payload(payload):
                                'sha256': manifest['files']['deploy/ui-retention/lifecycle_remote.py']['sha256']},
                 'approval': {'path': package + '/' + FILES[0], 'sha256': APPROVAL},
                 'statePath': STATE, 'offHostCustodyRoot': CUSTODY}
+    # Read/authenticate legacy packages during a sealed completion-preserving
+    # upgrade. Every newly committed payload selects the explicit VPS policy.
+    if 'retentionPolicy' in config:
+        expected.update(offHostCustodyRoot=None, retentionPolicy=VPS_POLICY)
     require(config == expected and sha(encoded(config)) == payload['configSha256']
             and payload['files'][FILES[0]]['sha256'] == APPROVAL, 'Expanded or unbound lifecycle configuration')
 
@@ -468,7 +477,8 @@ def completed_review(runtime, request):
     intent = json.loads(read_bound(intent_binding['path'], intent_binding['sha256']))
     path = Path(intent_binding['path'])
     require(path.parent == runtime.layout.evidence and path.name.endswith('-intent.json')
-            and intent['operation'] == 'complete-cycle' and intent['configSha256'] == checkpoint['configSha256'],
+            and intent['operation'] == ('complete-vps-cycle' if state['lastCompleted'].get('retentionPolicy') == VPS_POLICY else 'complete-cycle')
+            and intent['configSha256'] == checkpoint['configSha256'],
             'Completed phase intent differs')
     receipt_path = path.with_name(path.name.removesuffix('-intent.json') + '-completed.json')
     receipt_raw = read_bound(receipt_path); receipt = json.loads(receipt_raw)
@@ -515,46 +525,61 @@ def local_guard_refusal(binding, payload):
     committed = subprocess.check_output(['git', '-C', str(ROOT), 'show', payload['manifest']['sourceCommit'] + ':' + relative])
     require(committed == raw, 'Guard refusal differs from committed source')
     value = json.loads(raw)
-    require(value.get('schema') == 'pow-ui-custody-completed-config-guard-refusal-v1'
-            and value.get('scopeApprovalSha256') == APPROVAL and value.get('retirementReplayAllowed') is False
-            and value['guardDifference']['onlyChangedPaths'] == [CONFIG]
+    guard_refusal_shape(value)
+    if value['schema'] == 'pow-ui-custody-completed-config-guard-refusal-v1':
+        for bound in (value['completedCycle']['local'], value['completedUpgrade']['plan'], value['completedUpgrade']['result'],
+                      value['failure']['log'], value['failure']['emptyOutput'], value['guardObservation'], value['stateObservation']):
+            read_bound(bound['path'], bound['sha256'])
+    return {'binding': binding, 'base64': base64.b64encode(raw).decode()}
+
+
+def guard_refusal_shape(value):
+    historical = value.get('schema') == 'pow-ui-custody-completed-config-guard-refusal-v1'
+    compact = value.get('schema') == 'pow-ui-custody-completed-holds-guard-refusal-v1'
+    require((historical or compact) and value.get('scopeApprovalSha256') == APPROVAL
+            and value.get('retirementReplayAllowed') is False
+            and value['guardDifference']['onlyChangedPaths'] == ([CONFIG] if historical else COMPLETED_ACCESS_TIME_PATHS)
             and value['guardDifference']['otherHoldRowsUnchanged'] is True
             and value['guardDifference']['timersUnchanged'] is True, 'Expanded config guard refusal')
-    for bound in (value['completedCycle']['local'], value['completedUpgrade']['plan'], value['completedUpgrade']['result'],
-                  value['failure']['log'], value['failure']['emptyOutput'], value['guardObservation'], value['stateObservation']):
-        read_bound(bound['path'], bound['sha256'])
-    return {'binding': binding, 'base64': base64.b64encode(raw).decode()}
+    if compact:
+        proof = value.get('accessTimeReconciliation', {})
+        require(proof.get('schema') == 'pow-ui-completed-holds-access-time-v1'
+                and proof.get('rows') == value['guardDifference'].get('rows')
+                and isinstance(proof.get('rows'), list) and len(proof['rows']) == 4
+                and all(isinstance(row, dict) and set(row) == {'before', 'current'}
+                        and all(isinstance(row[key], dict) and row[key].get('path') == path
+                                for key in ('before', 'current'))
+                        for path, row in zip(COMPLETED_ACCESS_TIME_PATHS, proof['rows'])),
+                'Expanded compact hold access-time refusal')
 
 
 def validate_guard_refusal(request, runtime):
     bound = request['guardRefusal']; raw = base64.b64decode(bound['base64'], validate=True)
     require(len(raw) <= 1024**2 and sha(raw) == bound['binding']['sha256'], 'Guard refusal SHA differs')
     value = json.loads(raw); state, state_sha = runtime.state()
-    require(value['schema'] == 'pow-ui-custody-completed-config-guard-refusal-v1'
-            and value['scopeApprovalSha256'] == APPROVAL and value['retirementReplayAllowed'] is False
-            and value['config']['path'] == CONFIG and value['config']['sha256'] == runtime.config_sha == request['configSha256']
+    guard_refusal_shape(value)
+    require(value['config']['path'] == CONFIG and value['config']['sha256'] == runtime.config_sha == request['configSha256']
             and value['state']['path'] == STATE and value['state']['sha256'] == state_sha == request['stateSha256']
             and value['state']['revision'] == state['revision'] and value['state']['status'] == state['status'] == 'complete'
             and value['installedSourceCommit'] == runtime.config['sourceCommit']
             and value['qualifiedPlan']['sha256'] == state['lastCompleted']['custodyPlan']['sha256']
-            and value['completedCycle']['cycleId'] == state['lastCompleted']['cycleId']
-            and value['guardDifference']['onlyChangedPaths'] == [CONFIG]
-            and value['guardDifference']['otherHoldRowsUnchanged'] is True
-            and value['guardDifference']['timersUnchanged'] is True, 'Guard refusal does not bind existing completion')
+            and value['completedCycle']['cycleId'] == state['lastCompleted']['cycleId'],
+            'Guard refusal does not bind existing completion')
     read_bound(value['completedCycle']['receipt']['path'], value['completedCycle']['receipt']['sha256'])
     require(value['completedUpgrade']['receipt']['path'] == state['lastUpgrade']['completionPath'],
             'Guard refusal upgrade receipt differs')
     read_bound(value['completedUpgrade']['receipt']['path'], value['completedUpgrade']['receipt']['sha256'])
     access_time = value.get('accessTimeReconciliation')
     if access_time is not None:
-        require(access_time.get('schema') == 'pow-ui-completed-config-access-time-v1'
+        historical = value['schema'] == 'pow-ui-custody-completed-config-guard-refusal-v1'
+        require(access_time.get('schema') == ('pow-ui-completed-config-access-time-v1' if historical else 'pow-ui-completed-holds-access-time-v1')
                 and access_time.get('configSha256') == runtime.config_sha
                 and access_time.get('stateSha256') == state_sha
                 and access_time.get('cycleId') == state['lastCompleted']['cycleId']
                 and access_time.get('planSha256') == state['lastCompleted']['custodyPlan']['sha256']
                 and access_time.get('resultSha256') == state['lastCompleted']['custodyResult']['sha256']
-                and access_time.get('before') == value['guardDifference'].get('oldLifecycleConfig')
-                and access_time.get('current') == value['guardDifference'].get('currentLifecycleConfig'),
+                and (not historical or (access_time.get('before') == value['guardDifference'].get('oldLifecycleConfig')
+                                        and access_time.get('current') == value['guardDifference'].get('currentLifecycleConfig'))),
                 'Access-time refusal does not bind the exact completed evidence')
     return access_time
 
@@ -572,6 +597,11 @@ def completed_package_review(payload, package, old_runtime, review):
     require(context == review['context'], 'New package changes completed protected context')
     state = review['state']; index = state['index']
     require(not policy.policy_scope(index, runtime.layout, APPROVAL)['eligible'], 'New package finds eligible ordinary assets')
+    if state['lastCompleted'].get('retentionPolicy') == VPS_POLICY:
+        verification = runtime.verify_vps_completion(state, context)
+        storage.compare_guards(runtime.layout, context['guards'], [])
+        return {'context': context, 'index': index, 'lastCompleted': state['lastCompleted'],
+                'vpsVerification': verification, 'fullCompletionVerified': True}
     plan_binding = state['lastCompleted']['custodyPlan']; result_binding = state['lastCompleted']['custodyResult']
     plan = json.loads(read_bound(plan_binding['path'], plan_binding['sha256']))
     result = json.loads(read_bound(result_binding['path'], result_binding['sha256']))

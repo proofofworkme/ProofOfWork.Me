@@ -370,6 +370,7 @@ import {
   proofIndexCanonicalSummaryTokenTablePayload,
   proofIndexReplayCanonicalSummaryTokenTablePayload,
   proofIndexCanonicalWorkListingById,
+  proofIndexCanonicalWorkAmoV8ListingsByIds,
   proofIndexCanonicalSummaryLedgerPayload,
   proofIndexScopedIncbIssuanceOraclePayload,
   proofIndexCanonicalStateMetaPayload,
@@ -6128,7 +6129,7 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
       overlay,
       canonicalTokenState,
     );
-    const nextPayload = marketplaceSummaryWithCurrentBtcUsd(
+    const nextPayload = await marketplaceSummaryWithCurrentBtcUsd(
       {
         ...payload,
         indexedAt: newerIso(payload.indexedAt, overlay.indexedAt),
@@ -36037,7 +36038,7 @@ async function indexedRegistryPayload(network, options = {}) {
     Number.isSafeInteger(exactHeight) &&
     exactHeight > 0 &&
     /^[0-9a-f]{64}$/u.test(exactHash);
-  return proofIndexRegistryPayload(network, {
+  const readOptions = {
     ...(exactCheckpointRequested
       ? {
           allowIncompleteScan: true,
@@ -36052,8 +36053,15 @@ async function indexedRegistryPayload(network, options = {}) {
         }
       : {}),
     registryAddress,
-  })
-    .then(async (payload) => {
+  };
+  return deduplicatedSummaryRead(
+    `registry-rows:${JSON.stringify([network, readOptions])}`,
+    () => proofIndexRegistryPayload(network, readOptions),
+  )
+    .then(async (sharedPayload) => {
+      // Share overlapping SQL only. Each caller keeps independent evidence and
+      // its own current-coverage and Core checkpoint reconciliation below.
+      const payload = structuredClone(sharedPayload);
       const orderedPayload = payload
         ? {
             ...payload,
@@ -57367,8 +57375,8 @@ async function marketplaceSummaryFallbackPayload(network) {
   );
 }
 
-async function marketplaceSummaryFastFallbackPayload(network) {
-  if (network === "livenet") {
+async function marketplaceSummaryFastFallbackPayload(network, options = {}) {
+  if (network === "livenet" && options.indexedFallbackAttempted !== true) {
     const indexedPayload =
       await currentProofIndexMarketplaceSummaryFallbackPayload(network, false, {
         fast: true,
@@ -57409,14 +57417,6 @@ async function marketplaceSummaryFastFallbackPayload(network) {
     return marketplaceSummaryPayloadWithIndexedMarketOverlay(ledgerPayload, network, {
       fast: true,
     });
-  }
-
-  const indexedPayload =
-    await currentProofIndexMarketplaceSummaryFallbackPayload(network, false, {
-      fast: true,
-    });
-  if (indexedPayload) {
-    return indexedPayload;
   }
 
   const indexedFloor =
@@ -57687,7 +57687,9 @@ async function livenetMarketplaceSummaryPayload(network, fresh = false) {
     );
   }
   if (!fresh) {
-    const fastFallback = await marketplaceSummaryFastFallbackPayload(network);
+    const fastFallback = await marketplaceSummaryFastFallbackPayload(network, {
+      indexedFallbackAttempted: true,
+    });
     if (
       summaryPayloadHasFiniteNetworkValue(
         network,
@@ -59485,32 +59487,30 @@ async function completeTokenListingHistoryPayload(
     );
   }
   const canonicalWorkAmoV8ListingIds = new Set();
-  const canonicalItems = await mapWithConcurrency(
-    relationalItems,
-    Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
-    async (listing) => {
-      const record = workAmoV8ListingHistoryRecord(listing);
-      if (!record) {
-        return listing;
-      }
-      const witness = await proofIndexCanonicalWorkListingById(
-        network,
-        record.listingId,
-      );
-      const version = String(witness?.version ?? "").trim().toLowerCase();
-      if (
-        witness?.valid !== true || witness?.confirmed !== true ||
-        witness?.unspent !== true ||
-        version !== TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION ||
-        !witness?.listingFrozenTerms ||
-        !witness?.listingAuthorization
-      ) {
-        return listing;
-      }
-      canonicalWorkAmoV8ListingIds.add(record.listingId);
-      return tokenListingWithCanonicalWorkAmoV8Witness(listing, witness);
-    },
-  );
+  const witnesses = new Map((await proofIndexCanonicalWorkAmoV8ListingsByIds(
+    network,
+    relationalItems.map(workAmoV8ListingHistoryRecord).filter(Boolean)
+      .map((record) => record.listingId),
+  )).map((witness) => [witness.listingId, witness]));
+  const canonicalItems = relationalItems.map((listing) => {
+    const record = workAmoV8ListingHistoryRecord(listing);
+    if (!record) {
+      return listing;
+    }
+    const witness = witnesses.get(record.listingId);
+    const version = String(witness?.version ?? "").trim().toLowerCase();
+    if (
+      witness?.valid !== true || witness?.confirmed !== true ||
+      witness?.unspent !== true ||
+      version !== TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION ||
+      !witness?.listingFrozenTerms ||
+      !witness?.listingAuthorization
+    ) {
+      return listing;
+    }
+    canonicalWorkAmoV8ListingIds.add(record.listingId);
+    return tokenListingWithCanonicalWorkAmoV8Witness(listing, witness);
+  });
   const authority = await strictCoreTokenListingReconciliation(
     canonicalItems, network, { requireAll: true },
   );

@@ -9055,8 +9055,9 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
 export async function proofIndexWorkAmoV8ActivationLatch(
   network,
   expectedPins,
+  { client = null } = {},
 ) {
-  const pool = proofIndexPool();
+  const pool = client ?? proofIndexPool();
   const pins = normalizedWorkAmoV6ExpectedPins(expectedPins);
   if (!pool || network !== "livenet") {
     return null;
@@ -9304,28 +9305,38 @@ function normalizedWorkAmoV8ListingTermsRow(row, pins) {
   };
 }
 
-export async function proofIndexWorkAmoV8ListingTerms(
-  network,
-  listingId,
-) {
-  const pool = proofIndexPool();
+export async function proofIndexWorkAmoV8ListingTerms(network, listingId) {
   const normalizedListingId = normalizedLowerText(listingId);
+  return (await workAmoV8ListingTermsByIds(network, [normalizedListingId]))
+    .get(normalizedListingId) ?? null;
+}
+
+async function workAmoV8ListingTermsByIds(
+  network,
+  listingIds,
+  client,
+) {
+  const pool = client ?? proofIndexPool();
+  const normalizedListingIds = [...new Set(listingIds.map(normalizedLowerText))];
   if (
     !pool ||
     network !== "livenet" ||
-    !/^[0-9a-f]{64}$/u.test(normalizedListingId)
+    normalizedListingIds.length === 0 ||
+    normalizedListingIds.length > 5000 ||
+    normalizedListingIds.some((id) => !/^[0-9a-f]{64}$/u.test(id))
   ) {
-    return null;
+    return new Map();
   }
   const configuredPins =
     configuredWorkPrecisionV2ReaderPins();
   const latch = await proofIndexWorkAmoV8ActivationLatch(
     network,
     configuredPins,
+    { client: pool },
   ).catch(() => null);
   const pins = configuredPins ?? latch?.pins ?? null;
   if (!pins) {
-    return null;
+    return new Map();
   }
   // Confirmed V8 listing terms are immutable. Exact-tip worker readiness gates
   // fresh writes elsewhere, but must not make an already-indexed frozen listing
@@ -9376,24 +9387,29 @@ export async function proofIndexWorkAmoV8ListingTerms(
       JOIN proof_indexer.meta migration
         ON migration.key = $3
       WHERE terms.network = $1
-        AND terms.listing_id = $2
+        AND terms.listing_id = ANY($2::text[])
         AND terms.authorization_version = $4
-      LIMIT 2
     `,
     [
       network,
-      normalizedListingId,
+      normalizedListingIds,
       WORK_PRECISION_V2_MIGRATION_META_KEY,
       WORK_AMO_V8_AUTH_VERSION,
     ],
   );
-  return result.rows.length === 1
-    ? normalizedWorkAmoV8ListingTermsRow(
-        result.rows[0],
-        pins,
-      )
-    : null;
+  const rowsById = new Map(normalizedListingIds.map((id) => [id, []]));
+  for (const row of result.rows) {
+    rowsById.get(normalizedLowerText(row.listing_id))?.push(row);
+  }
+  return new Map(normalizedListingIds.flatMap((id) => {
+    const rows = rowsById.get(id);
+    const terms = rows.length === 1
+      ? normalizedWorkAmoV8ListingTermsRow(rows[0], pins)
+      : null;
+    return terms ? [[id, terms]] : [];
+  }));
 }
+
 
 function historicalWorkListingScopeObject(value) {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -9693,15 +9709,7 @@ export async function proofIndexCanonicalHistoricalWorkListingScopes(
   });
 }
 
-export async function proofIndexCanonicalWorkListingById(
-  network,
-  listingId,
-) {
-  const pool = proofIndexPool();
-  const normalizedListingId = String(listingId ?? "").trim().toLowerCase();
-  if (!pool || !/^[0-9a-f]{64}$/u.test(normalizedListingId)) {
-    return null;
-  }
+async function canonicalWorkListingRows(network, listingIds, pool) {
   const result = await pool.query(
     `
       SELECT
@@ -9765,18 +9773,23 @@ export async function proofIndexCanonicalWorkListingById(
        AND listing_anchor.value_sats = effective_sale_ticket.sale_ticket_value_sats
        AND listing_anchor.spent_by_txid IS NULL
       WHERE listing.network = $1
-        AND listing.listing_id = $2
+        AND listing.listing_id = ANY($2::text[])
         AND lower(listing.token_id) = $3
         AND listing.status IN ('active', 'sealing')
       ORDER BY listing_event.event_id
-      LIMIT 2
     `,
-    [network, normalizedListingId, WORK_TOKEN_ID],
+    [network, listingIds, WORK_TOKEN_ID],
   );
-  if (result.rows.length !== 1) {
-    return null;
-  }
-  const row = result.rows[0];
+  return result.rows;
+}
+
+async function canonicalWorkListingFromRow(
+  network,
+  normalizedListingId,
+  row,
+  pool,
+  v8TermsById = null,
+) {
   const payload =
     row?.listing_event_payload &&
     typeof row.listing_event_payload === "object" &&
@@ -9825,10 +9838,9 @@ export async function proofIndexCanonicalWorkListingById(
       : null;
   const v7Terms =
     version === WORK_AMO_V8_AUTH_VERSION
-      ? await proofIndexWorkAmoV8ListingTerms(
-          network,
-          normalizedListingId,
-        )
+      ? v8TermsById
+        ? v8TermsById.get(normalizedListingId) ?? null
+        : await proofIndexWorkAmoV8ListingTerms(network, normalizedListingId)
       : null;
   if (version === WORK_AMO_V5_AUTH_VERSION) {
     const termsPosition = v5Terms?.listingPosition;
@@ -10001,6 +10013,62 @@ export async function proofIndexCanonicalWorkListingById(
     version,
     ...position,
   };
+}
+
+export async function proofIndexCanonicalWorkListingById(network, listingId) {
+  const pool = proofIndexPool();
+  const normalizedListingId = normalizedLowerText(listingId);
+  if (!pool || !/^[0-9a-f]{64}$/u.test(normalizedListingId)) {
+    return null;
+  }
+  const rows = await canonicalWorkListingRows(network, [normalizedListingId], pool);
+  return rows.length === 1
+    ? canonicalWorkListingFromRow(network, normalizedListingId, rows[0], pool)
+    : null;
+}
+
+// One bounded, consistent read of immutable V8 terms and their current canonical
+// listing anchors. Callers still reconcile every anchor against a fresh Core tip.
+export async function proofIndexCanonicalWorkAmoV8ListingsByIds(network, listingIds) {
+  const pool = proofIndexPool();
+  if (!pool || network !== "livenet" || !Array.isArray(listingIds)) {
+    return [];
+  }
+  const ids = [...new Set(listingIds.map(normalizedLowerText))];
+  if (ids.length === 0 || ids.length > 5000 || ids.some((id) => !/^[0-9a-f]{64}$/u.test(id))) {
+    return [];
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const rows = await canonicalWorkListingRows(network, ids, client);
+    const termsById = await workAmoV8ListingTermsByIds(network, ids, client);
+    const rowsById = new Map(ids.map((id) => [id, []]));
+    for (const row of rows) {
+      rowsById.get(normalizedLowerText(row.listing_id))?.push(row);
+    }
+    const witnesses = [];
+    for (const id of ids) {
+      const candidates = rowsById.get(id);
+      if (candidates.length !== 1 ||
+          normalizedLowerText(candidates[0].listing_event_payload?.saleAuthorization?.version) !== WORK_AMO_V8_AUTH_VERSION) {
+        continue;
+      }
+      const witness = await canonicalWorkListingFromRow(
+        network, id, candidates[0], client, termsById,
+      );
+      if (witness) {
+        witnesses.push(witness);
+      }
+    }
+    await client.query("COMMIT");
+    return witnesses;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 function exactWorkAmoV5PreUnitRelicAuthorization(authorization) {
@@ -42815,7 +42883,7 @@ export async function proofIndexSnapshotPayload(network, key) {
         generated_at,
         indexed_through_block,
         consistency,
-        payload
+        payload->'summaryPayloads'->$2 AS summary_payload
       FROM proof_indexer.ledger_snapshots snapshot
       WHERE network = $1
         AND ${latestSummaryEligibility}
@@ -42919,7 +42987,7 @@ export async function proofIndexSnapshotPayload(network, key) {
           generated_at,
           indexed_through_block,
           consistency,
-          payload
+          payload->'summaryPayloads'->$2 AS summary_payload
         FROM recent
         WHERE payload ? 'summaryPayloads'
           AND payload->'summaryPayloads' ? $2
@@ -42937,7 +43005,9 @@ export async function proofIndexSnapshotPayload(network, key) {
   // Only authenticated canonical-summary refresh rows are eligible here.
   // proof-api separately requires their conservative embedded coverage to
   // reach the hashed block-scan checkpoint before opening public reads.
-  const payload = snapshot?.payload?.summaryPayloads?.[key];
+  // Transfer and parse only the requested component; every canonical eligibility
+  // predicate above still examines the complete snapshot inside PostgreSQL.
+  const payload = snapshot?.summary_payload;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
   }

@@ -1913,6 +1913,7 @@ const ACTIVITY_FEED_PAGE_SIZE = 50;
 const GROWTH_EVENT_PAGE_SIZE = 12;
 const GROWTH_AUTO_REFRESH_MS = 5 * 60_000;
 const WORK_FLOOR_LIVE_REFRESH_MS = 15_000;
+const MARKETPLACE_LIVE_REFRESH_MS = 60_000;
 const LOG_LIVE_REFRESH_MS = 15_000;
 const BACKGROUND_FRESH_REFRESH_DELAY_MS = 1_000;
 const BTC_USD_BROWSER_CACHE_TTL_MS = 60_000;
@@ -17605,6 +17606,7 @@ async function fetchCompleteTokenListings(
     address?: string;
     fresh?: boolean;
     onVerifiedPage?: (progress: TokenListingHistoryProgress) => void;
+    expectedCheckpoint?: PowTokenState;
     tokenScope?: string;
   } = {},
 ): Promise<CompleteTokenListingHistory> {
@@ -17654,6 +17656,11 @@ async function fetchCompleteTokenListings(
       .toLowerCase();
     const pageSnapshotId = String(page.snapshotId ?? "").trim();
     const pageTotalCount = Number(page.totalCount);
+    if (options.expectedCheckpoint &&
+        (pageIndexedThroughBlock !== options.expectedCheckpoint.indexedThroughBlock ||
+          pageIndexedThroughBlockHash !== options.expectedCheckpoint.indexedThroughBlockHash)) {
+      throw new Error("The complete credit listing book does not match the AMO summary checkpoint.");
+    }
     const pageItems = page.items ?? [];
     const pageStart = Number(page.start);
     const pageEnd = Number(page.end);
@@ -22740,6 +22747,7 @@ export default function App() {
   const marketplaceSummaryRefreshInFlightRef =
     useRef<Promise<MarketplaceSummarySnapshot | undefined> | null>(null);
   const marketplaceSummaryRefreshInFlightFreshRef = useRef(false);
+  const marketplaceSummaryRefreshSignalRef = useRef<AbortSignal>();
   const completeMarketplaceListingHistoryRef =
     useRef<CompleteTokenListingHistory | undefined>();
   const completeMarketplaceListingHistoryInFlightRef =
@@ -23036,6 +23044,7 @@ export default function App() {
     if (!request) {
       request = fetchCompleteTokenListings("livenet", {
         fresh,
+        expectedCheckpoint: state,
         onVerifiedPage,
         signal,
       });
@@ -23136,6 +23145,7 @@ export default function App() {
       request = fetchCompleteTokenListings("livenet", {
         tokenScope: scope,
         fresh,
+        expectedCheckpoint: state,
         onVerifiedPage,
         signal,
       });
@@ -27208,7 +27218,7 @@ export default function App() {
       }
 
       if (activeFolder === "marketplace") {
-        void refreshMarketplaceSummary(true, false);
+        // The visible AMO loop owns the public book, independent of account changes.
         return;
       }
 
@@ -27281,7 +27291,8 @@ export default function App() {
 
   useEffect(() => {
     if (
-      (!marketplaceMode && !tokenMode && !walletMode && !workTokenMode) ||
+      marketplaceMode ||
+      (!tokenMode && !walletMode && !workTokenMode) ||
       Boolean(standaloneBondConfig) ||
       network !== "livenet"
     ) {
@@ -27290,11 +27301,7 @@ export default function App() {
 
     let cancelled = false;
     void (async () => {
-      if (marketplaceMode || activeFolder === "marketplace") {
-        await refreshMarketplaceSummary(true, false);
-      } else {
-        await refreshToken(true, false);
-      }
+      await refreshToken(true, false);
       // Credit and Wallet already have a checkpoint-qualified directory/account read.
       // A delayed nonfresh repeat does not improve balances or signing readiness.
       const tokenWorkspaceRead =
@@ -27305,11 +27312,7 @@ export default function App() {
       if (!tokenWorkspaceRead && !cancelled && document.visibilityState === "visible") {
         window.setTimeout(() => {
           if (!cancelled && document.visibilityState === "visible") {
-            if (marketplaceMode || activeFolder === "marketplace") {
-              void refreshMarketplaceSummary(true, true);
-            } else {
-              void refreshToken(true, false);
-            }
+            void refreshToken(true, false);
           }
         }, BACKGROUND_FRESH_REFRESH_DELAY_MS);
       }
@@ -27401,16 +27404,21 @@ export default function App() {
       return;
     }
 
+    const useMarketplaceSummary = marketplaceMode || activeFolder === "marketplace";
     const refreshWorkFloorMetrics = async (signal: AbortSignal) => {
-      const useMarketplaceSummary = marketplaceMode || activeFolder === "marketplace";
-      if (useMarketplaceSummary) await refreshMarketplaceSummary(true, false);
-      else await Promise.all([refreshTokenBtcUsd(false), refreshWorkFloor(true, false)]);
+      if (useMarketplaceSummary) {
+        // One exact read per cycle. A cached-then-fresh pair repeats every page
+        // of the public book and can restart immediately after an unavailable read.
+        await refreshMarketplaceSummary(true, true, signal);
+        return;
+      }
+      await Promise.all([refreshTokenBtcUsd(false), refreshWorkFloor(true, false)]);
       await waitForDisplayRead(BACKGROUND_FRESH_REFRESH_DELAY_MS, signal);
       signal.throwIfAborted();
-      if (useMarketplaceSummary) await refreshMarketplaceSummary(true, true);
-      else await Promise.all([refreshTokenBtcUsd(true), refreshWorkFloor(true, true)]);
+      await Promise.all([refreshTokenBtcUsd(true), refreshWorkFloor(true, true)]);
     };
-    return createVisibleReadLoop(refreshWorkFloorMetrics, WORK_FLOOR_LIVE_REFRESH_MS);
+    return createVisibleReadLoop(refreshWorkFloorMetrics,
+      useMarketplaceSummary ? MARKETPLACE_LIVE_REFRESH_MS : WORK_FLOOR_LIVE_REFRESH_MS);
   }, [
     activeFolder,
     marketplaceMode,
@@ -27551,12 +27559,6 @@ export default function App() {
 
     void refreshDns(true, false);
   }, [activeFolder, marketplaceMode, network]);
-
-  useEffect(() => {
-    if (marketplaceMode && network === "livenet") {
-      void refreshMarketplaceSummary(true, false);
-    }
-  }, [marketplaceMode, network]);
 
   useEffect(() => {
     if (!bondWorkspaceActive) {
@@ -29534,11 +29536,12 @@ export default function App() {
     return "";
   }
 
-  async function fetchCompleteMarketplaceSnapshot(fresh: boolean) {
+  async function fetchCompleteMarketplaceSnapshot(fresh: boolean, consumerSignal?: AbortSignal) {
     const controller = new AbortController();
     const scope = activeWorkspaceStatusKeyRef.current;
     // This is a public book: connecting an account does not invalidate it.
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]);
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120_000),
+      ...(consumerSignal ? [consumerSignal] : [])]);
     const abortObsoleteContext = () => {
       if (activeWorkspaceStatusKeyRef.current !== scope ||
           !marketplaceReadContextRef.current.startsWith(`${network}:`)) {
@@ -29593,16 +29596,19 @@ export default function App() {
   async function refreshMarketplaceSummary(
     silent = false,
     fresh = false,
+    consumerSignal?: AbortSignal,
   ): Promise<MarketplaceSummarySnapshot | undefined> {
     const requestWorkspaceKey = activeWorkspaceStatusKeyRef.current;
     const requestIsActive = () =>
+      !consumerSignal?.aborted &&
       activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
       marketplaceReadContextRef.current.startsWith(`${network}:`);
-    if (network !== "livenet") {
+    if (network !== "livenet" || consumerSignal?.aborted) {
       return undefined;
     }
 
     if (marketplaceSummaryRefreshInFlightRef.current) {
+      const inFlightSignal = marketplaceSummaryRefreshSignalRef.current;
       const needsFreshRefresh =
         fresh && !marketplaceSummaryRefreshInFlightFreshRef.current;
       let chainedRefresh = false;
@@ -29618,14 +29624,14 @@ export default function App() {
         });
       }
       try {
-        const snapshot = await marketplaceSummaryRefreshInFlightRef.current;
-        if (needsFreshRefresh && requestIsActive()) {
+        const snapshot = await consumeDisplayRead(marketplaceSummaryRefreshInFlightRef.current, consumerSignal);
+        if ((needsFreshRefresh || inFlightSignal?.aborted) && requestIsActive()) {
           chainedRefresh = true;
-          return refreshMarketplaceSummary(silent, fresh);
+          return refreshMarketplaceSummary(silent, fresh, consumerSignal);
         }
         return snapshot;
       } finally {
-        if (!chainedRefresh) {
+        if (!chainedRefresh && !marketplaceSummaryRefreshInFlightRef.current) {
           setMarketplaceDataLoading(false);
         }
         if (!silent && !chainedRefresh) {
@@ -29660,8 +29666,8 @@ export default function App() {
       }
       try {
         const [snapshot, btcUsdQuote] = await Promise.all([
-          fetchCompleteMarketplaceSnapshot(fresh),
-          fetchBtcUsdPrice(fresh).catch(() => undefined),
+          fetchCompleteMarketplaceSnapshot(fresh, consumerSignal),
+          consumeDisplayRead(fetchBtcUsdPrice(fresh).catch(() => undefined), consumerSignal),
         ]);
         if (!requestIsActive()) return undefined;
         const completeTokenState = snapshot.token;
@@ -29859,6 +29865,7 @@ export default function App() {
       } finally {
         marketplaceSummaryRefreshInFlightRef.current = null;
         marketplaceSummaryRefreshInFlightFreshRef.current = false;
+        marketplaceSummaryRefreshSignalRef.current = undefined;
         setMarketplaceDataLoading(false);
         if (!silent) {
           setBusyForWorkspace(requestWorkspaceKey, false);
@@ -29869,6 +29876,7 @@ export default function App() {
       }
     })();
     marketplaceSummaryRefreshInFlightFreshRef.current = fresh;
+    marketplaceSummaryRefreshSignalRef.current = consumerSignal;
     marketplaceSummaryRefreshInFlightRef.current = refreshPromise;
     return refreshPromise;
   }

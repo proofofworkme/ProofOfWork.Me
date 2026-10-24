@@ -591,6 +591,11 @@ class CompletionConfigTransitionTests(unittest.TestCase):
   self.evidence=C.BASE/'cleanup-evidence';self.config={'schema':'pow-ui-retention-lifecycle-config-v1','scopeApprovalSha256':C.REPAIR_APPROVAL_SHA,'statePath':str(C.LIFECYCLE_STATE),'generation':0}
   self.current=self.hold(self.config);self.other=dict(path='/etc/proofofwork-retention/held.json',sha256='a'*64,identity=dict(self.identity),xattrs={})
   self.plan=dict(holds=[copy.deepcopy(self.current),copy.deepcopy(self.other)],timers={'exact':'timers'},candidates=[],lifecycle=dict(index={'path':str(self.evidence/'index.json'),'sha256':'b'*64}))
+  self.additional=[]
+  if getattr(self,'four_hold_fixture',False):
+   for n,path in enumerate(C.COMPLETED_ACCESS_TIME_PATHS[:-1]):
+    self.additional.append(dict(path=path,sha256=str(n+1)*64,identity=dict(self.identity,st_mode=stat.S_IFREG|(0o644 if n<2 else 0o600)),xattrs={}))
+   self.plan['holds']+=copy.deepcopy(self.additional)
   self.plan_binding=self.put(self.evidence/'cycle-custody-plan.json',self.plan);self.plan_sha=self.plan_binding['sha256']
   self.result=dict(ok=True,planSha256=self.plan_sha,completed=[]);self.result_binding=self.put(self.evidence/'cycle-custody-result.json',self.result);self.result_sha=self.result_binding['sha256']
   phase=dict(operation='complete-cycle',configSha256=E.digest(C.encoded(self.config)));self.phase=self.put(self.evidence/'cycle-intent.json',phase)
@@ -600,7 +605,7 @@ class CompletionConfigTransitionTests(unittest.TestCase):
   self.phase_receipt=self.put(self.evidence/'cycle-completed.json',dict(ok=True,retentionComplete=True,intent=self.phase,stateSha256=E.digest(C.encoded(self.state)),stateRevision=12,index=self.state['index'],cycleId='cycle1'))
   self.add_upgrade()
   self.addCleanup(patch.stopall)
-  patch.object(C,'record',side_effect=self.read).start();patch.object(E,'hold_snapshot',side_effect=lambda:copy.deepcopy([self.current,self.other])).start()
+  patch.object(C,'record',side_effect=self.read).start();patch.object(E,'hold_snapshot',side_effect=lambda:copy.deepcopy([self.current,self.other]+self.additional)).start()
   patch.object(E,'timer_snapshot',return_value=self.plan['timers']).start();patch.object(E,'xattrs',return_value={}).start()
   patch.object(C,'protected_fence').start();patch.object(C,'discover',return_value=[]).start()
  def put(self,path,value):
@@ -640,17 +645,32 @@ class CompletionConfigTransitionTests(unittest.TestCase):
   link=self.transitions[0];intent=json.loads(self.records[link['intent']['path']]);request=intent['plan']['request'];review=intent['plan']['before']['completedReview']
   before=copy.deepcopy(self.plan['holds'][0]);current=copy.deepcopy(before);current['identity']['st_atime_ns']+=1
   access=dict(schema='pow-ui-completed-config-access-time-v1',configSha256=request['configSha256'],stateSha256=request['stateSha256'],cycleId='cycle1',planSha256=self.plan_sha,resultSha256=self.result_sha,before=before,current=current)
-  raw=C.encoded(dict(accessTimeReconciliation=access));request.update(mode='completed-config-repair',guardRefusal=dict(base64=C.base64.b64encode(raw).decode(),binding=dict(path='/reviewed/refusal.json',sha256=E.digest(raw))))
-  review['accessTimeReconciliation']=access
-  link['intent']=self.put(link['intent']['path'],intent);self.state['lastUpgrade']['intentSha256']=link['intent']['sha256']
-  completed=json.loads(self.records[link['completed']['path']]);completed['intent']=link['intent'];completed['state']['sha256']=E.digest(C.encoded(self.state));completed['completionVerification']['verifiedAccessTimeReconciliation']=access
-  link['completed']=self.put(link['completed']['path'],completed)
+  self.seal_access_proof(access)
   self.assertTrue(self.verify()['ok'])
   original=copy.deepcopy(link['completed']);saved=self.records[original['path']]
   for mutation in (lambda p:p.pop('verifiedAccessTimeReconciliation'),lambda p:p['verifiedAccessTimeReconciliation'].update(stateSha256='f'*64)):
    value=json.loads(saved);mutation(value['completionVerification']);link['completed']=self.put(original['path'],value)
    with self.assertRaisesRegex(ValueError,'access-time'):self.verify()
    link['completed']=copy.deepcopy(original);self.records[original['path']]=saved
+ def seal_access_proof(self,access):
+  link=self.transitions[0];intent=json.loads(self.records[link['intent']['path']]);request=intent['plan']['request'];review=intent['plan']['before']['completedReview']
+  raw=C.encoded(dict(accessTimeReconciliation=access));request.update(mode='completed-config-repair',guardRefusal=dict(base64=C.base64.b64encode(raw).decode(),binding=dict(path='/reviewed/refusal.json',sha256=E.digest(raw))))
+  review['accessTimeReconciliation']=access
+  link['intent']=self.put(link['intent']['path'],intent);self.state['lastUpgrade']['intentSha256']=link['intent']['sha256']
+  completed=json.loads(self.records[link['completed']['path']]);completed['intent']=link['intent'];completed['state']['sha256']=E.digest(C.encoded(self.state));completed['completionVerification']['verifiedAccessTimeReconciliation']=access
+  link['completed']=self.put(link['completed']['path'],completed)
+ def test_four_hold_access_time_proof_survives_sealed_and_future_upgrades(self):
+  patch.stopall();self.four_hold_fixture=True;self.setUp()
+  request=json.loads(self.records[self.transitions[0]['intent']['path']])['plan']['request'];rows=[]
+  for path in C.COMPLETED_ACCESS_TIME_PATHS:
+   before=copy.deepcopy(next(row for row in self.plan['holds'] if row['path']==path));current=copy.deepcopy(before);current['identity']['st_atime_ns']+=1
+   rows.append(dict(before=before,current=current))
+   if path!=str(C.LIFECYCLE_CONFIG):next(row for row in self.additional if row['path']==path)['identity']['st_atime_ns']+=1
+  access=dict(schema='pow-ui-completed-holds-access-time-v1',configSha256=request['configSha256'],stateSha256=request['stateSha256'],cycleId='cycle1',planSha256=self.plan_sha,resultSha256=self.result_sha,rows=rows)
+  self.seal_access_proof(access);self.assertTrue(self.verify()['ok'])
+  self.add_upgrade();self.assertTrue(self.verify()['ok'])
+  self.additional[0]['identity']['st_atime_ns']+=1
+  with self.assertRaisesRegex(ValueError,'non-config retention hold'):self.verify()
  def test_multiple_complete_preserving_upgrades_join(self):
   self.add_upgrade();self.assertTrue(self.verify()['ok'])
  def test_wrong_status_seal_path_refuses(self):
@@ -771,6 +791,57 @@ class CompletionConfigAccessTimeTests(unittest.TestCase):
   for holds in ([self.other],[self.current,self.current,self.other],[self.current,self.other,dict(self.other,path='/extra')]):
    with patch.object(E,'hold_snapshot',return_value=holds),self.assertRaises(ValueError):self.verify()
 
-suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls) for cls in (FileGroupTests,ArtifactQualificationTests,ClosedOrdinaryAliasTests,OffhostCapacityTests,BatchPreservationTests,RetirementBudgetTests,RetirementDiagnosticsTests,CompletionConfigTransitionTests,CompletionConfigAccessTimeTests))
+class CompletionHoldsAccessTimeTests(unittest.TestCase):
+ def setUp(self):
+  self.rows=[]
+  for n,path in enumerate(C.COMPLETED_ACCESS_TIME_PATHS):
+   ident={k:1 for k in E.STAT_FIELDS};ident.update(st_mode=stat.S_IFREG|(0o644 if n<2 else 0o600),st_uid=0,st_gid=0,st_nlink=1,st_atime_ns=100)
+   before=dict(path=path,sha256=str(n+1)*64,identity=ident,xattrs=[]);current=copy.deepcopy(before);current['identity']['st_atime_ns']=200
+   self.rows.append(dict(before=before,current=current))
+  self.other=dict(self.rows[0]['before'],path='/etc/proofofwork-retention/unchanged.json')
+  self.plan=dict(holds=[copy.deepcopy(row['before']) for row in self.rows]+[copy.deepcopy(self.other)],timers={'exact':'timers'},candidates=[],lifecycle={'exact':'authority'})
+  self.plan_sha=E.digest(C.encoded(self.plan));self.result=dict(ok=True,planSha256=self.plan_sha,completed=[]);self.result_sha=E.digest(C.encoded(self.result))
+  self.proof=dict(schema='pow-ui-completed-holds-access-time-v1',configSha256='4'*64,stateSha256='c'*64,cycleId='completed-cycle',planSha256=self.plan_sha,resultSha256=self.result_sha,rows=copy.deepcopy(self.rows))
+  self.addCleanup(patch.stopall)
+  patch.object(E,'hold_snapshot',side_effect=lambda:[copy.deepcopy(row['current']) for row in self.rows]+[copy.deepcopy(self.other)]).start()
+  patch.object(E,'timer_snapshot',return_value=self.plan['timers']).start();patch.object(C,'protected_fence').start();patch.object(C,'discover',return_value=[]).start()
+ def verify(self,proof=None):
+  return C.verify_final_result(self.plan,self.plan_sha,self.result,self.result_sha,config_access_time_reconciliation=self.proof if proof is None else proof)
+ def test_exact_four_rows_preserve_original_evidence_and_strict_writer(self):
+  original=C.encoded(self.plan);self.assertTrue(self.verify()['ok']);self.assertEqual(C.encoded(self.plan),original)
+  with self.assertRaisesRegex(ValueError,'holds/timers'):C.fence(self.plan,full=True)
+  with self.assertRaisesRegex(ValueError,'holds/timers'):C.verify_final_result(self.plan,self.plan_sha,self.result,self.result_sha)
+ def test_every_row_keeps_all_non_atime_identity_fields_exact(self):
+  for n in range(4):
+   for key in E.STAT_FIELDS:
+    if key=='st_atime_ns':continue
+    proof=copy.deepcopy(self.proof);proof['rows'][n]['current']['identity'][key]+=1
+    with self.subTest(row=n,field=key),self.assertRaises(ValueError):self.verify(proof)
+ def test_bytes_xattrs_paths_and_extra_fields_refuse(self):
+  for n in range(4):
+   for key,value in [('sha256','e'*64),('xattrs',[['user.x','00']]),('path','/etc/unrelated'),('extra',True)]:
+    proof=copy.deepcopy(self.proof);proof['rows'][n]['current'][key]=value
+    with self.subTest(row=n,field=key),self.assertRaises(ValueError):self.verify(proof)
+ def test_missing_duplicate_reordered_or_extra_allowlist_rows_refuse(self):
+  for rows in (self.proof['rows'][:3],self.proof['rows']+[self.proof['rows'][0]],list(reversed(self.proof['rows'])),[self.proof['rows'][0]]*4):
+   with self.assertRaises(ValueError):self.verify(dict(self.proof,rows=rows))
+ def test_only_exact_observed_forward_integer_atime_passes(self):
+  for n in range(4):
+   for value in (99,100,201,200.0,True,'200'):
+    proof=copy.deepcopy(self.proof);proof['rows'][n]['current']['identity']['st_atime_ns']=value
+    with self.subTest(row=n,value=value),self.assertRaises((ValueError,TypeError)):self.verify(proof)
+ def test_original_plan_hashes_and_all_other_holds_are_bound(self):
+  for key in ('planSha256','resultSha256','configSha256'):
+   with self.subTest(key=key),self.assertRaises(ValueError):self.verify(dict(self.proof,**{key:'f'*64}))
+  proof=copy.deepcopy(self.proof);proof['rows'][0]['before']['identity']['st_atime_ns']=99
+  with self.assertRaises(ValueError):self.verify(proof)
+  self.other['sha256']='f'*64
+  with self.assertRaisesRegex(ValueError,'another hold'):self.verify()
+ def test_timer_drift_and_further_access_between_fences_refuse(self):
+  with patch.object(E,'timer_snapshot',return_value={'changed':True}),self.assertRaisesRegex(ValueError,'timers'):self.verify()
+  first=[copy.deepcopy(row['current']) for row in self.rows]+[copy.deepcopy(self.other)];second=copy.deepcopy(first);second[1]['identity']['st_atime_ns']+=1
+  with patch.object(E,'hold_snapshot',side_effect=[first,second]),self.assertRaisesRegex(ValueError,'Observed config access time'):self.verify()
+
+suite=unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(cls) for cls in (FileGroupTests,ArtifactQualificationTests,ClosedOrdinaryAliasTests,OffhostCapacityTests,BatchPreservationTests,RetirementBudgetTests,RetirementDiagnosticsTests,CompletionConfigTransitionTests,CompletionConfigAccessTimeTests,CompletionHoldsAccessTimeTests))
 result=unittest.TextTestRunner(verbosity=1).run(suite)
 if not result.wasSuccessful():raise SystemExit(1)

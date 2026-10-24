@@ -1471,6 +1471,16 @@ original confirmed listing event and verify that exact outpoint against Core.
 Seal metadata can publish seller terms, but it cannot replace the listing
 event as anchor authority.
 
+The complete listing reader batches canonical V8 listing anchors and frozen terms
+inside one read-only repeatable-read transaction, bounded by the existing
+5,000-listing materialization limit. It preserves duplicate/missing-witness
+rejection, frozen canonical positions, and fresh Core reconciliation. This
+changes read scheduling only; it changes no sale authorization or economics.
+The UI has one visible automatic owner, with one fresh complete-book cycle on
+entry and a 60-second pause after completion. A page from a different summary
+height/hash fails immediately; incomplete or canceled work cannot publish a
+complete book. Manual refresh still rechecks fresh authority.
+
 ## June 27 Sealed Summary Hardening (Historical)
 
 This section records the June 27 production behavior and is retained for

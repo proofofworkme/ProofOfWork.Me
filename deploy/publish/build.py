@@ -31,13 +31,14 @@ PERMISSION_SURFACES = {**PAGES_SURFACES, 'permission': ('permission', 'VITE_PERM
 
 def build_focused_surfaces(source, payload, surfaces, environment, log):
     """TypeScript source is shared; each focused Vite bundle has its own flags."""
-    subprocess.run(['/usr/bin/node', str(source / 'node_modules/typescript/bin/tsc')],
+    node = environment.get('POW_UI_BUILD_NODE', '/usr/bin/node')
+    subprocess.run([node, str(source / 'node_modules/typescript/bin/tsc')],
                    cwd=source, env=environment, stdout=log, stderr=subprocess.STDOUT, check=True)
     for name, (host, switch) in surfaces.items():
         build_env = {**environment, 'VITE_POW_API_BASE': 'https://' + host + '.proofofwork.me'}
         if switch:
             build_env[switch] = '1'
-        subprocess.run(['/usr/bin/node', str(source / 'node_modules/vite/bin/vite.js'), 'build',
+        subprocess.run([node, str(source / 'node_modules/vite/bin/vite.js'), 'build',
                         '--outDir', str(payload / 'surfaces' / name), '--emptyOutDir'],
                        cwd=source, env=build_env, stdout=log, stderr=subprocess.STDOUT, check=True)
         print(json.dumps({'surface': name, 'status': 'built'}), flush=True)
@@ -49,6 +50,8 @@ def main():
     parser.add_argument('commit')
     parser.add_argument('build_root', type=Path)
     parser.add_argument('--release-id')
+    parser.add_argument('--node-executable', type=Path, default=Path('/usr/bin/node'),
+                        help='Supported Node runtime on the build VPS')
     parser.add_argument('--release-format', choices=['v3', 'v4', 'v5'], default='v5')
     args = parser.parse_args()
     surfaces = PERMISSION_SURFACES if args.release_format == 'v5' else PAGES_SURFACES if args.release_format == 'v4' else SURFACES
@@ -66,7 +69,15 @@ def main():
     payload = root / ('proofofwork-ui-surfaces-' + release)
     (payload / 'surfaces').mkdir(parents=True, mode=0o755)
     home = root / 'build-home'; home.mkdir(mode=0o700)
-    env = {'HOME': str(home), 'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}
+    node = args.node_executable.resolve(strict=True)
+    assert node.is_file() and os.access(node, os.X_OK) and not node.stat().st_mode & 0o7022
+    version = subprocess.check_output([str(node), '--version'], text=True).strip()
+    match = re.fullmatch(r'v(\d+)\.(\d+)\.(\d+)', version)
+    assert match, 'Unrecognized Node version'
+    major, minor, patch = map(int, match.groups())
+    assert major == 20 and minor >= 19 or major == 22 and minor >= 12 or major > 22, 'Unsupported build Node version'
+    env = {'HOME': str(home), 'PATH': str(node.parent) + ':/usr/bin:/bin',
+           'LANG': 'C.UTF-8', 'POW_UI_BUILD_NODE': str(node)}
     subprocess.run(['git', 'clone', '--quiet', '--no-hardlinks', '--no-local', str(repo), str(source)], check=True, env=env)
     subprocess.run(['git', '-C', str(source), 'checkout', '--quiet', '--detach', args.commit], check=True, env=env)
     def git(*arguments):

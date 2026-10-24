@@ -3528,7 +3528,7 @@ expect(
 );
 expect(
   "AMO automatically verifies the complete credit and bond book before publishing",
-  /fetchCompleteMarketplaceSnapshot\(fresh\)/.test(refreshMarketplaceSummaryBlock) &&
+  /fetchCompleteMarketplaceSnapshot\(fresh, consumerSignal\)/.test(refreshMarketplaceSummaryBlock) &&
     /const completeTokenState = snapshot\.token/.test(refreshMarketplaceSummaryBlock) &&
     /async function fetchCompleteMarketplaceSnapshot[\s\S]*await tokenStateWithCurrentCompleteMarketplaceListings/.test(app) &&
     /listingBookComplete: true/.test(tokenStateWithCompleteTokenListingsBlock) &&

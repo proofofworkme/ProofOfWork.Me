@@ -17,9 +17,9 @@ PROTECTED = UNITS
 GATEWAY = ('proofofwork-api-wg.socket', 'proofofwork-api-wg.service')
 AUTHORITY = ('bitcoind.service', 'electrs.service', 'postgresql@16-main.service')
 SEARCH = ('proofofwork-search-index.service', 'proofofwork-search-index.timer')
-ALLOWED = frozenset({'server/proof-api.mjs'})
+ALLOWED = frozenset({'server/proof-api.mjs', 'server/db/proof-index-reader.mjs'})
 NEW = frozenset()
-BASE_SOURCE_COMMIT = '946946aa624e2a58da167cc384d1cc0424e5d29e'
+BASE_SOURCE_COMMIT = '49ce8edc9747b99918f94c51ead05d756770194a'
 ENTRYPOINTS = ('server/proof-api.mjs', 'scripts/backfill-proof-indexer.mjs',
     'scripts/backfill-proof-search.mjs')
 IMPORT = re.compile(r'''(?:\b(?:import|export)\s+[^;]*?\bfrom\s*|\bimport\s*\(?\s*)['"](\.[^'"]+)['"]''')

@@ -280,6 +280,95 @@ class RemoteTests(unittest.TestCase):
         self.assertEqual(state['pending']['stage'], 'ordinary-complete')
         self.assertFalse(self.runtime.status({})['retentionComplete'])
 
+    def vps_prepared(self):
+        self.config.update(retentionPolicy=R.VPS_POLICY, offHostCustodyRoot=None)
+        prepared = self.prepare()
+        self.assertNotIn('value', prepared['ordinaryPlan'], 'A VPS cycle must not download its full snapshot inventory')
+        frame = {'expectedStateSha256': prepared['stateSha256'],
+                 'expectedPair': self.runtime.current()[1]['pair'], 'operationId': 'vps-ordinary-test',
+                 'cycleId': prepared['cycleId'], 'pendingToken': prepared['pendingToken']}
+        return prepared, frame
+
+    def vps_complete(self):
+        _, frame = self.vps_prepared()
+        applied = self.runtime.dispatch('apply-vps-retention', frame)
+        self.assertFalse(applied['freshCustodyQualificationRequired'])
+        final = dict(frame, expectedStateSha256=applied['stateSha256'], operationId='vps-complete-test')
+        return self.runtime.dispatch('complete-vps-cycle', final)
+
+    def test_vps_cycle_executes_real_guarded_plan_without_custody_and_verifies_retained_pair(self):
+        with patch.object(F.P, 'verify_custody_proof', side_effect=AssertionError('No off-host custody')):
+            result = self.vps_complete()
+            self.assertTrue(result['retentionComplete'])
+            self.assertTrue(result['historicalBulkPreserved'])
+            self.assertFalse(result['independentOffHostRecovery'])
+            status = self.runtime.dispatch('status', {'requireComplete': True})
+            self.assertTrue(status['retentionComplete'])
+            self.assertIsNone(status['offHostCustodyRoot'])
+            self.assertEqual(status['retentionPolicy'], R.VPS_POLICY)
+            state, _ = self.runtime.state()
+            self.assertNotIn('custodyPlan', state['lastCompleted'])
+            self.assertNotIn('custodyResult', state['lastCompleted'])
+            self.assertFalse(F.P.policy_scope(state['index'], self.layout, R.APPROVAL_SHA)['eligible'])
+
+    def test_vps_completion_can_be_authenticated_by_future_package_upgrade(self):
+        result = self.vps_complete()
+        request = {'mode': 'completed-cycle', 'stateSha256': result['stateSha256']}
+        review = I.completed_review(self.runtime, request)
+        original_spec = I.importlib.util.spec_from_file_location
+        def fixture_spec(name, path):
+            spec = original_spec(name, path)
+            if name == 'upgrade_new_lifecycle':
+                execute = spec.loader.exec_module
+                def load_fixture_module(module):
+                    execute(module)
+                    # Reuse the real storage/policy modules carrying this test's
+                    # filesystem and held-policy pins; custody must not run.
+                    module.load_module = lambda name, *args, **kwargs: (
+                        F.S if name == 'upgrade_new_storage' else F.P if name == 'upgrade_new_policy'
+                        else types.SimpleNamespace(load_helpers=lambda: None))
+                spec.loader.exec_module = load_fixture_module
+            return spec
+        with patch.object(I.importlib.util, 'spec_from_file_location', side_effect=fixture_spec):
+            verified = I.completed_package_review({'config': self.config, 'configSha256': self.runtime.config_sha},
+                                                  HERE.parents[1], self.runtime, review)
+        self.assertTrue(verified['fullCompletionVerified'])
+        self.assertTrue(verified['vpsVerification']['retainedVpsPairVerified'])
+        self.assertNotIn('custodyLifecycle', verified)
+
+    def test_vps_policy_cannot_be_selected_by_request_or_mixed_with_custody(self):
+        prepared = self.prepare()
+        frame = {'expectedStateSha256': prepared['stateSha256'], 'expectedPair': self.runtime.current()[1]['pair'],
+                 'operationId': 'vps-test', 'cycleId': prepared['cycleId'], 'pendingToken': prepared['pendingToken'],
+                 'retentionPolicy': R.VPS_POLICY}
+        before = self.runtime.state()[1]
+        with self.assertRaisesRegex(ValueError, 'installed retention policy'):
+            self.runtime.dispatch('apply-vps-retention', frame)
+        self.assertEqual(self.runtime.state()[1], before)
+        self.config.update(retentionPolicy=R.VPS_POLICY, offHostCustodyRoot=None)
+        with self.assertRaisesRegex(ValueError, 'Expanded VPS'):
+            self.runtime.dispatch('apply-vps-retention', frame)
+        with self.assertRaisesRegex(ValueError, 'installed retention policy'):
+            self.runtime.dispatch('apply-ordinary', frame)
+        self.assertEqual(self.runtime.state()[1], before)
+
+    def test_vps_interruption_preserves_applying_state_and_blocks_retry(self):
+        _, frame = self.vps_prepared()
+        with patch.object(F.S, 'execute', side_effect=InterruptedError('fixture interruption')):
+            with self.assertRaises(InterruptedError):
+                self.runtime.dispatch('apply-vps-retention', frame)
+        state, state_sha = self.runtime.state()
+        self.assertEqual(state['pending']['stage'], 'applying')
+        with self.assertRaisesRegex(ValueError, 'Partial phase'):
+            self.runtime.dispatch('apply-vps-retention', dict(frame, expectedStateSha256=state_sha, operationId='retry'))
+
+    def test_vps_status_refuses_changed_retained_ui(self):
+        self.vps_complete()
+        target = self.layout.live / 'proofofwork-activity/index.html'
+        target.write_bytes(b'changed retained UI')
+        with self.assertRaises(ValueError):
+            self.runtime.dispatch('status', {'requireComplete': True})
+
     def test_custody_mismatch_changes_no_artifact_and_blocks_retry(self):
         plan, proof, _, frame = self.custody_state()
         frame['custodyProof'] = envelope(dict(proof, objects=proof['objects'][:-1]))
@@ -977,12 +1066,46 @@ class PackagingTests(unittest.TestCase):
                                    ('config', {'path': I.CONFIG, 'sha256': '0' * 64}),
                                    ('guardDifference', {'onlyChangedPaths': [I.CONFIG, '/unrelated'],
                                     'otherHoldRowsUnchanged': True, 'timersUnchanged': True})]:
-                    with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'does not bind existing completion'):
+                    with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'does not bind existing completion|Expanded config guard refusal'):
                         I.validate_guard_refusal(request(dict(value, **{key: wrong})), runtime)
+                rows = [{'before': {'path': path}, 'current': {'path': path}} for path in I.COMPLETED_ACCESS_TIME_PATHS]
+                compact_proof = {key: item for key, item in proof.items() if key not in ('before', 'current')}
+                compact_proof.update(schema='pow-ui-completed-holds-access-time-v1', rows=rows)
+                compact = dict(value, schema='pow-ui-custody-completed-holds-guard-refusal-v1',
+                    accessTimeReconciliation=compact_proof,
+                    guardDifference={'onlyChangedPaths': I.COMPLETED_ACCESS_TIME_PATHS,
+                                     'otherHoldRowsUnchanged': True, 'timersUnchanged': True, 'rows': rows})
+                self.assertEqual(I.validate_guard_refusal(request(compact), runtime), compact_proof)
+                for key, wrong in [('onlyChangedPaths', [I.CONFIG]), ('timersUnchanged', False),
+                                   ('otherHoldRowsUnchanged', False), ('rows', rows[:3])]:
+                    changed = dict(compact, guardDifference=dict(compact['guardDifference'], **{key: wrong}))
+                    with self.subTest(compact_field=key), self.assertRaises(ValueError):
+                        I.validate_guard_refusal(request(changed), runtime)
+                for key in ('configSha256', 'stateSha256', 'cycleId', 'planSha256', 'resultSha256'):
+                    changed = dict(compact, accessTimeReconciliation=dict(compact_proof, **{key: 'wrong'}))
+                    with self.subTest(compact_proof_field=key), self.assertRaises(ValueError):
+                        I.validate_guard_refusal(request(changed), runtime)
                 cycle_receipt.write_bytes(b'changed cycle')
                 with self.assertRaisesRegex(ValueError, 'SHA differs'): I.validate_guard_refusal(request(value), runtime)
             finally:
                 os.umask(previous)
+
+    def test_compact_guard_refusal_reads_only_committed_metadata_locally(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory); path = base / 'audits/refusal.json'; path.parent.mkdir()
+            rows = [{'before': {'path': item}, 'current': {'path': item}} for item in I.COMPLETED_ACCESS_TIME_PATHS]
+            value = {'schema': 'pow-ui-custody-completed-holds-guard-refusal-v1',
+                'scopeApprovalSha256': I.APPROVAL, 'retirementReplayAllowed': False,
+                'guardDifference': {'onlyChangedPaths': I.COMPLETED_ACCESS_TIME_PATHS,
+                    'otherHoldRowsUnchanged': True, 'timersUnchanged': True, 'rows': rows},
+                'accessTimeReconciliation': {'schema': 'pow-ui-completed-holds-access-time-v1', 'rows': rows}}
+            raw = I.encoded(value); path.write_bytes(raw); path.chmod(0o600)
+            binding = {'path': str(path), 'sha256': I.sha(raw)}
+            with patch.object(I, 'ROOT', base), patch.object(I.subprocess, 'check_output', return_value=raw), \
+                    patch.object(I, 'read_bound', wraps=I.read_bound) as read:
+                result = I.local_guard_refusal(binding, {'manifest': {'sourceCommit': 'a' * 40}})
+                self.assertEqual(base64.b64decode(result['base64']), raw)
+                read.assert_called_once_with(path, I.sha(raw))
 
     def test_repair_verifier_does_not_patch_old_modules_or_change_dependencies(self):
         with tempfile.TemporaryDirectory() as directory:

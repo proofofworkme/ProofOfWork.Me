@@ -4,6 +4,21 @@ This file is operating memory for future agents.
 
 It is distilled from current repository docs and public launch memory captured through 2026-08-19. It is not a protocol spec. When this file conflicts with `README.md`, `PROOFOFWORK_IDS.md`, `MARKETPLACE.md`, `OP_RETURN_INFRASTRUCTURE.md`, `MAIL_ORGANIZATION.md`, or the source code, the protocol docs and code win.
 
+## Operator storage policy — 2026-10-24
+
+The user's computer must not become a backup warehouse. Keep only the most
+recent verified backup on the VPS; live runtime and source are not backups.
+Do not create or download local backup, archive, custody, or full-restoration
+payloads in home, `/tmp`, or removable disks without new explicit authorization.
+Verify backups on the VPS with bounded resources. A small Git stash or patch
+may preserve necessary unique dirty source; do not copy whole checkouts.
+Working source, browser data and wallet state remain separate from backup cleanup.
+This instruction supersedes historical local-custody requirements. Release
+verification and retention stay on the VPS; the local operator receives small
+receipts. Build full releases on the VPS with bounded resources and stream
+artifacts between the build and UI hosts. Keep the live UI and one verified
+prior release for rollback; do not accumulate local recovery copies. See [infrastructure storage policy](OP_RETURN_INFRASTRUCTURE.md#storage-policy--2026-10-24).
+
 ## Source Memory
 
 - Public account: `@proofofworkme`

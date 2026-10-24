@@ -248,4 +248,30 @@ class ComposedPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'approved base'):R.plan(args)
         self.assertFalse(args.output.exists())
 
+class VpsCaptureTests(unittest.TestCase):
+    def test_capture_returns_receipt_without_writing_runtime_locally(self):
+        target=Path('/tmp/proofofwork-runtime-capture-unit-test.json')
+        receipt={'capture':str(target),'location':'node-vps','sha256':'a'*64,
+                 'baselineHead':'b'*40,'sourceFiles':12,'runtimeDependencies':10}
+        process=types.SimpleNamespace(returncode=0,stdout=json.dumps(receipt).encode(),stderr=b'')
+        with patch.object(R.subprocess,'run',return_value=process) as run, patch.object(R,'save',side_effect=AssertionError('local write forbidden')), contextlib.redirect_stdout(io.StringIO()) as output:
+            R.capture(types.SimpleNamespace(output=target))
+        self.assertEqual(json.loads(output.getvalue()),receipt)
+        request=json.loads(run.call_args.kwargs['input'])
+        self.assertEqual(request['output'],str(target))
+        self.assertEqual(hashlib.sha256(base64.b64decode(request['captureBase64'])).hexdigest(),request['captureSha256'])
+        self.assertIn('StrictHostKeyChecking=yes',run.call_args.args[0])
+
+    def test_capture_refuses_swappable_nested_parent_before_ssh(self):
+        with patch.object(R.subprocess,'run') as run:
+            with self.assertRaisesRegex(ValueError,'direct /tmp filename'):
+                R.capture(types.SimpleNamespace(output=Path('/tmp/user-controlled/capture.json')))
+            run.assert_not_called()
+
+    def test_capture_refuses_payload_instead_of_compact_receipt(self):
+        process=types.SimpleNamespace(returncode=0,stdout=b'x'*65537,stderr=b'')
+        with patch.object(R.subprocess,'run',return_value=process), patch.object(R,'save',side_effect=AssertionError('local write forbidden')):
+            with self.assertRaisesRegex(ValueError,'Oversized VPS capture receipt'):
+                R.capture(types.SimpleNamespace(output=Path('/tmp/proofofwork-runtime-capture-unit-test.json')))
+
 if __name__ == '__main__':unittest.main()

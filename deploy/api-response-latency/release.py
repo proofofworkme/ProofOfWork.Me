@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Capture and rehearse the single-file API response latency overlay over the accepted active runtime.
+"""Capture and rehearse the scoped API response latency overlay over the accepted active runtime.
 
-Capture is read-only. Plan writes only a new private /tmp directory. Overlay
+Capture stores runtime evidence on the node VPS and returns a compact receipt.
+Run plan on that VPS: its private /tmp output never belongs on the operator host. Overlay
 explicitly dispatches the reviewed, hash-bound plan to production.
 """
 import argparse, base64, datetime, hashlib, importlib.util, json, os, re, shlex, subprocess
@@ -9,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 NODE_SSH = ['ssh', '-i', '/home/sixer/.ssh/proofofwork_node_ed25519',
-    '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', 'powadmin@65.108.122.87']
+    '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10', 'powadmin@65.108.122.87']
 
 def sha(value): return hashlib.sha256(value).hexdigest()
 def save(path, raw):
@@ -26,23 +27,45 @@ def private_output(path):
         raise ValueError('Output must be a new canonical /tmp path')
 
 def capture(args):
-    private_output(args.output)
+    # The operator's 2026-10-24 storage instruction forbids local runtime copies.
+    # Only the node writes the full capture; stdout is a small hash-bound receipt.
+    if args.output.parent != Path('/tmp') or args.output.name in ('', '.', '..'):
+        raise ValueError('VPS capture must use a new direct /tmp filename')
     code = (ROOT/'scoped-node.py').read_bytes()
-    request = encoded({'controllerBase64':base64.b64encode(code).decode(), 'controllerSha256':sha(code)})
-    script = (ROOT/'capture-node.py').read_text()
-    remote_command = shlex.join(['sudo', '-n', '/usr/bin/python3', '-I', '-B', '-c', script])
+    script = (ROOT/'capture-node.py').read_bytes()
+    request = encoded({'controllerBase64':base64.b64encode(code).decode(), 'controllerSha256':sha(code),
+                       'captureBase64':base64.b64encode(script).decode(), 'captureSha256':sha(script),
+                       'output':str(args.output)})
+    runner = r'''
+import base64,hashlib,json,os,pathlib,sys
+assert os.geteuid()==0 and sys.flags.isolated
+raw=sys.stdin.buffer.read(2*1024**2+1);assert len(raw)<=2*1024**2
+r=json.loads(raw)
+p=pathlib.Path(r['output']);assert p.parent==pathlib.Path('/tmp') and p.resolve()==p and not os.path.lexists(p)
+assert p.parent.resolve()==p.parent and p.parent.is_dir()
+controller=base64.b64decode(r['controllerBase64'],validate=True)
+source=base64.b64decode(r['captureBase64'],validate=True)
+assert hashlib.sha256(controller).hexdigest()==r['controllerSha256']
+assert hashlib.sha256(source).hexdigest()==r['captureSha256']
+ns={'__name__':'_vps_runtime_capture'};exec(compile(source,'capture-node.py','exec'),ns)
+v=ns['capture'](controller);data=(json.dumps(v)+'\n').encode()
+assert len(data)<=90*1024**2
+fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+with os.fdopen(fd,'wb') as f:f.write(data);f.flush();os.fsync(f.fileno())
+fd=os.open(p.parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW);os.fsync(fd);os.close(fd)
+print(json.dumps({'capture':str(p),'location':'node-vps','sha256':hashlib.sha256(data).hexdigest(),
+ 'baselineHead':v['baselineHead'],'sourceFiles':len(v['sources']),'runtimeDependencies':len(v['dependencyPaths'])}))
+'''
+    remote_command = shlex.join(['sudo', '-n', '/usr/bin/python3', '-I', '-B', '-c', runner])
     result = subprocess.run([*NODE_SSH, remote_command], input=request,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=90)
     if result.returncode:
-        raise ValueError('Read-only capture refused: '+result.stderr[-4000:].decode('utf-8', errors='replace'))
-    if len(result.stdout) > 90*1024**2: raise ValueError('Oversized capture result')
-    snapshot = json.loads(result.stdout)
-    if snapshot.get('format') != 'proof-of-work-api-response-latency-runtime-capture-v1' or snapshot['controllerSha256'] != sha(code):
-        raise ValueError('Wrong capture identity')
-    save(args.output, result.stdout)
-    print(json.dumps({'capture':str(args.output), 'sha256':sha(result.stdout),
-        'baselineHead':snapshot['baselineHead'], 'sourceFiles':len(snapshot['sources']),
-        'runtimeDependencies':len(snapshot['dependencyPaths'])}))
+        raise ValueError('VPS capture refused: '+result.stderr[-4000:].decode('utf-8', errors='replace'))
+    if len(result.stdout)>65536: raise ValueError('Oversized VPS capture receipt')
+    receipt=json.loads(result.stdout)
+    if receipt.get('location')!='node-vps' or receipt.get('capture')!=str(args.output) or not re.fullmatch('[0-9a-f]{64}',receipt.get('sha256','')):
+        raise ValueError('Wrong VPS capture receipt')
+    print(json.dumps(receipt))
 
 def reviewed_merges(path, ns):
     """Load explicit resolutions, bound to the exact captured/base/candidate bytes."""

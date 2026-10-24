@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Operator orchestration contracts: exact custody, fresh qualification and no blind retry."""
+"""VPS-only operator orchestration: compact receipts and no local backup exports."""
 import contextlib
 import hashlib
 import importlib.util
@@ -7,6 +7,7 @@ import io
 import json
 from pathlib import Path
 import tempfile
+import subprocess
 import types
 import unittest
 from unittest.mock import patch
@@ -48,14 +49,16 @@ class Lifecycle(unittest.TestCase):
             return {'cycleId':'cycle','pendingToken':'token','stateSha256':'2'*64,'lifecycleBinding':self.lifecycle,
                     'ordinaryPlan':{'value':{'delete':[],'policyScope':{'admissionIndex':self.lifecycle['index']},
                     'protected':{k:{'fields':{'release_id':rid}} for k,rid in self.pair.items()}}}}
-        if operation=='apply-ordinary':
+        if operation=='apply-vps-retention':
             self.assertEqual(frame['expectedStateSha256'],'2'*64)
+            self.assertNotIn('custodyProof',frame)
             return {'stateSha256':'3'*64,'lifecycleBinding':dict(self.lifecycle,index={'path':'/trusted/index-2','sha256':'f'*64})}
-        self.assertEqual(operation,'complete-cycle');self.assertEqual(frame['expectedStateSha256'],'3'*64)
+        self.assertEqual(operation,'complete-vps-cycle');self.assertEqual(frame['expectedStateSha256'],'3'*64)
+        self.assertNotIn('custodyPlan',frame)
         return {'retentionComplete':True}
 
     def run_cycle(self,call=None,attempt=None):
-        with patch.object(L,'CUSTODY',self.root/'custody'),patch.object(L,'status',return_value={'binding':self.binding,'pair':self.pair,'stateSha256':'1'*64}),patch.object(L,'call',side_effect=call or self.call),patch.object(L,'custody_module',return_value=self.module),contextlib.redirect_stdout(io.StringIO()):
+        with patch.object(L,'CUSTODY',self.root/'custody'),patch.object(L,'status',return_value={'binding':self.binding,'pair':self.pair,'stateSha256':'1'*64,'retentionPolicy':L.VPS_POLICY,'offHostCustodyRoot':None}),patch.object(L,'call',side_effect=call or self.call),patch.object(L,'custody_module',side_effect=AssertionError('Local custody must never load')),contextlib.redirect_stdout(io.StringIO()):
             return L.complete(self.plan,self.log,self.https,self.destination,attempt)
 
     def test_reconciled_attempt_uses_unique_phase_names_without_reusing_custody(self):
@@ -74,15 +77,16 @@ class Lifecycle(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError,'Invalid retention attempt'):self.run_cycle(attempt=attempt)
         self.assertFalse(self.destination.exists());self.assertEqual(self.calls,[])
 
-    def test_ordinary_completion_requires_fresh_custody_closure_and_final_receipt(self):
+    def test_ordinary_completion_keeps_only_compact_phase_receipts_without_local_custody(self):
         self.assertTrue(self.run_cycle()['retentionComplete'])
-        self.assertEqual([v[0] for v in self.calls],['prepare-cycle','qualify','preserve','apply-ordinary','qualify','preserve','retire','complete-cycle'])
-        self.assertEqual([v[1] for v in self.calls if v[0]=='qualify'],['/trusted/index-1','/trusted/index-2'])
+        self.assertEqual([v[0] for v in self.calls],['prepare-cycle','apply-vps-retention','complete-vps-cycle'])
+        self.assertFalse((self.root/'custody').exists())
+        self.assertEqual(sorted(p.name for p in self.destination.iterdir()),['completed.json','ordinary-applied.json','prepared.json'])
         self.assertTrue((self.destination/'completed.json').exists())
 
     def test_remote_cleanup_failure_never_reports_complete_or_retries(self):
         def failing(binding,operation,frame):
-            if operation=='apply-ordinary':raise RuntimeError('durable partial operation')
+            if operation=='apply-vps-retention':raise RuntimeError('durable partial operation')
             return self.call(binding,operation,frame)
         with self.assertRaisesRegex(RuntimeError,'partial'):self.run_cycle(failing)
         self.assertFalse((self.destination/'completed.json').exists())
@@ -90,6 +94,21 @@ class Lifecycle(unittest.TestCase):
         before=list(self.calls)
         with self.assertRaises(FileExistsError):self.run_cycle()
         self.assertEqual(self.calls,before)
+
+    def test_legacy_configuration_refuses_before_creating_custody_or_phase_directory(self):
+        with patch.object(L,'status',return_value={'binding':self.binding,'pair':self.pair,'stateSha256':'1'*64}),patch.object(L,'call') as remote:
+            with self.assertRaisesRegex(AssertionError,'VPS-only lifecycle'):
+                L.complete(self.plan,self.log,self.https,self.destination)
+            remote.assert_not_called()
+        self.assertFalse(self.destination.exists())
+
+    def test_legacy_preserve_cli_refuses_before_any_plan_read_or_export(self):
+        custody=self.root/'forbidden-local-backups'
+        result=subprocess.run(['python3','-I','-B',str(ROOT/'deploy/ui-retention/custody.py'),
+                               'preserve',str(self.root/'missing-plan'),str(custody)],capture_output=True,text=True)
+        self.assertEqual(result.returncode,2)
+        self.assertIn('Local backup exports are disabled',result.stderr)
+        self.assertFalse(custody.exists())
 
     def test_missing_exact_ordinary_custody_refuses(self):
         q=self.root/'qualified.json';L.save(q,{'candidates':[]})

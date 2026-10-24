@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Finish verified UI releases with bounded retention and independently restored custody.
+"""Finish verified UI releases with bounded VPS retention and compact receipts.
 
-The operator host keeps custody. The pinned VPS controller owns lifecycle state
-and ordinary policy changes; custody.py owns descriptor-relative retirement.
-Every local cycle is creation-only. Partial work requires exact reconciliation.
+The operator host never downloads backup archives or restoration trees. The
+pinned VPS controller keeps the current release and one verified prior release.
+Partial work requires exact reconciliation; historical custody helpers are read-only.
 """
 import argparse
 import base64
@@ -25,6 +25,8 @@ SSH = ['ssh', '-i', '/home/sixer/.ssh/proofofwork_me_ed25519', '-o', 'BatchMode=
        '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes', 'root@77.42.91.106']
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 APPROVAL_SHA = 'df166edb2d9817dd4f8af24819880b6bf08b396b6aa483adaa141415fc709379'
+VPS_POLICY = {'model': 'vps-current-and-one-prior-v1', 'localBackups': False,
+              'independentOffHostRecovery': False, 'authorizedAt': '2026-10-24'}
 LOCAL_SOURCES = ('deploy/ui-retention/lifecycle.py', 'deploy/ui-retention/custody.py',
                  'deploy/ui-retention/inventory.py', 'deploy/ui-retention/removal.py',
                  'deploy/proofofwork-ui-verified-retention.py',
@@ -188,8 +190,10 @@ def complete(plan_path, publish_log, https_receipt, destination, attempt=None):
         for path, expected in plan['retentionLocalSources'].items():
             assert sha((ROOT/path).read_bytes()) == expected, 'Retention local source changed after admission'
     assert re.fullmatch(r'[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', rid)
-    destination.mkdir(mode=0o700)
     current = status(); binding=current['binding']
+    assert current.get('retentionPolicy') == VPS_POLICY and current.get('offHostCustodyRoot') is None, \
+        'Install the approved VPS-only lifecycle before completing a release; local custody export is disabled'
+    destination.mkdir(mode=0o700)
     assert current['pair']['current']==rid
     if 'retentionLifecycle' in plan:
         for key in ('config','controller'):
@@ -199,33 +203,16 @@ def complete(plan_path, publish_log, https_receipt, destination, attempt=None):
            'publicationReceipt':publication_binding(plan,publish_log)}
     prepared=call(binding,'prepare-cycle',frame);save(destination/'prepared.json',prepared)
     assert prepared['lifecycleBinding']['approval']['sha256']==APPROVAL_SHA
-    module=custody_module()
-    ordinary=destination/'ordinary-qualified.json';module.qualify(ordinary,prepared['lifecycleBinding'])
-    value=json.loads(ordinary.read_bytes())
-    value['candidates']=[r for r in value['candidates'] if r.get('eligible') and r.get('retirementMethod')=='ordinary-policy']
-    narrowed=destination/'ordinary-custody-plan.json';save(narrowed,value)
-    CUSTODY.mkdir(mode=0o700,exist_ok=True)
-    assert CUSTODY.resolve()==CUSTODY and not CUSTODY.stat().st_mode & 0o077
-    cycle_custody=CUSTODY/rid;cycle_custody.mkdir(mode=0o700)
-    ordinary_custody=cycle_custody/'ordinary';module.preserve(narrowed,ordinary_custody)
-    proof,records=ordinary_proof(prepared['ordinaryPlan']['value'],narrowed,ordinary_custody,module)
-    proof_path=destination/'ordinary-custody-proof.json';save(proof_path,proof)
     mutation={'expectedStateSha256':prepared['stateSha256'],'expectedPair':current['pair'],
-              'operationId':'ordinary-'+rid+suffix,'cycleId':prepared['cycleId'],'pendingToken':prepared['pendingToken'],
-              'custodyProof':blob(proof_path),'custodyRecords':records}
-    applied=call(binding,'apply-ordinary',mutation);save(destination/'ordinary-applied.json',applied)
-    # Ordinary deletion changes the admission closure. Always qualify anew.
-    qualified=destination/'custody-qualified.json';module.qualify(qualified,applied['lifecycleBinding'])
-    bulk=cycle_custody/'bulk';module.preserve(qualified,bulk)
-    retired=destination/'custody-completed.json';module.retire(qualified,bulk,retired)
-    final=call(binding,'complete-cycle',{'expectedStateSha256':applied['stateSha256'],
+              'operationId':'ordinary-'+rid+suffix,'cycleId':prepared['cycleId'],'pendingToken':prepared['pendingToken']}
+    applied=call(binding,'apply-vps-retention',mutation);save(destination/'ordinary-applied.json',applied)
+    final=call(binding,'complete-vps-cycle',{'expectedStateSha256':applied['stateSha256'],
         'expectedPair':current['pair'],'operationId':'complete-'+rid+suffix,
-        'cycleId':prepared['cycleId'],'pendingToken':prepared['pendingToken'],
-        'custodyPlan':blob(qualified),'custodyResult':blob(retired)})
+        'cycleId':prepared['cycleId'],'pendingToken':prepared['pendingToken']})
     save(destination/'completed.json',final)
     assert final['retentionComplete'] is True
     print(json.dumps({'retentionComplete':True,'releaseId':rid,'evidence':str(destination),
-                      'custody':str(cycle_custody),'result':final}),flush=True)
+                      'retentionPolicy':VPS_POLICY,'historicalBulkPreserved':True,'result':final}),flush=True)
     return final
 
 

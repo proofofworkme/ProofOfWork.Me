@@ -1,5 +1,84 @@
 # ProofOfWork OP_RETURN Infrastructure
 
+## Storage policy — 2026-10-24
+
+The user requires only the most recent verified backup on the VPS. Live runtime
+and source are not backups. Do not create or download local backup, archive,
+custody, or full-restoration payloads under home, `/tmp`, or removable disks
+without new explicit user authorization. Verify backups on the VPS with bounded
+CPU, memory, I/O, and scratch storage. Preserve necessary unique dirty source
+with a small Git stash or patch, never a full checkout copy. This policy does
+not authorize deleting the working repository, browser data, or wallet state.
+
+This instruction supersedes historical retention requirements for local custody
+and accumulated backup generations below. Historical procedures and receipts
+remain records of their original releases; they do not authorize recreating
+local backup trees.
+
+`deploy/publish/collect_verify.py` now runs the hash-bound HTTPS byte verifier
+against the existing archive and active manifest on the UI VPS. Only compact
+JSON receipts return to the operator. `deploy/ui-retention/lifecycle.py complete`
+requires the installed `vps-current-and-one-prior-v1` policy, whose
+`offHostCustodyRoot` is null. Its guarded phases preserve the live release and
+one fully verified prior release on the VPS, then retire older admitted ordinary
+release roots and archives. Historical source/transport evidence stays on the VPS
+and is explicitly reported as preserved; the lifecycle does not claim independent
+off-host recovery or historical bulk deletion. Capacity, source, checkpoint,
+publication, deployment-lock, and receipt checks remain mandatory. The old
+`custody.py preserve` command refuses local exports. Historical custody receipts
+remain verifiable through authenticated package upgrades.
+
+Run full release builds on the node VPS with bounded resources. The transport
+helper's `--bundle-host node-vps` mode streams the exact hash-bound source and
+surface artifacts to the UI VPS without storing another local copy. API
+`deploy/api-response-latency/release.py capture` likewise writes its runtime
+capture on the node VPS and returns only a compact receipt; run its merge/plan
+phase on that VPS. Do not download the capture for local planning.
+
+Node logical-backup rotation was changed on 2026-10-24 to retain only the newest
+complete routine dumpset. The obsolete October 12 fixed pin and dumpset were
+retired through the installed guarded controller after today's
+`proof_indexer-20261024T031851Z.dumpset` passed its checksums and PostgreSQL
+catalog read. The root-owned pin file remains present and empty, so subsequent
+daily backups can retire the preceding set. Current backup health verifies the
+latest complete set and enabled daily timer without claiming a fresh full
+database restore. Small policy, rollback and completion records are on the VPS under
+`/etc/proofofwork-retention/latest-only-20261024`; installed monitor SHA-256 is
+`0704fb072a96e9462b48c202e988372581301493f8266960b8a4fd32392a842f`, and policy
+SHA-256 is `15070ba9ba11d78a8f3e17e7850a022ea2f99c5ca79d83bb0edef193f0d5b0b5`.
+No database or application runtime restart was required for backup rotation.
+
+## AMO read reliability and monitoring — 2026-10-24
+
+The complete AMO book batches up to the existing 5,000-listing materialization
+ceiling into canonical listing, activation-latch and frozen-term queries in one
+read-only repeatable-read transaction. It reuses the same row and frozen-position
+validators. Missing, duplicate, malformed or noncanonical witnesses still fail
+closed, and the complete book must still match its relational checkpoint and
+fresh Core reconciliation. Marketplace overlay enrichment awaits the live quote
+before binding a derived snapshot, preserving exact values and snapshot lineage.
+Overlapping registry SQL reads coalesce without sharing mutable caller evidence.
+Summary reads project only the requested component from PostgreSQL while keeping
+the full canonical eligibility predicates. A fallback chain does not repeat the
+same indexed marketplace read after it has already failed in that chain.
+
+AMO has one visible automatic refresh owner: one fresh complete read on entry,
+then another 60 seconds after the previous cycle completes. It cancels hidden or
+obsolete display work and rejects a page at a different summary height/hash
+before fetching the rest of the book. Manual refresh retains its fresh-read
+contract and can restart after a canceled automatic owner.
+
+Monitoring reconciliation is limited to explicit evidence: the ten notification
+helpers and three updated runtime files must match completed release receipts
+before source acceptance changes. The 18 node and 11 UI already-absent historical
+hold requirements are qualified as retired requirements, preserving the original
+held-review bytes and recording that their original deletion time/cause is
+unknown. New missing paths, reappearing retired paths, live dependencies and
+rollback failures still alert. Reconciliation records live under
+`/var/lib/proofofwork-monitoring-reconciliation/20261024`, outside the retention
+hold inventory. Storage-percentage thresholds and unresolved allocation reviews
+remain active; they are not obsolete-warning exceptions.
+
 ## Permission v1 discovery and release
 
 Permission uses the existing Mail body lane and adds no ledger economics or

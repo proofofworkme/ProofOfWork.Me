@@ -52,6 +52,9 @@ RETIREMENT_STDOUT_BYTES=32*1024**2
 RETIREMENT_STDERR_BYTES=256*1024
 LIFECYCLE_CONFIG=Path('/etc/proofofwork-retention/ui-lifecycle.json')
 LIFECYCLE_STATE=Path('/var/lib/proofofwork-ui-retention/state.json')
+COMPLETED_ACCESS_TIME_PATHS=tuple('/etc/proofofwork-retention/'+name for name in (
+    'audit28-held-review.json','audit29-approved-cleanup.json',
+    'audit29-completed-retirements.json','ui-lifecycle.json'))
 
 
 class QualificationError(ValueError):
@@ -199,6 +202,7 @@ def completion_config_holds(plan, plan_sha, result_sha, transitions):
     old_rows=[r for r in plan['holds'] if r['path']==config_path]
     require(len(old_rows)==1 and plan.get('lifecycle'),'completion-transition','Historical lifecycle config hold is missing or duplicated')
     original=old_rows[0];config_sha=original['sha256'];last_state=None;last_proof=None;last_config=None
+    reconciled_holds=plan['holds']
     for position,link in enumerate(transitions):
         require(isinstance(link,dict) and set(link)=={'intent','completed'},'completion-transition','Invalid sealed upgrade link')
         intent,ir=bound(link['intent']);completed,_=bound(link['completed'])
@@ -271,7 +275,9 @@ def completion_config_holds(plan, plan_sha, result_sha, transitions):
                 and access_time.get('stateSha256')==prior_state_binding['sha256']
                 and access_time.get('configSha256')==config_sha and access_time.get('cycleId')==cycle,
                 'completion-transition','Sealed access-time refusal authority differs')
-            completion_access_time_rows(plan,plan_sha,result_sha,access_time)
+            pairs=completion_access_time_pairs(plan,plan_sha,result_sha,access_time)
+            replacements={before['path']:current for before,current in pairs if before['path']!=config_path}
+            reconciled_holds=[replacements.get(row['path'],row) for row in plan['holds']]
         if last_proof is not None:
             require(all(proof[k]==last_proof[k] for k in ('context','index','lastCompleted','custodyLifecycle')),'completion-transition','Upgrade completion proof changed across chain')
         config_sha=new_sha;last_state=final;last_proof=proof;last_config=config
@@ -285,7 +291,7 @@ def completion_config_holds(plan, plan_sha, result_sha, transitions):
         require(set(row)=={'path','sha256','identity','xattrs'} and set(ident)==set(E.STAT_FIELDS) and ident['st_mode']==stat.S_IFREG|0o600 and ident['st_uid']==ident['st_gid']==0 and ident['st_nlink']==1,'completion-transition','Lifecycle config hold permissions/type/links changed')
     stable=('st_dev','st_mode','st_nlink','st_uid','st_gid','st_blksize')
     require(all(current['identity'][k]==original['identity'][k] for k in stable) and current['xattrs']==original['xattrs'],'completion-transition','Lifecycle config hold stable identity/xattrs changed')
-    require([r if r['path']!=config_path else original for r in holds]==plan['holds'],'completion-transition','A non-config retention hold changed')
+    require([r if r['path']!=config_path else original for r in holds]==reconciled_holds,'completion-transition','A non-config retention hold changed')
     return holds
 
 
@@ -317,12 +323,48 @@ def completion_access_time_rows(plan, plan_sha, result_sha, proof):
 
 
 def completion_access_time_holds(plan, plan_sha, result_sha, proof):
-    before,current=completion_access_time_rows(plan,plan_sha,result_sha,proof)
-    config_path=str(LIFECYCLE_CONFIG);holds=E.hold_snapshot()
-    require([r for r in holds if r['path']==config_path]==[current]
-        and [before if r['path']==config_path else r for r in holds]==plan['holds'],
+    pairs=completion_access_time_pairs(plan,plan_sha,result_sha,proof)
+    replacements={before['path']:current for before,current in pairs};holds=E.hold_snapshot()
+    require(holds==[replacements.get(row['path'],row) for row in plan['holds']],
         'completion-access-time','Observed config access time or another hold changed')
     return holds
+
+
+def completion_access_time_pairs(plan, plan_sha, result_sha, proof):
+    """Accept the historical config proof or four exact observed read-only changes."""
+    if isinstance(proof,dict) and proof.get('schema')=='pow-ui-completed-config-access-time-v1':
+        return [completion_access_time_rows(plan,plan_sha,result_sha,proof)]
+    keys={'schema','configSha256','stateSha256','cycleId','planSha256','resultSha256','rows'}
+    require(isinstance(proof,dict) and set(proof)==keys
+        and proof['schema']=='pow-ui-completed-holds-access-time-v1'
+        and proof['planSha256']==plan_sha and proof['resultSha256']==result_sha
+        and all(re.fullmatch('[0-9a-f]{64}',proof[k] or '') for k in ('configSha256','stateSha256'))
+        and isinstance(proof['cycleId'],str) and bool(proof['cycleId'])
+        and isinstance(proof['rows'],list) and len(proof['rows'])==len(COMPLETED_ACCESS_TIME_PATHS)
+        and plan.get('lifecycle'),'completion-access-time','Hold access-time repair authority differs')
+    pairs=[]
+    for path,pair in zip(COMPLETED_ACCESS_TIME_PATHS,proof['rows']):
+        require(isinstance(pair,dict) and set(pair)=={'before','current'},
+            'completion-access-time','Hold access-time pair shape differs')
+        before,current=pair['before'],pair['current']
+        for row in (before,current):
+            require(isinstance(row,dict) and set(row)=={'path','sha256','identity','xattrs'}
+                and row['path']==path and re.fullmatch('[0-9a-f]{64}',row['sha256'] or '')
+                and isinstance(row['identity'],dict) and set(row['identity'])==set(E.STAT_FIELDS)
+                and all(type(value)is int for value in row['identity'].values()),
+                'completion-access-time','Hold access-time row shape differs')
+            ident=row['identity']
+            mode=0o644 if path in COMPLETED_ACCESS_TIME_PATHS[:2] else 0o600
+            require(ident['st_mode']==stat.S_IFREG|mode and ident['st_uid']==ident['st_gid']==0
+                and ident['st_nlink']==1,'completion-access-time','Hold access-time permissions/type/links differ')
+        require(current['identity']['st_atime_ns']>before['identity']['st_atime_ns']>=0
+            and dict(current,identity=dict(current['identity'],st_atime_ns=before['identity']['st_atime_ns']))==before
+            and [row for row in plan['holds'] if row['path']==path]==[before],
+            'completion-access-time','Repair must be only the exact forward hold access times')
+        if path==str(LIFECYCLE_CONFIG):
+            require(before['sha256']==proof['configSha256'],'completion-access-time','Config hold SHA differs')
+        pairs.append((before,current))
+    return pairs
 
 
 def completion_fence(plan, plan_sha, result_sha, transitions, expected_holds=None, access_time_reconciliation=None):
@@ -1116,7 +1158,10 @@ def main():
     parser.add_argument('operation',choices=['qualify','preserve','retire']);parser.add_argument('plan',type=Path);parser.add_argument('custody',nargs='?',type=Path);parser.add_argument('output',nargs='?',type=Path)
     parser.add_argument('--resume',action='store_true',help='Skip only complete, hash-verified preservation receipts; partial attempts refuse')
     parser.add_argument('--lifecycle',type=Path,help='Read-only qualification with exact approved custody lifecycle/index bindings')
-    args=parser.parse_args();os.umask(0o077);load_helpers()
+    args=parser.parse_args()
+    if args.operation == 'preserve':
+        parser.error('Local backup exports are disabled by the 2026-10-24 VPS-only retention policy. Use lifecycle.py complete; historical custody verification remains available.')
+    os.umask(0o077);load_helpers()
     if args.lifecycle is not None and args.operation!='qualify':parser.error('--lifecycle is only valid for qualification')
     if args.operation=='qualify':qualify(args.plan,json.loads(args.lifecycle.read_bytes()) if args.lifecycle else None)
     elif args.operation=='preserve':

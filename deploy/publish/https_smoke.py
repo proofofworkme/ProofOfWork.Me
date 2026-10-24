@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare the downloaded managed UI archive with off-host production HTTPS.
+"""Compare a managed UI archive in place with public production HTTPS.
 
 Creation-only receipt; at most eight independent static requests run at once.
 Every response is bounded by its exact expected byte count plus one byte.
@@ -121,7 +121,7 @@ def check(args,receipt):
     with archive_path.open('rb') as source: actual_hash = hashlib.file_digest(source,'sha256').hexdigest()
     if identity(archive_path.lstat()) != identity(before) or actual_hash != args.archive_sha256:
         raise ValueError('Managed archive changed or hash differs')
-    active_path = archive_path.parent/'.proofofwork-ui-release'
+    active_path = Path(getattr(args, 'manifest', None) or archive_path.parent/'.proofofwork-ui-release')
     raw = bounded_local(active_path,65536)
     if raw != bounded_local(Path(str(archive_path)+'.provenance'),65536):
         raise ValueError('Active manifest and archive provenance differ')
@@ -239,6 +239,7 @@ def main():
     parser.add_argument('archive'); parser.add_argument('release_id'); parser.add_argument('commit')
     parser.add_argument('tree'); parser.add_argument('archive_sha256')
     parser.add_argument('--receipt',required=True)
+    parser.add_argument('--manifest', help='Canonical active manifest; defaults to the adjacent evidence file')
     parser.add_argument('--workers',type=int,default=8)
     parser.add_argument('--timeout',type=float,default=30)
     parser.add_argument('--overall-timeout',type=float,default=900)

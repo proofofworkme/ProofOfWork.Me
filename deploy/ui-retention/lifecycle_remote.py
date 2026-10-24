@@ -21,6 +21,8 @@ APPROVAL_SHA = 'df166edb2d9817dd4f8af24819880b6bf08b396b6aa483adaa141415fc709379
 CONFIG_PATH = Path('/etc/proofofwork-retention/ui-lifecycle.json')
 STATE_PATH = Path('/var/lib/proofofwork-ui-retention/state.json')
 CUSTODY_ROOT = '/home/sixer/ProofOfWork.Me.release-custody-ui-retention'
+VPS_POLICY = {'model': 'vps-current-and-one-prior-v1', 'localBackups': False,
+              'independentOffHostRecovery': False, 'authorizedAt': '2026-10-24'}
 MAX_FRAME = 64 * 1024**2
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 IDENTIFIER = re.compile(r'[a-z0-9][A-Za-z0-9-]{0,63}\Z')
@@ -133,7 +135,9 @@ def validate_config(path, expected):
     require(config.get('schema') == 'pow-ui-retention-lifecycle-config-v1'
             and config.get('scopeApprovalSha256') == APPROVAL_SHA
             and config.get('statePath') == str(STATE_PATH)
-            and config.get('offHostCustodyRoot') == CUSTODY_ROOT, 'Lifecycle configuration authority differs')
+            and ((config.get('retentionPolicy') is None and config.get('offHostCustodyRoot') == CUSTODY_ROOT)
+                 or (config.get('retentionPolicy') == VPS_POLICY and config.get('offHostCustodyRoot') is None)),
+            'Lifecycle configuration authority differs')
     binding = config['package']
     package = Path(binding['path'])
     require(package.parent == Path('/var/backups/proofofwork-ui/cleanup-evidence')
@@ -382,24 +386,10 @@ class Runtime:
             if complete:
                 require(not self.P.policy_scope(index, self.layout, APPROVAL_SHA)['eligible'],
                         'Completed state has eligible ordinary assets')
-                for key in ('custodyPlan', 'custodyResult', 'ordinaryReceipt'):
-                    binding = state['lastCompleted'][key]
-                    read(binding['path'], binding['sha256'])
-                require(self.C is not None, 'Custody verifier unavailable')
-                plan_binding = state['lastCompleted']['custodyPlan']
-                result_binding = state['lastCompleted']['custodyResult']
-                plan, _ = read_json(plan_binding['path'], plan_binding['sha256'])
-                result, _ = read_json(result_binding['path'], result_binding['sha256'])
-                require(plan.get('lifecycle') == self.completion_lifecycle(state, index), 'Completed custody index differs')
-                transitions = self.completion_transitions(state)
-                access_time = self.completion_access_time_reconciliation
-                if access_time is not None:
-                    require(access_time['stateSha256'] == digest and access_time['configSha256'] == self.config_sha
-                            and access_time['cycleId'] == state['lastCompleted']['cycleId'],
-                            'Access-time repair no longer binds the completed state')
-                completion_verification = self.C.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'],
-                                           **({'config_transitions': transitions} if transitions else {}),
-                                           **({'config_access_time_reconciliation': access_time} if access_time is not None else {}))
+                if state['lastCompleted'].get('retentionPolicy') == VPS_POLICY:
+                    completion_verification = self.verify_vps_completion(state, context)
+                else:
+                    completion_verification = self.verify_custody_completion(state, index, digest)
         if frame.get('requireComplete'):
             require(complete, 'Published UI is healthy; retention-incomplete blocks another upload')
         return {'ok': True, 'initialized': state is not None, 'retentionComplete': complete,
@@ -409,10 +399,55 @@ class Runtime:
                 'pair': context['pair'], 'context': context, 'index': state.get('index') if state else None,
                 'pending': state.get('pending') if state else None,
                 'unfinishedIntents': unfinished,
+                'retentionPolicy': self.config.get('retentionPolicy'),
+                'historicalBulkPreserved': self.config.get('retentionPolicy') == VPS_POLICY,
                 'offHostCustodyRoot': self.config['offHostCustodyRoot'],
                 'binding': {'config': {'path': str(CONFIG_PATH), 'sha256': self.config_sha},
                             'controller': self.config['controller'],
                             'state': {'path': str(self.state_path), 'sha256': digest}, 'pair': context['pair']}}
+
+    def verify_custody_completion(self, state, index, digest):
+        # Historical completions remain authenticated during migration.
+        for key in ('custodyPlan', 'custodyResult', 'ordinaryReceipt'):
+            binding = state['lastCompleted'][key]
+            read(binding['path'], binding['sha256'])
+        require(self.C is not None, 'Custody verifier unavailable')
+        plan_binding = state['lastCompleted']['custodyPlan']
+        result_binding = state['lastCompleted']['custodyResult']
+        plan, _ = read_json(plan_binding['path'], plan_binding['sha256'])
+        result, _ = read_json(result_binding['path'], result_binding['sha256'])
+        require(plan.get('lifecycle') == self.completion_lifecycle(state, index), 'Completed custody index differs')
+        transitions = self.completion_transitions(state)
+        access_time = self.completion_access_time_reconciliation
+        if access_time is not None:
+            require(access_time['stateSha256'] == digest and access_time['configSha256'] == self.config_sha
+                    and access_time['cycleId'] == state['lastCompleted']['cycleId'],
+                    'Access-time repair no longer binds the completed state')
+        return self.C.verify_final_result(plan, plan_binding['sha256'], result, result_binding['sha256'],
+                                   **({'config_transitions': transitions} if transitions else {}),
+                                   **({'config_access_time_reconciliation': access_time} if access_time is not None else {}))
+
+    def verify_vps_completion(self, state, context):
+        require(self.config.get('retentionPolicy') == VPS_POLICY
+                and self.config.get('offHostCustodyRoot') is None, 'VPS retention policy not installed')
+        completed = state['lastCompleted']
+        require(completed.get('retentionPolicy') == VPS_POLICY
+                and completed.get('retainedPair') == context['pair'], 'VPS retained pair authority differs')
+        plan_binding = completed['ordinaryPlan']; receipt_binding = completed['ordinaryReceipt']
+        plan, _ = read_json(plan_binding['path'], plan_binding['sha256'])
+        receipt, _ = read_json(receipt_binding['path'], receipt_binding['sha256'])
+        index = self.P.load_index(state['index']['path'], state['index']['sha256'], self.layout, APPROVAL_SHA)
+        require(receipt_binding in index['index']['completedRetirements']
+                and receipt.get('status') == 'completed'
+                and receipt.get('planSha256') == self.S.digest(plan)
+                and self.P.pair_ids(plan['protected']) == context['pair']
+                and all(not os.path.lexists(row['path']) for row in plan['delete']),
+                'VPS ordinary retirement proof differs')
+        require(not self.P.policy_scope(state['index'], self.layout, APPROVAL_SHA)['eligible'],
+                'Completed VPS state has eligible ordinary assets')
+        return {'retainedVpsPairVerified': True, 'retainedPair': context['pair'],
+                'retentionPolicy': VPS_POLICY, 'historicalBulkPreserved': True,
+                'independentOffHostRecovery': False}
 
     def bootstrap(self, frame):
         state, state_sha = self.state()
@@ -501,16 +536,22 @@ class Runtime:
                    pending=pending, lastIntent=intent)
         return self.finish(operation_id, intent, active_sha, new,
                            {'cycleId': operation_id, 'pendingToken': token, 'index': index,
-                            'ordinaryPlan': dict(plan_binding, value=plan),
+                            'ordinaryPlan': plan_binding if self.config.get('retentionPolicy') == VPS_POLICY else dict(plan_binding, value=plan),
                             'lifecycleBinding': self.lifecycle(index), 'retentionComplete': False})
 
-    def apply_ordinary(self, frame):
+    def apply_ordinary(self, frame, *, vps_only=False):
+        require((self.config.get('retentionPolicy') == VPS_POLICY and self.config.get('offHostCustodyRoot') is None) if vps_only
+                else self.config.get('retentionPolicy') is None,
+                'Operation does not match installed retention policy')
+        if vps_only:
+            require(set(frame) == {'expectedStateSha256', 'expectedPair', 'operationId', 'cycleId', 'pendingToken'},
+                    'Expanded VPS retention request')
         state, state_sha = self.state()
         _, context = self.current()
         pending = self.pending(state, frame, context, 'prepared')
         plan, _ = read_json(pending['ordinaryPlan']['path'], pending['ordinaryPlan']['sha256'])
-        operation_id, intent, active_sha = self.begin('apply-ordinary', frame, state, state_sha, context)
-        for row in frame.get('custodyRecords', []):
+        operation_id, intent, active_sha = self.begin('apply-vps-retention' if vps_only else 'apply-ordinary', frame, state, state_sha, context)
+        for row in ([] if vps_only else frame.get('custodyRecords', [])):
             _, raw = embedded(row)
             path = self.layout.evidence / ('ui-retention-custody-record-' + row['sha256'] + '.json')
             if os.path.lexists(path):
@@ -518,10 +559,13 @@ class Runtime:
             else:
                 self.capacity(len(raw) + 65536)
                 write_new(path, raw)
-        _, proof = self.store('ui-retention-custody-proof-' + operation_id + '.json', frame['custodyProof'])
-        self.P.verify_custody_proof(proof, plan, self.layout, APPROVAL_SHA)
+        proof = None
+        if not vps_only:
+            _, proof = self.store('ui-retention-custody-proof-' + operation_id + '.json', frame['custodyProof'])
+            self.P.verify_custody_proof(proof, plan, self.layout, APPROVAL_SHA)
         applying = dict(state, revision=state['revision'] + 2,
-                        pending=dict(pending, stage='applying', custodyProof=proof), lastIntent=intent)
+                        pending=dict(pending, stage='applying', **({'retentionPolicy': VPS_POLICY} if vps_only else {'custodyProof': proof})),
+                        lastIntent=intent)
         applying_sha = self.cas(active_sha, applying, operation_id + '-start')
         # No catch-and-retry: interruption leaves the applying state and immutable
         # policy progress records for explicit reconciliation.
@@ -538,9 +582,38 @@ class Runtime:
         return self.finish(operation_id, intent, applying_sha, new,
                            {'cycleId': pending['cycleId'], 'pendingToken': pending['token'], 'index': index,
                             'ordinaryReceipt': completed, 'lifecycleBinding': self.lifecycle(index),
-                            'freshCustodyQualificationRequired': True, 'retentionComplete': False})
+                            'freshCustodyQualificationRequired': not vps_only, 'retentionComplete': False})
+
+    def apply_vps_retention(self, frame):
+        return self.apply_ordinary(frame, vps_only=True)
+
+    def complete_vps_cycle(self, frame):
+        require(self.config.get('retentionPolicy') == VPS_POLICY and self.config.get('offHostCustodyRoot') is None,
+                'VPS retention policy not installed')
+        require(set(frame) == {'expectedStateSha256', 'expectedPair', 'operationId', 'cycleId', 'pendingToken'},
+                'Expanded VPS completion request')
+        state, state_sha = self.state()
+        _, context = self.current()
+        pending = self.pending(state, frame, context, 'ordinary-complete')
+        require(pending.get('retentionPolicy') == VPS_POLICY, 'VPS apply authority differs')
+        completed = {'cycleId': pending['cycleId'], 'retentionPolicy': VPS_POLICY,
+                     'retainedPair': context['pair'], 'ordinaryPlan': pending['ordinaryPlan'],
+                     'ordinaryReceipt': pending['ordinaryReceipt']}
+        verification = self.verify_vps_completion(dict(state, lastCompleted=completed), context)
+        operation_id, intent, active_sha = self.begin('complete-vps-cycle', frame, state, state_sha, context)
+        _, after = self.current()
+        require(after == context, 'Protected pair or guard fence changed at completion')
+        pools = self.capacity()
+        new = dict(state, revision=state['revision'] + 2, status='complete', pending=None,
+                   completedContext=context, lastIntent=intent, lastCompleted=completed)
+        return self.finish(operation_id, intent, active_sha, new,
+                           {'cycleId': pending['cycleId'], 'index': state['index'], 'retentionComplete': True,
+                            'pair': context['pair'], 'pools': pools, 'vpsVerification': verification,
+                            'retentionPolicy': VPS_POLICY, 'historicalBulkPreserved': True,
+                            'independentOffHostRecovery': False})
 
     def complete_cycle(self, frame):
+        require(self.config.get('retentionPolicy') is None, 'Legacy custody completion disabled by VPS policy')
         state, state_sha = self.state()
         _, context = self.current()
         pending = self.pending(state, frame, context, 'ordinary-complete')
@@ -569,7 +642,8 @@ class Runtime:
 
     def dispatch(self, operation, frame):
         methods = {'status': self.status, 'bootstrap': self.bootstrap, 'prepare-cycle': self.prepare_cycle,
-                   'apply-ordinary': self.apply_ordinary, 'complete-cycle': self.complete_cycle}
+                   'apply-ordinary': self.apply_ordinary, 'complete-cycle': self.complete_cycle,
+                   'apply-vps-retention': self.apply_vps_retention, 'complete-vps-cycle': self.complete_vps_cycle}
         require(operation in methods and isinstance(frame, dict), 'Unsupported lifecycle operation/frame')
         lock = self.S.lock(self.layout)
         try:
