@@ -117,3 +117,46 @@ prune or removal of retention masks. Its checks are:
 ```sh
 python3 deploy/monitoring-reconciliation/runtime_archive.test.py
 ```
+
+## Summary monitor derived snapshot comparison
+
+The summary monitor compares the source checkpoint separately from the response
+snapshot ID. Marketplace enrichment may produce a different response ID with an
+explicit top-level `derivedFromSnapshotId`. The monitor accepts that direct link
+only when the other route is its source, both routes have valid matching network,
+height, block hash and `indexedAt`, and the link is neither empty nor self-referential.
+Different children, indirect links and conflicting lineage remain failures.
+Equal IDs also cannot hide differing checkpoint metadata. HTTP errors, lag,
+canonical V8 evidence and latency remain independent gates.
+
+The scoped installation target is only
+`/usr/local/sbin/proofofwork-summary-route-health`. The separately stored
+`/opt/proofofwork-api/scripts/check-summary-route-readiness.mjs` is inside the
+managed runtime and is not changed by this monitor installation. Therefore this
+scope requires neither a runtime overlay acceptance change nor another runtime
+archive. The service and timer are also unchanged.
+
+After the source is committed and reviewed, use the clean committed node-side
+release checkout to supply `scripts/check-summary-route-readiness.mjs`. Bind its
+commit and SHA-256 and, under `/run/proofofwork-audit29-ops.lock`, recheck the
+installed regular file's root ownership, mode `0755`, single link and old SHA-256
+`149c74a1c53d63cd41b6c0d39ea8461cbb64749226b996de9a60924e4f56010a`.
+Also pin the service SHA-256
+`7e2c3662dd7318b7101c683048370fcf2c0ebc53350b0f1af43d2dfda710ce0c`
+and timer SHA-256
+`1720b87f4d2a64772234ed66a9e28c9b0ab0bab1d089eb34becbefc0e25dbf23`.
+Unexpected bytes or metadata require another review.
+
+Check candidate syntax, preserve the small predecessor script on the VPS with
+the scoped receipt, atomically install the exact candidate with the existing
+metadata, and verify the installed hash. Record the commit, before/after hashes,
+unit hashes and verification result in a hash-bound receipt under
+`/var/lib/proofofwork-monitoring-reconciliation/20261024/`. Roll back the exact
+predecessor if installation or byte verification fails. Run the existing service
+once and report its actual correctness and latency findings; a genuine alert
+must not be converted into success. No API restart or local backup is involved.
+
+```sh
+node --test scripts/check-summary-route-latency.test.mjs
+node --check scripts/check-summary-route-readiness.mjs
+```

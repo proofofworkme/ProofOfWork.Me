@@ -98,6 +98,12 @@ function checkpointFromPayload(payload, nestedKey) {
   const token = payload?.token ?? null;
   const provenance = payload?.provenance ?? payload?.canonicalProvenance ?? null;
   return {
+    network: asString(payload?.network),
+    // Only the API's explicit top-level link proves a derived snapshot's parent.
+    // Preserve an invalid supplied link as empty, distinct from an absent link.
+    derivedFromSnapshotId: Object.hasOwn(payload ?? {}, "derivedFromSnapshotId")
+      ? (asString(payload.derivedFromSnapshotId) ?? "")
+      : null,
     snapshotId: asString(
       firstValue(
         payload?.snapshotId,
@@ -282,13 +288,38 @@ function compactIssue(severity, kind, message, details = {}) {
   return { severity, kind, message, details };
 }
 
+function isSnapshotId(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 256 &&
+    !/[\s\u0000-\u001f\u007f]/u.test(value);
+}
+
+function verifiableCheckpoint(checkpoint) {
+  return checkpoint.network === NETWORK &&
+    Number.isSafeInteger(checkpoint.indexedThroughBlock) &&
+    checkpoint.indexedThroughBlock >= 0 &&
+    isBlockHash(checkpoint.indexedThroughBlockHash) &&
+    isSnapshotId(checkpoint.snapshotId) &&
+    typeof checkpoint.indexedAt === "string" &&
+    Number.isFinite(Date.parse(checkpoint.indexedAt)) &&
+    (checkpoint.derivedFromSnapshotId === null ||
+      (isSnapshotId(checkpoint.derivedFromSnapshotId) &&
+        checkpoint.derivedFromSnapshotId !== checkpoint.snapshotId));
+}
+
 function checkpointMismatch(a, b) {
-  return (
-    a.indexedThroughBlock !== null &&
-    b.indexedThroughBlock !== null &&
-    (a.indexedThroughBlock !== b.indexedThroughBlock ||
-      a.indexedThroughBlockHash !== b.indexedThroughBlockHash ||
-      a.snapshotId !== b.snapshotId)
+  if (!verifiableCheckpoint(a) || !verifiableCheckpoint(b) ||
+      a.network !== b.network || a.indexedThroughBlock !== b.indexedThroughBlock ||
+      a.indexedThroughBlockHash !== b.indexedThroughBlockHash || a.indexedAt !== b.indexedAt) {
+    return true;
+  }
+  if (a.snapshotId === b.snapshotId) {
+    return a.derivedFromSnapshotId !== b.derivedFromSnapshotId;
+  }
+  // Accept one directly evidenced enrichment of the other route's source.
+  // Different children or multi-hop claims cannot establish the same source.
+  return !(
+    (a.derivedFromSnapshotId === b.snapshotId && b.derivedFromSnapshotId === null) ||
+    (b.derivedFromSnapshotId === a.snapshotId && a.derivedFromSnapshotId === null)
   );
 }
 
@@ -342,10 +373,7 @@ function pushCheckpointIssues(issues, health, work, marketplace) {
   for (const route of [work, marketplace]) {
     const checkpoint = route.checkpoint;
     if (!route.ok) continue;
-    if (
-      checkpoint.indexedThroughBlock === null ||
-      !isBlockHash(checkpoint.indexedThroughBlockHash)
-    ) {
+    if (!verifiableCheckpoint(checkpoint)) {
       issues.push(
         compactIssue(
           "error",
