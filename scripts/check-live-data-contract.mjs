@@ -78,6 +78,9 @@ const bondHardPriceDeclarationPreparation = readFileSync(
 );
 const workUnits = readFileSync("server/work-units.mjs", "utf8");
 const app = readFileSync("src/App.tsx", "utf8");
+const appEntry = readFileSync("src/main.tsx", "utf8");
+const seoMetadata = readFileSync("src/app/seoMetadata.mjs", "utf8");
+const documentMetadata = readFileSync("src/app/documentMetadata.ts", "utf8");
 const routeRegistry = readFileSync("src/app/routeRegistry.ts", "utf8");
 const proofIndexDeploy = readFileSync("deploy/proofofwork-api-proof-index.conf", "utf8");
 const proofIndexDbRoleLimits = readFileSync(
@@ -1656,15 +1659,26 @@ expect("Desktop public search must keep fetchAddressMail source present", Boolea
 expect("Desktop public search must keep loadDesktopTarget source present", Boolean(loadDesktopTargetSource));
 expect("Desktop public app source must stay present", Boolean(desktopAppSource));
 expect("Desktop public route must not expose network switching controls", !/onNetworkChange/.test(desktopAppSource));
-expectAll("Desktop public route has dedicated metadata", app, [
-  /desktopRoute[\s\S]*?Search public confirmed ProofOfWork files by address or confirmed ProofOfWork ID\./,
-  /title:\s*"ProofOfWork Desktop"/,
-  /\},\s*\[browserRoute,\s*pagesRoute,\s*desktopRoute,\s*dnsLaunchMode,\s*idLaunchMode\]\)/,
+expectAll("Desktop public route has dedicated metadata", seoMetadata, [
+  /\["desktop",\s*"Desktop",\s*"desktop",\s*"ProofOfWork Desktop \| Explore public verified files",/,
+  /"ProofOfWork Desktop \| Explore public verified files",\s*"Search an address or confirmed ProofOfWork ID to explore public files and inspect their transaction evidence\. File content is verified against its chain record\."/,
 ]);
-expectAll("Browser public route has dedicated metadata", app, [
-  /browserRoute[\s\S]*?Render ProofOfWork HTML message bodies and verified HTML attachments by transaction ID\./,
-  /title:\s*"ProofOfWork Browser"/,
-  /\},\s*\[browserRoute,\s*pagesRoute,\s*desktopRoute,\s*dnsLaunchMode,\s*idLaunchMode\]\)/,
+expectAll("Browser public route has dedicated metadata", seoMetadata, [
+  /\["browser",\s*"Browser",\s*"browser",\s*"ProofOfWork Browser \| Read verified pages and apps",/,
+  /"ProofOfWork Browser \| Read verified pages and apps",\s*"Open verified HTML pages by transaction ID or \.pow name\. Inspect their source and proof, with static viewing and an isolated option to run supported apps\."/,
+]);
+expectAll("public route metadata initializes before product rendering", appEntry, [
+  /import\s*\{[^}]*initializeDocumentMetadata[^}]*\}\s*from "\.\/app\/documentMetadata"/,
+  /initializeDocumentMetadata\(\);[\s\S]*?ReactDOM\.createRoot\([\s\S]*?\.render\(/,
+]);
+expectAll("public route metadata applies current surface title and description", documentMetadata, [
+  /function refreshDocumentMetadata\(\)[\s\S]*?resolvePageMetadata\(detectAppSurface\(\),\s*href,\s*view\?\.metadata\)[\s\S]*?applyMetadata\(metadata\)/,
+  /function applyMetadata\(metadata:\s*Metadata\)[\s\S]*?document\.title = metadata\.title;[\s\S]*?setMeta\("name",\s*"description",\s*metadata\.description\)/,
+]);
+expectAll("public route metadata refreshes on history navigation", documentMetadata, [
+  /const locationChanged = \(\) => \{[\s\S]*?refreshDocumentMetadata\(\)/,
+  /for \(const method of \["pushState",\s*"replaceState"\] as const\)[\s\S]*?original\.apply\(this,\s*args\);[\s\S]*?locationChanged\(\)/,
+  /window\.addEventListener\("popstate",\s*locationChanged\)/,
 ]);
 expectAll("Browser .pow page resolution uses current first-party DNS and confirmed HTML", app, [
   /async function fetchBrowserTargetPage/,
@@ -1881,7 +1895,7 @@ expectAll("fresh wallet overlays preserve their exact checkpoint proof", walletT
 expectAll("marketplace summary and tabs keep confirmed sealed inventory canonical", server + app, [
   /const MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS = Number\([\s\S]*?12_000/,
   /const MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED = Number\([\s\S]*?const MARKETPLACE_SUMMARY_FRESH_WAIT_MS =[\s\S]*?MARKETPLACE_SUMMARY_FRESH_HARD_CAP_MS > 0[\s\S]*?MARKETPLACE_SUMMARY_FRESH_WAIT_MS_UNCAPPED/,
-  /async function marketplaceSummaryFastFallbackPayload\(network\)[\s\S]*?payloadWithFallbackAfterMs\([\s\S]*?cachedMarketplaceSummaryPayloadNoRefresh/,
+  /async function marketplaceSummaryFastFallbackPayload\(network,\s*options\s*=\s*\{\}\)[\s\S]*?const cached = await payloadWithFallbackAfterMs\(\s*cachedMarketplaceSummaryPayloadNoRefresh\(network\),\s*null,\s*Math\.min\(2_500,\s*MARKETPLACE_SUMMARY_FRESH_WAIT_MS\)/,
   /async function marketplaceSummaryPayloadWithIndexedMarketOverlay\([\s\S]*?indexedTokenMarketSummaryOverlay\([\s\S]*?tokenPayloadWithCurrentWorkActiveListingPolicy\([\s\S]*?tokenStateWithCanonicalWorkListingBookForMarketplaceSummary\([\s\S]*?compactTokenSummaryPayload\(canonicalTokenState\)/,
   /async function marketplaceSummaryPayloadWithIndexedMarketOverlay\([\s\S]*?const immutableSnapshot =[\s\S]*?options\.fast !== true[\s\S]*?tokenPayloadWithSpendableActiveListings\([\s\S]*?summaryWithDerivedSnapshot\([\s\S]*?"marketplace-token-listing-authority"/,
   /async function indexedTokenMarketSummaryOverlay\([\s\S]*?tokenMarketLifecycleOverlayFromCreditListings\([\s\S]*?proofIndexPayloadCoversConfirmedTip\(/,
@@ -1912,7 +1926,7 @@ expectAll("marketplace summary and tabs keep confirmed sealed inventory canonica
   /async function currentProofIndexMarketplaceSummaryFallbackPayload\([\s\S]*?currentProofIndexSummarySnapshotFallbackPayload\([\s\S]*?"marketplaceSummary"[\s\S]*?"marketplace-summary"[\s\S]*?workFloorWithSummaryMarketOverlay\([\s\S]*?indexedPayload\.workFloor[\s\S]*?marketplaceSummaryPayloadWithIndexedMarketOverlay/,
   /async function marketplaceSummaryFastFallbackPayload\([\s\S]*?currentProofIndexMarketplaceSummaryFallbackPayload\(network,\s*false,\s*\{[\s\S]*?fast:\s*true/,
   /if \(fresh\) \{[\s\S]*?refreshMarketplaceSummaryPayloadCache\(network,\s*true\)[\s\S]*?summaryPayloadHasFiniteNetworkValue\([\s\S]*?"marketplaceSummary"[\s\S]*?refreshed[\s\S]*?return refreshed[\s\S]*?throw freshDataUnavailableError\([\s\S]*?"Fresh marketplace summary is unavailable\."/,
-  /url\.pathname === "\/api\/v1\/marketplace-summary"[\s\S]*?await deduplicatedSummaryRead\(\s*`marketplace-summary:\$\{network\}:\$\{freshRead \? "fresh" : "cached"\}`,[\s\S]*?\(\) => marketplaceSummaryPayload\(network,\s*freshRead\)/,
+  /url\.pathname === "\/api\/v1\/marketplace-summary"[\s\S]*?const rawMarketplaceSummary = await measureMarketplaceReadPhase\(\s*"snapshot-assembly",\s*\(\) => deduplicatedSummaryRead\(\s*`marketplace-summary:\$\{network\}:\$\{freshRead \? "fresh" : "cached"\}`,[\s\S]*?\(\) => marketplaceSummaryPayload\(network,\s*freshRead\)/,
   /const sealedListings = marketListings\.filter\(\s*tokenListingHasConfirmedSaleTicketSeal,\s*\)/,
   /const unsealedListings = marketListings\.filter\(\s*\(listing\) => !tokenListingHasConfirmedSaleTicketSeal\(listing\),\s*\)/,
   /tokenMarketHistoryRefreshNonce[\s\S]*?fresh:\s*tokenMarketHistoryRefreshNonce > 0/,
@@ -2040,8 +2054,8 @@ expectAll(
   ],
 );
 expectAll("summary proof-index snapshots prefer latest summary scan rows before historical fallback", proofIndexSnapshotPayloadSource, [
-  /FROM proof_indexer\.ledger_snapshots[\s\S]*?WHERE network = \$1[\s\S]*?payload \? 'summaryPayloads'[\s\S]*?payload->'summaryPayloads' \? \$2[\s\S]*?ORDER BY indexed_through_block DESC NULLS LAST,\s*generated_at DESC[\s\S]*?LIMIT 1/,
-  /if \(!snapshot\) \{[\s\S]*?WITH recent AS \([\s\S]*?FROM proof_indexer\.ledger_snapshots[\s\S]*?WHERE network = \$1[\s\S]*?AND payload \? 'summaryPayloads'[\s\S]*?ORDER BY generated_at DESC[\s\S]*?LIMIT \$\{SUMMARY_SNAPSHOT_LOOKBACK_LIMIT\}[\s\S]*?FROM recent[\s\S]*?WHERE payload \? 'summaryPayloads'[\s\S]*?AND payload->'summaryPayloads' \? \$2[\s\S]*?ORDER BY generated_at DESC[\s\S]*?LIMIT 1/,
+  /summary_parts\."summaryPayloads"->\$2 AS summary_payload[\s\S]*?FROM proof_indexer\.ledger_snapshots snapshot[\s\S]*?CROSS JOIN LATERAL \([\s\S]*?snapshot\.payload->'workSufficientState' AS "workSufficientState",\s*snapshot\.payload->'summaryPayloads' AS "summaryPayloads",\s*snapshot\.payload->'totals' AS "totals"\s*OFFSET 0\s*\) AS summary_parts[\s\S]*?WHERE network = \$1[\s\S]*?AND \$\{latestSummaryEligibility\}[\s\S]*?payload \? 'summaryPayloads'[\s\S]*?summary_parts\."summaryPayloads" \? \$2[\s\S]*?ORDER BY indexed_through_block DESC NULLS LAST,\s*generated_at DESC[\s\S]*?LIMIT 1/,
+  /if \(!snapshot\) \{[\s\S]*?WITH recent AS \([\s\S]*?summary_parts\."summaryPayloads" AS summary_payloads[\s\S]*?FROM proof_indexer\.ledger_snapshots snapshot[\s\S]*?CROSS JOIN LATERAL \([\s\S]*?snapshot\.payload->'workSufficientState' AS "workSufficientState",\s*snapshot\.payload->'summaryPayloads' AS "summaryPayloads",\s*snapshot\.payload->'totals' AS "totals"\s*OFFSET 0\s*\) AS summary_parts[\s\S]*?WHERE network = \$1[\s\S]*?AND \$\{latestSummaryEligibility\}[\s\S]*?AND payload \? 'summaryPayloads'[\s\S]*?ORDER BY generated_at DESC[\s\S]*?LIMIT \$\{SUMMARY_SNAPSHOT_LOOKBACK_LIMIT\}[\s\S]*?summary_payloads->\$2 AS summary_payload[\s\S]*?FROM recent[\s\S]*?WHERE payload \? 'summaryPayloads'[\s\S]*?AND summary_payloads \? \$2[\s\S]*?ORDER BY generated_at DESC[\s\S]*?LIMIT 1/,
 ]);
 expectAll(
   "pending Q16 tip races return control to the outer canonical retry",
@@ -2656,7 +2670,7 @@ expectAll("registry default reads use proof index with canonical fallback", serv
   /proofIndexRegistryPayload/,
   /function duplicateRegistryRecordIds\(payload\)[\s\S]*?duplicates\.add\(id\)/,
   /function registryIndexedPayloadRejectReason\(payload,\s*previousPayload\s*=\s*null\)[\s\S]*?duplicateRegistryRecordIds\(payload\)[\s\S]*?stale indexedAt[\s\S]*?registryPayloadLooksWorse/,
-  /async function indexedRegistryPayload\(network,\s*options\s*=\s*\{\}\)[\s\S]*?proofIndexReadFeatureEnabled\([\s\S]*?registry-history[\s\S]*?proofIndexRegistryPayload\(network,\s*\{[\s\S]*?allowIncompleteScan:\s*true[\s\S]*?expectedHash:\s*exactHash[\s\S]*?expectedHeight:\s*exactHeight[\s\S]*?registryAddress/,
+  /async function indexedRegistryPayload\(network,\s*options\s*=\s*\{\}\)[\s\S]*?proofIndexReadFeatureEnabled\([\s\S]*?registry-history[\s\S]*?const exactCheckpointRequested =[\s\S]*?Number\.isSafeInteger\(exactHeight\)[\s\S]*?exactHeight > 0[\s\S]*?const readOptions = \{\s*\.\.\.\(exactCheckpointRequested\s*\? \{\s*allowIncompleteScan:\s*true,\s*expectedHash:\s*exactHash,\s*expectedHeight:\s*exactHeight,[\s\S]*?registryAddress,\s*\};\s*return deduplicatedSummaryRead\(\s*`registry-rows:\$\{JSON\.stringify\(\[network, readOptions\]\)\}`,[\s\S]*?\(\) => proofIndexRegistryPayload\(network,\s*readOptions\),[\s\S]*?\.then\(async \(sharedPayload\) => \{[\s\S]*?const payload = structuredClone\(sharedPayload\)/,
   /async function indexedRegistryPayload\(network,\s*options\s*=\s*\{\}\)[\s\S]*?records:[\s\S]*?sort\(compareRegistryRecordDisplayOrder\)[\s\S]*?registryIndexedPayloadRejectReason\(orderedPayload\)[\s\S]*?exactCheckpointMatches[\s\S]*?Rejected proof-index registry payload/,
   /async function safeRegistryPayload\(network\)[\s\S]*?registryConfirmedCount\(nextPayload\) <= 0[\s\S]*?Current livenet registry is unavailable/,
   /async function registrySummaryPayload\(network,\s*fresh\s*=\s*false\)[\s\S]*?await indexedRegistryPayload\(network\)[\s\S]*?fastJsonBackedPayload/,
@@ -3321,7 +3335,7 @@ expectAll("summary routes cache only non-fresh canonical payloads", server, [
   /const workSummaryResponsePayload = async \(\) => \{[\s\S]*?summaryPayloadWithCanonicalProvenance\([\s\S]*?"work-summary"/,
   /if \(!freshRead\) \{[\s\S]*?cachedJsonResponse\([\s\S]*?`work-summary:\$\{network\}:\$\{compactRead \? "compact" : "full"\}`,[\s\S]*?workSummaryResponsePayload,[\s\S]*?READ_CACHE_CONTROL,[\s\S]*?RESPONSE_CACHE_TTL_MS,[\s\S]*?0,/,
   /jsonResponse\([\s\S]*?await workSummaryResponsePayload\(\),[\s\S]*?FRESH_READ_CACHE_CONTROL/,
-  /const marketplaceSummaryResponsePayload = async \(\) => \{[\s\S]*?summaryPayloadWithCanonicalProvenance\([\s\S]*?"marketplace-summary"/,
+  /const marketplaceSummaryResponsePayload = \(\) => withMarketplaceReadPhases\(async \(\) => \{[\s\S]*?return withWorkMarketplaceV4Metadata\(\s*await measureMarketplaceReadPhase\(\s*"confirmed-barrier",\s*\(\) => summaryPayloadWithCanonicalProvenance\(\s*marketplaceSummary,\s*network,\s*freshRead,\s*"marketplace-summary"/,
   /if \(!freshRead\) \{[\s\S]*?cachedJsonResponse\([\s\S]*?`marketplace-summary:\$\{network\}:\$\{compactRead \? "compact" : "full"\}`,[\s\S]*?marketplaceSummaryResponsePayload,[\s\S]*?READ_CACHE_CONTROL,[\s\S]*?RESPONSE_CACHE_TTL_MS,[\s\S]*?0,/,
   /jsonResponse\([\s\S]*?await marketplaceSummaryResponsePayload\(\),[\s\S]*?FRESH_READ_CACHE_CONTROL/,
 ]);

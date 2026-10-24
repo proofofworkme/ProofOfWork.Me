@@ -17,7 +17,11 @@ function overlayFixture(failure) {
     indexedTokenMarketSummaryOverlay: async () => { calls.push('overlay'); if (failure === 'overlay') throw error; return { indexedAt: 'new' }; },
     tokenSummaryListingIdsMissingFromMarketLifecycle: () => [],
     tokenStateWithIndexedMarketSummaryOverlay: value => { calls.push('merge'); return value; },
-    tokenPayloadWithSpendableActiveListings: async value => { calls.push('core'); if (failure === 'core') throw error; return value; },
+    tokenPayloadWithSpendableActiveListings: async (value, network, options) => {
+      calls.push('core'); assert.equal(network, 'livenet');
+      assert.equal(options?.useCurrentCoreSummaryEvidence, true);
+      if (failure === 'core') throw error; return value;
+    },
     tokenPayloadWithCurrentWorkActiveListingPolicy: value => { calls.push('policy'); return value; },
     tokenStateWithCanonicalWorkListingBookForMarketplaceSummary: async value => { calls.push('work-book'); if (failure === 'work-book') throw error; return value; },
     compactTokenSummaryPayload: value => { calls.push('compact'); return value; },

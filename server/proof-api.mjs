@@ -411,6 +411,7 @@ import {
   proofIndexValueSummaryPayload,
   proofIndexTokenSnapshotPayload,
   proofIndexWalletTokenOverlayPayload,
+  isProofIndexWalletReadinessUnavailable,
   proofIndexWithWalletRequestReadiness,
   proofIndexWorkWalletCapacities,
   proofIndexWorkAmoBlockTransition,
@@ -3847,7 +3848,9 @@ async function proofIndexWalletScopedTokenPayloadForRead(
     network,
     tokenScope,
     recoveryAddresses,
+    { rejectProofReadinessFailure: true },
   ).catch((error) => {
+    if (isProofIndexWalletReadinessUnavailable(error)) throw error;
     console.error(
       `Proof index ${label} wallet projection failed: ${errorSummary(error)}`,
     );
@@ -6251,7 +6254,9 @@ async function marketplaceSummaryPayloadWithIndexedMarketOverlay(
     );
     const tokenState = await measureMarketplaceReadPhase(
       "closing-core",
-      () => tokenPayloadWithSpendableActiveListings(overlaidTokenState, network),
+      () => tokenPayloadWithSpendableActiveListings(overlaidTokenState, network, {
+        useCurrentCoreSummaryEvidence: true,
+      }),
     );
     const currentTokenState = tokenPayloadWithCurrentWorkActiveListingPolicy(
       tokenState,
@@ -21346,7 +21351,36 @@ function assertCanonicalCreditAggregateResponse(payload, network) {
   }
 }
 
-async function spendableTokenListingsPayload(payload, network) {
+function coreProvenTokenSummarySelection(coreReconciliation, originalListings) {
+  const evidence = coreReconciliation?.evidence;
+  const listings = coreReconciliation?.listings;
+  const originalSet = new Set(originalListings);
+  if (
+    !stableTipCoreTokenListingAuthorityComplete(evidence) ||
+    !Number.isSafeInteger(evidence.checkpoint?.height) ||
+    !Array.isArray(listings) ||
+    evidence.checkedListingCount !== originalListings.length ||
+    evidence.inputListingCount !== originalListings.length ||
+    evidence.outputListingCount !== listings.length ||
+    evidence.unspentListingCount !== listings.length ||
+    evidence.spentListingCount !== originalListings.length - listings.length ||
+    originalSet.size !== originalListings.length ||
+    new Set(listings).size !== listings.length ||
+    listings.some((listing) => !originalSet.has(listing))
+  ) {
+    throw tokenListingAuthorityUnavailable(
+      "The marketplace summary has no complete current Core listing selection.",
+    );
+  }
+  // Only the fast summary opts in, after this request's requireAll Core batch
+  // and both tip fences. This is the existing enrichment-timeout fallback,
+  // selected without starting another per-anchor outspend lookup. Pending
+  // spends arriving after the Core batch are not frozen by either path.
+  // Canonical closed history is still merged by the common path below.
+  return { closedListings: [], listings };
+}
+
+async function spendableTokenListingsPayload(payload, network, options = {}) {
   if (!payload || !Array.isArray(payload.listings)) {
     return payload;
   }
@@ -21359,19 +21393,21 @@ async function spendableTokenListingsPayload(payload, network) {
     { requireAll: network === "livenet" },
   );
   const tokenListings =
-    network === "livenet"
-      ? await payloadWithFallbackAfterMs(
-          filterSpendableTokenListings(
+    network === "livenet" && options.useCurrentCoreSummaryEvidence === true
+      ? coreProvenTokenSummarySelection(coreReconciliation, originalListings)
+      : network === "livenet"
+        ? await payloadWithFallbackAfterMs(
+            filterSpendableTokenListings(
+              coreReconciliation.listings,
+              network,
+            ),
+            null,
+            SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS,
+          )
+        : await filterSpendableTokenListings(
             coreReconciliation.listings,
             network,
-          ),
-          null,
-          SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS,
-        )
-      : await filterSpendableTokenListings(
-          coreReconciliation.listings,
-          network,
-        );
+          );
   if (!tokenListings && network === "livenet") {
     console.error(
       `Token listing lifecycle enrichment timed out after ${SUMMARY_SPENDABLE_CURRENT_FALLBACK_WAIT_MS}ms; returning only stable-tip Core-proven unspent listings.`,
@@ -21569,12 +21605,12 @@ function tokenPayloadWithReconciledActiveListingCounts(
   };
 }
 
-async function boundedSpendableTokenListingsPayload(payload, network, label) {
+async function boundedSpendableTokenListingsPayload(payload, network, label, options = {}) {
   if (!payload || !Array.isArray(payload.listings)) {
     return payload;
   }
 
-  return spendableTokenListingsPayload(payload, network);
+  return spendableTokenListingsPayload(payload, network, options);
 }
 
 async function tokenPayloadWithSpendableListings(payload, network) {
@@ -21585,11 +21621,12 @@ async function tokenPayloadWithSpendableListings(payload, network) {
   );
 }
 
-async function tokenPayloadWithSpendableActiveListings(payload, network) {
+async function tokenPayloadWithSpendableActiveListings(payload, network, options = {}) {
   return boundedSpendableTokenListingsPayload(
     payload,
     network,
     "active token market",
+    options,
   );
 }
 
@@ -73342,7 +73379,10 @@ function pendingWorkVerifierStageConfirmedBase(
     pendingSupply: formatWorkSubatoms(0n),
     pendingSupplySubatoms: "0",
   };
-  const state = pendingWorkVerifierStageJsonClone({
+  // Each event/listing is already JSON-detached above; holders, token and
+  // envelope fields are newly constructed. Preserve that ownership without
+  // cloning the complete confirmed history a second time.
+  const state = {
     amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
     blockHash: tip.blockHash,
     canonicalCoverage: true,
@@ -73376,7 +73416,7 @@ function pendingWorkVerifierStageConfirmedBase(
     tokens: [token],
     transfers,
     unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,
-  });
+  };
   if (
     !workPrecisionV2CurrentPayloadIsExact(
       state,

@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { Worker } from "node:worker_threads";
 import test from "node:test";
+import { workAmoV5CanonicalPayloadCommitment } from "../server/work-amo-v5.mjs";
 const source = readFileSync(new URL("../server/proof-api.mjs", import.meta.url), "utf8");
 const laneSource = source.slice(source.indexOf("function createPendingBaseValidationLane("), source.indexOf("const pendingBaseValidationLane ="));
 const stageError = (code, message, details) => Object.assign(new Error(message), { statusCode: 503, details: { code, ...details } });
@@ -94,4 +95,146 @@ test("unverified termination closes admission and cannot spawn a replacement", a
   await Promise.all([active, queued]);
   await assert.rejects(lane.run(7, 8, 9), e => e.details.reason === "closed");
   assert.equal(created, 1); await lane.close();
+});
+
+function declaration(name, next) {
+  const start = source.indexOf(`function ${name}(`);
+  const end = source.lastIndexOf("\n", source.indexOf(`function ${next}(`, start));
+  assert.ok(start >= 0 && end > start, `missing ${name}`);
+  return source.slice(start, end);
+}
+
+function confirmedBaseFixture({ legacyClone = false, rejectConservation = false, rejectCommitment = false } = {}) {
+  const tokenId = "a".repeat(64), blockHash = "b".repeat(64);
+  const definition = {
+    amountStorageModel: "q16", decimals: 16, maxSupplySubatoms: "1000",
+    mintAmountSubatoms: "10", precisionModel: "precision-v2",
+    registryAddress: "registry", ticker: "WORK", tokenId, unitScale: "10000000000000000",
+  };
+  const commitment = { model: "canonical-work-amo-payload-sha256-v1", payloadBytes: 7, sha256: "c".repeat(64) };
+  const event = (digit) => ({
+    confirmed: true, txid: digit.repeat(64), tokenId, network: "livenet",
+    blockHash, blockHeight: 9, blockIndex: 1, protocolVout: 0, recordOrdinal: 0,
+    evidence: { nested: [{ label: "original", omitted: undefined }] },
+    pendingEvidence: { ignored: true },
+  });
+  const listing = (digit, closed = false) => ({
+    ...event(digit), listingId: digit.repeat(64), registryAddress: "registry",
+    sellerAddress: "seller", listingAuthorization: { version: "v8", proof: { field: "bound" } },
+    frozenTerms: { terms: ["exact"] },
+    ...(closed ? { closedConfirmed: true, closedTxid: "f".repeat(64), closedBlockHash: blockHash,
+      closedBlockHeight: 10, closedBlockIndex: 0, closedProtocolVout: 1, closedRecordOrdinal: 0 } : {}),
+  });
+  const payload = {
+    source: "proof-indexer-token-state-tables", network: "livenet",
+    indexedThroughBlock: 10, indexedThroughBlockHash: blockHash,
+    tokens: [structuredClone(definition)],
+    holders: [{ tokenId, address: "holder", balanceSubatoms: "10", amountStorageModel: "q16", precisionModel: "precision-v2" }],
+    mints: [event("1")], transfers: [event("2")], invalidEvents: [{ ...event("3"), valid: false }],
+    listings: [listing("4")], closedListings: [listing("5", true)], sales: [event("6")],
+  };
+  const dependencies = {
+    proofIndexTokenStateTablesSource: value => value === "proof-indexer-token-state-tables",
+    workPrecisionV2CurrentPayloadIsExact: value => value.forceInexact !== true,
+    WORK_AMO_V8_ACTIVATION_HEIGHT: 1, WORK_SUBATOM_PROJECTION_MODEL: "q16",
+    WORK_PRECISION_V2_MODEL: "precision-v2", WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS: "registry",
+    WORK_TOKEN_TICKER: "WORK", WORK_TOKEN_ID: tokenId, WORK_TOKEN_MAX_SUPPLY_SUBATOMS: 1000n,
+    WORK_SUBATOM_DECIMALS: 16, WORK_SUBATOM_UNIT_SCALE_TEXT: definition.unitScale,
+    WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL: commitment.model,
+    TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: "v8", PENDING_WORK_STAGE_SEAL_FIELDS: [], PENDING_WORK_STAGE_CLOSE_FIELDS: [],
+    isWorkTokenId: value => value === tokenId,
+    canonicalWorkTokenDefinition: () => structuredClone(definition),
+    canonicalWorkSubatomsText: value => /^\d+$/u.test(String(value)) ? String(value) : "",
+    isValidBitcoinAddress: value => typeof value === "string" && value.length > 0,
+    workBalanceFieldsFromSubatoms: value => ({ balance: String(value), balanceSubatoms: String(value) }),
+    formatWorkSubatoms: value => String(value), compareCanonicalUtf8: (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)),
+    canonicalVerifierItemPosition: (value, fields) => ({
+      blockHash: value[fields.blockHashField ?? "blockHash"],
+      blockHeight: value[fields.blockHeightField ?? "blockHeight"],
+      blockIndex: value[fields.blockIndexField ?? "blockIndex"],
+      protocolVout: value[fields.protocolVoutField ?? "protocolVout"],
+      recordOrdinal: value[fields.recordOrdinalField ?? "recordOrdinal"],
+    }),
+    pendingWorkVerifierStageError: stageError, errorSummary: error => error.message,
+    pendingWorkVerifierStageCollapseExactLegacyInvalidSibling: values => values,
+    pendingWorkVerifierStageDeleteFields: (value, fields) => Object.fromEntries(Object.entries(value).filter(([key]) => !fields.includes(key))),
+    pendingWorkVerifierStageCanonicalCutoverRelic: () => false,
+    pendingWorkVerifierStageCanonicalOutpointClose: () => null,
+    tokenSaleAuthorizationDraft: value => value,
+    validateWorkAmoV8StaticAuthorization: authorization => ({ valid: true, authorization }),
+    pendingWorkVerifierStageConfirmedV8Listing: value => value,
+    tokenTablePayloadHasConservedBalances: () => !rejectConservation,
+    workAmoV8CanonicalTokenStateCommitment: () => {
+      if (rejectCommitment) throw new Error("invalid V8 state");
+      return commitment;
+    },
+    workAmoV5CanonicalPayloadCommitment,
+  };
+  let base = declaration("pendingWorkVerifierStageConfirmedBase", "pendingWorkVerifierStageCoreAuthority");
+  if (legacyClone) {
+    base = base.replace("const state = {", "const state = pendingWorkVerifierStageJsonClone({")
+      .replace("unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,\n  };", "unitScale: WORK_SUBATOM_UNIT_SCALE_TEXT,\n  });");
+  }
+  const helpers = [
+    declaration("pendingWorkVerifierStageJsonClone", "pendingWorkVerifierStageWithoutPendingFields"),
+    declaration("pendingWorkVerifierStageWithoutPendingFields", "pendingWorkVerifierStageConfirmedItem"),
+    declaration("pendingWorkVerifierStageConfirmedItem", "pendingWorkVerifierStageCanonicalOutpointClose"),
+    declaration("pendingWorkVerifierStageSortUniqueItems", "pendingWorkVerifierStageCollapseExactLegacyInvalidSibling"),
+    declaration("pendingWorkVerifierStageConfirmedListing", "pendingWorkVerifierStageConfirmedTransitionCommitment"),
+  ].join("\n");
+  const validate = new Function(...Object.keys(dependencies), `${helpers}\n${base}\nreturn pendingWorkVerifierStageConfirmedBase;`)(...Object.values(dependencies));
+  return { payload, tip: { height: 10, blockHash }, commitment, validate };
+}
+
+function objectIdentities(value, found = new Set()) {
+  if (!value || typeof value !== "object" || found.has(value)) return found;
+  found.add(value);
+  for (const child of Object.values(value)) objectIdentities(child, found);
+  return found;
+}
+
+test("confirmed-base assembly retains exact legacy state and commitment bytes without input aliases", () => {
+  const current = confirmedBaseFixture(), previous = confirmedBaseFixture({ legacyClone: true });
+  const result = current.validate(current.payload, current.tip, current.commitment);
+  const legacy = previous.validate(previous.payload, previous.tip, previous.commitment);
+  assert.deepEqual(result, legacy);
+  assert.equal(JSON.stringify(result.state), JSON.stringify(legacy.state));
+  const inputs = objectIdentities(current.payload);
+  for (const value of objectIdentities(result.state)) assert.equal(inputs.has(value), false, "confirmed state aliases an input object");
+});
+
+test("confirmed-base event, listing, holder and definition objects remain detached in both directions", () => {
+  const fixture = confirmedBaseFixture();
+  const result = fixture.validate(fixture.payload, fixture.tip, fixture.commitment);
+  const original = structuredClone(fixture.payload);
+  for (const name of ["mints", "transfers", "invalidEvents", "listings", "closedListings", "sales"]) {
+    result.state[name][0].evidence.nested[0].label = "output-only";
+    fixture.payload[name][0].evidence.nested.push({ label: "input-only" });
+    assert.equal(result.state[name][0].evidence.nested.length, 1);
+    assert.equal(fixture.payload[name][0].evidence.nested[0].label, "original");
+  }
+  result.state.listings[0].listingAuthorization.proof.field = "output-only";
+  assert.equal(fixture.payload.listings[0].listingAuthorization.proof.field, "bound");
+  fixture.payload.closedListings[0].frozenTerms.terms.push("input-only");
+  assert.deepEqual(result.state.closedListings[0].frozenTerms.terms, ["exact"]);
+  result.state.holders[0].address = "output-only";
+  result.state.tokens[0].ticker = "output-only";
+  assert.equal(fixture.payload.holders[0].address, original.holders[0].address);
+  assert.equal(fixture.payload.tokens[0].ticker, original.tokens[0].ticker);
+});
+
+test("removing the redundant clone preserves exact position, duplicate, conservation and commitment refusals", () => {
+  for (const mutate of [
+    value => { value.forceInexact = true; },
+    value => { value.mints[0].blockHash = "invalid"; },
+    value => { value.mints.push(structuredClone(value.mints[0])); },
+    value => { value.holders[0].balanceSubatoms = "0"; },
+  ]) {
+    const fixture = confirmedBaseFixture(); mutate(fixture.payload);
+    assert.throws(() => fixture.validate(fixture.payload, fixture.tip, fixture.commitment), error => error.statusCode === 503);
+  }
+  for (const options of [{ rejectConservation: true }, { rejectCommitment: true }]) {
+    const fixture = confirmedBaseFixture(options);
+    assert.throws(() => fixture.validate(fixture.payload, fixture.tip, fixture.commitment), error => error.statusCode === 503);
+  }
 });

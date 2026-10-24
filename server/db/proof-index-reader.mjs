@@ -283,6 +283,43 @@ const workPrecisionV2ReadinessEpochContractInFlight = new Map();
 const workPrecisionV2ReadinessEpochContractReadyCache = new Map();
 const walletRequestReadiness = new WalletRequestAsyncLocalStorage();
 const walletRequestReadinessSnapshots = new WeakMap();
+const walletProofReadinessFailures = new WeakSet();
+
+export function isProofIndexWalletReadinessUnavailable(error) {
+  return walletProofReadinessFailures.has(error);
+}
+
+function reportWalletTokenOverlayUnavailable(details, scope, options = {}) {
+  console.warn(JSON.stringify({
+    event: "wallet-token-overlay-unavailable",
+    warning: details.reason,
+    ...details,
+  }));
+  if (
+    options.rejectProofReadinessFailure !== true ||
+    ![
+      "work-q16-reader-pins-unavailable",
+      "work-q16-readiness-unavailable",
+      "work-q16-payload-inexact",
+      "work-q16-checkpoint-mismatch",
+    ].includes(details.reason)
+  ) {
+    return;
+  }
+  // A private identity distinguishes a failed canonical proof from ordinary
+  // missing data. Shared wallet readers propagate this same rejection; no
+  // negative result or private diagnostic becomes cached public authority.
+  const error = new Error(
+    `Fresh wallet credit state is temporarily unavailable for ${scope || "all"}.`,
+  );
+  error.statusCode = 503;
+  error.details = {
+    code: "CANONICAL_WALLET_INDEX_UNAVAILABLE",
+    requiredSource: "proof-indexer-wallet-token-overlay",
+  };
+  walletProofReadinessFailures.add(error);
+  throw error;
+}
 
 export async function proofIndexWithWalletRequestReadiness(read) {
   // A new caller always owns new maps, including when a wallet payload was
@@ -34006,6 +34043,7 @@ export async function proofIndexWalletTokenOverlayPayload(
   network,
   tokenScope,
   addresses,
+  options = {},
 ) {
   const pool = proofIndexPool();
   const addressNeedles = [
@@ -35030,11 +35068,11 @@ export async function proofIndexWalletTokenOverlayPayload(
     network,
     currentMarketPayload,
     {
-      onUnavailable: (details) => console.warn(JSON.stringify({
-        event: "wallet-token-overlay-unavailable",
-        warning: details.reason,
-        ...details,
-      })),
+      onUnavailable: (details) => reportWalletTokenOverlayUnavailable(
+        details,
+        scope,
+        options,
+      ),
       requireExactCheckpoint: true,
       requireSupplyEnvelope: false,
     },

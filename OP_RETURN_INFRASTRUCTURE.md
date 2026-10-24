@@ -103,12 +103,39 @@ including for delayed asynchronous continuations. The accepted node snapshot
 overlay is integrated through the reviewed, hash-bound merge and tested after
 the actual transaction commit; it is not replaced by canonical source alone.
 
+Wallet response assembly propagates an explicit Q16 proof-readiness refusal
+instead of starting the legacy recovery chain and repeating the same failed
+proof. The reader's opt-in refusal is privately branded and shared with every
+single-flight joiner; ordinary missing-data results and unrelated lookup errors
+keep their existing fallback behavior. The response uses the existing
+`CANONICAL_WALLET_INDEX_UNAVAILABLE` status, so clients retain their qualified
+last-good view and wallet actions wait for fresh proof. Refusals are never
+cached as authority, and the next request evaluates readiness again.
+
+Pending WORK confirmed-base validation constructs its final state from the
+already detached per-record JSON copies and freshly created definition and
+holder records. It avoids copying the complete state a second time. Both
+independent base reads and validations remain, including exact positions,
+conservation, V8 and canonical payload commitments, Core/mempool checks and
+readiness epochs. The returned state shares no mutable objects with its input.
+
 Private marketplace timings use the existing bounded observer: `snapshot-assembly`
 covers summary assembly, with nested `ledger-source-market-overlay`,
 `closing-core` and `confirmed-summary` timings for the indexed overlay, listing
 reconciliation and canonical WORK book respectively. `confirmed-barrier` covers
 the independent final summary checkpoint. These timings contain no wallet or
 listing payloads and cannot alter successful results or rejection behavior.
+
+The fast livenet marketplace summary uses its complete, request-local Core
+listing selection directly after the unchanged before/after tip fences and
+every selected anchor's script, value and confirmation checks. It does not
+start the second per-anchor lifecycle enrichment scan, which previously could
+time out after 2.5 seconds and return that same Core selection. Exact input and
+output counts and object identities must match the internal proof; incomplete
+or malformed evidence remains unavailable. Canonical closed history, sales,
+reconciled counts and the final summary checkpoint still apply. Pending spends
+are observed by the fresh Core batch; arrivals after that batch are not frozen.
+Other token reads and transaction preparation retain their existing checks.
 
 Complete-book evidence hashing reuses canonical record bytes only within the
 current request, after fresh database and Core reconciliation. Eligible plain
