@@ -61,8 +61,9 @@ class ArchiveTests(unittest.TestCase):
                     m.inventory({'retain': []}, {'overlays': []}, previous)
 
     def test_only_exact_completed_two_file_receipt(self):
-        rows = [{'path': name, 'after': 'a'*64} for name in m.TARGETS]
-        manifest = {'sourceCommit': 'b'*40, 'baselineHead': 'c'*40, 'sources': rows}
+        rows = [{'path': name, 'before': 'e'*64, 'after': 'a'*64} for name in m.TARGETS]
+        manifest = {'format': 'proof-of-work-api-response-latency-scoped-runtime-v1',
+                    'sourceCommit': 'b'*40, 'baselineHead': 'c'*40, 'sources': rows}
         receipt = {**manifest, 'manifestSha256': 'd'*64, 'installed': True, 'rolledBack': False,
                    'completedAt': '2026-10-24', 'rollbackRoot': '/data/receipt'}
         def check(value):
@@ -76,6 +77,38 @@ class ArchiveTests(unittest.TestCase):
         with self.assertRaises(ValueError): check(bad)
         bad = copy.deepcopy(receipt); bad['sources'][0]['after'] = 'wrong'
         with self.assertRaises(ValueError): check(bad)
+
+    def test_amo_new_helper_receipt_is_exact_and_cannot_replace_prior_source(self):
+        family = 'proof-of-work-amo-browse-scoped-runtime-v1'
+        rows = [{'path': 'server/proof-api.mjs', 'before': 'e'*64, 'after': 'a'*64},
+                {'path': 'server/amo-browse-snapshot.mjs', 'before': None, 'after': 'f'*64}]
+        manifest = {'format': family, 'sourceCommit': 'b'*40, 'baselineHead': 'c'*40, 'sources': rows}
+        receipt = {**copy.deepcopy(manifest), 'manifestSha256': 'd'*64, 'installed': True,
+                   'rolledBack': False, 'completedAt': '2026-10-25', 'rollbackRoot': '/data/receipt'}
+        def check(candidate, result=None):
+            return m.receipt_sources(candidate, result or receipt, 'd'*64, 'b'*40, Path('/data/receipt'), 'c'*40)
+        accepted = {'server/proof-api.mjs': {'sha256': 'e'*64},
+                    'server/db/proof-index-reader.mjs': {'sha256': '9'*64}}
+        bound = check(manifest)
+        m.require_overlay_extension(bound, accepted, family)
+        self.assertEqual(accepted['server/db/proof-index-reader.mjs']['sha256'], '9'*64)
+        for key, replacement in [('format', 'unreviewed-runtime'), ('sources', rows[:1]),
+                                 ('sources', rows + [{'path': 'server/other.mjs', 'after': 'a'*64}])]:
+            bad = copy.deepcopy(manifest); bad[key] = replacement
+            with self.subTest(key=key), self.assertRaises(ValueError): check(bad)
+        bad = copy.deepcopy(receipt); bad['format'] = 'proof-of-work-api-response-latency-scoped-runtime-v1'
+        with self.assertRaises(ValueError): check(manifest, bad)
+        bad = copy.deepcopy(manifest); bad['sources'][1]['before'] = '8'*64
+        result = {**receipt, 'sources': bad['sources']}
+        with self.assertRaisesRegex(ValueError, 'absent baseline'): check(bad, result)
+        result = copy.deepcopy(receipt); result['sources'][0]['before'] = '8'*64
+        with self.assertRaisesRegex(ValueError, 'hash differs'): check(manifest, result)
+        bad = copy.deepcopy(manifest); del bad['sources'][1]['before']
+        with self.assertRaisesRegex(ValueError, 'hash differs'): check(bad)
+        with self.assertRaisesRegex(ValueError, 'cannot replace'):
+            m.require_overlay_extension(bound, {**accepted, 'server/amo-browse-snapshot.mjs': {'sha256': '8'*64}}, family)
+        with self.assertRaisesRegex(ValueError, 'extend accepted'):
+            m.require_overlay_extension(bound, {**accepted, 'server/proof-api.mjs': {'sha256': '8'*64}}, family)
 
     def test_safe_metadata_refuses_links_and_permissions(self):
         with tempfile.TemporaryDirectory() as directory:

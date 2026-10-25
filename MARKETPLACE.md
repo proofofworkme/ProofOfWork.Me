@@ -1420,6 +1420,43 @@ pending sealing, and confirmed executable asks:
   summary and wallet-scoped seal metadata. Current gates verify the bounded
   preview and exact count separately from complete cursor-paginated book parity.
 
+## Versioned AMO browsing snapshots
+
+AMO browsing uses `/api/v1/marketplace-browse` over a complete immutable market
+snapshot produced by a bounded background reader. Publication requires a coherent
+summary and complete credit/bond listing evidence at one canonical height and
+block hash, including existing canonical V8 witness, frozen-term, membership,
+count and Core ticket checks. An incomplete or failed observation preserves the
+prior qualified view and never publishes a false empty book.
+
+Summary, selected listing page and display-only USD loading are independent.
+The summary omits mint, transfer and transfer-batch history, including batch
+recipient arrays, while retaining their totals and `collectionHasMore`
+qualification. Existing registry activity and closed-ticket previews remain.
+Search, sorting, asset and seal filters run against the complete server snapshot;
+the browser downloads only the requested page. WORK buyer-arb sorting uses the
+snapshot's exact Q8 WORK floor and Q16 frozen amounts; POWB/INCB use their exact
+Q8 bond references at the same checkpoint. Displayed listing references and
+ordering bind that version, even while a separate live dashboard reference
+refreshes. Continuation binds the version and exact query. Expired or evicted
+versions require a first-page restart.
+The server retains a bounded number of snapshots and one background build at a
+time, warms on API startup and observes again after each completed cycle.
+
+Every result is explicitly display-only and carries its observation time,
+checkpoint and source provenance. A retained snapshot does not prove current
+buyability: pending ticket spends can change without a new block, and a later
+chain observation can replace earlier state. Display refresh schedules a new
+observation while retaining qualified prior data. No browse snapshot enters the
+wallet's accepted authority caches or authorizes a signature. Existing fresh
+exact-tip ownership, listing terms, reservations, ticket spendability and
+pre-broadcast checks remain mandatory.
+
+This supersedes the browser scheduling in the dated complete-book section below.
+The strict summary and complete listing-history APIs, wallet-owned hydration and
+transaction preflights retain their current authority contracts. Protocol events,
+fees, frozen amounts and local signing are unchanged.
+
 ## August 27 Complete Book Rendering
 
 Compact token and marketplace summaries are bounded previews, not an authority

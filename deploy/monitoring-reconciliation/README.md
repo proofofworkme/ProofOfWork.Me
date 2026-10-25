@@ -84,9 +84,15 @@ certificate. No new runtime archive or replacement provenance was fabricated.
 
 The operator subsequently authorized closing that gap with one newest runtime
 archive on the VPS, after the approved two-file API rollout. The scoped
-`runtime_archive.py` controller accepts only that completed release's exact
-`server/proof-api.mjs` and `server/db/proof-index-reader.mjs` receipt. It verifies
-source acceptance and dependency custody, then reuses the hash-bound Oct22
+`runtime_archive.py` controller accepts that completed API-latency release's exact
+`server/proof-api.mjs` and `server/db/proof-index-reader.mjs` receipt. It also
+recognizes the separate `proof-of-work-amo-browse-scoped-runtime-v1` receipt for
+exactly `server/proof-api.mjs` and the new `server/amo-browse-snapshot.mjs` helper.
+The AMO receipt must prove the helper was absent before installation and is not
+replacing any accepted overlay; the existing reader and every other accepted
+source remain unchanged. Receipt family, complete source set and before/after
+hashes must agree. It verifies source acceptance and dependency custody, then
+reuses the hash-bound Oct22
 archive/runtime model under the existing operations lock. A new archive must
 match the complete current runtime and pass full release-health before any
 retirement. This proves archive contents and provenance, not an independent

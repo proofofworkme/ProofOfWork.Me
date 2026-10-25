@@ -67,6 +67,51 @@ database restore. Small policy, rollback and completion records are on the VPS u
 SHA-256 is `15070ba9ba11d78a8f3e17e7850a022ea2f99c5ca79d83bb0edef193f0d5b0b5`.
 No database or application runtime restart was required for backup rotation.
 
+## AMO background browsing snapshots
+
+`/api/v1/marketplace-browse` is a display-only read model separate from strict
+summary, listing-history and wallet authority reads. A bounded background build
+verifies the complete listing book and summary at one canonical checkpoint before
+atomically publishing an immutable version. API startup prewarms this view;
+periodic and requested refreshes coalesce into one active build. An unavailable
+initial build returns an explicit warming response. Failed later observations
+retain qualified prior data within the bounded retention policy.
+
+Summary and server-filtered, sorted listing pages share a version and observation
+time. Continuation binds the exact query and version; evicted or expired versions
+require restart. The client requests 25 listing rows; the endpoint permits at most
+100. Asset, confirmed-seal status, search and sort filters bind every cursor. The
+summary request includes only one listing row and the independent page request
+omits the summary. `refresh=1` queues background work; `fresh=1` and `nocache=1`
+are rejected so this endpoint cannot impersonate a fresh authority read.
+
+The store permits one active build, waits 60 seconds after completion before its
+next periodic build, and coalesces requested refreshes with a 15-second minimum
+interval. It retains at most two versions for ten minutes. A separate 15-second
+chain observation evicts known reorganized checkpoints and schedules a rebuild;
+pending ticket spends are observed during complete builds. Memory, listing count
+and structural budgets bound each snapshot. Nothing survives an API restart as
+accepted browsing evidence.
+
+Reading a published page performs no relational reconstruction
+or fresh whole-book Core sweep. Existing authority readers still perform those
+checks, and browser displays never seed wallet/signing readiness. Pending spends
+and chain changes are observed by background revalidation, so the endpoint makes
+no claim that a retained ticket remains currently buyable.
+
+This browsing contract supersedes the per-entry complete-book download described
+in the historical release below. It does not alter the strict `fresh=1` summary
+contract, complete-history cursor evidence or any transaction admission gate.
+
+`deploy/amo-browse/` captures and merges only `server/proof-api.mjs` plus the new
+`server/amo-browse-snapshot.mjs` helper over the accepted live runtime. Its
+`proof-of-work-amo-browse-scoped-runtime-v1` receipt binds the released source,
+exact before/after hashes and dependency hashes. The existing preservation and
+monitoring lifecycle accepts this exact two-file scope; accepted reader overlays,
+service configuration, canonical databases and protocol pins remain preserved.
+Capture, plans, tests, rollback state and source archives stay on the VPS under
+the current storage policy.
+
 ## AMO read reliability and monitoring — 2026-10-24
 
 The complete AMO book batches up to the existing 5,000-listing materialization

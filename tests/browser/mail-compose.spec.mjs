@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
 import { parseWorkBatchPayload } from "../../src/shared/protocol/workBatch.mjs";
 import { composerAppearance, composerViewports, expectAlignedFields, expectComposerContained, expectFeePresetsContained } from "../fixtures/composerGeometry.mjs";
+import { createAmoBrowseFixture } from "../fixtures/amoBrowseFixture.mjs";
 
 const NOW = "2026-08-01T12:00:00.000Z";
 const HASH = "1".repeat(64);
@@ -874,6 +875,11 @@ async function installApiFixtures(
   let initialFloorHeld = false;
   let releaseWalletBalanceReads;
   const walletBalanceGate = new Promise((resolve) => { releaseWalletBalanceReads = resolve; });
+  const browse = createAmoBrowseFixture({
+    summary: { indexedAt: NOW, network: "livenet", registry: marketRegistryState ?? registryState(),
+      summaryOnly: true, token: authoritativeWorkState(), workFloor: workFloor(mode) },
+    items: remoteV8MarketListings ? remoteV8Listings() : [],
+  });
 
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
@@ -934,6 +940,17 @@ async function installApiFixtures(
         confirmed: true,
         status: "confirmed",
       };
+    } else if (pathname === "/api/v1/marketplace-browse") {
+      json = await browse(url);
+      if (listingSummaryMismatch) {
+        // The response can never publish components from a different checkpoint.
+        if (json.summary) json = { ...json, summary: { ...json.summary,
+          token: { ...json.summary.token, indexedThroughBlock: json.checkpoint.height - 1 } } };
+      } else if (completeListingHistoryFailure) {
+        // An unverified empty display page is not evidence of an empty market.
+        json = { ...json, provenance: { ...json.provenance, completeAtObservation: false },
+          book: { ...json.book, items: [], totalCount: 0, end: 0, hasMore: false, nextCursor: "" } };
+      }
     } else if (pathname === "/api/v1/marketplace-summary") {
       const token = authoritativeWorkState();
       if (remoteV8MarketListings) {
@@ -1525,7 +1542,7 @@ test(`AMO directory reads confirmed wallet balance from the account lane despite
     walletBalanceSubatoms: "9999997003878536",
   });
   await page.goto(route, { waitUntil: "domcontentloaded" });
-  await expect(page.locator(".marketplace-summary-read-state").first()).toHaveAttribute("data-state", "ready");
+  await expect(page.locator(".marketplace-summary-read-state").first()).toHaveAttribute("data-state", "last-verified");
   const card = page.locator("article.token-market-row").filter({ has: page.getByText("WORK", { exact: true }) });
   await expect(card).toContainText("Your confirmed balance Loading WORK");
   await expect(card).not.toContainText("Your confirmed balance 0.0000000000000000 WORK");
@@ -1564,7 +1581,7 @@ test("AMO directory uses the clean all-account fallback when the dedicated fresh
   await installApiFixtures(page, { freshWorkWalletFailure: true,
     remoteV8MarketListings: true, walletBalanceSubatoms: "9999997003878536" });
   await page.goto("/?marketplace=1", { waitUntil: "domcontentloaded" });
-  await expect(page.locator(".marketplace-summary-read-state").first()).toHaveAttribute("data-state", "ready");
+  await expect(page.locator(".marketplace-summary-read-state").first()).toHaveAttribute("data-state", "last-verified");
   const card = page.locator("article.token-market-row").filter({ has: page.getByText("WORK", { exact: true }) });
   await expect(card).toContainText("Your confirmed balance 0.9999997003878536 WORK");
   await expect(card).not.toContainText("Your confirmed balance 0.0000000000000000 WORK");
@@ -1589,9 +1606,9 @@ test("AMO order book counts sealed and unsealed V8 listings with exact buyer arb
     .first();
   await expect(amoUnits).toBeVisible();
   await expect(amoUnits.getByText("No credit listings yet")).toHaveCount(0);
-  // The public AMO read hydrates the exact book before exposing the market,
-  // including when wallet connection changes the account during that read.
-  await expect(page.locator(".marketplace-summary-read-state").first()).toHaveAttribute("data-state", "ready");
+  // Complete counts and this visible page share an immutable server version;
+  // wallet connection does not trigger a global listing hydration.
+  await expect(page.locator(".marketplace-summary-read-state").first()).toHaveAttribute("data-state", "last-verified");
   await expect(amoUnits.getByRole("button", { name: "Load complete sale-ticket history" })).toHaveCount(0);
   await expect(
     amoUnits.getByRole("button", { name: "All 2" }),
@@ -1621,10 +1638,11 @@ test("AMO order book counts sealed and unsealed V8 listings with exact buyer arb
       fixture.requests.some((request) => {
         const url = new URL(request);
         return (
-          url.pathname === "/api/v1/token-history" &&
-          url.searchParams.get("kind") === "listings" &&
-          url.searchParams.get("cursor") === LISTING_PAGE_CURSOR &&
-          !url.searchParams.has("page")
+          url.pathname === "/api/v1/marketplace-browse" &&
+          url.searchParams.get("includeSummary") === "0" &&
+          url.searchParams.get("asset") === WORK_TOKEN_ID &&
+          url.searchParams.get("limit") === "25" &&
+          /^[0-9a-f]{64}$/u.test(url.searchParams.get("version") ?? "")
         );
       }),
     )
@@ -1647,8 +1665,8 @@ test("AMO order book counts sealed and unsealed V8 listings with exact buyer arb
 });
 
 for (const scenario of [
-  { name: "mismatched exact listing evidence", options: { listingSummaryMismatch: true, mode: "precision-paused" } },
-  { name: "unverified zero compact inventory", options: { compactZeroListingSummary: true, completeListingHistoryFailure: true } },
+  { name: "mismatched display summary checkpoint", options: { listingSummaryMismatch: true, mode: "precision-paused" } },
+  { name: "unverified empty display inventory", options: { compactZeroListingSummary: true, completeListingHistoryFailure: true } },
 ]) {
   test(`AMO withholds inventory and offers retry for ${scenario.name}`, async ({ page }) => {
     const fixture = await installApiFixtures(page, { ...scenario.options, remoteV8MarketListings: true });
@@ -1659,7 +1677,7 @@ for (const scenario of [
     await expect(page.locator(".marketplace-summary-gate")).toContainText("Totals and empty-book claims are withheld");
     await expect(page.getByText("No credit listings yet", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "AMO Units", exact: true })).toHaveCount(0);
-    const countReads = () => fixture.requests.filter(request => new URL(request).pathname === "/api/v1/marketplace-summary").length;
+    const countReads = () => fixture.requests.filter(request => new URL(request).pathname === "/api/v1/marketplace-browse").length;
     const before = countReads();
     await state.getByRole("button", { name: "Retry", exact: true }).click();
     await expect.poll(countReads).toBeGreaterThan(before);
@@ -2669,6 +2687,10 @@ async function openMarketWorkTicket(page, {computer=false, sealed=false, seller=
   await page.route(`**/api/v1/tx/${listing.listingId}/hex*`,route=>route.fulfill({contentType:'application/json',body:JSON.stringify({hex:tx.toHex()})}));
   await page.route(`**/api/v1/tx/${listing.listingId}/outspend/2*`,route=>route.fulfill({contentType:'application/json',body:'{"spent":false}'}));
   await page.route('**/api/v1/marketplace-summary**',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({indexedAt:NOW,network:'livenet',registry:registryState(),summaryOnly:true,token:state,workFloor:workFloor()})}));
+  const browse = createAmoBrowseFixture({ indexedAt: NOW, network: 'livenet', registry: registryState(),
+    summaryOnly: true, token: state, workFloor: workFloor() });
+  await page.route('**/api/v1/marketplace-browse**', async route =>
+    route.fulfill({ json: await browse(new URL(route.request().url())) }));
   await page.route('**/api/v1/token-history?**',async route=>{
     const url=new URL(route.request().url());
     if(url.searchParams.get('kind')!=='listings') return route.fallback();
@@ -2723,6 +2745,18 @@ for(const computer of [false,true]) test(`Marketplace review: ${computer?'Comput
   expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(0);
   await review.getByRole('button',{name:'Back to task'}).click();
   await expect(page.getByRole('button',{name:'Buy',exact:true})).toBeEnabled();
+});
+
+test('Marketplace review: a browsed ticket still requires fresh unspent evidence before purchase', async ({page}) => {
+  const {listing} = await openMarketWorkTicket(page, {market:true,sealed:true,seller:RECIPIENT});
+  await expect(page.locator('.marketplace-summary-read-state').first()).toHaveAttribute('data-state','last-verified');
+  const buy = page.getByRole('button',{name:'Buy',exact:true});
+  await expect(buy).toBeEnabled();
+  await page.route(`**/api/v1/tx/${listing.listingId}/outspend/2*`, route => route.fulfill({json:{spent:true}}));
+  await buy.click();
+  await expect(page.locator('.status-text')).toContainText('already been spent');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(0);
 });
 
 

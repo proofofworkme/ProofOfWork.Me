@@ -29,6 +29,7 @@ import { createWalletConnectionController } from "./shared/wallet/walletConnecti
 import { FEE_RATE_STEP } from "./shared/feeRate";
 import { createInFlightRequestPool } from "./shared/api/inFlightRequestPool";
 import { createVisibleReadLoop, waitForDisplayRead, consumeDisplayRead } from "./shared/api/useVisibleReadLoop";
+import { fetchMarketplaceBrowse, useMarketplaceBrowse, type BrowseCounts, type MarketplaceBrowseResponse } from "./features/marketplace/marketplaceBrowse";
 import { TransactionReview, type MailTransactionReview } from "./shared/components/TransactionReview";
 import { BackupPreview } from "./shared/components/BackupPreview";
 import { applyLocalRestore, isBackupStorageKey, prepareLocalRestore, type RestorePlan } from "./shared/localBackup";
@@ -249,6 +250,7 @@ import {
   clearProofApiReadWarning,
   currentProofApiReadWarning,
   fetchProofApiJson,
+  ProofApiRequestError,
   isTransientProofApiReadError,
   proofApiLastGoodReadStatus,
   proofApiUrl,
@@ -1214,6 +1216,16 @@ type PowTokenSummaryStats = {
   salesVolumeSats?: number;
 };
 
+type MarketplaceBrowseBondReference = {
+  floorQ8: string;
+  floorSats: string;
+  indexedAt: string;
+  snapshotId: string;
+  indexedThroughBlock: number;
+  indexedThroughBlockHash: string;
+  displayOnly: true;
+};
+
 type PowTokenSummaryMetadata = Pick<
   PowTokenState,
   | "canonicalWorkCapacities"
@@ -1237,7 +1249,11 @@ type PowTokenSummaryMetadata = Pick<
   | "summaryOnly"
   | "totalCounts"
   | "unitScale"
->;
+> & {
+  browseAssetCounts?: Record<string, BrowseCounts>;
+  browseBondReferences?: Record<string, MarketplaceBrowseBondReference>;
+  browseVersion?: string;
+};
 
 type AccountTokenLane = "all" | "work" | "powb" | "incb";
 
@@ -2692,6 +2708,7 @@ function marketplaceSnapshotReadProvenance(
 }
 
 type MarketplaceSummaryApiResponse = {
+  browseBondReferences?: Record<string, MarketplaceBrowseBondReference>;
   indexedAt?: string;
   network?: BitcoinNetwork;
   registry?: PowRegistryApiResponse;
@@ -14346,7 +14363,7 @@ type TokenMarketplaceCountState = Pick<
   | "summaryOnly"
   | "totalCounts"
   | "tokens"
->;
+> & { browseAssetCounts?: Record<string, BrowseCounts> };
 
 type TokenMarketplaceCanonicalCounts = {
   buyableListings?: number;
@@ -14454,7 +14471,9 @@ function tokenMarketplaceCanonicalCounts({
   const confirmedCredits =
     optionalMarketplaceCount(state.totalCounts?.tokens) ??
     networkCreditTokens.filter((candidate) => candidate.confirmed).length;
+  const browseCounts = marketplaceBrowseCounts(state, targetTokens.map((candidate) => candidate.tokenId));
   const openListings =
+    browseCounts?.all ??
     (scopedToken
       ? optionalMarketplaceCount(scopedToken.openListings) ??
         (scopedTotalCountsAreSafe
@@ -14469,6 +14488,7 @@ function tokenMarketplaceCanonicalCounts({
     : optionalMarketplaceCount(summaryStats?.pendingOpenListings) ??
       networkPendingListings;
   const confirmedListings =
+    browseCounts?.all ??
     (scopedToken
       ? optionalMarketplaceCount(scopedToken.confirmedOpenListings)
       : optionalMarketplaceCount(summaryStats?.confirmedOpenListings) ??
@@ -14511,7 +14531,7 @@ function tokenMarketplaceCanonicalCounts({
     previewMarketStats.pendingSales;
   const buyableListings =
     scopedToken && isWorkToken(scopedToken)
-      ? optionalMarketplaceCount(state.listingAuthority?.buyableCandidateCount) ??
+      ? browseCounts?.sealed ?? optionalMarketplaceCount(state.listingAuthority?.buyableCandidateCount) ??
         targetListings.filter(tokenListingHasConfirmedSaleTicketSeal).length
       : undefined;
 
@@ -14687,8 +14707,9 @@ function tokenMarketplaceSummaryStats({
   const previewBuyableListings = networkListings.filter(
     tokenListingHasConfirmedSaleTicketSeal,
   ).length;
+  const browseCounts = summary ? marketplaceBrowseCounts(summary, networkTokens.map((token) => token.tokenId)) : undefined;
   const buyableListings =
-    optionalMarketplaceCount(summary?.listingAuthority?.buyableCandidateCount) ??
+    browseCounts?.sealed ?? optionalMarketplaceCount(summary?.listingAuthority?.buyableCandidateCount) ??
     previewBuyableListings;
   const completeBookConfirmedListings = listingBookComplete
     ? previewConfirmedListings
@@ -14710,7 +14731,7 @@ function tokenMarketplaceSummaryStats({
     ? undefined
     : summedTokenMarketplaceMetric(networkTokens, "pendingOpenListings");
   const confirmedListings =
-    completeBookConfirmedListings ??
+    browseCounts?.all ?? completeBookConfirmedListings ??
     optionalMarketplaceCount(scopedToken?.confirmedOpenListings) ??
     networkConfirmedListings ??
     previewConfirmedListings;
@@ -14821,6 +14842,50 @@ function marketplaceSummaryMetric(
   return typeof value === "number" ? value.toLocaleString() : value;
 }
 
+function marketplaceBrowseCounts(summary: PowTokenSummaryMetadata, tokenIds?: string[]): BrowseCounts | undefined {
+  if (!summary.browseAssetCounts) return undefined;
+  const entries = tokenIds
+    ? tokenIds.map((tokenId) => summary.browseAssetCounts?.[tokenId] ?? { all: 0, sealed: 0, unsealed: 0 })
+    : Object.values(summary.browseAssetCounts);
+  return entries.reduce((total, counts) => ({ all: total.all + counts.all,
+    sealed: total.sealed + counts.sealed, unsealed: total.unsealed + counts.unsealed }),
+    { all: 0, sealed: 0, unsealed: 0 });
+}
+
+type TokenBrowseRead = ReturnType<typeof useMarketplaceBrowse<PowTokenListing>>;
+
+function MarketplaceBrowseReadStatus({ browse, onRefresh }: { browse: TokenBrowseRead; onRefresh?: () => void }) {
+  const snapshot = browse.response;
+  return <div className="marketplace-summary-inline-state" aria-live="polite" aria-busy={browse.loading}>
+    <div>
+      <p className="field-note" role={browse.error ? "alert" : "status"}>
+        {snapshot
+          ? `Last verified ${formatDate(snapshot.observedAt)} at block ${snapshot.checkpoint.height.toLocaleString()}. Search and counts cover all listings at this observation. Showing up to ${snapshot.book.limit} tickets.`
+          : browse.error ? "Sale tickets are unavailable. No empty market is being reported."
+            : "Loading sale tickets from the verified market snapshot…"}
+        {snapshot && browse.loading ? browse.matches ? " Refreshing this page." : " Showing the previous results while the selected view loads." : ""}
+        {browse.error ? ` ${browse.error}` : ""}
+        {snapshot ? " Each purchase is checked again before local signing." : ""}
+      </p>
+      {snapshot ? <details className="marketplace-snapshot-details"><summary>Listing snapshot evidence</summary>
+        <span className="marketplace-snapshot-provenance">Block hash <code className="mono">{snapshot.checkpoint.blockHash}</code> · version <code className="mono">{snapshot.version}</code></span>
+      </details> : null}
+    </div>
+    {browse.error ? <button className="secondary small" disabled={browse.loading} type="button"
+      onClick={() => { browse.retry(); onRefresh?.(); }}>Retry listings</button> : null}
+  </div>;
+}
+
+function marketplaceBrowsePage(browse: TokenBrowseRead): PagedItems<PowTokenListing> {
+  const book = browse.response?.book;
+  const items = book ? normalizeTokenListingRecords(book.items) : [];
+  const totalCount = book?.totalCount ?? 0;
+  const pageSize = book?.limit ?? 25;
+  const start = totalCount ? browse.pageIndex * pageSize : 0;
+  return { items, totalCount, pageSize, pageIndex: browse.pageIndex,
+    pageCount: Math.max(1, Math.ceil(totalCount / pageSize)), start, end: start + items.length };
+}
+
 function MarketplaceSummaryReadStatus({
   busy,
   onRetry,
@@ -14922,7 +14987,7 @@ function MarketplaceSummaryGate({
         <p>
           {unavailable
             ? "The canonical registry, credit, listing, sale, and WORK snapshot could not be verified. Totals and empty-book claims are withheld."
-            : "Loading and verifying all active credit and bond listings. Search and sorting will cover the complete inventory."}
+            : "Loading the verified market summary. Sale tickets load separately by page, with search and sorting across the complete server snapshot."}
         </p>
         {unavailable && readState.retryable !== false ? (
           <button
@@ -22814,6 +22879,11 @@ export default function App() {
   const acceptedGrowthSummaryRef = useRef<GrowthSummarySnapshot | undefined>();
   const acceptedMarketplaceSnapshotRef =
     useRef<MarketplaceSummarySnapshot | undefined>();
+  const marketplaceBrowseSnapshotRef = useRef<MarketplaceSummarySnapshot>();
+  const registryDisplayOnlyRef = useRef(false);
+  const workFloorDisplayOnlyRef = useRef(false);
+  const marketplaceBrowseReadRef = useRef<{ scope: string; controller: AbortController; promise: Promise<MarketplaceSummarySnapshot | undefined> }>();
+  const marketplaceBrowseBusyOwnerRef = useRef<AbortController>();
   const acceptedBondSummariesRef = useRef(
     new Map<string, InfinitySummarySnapshot>(),
   );
@@ -22933,6 +23003,7 @@ export default function App() {
     }
 
     const accepted = { ...state, activity };
+    registryDisplayOnlyRef.current = false;
     acceptedRegistryStateRef.current = accepted;
     setIdRegistry(accepted.records);
     setIdListings(accepted.listings);
@@ -23482,6 +23553,7 @@ export default function App() {
       return acceptedWorkFloorQuoteRef.current;
     }
 
+    workFloorDisplayOnlyRef.current = false;
     const current = acceptedWorkFloorQuoteRef.current;
     const boundaryWasLatched =
       workV8DeclarationBoundaryLatchRef.current;
@@ -23597,6 +23669,7 @@ export default function App() {
   );
 
   useEffect(() => {
+    if (registryDisplayOnlyRef.current) return;
     acceptedRegistryStateRef.current = {
       activity: idActivity,
       listings: idListings,
@@ -23608,6 +23681,7 @@ export default function App() {
 
   useEffect(() => {
     if (
+      tokenSummary.browseVersion ||
       !tokenDataLoaded ||
       tokenDataLoadedScopeKey !== activeTokenStateScopeKey
     ) {
@@ -23686,6 +23760,7 @@ export default function App() {
   }, [activeTokenStateScopeKey]);
 
   useEffect(() => {
+    if (workFloorDisplayOnlyRef.current) return;
     acceptedWorkFloorQuoteRef.current = workFloorQuote;
   }, [workFloorQuote]);
 
@@ -27434,9 +27509,7 @@ export default function App() {
     const useMarketplaceSummary = marketplaceMode || activeFolder === "marketplace";
     const refreshWorkFloorMetrics = async (signal: AbortSignal) => {
       if (useMarketplaceSummary) {
-        // One exact read per cycle. A cached-then-fresh pair repeats every page
-        // of the public book and can restart immediately after an unavailable read.
-        await refreshMarketplaceSummary(true, true, signal);
+        await refreshMarketplaceBrowseSummary(true, false, signal);
         return;
       }
       await Promise.all([refreshTokenBtcUsd(false), refreshWorkFloor(true, false)]);
@@ -27791,7 +27864,7 @@ export default function App() {
         }
 
         if (marketplaceWorkspaceIsCurrent()) {
-          const snapshot = await refreshMarketplaceSummary(true, false);
+          const snapshot = await refreshMarketplaceBrowseSummary(true, false);
           if (
             generation !== walletSyncGenerationRef.current ||
             !marketplaceWorkspaceIsCurrent()
@@ -29563,6 +29636,145 @@ export default function App() {
     return "";
   }
 
+  async function refreshMarketplaceBrowseSummary(
+    silent = false,
+    refresh = false,
+    consumerSignal?: AbortSignal,
+  ): Promise<MarketplaceSummarySnapshot | undefined> {
+    if (network !== "livenet" || consumerSignal?.aborted) return undefined;
+    const scope = activeWorkspaceStatusKeyRef.current;
+    const existing = marketplaceBrowseReadRef.current;
+    if (existing?.scope === scope && !existing.controller.signal.aborted) {
+      return consumeDisplayRead(existing.promise, consumerSignal);
+    }
+    existing?.controller.abort();
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, ...(consumerSignal ? [consumerSignal] : [])]);
+    const current = () => !signal.aborted && activeWorkspaceStatusKeyRef.current === scope &&
+      marketplaceReadContextRef.current.startsWith("livenet:");
+    const abortObsoleteRead = () => {
+      if (document.visibilityState !== "visible" || activeWorkspaceStatusKeyRef.current !== scope ||
+          !marketplaceReadContextRef.current.startsWith("livenet:")) controller.abort();
+    };
+    const scopeWatch = setInterval(abortObsoleteRead, 100);
+    document.addEventListener("visibilitychange", abortObsoleteRead);
+    const releaseDisplayBusy = () => {
+      if (marketplaceBrowseBusyOwnerRef.current !== controller) return;
+      marketplaceBrowseBusyOwnerRef.current = undefined;
+      if (!walletActionActiveRef.current) setBusyForWorkspace(scope, false);
+    };
+    const promise = (async () => {
+      setMarketplaceDataLoading(true);
+      if (!silent) {
+        marketplaceBrowseBusyOwnerRef.current = controller;
+        setBusyForWorkspace(scope, true);
+      }
+      // USD is optional display enrichment and cannot hold up the summary or listings.
+      void fetchBtcUsdPrice(false).then((quote) => { if (current()) setTokenBtcUsd(quote); }).catch(() => {});
+      let accepted = marketplaceBrowseSnapshotRef.current;
+      try {
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+          if (!current()) return undefined;
+          let browse: MarketplaceBrowseResponse<unknown, MarketplaceSummaryApiResponse>;
+          try {
+            browse = await fetchMarketplaceBrowse<unknown, MarketplaceSummaryApiResponse>({
+              refresh: refresh && attempt === 0, limit: 1, signal,
+            });
+          } catch (error) {
+            if (!current()) return undefined;
+            if (error instanceof ProofApiRequestError && error.status === 503 && attempt < 9) {
+              if (!accepted) setMarketplaceSummaryReadState({ status: "loading",
+                message: "The server is preparing the verified market snapshot. This page will update automatically." });
+              await waitForDisplayRead(3_000, signal);
+              continue;
+            }
+            throw error;
+          }
+          if (!current()) return undefined;
+          const payload = browse.summary;
+          if (!payload?.registry || !payload.token || !payload.workFloor || !payload.indexedAt) {
+            throw new Error("The AMO display snapshot is missing its coherent summary.");
+          }
+          if (![payload.registry, payload.token, payload.workFloor].every((part) =>
+              part.indexedThroughBlock === browse.checkpoint.height &&
+              part.indexedThroughBlockHash === browse.checkpoint.blockHash)) {
+            throw new Error("The AMO summary components disagree with the display checkpoint.");
+          }
+          if (Object.values(payload.browseBondReferences ?? {}).some((reference) =>
+              reference.displayOnly !== true || reference.indexedThroughBlock !== browse.checkpoint.height ||
+              reference.indexedThroughBlockHash !== browse.checkpoint.blockHash || !/^[0-9]+$/u.test(reference.floorQ8))) {
+            throw new Error("The bond references disagree with the display checkpoint.");
+          }
+          const snapshot: MarketplaceSummarySnapshot = {
+            indexedAt: browse.observedAt,
+            registry: normalizeRegistryApiState(payload.registry),
+            token: normalizeTokenApiState(payload.token),
+            workFloor: normalizeWorkFloorQuote(payload.workFloor),
+          };
+          const previous = marketplaceBrowseSnapshotRef.current;
+          // Display-only publication never seeds the strict reader's authority caches.
+          registryDisplayOnlyRef.current = true;
+          setIdRegistry(snapshot.registry.records);
+          setIdListings(snapshot.registry.listings);
+          setIdPendingEvents(snapshot.registry.pendingEvents);
+          setIdSales(snapshot.registry.sales);
+          setIdActivity(snapshot.registry.activity);
+          setTokenDefinitions(snapshot.token.tokens);
+          setTokenMints(snapshot.token.mints);
+          setTokenSales(snapshot.token.sales);
+          setTokenClosedListings(snapshot.token.closedListings);
+          setTokenTransfers((previousTransfers) => tokenTransfersWithPreservedLocalPending(previousTransfers, snapshot.token.transfers));
+          setTokenListings((previousListings) => tokenListingsWithPreservedLocalPending(
+            previousListings, applyPendingTokenListingSeals(snapshot.token.listings), snapshot.token.closedListings));
+          setTokenSummary({ ...tokenSummaryMetadata(snapshot.token), listingBookComplete: false,
+            browseAssetCounts: browse.book.assetCounts, browseBondReferences: payload.browseBondReferences, browseVersion: browse.version });
+          const floorTransition = planWorkFloorQuoteTransition(snapshot.workFloor,
+            acceptedWorkFloorQuoteRef.current ?? previous?.workFloor, workV8DeclarationBoundaryLatchRef.current);
+          if (floorTransition.incomingBoundaryObserved) workV8DeclarationBoundaryLatchRef.current = true;
+          workFloorDisplayOnlyRef.current = true;
+          setWorkFloorQuote(floorTransition.safetyBoundQuote);
+          marketplaceBrowseSnapshotRef.current = snapshot;
+          accepted = snapshot;
+          setMarketplaceDataLoading(false);
+          // Release once: later polling/finally must not clear a new wallet action.
+          releaseDisplayBusy();
+          if (!marketplaceMode && (workspaceStatusesRef.current.get(scope)?.text ?? INITIAL_COMPUTER_STATUS.text) === INITIAL_COMPUTER_STATUS.text) {
+            setStatusForWorkspace(scope, { tone: "good", text: "AMO summary loaded. The last verified market is visible; purchases are checked again before local signing." });
+          }
+          setMarketplaceSummaryReadState({ status: "last-verified", retryable: Boolean(browse.refreshError) && !browse.refreshing, indexedAt: browse.observedAt,
+            indexedThroughBlock: browse.checkpoint.height, indexedThroughBlockHash: browse.checkpoint.blockHash,
+            message: browse.refreshing
+              ? "Showing the last verified market while it refreshes. Purchases are checked again before local signing."
+              : browse.refreshError
+                ? "Market refresh is unavailable. The previous verified snapshot remains visible; purchases are checked again before local signing."
+                : "Summary and counts reflect the last verified market. Purchases are checked again before local signing." });
+          if (!browse.refreshing) return snapshot;
+          await waitForDisplayRead(3_000, signal);
+        }
+        return accepted;
+      } catch (error) {
+        if (!current()) return undefined;
+        setMarketplaceSummaryReadState(accepted
+          ? { status: "last-verified", indexedAt: accepted.indexedAt,
+              ...marketplaceSnapshotReadProvenance(accepted),
+              message: `The previous display snapshot remains visible. ${errorMessage(error, "Market refresh is unavailable.")}` }
+          : { status: "unavailable", message: errorMessage(error, "The market display snapshot is unavailable.") });
+        return undefined;
+      } finally {
+        clearInterval(scopeWatch);
+        document.removeEventListener("visibilitychange", abortObsoleteRead);
+        if (marketplaceBrowseReadRef.current?.controller === controller) {
+          marketplaceBrowseReadRef.current = undefined;
+          if (activeWorkspaceStatusKeyRef.current === scope) setMarketplaceDataLoading(false);
+        }
+        // Visibility cancellation still owns cleanup; a replacement read owns its own busy state.
+        releaseDisplayBusy();
+      }
+    })();
+    marketplaceBrowseReadRef.current = { scope, controller, promise };
+    return promise;
+  }
+
   async function fetchCompleteMarketplaceSnapshot(fresh: boolean, consumerSignal?: AbortSignal) {
     const controller = new AbortController();
     const scope = activeWorkspaceStatusKeyRef.current;
@@ -30883,7 +31095,7 @@ export default function App() {
         }
 
         if (marketplaceWorkspaceIsCurrent()) {
-          const snapshot = await refreshMarketplaceSummary(true, false);
+          const snapshot = await refreshMarketplaceBrowseSummary(true, false);
           if (
             generation !== walletSyncGenerationRef.current ||
             !marketplaceWorkspaceIsCurrent()
@@ -31492,7 +31704,7 @@ export default function App() {
 
   function refreshIdStateAfterMutation() {
     return marketplaceWorkspaceIsCurrent()
-      ? refreshMarketplaceSummary(true, true)
+      ? refreshMarketplaceBrowseSummary(true, true)
       : refreshIds(true);
   }
 
@@ -31502,7 +31714,7 @@ export default function App() {
 
   function refreshTokenStateAfterMutation() {
     return marketplaceWorkspaceIsCurrent()
-      ? refreshMarketplaceSummary(true, true)
+      ? refreshMarketplaceBrowseSummary(true, true)
       : refreshToken(true, true);
   }
 
@@ -37281,7 +37493,7 @@ export default function App() {
       : undefined;
   })();
   const refreshBondMarkets = () => {
-    void refreshMarketplaceSummary(false, true);
+    void refreshMarketplaceBrowseSummary(false, true);
     void refreshInfinity(true, true, INCEPTION_BOND_UI);
     void refreshInfinity(true, true, INFINITY_BOND_UI);
   };
@@ -37586,14 +37798,9 @@ export default function App() {
           onRefreshBonds={refreshBondMarkets}
           onRefreshDns={() => void refreshDns(false, true)}
           onRetryMarketplaceSummary={() =>
-            void refreshMarketplaceSummary(false, true)
+            void refreshMarketplaceBrowseSummary(false, true)
           }
-          onRefreshTokens={() =>
-            void refreshTokenMarketData({
-              includeWorkFloor: true,
-              label: "credit AMO",
-            })
-          }
+          onRefreshTokens={() => void refreshMarketplaceBrowseSummary(false, true)}
         />
         <MarketplacePurchaseReceiptModal
           receipt={purchaseReceipt}
@@ -38932,14 +39139,9 @@ export default function App() {
             onRefreshBonds={refreshBondMarkets}
             onRefreshDns={() => void refreshDns(false, true)}
             onRetryMarketplaceSummary={() =>
-              void refreshMarketplaceSummary(false, true)
+              void refreshMarketplaceBrowseSummary(false, true)
             }
-            onRefreshTokens={() =>
-              void refreshTokenMarketData({
-                includeWorkFloor: true,
-                label: "credit AMO",
-              })
-            }
+            onRefreshTokens={() => void refreshMarketplaceBrowseSummary(false, true)}
           />
         ) : activeFolder === "wallet" ? (
           <TokenWalletWorkspace
@@ -51714,6 +51916,7 @@ function InfinityBondMarketPanel({
   listings,
   network,
   onLoadCompleteListingBook,
+  onRefreshBrowse,
   sales,
   setFeeRate,
   summary,
@@ -51733,6 +51936,7 @@ function InfinityBondMarketPanel({
   listings: PowTokenListing[];
   network: BitcoinNetwork;
   onLoadCompleteListingBook?: (tokenScope: string) => void;
+  onRefreshBrowse?: () => void;
   sales: PowTokenSale[];
   setFeeRate: (value: number) => void;
   summary?: InfinitySummarySnapshot;
@@ -51745,6 +51949,17 @@ function InfinityBondMarketPanel({
     useState<MarketplaceSortMode>("arb-desc");
   const [tokenListingBookFilter, setTokenListingBookFilter] =
     useState<MarketplaceListingBookFilter>("all");
+  const remoteBrowseEnabled = network === "livenet" && Boolean(listingSummary.browseVersion);
+  const browse = useMarketplaceBrowse<PowTokenListing>({
+    enabled: remoteBrowseEnabled,
+    query: { asset: bondConfig.tokenId, status: tokenListingBookFilter, q: "", sort: tokenListingSortMode },
+    version: listingSummary.browseVersion,
+    onVersionExpired: onRefreshBrowse,
+    checkpoint: { height: listingSummary.indexedThroughBlock, blockHash: listingSummary.indexedThroughBlockHash },
+  });
+  const browsePage = marketplaceBrowsePage(browse);
+  const listingReferencesCurrent = !remoteBrowseEnabled || browse.response?.version === listingSummary.browseVersion;
+  const browseCounts = marketplaceBrowseCounts(listingSummary, [bondConfig.tokenId]);
   const marketListings = listings.filter(
     (listing) =>
       listing.network === network && listing.tokenId === bondConfig.tokenId,
@@ -51775,24 +51990,26 @@ function InfinityBondMarketPanel({
     (token) =>
       token.network === network && token.tokenId === bondConfig.tokenId,
   );
-  const powbReferenceValue =
-    summary?.actualValue.floorSats ?? summary?.floorSats ?? 0;
-  const powbReferenceQ8 =
-    summary?.actualValue.floorQ8 ?? summary?.floorQ8;
+  const pinnedReference = remoteBrowseEnabled ? listingSummary.browseBondReferences?.[bondConfig.tokenId] : undefined;
+  const hasReference = remoteBrowseEnabled ? Boolean(pinnedReference) : Boolean(summary);
+  const powbReferenceValue = remoteBrowseEnabled ? pinnedReference?.floorSats ?? 0
+    : summary?.actualValue.floorSats ?? summary?.floorSats ?? 0;
+  const powbReferenceQ8 = remoteBrowseEnabled ? pinnedReference?.floorQ8
+    : summary?.actualValue.floorQ8 ?? summary?.floorQ8;
   const powbReferenceSats = bondDecimalNumber(
     powbReferenceValue,
     powbReferenceQ8,
   );
   const powbFloorUsd = satsToUsd(powbReferenceSats, btcUsd);
   const powbReference: TokenReferenceSnapshot = {
-    mintAmount: powbToken?.mintAmount ?? 1,
-    mintPriceSats: powbToken?.mintPriceSats ?? Math.max(1, powbReferenceSats),
+    mintAmount: remoteBrowseEnabled ? 1 : powbToken?.mintAmount ?? 1,
+    mintPriceSats: remoteBrowseEnabled ? 0 : powbToken?.mintPriceSats ?? Math.max(1, powbReferenceSats),
     pricePerToken: powbReferenceSats,
     ticker: bondConfig.ticker,
     tokenId: bondConfig.tokenId,
   };
   const tokenReferenceById = new Map<string, TokenReferenceSnapshot>([
-    ...(summary ? [[bondConfig.tokenId, powbReference] as [string, TokenReferenceSnapshot]] : []),
+    ...(hasReference ? [[bondConfig.tokenId, powbReference] as [string, TokenReferenceSnapshot]] : []),
   ]);
   const sortedMarketListings = sortTokenListings(
     visibleMarketListings,
@@ -51819,17 +52036,48 @@ function InfinityBondMarketPanel({
       txid: sale.txid,
     })),
   ]);
-  const tokenListingPage = pagedItems(
-    sortedMarketListings,
-    tokenListingPageIndex,
-    TOKEN_LIST_PREVIEW_COUNT,
+  const tokenListingPage = remoteBrowseEnabled ? browsePage : pagedItems(
+    sortedMarketListings, tokenListingPageIndex, TOKEN_LIST_PREVIEW_COUNT,
   );
-  const tokenMarketLogPage = pagedItems(
-    tokenMarketLogItems,
-    tokenMarketLogPageIndex,
-    TOKEN_LIST_PREVIEW_COUNT,
-  );
-  const hasTokenMarketLogItems = tokenMarketLogPage.totalCount > 0;
+  const [historyRead, setHistoryRead] = useState<{
+    asset: string; key: string; pageIndex: number; page: PowPaginatedApiResponse<TokenMarketLogItem>;
+  }>();
+  const [historyError, setHistoryError] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyRetry, setHistoryRetry] = useState(0);
+  const historyKey = [network, bondConfig.tokenId, listingSummary.browseVersion, tokenMarketLogPageIndex].join(":");
+  useEffect(() => {
+    if (!remoteBrowseEnabled) return;
+    let current = true;
+    const stop = createVisibleReadLoop(async (signal) => {
+      setHistoryLoading(true);
+      setHistoryError("");
+      try {
+        const page = await fetchTokenHistoryPage<TokenMarketLogItem>(network, "market-log", {
+          tokenScope: bondConfig.tokenId, pageIndex: tokenMarketLogPageIndex,
+          pageSize: TOKEN_LIST_PREVIEW_COUNT, signal,
+        });
+        if (page.kind !== "market-log" || !Array.isArray(page.items) || typeof page.totalCount !== "number" ||
+            !Number.isSafeInteger(page.totalCount) || page.totalCount < page.items.length) {
+          throw new Error("The history page could not be verified.");
+        }
+        if (current && !signal.aborted) setHistoryRead({ asset: bondConfig.tokenId, key: historyKey,
+          pageIndex: tokenMarketLogPageIndex, page });
+      } catch (error) {
+        if (current && !signal.aborted) setHistoryError(errorMessage(error, "History is unavailable."));
+      } finally {
+        if (current) setHistoryLoading(false);
+      }
+    });
+    return () => { current = false; stop(); };
+  }, [remoteBrowseEnabled, historyKey, historyRetry]);
+  const visibleHistory = historyRead?.asset === bondConfig.tokenId ? historyRead : undefined;
+  const historyCurrent = visibleHistory?.key === historyKey;
+  const historyAuthoritative = Boolean(historyCurrent && visibleHistory && tokenMarketHistoryPageIsAuthoritative(visibleHistory.page));
+  const tokenMarketLogPage = remoteBrowseEnabled && visibleHistory
+    ? historyPageToPagedItems(visibleHistory.page, visibleHistory.pageIndex, TOKEN_LIST_PREVIEW_COUNT)
+    : pagedItems(tokenMarketLogItems, tokenMarketLogPageIndex, TOKEN_LIST_PREVIEW_COUNT);
+  const hasTokenMarketLogItems = tokenMarketLogPage.items.length > 0;
 
   useEffect(() => {
     setTokenListingPageIndex(0);
@@ -51853,7 +52101,7 @@ function InfinityBondMarketPanel({
             </p>
           </div>
         </div>
-        {listingBookPreviewIncomplete ? (
+        {remoteBrowseEnabled ? <MarketplaceBrowseReadStatus browse={browse} onRefresh={onRefreshBrowse} /> : listingBookPreviewIncomplete ? (
           <>
             <p className="field-note" role="status">
               Showing a verified AMO preview
@@ -51892,20 +52140,20 @@ function InfinityBondMarketPanel({
           <div>
             <span>Bond floor</span>
             <strong>
-              {summary ? `${bondProofAmountDisplay(powbReferenceValue, powbReferenceQ8)} proofs / ${bondConfig.ticker}` : referenceError ? "Unavailable" : "Verifying reference"}
+              {hasReference ? `${bondProofAmountDisplay(powbReferenceValue, powbReferenceQ8)} proofs / ${bondConfig.ticker}` : referenceError ? "Unavailable" : "Verifying reference"}
             </strong>
           </div>
           <div>
             <span>USD/{bondConfig.ticker}</span>
-            <strong>{summary ? tokenUsd(powbFloorUsd) : "—"}</strong>
+            <strong>{hasReference ? tokenUsd(powbFloorUsd) : "—"}</strong>
           </div>
           <div>
             <span>Open tickets</span>
-            <strong>{listingBookPreviewIncomplete ? "—" : marketListings.length.toLocaleString()}</strong>
+            <strong>{remoteBrowseEnabled ? browseCounts?.all.toLocaleString() ?? "—" : listingBookPreviewIncomplete ? "—" : marketListings.length.toLocaleString()}</strong>
           </div>
           <div>
             <span>Sealed</span>
-            <strong>{listingBookPreviewIncomplete ? "—" : sealedListings.length.toLocaleString()}</strong>
+            <strong>{remoteBrowseEnabled ? browseCounts?.sealed.toLocaleString() ?? "—" : listingBookPreviewIncomplete ? "—" : sealedListings.length.toLocaleString()}</strong>
           </div>
         </div>
         <div className="listing-fee-control token-listing-fee-control">
@@ -51916,18 +52164,18 @@ function InfinityBondMarketPanel({
           <FeeRateControl feeRate={feeRate} setFeeRate={setFeeRate} />
         </div>
         <MarketplaceListingBookTabs
-          allCount={listingBookPreviewIncomplete ? undefined : marketListings.length}
+          allCount={remoteBrowseEnabled ? browseCounts?.all : listingBookPreviewIncomplete ? undefined : marketListings.length}
           label={`${bondConfig.ticker} order book filter`}
           onChange={setTokenListingBookFilter}
-          sealedCount={listingBookPreviewIncomplete ? undefined : sealedListings.length}
-          unsealedCount={listingBookPreviewIncomplete ? undefined : unsealedListings.length}
+          sealedCount={remoteBrowseEnabled ? browseCounts?.sealed : listingBookPreviewIncomplete ? undefined : sealedListings.length}
+          unsealedCount={remoteBrowseEnabled ? browseCounts?.unsealed : listingBookPreviewIncomplete ? undefined : unsealedListings.length}
           value={tokenListingBookFilter}
         />
         <MarketplaceSortControl
           onChange={setTokenListingSortMode}
           value={tokenListingSortMode}
         />
-        {visibleMarketListings.length ? (
+        {tokenListingPage.items.length ? (
           <div className="token-market-grid">
             {tokenListingPage.items.map((listing) => {
               const hasSeal = tokenSaleAuthorizationUsesSaleTicketAnchor(
@@ -51938,10 +52186,11 @@ function InfinityBondMarketPanel({
               const sealPending = tokenListingHasPendingSaleTicketSeal(listing);
               const listingUnitSats = tokenListingUnitPriceSats(listing);
               const listingDeltaPct =
-                powbReferenceSats > 0 && listingUnitSats > 0
+                listingReferencesCurrent && powbReferenceSats > 0 && listingUnitSats > 0
                   ? (listingUnitSats - powbReferenceSats) / powbReferenceSats
                   : 0;
               const listingMarketLabel =
+                !listingReferencesCurrent ? "Updating reference" :
                 powbReferenceSats > 0 && listingUnitSats > 0
                   ? Math.abs(listingDeltaPct) <= 0.01
                     ? "Floor"
@@ -52025,12 +52274,12 @@ function InfinityBondMarketPanel({
                   </dl>
                   <p className="field-note">
                     Reference:{" "}
-                    {powbReferenceSats > 0
+                    {!listingReferencesCurrent ? "updating for these listings" : powbReferenceSats > 0
                       ? `${bondProofAmountDisplay(
                           powbReferenceValue,
                           powbReferenceQ8,
                         )} proofs / ${bondConfig.ticker} bond floor`
-                      : summary ? "no confirmed bond floor yet" : referenceError ? "bond floor unavailable" : "verifying confirmed bond floor"}
+                      : hasReference ? "no confirmed bond floor yet" : referenceError ? "bond floor unavailable" : "verifying confirmed bond floor"}
                   </p>
                   <div className="id-record-actions">
                     <button
@@ -52061,7 +52310,10 @@ function InfinityBondMarketPanel({
           <div className="empty-state">
             <Wallet size={28} />
             <h3>
-              {listingBookPreviewIncomplete
+              {remoteBrowseEnabled
+                ? !browse.response ? browse.error ? "Sale tickets unavailable" : "Loading sale tickets"
+                  : !browse.matches ? "Updating sale tickets" : "No matching sale tickets"
+                : listingBookPreviewIncomplete
                 ? `Complete ${bondConfig.ticker} history not loaded`
                 : marketListings.length
                 ? tokenListingBookFilter === "sealed"
@@ -52070,7 +52322,11 @@ function InfinityBondMarketPanel({
                 : `No ${bondConfig.ticker} sale tickets yet`}
             </h3>
             <p>
-              {listingBookPreviewIncomplete
+              {remoteBrowseEnabled
+                ? browse.response && browse.matches
+                  ? "No confirmed sale tickets match this view in the last verified complete server snapshot."
+                  : "The current page is awaiting verified display evidence; no empty-book claim is being made."
+                : listingBookPreviewIncomplete
                 ? "The verified preview is incomplete, so empty-state claims are withheld until the checkpoint-bound sale-ticket book is complete."
                 : marketListings.length
                 ? tokenListingBookFilter === "sealed"
@@ -52082,7 +52338,7 @@ function InfinityBondMarketPanel({
         )}
         <PaginationControls
           label={`${bondConfig.ticker} sale tickets`}
-          onPageChange={setTokenListingPageIndex}
+          onPageChange={remoteBrowseEnabled ? browse.goToPage : setTokenListingPageIndex}
           page={tokenListingPage}
         />
       </section>
@@ -52097,6 +52353,14 @@ function InfinityBondMarketPanel({
             <p>{bondConfig.ticker} listings, seals, closes, and sale settlements.</p>
           </div>
         </div>
+        {remoteBrowseEnabled ? <p className="field-note" role={historyError ? "alert" : "status"}>
+          {historyCurrent ? historyAuthoritative ? "History is loaded separately from sale tickets."
+            : "Indexed history preview. These rows and page counts do not establish complete market history." : visibleHistory
+            ? "Showing the previous history page while this view updates." : "Loading history separately from sale tickets. Summary rows are a partial preview."}
+          {historyError ? ` ${historyError}` : ""}
+        </p> : null}
+        {remoteBrowseEnabled && historyError ? <button className="secondary small" disabled={historyLoading}
+          onClick={() => setHistoryRetry((value) => value + 1)} type="button">Retry history</button> : null}
         {hasTokenMarketLogItems ? (
           <div className="token-market-grid">
             {tokenMarketLogPage.items.map((item) => {
@@ -52372,17 +52636,21 @@ function InfinityBondMarketPanel({
         ) : (
           <div className="empty-state">
             <FileText size={28} />
-            <h3>{listingBookPreviewIncomplete ? `${bondConfig.ticker} history not verified` : `No ${bondConfig.ticker} market history yet`}</h3>
-            <p>{listingBookPreviewIncomplete
-              ? "Load the complete checkpoint-bound book before reporting an empty market history."
-              : `${bondConfig.ticker} listings and sales will appear here after they index.`}</p>
+            <h3>{remoteBrowseEnabled ? historyCurrent ? historyAuthoritative ? `No ${bondConfig.ticker} market history yet`
+                : `No ${bondConfig.ticker} history rows in this preview`
+              : historyError ? `${bondConfig.ticker} history unavailable` : `Loading ${bondConfig.ticker} history`
+              : listingBookPreviewIncomplete ? `${bondConfig.ticker} history not verified` : `No ${bondConfig.ticker} market history yet`}</h3>
+            <p>{remoteBrowseEnabled && !historyAuthoritative ? "Complete history has not been verified for this view; no empty-history claim is being made."
+              : listingBookPreviewIncomplete && !remoteBrowseEnabled
+                ? "Load the complete checkpoint-bound book before reporting an empty market history."
+                : `${bondConfig.ticker} listings and sales will appear here after they index.`}</p>
           </div>
         )}
-        <PaginationControls
+        {(!remoteBrowseEnabled || visibleHistory) ? <PaginationControls
           label={`${bondConfig.ticker} sales and listings`}
-          onPageChange={setTokenMarketLogPageIndex}
+          onPageChange={(pageIndex) => { if (!historyLoading) setTokenMarketLogPageIndex(pageIndex); }}
           page={tokenMarketLogPage}
-        />
+        /> : null}
       </section>
     </div>
   );
@@ -52411,6 +52679,7 @@ function BondMarketplacePanel({
   listings,
   network,
   onLoadCompleteListingBook,
+  onRefreshBrowse,
   sales,
   setFeeRate,
   tokens,
@@ -52429,6 +52698,7 @@ function BondMarketplacePanel({
   listings: PowTokenListing[];
   network: BitcoinNetwork;
   onLoadCompleteListingBook?: (tokenScope: string) => void;
+  onRefreshBrowse?: () => void;
   sales: PowTokenSale[];
   setFeeRate: (value: number) => void;
   tokens: PowTokenDefinition[];
@@ -52472,7 +52742,9 @@ function BondMarketplacePanel({
   const bondSaleCount = confirmedBondSaleCount(tokens, network);
   const sealedBondListings = bondListings.filter(tokenListingHasConfirmedSaleTicketSeal);
   const listingBookComplete = listingSummary.listingBookComplete === true;
+  const browseBondCounts = marketplaceBrowseCounts(listingSummary, [POWB_TOKEN_ID, INCB_TOKEN_ID]);
   const listingCountFor = (config: BondUiConfig) =>
+    marketplaceBrowseCounts(listingSummary, [config.tokenId])?.all ??
     bondListings.filter((listing) => listing.tokenId === config.tokenId).length;
   const bondTabOptions = [
     ["inception", INCEPTION_BOND_UI],
@@ -52501,15 +52773,15 @@ function BondMarketplacePanel({
         >
           <div>
             <span>Inception tickets</span>
-            <strong>{listingBookComplete ? listingCountFor(INCEPTION_BOND_UI).toLocaleString() : "—"}</strong>
+            <strong>{(listingBookComplete || browseBondCounts) ? listingCountFor(INCEPTION_BOND_UI).toLocaleString() : "—"}</strong>
           </div>
           <div>
             <span>Infinity tickets</span>
-            <strong>{listingBookComplete ? listingCountFor(INFINITY_BOND_UI).toLocaleString() : "—"}</strong>
+            <strong>{(listingBookComplete || browseBondCounts) ? listingCountFor(INFINITY_BOND_UI).toLocaleString() : "—"}</strong>
           </div>
           <div>
             <span>Sealed tickets</span>
-            <strong>{listingBookComplete ? sealedBondListings.length.toLocaleString() : "—"}</strong>
+            <strong>{browseBondCounts?.sealed.toLocaleString() ?? (listingBookComplete ? sealedBondListings.length.toLocaleString() : "—")}</strong>
           </div>
           <div>
             <span>Bond sales</span>
@@ -52525,7 +52797,7 @@ function BondMarketplacePanel({
               type="button"
             >
               <span>{config.displayName.replace(" Bond", "")}</span>
-              <strong>{listingBookComplete ? listingCountFor(config).toLocaleString() : "—"}</strong>
+              <strong>{(listingBookComplete || browseBondCounts) ? listingCountFor(config).toLocaleString() : "—"}</strong>
             </button>
           ))}
         </div>
@@ -52551,6 +52823,7 @@ function BondMarketplacePanel({
         completeListingBookError={completeListingBookError}
         completeListingBookLoading={completeListingBookLoading}
         onLoadCompleteListingBook={onLoadCompleteListingBook}
+        onRefreshBrowse={onRefreshBrowse}
         sales={sales}
         setFeeRate={setFeeRate}
         summary={network === "livenet" ? activeSummary : undefined}
@@ -53265,6 +53538,22 @@ function TokenMarketplacePanel({
         ? tokenMarketActivityTotals.totals
         : {}
       : localTokenMarketActivityTotals;
+  const remoteBrowseEnabled = network === "livenet" && Boolean(summary.browseVersion) &&
+    (!selectedTokenIsWork || workMarketplaceVersion === "amo");
+  const browse = useMarketplaceBrowse<PowTokenListing>({
+    enabled: remoteBrowseEnabled,
+    query: { asset: selectedMarketToken?.tokenId ?? "credits", status: tokenListingBookFilter,
+      q: tokenListingSearchQuery, sort: tokenListingSortMode },
+    version: summary.browseVersion,
+    checkpoint: { height: summary.indexedThroughBlock, blockHash: summary.indexedThroughBlockHash },
+    onVersionExpired: onRetryMarketplaceSummary,
+    refreshNonce: tokenMarketHistoryRefreshNonce,
+  });
+  const browsePage = marketplaceBrowsePage(browse);
+  const listingReferencesCurrent = !remoteBrowseEnabled || browse.response?.version === summary.browseVersion;
+  const browseCounts = browse.matches ? browse.response?.book.counts : undefined;
+  const completeScopeCounts = marketplaceBrowseCounts(summary,
+    selectedMarketToken ? [selectedMarketToken.tokenId] : tokens.filter((token) => !BOND_TOKEN_IDS.has(token.tokenId)).map((token) => token.tokenId));
   const orderBookListings = marketListings;
   const sealedListings = useMemo(() => orderBookListings.filter(
     tokenListingHasConfirmedSaleTicketSeal,
@@ -53285,11 +53574,12 @@ function TokenMarketplacePanel({
     tokenReferenceById,
     workMarketFloorQ8,
   ), [visibleMarketListings, tokenListingSortMode, tokenReferenceById, workMarketFloorQ8]);
-  const filteredMarketListings = useMemo(() => tokenListingSearchQuery
+  const locallyFilteredMarketListings = useMemo(() => tokenListingSearchQuery
     ? sortedBookListings.filter((listing) =>
         tokenListingMatchesSearch(listing, tokenListingSearchQuery),
       )
     : sortedBookListings, [sortedBookListings, tokenListingSearchQuery]);
+  const filteredMarketListings = remoteBrowseEnabled ? browsePage.items : locallyFilteredMarketListings;
   const sortedMarketListings = filteredMarketListings;
   const walletMarketListings = address
     ? sortTokenListings(
@@ -53329,10 +53619,8 @@ function TokenMarketplacePanel({
     tokenMarketPageIndex,
     TOKEN_LIST_PREVIEW_COUNT,
   );
-  const tokenListingPage = pagedItems(
-    sortedMarketListings,
-    tokenListingPageIndex,
-    TOKEN_LIST_PREVIEW_COUNT,
+  const tokenListingPage = remoteBrowseEnabled ? browsePage : pagedItems(
+    sortedMarketListings, tokenListingPageIndex, TOKEN_LIST_PREVIEW_COUNT,
   );
   const workMarketFloorUsd = satsToUsd(workMarketFloorSats, btcUsd);
   const workMarketNetworkUsd = workFloorQuote
@@ -53597,7 +53885,7 @@ function TokenMarketplacePanel({
                             ? `${formatExactRational(
                               bestWorkAmoBuyerArb,
                             )} proofs arb`
-                            :"No sealed asks"}
+                            : summary.browseVersion ? "See the sorted sealed book" : "No sealed asks"}
                         </strong>
                       </div>
                       {(exactIntegerBigInt(workCreditNetworkValueQ8)??0n)>0n? (
@@ -54021,7 +54309,7 @@ function TokenMarketplacePanel({
             className="marketplace-tabs work-marketplace-version-tabs"
             items={[
               {
-                count: workAmoListings.length.toLocaleString(),
+                count: completeScopeCounts?.all.toLocaleString() ?? (summary.browseVersion ? "—" : workAmoListings.length.toLocaleString()),
                 id: "amo",
                 label: "AMO",
                 panelId: "credit-market-book",
@@ -54432,7 +54720,7 @@ function TokenMarketplacePanel({
               declaration boundary.
             </p>
           ) : null}
-          {listingBookPreviewIncomplete ? (
+          {remoteBrowseEnabled ? <MarketplaceBrowseReadStatus browse={browse} onRefresh={onRetryMarketplaceSummary} /> : listingBookPreviewIncomplete ? (
             <>
               <p className="field-note" role="status">
                 Showing a verified AMO preview
@@ -54473,17 +54761,17 @@ function TokenMarketplacePanel({
           </div>
           <IdSearchControl
             placeholder="Search sale tickets, sellers, txids"
-            resultCount={filteredMarketListings.length}
+            resultCount={remoteBrowseEnabled ? (browse.matches ? browse.response?.book.totalCount : undefined) : filteredMarketListings.length}
             setValue={setTokenListingSearchQuery}
-            totalCount={visibleMarketListings.length}
+            totalCount={remoteBrowseEnabled ? browseCounts?.[tokenListingBookFilter] : visibleMarketListings.length}
             value={tokenListingSearchQuery}
           />
           <MarketplaceListingBookTabs
-            allCount={orderBookListings.length}
+            allCount={remoteBrowseEnabled ? completeScopeCounts?.all : orderBookListings.length}
             label="Credit order book filter"
             onChange={setTokenListingBookFilter}
-            sealedCount={sealedListings.length}
-            unsealedCount={unsealedListings.length}
+            sealedCount={remoteBrowseEnabled ? completeScopeCounts?.sealed : sealedListings.length}
+            unsealedCount={remoteBrowseEnabled ? completeScopeCounts?.unsealed : unsealedListings.length}
             value={tokenListingBookFilter}
           />
           <MarketplaceSortControl
@@ -54594,7 +54882,7 @@ function TokenMarketplacePanel({
                     workFloorQuote,
                   );
                 const workBuyerArb =
-                  listingIsWork && sealConfirmed && workReadEraReady
+                  listingReferencesCurrent && listingIsWork && sealConfirmed && workReadEraReady
                   ? tokenListingBuyerArbExact(
                       listing,
                       tokenReferenceById,
@@ -54607,7 +54895,7 @@ function TokenMarketplacePanel({
                   (token) => token.tokenId === listing.tokenId,
                 );
                 const listingReferenceSats =
-                  listingIsWork
+                  !listingReferencesCurrent ? 0 : listingIsWork
                     ? workMarketFloorSats > 0
                       ? workMarketFloorSats
                       : 0
@@ -54630,6 +54918,7 @@ function TokenMarketplacePanel({
                       listingReferenceSats
                     : 0;
                 const listingMarketLabel =
+                  !listingReferencesCurrent ? "Updating reference" :
                   listingReferenceSats > 0 && listingUnitSats > 0
                     ? Math.abs(listingDeltaPct) <= 0.01
                       ? "Market"
@@ -54755,7 +55044,9 @@ function TokenMarketplacePanel({
                                 : "Estimate only"}
                             </dd>
                           </div>
-                          {workBuyerArb ? (
+                          {!listingReferencesCurrent && sealConfirmed && workReadEraReady ? (
+                            <div><dt>Buyer arb</dt><dd>Updating reference</dd></div>
+                          ) : workBuyerArb ? (
                             <div>
                               <dt>Buyer arb</dt>
                               <dd data-testid="work-buyer-arb">
@@ -54796,7 +55087,7 @@ function TokenMarketplacePanel({
                               workConfirmedPriceSats !== null
                             ? "Waiting for seal. Purchase opens after the seller publishes a confirmed seal for these immutable V8 terms."
                           : "Pending WORK amount and proof price are estimates only. Confirmation order creates the canonical terms."
-                        : `Reference: ${
+                        : !listingReferencesCurrent ? "Reference: updating for these listings." : `Reference: ${
                             listingReferenceSats > 0
                         ? `${tokenSatsPerUnit(listingReferenceSats)} proofs / ${listing.ticker} ${listingReferenceLabel}`
                               : "none yet"
@@ -54831,7 +55122,10 @@ function TokenMarketplacePanel({
             <div className="empty-state">
               <Wallet size={28} />
               <h3>
-                  {tokenMarketLoading
+                  {remoteBrowseEnabled
+                    ? !browse.response ? browse.error ? "Sale tickets unavailable" : "Loading credit sale tickets"
+                      : !browse.matches ? "Updating sale tickets" : "No matching sale tickets"
+                    : tokenMarketLoading
                     ? "Loading credit sale tickets"
                     : listingBookPreviewIncomplete
                       ? "Complete credit history not loaded"
@@ -54844,7 +55138,11 @@ function TokenMarketplacePanel({
                   : "No credit listings yet"}
               </h3>
               <p>
-                  {tokenMarketLoading
+                  {remoteBrowseEnabled
+                    ? browse.response && browse.matches
+                      ? "No confirmed sale tickets match this view in the last verified complete server snapshot."
+                      : "The current page is awaiting verified display evidence; no empty-book claim is being made."
+                    : tokenMarketLoading
                     ? "Confirmed listings and seals are loading from the ProofOfWork index."
                     : listingBookPreviewIncomplete
                       ? "The verified preview is incomplete, so search and empty-state claims are withheld until the checkpoint-bound sale-ticket book is complete."
@@ -54862,7 +55160,7 @@ function TokenMarketplacePanel({
           )}
           <PaginationControls
             label="Sale tickets"
-            onPageChange={setTokenListingPageIndex}
+            onPageChange={remoteBrowseEnabled ? browse.goToPage : setTokenListingPageIndex}
             page={tokenListingPage}
           />
         </section>
@@ -55643,10 +55941,12 @@ function MarketplaceApp({
     tokens: creditTokens,
   });
   const listingBookComplete = tokenSummary.listingBookComplete === true;
+  const browseBondCounts = marketplaceBrowseCounts(tokenSummary, [POWB_TOKEN_ID, INCB_TOKEN_ID]);
   const marketplaceSummaryVerified = marketplaceSummaryHasVerifiedData(
     marketplaceSummaryReadState,
   );
   const tokenStatusState: TokenMarketplaceCountState = {
+    browseAssetCounts: tokenSummary.browseAssetCounts,
     collectionHasMore: tokenSummary.collectionHasMore,
     hasMore: tokenSummary.hasMore,
     listingAuthority: tokenSummary.listingAuthority,
@@ -55676,8 +55976,10 @@ function MarketplaceApp({
   const scopedStatus = marketplaceStatusForTab({
     active: marketplaceTab,
     bondSummary: {
-      tone: listingBookComplete ? "good" : "idle",
-      text: listingBookComplete
+      tone: browseBondCounts || listingBookComplete ? "good" : "idle",
+      text: browseBondCounts
+        ? `${browseBondCounts.all.toLocaleString()} bond tickets in the last verified market snapshot; ${browseBondCounts.sealed.toLocaleString()} confirmed sealed tickets.`
+        : listingBookComplete
         ? `Bond listings loaded in AMO. ${bondListings.length.toLocaleString()} open ticket${bondListings.length === 1 ? "" : "s"}, ${sealedBondListings.length.toLocaleString()} confirmed sealed tickets.`
         : "Loading all bond listings. Counts will appear when the complete inventory is verified.",
     },
@@ -55703,7 +56005,7 @@ function MarketplaceApp({
       text: listingBookComplete
         ? creditMarketStatusText
         : marketplaceSummaryVerified
-          ? `${creditMarketStatusText} Loading all active listings.`
+          ? `${creditMarketStatusText} Last verified market snapshot.`
           : `The credit market summary is not verified yet; no complete-book claim is available.`,
     },
   });
@@ -55715,7 +56017,7 @@ function MarketplaceApp({
         }
       : marketplaceTab === "boosts" ||
           marketplaceTab === "dns" ||
-          marketplaceSummaryReadState.status === "ready"
+          marketplaceSummaryVerified || scopedStatus.tone === "bad"
       ? scopedStatus
       : {
           tone:
@@ -55986,7 +56288,7 @@ function MarketplaceApp({
 
         <MarketplaceTabs
           active={marketplaceTab}
-          bondCount={listingBookComplete ? bondListings.length : undefined}
+          bondCount={browseBondCounts?.all ?? (listingBookComplete ? bondListings.length : undefined)}
           boostCount={boostListings.length > 0 || (!boostMarketLoading && !boostMarketError) ? boostListings.length : undefined}
           dnsCount={dnsRegistryReadStatus === "ready" ? dnsRegistryListings.length : undefined}
           idCount={marketplaceSummaryVerified ? registryListings.length : undefined}
@@ -56325,6 +56627,7 @@ function MarketplaceApp({
           />
         ) : marketplaceTab === "bonds" ? (
           <BondMarketplacePanel
+            onRefreshBrowse={onRetryMarketplaceSummary}
             address={address}
             btcUsd={btcUsd}
             busy={busy}
@@ -56691,6 +56994,7 @@ function MarketplaceWorkspace({
     marketplaceSummaryReadState,
   );
   const listingBookComplete = tokenSummary.listingBookComplete === true;
+  const browseBondCounts = marketplaceBrowseCounts(tokenSummary, [POWB_TOKEN_ID, INCB_TOKEN_ID]);
   const tokenMarketRouteUnavailable =
     marketplaceSummaryVerified &&
     Boolean(selectedTokenMarketId.trim()) &&
@@ -56733,7 +57037,7 @@ function MarketplaceWorkspace({
             {!marketplaceSummaryVerified
               ? `Canonical AMO summary ${marketplaceSummaryReadState.status === "unavailable" ? "unavailable" : "loading"}`
               : registryAddress
-              ? `${networkListings.length.toLocaleString()} ID listings · ${dnsRegistryReadStatus === "ready" ? networkDnsListings.length.toLocaleString() : "unavailable"} DNS listings · ${networkTokenCount.toLocaleString()} credits · ${bondListings.length.toLocaleString()} bond tickets · ${boostListings.length.toLocaleString()} Boost listings`
+              ? `${networkListings.length.toLocaleString()} ID listings · ${dnsRegistryReadStatus === "ready" ? networkDnsListings.length.toLocaleString() : "unavailable"} DNS listings · ${networkTokenCount.toLocaleString()} credits · ${browseBondCounts?.all.toLocaleString() ?? (listingBookComplete ? bondListings.length.toLocaleString() : "unavailable")} bond tickets · ${boostListings.length.toLocaleString()} Boost listings`
               : `No AMO registry configured for ${networkLabel(network)}`}
           </span>
         </div>
@@ -56758,7 +57062,7 @@ function MarketplaceWorkspace({
 
       <MarketplaceTabs
         active={marketplaceTab}
-        bondCount={listingBookComplete ? bondListings.length : undefined}
+        bondCount={browseBondCounts?.all ?? (listingBookComplete ? bondListings.length : undefined)}
         boostCount={boostListings.length > 0 || (!boostMarketLoading && !boostMarketError) ? boostListings.length : undefined}
         dnsCount={dnsRegistryReadStatus === "ready" ? networkDnsListings.length : undefined}
         idCount={marketplaceSummaryVerified ? networkListings.length : undefined}
@@ -57230,6 +57534,7 @@ function MarketplaceWorkspace({
             </div>
           </div>
           <BondMarketplacePanel
+            onRefreshBrowse={onRetryMarketplaceSummary}
             address={address}
             btcUsd={btcUsd}
             busy={busy}
@@ -58641,9 +58946,9 @@ function IdSearchControl({
   value,
 }: {
   placeholder: string;
-  resultCount: number;
+  resultCount?: number;
   setValue: (value: string) => void;
-  totalCount: number;
+  totalCount?: number;
   value: string;
 }) {
   return (
@@ -58670,9 +58975,11 @@ function IdSearchControl({
         ) : null}
       </div>
       <span>
-        {value
-          ? `${resultCount.toLocaleString()} of ${totalCount.toLocaleString()}`
-          : `${totalCount.toLocaleString()} total`}
+        {totalCount === undefined || resultCount === undefined
+          ? "Verifying results"
+          : value
+            ? `${resultCount.toLocaleString()} of ${totalCount.toLocaleString()}`
+            : `${totalCount.toLocaleString()} total`}
       </span>
     </div>
   );

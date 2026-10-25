@@ -48,6 +48,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "check:fee-rate-precision": "node scripts/check-fee-rate-precision.mjs && node --test scripts/check-social-fee-preference.test.mjs",
     "check:ui": "node scripts/check-ui-contract.mjs",
+    "check:amo-browse": "node --test server/amo-browse-snapshot.test.mjs src/features/marketplace/marketplaceBrowse.test.mjs",
     "check:notifications": "node --test server/notification*.test.mjs src/features/notifications/*.test.mjs",
     "check:seo": "node --test scripts/check-seo-metadata.test.mjs scripts/check-seo-build.test.mjs",
     "check:seo:live": "node scripts/check-seo-live.mjs",

@@ -23,6 +23,11 @@ TEMPLATE_SHA = 'd4c1e87e47e369104603c457a1ab6ceb90443488ad6d2b92c7246b29e563d04e
 VERIFIER = Path('/usr/local/sbin/proofofwork-node-overlay-source-health')
 VERIFIER_SHA = 'e93bdaebcdf8af0a13c04e00bc5ca5cefadf3662ae08ecf6e55888008ebba4ea'
 TARGETS = ('server/proof-api.mjs', 'server/db/proof-index-reader.mjs')
+AMO_NEW = frozenset({'server/amo-browse-snapshot.mjs'})
+SOURCE_SCOPES = {
+    'proof-of-work-api-response-latency-scoped-runtime-v1': (frozenset(TARGETS), frozenset()),
+    'proof-of-work-amo-browse-scoped-runtime-v1': (AMO_NEW | {'server/proof-api.mjs'}, AMO_NEW),
+}
 OLD = tuple('proofofwork-node-release-' + name + '.tgz' for name in (
     '38ac6e2-20261003T042000Z', '527e4cb-20261001T062733Z',
     '53b5b42-20261001T201028Z', '92eb5fb-20261004T111041Z',
@@ -101,13 +106,39 @@ def receipt_sources(manifest, receipt, digest, source_commit, directory, baselin
          receipt['rolledBack'] is False and receipt['completedAt'] and
          receipt['baselineHead'] == manifest['baselineHead'] == baseline and
          receipt['rollbackRoot'] == str(directory), 'Incomplete/mismatched source release')
+    family = manifest.get('format')
+    need(family in SOURCE_SCOPES and receipt.get('format') == family,
+         'Unknown/mismatched source release family')
+    targets, new = SOURCE_SCOPES[family]
     rows = {row['path']: row for row in manifest['sources']}
     completed = {row['path']: row for row in receipt['sources']}
     need(len(rows) == len(manifest['sources']) and len(completed) == len(receipt['sources']) and
-         set(rows) == set(completed) == set(TARGETS), 'Expanded API acceptance scope')
-    for name in TARGETS:
-        need(rows[name]['after'] == completed[name]['after'], 'Source receipt hash differs')
+         set(rows) == set(completed) == targets, 'Expanded API acceptance scope')
+    for name in targets:
+        need('before' in rows[name] and 'before' in completed[name] and
+             rows[name]['after'] == completed[name]['after'] and
+             rows[name]['before'] == completed[name]['before'], 'Source receipt hash differs')
+        need(isinstance(rows[name]['after'], str) and re.fullmatch('[0-9a-f]{64}', rows[name]['after']),
+             'Invalid installed source hash')
+        if name in new:
+            need(rows[name]['before'] is None, 'New helper must prove absent baseline')
+        else:
+            need(isinstance(rows[name]['before'], str) and re.fullmatch('[0-9a-f]{64}', rows[name]['before']),
+                 'Invalid prior source hash')
     return rows
+
+
+def require_overlay_extension(rows, overlays, family):
+    targets, new = SOURCE_SCOPES[family]
+    need(set(rows) == targets, 'Expanded API acceptance scope')
+    for name in targets:
+        if name in new:
+            need(name not in overlays and rows[name].get('before') is None,
+                 'New helper cannot replace an accepted overlay')
+        else:
+            need(name in overlays, 'Expected prior accepted overlay missing')
+            need(overlays[name]['sha256'] == rows[name]['before'],
+                 'Receipt does not extend accepted source')
 
 
 def accept_source(args, custody, verify):
@@ -118,14 +149,15 @@ def accept_source(args, custody, verify):
     receipt_raw = read(directory / 'receipt.json')
     previous = read(ACCEPTED)
     accepted = json.loads(previous)
-    rows = receipt_sources(json.loads(manifest_raw), json.loads(receipt_raw),
+    manifest = json.loads(manifest_raw)
+    rows = receipt_sources(manifest, json.loads(receipt_raw),
                            args.manifest_sha256, args.source_commit, directory, accepted['baselineHead'])
     overlays = {row['path']: row for row in accepted['overlays']}
+    need(len(overlays) == len(accepted['overlays']), 'Duplicate accepted source overlay')
+    require_overlay_extension(rows, overlays, manifest['format'])
     evidence = [{'path': str(directory / 'manifest.json'), 'sha256': sha(manifest_raw)},
                 {'path': str(directory / 'receipt.json'), 'sha256': sha(receipt_raw)}]
-    for name in TARGETS:
-        need(name in overlays, 'Expected prior accepted overlay missing')
-        need(overlays[name]['sha256'] == rows[name]['before'], 'Receipt does not extend accepted source')
+    for name in sorted(rows):
         read(ROOT / name, rows[name]['after'], owner=ROOT.stat().st_uid)
         overlays[name] = {'path': name, 'sha256': rows[name]['after'],
                           'gitMode': '100755' if (ROOT/name).stat().st_mode & 0o111 else '100644',

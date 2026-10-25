@@ -12,6 +12,7 @@ const files = [
   "OP_RETURN_INFRASTRUCTURE.md",
   "PROOFOFWORK_GENERAL_DECK.md",
   "src/App.tsx",
+  "src/features/marketplace/marketplaceBrowse.ts",
   "src/exactAmount.ts",
   "src/workAmount.ts",
   "src/walletUtxos.ts",
@@ -2461,7 +2462,7 @@ expect(
     /async function transferToken[\s\S]*const freshAdmission = await freshWorkWriteMode\(\)[\s\S]*preparedWorkMode = freshAdmission\.mode[\s\S]*reviewAndSendAction\([\s\S]*revalidate:[\s\S]*freshWorkWriteMode\(preparedWorkMode\)/.test(
       app,
     ) &&
-    /async function reviewAndSendAction[\s\S]*const preflight =[\s\S]*await revalidate\(\)[\s\S]*await preflight\(\)[\s\S]*beforeBroadcast: preflight/.test(app) &&
+    /async function reviewAndSendAction[\s\S]*const preflight =[\s\S]*await revalidate\((?:attempted\?\.txid)?\)[\s\S]*await preflight\(\)[\s\S]*beforeBroadcast: preflight/.test(app) &&
     /async function sendOpReturn[\s\S]*preparedWorkAttachmentMode =[\s\S]*await freshWorkWriteMode\(\)[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkAttachmentMode\)/.test(
       app,
     ) &&
@@ -3526,13 +3527,60 @@ expect(
       tokenStateWithCompleteTokenListingsBlock,
     ),
 );
+const marketplaceBrowse = contents.get("src/features/marketplace/marketplaceBrowse.ts");
+const refreshMarketplaceBrowseSummaryBlock = app.match(
+  /async function refreshMarketplaceBrowseSummary[\s\S]*?async function fetchCompleteMarketplaceSnapshot/,
+)?.[0] ?? "";
 expect(
-  "AMO automatically verifies the complete credit and bond book before publishing",
+  "AMO publishes an independent compact display summary without fetching the global listing book or awaiting USD",
+  /await fetchMarketplaceBrowse[\s\S]*refresh: refresh && attempt === 0, limit: 1, signal/.test(refreshMarketplaceBrowseSummaryBlock) &&
+    /void fetchBtcUsdPrice\(false\)/.test(refreshMarketplaceBrowseSummaryBlock) &&
+    !/await fetchBtcUsdPrice|fetchCompleteMarketplaceSnapshot\(|tokenStateWithCurrentCompleteMarketplaceListings\(/.test(refreshMarketplaceBrowseSummaryBlock) &&
+    /setMarketplaceDataLoading\(false\)[\s\S]*status: "last-verified"/.test(refreshMarketplaceBrowseSummaryBlock) &&
+    /listingBookComplete: false,[\s\S]*browseAssetCounts: browse.book.assetCounts,[\s\S]*browseVersion: browse.version/.test(refreshMarketplaceBrowseSummaryBlock),
+);
+expect(
+  "AMO display data cannot populate strict registry, token, floor, or complete-book authority caches",
+  /if \(registryDisplayOnlyRef.current\) return/.test(app) &&
+    /if \(\s*tokenSummary.browseVersion \|\|[\s\S]*?return;/.test(app) &&
+    /if \(workFloorDisplayOnlyRef.current\) return/.test(app) &&
+    /registryDisplayOnlyRef.current = true/.test(refreshMarketplaceBrowseSummaryBlock) &&
+    /workFloorDisplayOnlyRef.current = true/.test(refreshMarketplaceBrowseSummaryBlock) &&
+    !/(?:applyRegistryState|applyTokenState|applyWorkFloorQuote)\(|(?:acceptedMarketplaceSnapshotRef|acceptedWorkFloorQuoteRef|acceptedTokenStatesRef|acceptedRegistryStatesRef)\.current\s*=/.test(refreshMarketplaceBrowseSummaryBlock) &&
+    /part.indexedThroughBlock === browse.checkpoint.height[\s\S]*part.indexedThroughBlockHash === browse.checkpoint.blockHash/.test(refreshMarketplaceBrowseSummaryBlock),
+);
+expect(
+  "AMO requests one immutable page and uses full-snapshot server counts for credits and bonds",
+  /const queryKey = browseQueryKey\(query\)/.test(marketplaceBrowse) &&
+    /if \(!enabled \|\| !version\)/.test(marketplaceBrowse) &&
+    /query, cursor, version,[\s\S]*checkpoint: options.checkpoint, start: pageIndex \* 25, includeSummary: false/.test(marketplaceBrowse) &&
+    /limit: String\(options.limit \?\? 25\)/.test(marketplaceBrowse) &&
+    /const visiblePage = enabled && page\?.asset === query.asset \? page : undefined/.test(marketplaceBrowse) &&
+    /failure.status === 409[\s\S]*!expiredVersionsRef.current.has\(version\)[\s\S]*onVersionExpiredRef.current\?\.\(\)/.test(marketplaceBrowse) &&
+    /const browseCounts = browse.matches \? browse.response\?.book.counts : undefined/.test(tokenMarketplacePanelBlock) &&
+    /allCount=\{remoteBrowseEnabled \? completeScopeCounts\?.all/.test(tokenMarketplacePanelBlock) &&
+    /marketplaceBrowseCounts\(listingSummary, \[bondConfig.tokenId\]\)/.test(infinityBondMarketPanelBlock) &&
+    /browseBondCounts\?\.all/.test(marketplaceAppBlock),
+);
+expect(
+  "Bond browsing pins valuation and keeps active history on an independent bounded read",
+  /listingSummary.browseBondReferences\?\.\[bondConfig.tokenId\]/.test(infinityBondMarketPanelBlock) &&
+    /mintPriceSats: remoteBrowseEnabled \? 0/.test(infinityBondMarketPanelBlock) &&
+    /fetchTokenHistoryPage<TokenMarketLogItem>\(network, "market-log",[\s\S]*tokenScope: bondConfig.tokenId, pageIndex: tokenMarketLogPageIndex,[\s\S]*pageSize: TOKEN_LIST_PREVIEW_COUNT, signal/.test(infinityBondMarketPanelBlock) &&
+    /const historyAuthoritative = Boolean\(historyCurrent && visibleHistory && tokenMarketHistoryPageIsAuthoritative\(visibleHistory.page\)\)/.test(infinityBondMarketPanelBlock) &&
+    /no empty-history claim is being made/.test(infinityBondMarketPanelBlock),
+);
+expect(
+  "A normal last-verified market does not hide wallet action feedback",
+  /marketplaceSummaryVerified \|\| scopedStatus.tone === "bad"[\s\S]*\? scopedStatus/.test(marketplaceAppBlock) &&
+    /!marketplaceMode && \(workspaceStatusesRef.current.get\(scope\)\?\.text \?\? INITIAL_COMPUTER_STATUS.text\) === INITIAL_COMPUTER_STATUS.text/.test(refreshMarketplaceBrowseSummaryBlock),
+);
+expect(
+  "Strict wallet listing reads still reconcile the complete current book before accepting authority",
   /fetchCompleteMarketplaceSnapshot\(fresh, consumerSignal\)/.test(refreshMarketplaceSummaryBlock) &&
-    /const completeTokenState = snapshot\.token/.test(refreshMarketplaceSummaryBlock) &&
+    /const completeTokenState = snapshot.token/.test(refreshMarketplaceSummaryBlock) &&
     /async function fetchCompleteMarketplaceSnapshot[\s\S]*await tokenStateWithCurrentCompleteMarketplaceListings/.test(app) &&
-    /listingBookComplete: true/.test(tokenStateWithCompleteTokenListingsBlock) &&
-    /bondCount=\{listingBookComplete \? bondListings\.length : undefined\}/.test(app),
+    /listingBookComplete: true/.test(tokenStateWithCompleteTokenListingsBlock),
 );
 expect(
   "Completed listing history matches canonical checkpoints while retaining page and cache observation fences",

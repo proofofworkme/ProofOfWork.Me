@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createAmoBrowseFixture } from "../fixtures/amoBrowseFixture.mjs";
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
 
@@ -53,6 +54,7 @@ function emptyListingPage(limit) { return { ...checkpoint, network: "livenet", s
 }; }
 
 async function fixture(page) {
+  const browseFixture = createAmoBrowseFixture(() => ({ ...checkpoint, network: "livenet", registry: registry(), token, workFloor }));
   page.on("pageerror", error => { throw error; });
   const state = { owner: OWNER, refused: "", reads: [], posts: [] };
   await page.addInitScript(({ owner, publicKey, utxo }) => {
@@ -83,6 +85,7 @@ async function fixture(page) {
         json: { error: state.refused || "Confirmed ID availability is unproven: old worker failure", details: { code: "ID_AVAILABILITY_UNPROVEN" } } });
       json = { ...registry(), record: { ...record, ownerAddress: state.owner }, records: [{ ...record, ownerAddress: state.owner }], pendingEvents: [] };
     } else if (url.pathname === "/api/v1/registry" || url.pathname === "/api/v1/registry-summary") json = registry();
+    else if (url.pathname === "/api/v1/marketplace-browse") json = await browseFixture(url);
     else if (url.pathname === "/api/v1/marketplace-summary") json = { ...checkpoint, network: "livenet", registry: registry(), token, workFloor };
     else if (url.pathname === "/api/v1/token-history") json = emptyListingPage(Number(url.searchParams.get("limit")));
     else if (url.pathname === "/api/v1/token" || url.pathname === "/api/v1/token-summary") json = token;
@@ -97,7 +100,7 @@ async function fixture(page) {
 async function prepare(page, path) {
   await page.goto(path);
   await expect(page.getByRole("button", { name: "Disconnect UniSat", exact: true })).toBeVisible();
-  await expect(page.getByLabel("AMO summary verification")).toHaveAttribute("data-state", "ready");
+  await expect(page.getByLabel("AMO summary verification")).toHaveAttribute("data-state", "last-verified");
   await page.getByLabel("AMO asset tabs").getByRole("button", { name: /^IDs/u }).click();
   await expect(page.getByRole("heading", { name: "List an ID", exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "ID", exact: true })).toHaveValue(ID);

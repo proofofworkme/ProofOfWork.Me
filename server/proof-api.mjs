@@ -8,6 +8,7 @@ import {
 } from "./wallet-read-observation.mjs";
 import { createPermissionVerificationStore } from "./permission-verification-store.mjs";
 import { createDnsVerificationStore } from "./dns-verification-store.mjs";
+import { createAmoBrowseSnapshotStore } from "./amo-browse-snapshot.mjs";
 import {
   PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH,
 } from "../src/shared/protocol/permissions.mjs";
@@ -59932,6 +59933,15 @@ async function completeTokenListingHistoryPayload(
   options = {},
 ) {
   const request = checkpointHistoryRequest(searchParams, TOKEN_LISTING_HISTORY_CURSOR_PREFIX);
+  // Private background browse materialization: one strict full-book read, then
+  // an immutable display version serves pages. Public authority pagination keeps
+  // its original bounded page size and fresh evidence contract.
+  if (options.browseSnapshotMaterialization === true) {
+    if (request.cursorRaw || request.query || tokenScope || searchParams.get("listingId")) {
+      throw new Error("Browse snapshot materialization requires the unfiltered complete book.");
+    }
+    request.limit = TOKEN_LISTING_LIFECYCLE_MATERIALIZATION_LIMIT;
+  }
   const itemProjection = String(searchParams.get("projection") ?? "full").trim().toLowerCase();
   const exactListingId = String(searchParams.get("listingId") ?? "").trim().toLowerCase();
   if (exactListingId && !/^[0-9a-f]{64}$/u.test(exactListingId)) {
@@ -82345,6 +82355,20 @@ async function handleRequest(request, response) {
     const freshRead = freshReadRequested(url.searchParams);
     const permissionInspectionRead = url.pathname === "/api/v1/permission" && url.searchParams.get("inspect") === "1";
 
+    // This route is explicitly historical display data, never a canonical
+    // public-read/write gate. Its immutable source was verified in the background;
+    // no DB/Core request belongs on the browsing response path.
+    if (url.pathname === "/api/v1/marketplace-browse") {
+      if (network !== "livenet" || booleanSearchParam(url.searchParams, "fresh") || booleanSearchParam(url.searchParams, "nocache")) {
+        errorResponse(response, 400, "AMO browsing requires livenet display reads; transaction checks use the existing fresh endpoints.",
+          { code: "AMO_BROWSE_REQUEST_INVALID" });
+        return;
+      }
+      if (url.searchParams.get("refresh") === "1" && amoBrowseEnabled()) void amoBrowseStore.refresh();
+      jsonResponse(response, 200, amoBrowseStore.read(url.searchParams), "no-store");
+      return;
+    }
+
     const authenticatedLoopbackRead = internalVerifierRequestAllowed(request);
     let canonicalReadGate = null;
     let serveFreshLastGood = false;
@@ -84341,12 +84365,83 @@ function prewarmExpensiveReadCaches() {
   }, BACKGROUND_STARTUP_REFRESH_DELAY_MS);
 }
 
+function amoBrowseEnabled() {
+  return Boolean(BITCOIN_RPC_URL) && proofIndexReadFeatureEnabled("token-state,token-default,token") &&
+    proofIndexReadFeatureEnabled("marketplace-summary");
+}
+
+async function buildAmoBrowseSnapshot() {
+  const network = "livenet";
+  const [summary, book, bondReferences] = await Promise.all([
+    (async () => withWorkMarketplaceV4Metadata(await summaryPayloadWithCanonicalProvenance(
+      compactMarketplaceSummaryReadPayload(await deduplicatedSummaryRead(
+        "marketplace-summary:livenet:fresh", () => marketplaceSummaryPayload(network, true),
+      )), network, true, "marketplace-summary",
+    ), network))(),
+    completeTokenListingHistoryPayload(network, "", new URLSearchParams({ projection: "display-v2" }), {
+      browseSnapshotMaterialization: true,
+    }),
+    Promise.all([INFINITY_BOND_CONFIG, INCEPTION_BOND_CONFIG].map(async (config) => {
+      const payload = await summaryPayloadWithCanonicalProvenance(
+        await bondSummaryPayload(network, true, config), network, true, config.summaryRoute,
+      );
+      const floorQ8 = canonicalIntegerText(payload.actualValue?.floorQ8 ?? payload.floorQ8, { allowZero: true });
+      if (!floorQ8) throw new Error("AMO browse bond reference lacks its exact confirmed floor.");
+      return [config.tokenId, {
+        displayOnly: true, floorQ8, floorSats: decimalTextFromQ8(BigInt(floorQ8)),
+        indexedAt: payload.indexedAt, snapshotId: payload.snapshotId,
+        indexedThroughBlock: payload.indexedThroughBlock, indexedThroughBlockHash: payload.indexedThroughBlockHash,
+      }];
+    })),
+  ]);
+  // Recheck after both independently verified readers complete. A new block,
+  // changing source or partial inventory cannot publish a mixed display version.
+  const checkpoint = await verifiedSummaryPayloadCheckpoint(summary, network, true, "marketplace-browse");
+  if (!checkpoint.exactTip || book.indexedThroughBlock !== checkpoint.indexedThroughBlock ||
+      book.indexedThroughBlockHash !== checkpoint.indexedThroughBlockHash) {
+    throw new Error("AMO browse summary and complete book changed checkpoint while warming.");
+  }
+  return {
+    summary: { ...summary, browseBondReferences: Object.fromEntries(bondReferences) }, book, observedAt: new Date().toISOString(),
+    checkpoint: { height: checkpoint.indexedThroughBlock, blockHash: checkpoint.indexedThroughBlockHash },
+  };
+}
+
+async function observeAmoBrowseCheckpoints(checkpoints) {
+  const tip = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
+  if (!tip) throw new Error("AMO browse current chain observation is unavailable.");
+  const hashes = new Map();
+  for (const checkpoint of checkpoints) {
+    if (checkpoint.height <= tip.height && !hashes.has(checkpoint.height)) {
+      const hash = await canonicalBlockHashAtHeight(checkpoint.height);
+      if (!hash) throw new Error("AMO browse retained checkpoint cannot be checked.");
+      hashes.set(checkpoint.height, hash);
+    }
+  }
+  const finalTip = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
+  if (!finalTip || finalTip.height !== tip.height || finalTip.blockHash !== tip.blockHash) {
+    throw new Error("AMO browse chain changed during its retained-checkpoint observation.");
+  }
+  return { ...tip, invalidVersions: checkpoints
+    .filter((checkpoint) => checkpoint.height > tip.height || hashes.get(checkpoint.height) !== checkpoint.blockHash)
+    .map((checkpoint) => checkpoint.version) };
+}
+
+const amoBrowseStore = createAmoBrowseSnapshotStore({
+  build: buildAmoBrowseSnapshot,
+  observe: observeAmoBrowseCheckpoints,
+  assets: { work: WORK_TOKEN_ID, powb: POWB_TOKEN_ID, incb: INCB_TOKEN_ID },
+  isSealed: tokenListingHasConfirmedSaleTicketSeal,
+  onError: (error) => console.error(`AMO browse background verification unavailable: ${errorSummary(error)}`),
+});
+
 if (isMainThread) {
 server.listen(PORT, HOST, () => {
   console.log(`ProofOfWork OP_RETURN API listening on http://${HOST}:${PORT}`);
   console.log(`Mainnet mempool source: ${MEMPOOL_BASE_MAINNET}`);
   void pruneGeneratedPersistedCacheTemps();
   prewarmExpensiveReadCaches();
+  if (amoBrowseEnabled()) amoBrowseStore.start();
   setTimeout(() => { void warmDnsVerifiedCoverage(); }, 5_000).unref();
 });
 } else if (workerData?.kind === "pending-work-confirmed-base-v1") {
