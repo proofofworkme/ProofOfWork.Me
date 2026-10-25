@@ -576,6 +576,58 @@ class ControllerTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'Unsupported ExecStart serialization'):
                     module.normalize_exec_start(value)
 
+
+    def exercise_actual_main_restart_lifecycle(self,fail_postflight):
+        unit=self.root/'lifecycle.service';unit.write_bytes(b'[Service]\n');unit.chmod(0o600)
+        hold=self.root/'search-hold';hold.write_bytes(b'exact held marker');hold.chmod(0o600)
+        properties={'Environment':'','EnvironmentFiles':'','PassEnvironment':'','UnsetEnvironment':'',
+            'ExecStart':EXEC_START_ACTIVE,'WorkingDirectory':str(self.root),
+            'FragmentPath':str(unit),'DropInPaths':''}
+        def ctl(*args):return '' if args==('show-environment',) else properties[args[-1]]
+        restores=[]
+        def drain():
+            properties['ExecStart']=EXEC_START_ACTIVE.replace('stop_time=[n/a]',
+                'stop_time=[Sun 2026-10-25 15:42:38 UTC]').replace('code=(null)','code=killed').replace('status=0/0','status=15/TERM')
+        def restore(*args):
+            properties['ExecStart']=EXEC_START_ACTIVE.replace('pid=3713663','pid=4000001').replace(
+                'Sat 2026-10-24 18:44:16 UTC','Sun 2026-10-25 15:50:00 UTC')
+            restores.append(True);return {}
+        def postflight():
+            if fail_postflight:raise ValueError('injected dormant postflight refusal')
+            return {'ready':False}
+        tree=ast.parse(pathlib.Path(module.__file__).read_bytes())
+        main=next(node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name=='main')
+        transaction=next(node for node in main.body if isinstance(node,ast.Try))
+        program=ast.fix_missing_locations(ast.Module(body=[transaction],type_ignores=[]))
+        candidates=module.validate_manifest(self.manifest)
+        receipt={'sourceWritesStarted':False,'installed':False,'rolledBack':False,'createdHelpers':self.created}
+        env={**vars(module),'ROOT':self.root,'HOLD':hold,'m':self.manifest,'candidates':candidates,
+            'receipt':receipt,'backup':self.backup,'metadata':self.metadata,'stamp':'lifecycle',
+            'authority':{},'search':{},'hold_raw':hold.read_bytes(),'states':lambda units:{},
+            'require_protected_services':lambda *args:None,'require_apps_drained':lambda:None,
+            'restore_verified_apps':restore,'drain_apps':drain,'require_dormant_status':postflight,
+            'save':lambda:None,'print':lambda *args,**kwargs:None}
+        with patch.object(module,'ctl',side_effect=ctl):
+            self.manifest['dormantConfigurationSha256']=module.restart_configuration_pin()
+            if fail_postflight:
+                with self.assertRaisesRegex(ValueError,'injected dormant postflight refusal'):
+                    exec(compile(program,'actual-main-lifecycle','exec'),env)
+            else:
+                exec(compile(program,'actual-main-lifecycle','exec'),env)
+            module.require_restart_configuration(self.manifest['dormantConfigurationSha256'])
+        self.assertNotIn('recoveryIncomplete',receipt)
+        self.assertEqual(receipt['rolledBack'],fail_postflight)
+        self.assertEqual(len(restores),2 if fail_postflight else 1)
+        for row in self.manifest['sources']:
+            file=self.root/row['path'];expected=row['before'] if fail_postflight else row['after']
+            self.assertEqual(module.sha(file.read_bytes()) if file.exists() else None,expected)
+
+    def test_actual_main_forward_keeps_configuration_pin_across_drain_and_restore(self):
+        self.exercise_actual_main_restart_lifecycle(False)
+
+    def test_actual_main_rollback_keeps_configuration_pin_across_recovery(self):
+        self.exercise_actual_main_restart_lifecycle(True)
+
     def test_untrusted_quarantine_parent_refuses_before_source_writes(self):
         module.QUARANTINE_PARENT.chmod(0o777)
         with self.assertRaisesRegex(ValueError,'root-owned quarantine'):
