@@ -6,6 +6,10 @@ from unittest.mock import Mock, MagicMock, patch
 spec = importlib.util.spec_from_file_location('work-batch-sends_scoped_node', pathlib.Path(__file__).with_name('scoped-node.py'))
 module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 
+EXEC_START_ACTIVE = ('{ path=/opt/node/bin/node ; argv[]=/opt/node/bin/node server/proof-api.mjs'
+    ' ; ignore_errors=no ; start_time=[Sat 2026-10-24 18:44:16 UTC] ; stop_time=[n/a]'
+    ' ; pid=3713663 ; code=(null) ; status=0/0 }')
+
 class ControllerTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
@@ -491,7 +495,7 @@ class ControllerTests(unittest.TestCase):
         env=self.root/'batch.env';env.write_bytes(b'WORK_BATCH_WRITES_ENABLED=0\n');env.chmod(0o600)
         unit=self.root/'api.service';unit.write_bytes(b'[Service]\n');unit.chmod(0o600)
         properties={'Environment':'OTHER_SECRET=never-printed','EnvironmentFiles':str(env)+' (ignore_errors=no)',
-            'ExecStart':'/opt/node/bin/node server/proof-api.mjs','WorkingDirectory':str(self.root),
+            'ExecStart':EXEC_START_ACTIVE,'WorkingDirectory':str(self.root),
             'FragmentPath':str(unit),'DropInPaths':'','PassEnvironment':'','UnsetEnvironment':''}
         with patch.object(module,'ctl',side_effect=lambda *args:'' if args==('show-environment',) else properties[args[-1]]):
             before=module.restart_configuration_pin();self.assertRegex(before,'^[0-9a-f]{64}$')
@@ -507,9 +511,70 @@ class ControllerTests(unittest.TestCase):
         with patch.object(module,'ctl',return_value='WORK_BATCH_DECLARATION_TXID=abc'):
             with self.assertRaisesRegex(ValueError,'Dormant deployment'):module.restart_configuration_pin()
         properties={'Environment':'','EnvironmentFiles':'','PassEnvironment':'WORK_BATCH_ACTIVATION_HEIGHT',
-            'UnsetEnvironment':'','ExecStart':'node','WorkingDirectory':str(self.root),'FragmentPath':'/unused','DropInPaths':''}
+            'UnsetEnvironment':'','ExecStart':EXEC_START_ACTIVE,'WorkingDirectory':str(self.root),'FragmentPath':'/unused','DropInPaths':''}
         with patch.object(module,'ctl',side_effect=lambda *args:'' if args==('show-environment',) else properties[args[-1]]):
             with self.assertRaisesRegex(ValueError,'inherited WORK batch'):module.restart_configuration_pin()
+
+
+    def test_exec_start_normalization_preserves_static_command_and_all_observed_states(self):
+        stopped_api=EXEC_START_ACTIVE.replace('stop_time=[n/a]','stop_time=[Sun 2026-10-25 15:42:38 UTC]').replace('code=(null)','code=killed').replace('status=0/0','status=15/TERM')
+        stopped_worker=stopped_api.replace('code=killed','code=exited').replace('status=15/TERM','status=0')
+        restarted=EXEC_START_ACTIVE.replace('Sat 2026-10-24 18:44:16 UTC','Sun 2026-10-25 15:50:00 UTC').replace('pid=3713663','pid=4000001')
+        expected=EXEC_START_ACTIVE.split(' ; start_time=')[0]+' ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }'
+        for value in (EXEC_START_ACTIVE,stopped_api,stopped_worker,restarted):
+            with self.subTest(value=value):
+                self.assertEqual(module.normalize_exec_start(value),expected)
+
+    def test_restart_pin_survives_process_lifecycle_but_binds_static_configuration(self):
+        env=self.root/'restart.env';env.write_bytes(b'OTHER_SECRET=private\n');env.chmod(0o600)
+        unit=self.root/'restart.service';unit.write_bytes(b'[Service]\n');unit.chmod(0o600)
+        properties={'Environment':'OTHER_SECRET=private','EnvironmentFiles':str(env)+' (ignore_errors=no)',
+            'ExecStart':EXEC_START_ACTIVE,'WorkingDirectory':str(self.root),'FragmentPath':str(unit),
+            'DropInPaths':'','PassEnvironment':'','UnsetEnvironment':''}
+        def ctl(*args):return '' if args==('show-environment',) else properties[args[-1]]
+        with patch.object(module,'ctl',side_effect=ctl):
+            baseline=module.restart_configuration_pin()
+            drained=EXEC_START_ACTIVE.replace('stop_time=[n/a]','stop_time=[Sun 2026-10-25 15:42:38 UTC]').replace('code=(null)','code=killed').replace('status=0/0','status=15/TERM')
+            restarted=EXEC_START_ACTIVE.replace('Sat 2026-10-24 18:44:16 UTC','Sun 2026-10-25 15:50:00 UTC').replace('pid=3713663','pid=4000001')
+            for value in (drained,restarted):
+                properties['ExecStart']=value
+                self.assertEqual(module.restart_configuration_pin(),baseline)
+                module.require_restart_configuration(baseline)
+            changes=[('ExecStart',EXEC_START_ACTIVE.replace('path=/opt/node/bin/node','path=/opt/other/bin/node')),
+                ('ExecStart',EXEC_START_ACTIVE.replace('server/proof-api.mjs','server/other-api.mjs')),
+                ('ExecStart',EXEC_START_ACTIVE.replace('ignore_errors=no','ignore_errors=yes')),
+                ('Environment','OTHER_SECRET=changed'),('WorkingDirectory',str(self.root/'different')),
+                ('PassEnvironment','OTHER_SETTING'),('UnsetEnvironment','OTHER_SETTING')]
+            properties['ExecStart']=EXEC_START_ACTIVE
+            for key,value in changes:
+                with self.subTest(property=key):
+                    original=properties[key];properties[key]=value
+                    with self.assertRaisesRegex(ValueError,'Restart configuration changed'):
+                        module.require_restart_configuration(baseline)
+                    properties[key]=original
+            for file in (env,unit):
+                original=file.read_bytes();file.write_bytes(original+b'# changed\n')
+                with self.assertRaisesRegex(ValueError,'Restart configuration changed'):
+                    module.require_restart_configuration(baseline)
+                file.write_bytes(original)
+
+    def test_exec_start_unknown_or_malformed_serialization_refuses(self):
+        malformed=[EXEC_START_ACTIVE+' '+EXEC_START_ACTIVE,
+            EXEC_START_ACTIVE.replace(' ; pid=',' ; unknown=value ; pid='),
+            EXEC_START_ACTIVE.replace('pid=3713663','pid=-1'),
+            EXEC_START_ACTIVE.replace('code=(null)','code=unknown'),
+            EXEC_START_ACTIVE.replace('status=0/0','status=unknown'),
+            EXEC_START_ACTIVE.replace('status=0/0','status=0/unknown'),
+            EXEC_START_ACTIVE.replace('stop_time=[n/a]','stop_time=n/a'),
+            EXEC_START_ACTIVE.replace(' UTC]',' LOCAL]'),
+            EXEC_START_ACTIVE.replace('ignore_errors=no','ignore_errors=maybe'),
+            EXEC_START_ACTIVE.replace(' ; code=(null)',''),
+            EXEC_START_ACTIVE.replace('server/proof-api.mjs','server/proof-api.mjs\n'),
+            '/opt/node/bin/node server/proof-api.mjs']
+        for value in malformed:
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError,'Unsupported ExecStart serialization'):
+                    module.normalize_exec_start(value)
 
     def test_untrusted_quarantine_parent_refuses_before_source_writes(self):
         module.QUARANTINE_PARENT.chmod(0o777)

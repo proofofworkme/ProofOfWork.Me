@@ -212,6 +212,22 @@ def inspect_batch_environment_file(raw):
         allowed = empty + ('0', '"0"', "'0'") if key == 'WORK_BATCH_WRITES_ENABLED' else empty
         require(value in allowed, 'Dormant deployment refuses WORK batch activation configuration')
 
+def normalize_exec_start(value):
+    # systemctl includes process state in ExecStart; retain the exact command.
+    stamp = r'\[(?:n/a|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} UTC)\]'
+    fields = ('argv[]', 'ignore_errors', 'start_time', 'stop_time', 'pid', 'code', 'status')
+    require(all(value.count(' ; '+field+'=') == 1 for field in fields),
+        'Unsupported ExecStart serialization')
+    match = re.fullmatch(
+        r'(\{ path=/[^\s;{}]+ ; argv\[\]=[^\r\n{}]+ ; ignore_errors=(?:yes|no))'
+        r' ; start_time='+stamp+r' ; stop_time='+stamp+
+        r' ; pid=(?:0|[1-9][0-9]*) ; code=(?:\(null\)|exited|killed)'
+        r' ; status=(?:0|[1-9][0-9]*)(?:/(?:0|[A-Z][A-Z0-9]*))? \}', value)
+    require(match is not None, 'Unsupported ExecStart serialization')
+    return (match.group(1)+' ; start_time=[n/a] ; stop_time=[n/a]'
+        ' ; pid=0 ; code=(null) ; status=0/0 }')
+
+
 def restart_configuration_pin():
     manager = ctl('show-environment')
     reject_activation_environment(dict(item.split('=',1) for item in shlex.split(manager) if '=' in item))
@@ -223,6 +239,7 @@ def restart_configuration_pin():
             'Dormant deployment refuses inherited WORK batch configuration')
         reject_activation_environment(dict(item.split('=',1) for item in
             shlex.split(properties['Environment']) if '=' in item))
+        properties['ExecStart'] = normalize_exec_start(properties['ExecStart'])
         files = properties['EnvironmentFiles']
         pattern = r'(/[^\s]+) \(ignore_errors=(?:yes|no)\)'
         require(not re.sub(pattern,'',files).strip(), 'Unsupported environment-file configuration')
