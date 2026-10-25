@@ -128,6 +128,56 @@ async function prepareMobileLikeClick(page) {
   }), { message: "Normal scrolling must expose the Like button's center" }).toBe(true);
 }
 
+// Hold only the first frame requested after the real dialog opens. Other
+// frames keep native scheduling, including Playwright's actionability checks.
+// Initial-focus controls below prove which behavior that held frame owns.
+async function holdOpeningModalFocus(page) {
+  await page.evaluate(() => {
+    if (document.querySelector(".boost-modal[role='dialog']")) throw new Error("Arm focus capture before opening");
+    const request = window.requestAnimationFrame.bind(window), cancel = window.cancelAnimationFrame.bind(window);
+    let held;
+    const state = { captured: 0, canceled: 0, executed: 0,
+      release: () => new Promise((resolve, reject) => request(time => {
+        try {
+          if (!held) throw new Error("No opening frame was captured");
+          if (!held.canceled && state.executed === 0) { state.executed++; held.callback(time); }
+          resolve({ captured: state.captured, canceled: state.canceled, executed: state.executed });
+        } catch (error) { reject(error); }
+      })) };
+    window.requestAnimationFrame = callback => {
+      if (!held && document.querySelector(".boost-modal[role='dialog']")) {
+        const id = request(() => {}); cancel(id);
+        held = { id, callback, canceled: false }; state.captured++;
+        return id;
+      }
+      return request(callback);
+    };
+    window.cancelAnimationFrame = id => {
+      if (held?.id === id && !held.canceled && state.executed === 0) { held.canceled = true; state.canceled++; }
+      cancel(id);
+    };
+    window.socialFeeOpeningFocus = state;
+  });
+  return {
+    wait: () => expect.poll(() => page.evaluate(() => window.socialFeeOpeningFocus.captured)).toBe(1),
+    release: () => page.evaluate(() => window.socialFeeOpeningFocus.release()),
+  };
+}
+
+async function openHeldFocusDialog(page, surface, action) {
+  await page.setViewportSize({ width: 320, height: 480 });
+  const state = await fixture(page); await page.goto(surface.route); await connect(page);
+  if (action === "like") await prepareMobileLikeClick(page);
+  const opener = action === "like" ? page.getByRole("button", { name: /^Like, /u }).first()
+    : page.getByRole("button", { name: "Create Boost", exact: true });
+  await opener.focus();
+  const frame = await holdOpeningModalFocus(page);
+  await opener.click();
+  const form = page.getByRole("dialog", { name: action === "like" ? "Like Boost" : "What’s happening?", exact: true });
+  await expect(form).toBeVisible(); await frame.wait();
+  return { state, frame, opener, form };
+}
+
 async function openAction(page, action) {
   if (action === "post") {
     const desktop = page.getByRole("button", { name: "Post a Boost", exact: true });
@@ -259,6 +309,44 @@ for (const surface of surfaces) for (const theme of ["light", "dark"]) {
     const modalWidth = await form.evaluate(element => ({ scroll: element.scrollWidth, client: element.clientWidth }));
     expect(modalWidth.scroll).toBeLessThanOrEqual(modalWidth.client + 1);
     await form.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(await page.evaluate(() => window.socialFeePsbts.length)).toBe(0);
+    expect(state.mutations).toEqual([]);
+  });
+}
+
+for (const surface of surfaces) {
+  test(`modal opening focus: intentional fee focus survives the opening frame in ${surface.name}`, async ({ page }) => {
+    const { state, frame, form } = await openHeldFocusDialog(page, surface, "like");
+    const fee = form.getByLabel("Fee proofs/vB", { exact: true });
+    await fee.click(); await fee.fill("0.15"); await expect(fee).toBeFocused();
+    expect(await frame.release()).toEqual({ captured: 1, canceled: 0, executed: 1 });
+    await expect(fee).toBeFocused(); await expect(fee).toHaveValue("0.15");
+    expect(await page.evaluate(() => window.socialFeePsbts.length)).toBe(0);
+    expect(state.mutations).toEqual([]);
+  });
+}
+
+for (const { surface, action } of [{ surface: surfaces[1], action: "like" }, { surface: surfaces[0], action: "post" }]) {
+  test(`modal opening focus: untouched ${action} receives initial focus and returns to its opener`, async ({ page }) => {
+    const { state, frame, opener, form } = await openHeldFocusDialog(page, surface, action);
+    expect(await frame.release()).toEqual({ captured: 1, canceled: 0, executed: 1 });
+    const initial = action === "like" ? form.getByRole("button", { name: "Close Boost action", exact: true })
+      : form.getByRole("textbox", { name: "Boost text", exact: true });
+    await expect(initial).toBeFocused();
+    if (action === "like") {
+      await page.keyboard.press("Shift+Tab"); await expect(submitButton(form, "like")).toBeFocused();
+      await page.keyboard.press("Tab"); await expect(initial).toBeFocused();
+    }
+    await page.keyboard.press("Escape"); await expect(form).toHaveCount(0); await expect(opener).toBeFocused();
+    expect(await page.evaluate(() => window.socialFeePsbts.length)).toBe(0);
+    expect(state.mutations).toEqual([]);
+  });
+
+  test(`modal opening focus: closing ${action} cancels the held frame and preserves opener focus`, async ({ page }) => {
+    const { state, frame, opener, form } = await openHeldFocusDialog(page, surface, action);
+    await page.keyboard.press("Escape"); await expect(form).toHaveCount(0); await expect(opener).toBeFocused();
+    expect(await frame.release()).toEqual({ captured: 1, canceled: 1, executed: 0 });
+    await expect(opener).toBeFocused();
     expect(await page.evaluate(() => window.socialFeePsbts.length)).toBe(0);
     expect(state.mutations).toEqual([]);
   });

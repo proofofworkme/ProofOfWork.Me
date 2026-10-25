@@ -2763,9 +2763,10 @@ export default function BoostRoot({
     document.body.style.overflow = "hidden";
     const focusableSelector =
       "button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary";
-    const focusFrame = window.requestAnimationFrame(() =>
-      (directPostOpen ? dialog?.querySelector<HTMLElement>("textarea") : dialog?.querySelector<HTMLElement>(focusableSelector))?.focus({ preventScroll: true }),
-    );
+    const focusFrame = window.requestAnimationFrame(() => {
+      if (!dialog?.isConnected || dialog.contains(document.activeElement)) return;
+      (directPostOpen ? dialog.querySelector<HTMLElement>("textarea") : dialog.querySelector<HTMLElement>(focusableSelector))?.focus({ preventScroll: true });
+    });
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
