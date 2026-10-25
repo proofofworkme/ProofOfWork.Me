@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 import copy
+import contextlib
 import importlib.util
 import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 spec = importlib.util.spec_from_file_location('retention', Path(__file__).with_name('retention.py'))
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
@@ -86,5 +88,72 @@ class Tests(unittest.TestCase):
             with self.assertRaises(ValueError): m.read_safe(link, owner=os.getuid())
             path.chmod(0o666)
             with self.assertRaises(ValueError): m.read_safe(path, owner=os.getuid())
+
+
+    def test_metadata_aged_atime_read_is_side_effect_free(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'aged'
+            payload = b'exact retained metadata'
+            path.write_bytes(payload)
+            path.chmod(0o600)
+            aged_ns = 1_000_000_000
+            os.utime(path, ns=(aged_ns, path.stat().st_mtime_ns))
+            before = path.stat()
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(descriptor, 'rb') as stream:
+                self.assertEqual(stream.read(), payload)
+            control = path.stat()
+            if control.st_atime_ns == before.st_atime_ns:
+                self.skipTest('Fixture filesystem does not update access times')
+            self.assertGreater(control.st_atime_ns, before.st_atime_ns)
+            for field in ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid',
+                          'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns'):
+                self.assertEqual(getattr(control, field), getattr(before, field), field)
+            # Reset before the fence; no fixture mutation occurs during read_safe.
+            os.utime(path, ns=(aged_ns, control.st_mtime_ns))
+            before = path.stat()
+            self.assertEqual(m.read_safe(path, m.digest(payload), os.getuid()), payload)
+            after = path.stat()
+            self.assertEqual(after, before)
+            self.assertEqual(after.st_atime_ns, before.st_atime_ns)
+            self.assertEqual(after.st_mtime_ns, before.st_mtime_ns)
+            self.assertEqual(after.st_ctime_ns, before.st_ctime_ns)
+
+    def read_then_mutate(self, action):
+        original = os.fdopen
+
+        @contextlib.contextmanager
+        def intercepted(descriptor, mode):
+            with original(descriptor, mode) as stream:
+                class Reader:
+                    def fileno(self):
+                        return stream.fileno()
+
+                    def read(self):
+                        result = stream.read()
+                        action()
+                        return result
+                yield Reader()
+        return mock.patch.object(m.os, 'fdopen', intercepted)
+
+    def test_metadata_mode_change_during_read_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'mode-race'
+            path.write_bytes(b'data')
+            path.chmod(0o600)
+            with self.read_then_mutate(lambda: path.chmod(0o640)):
+                with self.assertRaisesRegex(ValueError, 'Metadata changed on read'):
+                    m.read_safe(path, m.digest(b'data'), os.getuid())
+
+    def test_metadata_same_bytes_path_replacement_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'path-race'
+            replacement = Path(directory) / 'replacement'
+            for current in (path, replacement):
+                current.write_bytes(b'data')
+                current.chmod(0o600)
+            with self.read_then_mutate(lambda: os.replace(replacement, path)):
+                with self.assertRaisesRegex(ValueError, 'Metadata changed (on|after) read'):
+                    m.read_safe(path, m.digest(b'data'), os.getuid())
 
 if __name__ == '__main__': unittest.main()

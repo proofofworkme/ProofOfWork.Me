@@ -207,6 +207,17 @@ rollback failures still alert. Reconciliation records live under
 hold inventory. Storage-percentage thresholds and unresolved allocation reviews
 remain active; they are not obsolete-warning exceptions.
 
+The retention reader uses `O_NOATIME` to prevent its own protected reads from
+changing access time while preserving every existing stat, byte and policy
+fence. The [scoped updater](deploy/monitoring-reconciliation/update_retention.py)
+binds one node/UI checker replacement to the committed source/tree, preserves
+historical holds and unit configuration, and requires in-memory preflight plus
+fresh actual oneshot verification with owned rollback. Its small durable records
+stay under `/var/lib/proofofwork-monitoring-reconciliation/20261025-atime`; it
+creates no archives and deletes no retained data. See the
+[operator procedure](deploy/monitoring-reconciliation/README.md#retention-read-integrity-and-scoped-update-2026-10-25)
+for exact plan, lock and completion requirements.
+
 ## Permission v1 discovery and release
 
 Permission uses the existing Mail body lane and adds no ledger economics or

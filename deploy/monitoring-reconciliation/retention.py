@@ -82,7 +82,7 @@ def read_safe(path, expected=None, owner=0):
     need(stat.S_ISREG(before.st_mode) and before.st_uid == owner and
          not before.st_mode & 0o7022 and before.st_nlink == 1 and
          before.st_size <= 32 * 1024**2, 'Unsafe metadata file')
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOATIME)
     with os.fdopen(fd, 'rb') as stream:
         need(os.fstat(stream.fileno()) == before, 'Metadata changed on open')
         raw = stream.read()

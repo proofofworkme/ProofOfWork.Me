@@ -41,6 +41,69 @@ a pre-existing completion directory requires inspection, not an automatic rerun.
 The only checker-source substitution is `EXPECTED_POLICY_SHA256 = None` to the
 exact generated policy SHA. Do not execute the unbound template as a live check.
 
+## Retention read integrity and scoped update, 2026-10-25
+
+The Linux root checker opens protected inputs with `O_NOATIME`, alongside
+`O_NOFOLLOW` and `O_NONBLOCK`, so its own read cannot advance an aged access time
+and fail the full before/open/read/after stat fence. All existing byte, inode,
+owner, mode, link, metadata and policy checks remain. Failure to open with these
+flags is a refusal; there is no fallback that drops access-time integrity.
+
+[`update_retention.py`](update_retention.py) updates only
+`/usr/local/sbin/proofofwork-retention-protection` on the selected node or UI VPS.
+The reviewed plan binds the role, source repository, final commit and tree,
+installed predecessor/candidate hashes, exact input identities and the loaded
+service/timer context. Nanosecond identity fields must remain exact JSON
+integers; seal the plan with Python, without a floating-point JSON round trip.
+The committed canonical change must be exactly the one `O_NOATIME` insertion;
+the sole installation substitution binds the existing policy SHA-256.
+
+The node plan's B3 receipt at
+`/data/proofofwork-release-backups/runtime-latest-bca2efcbdb20-20261025T162006Z/completion.json`
+remains immutable historical incident evidence, not a current-archive gate.
+Before rollout, separately verify the latest final runtime archive and its
+coverage of the accepted runtime. Install the checker only after the joint
+release's UI lifecycle and final release synchronization are complete.
+
+After source review and commit, place the sealed plan at the exact path below,
+then run the committed helper as isolated root Python on the intended VPS.
+`REVIEWED_PLAN_SHA256` and `ATTEMPT_UTC` must be the reviewed plan hash and a unique
+`YYYYMMDDTHHMMSSZ` attempt label. The role is in the plan, with a closed node/UI
+input scope; there is no additional role override.
+
+```sh
+sudo /usr/bin/python3 -I -B deploy/monitoring-reconciliation/update_retention.py \
+  --plan /tmp/proofofwork-retention-atime-20261025/update-plan.json \
+  --plan-sha256 "$REVIEWED_PLAN_SHA256" --attempt "$ATTEMPT_UTC"
+```
+
+Under the existing role-specific operations lock, the helper records intent and
+the tiny predecessor in
+`/var/lib/proofofwork-monitoring-reconciliation/20261025-atime/attempt-<UTC>/`.
+It executes the exact candidate bytes in memory, requires a successful role-bound
+result, and repeats the input/configuration fences before atomic replacement.
+It preserves the installed owner and mode, then requires a fresh successful
+invocation of the existing oneshot service and its exact-role JSON result. A
+qualifying timer invocation is reused; otherwise the helper starts that service
+once. Changed configuration, stale invocation evidence or a real checker issue
+cannot certify the update.
+
+A failed installation restores the predecessor only while the replacement still
+belongs to that attempt; a foreign replacement is preserved and recovery remains
+incomplete. The durable result records verification and rollback. Any prior
+attempt requires evidence review rather than automatic retry. Completion requires
+that successful result, including actual service verification.
+
+Historical policy, held-review evidence, retention masks, service/timer settings,
+archive contents and deletion scope remain unchanged. No archive is created or
+removed, and no payload or backup is copied to the operator machine. Validate the
+reader regression and the updater's synthetic path/service fixtures with:
+
+```sh
+sudo /usr/bin/python3 -I -B deploy/monitoring-reconciliation/check.test.py
+sudo /usr/bin/python3 -I -B deploy/monitoring-reconciliation/update_retention.test.py
+```
+
 Validation:
 
 ```sh
