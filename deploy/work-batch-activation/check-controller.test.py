@@ -4,6 +4,12 @@ from pathlib import Path
 from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('activation',Path(__file__).with_name('controller.py'))
 c=importlib.util.module_from_spec(spec);spec.loader.exec_module(c)
+helper_spec=importlib.util.spec_from_file_location('scoped_activation_helper',
+    Path(__file__).parent.parent/'work-batch-sends/scoped-node.py')
+helper=importlib.util.module_from_spec(helper_spec);helper_spec.loader.exec_module(helper)
+EXEC_START=('{ path=/opt/node/bin/node ; argv[]=/opt/node/bin/node app.mjs ; ignore_errors=no'
+    ' ; start_time=[Sat 2026-10-24 18:44:16 UTC] ; stop_time=[n/a]'
+    ' ; pid=3713663 ; code=(null) ; status=0/0 }')
 PINS={'txid':'a'*64,'blockHash':'b'*64,'blockHeight':972965,'activationHeight':972966,
     'blockTransactionIndex':1,'protocolVout':1,'recordOrdinal':0,'registryPaymentVout':0}
 def read(path,limit=10*1024**2,absent=False):
@@ -42,7 +48,7 @@ class ControllerTests(unittest.TestCase):
                 actual[u]['UnitFileState']==pins['unitFileStates'][u] for u in self.gate),'gateway differs')
         self.h={'safe_read':read,'sync':lambda p:None,'rename_absent':lambda a,b:os.rename(a,b),'states':states,'gateway_states':lambda:copy.deepcopy(self.gateway),
             'GATEWAY':self.gate,'AUTHORITY':self.auth,'SEARCH':self.search,'ctl':ctl,'drain_apps':drain,
-            'require_gateway_baseline':gateway_check}
+            'require_gateway_baseline':gateway_check,'normalize_exec_start':helper.normalize_exec_start}
         self.approval={'sourceCommit':'c'*40}
         self.evidence={'pins':PINS,'v8WriteAdmission':True}
     def tearDown(self):
@@ -198,8 +204,10 @@ class ControllerTests(unittest.TestCase):
         env=self.root/'private.env';env.write_text('PRIVATE_TOKEN=private-test-value\n');env.chmod(0o640)
         props={key:'' for key in ('Environment','EnvironmentFiles','PassEnvironment','UnsetEnvironment','ExecStart',
             'WorkingDirectory','FragmentPath','DropInPaths','User','Group','UnitFileState')}
-        props.update(FragmentPath=str(unit),EnvironmentFiles=str(env)+' (ignore_errors=no)',WorkingDirectory=str(c.ROOT))
+        props.update(FragmentPath=str(unit),EnvironmentFiles=str(env)+' (ignore_errors=no)',WorkingDirectory=str(c.ROOT),ExecStart=EXEC_START)
         perunit={u:copy.deepcopy(props) for u in (c.API,c.WORKER,*self.gate,*self.auth,*self.search)}
+        for name in perunit:
+            if name.endswith(('.socket','.timer')):perunit[name]['ExecStart']=''
         if owned:
             perunit[c.API]['Environment']=' '.join(k+'='+v for k,v in c.values(owned['pins'],owned['enabled']).items())
             perunit[c.API]['DropInPaths']=str(self.drop)
@@ -230,6 +238,104 @@ class ControllerTests(unittest.TestCase):
         manager['value']=''
         env.write_text('WORK_BATCH_WRITES_ENABLED="\n1"\n')
         with self.assertRaises(ValueError):c.configuration(self.h,owned)
+
+    def lifecycle_configuration_fixture(self,owned=None,fail_restart=False):
+        original_ctl=self.h['ctl'];original_drain=self.h['drain_apps']
+        props,manager,env=self.configuration_fixture(owned)
+        configuration_ctl=self.h['ctl'];counter=100;failed=False
+        for index,unit in enumerate(self.units):self.appstates[unit]['MainPID']=str(20+index)
+        def descriptor(unit,active):
+            nonlocal counter
+            if not props[unit]['ExecStart']:return
+            prefix=props[unit]['ExecStart'].split(' ; start_time=')[0]
+            if active:
+                counter+=1
+                props[unit]['ExecStart']=(prefix+' ; start_time=[Sun 2026-10-25 15:50:00 UTC]'
+                    ' ; stop_time=[n/a] ; pid='+str(counter)+' ; code=(null) ; status=0/0 }')
+                if unit in self.appstates:self.appstates[unit]['MainPID']=str(counter)
+            else:
+                props[unit]['ExecStart']=(prefix+' ; start_time=[Sat 2026-10-24 18:44:16 UTC]'
+                    ' ; stop_time=[Sun 2026-10-25 15:42:38 UTC] ; pid=3713663 ; code=killed ; status=15/TERM }')
+        def ctl(*args):
+            nonlocal failed
+            if args[0] in ('show','show-environment'):return configuration_ctl(*args)
+            if args==('daemon-reload',):
+                props[c.API]['Environment']=' '.join(line.removeprefix('Environment=')
+                    for line in self.drop.read_text().splitlines() if line.startswith('Environment='))
+                props[c.API]['DropInPaths']=str(self.drop)
+            if args[0]=='start':
+                if fail_restart and args[1]==c.API and not failed:
+                    failed=True;raise TimeoutError('restart')
+                original_ctl(*args);descriptor(args[1],True)
+            else:original_ctl(*args)
+            return ''
+        def drain():
+            original_drain()
+            for unit in (*self.units,*self.gate):descriptor(unit,False)
+        def environment(pid):
+            unit=next(name for name,row in self.appstates.items() if row['MainPID']==pid)
+            return dict(value.split('=',1) for value in props[unit]['Environment'].split())
+        self.h.update(ctl=ctl,drain_apps=drain,process_environment=environment)
+        return props
+
+    def test_actual_configuration_stage_enable_disable_across_restart(self):
+        props=self.lifecycle_configuration_fixture()
+        with patch.object(c,'runtime_fence',return_value='runtime'),patch.object(c,'probe',return_value=self.evidence):
+            owned=None
+            for operation in ('stage-disabled','enable','disable'):
+                captured=c.capture(self.h,self.approval,owned,operation)
+                result=c.apply(self.h,self.approval,captured,operation,
+                    lambda record:self.records.append(copy.deepcopy(record)))
+                self.assertTrue(result['complete']);owned=result['owned']
+                self.assertEqual(c.configuration(self.h,owned),captured['configurationSha256'])
+                self.assertEqual(owned['enabled'],operation=='enable')
+                self.assertEqual(self.drop.read_bytes(),c.render(PINS,operation=='enable'))
+                self.assertTrue(all(row['ActiveState']=='active' for row in self.appstates.values()))
+        self.assertTrue(any(event==('start',self.gate[1]) for event in self.events))
+
+    def test_actual_configuration_postflight_failure_recovers_disabled(self):
+        owned=self.owned();self.lifecycle_configuration_fixture(owned);calls=0
+        def evidence(*args,**kwargs):
+            nonlocal calls;calls+=1
+            if calls==3:raise TimeoutError('postflight probe')
+            return self.evidence
+        with patch.object(c,'runtime_fence',return_value='runtime'),patch.object(c,'probe',side_effect=evidence):
+            captured=c.capture(self.h,self.approval,owned,'enable')
+            with self.assertRaisesRegex(TimeoutError,'postflight probe'):
+                c.apply(self.h,self.approval,captured,'enable',lambda record:self.records.append(copy.deepcopy(record)))
+        result=self.records[-1]
+        self.assertTrue(result['recoveredDisabled']);self.assertFalse(result['owned']['enabled'])
+        self.assertEqual(c.configuration(self.h,result['owned']),captured['configurationSha256'])
+        self.assertEqual(self.drop.read_bytes(),c.render(PINS,False))
+        self.assertTrue(all(row['ActiveState']=='active' for row in self.appstates.values()))
+
+    def test_actual_configuration_restart_failure_recovers_disabled(self):
+        owned=self.owned();self.lifecycle_configuration_fixture(owned,fail_restart=True)
+        with patch.object(c,'runtime_fence',return_value='runtime'),patch.object(c,'probe',return_value=self.evidence):
+            captured=c.capture(self.h,self.approval,owned,'enable')
+            with self.assertRaisesRegex(TimeoutError,'restart'):
+                c.apply(self.h,self.approval,captured,'enable',lambda record:self.records.append(copy.deepcopy(record)))
+        result=self.records[-1]
+        self.assertTrue(result['recoveredDisabled']);self.assertFalse(result['owned']['enabled'])
+        self.assertEqual(c.configuration(self.h,result['owned']),captured['configurationSha256'])
+        self.assertTrue(all(row['ActiveState']=='active' for row in self.appstates.values()))
+
+    def test_configuration_exec_start_keeps_commands_and_rejects_ambiguous_fields(self):
+        props,_,_=self.configuration_fixture()
+        before=c.configuration(self.h,None)
+        for unit in (c.API,c.WORKER,self.gate[1],*self.auth,*self.search):
+            old=props[unit]['ExecStart']
+            props[unit]['ExecStart']=old.replace('app.mjs','changed.mjs')
+            self.assertNotEqual(c.configuration(self.h,None),before)
+            props[unit]['ExecStart']=old
+        for value in ('',EXEC_START.replace('app.mjs','app.mjs ; pid=999'),
+                EXEC_START.replace('status=0/0','status=unknown'),EXEC_START+' '+EXEC_START):
+            props[c.API]['ExecStart']=value
+            with self.assertRaisesRegex(ValueError,'Unsupported ExecStart serialization'):
+                c.configuration(self.h,None)
+        props[c.API]['ExecStart']=EXEC_START
+        self.assertEqual(c.configuration(self.h,None),before)
+
     def test_process_environment_shadow_is_rejected(self):
         owned=self.owned();self.h['process_environment']=lambda pid:{**c.values(PINS,False),'WORK_BATCH_UNKNOWN':'1'}
         with self.assertRaises(ValueError):c.process_environment(self.h,owned)

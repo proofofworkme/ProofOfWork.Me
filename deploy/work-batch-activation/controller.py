@@ -128,6 +128,8 @@ def configuration(h, owned):
         properties = {key:h['ctl']('show',unit,'--value','-p',key) for key in (
             'Environment','EnvironmentFiles','PassEnvironment','UnsetEnvironment','ExecStart',
             'WorkingDirectory','FragmentPath','DropInPaths','User','Group','UnitFileState')}
+        if properties['ExecStart'] or not unit.endswith(('.socket','.timer')):
+            properties['ExecStart'] = h['normalize_exec_start'](properties['ExecStart'])
         if unit in (API,WORKER):
             require(not any('WORK_BATCH_' in properties[key] for key in ('PassEnvironment','UnsetEnvironment')),
                 'Foreign inherited WORK batch configuration')
