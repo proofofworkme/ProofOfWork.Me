@@ -550,7 +550,7 @@ class RemoteTests(unittest.TestCase):
         limits = (capacity_policy.ROOT_RESERVE_BYTES, capacity_policy.GROWTH_RESERVE_BYTES,
                   capacity_policy.MAX_DEPLOY_SCRATCH_BYTES, capacity_policy.RETENTION_BUDGETS)
         self.assertEqual(limits[:3], (10 * 1024**3, 64 * 1024**2, 5 * 1024**3))
-        self.assertEqual([limit for _, limit in limits[3]], [18 * 1024**3, 9 * 1024**3])
+        self.assertEqual([limit for _, limit in limits[3]], [18 * 1024**3, 9 * 1024**3 + 64 * 1024**2])
         original_read, original_verified = E.read_regular, custody.R.verified_release
 
         def read_fixture(path, *args, **kwargs):

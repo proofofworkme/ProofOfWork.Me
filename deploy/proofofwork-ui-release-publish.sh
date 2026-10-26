@@ -510,9 +510,12 @@ maximum_dependencies = 1600
 # and byte limits remain independent.
 maximum_reference_edges = 5632
 # The prior 7afc0f95 graph has 1,311,044 raw candidates; the 75948039 article
-# candidate has 1,313,796. Align the finite 1,376,256 ceiling with the stager;
-# every raw occurrence still counts and all independent guards remain enforced.
-maximum_reference_candidates = 1376256
+# candidate has 1,313,796. The October 15 calibration aligned 1,376,256
+# with the stager; every raw occurrence and all independent guards remained.
+# October 26 live A3 closure: 1,377,024 raw candidates across 22 roots.
+# The 1,441,792 ceiling leaves 64,768 headroom; every occurrence still
+# counts and all independent byte, edge, path and filesystem guards remain.
+maximum_reference_candidates = 1441792
 dependency_count = 0
 reference_edge_count = 0
 reference_candidate_count = 0

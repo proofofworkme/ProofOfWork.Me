@@ -8378,7 +8378,7 @@ count separately, and each reachable referrer is parsed once.
 
 The prior 5,120-edge limit refused staging before any candidate creation or
 publication. The prior 1,310,720-candidate limit also falls below both measured
-graphs. Both actual parsers use finite ceilings of 5,632 distinct edges and
+graphs. That calibration set both parsers to 5,632 distinct edges and
 1,376,256 raw candidates: 286 edges and 62,460 candidates above the larger
 measured set. Repeated literals and overlapping CSS patterns still consume a
 candidate each; distinct targets are deduplicated only within one referrer.
@@ -8399,6 +8399,44 @@ retained, configuration and service state. Use a fresh source/build release
 with its additional preserved input included in all capacity projections and
 native admissions; source synchronization remains mandatory.
 
+
+### UI raw-reference calibration (2026-10-26)
+
+The live A3 22-root closure has 1,377,024 raw reference candidates, 1,584
+reachable served paths, 5,390 distinct edges and 92,023,833 reachable bytes.
+The `874bdc4a226b-20261026T103318Z` attempt reached candidate 1,376,257 in
+`work/assets/LandingRoot-CityLHkn.js` and refused during the read-only stage
+model, before candidate creation or publication. The verified incoming archive
+SHA-256 is `1bd4e8c860182a29bcfcc249c28535891d642c66da21b5ea668bf5d89378f238`.
+Its 2,090 files and all 22 indexes were compared against live files: only the
+22 source-provenance JSON files differ. All script, stylesheet and asset bytes
+match; that incoming dependency graph cannot exceed the measured live graph.
+
+Both current parsers use a finite 1,441,792-candidate ceiling, leaving 64,768
+candidates above the measured closure. Every raw occurrence still counts;
+parser, path-resolution and graph-closure behavior are unchanged. The 5,632-edge,
+1,600-path, 2 MiB index, 64 MiB per-file and 512 MiB total-byte limits,
+provenance and ownership checks remain unchanged. Tests
+exercise both actual parsers at 1,377,024, exactly 1,441,792 and one over, while
+retaining the historical 1,376,256/1,376,257 boundary and earlier fixtures.
+
+The current native allocation guard and whole-release sequence model use a
+9 GiB + 64 MiB (9,730,785,280-byte) transport ceiling. The locked census measured
+8,008,511,488 retained transport bytes; the prior plan's 1,667,156,555 prospective
+bytes exceeded 9 GiB by 11,991,627 bytes. The finite increment leaves 55,117,237
+bytes against that estimate without deleting the failed input. Fresh admission
+must still measure the new release. Backup remains 18 GiB, scratch 5 GiB, root
+reserve 10 GiB, growth reserve 64 MiB and inode reserve 128. No environment
+override, deletion credit or future hardlink credit is introduced. The immutable
+historical 9 GiB approval and its hash remain unchanged; they describe that
+accepted release, rather than the current admission limit.
+
+Preserve the failed attempt's input and all six records. This failure is not an
+existing capacity-resume shape. A fresh normal release must independently pass
+capacity admission with those retained bytes charged and no cleanup credit;
+helper installation must bind the exact accepted predecessor hashes. The
+separate UI calibration source does not change the committed `874bdc4a226b`
+runtime/replay source or its activation provenance.
 
 ### Pending ID registration recovery
 

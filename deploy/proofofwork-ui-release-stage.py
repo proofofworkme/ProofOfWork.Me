@@ -74,9 +74,12 @@ MAXIMUM_DEPENDENCIES = 1600
 # served-path, raw-candidate and byte limits remain enforced.
 MAXIMUM_REFERENCE_EDGES = 5632
 # The prior 7afc0f95 graph has 1,311,044 raw candidates; the 75948039 article
-# candidate has 1,313,796. Keep a finite 1,376,256 ceiling (62,460 headroom
-# above the larger measured graph); every raw occurrence still counts.
-MAXIMUM_REFERENCE_CANDIDATES = 1376256
+# candidate has 1,313,796. The October 15 calibration used 1,376,256
+# (62,460 headroom above that graph); every raw occurrence still counted.
+# October 26 live A3 closure: 1,377,024 raw candidates across 22 roots.
+# The 1,441,792 ceiling leaves 64,768 headroom; every occurrence still
+# counts and all independent byte, edge, path and filesystem guards remain.
+MAXIMUM_REFERENCE_CANDIDATES = 1441792
 MAXIMUM_PAYLOAD_ENTRIES = 10000
 MAXIMUM_PAYLOAD_BYTES = 1024 * 1024 * 1024
 MANIFEST_NAME = ".proofofwork-ui-release"

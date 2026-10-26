@@ -234,7 +234,7 @@ assert.match(publisher, /verify_current_rollback_capability/u);
 assert.match(publisher, /"\$\{provenance_script\}" verify-rollback/u);
 assert.match(publisher, /maximum_dependencies = 1600/u);
 assert.match(publisher, /maximum_reference_edges = 5632/u);
-assert.match(publisher, /maximum_reference_candidates = 1376256/u);
+assert.match(publisher, /maximum_reference_candidates = 1441792/u);
 assert.match(publisher, /maximum_asset_bytes = 64 \* 1024 \* 1024/u);
 assert.match(publisher, /maximum_total_bytes = 512 \* 1024 \* 1024/u);
 assert.match(publisher, /details\.st_uid/u);
@@ -268,7 +268,7 @@ assert.match(
 );
 assert.match(stager, /MAXIMUM_DEPENDENCIES = 1600/u);
 assert.match(stager, /MAXIMUM_REFERENCE_EDGES = 5632/u);
-assert.match(stager, /MAXIMUM_REFERENCE_CANDIDATES = 1376256/u);
+assert.match(stager, /MAXIMUM_REFERENCE_CANDIDATES = 1441792/u);
 assert.match(stager, /MAXIMUM_ASSET_BYTES = 64 \* 1024 \* 1024/u);
 assert.match(stager, /MAXIMUM_TOTAL_BYTES = 512 \* 1024 \* 1024/u);
 assert.match(stager, /MAXIMUM_PAYLOAD_ENTRIES = 10000/u);
@@ -448,7 +448,7 @@ assert "maximum_dependencies = 1600" in publisher_code
 # token counting and refusal branches are the actual functions. Dependency copy
 # and publisher accept/reject branches are exercised below with a lowered ceiling
 # after the source-level assertions pin the production 1600-file limit.
-assert stage.MAXIMUM_REFERENCE_CANDIDATES == 1376256
+assert stage.MAXIMUM_REFERENCE_CANDIDATES == 1441792
 saved_argv = sys.argv
 try:
     sys.argv = ["verify", "/tmp/ui-bound-live", "/tmp/ui-bound-staged"]
@@ -491,11 +491,12 @@ def candidate_ceiling(ceiling, measured):
         stage.MAXIMUM_REFERENCE_CANDIDATES = saved_stage
         publisher_parser["maximum_reference_candidates"] = saved_publisher
 
+candidate_ceiling(1441792, (527332, 1016532, 1106566, 1311044, 1313796, 1377024))
 candidate_ceiling(1376256, (527332, 1016532, 1106566, 1311044, 1313796))
 candidate_ceiling(1310720, (527332, 1016532, 1106566))
 candidate_ceiling(1048576, (527332, 1016532))
-assert stage.MAXIMUM_REFERENCE_CANDIDATES == publisher_parser["maximum_reference_candidates"] == 1376256
-print("UI candidate regression: measured527332/1016532/1106566 and current1376256 accepted;1376257 refused; historical1310720/1310721 and1048576/1048577 boundaries preserved by both parsers", flush=True)
+assert stage.MAXIMUM_REFERENCE_CANDIDATES == publisher_parser["maximum_reference_candidates"] == 1441792
+print("UI candidate regression: measured527332/1016532/1106566/1377024 and current1441792 accepted;1441793 refused; historical1376256/1376257,1310720/1310721 and1048576/1048577 boundaries preserved by both parsers", flush=True)
 
 # Resolved edges count distinct targets per referrer; every raw occurrence still
 # costs a candidate. Exercise both actual parsers, including CSS overlap.
@@ -533,10 +534,10 @@ with tempfile.TemporaryDirectory(prefix="ui-reference-edge-regression-") as dire
             assert "reference-edge bound exceeded" in str(error)
         else:
             raise AssertionError(kind + " accepted a distinct " + str(current_edge_limit + 1) + "th referrer/target edge")
-        refs, candidates, edges = parsed(kind, root / "assets/one.js", b'"shared.js"', candidates=1376255)
-        assert refs == ["assets/shared.js"] and candidates == 1376256 and edges == 1
+        refs, candidates, edges = parsed(kind, root / "assets/one.js", b'"shared.js"', candidates=1441791)
+        assert refs == ["assets/shared.js"] and candidates == 1441792 and edges == 1
         try:
-            parsed(kind, root / "assets/one.js", b'"shared.js" "shared.js"', candidates=1376255)
+            parsed(kind, root / "assets/one.js", b'"shared.js" "shared.js"', candidates=1441791)
         except (stage.StageError, SystemExit) as error:
             assert "reference-candidate bound exceeded" in str(error)
         else:
@@ -861,6 +862,14 @@ try {
   markDirectory(oldUiStageRoot, "ui-stage-root", "old", 4);
   markDirectory(oldVarTmp, "var-tmp-ui", "old", 8);
   markDirectory(freshVarTmp, "var-tmp-ui", "fresh", 1);
+  // Isolate the hardcoded audit hold exactly as the existing dual-pin fixtures do.
+  // Production guard bytes are unchanged; apply tests only touch these private roots.
+  const fixturePrune = join(fixture, "ui-storage-prune.sh");
+  const fixtureHold = join(fixture, "audit28.hold");
+  assert.equal(storagePrune.split("/etc/proofofwork-retention/audit28.hold").length - 1, 3);
+  writeFileSync(fixturePrune,
+    storagePrune.replaceAll("/etc/proofofwork-retention/audit28.hold", fixtureHold),
+    { mode: 0o700 });
   const cleanupEnvironment = {
     POW_UI_WWW_ROOT: www,
     POW_UI_VAR_TMP_ROOT: varTmp,
@@ -875,7 +884,7 @@ try {
   );
   chmodSync(fixture, 0o770);
   const unsafeLockParent = run(
-    "deploy/proofofwork-ui-storage-prune.sh",
+    fixturePrune,
     ["--dry-run"],
     cleanupEnvironment,
   );
@@ -886,7 +895,7 @@ try {
   writeFileSync(cleanupEnvironment.POW_UI_DEPLOY_LOCK, "", { mode: 0o660 });
   chmodSync(cleanupEnvironment.POW_UI_DEPLOY_LOCK, 0o660);
   const unsafeLockFile = run(
-    "deploy/proofofwork-ui-storage-prune.sh",
+    fixturePrune,
     ["--dry-run"],
     cleanupEnvironment,
   );
@@ -896,7 +905,7 @@ try {
 
   for (const inheritedDescriptor of ["not-a-fd", "9"]) {
     const invalidInheritedDescriptor = run(
-      "deploy/proofofwork-ui-storage-prune.sh",
+      fixturePrune,
       ["--dry-run"],
       {
         ...cleanupEnvironment,
@@ -912,7 +921,7 @@ try {
   }
 
   const wrongInheritedDescriptor = runWithInheritedLock(
-    "deploy/proofofwork-ui-storage-prune.sh",
+    fixturePrune,
     ["--dry-run"],
     cleanupEnvironment,
     join(fixture, "wrong-ui-deploy.lock"),
@@ -925,7 +934,7 @@ try {
   assert.match(wrongInheritedDescriptor.stderr, /descriptor is invalid/u);
 
   const independentlyHeldLock = runWhileLockHeldSeparately(
-    "deploy/proofofwork-ui-storage-prune.sh",
+    fixturePrune,
     ["--dry-run"],
     cleanupEnvironment,
   );
@@ -934,7 +943,7 @@ try {
 
   chmodSync(www, 0o775);
   const unsafeUiRoot = run(
-    "deploy/proofofwork-ui-storage-prune.sh",
+    fixturePrune,
     ["--dry-run"],
     cleanupEnvironment,
   );
@@ -942,7 +951,7 @@ try {
   assert.match(unsafeUiRoot.stderr, /owner-controlled/u);
   chmodSync(www, 0o755);
   const mountedTree = run(
-    "deploy/proofofwork-ui-storage-prune.sh",
+    fixturePrune,
     ["--dry-run"],
     { ...cleanupEnvironment, POW_UI_MOUNTINFO_PATH: fakeMountinfo },
   );
@@ -978,6 +987,12 @@ exec /usr/bin/sort "$@"
     oldStaging, oldStageRoot, oldUiStageRoot, oldVarTmp, freshVarTmp,
     unmarkedOldStage,
   ];
+  writeFileSync(fixtureHold, "held fixture", { mode: 0o600 });
+  const heldApply = run(fixturePrune, ["--apply"], cleanupEnvironment);
+  assert.equal(heldApply.status, 78, heldApply.stderr);
+  assert.match(heldApply.stderr, /exact manifest approval required/u);
+  assert.equal(readFileSync(fixtureHold, "utf8"), "held fixture");
+  unlinkSync(fixtureHold);
   for (const mode of ["--dry-run", "--apply"]) {
     for (const failure of [
       { name: "first root", root: www },
@@ -988,7 +1003,7 @@ exec /usr/bin/sort "$@"
       { name: "candidate ordering", sort: true },
     ]) {
       const failureResult = run(
-        "deploy/proofofwork-ui-storage-prune.sh",
+        fixturePrune,
         [mode],
         {
           ...cleanupEnvironment,
@@ -1015,14 +1030,14 @@ exec /usr/bin/sort "$@"
   process.stdout.write("UI scratch retention: 12 discovery, size-limit and ordering failure cases preserved every candidate\n");
 
   const dryRun = run(
-    "deploy/proofofwork-ui-storage-prune.sh",
+    fixturePrune,
     ["--dry-run"],
     cleanupEnvironment,
   );
   assert.equal(dryRun.status, 0, dryRun.stderr);
   assert.match(dryRun.stdout, /would_prune/u);
   const inheritedDryRun = runWithInheritedLock(
-    "deploy/proofofwork-ui-storage-prune.sh",
+    fixturePrune,
     ["--dry-run"],
     cleanupEnvironment,
   );
@@ -1048,7 +1063,7 @@ exec /usr/bin/sort "$@"
   }
 
   const apply = run(
-    "deploy/proofofwork-ui-storage-prune.sh",
+    fixturePrune,
     ["--apply"],
     cleanupEnvironment,
   );

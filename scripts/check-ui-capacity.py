@@ -39,7 +39,7 @@ class CapacityTests(unittest.TestCase):
     def test_approved_retention_limits_and_unchanged_safeguards(self):
         self.assertEqual(capacity.RETENTION_BUDGETS, (
             (Path("/var/backups/proofofwork-ui"), 18 * 1024**3),
-            (Path("/var/backups/proofofwork-ui/transport-evidence"), 9 * 1024**3),
+            (Path("/var/backups/proofofwork-ui/transport-evidence"), 9 * 1024**3 + 64 * 1024**2),
         ))
         self.assertEqual(capacity.ROOT_RESERVE_BYTES, 10 * 1024**3)
         self.assertEqual(capacity.GROWTH_RESERVE_BYTES, 64 * 1024**2)
@@ -57,6 +57,25 @@ class CapacityTests(unittest.TestCase):
                 with self.assertRaisesRegex(capacity.CapacityError, "retention budget refused"):
                     capacity.retention_budget(root, limit, 8, "one-byte-over")
             self.assertEqual(evidence.read_bytes(), b"preserve")
+
+    def test_transport_calibration_preserves_refused_input_and_hard_boundary(self):
+        limit = capacity.RETENTION_BUDGETS[1][1]
+        self.assertEqual(limit, 9730785280)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / "failed-874b-input"
+            evidence.write_bytes(b"retained")
+            allocated, additional = 8008511488, 1667156555
+            measured = SimpleNamespace(stdout=f"{allocated}\t{root}\n".encode())
+            with mock.patch.object(capacity.subprocess, "run", return_value=measured):
+                with self.assertRaisesRegex(capacity.CapacityError, "retention budget refused"):
+                    capacity.retention_budget(root, 9 * 1024**3, additional, "historical-limit")
+                result = capacity.retention_budget(root, limit, additional, "calibrated-limit")
+                self.assertEqual(limit - result["allocatedBytes"] - additional, 55117237)
+                capacity.retention_budget(root, limit, limit - allocated, "exact-boundary")
+                with self.assertRaisesRegex(capacity.CapacityError, "retention budget refused"):
+                    capacity.retention_budget(root, limit, limit - allocated + 1, "one-byte-over")
+            self.assertEqual(evidence.read_bytes(), b"retained")
 
     def test_integer_boundary_and_no_float_rounding(self):
         extra = 2**60 + 7

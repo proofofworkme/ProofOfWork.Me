@@ -37,6 +37,27 @@ class CompleteSequence(unittest.TestCase):
         census['availableInodes'] = M.LIMITS['inodeReserve'] + self.required['additionalInodes']
         return census
 
+    def test_transport_only_calibration_and_retained_failure_measurement(self):
+        self.assertEqual(M.LIMITS, {
+            'backupBudgetBytes': 18 * 1024**3,
+            'transportBudgetBytes': 9 * 1024**3 + 64 * 1024**2,
+            'scratchBudgetBytes': 5 * 1024**3,
+            'rootReserveBytes': 10 * 1024**3,
+            'growthReserveBytes': 64 * 1024**2, 'inodeReserve': 128})
+        census = self.exact_fit()
+        census['usage']['transport'] = 8008511488
+        required = copy.deepcopy(self.required)
+        required['additionalBytes']['transport'] = 1667156555
+        self.assertEqual(M.admit(required, census)['headroom']['transport'], 55117237)
+        self.assertEqual(8008511488 + 1667156555 - 9 * 1024**3, 11991627)
+        historical = copy.deepcopy(census)
+        historical['limits']['transportBudgetBytes'] = 9 * 1024**3
+        with self.assertRaisesRegex(ValueError, 'cannot credit'):
+            M.admit(required, historical)
+        census['usage']['transport'] += 55117238
+        with self.assertRaisesRegex(ValueError, 'before upload'):
+            M.admit(required, census)
+
     def test_exact_fit_then_one_byte_or_inode_over_each_limit(self):
         census = self.exact_fit()
         self.assertTrue(M.admit(self.required, census)['ok'])

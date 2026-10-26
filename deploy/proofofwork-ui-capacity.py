@@ -28,7 +28,8 @@ MAX_DEPLOY_SCRATCH_BYTES = 5 * 1024**3
 # another allocation until custody-qualified retirement creates room.
 RETENTION_BUDGETS = (
     (Path("/var/backups/proofofwork-ui"), 18 * 1024**3),
-    (Path("/var/backups/proofofwork-ui/transport-evidence"), 9 * 1024**3),
+    # October 26: retain the refused input; add only 64 MiB of finite transport room.
+    (Path("/var/backups/proofofwork-ui/transport-evidence"), 9 * 1024**3 + 64 * 1024**2),
 )
 
 
