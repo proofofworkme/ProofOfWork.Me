@@ -302,7 +302,6 @@ def validate_manifest(m):
         'Recovery changes source metadata')
     by_path={row['path']:row for row in rows}
     require(all(by_path[name]['before']==expected[name] for name in ALLOWED)
-        and by_path[READER]['after']==expected[READER]
         and by_path['server/proof-api.mjs']['after']!=expected['server/proof-api.mjs']
         and m['sourceIdentities'][READER]==pr['createdHelpers'][READER]['candidateIdentity'],
         'Recovery does not preserve the exact installed reader lineage')

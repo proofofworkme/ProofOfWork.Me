@@ -2,8 +2,10 @@
 
 This controller completes the failed `work-batch-reader-fix` incident. It changes
 only the existing `server/db/proof-index-reader.mjs` and `server/proof-api.mjs`.
-The corrected reader stays byte-identical to the installed predecessor candidate;
-the API receives the reviewed growth-accounting correction. It performs no SQL,
+The reader starts from the exact installed predecessor candidate and receives
+the reviewed child fee projection correction; the API receives the reviewed
+growth-accounting correction. Both resulting hashes are bound to the committed
+composition plan and successful full-summary rehearsal. It performs no SQL,
 replay, reseal, declaration, activation-config, Git, authority-service, or cleanup
 operation.
 
@@ -123,7 +125,7 @@ The dispatch binds the mandatory rehearsal qualification. Archive acceptance
 rechecks it against the exact plan and retains a hash-identical custody copy.
 
 For the reader, acceptance proves the chain from accepted C2 bytes to the failed
-predecessor's installed reader to the identical recovery reader. The API must
+predecessor's installed reader to the reviewed recovery reader. The API must
 start at its original accepted before hash. The adapter does not pretend that
 the failed installation was already accepted. It preserves all unrelated
 overlays and retains hash-identical copies of any compact evidence outside

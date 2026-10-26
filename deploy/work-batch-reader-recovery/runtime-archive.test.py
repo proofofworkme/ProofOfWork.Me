@@ -258,6 +258,22 @@ class ArchiveTests(unittest.TestCase):
   row['sha256']=self.predecessor['manifest']['sources'][0]['after']
   with self.assertRaisesRegex(ValueError,'Accepted before hash'):
    a.extend_inventory(self.m,self.r,data,[],self.actual,lambda name:None,self.predecessor)
+ def test_three_generation_reader_acceptance_preserves_original_before_evidence(self):
+  name='server/db/proof-index-reader.mjs';prior=self.predecessor['manifest']['sources'][0]
+  current=next(row for row in self.m['sources']if row['path']==name)
+  self.assertEqual(current['before'],prior['after'])
+  self.assertEqual(len({prior['before'],prior['after'],current['after']}),3)
+  self.run_accept();accepted=json.loads(self.accepted.read_bytes())
+  self.assertEqual(next(row for row in accepted['overlays']if row['path']==name)['sha256'],current['after'])
+  before=json.loads((self.custody/'source-overlays-before.json').read_bytes())
+  self.assertEqual(next(row for row in before['overlays']if row['path']==name)['sha256'],prior['before'])
+ def test_intermediate_reader_rehearsal_cannot_authorize_new_reader_acceptance(self):
+  name='server/db/proof-index-reader.mjs'
+  self.qualification['candidateHashes'][name]=self.predecessor['manifest']['sources'][0]['after']
+  self.dispatch['rehearsal']['sha256']=a.sha(encode(self.qualification))
+  self.approval['dispatch']['sha256']=a.sha(encode(self.dispatch))
+  with self.assertRaisesRegex(ValueError,'Rehearsal source'):self.run_accept()
+  self.assertEqual(a.sha(self.accepted.read_bytes()),self.pin)
  def test_broken_predecessor_after_chain_refuses(self):
   prior=copy.deepcopy(self.predecessor);prior['manifest']['sources'][0]['after']='0'*64
   with self.assertRaisesRegex(ValueError,'byte chain'):

@@ -16972,13 +16972,24 @@ export function canonicalTransferFeeProjection(payload, evidence) {
   };
 }
 
+// A covered transaction fee does not belong to each derived recipient. Keep
+// full-family qualification local to these exact rows, outside stored payloads.
+const VERIFIED_WORK_BATCH_EVENT_ROWS = new WeakMap();
+
 export async function rowsWithCanonicalTransferFees(pool, rows, network) {
   if (network !== "livenet") return rows;
   // Qualify the exact stored payload before removing display-only metadata.
   // The parent verifier compares against the original sealed event rows.
-  await verifiedWorkBatchEventIds(pool, rows
+  const verifiedBatchEventIds = await verifiedWorkBatchEventIds(pool, rows
     .filter(row => (row.status === "confirmed" || row.payload?.confirmed === true) && row.payload?.valid === true),
   network);
+  for (const row of rows) {
+    if (verifiedBatchEventIds.has(Number(row.event_id))) {
+      VERIFIED_WORK_BATCH_EVENT_ROWS.set(row, {
+        eventId: Number(row.event_id), payload: row.payload,
+      });
+    }
+  }
   const candidates = rows.filter((row) => {
     const p = canonicalEventPayload(row.payload);
     return (row.status === "confirmed" || p.confirmed === true) &&
@@ -40184,9 +40195,28 @@ function eventRowPayload(row, network) {
   const invalidTokenEvent = kind === "token-event-invalid";
   const canonicalMinerFeeCovered =
     row?.canonical_miner_fee_covered === true;
-  const canonicalMinerFeeSats = canonicalMinerFeeCovered
+  let canonicalMinerFeeSats = canonicalMinerFeeCovered
     ? rowNumber(row, "canonical_miner_fee_sats")
     : undefined;
+  if (canonicalMinerFeeCovered && kind === "token-transfer" &&
+      payload.transferVersion === "batch1" && isWorkTokenId(payload.tokenId)) {
+    const verified = VERIFIED_WORK_BATCH_EVENT_ROWS.get(row);
+    if (!verified || verified.eventId !== Number(row.event_id) ||
+        verified.payload !== row.payload || payload.valid !== true ||
+        payload.confirmed !== true || payload.derived !== true ||
+        payload.rawCandidate !== false || payload.economicDelta !== false ||
+        payload.chargesTransactionFee !== false || payload.claimsEconomicOutputs !== false ||
+        Number(payload.paidSats) !== 0 || Number(payload.registryMutationFeeSats) !== 0 ||
+        Number(payload.minerFeeSats) !== 0 ||
+        !Number.isSafeInteger(payload.batchRecipientIndex) || payload.batchRecipientIndex < 0 ||
+        payload.containerPosition?.protocolVout !== payload.protocolVout ||
+        payload.containerPosition?.recordOrdinal + 1 + payload.batchRecipientIndex !== payload.recordOrdinal) {
+      throw new Error("Canonical WORK batch recipient fee has no qualified parent evidence.");
+    }
+    // Coverage still comes from the original normalized input/output rows.
+    // The economic parent owns that fee; the qualified child owns none.
+    canonicalMinerFeeSats = 0;
+  }
   const canonicalMinerFeePatch = canonicalMinerFeeCovered
     ? {
         canonicalMinerFeeCovered: true,

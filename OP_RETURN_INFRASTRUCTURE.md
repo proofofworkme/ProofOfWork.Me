@@ -8650,8 +8650,11 @@ accepted runtime overlays and keeping capture, plan and rollback evidence on the
 Canonical summary projection qualifies stored batch payloads before removing
 display metadata, and values each accepted parent once. Recipient projections
 retain balances and history with no independent fee or movement contribution.
-The batch at block 973284 exposed both a metadata-order failure and a summary
-classification failure; the strict closing-state guard must remain unchanged.
+The batch at block 973284 exposed a metadata-order failure, a summary
+classification failure, and normalized activity enrichment that copied the
+transaction miner fee onto derived recipients. Qualified recipient projections
+keep zero fees while coverage remains bound to the original relational evidence;
+the strict closing-state guard must remain unchanged.
 The [forward recovery controller](deploy/work-batch-reader-recovery/README.md)
 binds the failed reader installation and its retained custody, rehearses the
 composed reader/API against the existing database in a read-only service, and

@@ -280,6 +280,14 @@ canonical position. A self-recipient contributes no movement. Recipient history
 and balances retain their exact individual amounts,
 with zero independent fees and movement value.
 
+Normalized transaction-fee coverage must not copy the transaction's miner fee
+onto each recipient. After full parent and sibling qualification, activity
+projection keeps each derived recipient's miner-fee fields at zero. Coverage
+continues to use the original relational input/output evidence, and the parent
+retains the transaction fee. Verify this through activity reconstruction and
+history merging as well as direct token-table reads: a covered activity row
+otherwise overrides the table's correct zero-fee projection.
+
 The same confirmed transaction exposed a second summary integration defect:
 the parent payment fell into `computerEventFlowSats`, while recipient rows were
 revalued independently. The strict closing-state reconciliation refused the

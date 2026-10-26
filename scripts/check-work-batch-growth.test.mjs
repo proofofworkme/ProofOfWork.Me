@@ -8,6 +8,7 @@ import * as units from "../server/work-units.mjs";
 import * as bonds from "../server/bond-units.mjs";
 import { WORK_AMO_V5_ACTIVATION_HEIGHT, compareWorkAmoUtf8, workAmoV5CanonicalPayloadCommitment } from "../server/work-amo-v5.mjs";
 import { buildWorkBatchPayload } from "../src/shared/protocol/workBatch.mjs";
+import { verifiedWorkBatchEventIds } from "../server/db/work-batch-reader.mjs";
 
 // Execute the actual API projection and accounting functions without starting
 // its server, database clients, background workers, or wallet operations.
@@ -37,6 +38,9 @@ const names = [
   "creditNetworkValueEventDetailFor", "tokenAmountValueAtFloor", "tokenStateWithCreditNetworkValueDetails",
   "growthActualLiveTotalSatsAtProvider", "canonicalReplayTimeline", "canonicalReplayPrefixLengthAtMs",
   "workAmoV5HistoricalMovements",
+  "tokenTransferFromIndexedActivityItem", "canonicalMinerFeeDetailsFromActivity", "indexedActivityValue",
+  "transferMergeString", "transferMergeNumber", "mergeTokenTransferRecord", "mergeCreditNetworkValueRecord",
+  "mergedCreditRecordWithExactWorkAmount", "topLevelWorkAmountRecord", "newerIso",
 ];
 const constantNames = [
   "TOKEN_MIN_MUTATION_PRICE_SATS", "WORK_TOKEN_MAX_SUPPLY", "WORK_TOKEN_MAX_SUPPLY_ATOMS",
@@ -44,6 +48,7 @@ const constantNames = [
   "ID_MARKETPLACE_MUTATION_KINDS", "TOKEN_MARKETPLACE_MUTATION_KINDS",
   "DNS_REGISTRY_ACTIVITY_KINDS", "DNS_MARKETPLACE_MUTATION_KINDS", "MARKETPLACE_MUTATION_KINDS",
   "BOOST_EVENT_KINDS", "TOKEN_ACTIVITY_KINDS",
+  "CREDIT_NETWORK_VALUE_FIELD_NAMES",
 ];
 const api = vm.createContext({
   ...units, ...bonds, Buffer, WORK_AMO_V5_ACTIVATION_HEIGHT, compareWorkAmoUtf8,
@@ -80,6 +85,28 @@ vm.runInContext([
 ].join("\n"), api);
 
 const plain = (value) => JSON.parse(JSON.stringify(value));
+const readerSource = readFileSync(new URL("../server/db/proof-index-reader.mjs", import.meta.url), "utf8");
+const readerParsed = ts.createSourceFile("proof-index-reader.mjs", readerSource, ts.ScriptTarget.Latest, true);
+const readerFunctions = new Map(readerParsed.statements.filter(ts.isFunctionDeclaration)
+  .map(node => [node.name.text, node.getText(readerParsed).replace(/^export\s+/u, "")]));
+const readerConstants = new Map(readerParsed.statements.filter(ts.isVariableStatement)
+  .flatMap(node => node.declarationList.declarations)
+  .map(node => [node.name.getText(readerParsed), node.getText(readerParsed)]));
+const reader = vm.createContext({ ...units, Buffer, WORK_AMO_V5_ACTIVATION_HEIGHT, verifiedWorkBatchEventIds });
+vm.runInContext([
+  ...["VERIFIED_WORK_BATCH_EVENT_ROWS", "BITCOIN_GENESIS_TIME_MS", "INFINITY_BOND_MEMO", "INFINITY_BOND_KIND",
+    "INCEPTION_BOND_MEMO", "INCEPTION_BOND_KIND", "BOND_TAGS"].map(name => {
+      assert.ok(readerConstants.has(name), `Missing actual reader constant ${name}`);
+      return `const ${readerConstants.get(name)};`;
+    }),
+  ...["rowsWithCanonicalTransferFees", "eventRowPayload", "canonicalEventPayload", "normalizeEventPayload",
+    "bondTagForEventPayload", "bondTagForKind", "bondTagForMemo", "normalizedLowerText", "normalizedText",
+    "canonicalEventIdentityDetails", "canonicalMovementPositionFromEventRow", "rowNumber", "dateIso",
+    "plausibleBitcoinEventTime", "idRegistryProtocolFeeSats", "eventPayloadParticipants", "objectRecord"].map(name => {
+      assert.ok(readerFunctions.has(name), `Missing actual reader function ${name}`);
+      return readerFunctions.get(name);
+    }),
+].join("\n"), reader);
 const address = (byte) => bitcoin.payments.p2wpkh({ hash: Buffer.alloc(20, byte) }).address;
 const SENDER = address(1);
 const TOKEN = { tokenId: units.WORK_TOKEN_ID, ticker: "WORK", maxSupply: 21_000_000, valid: true };
@@ -130,6 +157,98 @@ function metrics(state) {
     includeEvents: true,
   });
 }
+
+function acceptedActivityFamily() {
+  const state = family();
+  const parent = state.transferBatches[0];
+  parent.minerFeeSats = parent.canonicalMinerFeeSats = 546;
+  const position = { blockHeight: parent.blockHeight, blockHash: parent.blockHash,
+    blockTransactionIndex: parent.blockIndex, protocolVout: parent.protocolVout, recordOrdinal: 0 };
+  const chain = { model: "canonical-work-amo-raw-transition-chain-sha256-v1", sha256: "ef".repeat(32), payloadBytes: 100 };
+  const descriptors = state.transfers.map((child, index) => ({ ...child,
+    containerPosition: position, projectionPosition: { ...position, recordOrdinal: index + 1 },
+    parentTransitionChainCommitmentAfter: chain,
+  }));
+  const output = { amountSubatoms: parent.totalAmountSubatoms, totalAmountSubatoms: parent.totalAmountSubatoms,
+    recipientCount: parent.recipientCount, recipients: parent.recipients,
+    batchPayloadCommitment: parent.batchPayloadCommitment, projection: { kind: "token-transfer-batch" } };
+  Object.assign(parent, { protocol: "pwt1", payload: buildWorkBatchPayload(parent.recipients),
+    _workAmoV5ReplayBound: true, workAmoV5RawCandidate: true, workAmoV5ReplayOutput: output });
+  const children = descriptors.map(descriptor => ({ ...descriptor, position: descriptor.projectionPosition,
+    protocol: "pwt1", _workAmoV5ReplayBound: true, workAmoV5RawCandidate: false,
+    workAmoV5ReplayOutcome: { kind: "pwt1-valid", valid: true },
+    workAmoV5ReplayRawWitness: { model: "canonical-work-amo-v5-derived-child-v1", descriptor,
+      parentPosition: position, parentProtocol: "pwt1" },
+  }));
+  const evidence = { parent_event_id: "10", parent_payload: parent,
+    parent_records: [{ position, txid: parent.txid, rawCandidate: true, derived: descriptors,
+      outcome: { kind: "pwt1-valid", semanticKind: "token-transfer-batch", valid: true },
+      output, transitionChainCommitmentAfter: chain }],
+    carrier_output: { value: 0, scriptpubkey: Buffer.from(bitcoin.script.compile([106, Buffer.from(parent.payload)])).toString("hex") },
+    siblings: children.map((payload, index) => ({ event_id: String(11 + index), payload, position: payload.position })),
+  };
+  const rows = [parent, ...children].map((payload, index) => ({ event_id: 10 + index, payload,
+    network: "livenet", protocol: "pwt1", kind: payload.kind, status: "confirmed", valid: true,
+    txid: parent.txid, transaction_status: "confirmed", block_height: parent.blockHeight,
+    transaction_block_height: parent.blockHeight, block_index: parent.blockIndex,
+    transaction_block_index: parent.blockIndex, op_return_vout: parent.protocolVout, record_ordinal: index,
+    block_hash: parent.blockHash, canonical_block_hash: parent.blockHash, canonical_position_required: true,
+    canonical_miner_fee_covered: true, canonical_miner_fee_sats: "546" }));
+  return { state: { ...state, transfers: children }, evidence, rows };
+}
+
+test("qualified activity children keep zero miner fees through indexed reconstruction and canonical merge", async () => {
+  const { state, evidence, rows } = acceptedActivityFamily();
+  const before = JSON.stringify(rows);
+  let queries = 0;
+  const qualified = await reader.rowsWithCanonicalTransferFees({ query: async sql => {
+    assert.match(sql, /canonical_work_batch_parent_evidence/u); queries++;
+    return { rows: [evidence] };
+  } }, rows, "livenet");
+  const activity = qualified.map(row => reader.eventRowPayload(row, "livenet"));
+  assert.equal(queries, 1);
+  assert.equal(JSON.stringify(rows), before, "normalized transaction rows and stored payloads stay exact");
+  assert.ok(rows.every(row => row.canonical_miner_fee_covered && row.canonical_miner_fee_sats === "546"));
+  assert.equal(activity[0].minerFeeSats, 546);
+  assert.equal(activity[0].canonicalMinerFeeSats, 546);
+  const reconstructed = activity.slice(1).map(item => api.tokenTransferFromIndexedActivityItem(
+    item, TOKEN, "livenet", units.WORK_SUBATOM_PROJECTION_MODEL));
+  // The token-table transfer mapper does not attach normalized transaction
+  // coverage; the covered activity projection therefore wins value merging.
+  const tableChildren = state.transfers.map(({ canonicalMinerFeeCovered: _covered, ...child }) => child);
+  const merged = reconstructed.map((item, index) => api.mergeTokenTransferRecord(item, tableChildren[index]));
+  assert.ok(merged.every(item => item.canonicalMinerFeeCovered === true && item.minerFeeSats === 0 &&
+    item.canonicalMinerFeeSats === 0 && item.paidSats === 0 && item.registryMutationFeeSats === 0));
+  const economics = api.economicTokenTransfersFromState({ ...state, transfers: merged });
+  assert.equal(economics.length, 1);
+  assert.equal(economics[0].paidSats, 546);
+  assert.equal(economics[0].minerFeeSats, 546);
+  // Reproduce the observed old activity projection without weakening the
+  // economic guard: covered nonzero child fees survive the real merge.
+  const poisoned = reconstructed.map((item, index) => api.mergeTokenTransferRecord({ ...item,
+    minerFeeSats: 546, canonicalMinerFeeSats: 546 }, tableChildren[index]));
+  assert.throws(() => api.economicTokenTransfersFromState({ ...state, transfers: poisoned }), /recipient differs/u);
+});
+
+test("child fee projection refuses unqualified or changed rows and leaves ordinary transfer fees intact", async () => {
+  const { rows, evidence } = acceptedActivityFamily();
+  assert.throws(() => reader.eventRowPayload(rows[1], "livenet"), /qualified parent evidence/u);
+  await reader.rowsWithCanonicalTransferFees({ query: async () => ({ rows: [evidence] }) }, rows, "livenet");
+  assert.throws(() => reader.eventRowPayload({ ...rows[1] }, "livenet"), /qualified parent evidence/u);
+  const original = rows[1].payload;
+  rows[1].payload = { ...original };
+  assert.throws(() => reader.eventRowPayload(rows[1], "livenet"), /qualified parent evidence/u);
+  rows[1].payload = original;
+  for (const [key, value] of [["chargesTransactionFee", true], ["paidSats", 1], ["minerFeeSats", 546], ["batchRecipientIndex", 99]]) {
+    const old = original[key]; original[key] = value;
+    assert.throws(() => reader.eventRowPayload(rows[1], "livenet"), /qualified parent evidence/u);
+    original[key] = old;
+  }
+  const ordinary = { ...rows[1], payload: { ...original, transferVersion: "send3", amountVersion: "send3" } };
+  const projected = reader.eventRowPayload(ordinary, "livenet");
+  assert.equal(projected.minerFeeSats, 546);
+  assert.equal(projected.canonicalMinerFeeSats, 546);
+});
 
 test("batch parent contributes one registry payment to WORK, never Computer", () => {
   const state = family();
