@@ -1,5 +1,10 @@
 import { parseBoostWorkTip } from "../src/shared/protocol/boostTip.mjs";
 import { canonicalSealTime } from "../server/canonical-seal-time.mjs";
+import { WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT } from "../server/work-batch-declaration.mjs";
+import { parseWorkBatchPayload, WORK_BATCH_PROTOCOL_PREFIX } from "../src/shared/protocol/workBatch.mjs";
+import { verifiedWorkBatchEventIds } from "../server/db/work-batch-reader.mjs";
+import { notificationAddressKey } from "../server/notification-query.mjs";
+import { measurePrivatePhase as measureMarketplaceReadPhase } from "../server/wallet-read-observation.mjs";
 import { JOBS_ACTIVATION_HEIGHT } from "../src/shared/protocol/jobs.mjs";
 import { JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_META_KEY, advanceJobsCandidateDigest, jobsCandidateParts } from "../server/jobs.mjs";
 import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, advanceCodeCandidateDigest } from "../server/code-repositories.mjs";
@@ -9,6 +14,8 @@ import { canonicalIncbReplayComponents } from "../server/incb-replay-components.
 import assert from "node:assert/strict";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { performance } from "node:perf_hooks";
+import { setImmediate as yieldToIo } from "node:timers/promises";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import * as ecc from "@bitcoinerlab/secp256k1";
@@ -1056,7 +1063,7 @@ function fileSource(path) {
 function topLevelFunctionSource(path, name) {
   const source = fileSource(path);
   const startPattern = new RegExp(
-    `^(?:export\\s+)?(?:async\\s+)?function\\s+${name}(?:<[^>]+>)?\\s*\\(`,
+    `^(?:export\\s+)?(?:async\\s+)?function\\s*\\*?\\s+${name}(?:<[^>]+>)?\\s*\\(`,
     "mu",
   );
   const startMatch = startPattern.exec(source);
@@ -1064,7 +1071,7 @@ function topLevelFunctionSource(path, name) {
     throw new Error(`Could not find ${name} in ${path.pathname}`);
   }
   const rest = source.slice(startMatch.index + startMatch[0].length);
-  const nextMatch = /\n(?:export\s+)?(?:async\s+)?function\s+[A-Za-z_$][\w$]*\s*\(/mu.exec(
+  const nextMatch = /\n(?:export\s+)?(?:async\s+)?function\s*\*?\s+[A-Za-z_$][\w$]*\s*\(/mu.exec(
     rest,
   );
   const end = nextMatch
@@ -1275,6 +1282,13 @@ function isolatedFunction(path, name, globals = {}) {
     structuredClone,
     deduplicatedSummaryRead: async (_key, producer) => producer(),
     canonicalSealTime,
+    parseWorkBatchPayload,
+    WORK_BATCH_PROTOCOL_PREFIX,
+    verifiedWorkBatchEventIds,
+    notificationAddressKey,
+    measureMarketplaceReadPhase,
+    performance,
+    yieldToIo,
     Buffer,
     createHash,
     URLSearchParams,
@@ -1739,7 +1753,17 @@ function isolatedFunction(path, name, globals = {}) {
           "completeTokenListingRelationalRead",
           "logTokenListingLifecycleCapacity",
           "tokenListingLifecycleCapacityStats",
+          "checkpointListingDigestContext",
+          "checkpointCanonicalSha256",
         ],
+        checkpointListingDigestContext: [
+          "checkpointListingRecordObjects",
+          "checkpointBoundedCanonicalRecord",
+          "checkpointCanonicalSha256",
+        ],
+        checkpointBoundedCanonicalRecord: ["checkpointCanonicalObjectKeys"],
+        checkpointCanonicalSha256: ["canonicalTokens"],
+        canonicalTokens: ["checkpointCanonicalObjectKeys"],
         indexedTokenMarketSummaryOverlay: [
           "logTokenListingLifecycleCapacity",
           "tokenListingLifecycleCapacityStats",
@@ -1825,7 +1849,13 @@ function isolatedFunction(path, name, globals = {}) {
             "workListingAmountProjection",
           ],
           proofIndexCanonicalWorkListingById: [
+            "canonicalWorkListingRows",
+            "canonicalWorkListingFromRow",
+          ],
+          canonicalWorkListingRows: [
             "canonicalCreditListingEffectiveSaleTicketJoinSql",
+          ],
+          canonicalWorkListingFromRow: [
             "workAmountProjectionMetadataForAmount",
             "workListingAmountProjection",
           ],
@@ -1984,6 +2014,9 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           canonicalSummaryAccountingModelsCurrent: [
             "canonicalSummaryCoverage",
+          ],
+          storeCanonicalSummarySnapshot: [
+            "canonicalSummaryTransitionSourceCurrent",
           ],
           canonicalSummaryCoverage: [
             "summaryPayloadConservativeCoverage",
@@ -30085,6 +30118,7 @@ check("an Inception summary barrier is exact and cannot defer", async () => {
     BACKFILL_PATH,
     "storeCanonicalSummarySnapshot",
     {
+      NETWORK: "livenet",
       CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS: 600_000,
       canonicalSummaryAccountingModelsCurrent: () => true,
       canonicalSummaryCoverage: () => 101,
@@ -51188,6 +51222,7 @@ check("pending WORK admission defers retryable listing resolution to replay", as
   };
   const txid = "a".repeat(64);
   const record = {
+    parsedMessages: [{ kind: "delist", listingId: "b".repeat(64) }],
     transaction: { hex: "020000000001" },
     txid,
   };
@@ -59070,10 +59105,12 @@ check("token listing history rejects previews and fences relational and Core evi
         return { ...relational, items, totalCount: items.length };
       },
       tokenListingHistoryQueryScope,
-      proofIndexCanonicalWorkListingById: async (_network, listingId) => {
-        witnessCalls.push(listingId);
-        return witnesses.get(listingId) ?? null;
-      },
+      proofIndexCanonicalWorkAmoV8ListingsByIds: async (_network, listingIds) =>
+        listingIds.flatMap((listingId) => {
+          witnessCalls.push(listingId);
+          const witness = witnesses.get(listingId);
+          return witness ? [{ ...witness, listingId }] : [];
+        }),
       recoveryAddressesFromSearchParams: (searchParams) =>
         searchParams.getAll("address")
           .map((address) => String(address ?? "").trim())
@@ -59163,7 +59200,7 @@ check("token listing history rejects previews and fences relational and Core evi
     new URLSearchParams("limit=200&page=0"),
   );
   assert.equal(emptyIncb.totalCount, 0);
-  assert.deepEqual(emptyIncb.items, []);
+  assert.deepEqual([...emptyIncb.items], []);
   assert.equal(emptyIncb.hasMore, false);
   assert.equal(emptyIncb.nextCursor, "");
   assert.equal(emptyIncb.page, 0);
@@ -59177,7 +59214,7 @@ check("token listing history rejects previews and fences relational and Core evi
   assert.equal(emptyIncb.listingProjection.activeListingCount, 0);
   assert.equal(emptyIncb.listingProjection.coreUnspentListingCount, 0);
   assert.match(emptyIncb.snapshotId, /^[0-9a-f]{64}$/u);
-  assert.deepEqual(coreCheckedListings, []);
+  assert.deepEqual([...coreCheckedListings], []);
 
   relational = {
     indexedAt: "2026-08-26T12:00:00.000Z",
@@ -59268,7 +59305,7 @@ check("token listing history rejects previews and fences relational and Core evi
       searchParams,
     );
     assert.equal(emptyFiltered.totalCount, 0, `${label} filter count`);
-    assert.deepEqual(emptyFiltered.items, [], `${label} filter items`);
+    assert.deepEqual([...emptyFiltered.items], [], `${label} filter items`);
     assert.equal(
       emptyFiltered.listingAuthority.checkedListingCount,
       lifecycleListings.length,
@@ -59302,7 +59339,7 @@ check("token listing history rejects previews and fences relational and Core evi
     exactRelic.source,
     "proof-indexer-exact-core-reconciled-token-listing",
   );
-  assert.deepEqual(exactRelic.items, []);
+  assert.deepEqual([...exactRelic.items], []);
   assert.equal(exactRelic.listingProjection.excludedByProtocolCount, 1);
   assert.equal(
     exactRelic.listingAuthority.checkedOutpointsSha256,
@@ -59311,7 +59348,7 @@ check("token listing history rejects previews and fences relational and Core evi
   assert.equal(exactRelic.listingAuthority.checkpoint.height, 964_200);
   assert.equal(exactRelic.listingAuthority.checkpoint.blockHash, coreHash);
   assert.deepEqual(
-    coreCheckedListingIds,
+    [...coreCheckedListingIds],
     [legacyRefundListing.listingId],
     "an exact lookup still reconciles the targeted cutover relic against Core",
   );
@@ -71476,6 +71513,13 @@ check("AMO V5 raw replay executes ID, generic-token, and WORK buys atomically", 
         `${txid}:${protocolVout}:${recordOrdinal}`,
       workAmoV5RecordPositionKey: recordKey,
       workAmoV5RawTransitionChainCommitmentsEqual,
+      workBatchReplayContext: async (network, height) => {
+        assert.equal(network, "livenet");
+        assert.equal(height, blockHeight);
+        assert.ok(height < WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT,
+          "this legacy fixture predates batch declarations");
+        return null;
+      },
     },
   );
   const projection = await completeProjection(
@@ -84872,7 +84916,7 @@ check("all relational token-action selectors bind kind to pwt1", () => {
     ],
     [
       "proofIndexTokenTransferEventsFromTables",
-      /e\.protocol = 'pwt1'[\s\S]*e\.kind = 'token-transfer'/iu,
+      /e\.protocol = 'pwt1'[\s\S]*e\.kind IN \('token-transfer', 'token-transfer-batch'\)/iu,
     ],
     [
       "proofIndexTokenMarketEventsFromTables",
