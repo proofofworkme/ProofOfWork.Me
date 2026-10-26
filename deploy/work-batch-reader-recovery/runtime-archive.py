@@ -155,6 +155,8 @@ def extend_inventory(m,r,accepted,evidence,actual_reader,baseline_reader,predece
     for name,row in rows_by_path(m['sources']).items():
         accepted_before=row['before']
         if name in prior_rows:
+            # The reviewed recovery candidate may correct the failed reader again;
+            # its before bytes must still be the predecessor's owned publication.
             need(row['before']==prior_rows[name]['after'],'Broken predecessor-to-recovery byte chain')
             accepted_before=prior_rows[name]['before']
         mode=m['sourceMetadata'][name]['mode']

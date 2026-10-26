@@ -116,12 +116,25 @@ class PredecessorTests(unittest.TestCase):
         return m
     def test_recovery_manifest_preserves_installed_reader_and_all_dependency_pins(self):
         self.assertEqual(set(C.validate_manifest(self.recovery_manifest())),C.ALLOWED)
-    def test_reader_change_or_unrelated_dependency_change_refuses(self):
+    def test_reviewed_reader_correction_keeps_the_exact_predecessor_baseline(self):
+        m=self.recovery_manifest();row=next(r for r in m['sources']if r['path']==C.READER)
+        raw=base64.b64decode(row['base64'])+b'// reviewed child fee projection correction\n'
+        row.update(after=C.sha(raw),base64=base64.b64encode(raw).decode())
+        self.assertNotEqual(row['after'],row['before'])
+        self.assertEqual(C.validate_manifest(m)[C.READER],raw)
+        self.assertEqual(row['before'],self.m['sources'][0]['after'])
+    def test_reader_baseline_or_unrelated_dependency_change_refuses(self):
         m=self.recovery_manifest();m['dependencies']['package.json']='0'*64
         with self.assertRaisesRegex(ValueError,'closure'):C.validate_manifest(m)
         m=self.recovery_manifest();row=next(r for r in m['sources']if r['path']==C.READER)
-        raw=b'changed reader';row.update(after=C.sha(raw),base64=base64.b64encode(raw).decode())
+        row['before']='0'*64
         with self.assertRaisesRegex(ValueError,'reader lineage'):C.validate_manifest(m)
+        m=self.recovery_manifest();m['sourceIdentities'][C.READER][1]+=1
+        with self.assertRaisesRegex(ValueError,'reader lineage'):C.validate_manifest(m)
+    def test_unreviewed_reader_bytes_refuse_the_candidate_hash(self):
+        m=self.recovery_manifest();row=next(r for r in m['sources']if r['path']==C.READER)
+        row['base64']=base64.b64encode(b'unreviewed reader bytes').decode()
+        with self.assertRaisesRegex(ValueError,'Candidate bytes differ'):C.validate_manifest(m)
 
 class PublicationTests(unittest.TestCase):
     def setUp(self):
@@ -184,6 +197,12 @@ class RehearsalGateTests(unittest.TestCase):
     def test_exact_success_is_admitted_without_changing_plan(self):
         before=encoded(self.plan);self.assertIs(C.validate_rehearsal(self.value,self.plan,self.pin),self.value)
         self.assertEqual(encoded(self.plan),before)
+    def test_old_reader_rehearsal_cannot_qualify_the_corrected_reader(self):
+        row=next(row for row in self.plan['runtimeManifestTemplate']['sources']if row['path']==C.READER)
+        row['after']='9'*64;self.pin=C.sha(encoded(self.plan));self.value['planSha256']=self.pin
+        with self.assertRaisesRegex(ValueError,'Rehearsal source'):C.validate_rehearsal(self.value,self.plan,self.pin)
+        self.value['candidateHashes'][C.READER]=row['after']
+        self.assertIs(C.validate_rehearsal(self.value,self.plan,self.pin),self.value)
     def test_wrong_identity_or_missing_qualification_refuses(self):
         for key,value in [('qualified',False),('planSha256','0'*64),('sourceCommit','0'*40),
                 ('releaseId','foreign'),('candidateHashes',{C.READER:'b'*64}),('predecessor',{}),
