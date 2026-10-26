@@ -263,7 +263,8 @@
       "deploy/work-batch-sends/README.md",
       "deploy/work-batch-activation/README.md",
       "deploy/work-batch-replay/README.md",
-      "deploy/work-batch-reader-fix/README.md"
+      "deploy/work-batch-reader-fix/README.md",
+      "deploy/work-batch-reader-recovery/README.md"
     ]
   },
   "protectedTrackedPaths": [

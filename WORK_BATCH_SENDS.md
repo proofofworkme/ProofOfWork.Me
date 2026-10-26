@@ -270,3 +270,22 @@ at block 973284 exposed this caller-order regression: its one parent and twelve
 recipients passed unchanged validation, while pre-validation metadata removal
 blocked summary publication. This is a read-path correction; it does not change
 the transaction, accepted balances, declaration, replay rules or sealed history.
+
+Summary and growth readers must also preserve the distinction between the parent
+and its derived recipients. Build economic transfer input from legacy transfers
+and accepted batch parents; exclude batch children from independent valuation.
+A parent contributes its one registry payment and transaction miner fee, and
+uses `movementAmountSubatoms` for the aggregate non-self movement at its original
+canonical position. A self-recipient contributes no movement. Recipient history
+and balances retain their exact individual amounts,
+with zero independent fees and movement value.
+
+The same confirmed transaction exposed a second summary integration defect:
+the parent payment fell into `computerEventFlowSats`, while recipient rows were
+revalued independently. The strict closing-state reconciliation refused the
+extra 546 proofs. Correct summary input and activity classification rather than
+relaxing that guard or rewriting accepted transitions. Scoped token state,
+activity projection, source fingerprints and historical movement reconstruction
+must all retain the accepted parent. A failed read-path release is recovered
+forward with its exact installed-source and custody evidence; it is not a reason
+to restore the known-broken reader or resend the transaction.

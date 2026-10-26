@@ -17758,12 +17758,143 @@ function tokenAmountFieldsFromRecord(record) {
       });
 }
 
+function isWorkBatchTransferParent(record) {
+  return record?.kind === "token-transfer-batch" &&
+    record?.transferVersion === "batch1" && isWorkTokenId(record?.tokenId);
+}
+
+function isWorkBatchTransferChild(record) {
+  return record?.transferVersion === "batch1" &&
+    record?.kind !== "token-transfer-batch" && isWorkTokenId(record?.tokenId);
+}
+
+function workBatchChildIdentityFields(record) {
+  if (!isWorkBatchTransferChild(record)) return {};
+  return Object.fromEntries([
+    "transferVersion", "amountVersion", "batchRecipientIndex", "batchRecipientCount",
+    "batchTotalAmountSubatoms", "batchPayloadCommitment", "containerPosition",
+    "derived", "derivedId", "parentTransitionChainCommitmentAfter", "economicDelta",
+    "chargesTransactionFee", "claimsEconomicOutputs", "rawCandidate",
+  ].filter((field) => record[field] !== undefined).map((field) => [field, record[field]]));
+}
+
+function workBatchEconomicTransfer(parent) {
+  const movement = canonicalNonNegativeIntegerText(parent?.movementAmountSubatoms);
+  const total = canonicalNonNegativeIntegerText(parent?.totalAmountSubatoms);
+  const recipients = parent?.recipients;
+  if (!isWorkBatchTransferParent(parent) || !movement || !total ||
+      !Array.isArray(recipients) || recipients.length !== parent.recipientCount ||
+      recipients.length < 2 || recipients.length > 256 ||
+      Number(parent.paidSats) !== TOKEN_MIN_MUTATION_PRICE_SATS ||
+      Number(parent.batchRegistryPaymentSats) !== TOKEN_MIN_MUTATION_PRICE_SATS ||
+      parent.batchPayloadCommitment?.model !== "canonical-work-amo-payload-sha256-v1" ||
+      !/^[0-9a-f]{64}$/u.test(parent.batchPayloadCommitment?.sha256 ?? "") ||
+      !Number.isSafeInteger(parent.batchPayloadCommitment?.payloadBytes) ||
+      parent.batchPayloadCommitment.payloadBytes < 1) {
+    throw new Error("Canonical WORK batch economic parent is incomplete.");
+  }
+  let expectedTotal = 0n;
+  let expectedMovement = 0n;
+  for (const recipient of recipients) {
+    const amount = canonicalNonNegativeIntegerText(recipient?.amountSubatoms, { allowZero: false });
+    if (!amount || !recipient?.recipientAddress || !parent.senderAddress) {
+      throw new Error("Canonical WORK batch economic recipient is incomplete.");
+    }
+    expectedTotal += BigInt(amount);
+    if (recipient.recipientAddress !== parent.senderAddress) expectedMovement += BigInt(amount);
+  }
+  if (expectedTotal.toString() !== total || expectedMovement.toString() !== movement) {
+    throw new Error("Canonical WORK batch economic amount differs from its recipients.");
+  }
+  // This is a value-replay view only. The parent and recipient history retain
+  // their original total/individual amounts for balance and activity readers.
+  return {
+    ...parent,
+    ...workAmountFieldsFromSubatoms(movement, { allowZero: true }),
+  };
+}
+
+function economicTokenTransfersFromState(state) {
+  const parents = (Array.isArray(state?.transferBatches) ? state.transferBatches : [])
+    .filter((parent) => parent?.valid !== false);
+  const parentKey = (item, position = item) => [
+    item?.network, item?.txid, position?.protocolVout, position?.recordOrdinal,
+  ].join(":");
+  const parentsByKey = new Map();
+  const childIndicesByParent = new Map();
+  const economicParents = parents.map((parent) => {
+    const key = parentKey(parent);
+    if (parentsByKey.has(key)) throw new Error("Canonical WORK batch economic parent is duplicated.");
+    parentsByKey.set(key, parent);
+    childIndicesByParent.set(key, new Set());
+    return workBatchEconomicTransfer(parent);
+  });
+  const transfers = (Array.isArray(state?.transfers) ? state.transfers : []).filter((item) => {
+    if (!isWorkBatchTransferChild(item)) return true;
+    if (item?.valid !== false) {
+      const parent = parentsByKey.get(parentKey(item, item.containerPosition));
+      const seen = childIndicesByParent.get(parentKey(item, item.containerPosition));
+      const index = item.batchRecipientIndex;
+      const recipient = parent?.recipients?.[index];
+      if (!parent || !Number.isSafeInteger(index) || index < 0 || !recipient ||
+          item.rawCandidate !== false || item.economicDelta !== false ||
+          item.chargesTransactionFee !== false || item.claimsEconomicOutputs !== false ||
+          item.derived === false || Number(item.paidSats) !== 0 ||
+          Number(item.registryMutationFeeSats) !== 0 || Number(item.minerFeeSats) !== 0 ||
+          item.batchRecipientCount !== parent.recipientCount ||
+          item.batchTotalAmountSubatoms !== parent.totalAmountSubatoms ||
+          item.senderAddress !== parent.senderAddress ||
+          item.recipientAddress !== recipient.recipientAddress ||
+          item.amountSubatoms !== recipient.amountSubatoms ||
+          item.recordOrdinal !== parent.recordOrdinal + 1 + index ||
+          item.confirmed !== parent.confirmed || item.blockHash !== parent.blockHash ||
+          item.blockHeight !== parent.blockHeight || item.blockIndex !== parent.blockIndex ||
+          seen.has(index) ||
+          ["model", "sha256", "payloadBytes"].some((key) =>
+            item.batchPayloadCommitment?.[key] !== parent.batchPayloadCommitment?.[key])) {
+        throw new Error("Canonical WORK batch recipient differs from its economic parent.");
+      }
+      seen.add(index);
+    }
+    return false;
+  });
+  for (const [key, parent] of parentsByKey) {
+    if (childIndicesByParent.get(key).size !== parent.recipientCount) {
+      throw new Error("Canonical WORK batch economic parent has an incomplete recipient set.");
+    }
+  }
+  return [...transfers, ...economicParents];
+}
+
+function zeroWorkBatchChildEconomicFields(record) {
+  const zeroValues = Object.fromEntries([
+    "creditValueAtConfirm", "creditLiveValue", "frozenNetworkValue",
+    "liveNetworkValue", "fixedEventFlow",
+  ].flatMap((prefix) => [[`${prefix}Sats`, 0], [`${prefix}Q8`, "0"]]));
+  return {
+    ...record,
+    ...zeroValues,
+    paidSats: 0,
+    registryMutationFeeSats: 0,
+    minerFeeSats: 0,
+    canonicalMinerFeeSats: 0,
+    attributedMinerFeeSats: 0,
+    creditAmountMoved: "0",
+    creditAmountMovedSubatoms: "0",
+    economicDelta: false,
+    chargesTransactionFee: false,
+    claimsEconomicOutputs: false,
+  };
+}
+
 function tokenCreditAmountMovedFields(record) {
   const tokenId = String(record?.tokenId ?? "").trim().toLowerCase();
   if (isWorkTokenId(tokenId)) {
-    const amountSubatoms = workSubatomsBigIntFromRecord(record, {
-      convertLegacyAtoms: true,
-    });
+    const amountSubatoms = isWorkBatchTransferChild(record) ? 0n :
+      workSubatomsBigIntFromRecord(
+        isWorkBatchTransferParent(record) ? workBatchEconomicTransfer(record) : record,
+        { allowZero: isWorkBatchTransferParent(record), convertLegacyAtoms: true },
+      );
     if (amountSubatoms === null) {
       return {};
     }
@@ -21073,8 +21204,14 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       proofPaymentSats,
     };
   });
-  const transfers = (Array.isArray(state.transfers) ? state.transfers : []).map(
+  const valuedTransfers = [
+    ...(Array.isArray(state.transfers) ? state.transfers : []),
+    ...(Array.isArray(state.transferBatches) ? state.transferBatches : []),
+  ].map(
     (transfer) => {
+      if (isWorkBatchTransferChild(transfer)) {
+        return zeroWorkBatchChildEconomicFields(transfer);
+      }
       if (!tokenUsesCreditNetworkFloor(transfer.tokenId)) {
         return transfer;
       }
@@ -21104,7 +21241,10 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       const creditLiveFloorSats = creditRevaluationFloorSats;
       const creditLiveValueSats =
         numericValue(detail?.creditLiveValueSats) ||
-        tokenAmountValueAtFloor(transfer, creditLiveFloorSats);
+        tokenAmountValueAtFloor(
+          isWorkBatchTransferParent(transfer) ? workBatchEconomicTransfer(transfer) : transfer,
+          creditLiveFloorSats,
+        );
       const creditLiveFloorQ8 = canonicalNonNegativeIntegerText(
         detail?.creditLiveFloorQ8,
       );
@@ -21209,6 +21349,8 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       };
     },
   );
+  const transfers = valuedTransfers.filter((item) => !isWorkBatchTransferParent(item));
+  const transferBatches = valuedTransfers.filter(isWorkBatchTransferParent);
   const sales = (Array.isArray(state.sales) ? state.sales : []).map((sale) => {
     if (!tokenUsesCreditNetworkFloor(sale.tokenId)) {
       return sale;
@@ -21313,6 +21455,7 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
     sales,
     tokens,
     transfers,
+    ...(transferBatches.length ? { transferBatches } : {}),
     listings,
     stats: {
       ...(state.stats ?? {}),
@@ -29821,7 +29964,7 @@ function inceptionPreBondLiveNetworkValueQ8(ledger, bond) {
     before(registryState.sales),
     before(tokenState.tokens),
     before(tokenState.mints),
-    before(tokenState.transfers),
+    before(economicTokenTransfersFromState(tokenState)),
     before(tokenState.sales),
     Number.MAX_SAFE_INTEGER,
   );
@@ -32333,6 +32476,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     .filter((transfer) => baseActivityRecordCanProject(transfer))
     .map((transfer) => ({
     ...canonicalEventIdentityDetails(transfer),
+    ...workBatchChildIdentityFields(transfer),
     ...tokenAmountFieldsFromRecord(transfer),
     ...tokenCreditAmountMovedFields(transfer),
     amountSats: transfer.paidSats,
@@ -32405,6 +32549,27 @@ function tokenActivityItemsFromState(state, indexAddress) {
     tokenId: transfer.tokenId,
     txid: transfer.txid,
     ...canonicalCreditValueFieldsFromRecord(transfer),
+    }));
+
+  const transferBatches = (state.transferBatches ?? [])
+    .filter((parent) => baseActivityRecordCanProject(parent))
+    .map((parent) => ({
+      ...parent,
+      ...canonicalEventIdentityDetails(parent),
+      ...tokenAmountFieldsFromRecord(parent),
+      ...tokenCreditAmountMovedFields(parent),
+      ...canonicalCreditValueFieldsFromRecord(parent),
+      actor: parent.senderAddress,
+      amountSats: parent.paidSats,
+      counterparty: parent.registryAddress,
+      description: `${parent.recipientCount} WORK recipients in one atomic transfer.`,
+      kind: "token-transfer-batch",
+      participants: [parent.senderAddress, parent.registryAddress,
+        ...(parent.recipients ?? []).map((recipient) => recipient.recipientAddress)].filter(Boolean),
+      protocol: "pwt1",
+      registryMutationFeeSats: parent.paidSats,
+      title: parent.confirmed ? "WORK batch transfer" : "WORK batch transfer pending",
+      tags: [activityStatusTag(parent.confirmed), networkLabel(parent.network), "Credit", "Batch", "WORK"],
     }));
 
   const listings = [
@@ -32943,6 +33108,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     ...creations,
     ...mints,
     ...transfers,
+    ...transferBatches,
     ...listings,
     ...sealedListings,
     ...closedListings,
@@ -32954,6 +33120,7 @@ const TOKEN_ACTIVITY_KINDS = new Set([
   "token-create",
   "token-mint",
   "token-transfer",
+  "token-transfer-batch",
   "token-listing",
   "token-listing-sealed",
   "token-listing-closed",
@@ -38103,6 +38270,7 @@ function scopedTokenPayloadFromState(tokenState, scope) {
   const sourceMints = (tokenState.mints ?? []).filter(matchesSourceToken);
   const sourceSales = (tokenState.sales ?? []).filter(matchesSourceToken);
   const sourceTransfers = (tokenState.transfers ?? []).filter(matchesSourceToken);
+  const transferBatches = (tokenState.transferBatches ?? []).filter(matchesSourceToken);
   const scopedWorkRecordsUseSubatoms =
     workScoped &&
     [
@@ -38414,6 +38582,7 @@ function scopedTokenPayloadFromState(tokenState, scope) {
     sales,
     tokens: canonicalTokens,
     transfers,
+    ...(Array.isArray(tokenState.transferBatches) ? { transferBatches } : {}),
     stats: {
       ...(tokenState.stats ?? {}),
       confirmedMints: mints.filter((mint) => mint.confirmed).length,
@@ -39377,6 +39546,7 @@ function tokenStateWithoutDroppedPendingTransactions(state, network) {
   const tokens = filterPendingItems(state.tokens, (item) => [item?.txid]);
   const mints = filterPendingItems(state.mints, (item) => [item?.txid]);
   const transfers = filterPendingItems(state.transfers, (item) => [item?.txid]);
+  const transferBatches = filterPendingItems(state.transferBatches, (item) => [item?.txid]);
   const sales = filterPendingItems(state.sales, (item) => [item?.txid]);
   const invalidEvents = filterPendingItems(state.invalidEvents, (item) => [
     item?.txid,
@@ -39458,6 +39628,7 @@ function tokenStateWithoutDroppedPendingTransactions(state, network) {
     sales,
     tokens,
     transfers,
+    ...(Array.isArray(state.transferBatches) ? { transferBatches } : {}),
   });
 }
 
@@ -42792,6 +42963,12 @@ function tokenPayloadWithCanonicalHistoryFloor(canonicalPayload, payload) {
   ) {
     return tokenStateWithPendingStats({
       ...payload,
+      ...(Array.isArray(canonicalPayload.transferBatches) || Array.isArray(payload.transferBatches) ? {
+        transferBatches: mergeCanonicalHistoryItems(
+          canonicalPayload.transferBatches, payload.transferBatches,
+          tokenTransferHistoryItemKey, mergeCreditNetworkValueRecord,
+        ),
+      } : {}),
       closedListings: mergeCanonicalHistoryItems(
         canonicalPayload.closedListings,
         payload.closedListings,
@@ -42828,6 +43005,12 @@ function tokenPayloadWithCanonicalHistoryFloor(canonicalPayload, payload) {
 
   const next = {
     ...payload,
+    ...(Array.isArray(canonicalPayload.transferBatches) || Array.isArray(payload.transferBatches) ? {
+        transferBatches: mergeCanonicalHistoryItems(
+          canonicalPayload.transferBatches, payload.transferBatches,
+          tokenTransferHistoryItemKey, mergeCreditNetworkValueRecord,
+        ),
+      } : {}),
     confirmedSupply: maxTokenPayloadSupply(payload, canonicalPayload),
     indexedAt: newerIso(canonicalPayload?.indexedAt, payload?.indexedAt),
     indexedThroughBlock: Math.max(
@@ -46728,11 +46911,17 @@ function ledgerSourceHashes({
     tokenSales: sourceCollectionFingerprint(tokenState?.sales),
     tokenInvalidEvents: sourceCollectionFingerprint(tokenState?.invalidEvents),
     tokenTransfers: sourceCollectionFingerprint(tokenState?.transfers),
+    ...(tokenState?.transferBatches?.length ? {
+      tokenTransferBatches: sourceCollectionFingerprint(tokenState.transferBatches),
+    } : {}),
     tokens: sourceCollectionFingerprint(tokenState?.tokens),
     workInvalidEvents: sourceCollectionFingerprint(workTokenState?.invalidEvents),
     workMints: sourceCollectionFingerprint(workTokenState?.mints),
     workSales: sourceCollectionFingerprint(workTokenState?.sales),
     workTransfers: sourceCollectionFingerprint(workTokenState?.transfers),
+    ...(workTokenState?.transferBatches?.length ? {
+      workTransferBatches: sourceCollectionFingerprint(workTokenState.transferBatches),
+    } : {}),
   };
 }
 
@@ -47045,7 +47234,7 @@ function growthDeltaForProofIndexEvents(events) {
       addScaled("tokenCreationFlowSats", "tokenSats", sats);
     } else if (kind === "token-mint") {
       addScaled("tokenMintFlowSats", "tokenSats", sats);
-    } else if (kind === "token-transfer") {
+    } else if (kind === "token-transfer" || kind === "token-transfer-batch") {
       delta.tokenTransferFlowSats += sats;
       delta.walletFlowSats += sats;
       delta.walletSats += sats * GROWTH_MODEL_INPUTS.valueMultiple;
@@ -48172,7 +48361,7 @@ async function ledgerWithReplayedCreditNetworkValues(
       registryState.sales ?? [],
       initialTokenState.tokens ?? [],
       initialTokenState.mints ?? [],
-      initialTokenState.transfers ?? [],
+      economicTokenTransfersFromState(initialTokenState),
       initialTokenState.sales ?? [],
     ),
     canonicalMinerFeeCoverage,
@@ -48182,7 +48371,7 @@ async function ledgerWithReplayedCreditNetworkValues(
     tokenDefinitions: initialTokenState.tokens ?? [],
     tokenMints: initialTokenState.mints ?? [],
     tokenSales: initialTokenState.sales ?? [],
-    tokenTransfers: initialTokenState.transfers ?? [],
+    tokenTransfers: economicTokenTransfersFromState(initialTokenState),
   });
   const tokenState = tokenStateWithCreditNetworkValueDetails(
     initialTokenState,
@@ -48579,6 +48768,17 @@ function tokenStateLogExpectations(tokenState) {
     });
   }
 
+  for (const parent of tokenState?.transferBatches ?? []) {
+    if (!parent?.confirmed) continue;
+    add({
+      kind: "token-transfer-batch",
+      participants: [parent.senderAddress, parent.registryAddress,
+        ...(parent.recipients ?? []).map((recipient) => recipient.recipientAddress)].filter(Boolean),
+      tokenId: parent.tokenId,
+      txid: parent.txid,
+    });
+  }
+
   for (const listing of [
     ...(tokenState?.listings ?? []),
     ...(tokenState?.closedListings ?? []).filter(
@@ -48721,6 +48921,11 @@ function tokenComponentCoverageFromConfirmedActivity(activity, tokenState) {
     transfers: (tokenState?.transfers ?? []).filter((item) => item?.confirmed)
       .length,
   };
+  if (confirmedActivity.some((item) => item.kind === "token-transfer-batch") ||
+      tokenState?.transferBatches?.length) {
+    activityCounts.transferBatches = confirmedActivity.filter((item) => item.kind === "token-transfer-batch").length;
+    stateCounts.transferBatches = (tokenState?.transferBatches ?? []).filter((item) => item?.confirmed).length;
+  }
   const missing = Object.keys(activityCounts).filter(
     (key) => activityCounts[key] > 0 && stateCounts[key] === 0,
   );
@@ -51630,10 +51835,12 @@ function tokenTransferFromIndexedActivityItem(
   );
   return {
     ...canonicalEventIdentityDetails(item),
+    ...workBatchChildIdentityFields(item),
     ...amountFields,
     ...tokenCreditAmountMovedFields({
       ...amountRecord,
       ...amountFields,
+      ...workBatchChildIdentityFields(item),
       tokenId: token.tokenId,
     }),
     ...(item?.amountVersion ? { amountVersion: item.amountVersion } : {}),
@@ -51957,6 +52164,7 @@ async function tokenValueStateFromIndexedActivity(
   };
   const mints = [];
   const transfers = [];
+  const transferBatches = [];
   const listingTermsById = new Map();
 
   for (const item of activityState.activity) {
@@ -52067,6 +52275,22 @@ async function tokenValueStateFromIndexedActivity(
         txid: String(item.txid ?? "").toLowerCase(),
         ...canonicalCreditValueFieldsFromRecord(item),
       });
+    } else if (item.kind === "token-transfer-batch") {
+      if (item.confirmed !== false && item.valid !== false) {
+        const parent = {
+          ...item,
+          ...activityPositionFields(item),
+          ...canonicalMinerFeeDetailsFromActivity(item),
+          confirmed: true,
+          network,
+          paidSats: Number(item.paidSats ?? item.registryMutationFeeSats ?? item.amountSats),
+          senderAddress: indexedActivityValue(item, "senderAddress", "actor"),
+          ticker: token.ticker,
+          tokenId: token.tokenId,
+        };
+        workBatchEconomicTransfer(parent);
+        transferBatches.push(parent);
+      }
     } else if (item.kind === "token-transfer") {
       const transfer = tokenTransferFromIndexedActivityItem(
         item,
@@ -52498,6 +52722,7 @@ async function tokenValueStateFromIndexedActivity(
     },
     tokens: scopedTokens,
     transfers,
+    ...(transferBatches.length ? { transferBatches } : {}),
   };
 }
 
@@ -53379,7 +53604,7 @@ async function buildIndexedCanonicalLedgerPayload(
       registryState.sales ?? [],
       ledgerTokenState.tokens ?? [],
       ledgerTokenState.mints ?? [],
-      ledgerTokenState.transfers ?? [],
+      economicTokenTransfersFromState(ledgerTokenState),
       ledgerTokenState.sales ?? [],
     ),
     canonicalMinerFeeCoverage: activityState?.canonicalMinerFeeCoverage,
@@ -53389,7 +53614,7 @@ async function buildIndexedCanonicalLedgerPayload(
     tokenDefinitions: ledgerTokenState.tokens ?? [],
     tokenMints: ledgerTokenState.mints ?? [],
     tokenSales: ledgerTokenState.sales ?? [],
-    tokenTransfers: ledgerTokenState.transfers ?? [],
+    tokenTransfers: economicTokenTransfersFromState(ledgerTokenState),
   });
   markTiming("credit-value");
   let valuedTokenState = tokenStateWithCreditNetworkValueDetails(
@@ -54054,7 +54279,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
       registryState.sales ?? [],
       ledgerTokenState.tokens ?? [],
       ledgerTokenState.mints ?? [],
-      ledgerTokenState.transfers ?? [],
+      economicTokenTransfersFromState(ledgerTokenState),
       ledgerTokenState.sales ?? [],
     ),
     canonicalMinerFeeCoverage: activityState?.canonicalMinerFeeCoverage,
@@ -54064,7 +54289,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
     tokenDefinitions: ledgerTokenState.tokens ?? [],
     tokenMints: ledgerTokenState.mints ?? [],
     tokenSales: ledgerTokenState.sales ?? [],
-    tokenTransfers: ledgerTokenState.transfers ?? [],
+    tokenTransfers: economicTokenTransfersFromState(ledgerTokenState),
   });
   ledgerTokenState = tokenStateWithCreditNetworkValueDetails(
     ledgerTokenState,
@@ -61265,6 +61490,7 @@ function activityKindHasDedicatedGrowthBucket(item) {
     item.kind === "token-create" ||
     item.kind === "token-mint" ||
     item.kind === "token-transfer" ||
+    item.kind === "token-transfer-batch" ||
     item.kind === "token-sale"
   );
 }
@@ -62301,6 +62527,7 @@ function creditNetworkValueMetrics({
             workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
           })
         : workSubatomsBigIntFromRecord(item, {
+            allowZero: isWorkBatchTransferParent(item),
             convertLegacyAtoms: true,
           })
       : null;
@@ -62320,7 +62547,8 @@ function creditNetworkValueMetrics({
       createdMs > cutoffMs ||
       (
         workMovement
-          ? amountSubatoms === null || amountSubatoms <= 0n
+          ? amountSubatoms === null || amountSubatoms < 0n ||
+            (amountSubatoms === 0n && !isWorkBatchTransferParent(item))
           : amountUnits === null
       )
     ) {
@@ -62344,6 +62572,7 @@ function creditNetworkValueMetrics({
       movementIdentity: creditMovementIdentity(item, kind),
       order: 1,
       source: item,
+      ...(isWorkBatchTransferParent(item) ? { sourceKind: "token-transfer-batch" } : {}),
       token,
       txid,
     });
@@ -62806,6 +63035,12 @@ function tokenStateWithScopedTokenOverride(tokenState, scopedState, tokenId) {
       scopedState.tokens,
       scopedTokenKey,
     ),
+    ...(Array.isArray(tokenState?.transferBatches) || Array.isArray(scopedState.transferBatches) ? {
+      transferBatches: mergeScopedItems(
+        tokenState?.transferBatches, scopedState.transferBatches,
+        tokenTransferHistoryItemKey, mergeCreditNetworkValueRecord,
+      ),
+    } : {}),
     transfers: mergeScopedItems(
       tokenState?.transfers,
       scopedState.transfers,
@@ -62890,6 +63125,9 @@ function tokenStateWithExactScopedTokenReplacement(
     mints: replaceScopedItems(tokenState?.mints, scopedState.mints),
     sales: replaceScopedItems(tokenState?.sales, scopedState.sales),
     tokens: replaceScopedItems(tokenState?.tokens, scopedState.tokens),
+    ...(Array.isArray(tokenState?.transferBatches) || Array.isArray(scopedState.transferBatches) ? {
+      transferBatches: replaceScopedItems(tokenState?.transferBatches, scopedState.transferBatches),
+    } : {}),
     transfers: replaceScopedItems(
       tokenState?.transfers,
       scopedState.transfers,
@@ -63931,6 +64169,7 @@ function growthActualLiveTotalSatsAtProvider(
             workAmountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
           })
         : workSubatomsBigIntFromRecord(item, {
+            allowZero: isWorkBatchTransferParent(item),
             convertLegacyAtoms: true,
           })
       : null;
@@ -63945,7 +64184,8 @@ function growthActualLiveTotalSatsAtProvider(
       !Number.isFinite(createdMs) ||
       (
         workMovement
-          ? amountSubatoms === null || amountSubatoms <= 0n
+          ? amountSubatoms === null || amountSubatoms < 0n ||
+            (amountSubatoms === 0n && !isWorkBatchTransferParent(item))
           : amountUnits === null
       )
     ) {
@@ -63966,6 +64206,7 @@ function growthActualLiveTotalSatsAtProvider(
       kind,
       order: 1,
       source: item,
+      ...(isWorkBatchTransferParent(item) ? { sourceKind: "token-transfer-batch" } : {}),
       token,
       txid,
     });
@@ -64550,7 +64791,7 @@ function growthRealEventItems(
   }
 
   for (const transfer of tokenTransfers) {
-    if (!transfer.confirmed) {
+    if (!transfer.confirmed || isWorkBatchTransferChild(transfer)) {
       continue;
     }
 
@@ -64563,6 +64804,20 @@ function growthRealEventItems(
       network: transfer.network,
       title: "Wallet transfer",
       txid: transfer.txid,
+    });
+  }
+
+  for (const parent of idActivity.filter(isWorkBatchTransferParent)) {
+    if (!parent.confirmed) continue;
+    setEvent({
+      amountLabel: `${Number(parent.paidSats ?? parent.amountSats).toLocaleString()} registry proofs`,
+      createdAt: parent.createdAt,
+      detail: `${parent.recipientCount} WORK recipients in one atomic transfer.`,
+      key: parent.txid,
+      kind: "Wallet",
+      network: parent.network,
+      title: "WORK batch transfer",
+      txid: parent.txid,
     });
   }
 
@@ -64815,7 +65070,7 @@ function workFloorPayloadFromState(
     registryState.sales ?? [],
     valueTokenState.tokens ?? [],
     valueTokenState.mints ?? [],
-    valueTokenState.transfers ?? [],
+    economicTokenTransfersFromState(valueTokenState),
     tokenSalesForValue,
     valueCutoffMs,
     {
@@ -64953,7 +65208,7 @@ function workFloorPayloadFromState(
     registryState.sales ?? [],
     valueTokenState.tokens ?? [],
     valueTokenState.mints ?? [],
-    valueTokenState.transfers ?? [],
+    economicTokenTransfersFromState(valueTokenState),
     tokenSalesForValue,
     {
       canonicalBaseLookupDiagnostics:
@@ -68414,10 +68669,8 @@ function workAmoV5HistoricalMovements(tokenState, throughHeight) {
     : []) {
     add(mint, "mint");
   }
-  for (const transfer of Array.isArray(tokenState?.transfers)
-    ? tokenState.transfers
-    : []) {
-    add(transfer, "transfer");
+  for (const transfer of economicTokenTransfersFromState(tokenState)) {
+    add(transfer, isWorkBatchTransferParent(transfer) ? "batch-transfer" : "transfer");
   }
   for (const sale of Array.isArray(tokenState?.sales)
     ? tokenState.sales
