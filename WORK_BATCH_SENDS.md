@@ -256,3 +256,10 @@ confirmation is uncertain requires evidence review before any code rollback.
 It returns activation, write/readiness flags, exact checked tip, declaration
 identity, limits and the 546-proof registry payment. A boolean from a browser,
 test fixture or environment variable cannot establish chain authority.
+
+## Ordinary Mail extension
+
+[WORK Mail Attachments V1](WORK_MAIL_BATCH_SENDS.md) defines the separate
+`mailbatch1` form. It has its own forward declaration and activation gate.
+The standalone `batch1` association prohibition and original signed declaration
+remain unchanged.

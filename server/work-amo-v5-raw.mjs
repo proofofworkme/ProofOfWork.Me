@@ -5,6 +5,9 @@ import { exactCodeOutputProofs } from "./code-repositories.mjs";
 import { parseWorkBatchPayload, workBatchNonSelfAmountSubatoms } from "../src/shared/protocol/workBatch.mjs";
 import { WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, workBatchDeclarationPaymentOrderValid } from "./work-batch-declaration.mjs";
 import { validateWorkBatchV1RawTransaction } from "./work-batch-transaction.mjs";
+import { parseWorkMailBatchPayload, workMailBatchNonSelfAmountSubatoms } from "../src/shared/protocol/workMailBatch.mjs";
+import { normalizeWorkMailBatchDeclarationPins, WORK_MAIL_BATCH_DECLARATION_COMMITMENT_MODEL } from "./work-mail-batch-declaration.mjs";
+import { validateWorkMailBatchV1RawTransaction } from "./work-mail-batch-transaction.mjs";
 import {
   DNS_SUBDOMAIN_ACTIVATION_HEIGHT,
   DNS_SUBDOMAIN_PREFIX,
@@ -4167,7 +4170,128 @@ function evaluateWorkBatch(record, context) {
   };
 }
 
+function evaluateWorkMailBatch(record, context) {
+  const parsed = parseWorkMailBatchPayload(record.message);
+  const invalid = (reasonCode) => invalidOutcome(
+    reasonCode,
+    parsed,
+    "token-transfer-batch",
+  );
+  if (!parsed) {
+    return invalid("work-mail-batch-v1-payload-invalid");
+  }
+  if (
+    !context.workMailBatchV1 ||
+    record.position.blockHeight < context.workMailBatchV1.activationHeight ||
+    context.workState.amountStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+    !context.workAmoV8
+  ) {
+    return invalid("work-mail-batch-v1-not-active");
+  }
+
+  const transaction = validateWorkMailBatchV1RawTransaction({
+    transaction: record.tx,
+    protocolVout: record.position.protocolVout,
+    recordOrdinal: record.position.recordOrdinal,
+  });
+  if (!transaction.valid) return invalid(transaction.reasonCode);
+  const { senderAddress, registryPayment, mailEnvelope } = transaction;
+  const claimedMail = context.claimedByTxid.get(record.txid);
+  // The earlier ordinary Mail record is independently valid. An invalid WORK
+  // attachment never rolls its proof contribution back, nor applies a prefix
+  // of WORK recipients. Require its exact payments to have been accepted.
+  if (!mailEnvelope.recipients.every(payment => claimedMail?.has(payment.vout))) {
+    return invalid("work-mail-batch-v1-mail-not-accepted");
+  }
+  const movementAmountSubatoms = workMailBatchNonSelfAmountSubatoms(parsed, senderAddress);
+  const batchPayloadCommitment = workAmoV5CanonicalPayloadCommitment({ payload: record.message });
+
+  const workState = cloneWorkState(context.workState);
+  const totalAmount = BigInt(parsed.totalAmountSubatoms);
+  // Validate and debit the entire batch before any credit, including self-send
+  // credits. A partially fundable batch must never mutate even one recipient.
+  if (
+    workSpendable(workState, senderAddress) < totalAmount ||
+    !adjustWorkBalance(workState, senderAddress, -totalAmount) ||
+    parsed.recipients.some(({ recipientAddress, amountSubatoms }) =>
+      !adjustWorkBalance(workState, recipientAddress, BigInt(amountSubatoms)))
+  ) {
+    return invalid("work-mail-batch-v1-insufficient-spendable-balance");
+  }
+  const claimed = claimedForTx(context.claimedByTxid, record.txid);
+  if (claimed.has(registryPayment.vout)) {
+    return invalid("work-mail-batch-v1-registry-payment-already-claimed");
+  }
+  claimed.add(registryPayment.vout);
+  const output = {
+    amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    amountVersion: "mailbatch1",
+    paidSats: WORK_AMO_V5_MIN_PAYMENT_SATS,
+    amountSubatoms: parsed.totalAmountSubatoms,
+    batchRegistryPaymentSats: WORK_AMO_V5_MIN_PAYMENT_SATS,
+    batchPayloadCommitment,
+    mailEnvelope,
+    movementAmountSubatoms,
+    recipientCount: parsed.recipientCount,
+    recipients: parsed.recipients,
+    senderAddress,
+    tokenId: WORK_TOKEN_ID,
+    totalAmountSubatoms: parsed.totalAmountSubatoms,
+    transferVersion: "mailbatch1",
+  };
+  return {
+    claimed,
+    derived: parsed.recipients.map((recipient, batchRecipientIndex) => ({
+      ...recipient,
+      amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+      amountVersion: "mailbatch1",
+      batchRecipientCount: parsed.recipientCount,
+      batchPayloadCommitment,
+      mailEnvelope,
+      batchRecipientIndex,
+      batchTotalAmountSubatoms: parsed.totalAmountSubatoms,
+      kind: "token-transfer",
+      paidSats: 0,
+      registryMutationFeeSats: 0,
+      senderAddress,
+      tokenId: WORK_TOKEN_ID,
+      transferVersion: "mailbatch1",
+    })),
+    output,
+    parsed,
+    reasonCode: "",
+    semanticKind: "token-transfer-batch",
+    stateDelta: normalizeStateDelta({
+      baseContributions: [{
+        field: "tokenTransferFlowSats",
+        value: String(WORK_AMO_V5_MIN_PAYMENT_SATS),
+      }],
+      creditFixedSats: String(WORK_AMO_V5_MIN_PAYMENT_SATS),
+      economicOutputs: [{
+        address: registryPayment.address,
+        attributedSats: String(WORK_AMO_V5_MIN_PAYMENT_SATS),
+        outputSats: String(WORK_AMO_V5_MIN_PAYMENT_SATS),
+        role: "pwt-token-registry",
+        vout: registryPayment.vout,
+      }],
+      // One aggregate integer valuation freezes at the batch opening state.
+      // Recipient observations never create extra frozen or live movements.
+      movement: {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+        amountSubatoms: movementAmountSubatoms,
+        identity: `mail-batch-transfer:${record.txid}:${record.position.protocolVout}:${record.position.recordOrdinal}`,
+      },
+    }),
+    valid: true,
+    workState,
+  };
+}
+
 function evaluatePwt(record, context) {
+  if (record.message.startsWith("pwt1:mailbatch1:") && context.workMailBatchV1 &&
+      record.position.blockHeight >= context.workMailBatchV1.activationHeight) {
+    return evaluateWorkMailBatch(record, context);
+  }
   if (record.message.startsWith("pwt1:batch1:") && context.workBatchV1 &&
       record.position.blockHeight >= context.workBatchV1.activationHeight) {
     return evaluateWorkBatch(record, context);
@@ -5255,6 +5379,22 @@ function normalizedWorkBatchV1ReplayContext({ blockHeight, workBatchV1 }) {
   return { commitment, evaluation: commitment };
 }
 
+function normalizedWorkMailBatchV1ReplayContext({ blockHeight, workMailBatchV1 }) {
+  const pins = normalizeWorkMailBatchDeclarationPins({ ...workMailBatchV1?.declaration,
+    activationHeight: workMailBatchV1?.activationHeight });
+  const evidence = workMailBatchV1?.evidenceCommitment;
+  if (!pins || workMailBatchV1?.canonical !== true || workMailBatchV1?.confirmed !== true ||
+      workMailBatchV1?.evidenceComplete !== true || blockHeight < pins.activationHeight ||
+      evidence?.model !== WORK_MAIL_BATCH_DECLARATION_COMMITMENT_MODEL ||
+      !normalizedTxid(evidence?.sha256) || exactSafeInteger(evidence?.payloadBytes, { positive: true }) === null) {
+    return { commitment: null, evaluation: null };
+  }
+  const { activationHeight, ...declaration } = pins;
+  const commitment = { activationHeight, declaration,
+    evidenceCommitment: { model: evidence.model, payloadBytes: evidence.payloadBytes, sha256: evidence.sha256 } };
+  return { commitment, evaluation: commitment };
+}
+
 export function replayWorkAmoV5RawBlock({
   blockHeaderHex,
   blockTransactions,
@@ -5270,6 +5410,7 @@ export function replayWorkAmoV5RawBlock({
   workAmoV6 = null,
   workAmoV8 = null,
   workBatchV1 = null,
+  workMailBatchV1 = null,
 } = {}) {
   const openingValidation = validateWorkAmoV5SufficientState(
     openingEconomicState,
@@ -5420,6 +5561,9 @@ export function replayWorkAmoV5RawBlock({
     blockHeight: requiredBlockHeight,
     workBatchV1,
   });
+  const mailBatchReplay = normalizedWorkMailBatchV1ReplayContext({
+    blockHeight: requiredBlockHeight, workMailBatchV1,
+  });
   const countsByTxid = new Map();
   const protocolRecordCountsByTxid = new Map();
   const validPwaRecordCountsByTxid = new Map();
@@ -5511,6 +5655,9 @@ export function replayWorkAmoV5RawBlock({
     ...(batchReplay.commitment
       ? { workBatchV1: batchReplay.commitment }
       : {}),
+    ...(mailBatchReplay.commitment
+      ? { workMailBatchV1: mailBatchReplay.commitment }
+      : {}),
   });
   for (let index = 0; index < ordered.length; index += 1) {
     const record = ordered[index];
@@ -5537,6 +5684,7 @@ export function replayWorkAmoV5RawBlock({
           workAmoV6: v6Replay.evaluation,
           workAmoV8: v7Replay.evaluation,
           workBatchV1: batchReplay.evaluation,
+          workMailBatchV1: mailBatchReplay.evaluation,
           workAggregateRegistryGroupsByTxid,
           workSendsByTxid,
           workState,
@@ -5875,6 +6023,9 @@ export function replayWorkAmoV5RawBlock({
     ...(batchReplay.commitment
       ? { workBatchV1: batchReplay.commitment }
       : {}),
+    ...(mailBatchReplay.commitment
+      ? { workMailBatchV1: mailBatchReplay.commitment }
+      : {}),
     records: ordered,
     stateCommitment,
     tokenStateCommitment,
@@ -6129,7 +6280,7 @@ export function projectWorkAmoV5RawEvents(
         ticker: "WORK",
         tokenId: WORK_TOKEN_ID,
       });
-    } else if (event.parsed?.kind === "batch") {
+    } else if (event.parsed?.kind === "batch" || event.parsed?.kind === "mail-batch") {
       next.transferBatches ??= [];
       if (!next.transferBatches.some(batch => batch.txid === base.txid &&
           batch.protocolVout === base.protocolVout && batch.recordOrdinal === base.recordOrdinal)) {
@@ -6137,8 +6288,9 @@ export function projectWorkAmoV5RawEvents(
           ...base,
           amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
           amountSubatoms: event.parsed.totalAmountSubatoms,
-          amountVersion: "batch1",
+          amountVersion: event.parsed.amountVersion,
           batchPayloadCommitment: projection.batchPayloadCommitment,
+          ...(event.parsed.kind === "mail-batch" ? { mailEnvelope: structuredClone(projection.mailEnvelope) } : {}),
           batchRegistryPaymentSats: WORK_AMO_V5_MIN_PAYMENT_SATS,
           kind: "token-transfer-batch",
           movementAmountSubatoms: projection.movementAmountSubatoms,
@@ -6149,21 +6301,22 @@ export function projectWorkAmoV5RawEvents(
           ticker: "WORK",
           tokenId: WORK_TOKEN_ID,
           totalAmountSubatoms: event.parsed.totalAmountSubatoms,
-          transferVersion: "batch1",
+          transferVersion: event.parsed.amountVersion,
           transitionChainCommitmentAfter: event.transitionChainCommitmentAfter,
         });
       }
       for (const child of event.derived ?? []) {
-        if (child.kind !== "token-transfer" || child.transferVersion !== "batch1") {
+        if (child.kind !== "token-transfer" || child.transferVersion !== event.parsed.amountVersion) {
           continue;
         }
         next.transfers.push({
           ...baseEventProjection({ ...event, position: child.projectionPosition }),
           amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
           amountSubatoms: child.amountSubatoms,
-          amountVersion: "batch1",
+          amountVersion: event.parsed.amountVersion,
           batchRecipientCount: child.batchRecipientCount,
           batchPayloadCommitment: child.batchPayloadCommitment,
+          ...(event.parsed.kind === "mail-batch" ? { mailEnvelope: structuredClone(child.mailEnvelope) } : {}),
           batchRecipientIndex: child.batchRecipientIndex,
           batchTotalAmountSubatoms: child.batchTotalAmountSubatoms,
           chargesTransactionFee: false,
@@ -6181,7 +6334,7 @@ export function projectWorkAmoV5RawEvents(
           senderAddress: child.senderAddress,
           ticker: "WORK",
           tokenId: WORK_TOKEN_ID,
-          transferVersion: "batch1",
+          transferVersion: event.parsed.amountVersion,
         });
       }
     } else if (event.parsed?.kind === "send") {

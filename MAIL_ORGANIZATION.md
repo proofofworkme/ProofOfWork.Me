@@ -279,7 +279,7 @@ Mail organization features that are already implemented in the full app:
 - CC compose support for visible additional recipients.
 - Multi-recipient compose with removable recipient chips.
 - Reply All for multi-recipient mail.
-- Connected mainnet senders with authoritative spendable WORK can attach canonical WORK credit to a message. The message remains normal mail, while the same tx also carries the WORK registry mutation payment and era-valid atomic WORK payloads for the mail recipients: historical Q8 `pwt1:send2`, then Q16 `pwt1:send3` only after the approved V8 precision declaration confirms in block `D` and activates at `D+1`. The V7 proposal never activated and its empty pins cannot authorize `send3`. A multi-recipient attachment uses one exact `546 * recipientCount` WORK-registry output after the `pwm1:` mail envelope and before every same-era WORK transfer record; replay attributes exactly 546 proofs to each transfer while claiming the physical output once. Raw legacy attachments retain their original scale.
+- Connected mainnet senders with authoritative spendable WORK can attach canonical WORK credit to a message. The message remains normal mail, while the same tx also carries the WORK registry mutation payment and era-valid atomic WORK payloads for the mail recipients: historical Q8 `pwt1:send2`, then Q16 `pwt1:send3` only after the approved V8 precision declaration confirms in block `D` and activates at `D+1`. The V7 proposal never activated and its empty pins cannot authorize `send3`. A legacy multi-recipient attachment uses one exact `546 * recipientCount` WORK-registry output after the `pwm1:` mail envelope and before every same-era WORK transfer record; replay attributes exactly 546 proofs to each transfer while claiming the physical output once. Raw legacy attachments retain their original scale.
 - Files view for confirmed attachments.
 - Desktop search for confirmed public attachments by address or confirmed ProofOfWork ID.
 - Search workspace at `/?folder=search` for protocol records, public content, verified readable file text and transaction evidence. It requires no wallet. Confirmed valid results are the default; explicit status and validity filters expose pending, historical invalid and raw-carrier records. Filters and source selection are shareable URL state, not mailbox organization. See [SEARCH.md](SEARCH.md).
@@ -773,7 +773,7 @@ Multi-recipient mail:
 - The reader derives recipients from payment outputs, not OP_RETURN data.
 - To/CC labels are local sender-side organization metadata. Recipients can see payment outputs on-chain, but the protocol does not currently make role labels authoritative for every recipient.
 - Reply targets the sender; Reply All targets the sender plus other payment-output recipients, excluding the connected wallet address.
-- Keep the current cap at 10 recipients until wallet signing UX and fee estimates have more production mileage.
+- Ordinary Mail accepts up to 256 distinct resolved To/CC recipients. WORK attachments use the separately gated [Mail batch extension](WORK_MAIL_BATCH_SENDS.md); verified inactive legacy attachments retain the ten-recipient limit and per-recipient registry fees.
 
 WORK attachment admission:
 
@@ -789,8 +789,11 @@ WORK attachment admission:
 - Once the sender enters a positive WORK amount, Send also requires a current
   WORK protocol-admission read. Before the V8 declaration boundary, an exactly
   Q8-representable attachment writes `pwt1:send2`. At and after the V8 boundary,
-  it writes `pwt1:send3` only when exact Q16 admission is ready. An observed V8
-  boundary never falls back to `send2`.
+  legacy attachments write `pwt1:send3` only when exact Q16 admission is ready. An observed V8
+  boundary never falls back to `send2`. Once the independent Mail batch gate is ready, ordinary
+  Mail uses one `mailbatch1` attachment and one 546-proof registry payment for its full
+  ordered recipient vector. An unavailable or active-but-unready Mail batch gate never
+  falls back to legacy fees; verified inactive status permits legacy attachments.
 - A positive WORK attachment fails closed while wallet authority or protocol
   admission is loading, unavailable, stale, paused, or inconsistent. The Send
   control stays disabled and the composer renders a visible status explaining
@@ -1116,7 +1119,11 @@ authority accompanies the navigation. Desktop extension behavior is unchanged.
 
 ## WORK batch sends and Mail
 
-The staged [WORK batch](WORK_BATCH_SENDS.md) flow lives in Wallet transfers,
-including Computer's Wallet workspace. It is a standalone credit operation;
-Mail keeps its current recipient limit, proof payments and separately charged
-WORK attachments. A batch is not an attachment receipt for Mail, Boost or Jobs.
+The [standalone WORK batch](WORK_BATCH_SENDS.md) flow lives in Wallet transfers,
+including Computer's Wallet workspace. Its `batch1` records do not authorize
+Mail, Boost or Jobs attachments. The separate [WORK Mail extension](WORK_MAIL_BATCH_SENDS.md)
+adds `mailbatch1`: one 546-proof registry payment for up to 256 ordinary Mail
+recipients, including all 78 wallets in one transaction. Recipient proof payments
+and miner fees remain separate. The entire WORK vector applies atomically while
+ordinary Mail remains independently valid. Confirmed history verifies the parent,
+complete sibling set and ordinary Mail envelope before displaying derived credits.

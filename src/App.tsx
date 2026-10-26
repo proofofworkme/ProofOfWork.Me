@@ -5,7 +5,8 @@ import { BrandMark } from "./shared/components/BrandMark";
 import { WorkBatchPanel } from "./features/work-batch/WorkBatchPanel";
 import { assertSameWorkBatchRoutes, assertWorkBatchReady, resolveWorkBatchDraft, type WorkBatchDraft } from "./features/work-batch/workBatchClient.mjs";
 import { buildWorkBatchPayload, WORK_BATCH_REGISTRY_FEE_PROOFS } from "./shared/protocol/workBatch.mjs";
-import { assertNoUnresolvedWorkBatch, WORK_BATCH_RECEIPT_MARKER } from "./shared/work/workBatchRecovery";
+import { assertNoUnresolvedWorkBatch, WORK_BATCH_RECEIPT_MARKER, WORK_MAIL_BATCH_RECEIPT_MARKER } from "./shared/work/workBatchRecovery";
+import { assertSameMailRoutes, canonicalMailRecipients, planWorkMailAttachment, readWorkMailBatchStatus, workMailAttachmentMode, type WorkMailBatchStatus, type WorkMailAttachmentPlan } from "./features/mail-work-batch/workMailBatchClient.mjs";
 import { LedgerChart, type ChartPoint, type ChartSeries } from "./shared/charts/LedgerChart";
 import { APP_ICONS } from "./app/appIcons";
 import type { PagesPublicationDraft, PagesDnsLinkRequest, PagesViewState, PagesBrowserTarget } from "./features/pages/PagesWorkspace";
@@ -2195,7 +2196,7 @@ const DEFAULT_AMOUNT_SATS = 546;
 const DEFAULT_FEE_RATE = 1;
 const DEFAULT_BROWSER_INTENT_FEE_RATE = 1;
 const DEFAULT_MEMO = "";
-const MAX_RECIPIENTS = 10;
+const MAX_RECIPIENTS = 256;
 
 type GrowthValuePoint = {
   label: string;
@@ -6475,7 +6476,7 @@ function storedAttachedCredits(
         amount: workNumberFromAtoms(amountAtoms),
         amountAtoms: credit.amountAtoms,
         amountSubatoms: amountAtoms.toString(),
-        paidSats: paidSats > 0 ? paidSats : undefined,
+        paidSats: credit.paidSats !== undefined && Number.isSafeInteger(paidSats) && paidSats >= 0 ? paidSats : undefined,
         recipientAddress,
         registryAddress: isValidBitcoinAddress(registryAddress, network)
           ? registryAddress
@@ -22214,6 +22215,21 @@ export default function App() {
   const workBatchInFlightRef = useRef(false);
   const loadWorkBatchStatus = useCallback((signal?: AbortSignal) =>
     fetchProofApiJson<unknown>("/api/v1/work-batch-status?fresh=1", "livenet", { signal }), []);
+  const [mailWorkBatchStatus, setMailWorkBatchStatus] = useState<WorkMailBatchStatus>();
+  const [mailWorkBatchStatusError, setMailWorkBatchStatusError] = useState("");
+  const mailWorkBatchObservedStatusRef = useRef<WorkMailBatchStatus>();
+  const loadWorkMailBatchStatus = useCallback(async (signal?: AbortSignal) => {
+    const current = readWorkMailBatchStatus(await fetchProofApiJson<unknown>(
+      "/api/v1/work-mail-batch-status?fresh=1", "livenet", { signal }));
+    const previous = mailWorkBatchObservedStatusRef.current;
+    if (previous && (current.checkedTipHeight < previous.checkedTipHeight ||
+        current.checkedTipHeight === previous.checkedTipHeight && current.checkedTipHash !== previous.checkedTipHash ||
+        previous.active && (!current.active || current.declarationTxid !== previous.declarationTxid || current.activationHeight !== previous.activationHeight))) {
+      throw new Error("Mail WORK activation changed. Refresh the verified chain state before sending.");
+    }
+    if (!previous || current.checkedTipHeight >= previous.checkedTipHeight) mailWorkBatchObservedStatusRef.current = current;
+    return current;
+  }, []);
   const resolveWorkBatchRecipients = useCallback((recipients: string, amountEach: string, signal?: AbortSignal) =>
     resolveWorkBatchDraft(recipients, amountEach, {
       signal,
@@ -24019,9 +24035,14 @@ export default function App() {
   const ccRecipientNote = ccRecipient.trim()
     ? recipientResolutionNote(ccRecipientResolution)
     : "";
-  const totalResolvedRecipients =
-    recipientResolution.recipients.length +
-    ccRecipientResolution.recipients.length;
+  const mailRecipientPlan = useMemo(() => {
+    if (!recipientResolution.recipients.length && !ccRecipientResolution.recipients.length) return { routes: [], error: "" };
+    try {
+      return { routes: canonicalMailRecipients(recipientResolution.recipients, ccRecipientResolution.recipients, network), error: "" };
+    } catch (error) { return { routes: [], error: errorMessage(error, "Mail recipient routes are unavailable.") }; }
+  }, [recipientResolution, ccRecipientResolution, network]);
+  const mailRecipientRoutes = mailRecipientPlan.routes;
+  const totalResolvedRecipients = mailRecipientRoutes.length;
   const parsedMessageWorkAmountAtoms = workAtomsFromDecimal(messageWorkAmount);
   const messageWorkAmountInvalid =
     messageWorkAmount.trim() !== "" && parsedMessageWorkAmountAtoms === null;
@@ -24125,55 +24146,24 @@ export default function App() {
   const workAttachmentVisible =
     (messageWorkAttachmentAllowed && workAttachmentSpendableAtoms > 0n) ||
     messageWorkAmountAtoms > 0n;
-  const messageWorkRecipientAddresses = useMemo(() => {
-    const addresses: string[] = [];
-    const addRecipient = (recipientItem: RecipientResolution) => {
-      if (
-        !recipientItem.paymentAddress ||
-        !isValidBitcoinAddress(recipientItem.paymentAddress, network) ||
-        addresses.some((existing) =>
-          samePaymentAddress(existing, recipientItem.paymentAddress),
-        )
-      ) {
-        return;
-      }
-
-      addresses.push(recipientItem.paymentAddress);
-    };
-
-    recipientResolution.recipients.forEach(addRecipient);
-    ccRecipientResolution.recipients.forEach(addRecipient);
-    return addresses;
-  }, [ccRecipientResolution, network, recipientResolution]);
-  const workAttachmentPayloads = useMemo(
-    () =>
-      messageWorkAmountAtoms > 0n && messageWorkAttachmentAllowed
-        ? messageWorkRecipientAddresses
-            .map((recipientAddress) =>
-            tryBuildTokenSendPayload(
-              WORK_TOKEN_ID,
-              workDecimalFromAtoms(messageWorkAmountAtoms),
-              recipientAddress,
-              mailWorkWriteMode,
-            ),
-          )
-            .filter(Boolean)
-        : [],
-    [
-      messageWorkAmountAtoms,
-      messageWorkRecipientAddresses,
-      messageWorkAttachmentAllowed,
-      mailWorkWriteMode,
-    ],
-  );
-  const mailWorkPayloadUnavailable =
-    mailWorkAttachmentRequested &&
-    !mailWorkAdmissionChecking &&
-    !mailWorkAdmissionPaused &&
-    messageWorkRecipientAddresses.length > 0 &&
-    workAttachmentPayloads.length === 0;
-  const workAttachmentTotalAtoms =
-    messageWorkAmountAtoms * BigInt(workAttachmentPayloads.length);
+  const messageWorkRecipientAddresses = mailRecipientRoutes.map(item => item.address);
+  const mailWorkAttachmentPreview = useMemo((): { plan?: WorkMailAttachmentPlan; error: string } => {
+    if (!mailWorkAttachmentRequested || !mailRecipientRoutes.length) return { error: "" };
+    try {
+      return { plan: planWorkMailAttachment({ recipients: mailRecipientRoutes,
+        amountSubatoms: messageWorkAmountAtoms.toString(), status: mailWorkBatchStatus, socialMode, message: memo, parentTxid: replyParentTxid, hasAttachment: Boolean(attachment),
+        legacyPayload: recipientAddress => tryBuildTokenSendPayload(WORK_TOKEN_ID,
+          workDecimalFromAtoms(messageWorkAmountAtoms), recipientAddress, mailWorkWriteMode),
+      }), error: "" };
+    } catch (error) {
+      return { error: mailWorkBatchStatusError || errorMessage(error, "Verified Mail WORK attachment admission is unavailable.") };
+    }
+  }, [mailWorkAttachmentRequested, mailRecipientRoutes, messageWorkAmountAtoms, mailWorkBatchStatus,
+    mailWorkBatchStatusError, socialMode, mailWorkWriteMode, memo, replyParentTxid, attachment]);
+  const workAttachmentPayloads = mailWorkAttachmentPreview.plan?.payloads ?? [];
+  const mailWorkPayloadUnavailable = mailWorkAttachmentRequested && !mailWorkAdmissionChecking &&
+    !mailWorkAdmissionPaused && messageWorkRecipientAddresses.length > 0 && workAttachmentPayloads.length === 0;
+  const workAttachmentTotalAtoms = messageWorkAmountAtoms * BigInt(mailRecipientRoutes.length);
   const workAttachmentTotalAmount = workNumberFromAtoms(
     workAttachmentTotalAtoms,
   );
@@ -24216,6 +24206,8 @@ export default function App() {
             ? mailWorkAdmissionError
             : mailWorkAdmissionPaused
               ? `WORK transfers are paused${mailWorkPauseReason ? ` (${mailWorkPauseReason})` : ""}. Send will unlock when verified write admission is ready.`
+              : mailWorkAttachmentPreview.error
+                ? mailWorkAttachmentPreview.error
               : mailWorkPayloadUnavailable
                 ? mailWorkAdmissionMode === "legacy-q8"
                 ? "Before V8 activates, WORK attachments must resolve exactly to eight decimal places."
@@ -24578,12 +24570,12 @@ export default function App() {
       ),
     ) &&
     recipientResolution.recipients.length > 0 &&
-    totalResolvedRecipients <= MAX_RECIPIENTS &&
+    totalResolvedRecipients > 0 && totalResolvedRecipients <= MAX_RECIPIENTS &&
     !recipientResolution.error &&
     !ccRecipientResolution.error &&
     !messageWorkAmountInvalid &&
     !boostComposeReason &&
-    workAttachmentBalanceOk &&
+    workAttachmentBalanceOk && (!mailWorkAttachmentRequested || !mailWorkAdmissionReason) &&
     composeDataCarrierBytes <= MAX_DATA_CARRIER_BYTES &&
     !mailSendBusy && !uncertainMailBroadcast;
   const composeSendState = mailSendBusy
@@ -27469,6 +27461,28 @@ export default function App() {
     activityMode,
     network,
   ]);
+
+  useEffect(() => {
+    if (network !== "livenet" || socialMode || !mailWorkAttachmentRequested || (!composeOpen && activeFolder !== "drafts")) {
+      setMailWorkBatchStatus(undefined);
+      setMailWorkBatchStatusError("");
+      return;
+    }
+    let cancelled = false;
+    const stop = createVisibleReadLoop(async (signal: AbortSignal) => {
+      try {
+        const current = await loadWorkMailBatchStatus(signal);
+        if (cancelled || signal.aborted) return;
+        setMailWorkBatchStatus(current);
+        setMailWorkBatchStatusError("");
+      } catch (error) {
+        if (cancelled || signal.aborted) return;
+        setMailWorkBatchStatus(undefined);
+        setMailWorkBatchStatusError(errorMessage(error, "Verified Mail WORK attachment status is unavailable. Refresh before sending."));
+      }
+    }, WORK_FLOOR_LIVE_REFRESH_MS);
+    return () => { cancelled = true; stop(); };
+  }, [network, socialMode, mailWorkAttachmentRequested, address, composeOpen, activeFolder, loadWorkMailBatchStatus]);
 
   useEffect(() => {
     if (network !== "livenet" || !mailWorkFloorHydrationRequired) {
@@ -34290,6 +34304,7 @@ export default function App() {
     };
     let attemptedMailRecord: SentMessage | undefined;
     let mailBroadcastTxid = "";
+    let signedMailAction: ActionReceipt | undefined;
     setStatus({
       tone: "idle",
       text: shouldResolveId
@@ -34341,18 +34356,7 @@ export default function App() {
         return;
       }
 
-      if (
-        resolvedRecipients.recipients.length +
-          resolvedCcRecipients.recipients.length >
-        MAX_RECIPIENTS
-      ) {
-        setStatus({
-          tone: "bad",
-          text: `Send to ${MAX_RECIPIENTS} recipients or fewer for now.`,
-        });
-        return;
-      }
-
+      const resolvedRoutes = canonicalMailRecipients(resolvedRecipients.recipients, resolvedCcRecipients.recipients, network);
       setStatus({ tone: "idle", text: "Building PSBT..." });
       await ensureWalletNetwork(window.unisat, network, address);
 
@@ -34371,44 +34375,17 @@ export default function App() {
       }
 
       const satoshis = Math.floor(amountSats);
-      const toRecipients: MailRecipient[] = resolvedRecipients.recipients.map(
-        (resolved) => ({
-          address: resolved.paymentAddress,
-          amountSats: satoshis,
-          display: resolved.isId
-            ? resolved.displayRecipient
-            : resolved.paymentAddress,
-          id: resolved.id,
-        }),
-      );
-      const seenAddresses = new Set(
-        toRecipients.map((mailRecipient) => mailRecipient.address),
-      );
-      const ccRecipients: MailRecipient[] =
-        resolvedCcRecipients.recipients.flatMap((resolved): MailRecipient[] => {
-          if (seenAddresses.has(resolved.paymentAddress)) {
-            return [];
-          }
-
-          seenAddresses.add(resolved.paymentAddress);
-          return [
-            {
-              address: resolved.paymentAddress,
-              amountSats: satoshis,
-              display: resolved.isId
-                ? resolved.displayRecipient
-                : resolved.paymentAddress,
-              id: resolved.id,
-            },
-          ];
-        });
-      const mailRecipients = [...toRecipients, ...ccRecipients];
+      const mailRecipients: MailRecipient[] = resolvedRoutes.map(route => ({ address: route.address,
+        amountSats: satoshis, display: route.label, id: route.id }));
+      const toRecipients = mailRecipients.filter((_, index) => resolvedRoutes[index].role === "To");
+      const ccRecipients = mailRecipients.filter((_, index) => resolvedRoutes[index].role === "CC");
       const workAttachmentAmount = messageWorkAmountValue;
       const workAttachmentAtoms = messageWorkAmountAtoms;
       let paymentExcludeOutpoints = reservedOutpoints;
       let attachedWorkCredits: MailAttachedCredit[] = [];
       let attachedWorkPayloads: string[] = [];
       let pendingWorkTransfers: PowTokenTransfer[] = [];
+      let preparedMailWorkPlan: WorkMailAttachmentPlan | undefined;
       let preparedWorkAttachmentMode:
         | Exclude<WorkWriteMode, "paused">
         | undefined;
@@ -34462,25 +34439,29 @@ export default function App() {
           return;
         }
 
-        attachedWorkCredits = mailRecipients.map((mailRecipient) => ({
-          amount: workAttachmentAmount,
-          amountSubatoms: workAttachmentAtoms.toString(),
-          paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
-          recipientAddress: mailRecipient.address,
-          registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
-          ticker: WORK_TOKEN_TICKER,
-          tokenId: WORK_TOKEN_ID,
+        preparedWorkAttachmentMode = (await freshWorkWriteMode()).mode;
+        const currentMailStatus = socialMode ? undefined : await loadWorkMailBatchStatus();
+        preparedMailWorkPlan = planWorkMailAttachment({ recipients: resolvedRoutes,
+          amountSubatoms: workAttachmentAtoms.toString(), status: currentMailStatus,
+          previousStatus: socialMode ? undefined : mailWorkAttachmentPreview.plan?.status, socialMode,
+          message: memo, parentTxid: replyParentTxid, hasAttachment: Boolean(attachment),
+          legacyPayload: recipientAddress => buildTokenSendPayload(WORK_TOKEN_ID,
+            workDecimalFromAtoms(workAttachmentAtoms), recipientAddress, preparedWorkAttachmentMode),
+        });
+        if (!socialMode && (!mailWorkAttachmentPreview.plan ||
+            preparedMailWorkPlan.mode !== mailWorkAttachmentPreview.plan.mode ||
+            preparedMailWorkPlan.registryFeeProofs !== mailWorkAttachmentPreview.plan.registryFeeProofs ||
+            JSON.stringify(preparedMailWorkPlan.payloads) !== JSON.stringify(mailWorkAttachmentPreview.plan.payloads))) {
+          if (currentMailStatus) setMailWorkBatchStatus(currentMailStatus);
+          throw new Error("Mail WORK attachment terms changed. Review the current recipient list and fee before sending.");
+        }
+        attachedWorkPayloads = preparedMailWorkPlan.payloads;
+        attachedWorkCredits = mailRecipients.map(mailRecipient => ({
+          amount: workAttachmentAmount, amountSubatoms: workAttachmentAtoms.toString(),
+          paidSats: preparedMailWorkPlan!.mode === "mailbatch1" ? 0 : TOKEN_MIN_MUTATION_PRICE_SATS,
+          recipientAddress: mailRecipient.address, registryAddress: WORK_TOKEN_REGISTRY_ADDRESS,
+          ticker: WORK_TOKEN_TICKER, tokenId: WORK_TOKEN_ID,
         }));
-        preparedWorkAttachmentMode =
-          (await freshWorkWriteMode()).mode;
-        attachedWorkPayloads = attachedWorkCredits.map((credit) =>
-          buildTokenSendPayload(
-            credit.tokenId,
-            workDecimalFromAtoms(credit.amountSubatoms ?? "0"),
-            credit.recipientAddress,
-            preparedWorkAttachmentMode,
-          ),
-        );
         if (
           dataCarrierBytesForPayloads([
             ...protocolPayloads,
@@ -34502,7 +34483,7 @@ export default function App() {
             { network: "livenet" },
           ),
         ];
-        pendingWorkTransfers = attachedWorkCredits.map((credit) => ({
+        pendingWorkTransfers = preparedMailWorkPlan.mode === "mailbatch1" ? [] : attachedWorkCredits.map((credit) => ({
           amount: credit.amount,
           amountAtoms: credit.amountAtoms,
           amountSubatoms: credit.amountSubatoms,
@@ -34534,6 +34515,7 @@ export default function App() {
           : "Checking spendable proofs and reserved listing anchors...",
       });
       const paymentPsbt = await buildPaymentPsbt({
+        strictOwnerOutputCommitment: preparedMailWorkPlan?.mode === "mailbatch1",
         excludeOutpoints: paymentExcludeOutpoints,
         feeRate,
         fromAddress: address,
@@ -34551,9 +34533,7 @@ export default function App() {
             ? [
                 {
                   address: WORK_TOKEN_REGISTRY_ADDRESS,
-                  amountSats:
-                    TOKEN_MIN_MUTATION_PRICE_SATS *
-                    attachedWorkPayloads.length,
+                  amountSats: preparedMailWorkPlan!.registryFeeProofs,
                 },
               ]
             : undefined,
@@ -34586,7 +34566,7 @@ export default function App() {
       });
       const registryOutput = attachedWorkPayloads.length > 0 ? recipientOutputs[mailRecipients.length] : undefined;
       if (registryOutput && (registryOutput.address !== WORK_TOKEN_REGISTRY_ADDRESS ||
-        registryOutput.proofs !== String(TOKEN_MIN_MUTATION_PRICE_SATS * attachedWorkPayloads.length))) {
+        registryOutput.proofs !== String(preparedMailWorkPlan!.registryFeeProofs))) {
         throw new Error("Prepared WORK registry payment does not match the attachment.");
       }
       setStatus({ tone: "idle", text: "Review the prepared mail transaction before opening your wallet." });
@@ -34602,6 +34582,7 @@ export default function App() {
             work: workAttachmentAtoms > 0n ? workDecimalFromAtoms(workAttachmentAtoms) : undefined,
           })),
           registry: registryOutput ? { address: registryOutput.address, proofs: registryOutput.proofs } : undefined,
+          workAttachmentFeeLabel: preparedMailWorkPlan?.feeLabel,
         });
       });
       if (!approved) {
@@ -34624,19 +34605,23 @@ export default function App() {
         const latest = await fetchIdRegistry(network);
         const latestTo = resolveRecipientInputs(recipientInput, network, latest, registryAddress);
         const latestCc = resolveRecipientInputs(ccRecipientInput, network, latest, registryAddress);
-        const destinationKey = (resolution: MultiRecipientResolution) => JSON.stringify(resolution.recipients.map(item => [item.id, item.paymentAddress]));
-        if (latestTo.error || latestCc.error || destinationKey(latestTo) !== destinationKey(resolvedRecipients) ||
-          destinationKey(latestCc) !== destinationKey(resolvedCcRecipients)) {
-          throw new Error("A confirmed ID receiver changed after preparation. Review the current destination before signing again.");
+        if (latestTo.error || latestCc.error) throw new Error("A Mail recipient route is unavailable. Review the current destinations again.");
+        assertSameMailRoutes(resolvedRoutes, canonicalMailRecipients(latestTo.recipients, latestCc.recipients, network));
+      };
+      const assertCurrentMailWork = async () => {
+        if (!preparedWorkAttachmentMode || !preparedMailWorkPlan) return;
+        await freshWorkWriteMode(preparedWorkAttachmentMode);
+        if (!socialMode) {
+          const current = workMailAttachmentMode(await loadWorkMailBatchStatus(), preparedMailWorkPlan.status);
+          if (current.mode !== preparedMailWorkPlan.mode) throw new Error("Mail WORK activation changed. Review the current transaction again.");
         }
+        await requireFreshWorkCapacityBeforeBroadcast(address, WORK_TOKEN_DEFINITION,
+          workAttachmentAtoms * BigInt(mailRecipients.length), tokenListings, tokenClosedListings, tokenTransfers, tokenSales,
+          false, signedMailAction?.txid);
       };
       await assertCurrentMailDestinations();
       await assertCurrentMailFunding();
-      if (preparedWorkAttachmentMode) {
-        await freshWorkWriteMode(preparedWorkAttachmentMode);
-        await requireFreshWorkCapacityBeforeBroadcast(address, WORK_TOKEN_DEFINITION,
-          workAttachmentAtoms * BigInt(mailRecipients.length), tokenListings, tokenClosedListings, tokenTransfers, tokenSales);
-      }
+      await assertCurrentMailWork();
       assertMailContext();
 
       const createdAt = new Date().toISOString();
@@ -34655,39 +34640,57 @@ export default function App() {
         text: `Waiting for UniSat signature. Fee estimate: ${paymentPsbt.feeSats.toLocaleString()} proofs.`,
       });
 
+      const retainMailRecord = (candidateTxid: string) => {
+        const record = makeSentMessage(candidateTxid, "unknown");
+        const next = [record, ...allSentRef.current.filter(message => message.txid !== candidateTxid || message.network !== network)];
+        try { saveSentMessages(next); } catch {
+          throw new Error("Local transaction tracking could not be saved. Export local data and free storage before trying again. No broadcast was attempted.");
+        }
+        attemptedMailRecord = record;
+        allSentRef.current = next;
+        setAllSent(next);
+      };
       const txid = await signAndBroadcastPsbt({
+        strictOwnerOutputCommitment: paymentPsbt.strictOwnerOutputCommitment,
+        onSigned: preparedMailWorkPlan?.mode === "mailbatch1" ? candidateTxid => {
+          // Preserve the captured wallet's signature before any asynchronous
+          // recheck, including a wallet or draft change while signing.
+          const receipt: ActionReceipt = { txid: candidateTxid, address, network,
+            title: "Mail WORK attachment", key: "mail-work-batch:" + candidateTxid,
+            createdAt, status: "unknown", fields: [
+              ["Transfer mode", WORK_MAIL_BATCH_RECEIPT_MARKER],
+              ["Mail To", recipientInput], ["Mail CC", ccRecipientInput],
+              ["WORK each", workDecimalFromAtoms(workAttachmentAtoms)],
+              ["Total WORK", workDecimalFromAtoms(workAttachmentAtoms * BigInt(mailRecipients.length))],
+              ["Recipients", JSON.stringify(resolvedRoutes)], ["WORK registry payment", "546 proofs"],
+            ] };
+          setActionReceipts(saveActionReceipt(localStorage, receipt));
+          signedMailAction = receipt;
+          retainMailRecord(candidateTxid);
+        } : undefined,
         beforeBroadcast: async () => {
           assertMailContext();
           await ensureWalletNetwork(reviewWallet, network, address);
           await assertCurrentMailDestinations();
           await assertCurrentMailFunding();
-          if (preparedWorkAttachmentMode) {
-            await freshWorkWriteMode(preparedWorkAttachmentMode);
-            await requireFreshWorkCapacityBeforeBroadcast(
-              address, WORK_TOKEN_DEFINITION, workAttachmentAtoms * BigInt(mailRecipients.length),
-              tokenListings, tokenClosedListings, tokenTransfers, tokenSales,
-            );
-          }
+          await assertCurrentMailWork();
           assertMailContext();
         },
         onBroadcastAttempt: candidateTxid => {
-          const record = makeSentMessage(candidateTxid, "unknown");
-          const next = [record, ...allSentRef.current.filter(message => message.txid !== candidateTxid || message.network !== network)];
-          // Preserve a txid before any network write so an interrupted result can be inspected.
-          try { saveSentMessages(next); } catch {
-            throw new Error("Local transaction tracking could not be saved. Export local data and free storage before trying again. No broadcast was attempted.");
-          }
-          attemptedMailRecord = record;
-          allSentRef.current = next;
-          setAllSent(next);
+          assertMailContext();
+          if (!attemptedMailRecord || attemptedMailRecord.txid !== candidateTxid) retainMailRecord(candidateTxid);
         },
         inputCount: paymentPsbt.inputCount,
         network,
         psbtHex: paymentPsbt.psbtHex,
         signingAddress: address,
-        wallet: window.unisat,
+        wallet: reviewWallet,
       });
       mailBroadcastTxid = txid;
+      if (signedMailAction) {
+        try { setActionReceipts(saveActionReceipt(localStorage, { ...signedMailAction, status: "pending" })); }
+        catch { setActionRecoveryError("Broadcast returned, but the Mail WORK receipt remains uncertain. Check its status before spending more WORK."); }
+      }
       const sentMessage = makeSentMessage(txid, "pending");
       saveSentMessages([sentMessage, ...allSentRef.current.filter(message => message.txid !== txid || message.network !== network)]);
       setAllSent((current) => [sentMessage, ...current.filter(message => message.txid !== txid || message.network !== network)]);
@@ -34789,12 +34792,12 @@ export default function App() {
         tone: "bad",
         text: mailBroadcastTxid
           ? `Transaction broadcast: ${mailBroadcastTxid}. Local update failed; refresh mail to inspect delivery. ${errorMessage(error, "Local update failed.")}`
-          : attemptedMailRecord
-            ? `Broadcast outcome unknown. Draft and transaction ${attemptedMailRecord.txid} preserved. Refresh mail to check it before another send. ${errorMessage(error, "Broadcast failed.")}`
+          : attemptedMailRecord || signedMailAction
+            ? `Signed transaction outcome requires a status check. Draft and transaction ${(attemptedMailRecord ?? signedMailAction)!.txid} preserved. Refresh mail to check it before another send. ${errorMessage(error, "Broadcast failed.")}`
             : /user.*(?:reject|cancel|denied)|(?:reject|cancel).*request|request.*(?:reject|cancel)|sign(?:ature|ing).*cancel/i.test(errorMessage(error, ""))
               ? "Signature rejected or canceled. Draft preserved; review again when ready."
               : `${errorMessage(error, "Transaction failed.")} Draft preserved.`,
-        links: attemptedMailRecord ? [txStatusLink(attemptedMailRecord.txid, network)] : undefined,
+        links: attemptedMailRecord || signedMailAction ? [txStatusLink((attemptedMailRecord ?? signedMailAction)!.txid, network)] : undefined,
       });
     } finally {
       mailSendInFlightRef.current = false;
@@ -37502,6 +37505,7 @@ export default function App() {
   const computerDnsRecoveryMode = actionComputerMode && !marketplaceMode && !desktopRoute && !browserRoute && !activityMode && !growthMode && !landingMode;
   function canRestoreActionHere(receipt: ActionReceipt) {
     if (receipt.fields.some(([label]) => label === "Listing transaction")) return false;
+    if (receipt.key.startsWith("mail-work-batch:")) return actionComputerMode;
     if (receipt.key.startsWith("dns-page-link:")) return pagesRoute || dnsLaunchMode || computerDnsRecoveryMode;
     if (receipt.key.startsWith("registerDns:")) return dnsLaunchMode || computerDnsRecoveryMode;
     if (receipt.key.startsWith("dns-subdomain:")) return dnsLaunchMode || actionComputerMode || marketplaceMode;
@@ -37512,7 +37516,20 @@ export default function App() {
   }
   function restoreActionTask(receipt: ActionReceipt) {
     const field = (name: string) => receipt.fields.find(([label]) => label === name)?.[1] ?? "";
-    if (receipt.key.startsWith("registerId:")) {
+    if (receipt.key.startsWith("mail-work-batch:")) {
+      const message = allSentRef.current.find(item => item.txid === receipt.txid && item.network === receipt.network && samePaymentAddress(item.from, receipt.address));
+      if (!message) {
+        openFolder("drafts");
+        setStatus({ tone: "idle", text: "Signed Mail evidence is retained. Inspect the saved draft and check the transaction status before spending WORK again." });
+        return;
+      }
+      const draft: DraftMessage = { amountSats: message.recipients?.[0]?.amountSats ?? amountSats,
+        attachment: message.attachment, ccRecipient: field("Mail CC"), feeRate: message.feeRate,
+        from: message.from, memo: message.memo, network: message.network,
+        parentTxid: message.parentTxid, recipient: field("Mail To"), socialMode: false,
+        subject: message.subject, updatedAt: new Date().toISOString(), workAmount: field("WORK each") };
+      saveDraft(draft); setSavedDraft(draft); applyDraft(draft);
+    } else if (receipt.key.startsWith("registerId:")) {
       setIdName(receipt.key.slice("registerId:".length)); setIdReceiveAddress(field("Mail receiver")); setIdPgpKey(field("PGP public key"));
       if (!idLaunchMode) openFolder("ids");
     } else if (receipt.key.startsWith("registerDns:")) {
@@ -38187,12 +38204,13 @@ export default function App() {
               feeRate={feeRate} memo={memo} dataCarrierBytes={composeDataCarrierBytes} network={network} draftMode onDiscardDraft={discardDraft} onPublish={composePublish}
               ccRecipient={ccRecipient} ccRecipientError={Boolean(ccRecipientResolution.error)} ccRecipientNote={ccRecipientNote}
               parentTxid={replyParentTxid} recipient={recipient} recipientError={Boolean(recipientResolution.error)} recipientNote={recipientNote}
-              sendState={composeSendState} sendStatus={[mailRecoveryReason, boostComposeReason, mailWorkAdmissionReason].filter(Boolean).join(" ")}
+              sendState={composeSendState} sendStatus={[mailRecoveryReason, mailRecipientPlan.error, boostComposeReason, mailWorkAdmissionReason].filter(Boolean).join(" ")}
               sender={address} setAttachment={setAttachment} setAttachmentFile={(file) => void attachFile(file)}
               setParentTxid={setReplyParentTxid} setAmountSats={setAmountSats} setCcRecipient={setCcRecipient} setFeeRate={setFeeRate}
               setMemo={setMemo} setRecipient={setRecipient} setSocialMode={setSocialMode} setSubject={setSubject}
               setWorkAmount={setMessageWorkAmount} socialMode={socialMode} subject={subject} submit={sendOpReturn}
               workAmount={messageWorkAmount} workAttachmentTotalAtoms={workAttachmentTotalAtoms.toString()}
+                workAttachmentFeeLabel={mailWorkAttachmentPreview.plan?.feeLabel}
               workSpendableAtoms={workAttachmentPreviewSpendability?.spendableBalanceSubatoms} workVisible={workAttachmentVisible}
             />
           </section>
@@ -39654,7 +39672,7 @@ export default function App() {
                   recipientError={Boolean(recipientResolution.error)}
                   recipientNote={recipientNote}
                   sendState={composeSendState}
-                  sendStatus={[mailRecoveryReason, boostComposeReason, mailWorkAdmissionReason]
+                  sendStatus={[mailRecoveryReason, mailRecipientPlan.error, boostComposeReason, mailWorkAdmissionReason]
                     .filter(Boolean)
                     .join(" ")}
                   sender={address}
@@ -39674,6 +39692,7 @@ export default function App() {
                   submit={sendOpReturn}
                   workAmount={messageWorkAmount}
                   workAttachmentTotalAtoms={workAttachmentTotalAtoms.toString()}
+                workAttachmentFeeLabel={mailWorkAttachmentPreview.plan?.feeLabel}
                   workSpendableAtoms={workAttachmentPreviewSpendability?.spendableBalanceSubatoms}
                   workVisible={workAttachmentVisible}
                 />
@@ -39713,7 +39732,7 @@ export default function App() {
                   recipientError={Boolean(recipientResolution.error)}
                   recipientNote={recipientNote}
                   sendState={composeSendState}
-                  sendStatus={[mailRecoveryReason, boostComposeReason, mailWorkAdmissionReason]
+                  sendStatus={[mailRecoveryReason, mailRecipientPlan.error, boostComposeReason, mailWorkAdmissionReason]
                     .filter(Boolean)
                     .join(" ")}
                   sender={address}
@@ -39733,6 +39752,7 @@ export default function App() {
                   submit={sendOpReturn}
                   workAmount={messageWorkAmount}
                   workAttachmentTotalAtoms={workAttachmentTotalAtoms.toString()}
+                workAttachmentFeeLabel={mailWorkAttachmentPreview.plan?.feeLabel}
                   workSpendableAtoms={workAttachmentPreviewSpendability?.spendableBalanceSubatoms}
                   workVisible={workAttachmentVisible}
                 />
@@ -60237,6 +60257,7 @@ function ComposePane({
   socialMode,
   workAmount,
   workAttachmentTotalAtoms,
+  workAttachmentFeeLabel,
   workSpendableAtoms,
   workVisible,
   setWorkAmount,
@@ -60278,6 +60299,7 @@ function ComposePane({
   submit: (event: FormEvent<HTMLFormElement>) => void;
   workAmount: string;
   workAttachmentTotalAtoms: string;
+  workAttachmentFeeLabel?: string;
   workSpendableAtoms: string | undefined;
   workVisible: boolean;
 }) {
@@ -60535,6 +60557,8 @@ function ComposePane({
           </div>
         </div>
       ) : null}
+
+      {workVisible && workAttachmentFeeLabel ? <p className="field-note">{workAttachmentFeeLabel}</p> : null}
 
       <label className="memo-field">
         Message

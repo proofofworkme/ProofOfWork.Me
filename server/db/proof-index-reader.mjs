@@ -15,6 +15,8 @@ import {
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
 import { readWorkBatchDeclarationCandidates, readWorkBatchDiscoveryCheckpoint, readWorkBatchActivationMarker, verifiedWorkBatchEventIds } from "./work-batch-reader.mjs";
+import { readWorkMailBatchDeclarationCandidates, readWorkMailBatchDiscoveryCheckpoint, readWorkMailBatchActivationMarker } from "./work-mail-batch-discovery.mjs";
+import { verifiedWorkMailBatchEventIds } from "./work-mail-batch-reader.mjs";
 import { readCodeSnapshot, readCodePageSource } from "./code-reader.mjs";
 import { readJobsSnapshot } from "./jobs-reader.mjs";
 import { createPermissionIndexDiscovery } from "./permission-reader.mjs";
@@ -16974,10 +16976,12 @@ export function canonicalTransferFeeProjection(payload, evidence) {
 
 export async function rowsWithCanonicalTransferFees(pool, rows, network) {
   if (network !== "livenet") return rows;
-  await verifiedWorkBatchEventIds(pool, rows
-    .map(row => ({ ...row, payload: canonicalEventPayload(row.payload) }))
-    .filter(row => (row.status === "confirmed" || row.payload.confirmed === true) && row.payload.valid === true),
-  network);
+  const confirmedRows = rows.map(row => ({ ...row, payload: canonicalEventPayload(row.payload) }))
+    .filter(row => (row.status === "confirmed" || row.payload.confirmed === true) && row.payload.valid === true);
+  const mailBatchRow = row => row.payload.transferVersion === "mailbatch1" || row.payload.amountVersion === "mailbatch1" ||
+    String(row.payload.payload ?? "").startsWith("pwt1:mailbatch1:");
+  await verifiedWorkBatchEventIds(pool, confirmedRows.filter(row => !mailBatchRow(row)), network);
+  await verifiedWorkMailBatchEventIds(pool, confirmedRows.filter(mailBatchRow), network);
   const candidates = rows.filter((row) => {
     const p = canonicalEventPayload(row.payload);
     return (row.status === "confirmed" || p.confirmed === true) &&
@@ -17308,7 +17312,7 @@ function tokenBatchFromEventPayload(payload, row = {}) {
     ...workAmountProjectionMetadataForAmount(workAmountProjection(payload)),
     kind: "token-transfer-batch",
     protocol: "pwt1",
-    transferVersion: "batch1",
+    transferVersion: payload.transferVersion === "mailbatch1" ? "mailbatch1" : "batch1",
     confirmed: row.status === "confirmed" || payload.confirmed === true,
     createdAt: dateIso(payload.createdAt ?? row.event_time ?? row.block_time ?? row.created_at),
     paidSats: 546,
@@ -17385,9 +17389,10 @@ function tokenTransferFromEventPayload(payload, row = {}) {
     ticker,
     tokenId,
     txid: String(payload?.txid ?? row.txid ?? "").trim().toLowerCase(),
-    ...(payload?.transferVersion === "batch1" ? {
-      amountVersion: "batch1",
-      transferVersion: "batch1",
+    ...(["batch1", "mailbatch1"].includes(payload?.transferVersion) ? {
+      amountVersion: payload.transferVersion,
+      transferVersion: payload.transferVersion,
+      ...(payload.transferVersion === "mailbatch1" ? { mailEnvelope: payload.mailEnvelope } : {}),
       batchRecipientIndex: payload.batchRecipientIndex,
       batchRecipientCount: payload.batchRecipientCount,
       batchTotalAmountSubatoms: payload.batchTotalAmountSubatoms,
@@ -21404,7 +21409,7 @@ function workAmountProjectionMetadata(record, metadata = {}) {
     (
       metadataVersion === WORK_AMO_V8_AUTH_VERSION ||
       metadataVersion === WORK_AMO_V8_TRANSFER_VERSION ||
-      metadataVersion === "batch1"
+      metadataVersion === "batch1" || metadataVersion === "mailbatch1"
     )
       ? WORK_SUBATOM_PROJECTION_MODEL
       : "";
@@ -26837,6 +26842,18 @@ export async function proofIndexWorkBatchDiscoveryCheckpoint(network, options = 
 
 export async function proofIndexWorkBatchDeclarationCandidates(network, options = {}) {
   return readWorkBatchDeclarationCandidates(proofIndexPool(), network, options);
+}
+
+export async function proofIndexWorkMailBatchActivationMarker(network) {
+  return readWorkMailBatchActivationMarker(proofIndexPool(), network);
+}
+
+export async function proofIndexWorkMailBatchDiscoveryCheckpoint(network, options = {}) {
+  return readWorkMailBatchDiscoveryCheckpoint(proofIndexPool(), network, options);
+}
+
+export async function proofIndexWorkMailBatchDeclarationCandidates(network, options = {}) {
+  return readWorkMailBatchDeclarationCandidates(proofIndexPool(), network, options);
 }
 
 export async function proofIndexWorkAmoV8DeclarationCandidates(
@@ -41058,6 +41075,15 @@ function canonicalMailAttachedCreditsFromRow(row, recipientAddresses) {
       amount: workAmount.amount,
       ...workAmountProjectionMetadataForAmount(workAmount),
       amountVersion: credit.amountVersion,
+      ...(credit.transferVersion === "mailbatch1" ? {
+        transferVersion: "mailbatch1", mailEnvelope: credit.mailEnvelope,
+        batchRecipientIndex: credit.batchRecipientIndex, batchRecipientCount: credit.batchRecipientCount,
+        batchTotalAmountSubatoms: credit.batchTotalAmountSubatoms, batchPayloadCommitment: credit.batchPayloadCommitment,
+        containerPosition: credit.containerPosition, derivedId: credit.derivedId,
+        parentTransitionChainCommitmentAfter: credit.parentTransitionChainCommitmentAfter,
+        rawCandidate: false, economicDelta: false, claimsEconomicOutputs: false, chargesTransactionFee: false,
+        registryMutationFeeSats: 0, minerFeeSats: 0,
+      } : {}),
       paidSats: positiveNumber(credit.paidSats),
       protocolVout,
       ...(recordOrdinal !== null ? { recordOrdinal } : {}),
@@ -41506,7 +41532,12 @@ export async function proofIndexAddressMailPayload(network, address) {
               transfer_event.op_return_vout,
               transfer_event.record_ordinal,
               transfer_event.event_id
-          ) AS attached_credit_events
+          ) AS attached_credit_events,
+          jsonb_agg(jsonb_build_object('event_id', transfer_event.event_id,
+            'payload', transfer_event.payload)) FILTER (WHERE
+              transfer_event.payload->>'transferVersion' = 'mailbatch1' OR
+              transfer_event.payload->>'amountVersion' = 'mailbatch1' OR
+              transfer_event.payload->>'payload' LIKE 'pwt1:mailbatch1:%') AS mail_batch_candidates
         FROM proof_indexer.events transfer_event
         JOIN candidate_mail_transactions candidate_mail
           ON candidate_mail.network = transfer_event.network
@@ -41537,6 +41568,21 @@ export async function proofIndexAddressMailPayload(network, address) {
             )
           )
         GROUP BY transfer_event.network, transfer_event.txid
+      ),
+      canonical_work_mail_batch_parents AS (
+        SELECT parent.network, parent.txid,
+          jsonb_agg(jsonb_build_object('event_id', parent.event_id,
+            'payload', parent.payload)) AS parent_candidates
+        FROM proof_indexer.events parent
+        JOIN candidate_mail_transactions candidate_mail
+          ON candidate_mail.network = parent.network AND candidate_mail.txid = parent.txid
+        WHERE parent.network = $1 AND parent.protocol = 'pwt1'
+          AND parent.kind = 'token-transfer-batch' AND parent.valid = true
+          AND parent.status = 'confirmed'
+          AND (parent.payload->>'transferVersion' = 'mailbatch1' OR
+            parent.payload->>'amountVersion' = 'mailbatch1' OR
+            parent.payload->>'payload' LIKE 'pwt1:mailbatch1:%')
+        GROUP BY parent.network, parent.txid
       )
       SELECT
         e.payload,
@@ -41558,6 +41604,8 @@ export async function proofIndexAddressMailPayload(network, address) {
           canonical_work_attachments.attached_credit_events,
           '[]'::jsonb
         ) AS attached_credit_events,
+        canonical_work_attachments.mail_batch_candidates AS mail_batch_candidates,
+        canonical_work_mail_batch_parents.parent_candidates AS mail_batch_parents,
         COALESCE(
           jsonb_agg(
             jsonb_build_object(
@@ -41575,6 +41623,9 @@ export async function proofIndexAddressMailPayload(network, address) {
        AND m.txid = e.txid
       LEFT JOIN proof_indexer.event_participants ep
         ON ep.event_id = e.event_id
+      LEFT JOIN canonical_work_mail_batch_parents
+        ON canonical_work_mail_batch_parents.network = e.network
+       AND canonical_work_mail_batch_parents.txid = e.txid
       LEFT JOIN canonical_work_attachments
         ON canonical_work_attachments.network = e.network
        AND canonical_work_attachments.txid = e.txid
@@ -41605,7 +41656,9 @@ export async function proofIndexAddressMailPayload(network, address) {
         m.body_text,
         m.amount_sats,
         canonical_boost_posts.records,
-        canonical_work_attachments.attached_credit_events
+        canonical_work_attachments.attached_credit_events,
+        canonical_work_attachments.mail_batch_candidates,
+        canonical_work_mail_batch_parents.parent_candidates
       ORDER BY
         COALESCE(e.event_time, e.block_time, e.created_at) DESC,
         e.txid DESC,
@@ -41613,6 +41666,14 @@ export async function proofIndexAddressMailPayload(network, address) {
     `,
     [network, addressCandidates, ADDRESS_MAIL_EVENT_KINDS, WORK_TOKEN_ID],
   );
+
+  const mailBatchCandidates = new Map();
+  for (const row of rowsResult.rows) {
+    for (const event of [...(row.mail_batch_candidates ?? []), ...(row.mail_batch_parents ?? [])]) {
+      mailBatchCandidates.set(String(event.event_id), event);
+    }
+  }
+  await verifiedWorkMailBatchEventIds(pool, [...mailBatchCandidates.values()], network);
 
   const inboxMessages = [];
   const sentMessages = [];

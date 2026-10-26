@@ -864,3 +864,12 @@ rules. Derived recipient rows never manufacture extra payments or movement.
 The approved original WORK declaration retains its attached proofs and WORK.
 Recognize its exact bootstrap exception, preserve the signed text and economic
 history, and repair derived index evidence when needed.
+
+
+Ordinary Mail has its own WORK batch attachment form. One transaction makes one
+546-proof WORK registry signal, while each recipient still receives the reviewed
+Mail proof payment. Carry the whole recipient vector through preview, signatures,
+capacity recovery and canonical history. All WORK recipients apply together;
+ordinary Mail remains independently valid. Declare this extension forward and
+explicitly permit attached proof and WORK signal on its declaration, without
+rewriting the original standalone declaration or its history.

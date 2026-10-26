@@ -158,7 +158,10 @@
     "check:work-batch:activation": "python3 -I -B deploy/work-batch-activation/check-controller.test.py && node --test deploy/work-batch-activation/check-probe.test.mjs && python3 -I -B deploy/work-batch-activation/check-composed-approval.test.py",
     "build:work-batch-declaration": "node scripts/build-work-batch-declaration.mjs",
     "check:work-batch:deploy": "python3 -I -B deploy/work-batch-sends/check-scoped-node.test.py && python3 -I -B deploy/work-batch-sends/check-release.test.py",
-    "check:work-batch:replay": "python3 -I -B deploy/work-batch-replay/prepare-source-manifest.test.py && node --test deploy/work-batch-replay/preflight.test.mjs && python3 -I -B deploy/work-batch-replay/controller.test.py && python3 -I -B deploy/work-batch-replay/runtime-archive.test.py"
+    "check:work-batch:replay": "python3 -I -B deploy/work-batch-replay/prepare-source-manifest.test.py && node --test deploy/work-batch-replay/preflight.test.mjs && python3 -I -B deploy/work-batch-replay/controller.test.py && python3 -I -B deploy/work-batch-replay/runtime-archive.test.py",
+    "build:work-mail-batch-declaration": "node scripts/build-work-mail-batch-declaration.mjs",
+    "check:work-mail-batch": "node --test src/shared/protocol/workMailBatch.test.mjs server/work-mail-batch-*.test.mjs server/db/work-mail-batch-*.test.mjs scripts/check-work-mail-batch-*.test.mjs src/features/mail-work-batch/*.test.mjs",
+    "check:work-mail-batch:deploy": "python3 -I -B deploy/mail-work-batch/check-scoped-node.test.py && python3 -I -B deploy/mail-work-batch/check-release.test.py && python3 -I -B deploy/mail-work-batch/check-activation.test.py && node --test deploy/mail-work-batch/check-activation-probe.test.mjs && python3 -I -B deploy/mail-work-batch/runtime-archive.test.py"
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",
