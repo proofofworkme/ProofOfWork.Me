@@ -8,6 +8,7 @@ parser.add_argument("--repository",type=Path,default=ROOT.parents[1])
 parser.add_argument("--output-root",type=Path,required=True)
 parser.add_argument("--derive-catalog",action="store_true")
 parser.add_argument("--long-suffix",action="store_true")
+parser.add_argument("--derived-closure",action="store_true")
 args=parser.parse_args()
 OUT=args.output_root
 if os.geteuid()!=0 or OUT.exists() or not OUT.is_absolute() or OUT.resolve()!=OUT: raise RuntimeError("Fresh VPS private output root and root execution required")
@@ -92,8 +93,18 @@ try:
  end_height=bridge["rows"][-1]["height"]
  hashes=[q["anchor"]["hash"]]+[r["hash"] for r in bridge["rows"]]
  payloads=[]; originals=[]
+ closure=q["derivedClosureFixture"]
+ def rebase(value,height,block_hash):
+  if isinstance(value,dict):
+   result={k:rebase(v,height,block_hash) for k,v in value.items()}
+   if result.get("blockHeight")==closure["sourceHeight"]:result["blockHeight"]=height
+   if result.get("blockHash")==closure["sourceHash"]:result["blockHash"]=block_hash
+   return result
+  if isinstance(value,list):return [rebase(v,height,block_hash) for v in value]
+  if isinstance(value,str):return value.replace(":"+str(closure["sourceHeight"])+":",":"+str(height)+":")
+  return value
  for idx,height in enumerate(range(973103,end_height+1)):
-  scalar=copy.deepcopy(bridge["rows"][max(0,idx-1)]["unchangedScalarMetadata"])
+  scalar=copy.deepcopy(bridge["rows"][max(0,idx-1)]["oldScalarMetadata"])
   scalar.update(block_height=height,block_hash=hashes[idx],previous_block_hash=hashes[idx-1] if idx else "1"*64,created_at="2026-10-25T18:00:00.123456Z")
   payload={"model":"fixture-transition","height":height,"rawProtocolCandidateCount":0,"protocolRecordCount":0,
    "transitionChainCommitment":{"model":"canonical-work-amo-raw-transition-chain-sha256-v1","sha256":hashlib.sha256(str(idx).encode()).hexdigest(),"payloadBytes":1025},
@@ -108,6 +119,12 @@ try:
     {"kind":"protocol-record","position":record["position"],"txid":record["txid"],"stateDelta":record["stateDelta"],"transitionChainCommitmentAfter":witness},
     {"kind":"transaction-fee","txid":record["txid"],"minerFeeSats":"546","transitionChainCommitmentAfter":witness}])
    sql("INSERT INTO proof_indexer.transactions VALUES('livenet',repeat('5',64),'confirmed',"+str(height)+","+pub.literal(hashes[idx])+",1);INSERT INTO proof_indexer.events VALUES('livenet','confirmed',"+str(height)+",1,repeat('5',64),'pwt1','{"+'"kind":"token-listing-sealed"'+ "}'::jsonb);INSERT INTO proof_indexer.op_returns VALUES('livenet',repeat('5',64),'pwt1','pwt1:seal5:fixture');")
+  if height==973104 and args.derived_closure:
+   scalar.update(event_count=2,event_set_model=closure["oldEventSetCommitment"]["model"],event_set_sha256=closure["oldEventSetCommitment"]["sha256"],event_set_payload_bytes=closure["oldEventSetCommitment"]["payloadBytes"])
+   evidence=rebase(closure["old"],height,hashes[idx])
+   payload.update(replayRecords=evidence["records"],traces=evidence["traces"])
+   sql("INSERT INTO proof_indexer.events VALUES('livenet','confirmed',"+str(height)+",3,repeat('5',64),'pwt1','{"+'"kind":"token-listing-closed"'+ "}'::jsonb);")
+  payload["eventSetCommitment"]={"model":scalar["event_set_model"],"sha256":scalar["event_set_sha256"],"payloadBytes":scalar["event_set_payload_bytes"],"eventCount":scalar["event_count"]}
   payloads.append(payload)
   sql("INSERT INTO proof_indexer.blocks VALUES('livenet',"+str(height)+","+pub.literal(hashes[idx])+",true);"+
       "INSERT INTO proof_indexer.work_amo_block_transitions SELECT (jsonb_populate_record(NULL::proof_indexer.work_amo_block_transitions,"+lit({**scalar,"payload":payload})+")).*;")
@@ -128,14 +145,24 @@ try:
  "runtimeFiles":dict.fromkeys(pub.TARGETS,"e"*64),"checkpoint":{"height":end_height,"hash":hashes[-1],"snapshotId":"fixture-head","rebuild":rebuild},
  "anchor":{**q["anchor"],"nativeSha256":old_state["main"][0]["payload"]["__powNativeStorage"]["sha256"]},"proposedMarker":copy.deepcopy(q["proposedMarker"]),"rows":[]}
  for idx,br in enumerate(bridge["rows"],1):
-  row=copy.deepcopy(br);row["unchangedScalarMetadata"]={k:v for k,v in old_state["main"][idx].items() if k!="payload"}
+  row=copy.deepcopy(br);row["oldScalarMetadata"]={k:v for k,v in old_state["main"][idx].items() if k!="payload"}
   row["currentMainRowSha256"]=val("SELECT to_jsonb(encode(sha256(jsonb_send(to_jsonb(t))),'hex')) FROM proof_indexer.work_amo_block_transitions t WHERE block_height="+str(row["height"])+";")
   row["oldNativeSha256"]=old_state["main"][idx]["payload"]["__powNativeStorage"]["sha256"]
-  row["replacementFields"].update({key:copy.deepcopy(payloads[idx][key]) for key in ("replayRecords","traces","replayDescriptorCommitment")})
+  row["replacementFields"].update({key:copy.deepcopy(payloads[idx][key]) for key in ("replayRecords","traces","replayDescriptorCommitment","eventSetCommitment")})
   if row["replacementFields"]["replayRecords"]:
-   for field in ("replayRecords","traces"):
-    for item in row["replacementFields"][field]:item["transitionChainCommitmentAfter"]["sha256"]="7"*64
+   if args.derived_closure:
+    evidence=rebase(closure["new"],row["height"],row["hash"])
+    row["replacementFields"].update(replayRecords=evidence["records"],traces=evidence["traces"],eventSetCommitment=copy.deepcopy(closure["newEventSetCommitment"]))
+   else:
+    for field in ("replayRecords","traces"):
+     for item in row["replacementFields"][field]:item["transitionChainCommitmentAfter"]["sha256"]="7"*64
    row["replacementFields"]["replayDescriptorCommitment"]["sha256"]="8"*64
+  row["oldEventSetCommitment"]=copy.deepcopy(payloads[idx]["eventSetCommitment"])
+  row["newEventSetCommitment"]=copy.deepcopy(row["replacementFields"]["eventSetCommitment"])
+  row["newScalarMetadata"]={**row["oldScalarMetadata"],"event_set_sha256":row["newEventSetCommitment"]["sha256"]}
+  for prefix in ("old","new"):row[prefix+"ScalarMetadataSha256"]=pub.sha(pub.stable(row[prefix+"ScalarMetadata"]).encode())
+  row["eventCount"]=row["oldScalarMetadata"]["event_count"];row["derivedEventCount"]=row["eventCount"]-row["oldScalarMetadata"]["protocol_record_count"]
+  row["eventSetProvenanceOnly"]=True
   row["allowedChangedFields"]=[key for key in pub.REPLACEMENT_FIELDS if payloads[idx].get(key)!=row["replacementFields"][key]]
   row["oldNativeBytes"]=val("SELECT octet_length(jsonb_send("+lit(payloads[idx])+"));")
   row["nativePayloadBytes"]=row["oldNativeBytes"];row["rawBlockBytes"]=1000
@@ -145,7 +172,7 @@ try:
   row["newNativeSha256"]=n["sha256"];row["newNativeBytes"]=n["bytes"];m["rows"].append(row)
  m["proposedMarker"]["activationBlock"]["hash"]=m["rows"][0]["hash"]
  m["proposedMarker"]["activationBlock"]["transitionChainCommitment"]=m["rows"][0]["replacementFields"]["transitionChainCommitment"]
- m["resourceUsage"]={"nativePayloadBytes":sum(r["oldNativeBytes"] for r in m["rows"]),"newNativePayloadBytes":sum(r["newNativeBytes"] for r in m["rows"]),"rawBlockBytes":sum(r["rawBlockBytes"] for r in m["rows"]),"ordinaryRecords":sum(r["unchangedScalarMetadata"]["protocol_record_count"] for r in m["rows"])}
+ m["resourceUsage"]={"nativePayloadBytes":sum(r["oldNativeBytes"] for r in m["rows"]),"newNativePayloadBytes":sum(r["newNativeBytes"] for r in m["rows"]),"rawBlockBytes":sum(r["rawBlockBytes"] for r in m["rows"]),"ordinaryRecords":sum(r["oldScalarMetadata"]["protocol_record_count"] for r in m["rows"])}
  pub.validate_manifest(m,old_sha,newhash)
  def render(x): return pub.render_transaction(x,pub.sha(pub.stable(x).encode()),extension,old_query,new_query)
  if not args.long_suffix:
@@ -179,10 +206,10 @@ try:
  refused("wrong old catalog aborts DDL and data",lambda x:x["oldCatalog"]["role"].update(canLogin=True))
  refused("wrong new catalog aborts DDL and data",lambda x:x["newCatalog"]["role"].update(canLogin=True))
  refused("checkpoint drift aborts atomically",lambda x:x["checkpoint"]["rebuild"].update(indexedThroughBlock=1))
- refused("tip height drift aborts atomically",lambda x:x["checkpoint"].update(height=973106))
+ refused("tip height drift aborts atomically",lambda x:x["checkpoint"].update(height=end_height+1))
  refused("tip hash drift aborts atomically",lambda x:x["checkpoint"].update(hash="f"*64))
  refused("anchor native digest drift aborts atomically",lambda x:x["anchor"].update(nativeSha256="f"*64))
- refused("old scalar change aborts atomically",lambda x:x["rows"][0]["unchangedScalarMetadata"].update(event_count=2))
+ refused("old scalar change aborts atomically",lambda x:x["rows"][0]["oldScalarMetadata"].update(event_count=999))
  refused("complete current main row drift aborts atomically",lambda x:x["rows"][0].update(currentMainRowSha256="f"*64))
  refused("old native digest change aborts atomically",lambda x:x["rows"][0].update(oldNativeSha256="f"*64))
  refused("second block native mismatch rolls back first replacement and chunks",lambda x:x["rows"][1].update(newNativeSha256="f"*64))
@@ -200,7 +227,7 @@ try:
   ("ordinary output",lambda f:f["replayRecords"][0]["output"].update(amount="6")),
   ("raw witness",lambda f:f["replayRecords"][0].update(rawWitness="pwt1:batch1:forged")),
   ("state delta",lambda f:f["replayRecords"][0]["stateDelta"].update(balance="created")),
-  ("position",lambda f:f["replayRecords"][0]["position"].update(protocolVout=2)),
+  ("position",lambda f:f["replayRecords"][0]["position"].update(protocolVout=99)),
   ("miner fee",lambda f:f["replayRecords"][0].update(transactionMinerFeeSats="0")),
   ("validity",lambda f:f["replayRecords"][0]["outcome"].update(valid=False)),
   ("derived child",lambda f:f["replayRecords"][0].update(derived=[{"kind":"token-transfer"}])),
@@ -213,6 +240,27 @@ try:
   ("descriptor metadata",lambda f:f["replayDescriptorCommitment"].update(payloadBytes=1)),
   ("top chain metadata",lambda f:f["transitionChainCommitment"].update(payloadBytes=1)),
  ]:refused_witness(label+" change with matching new native hash still aborts",mutation)
+ if args.derived_closure:
+  for label,mutation in [
+   ("child derived boolean",lambda f:f["replayRecords"][1].update(derived=[])),
+   ("child raw candidate",lambda f:f["replayRecords"][1].update(rawCandidate=True)),
+   ("child charges fee",lambda f:f["replayRecords"][1].update(chargesTransactionFee=True)),
+   ("child parent position",lambda f:f["replayRecords"][1]["parentPosition"].update(recordOrdinal=8)),
+   ("child witness parent protocol",lambda f:f["replayRecords"][1]["rawWitness"].update(parentProtocol="pwid1")),
+   ("child descriptor listing",lambda f:f["replayRecords"][1]["rawWitness"]["descriptor"].update(listingId="f"*64)),
+   ("child output economics",lambda f:f["replayRecords"][1]["output"]["projection"].update(freeBalance="100")),
+   ("child state delta",lambda f:f["replayRecords"][1]["stateDelta"].update(creditFixedSats="1")),
+   ("child parent witness mismatch",lambda f:f["replayRecords"][1]["parentTransitionChainCommitmentAfter"].update(sha256="f"*64)),
+   ("child witness bytes",lambda f:f["replayRecords"][1]["parentTransitionChainCommitmentAfter"].update(payloadBytes=999)),
+   ("parent descriptor kind",lambda f:f["replayRecords"][0]["derived"][0].update(kind="token-transfer")),
+   ("parent descriptor economic flag",lambda f:f["replayRecords"][0]["derived"][0].update(economicDelta=True)),
+   ("parent descriptor fee flag",lambda f:f["replayRecords"][0]["derived"][0].update(chargesTransactionFee=True)),
+   ("parent descriptor order",lambda f:f["replayRecords"][0]["derived"][0].update(derivedIndex=1)),
+   ("event-set model",lambda f:f["eventSetCommitment"].update(model="other")),
+   ("event-set bytes",lambda f:f["eventSetCommitment"].update(payloadBytes=1)),
+   ("event-set count",lambda f:f["eventSetCommitment"].update(eventCount=1)),
+  ]:refused_witness(label+" changes refuse with matching native hash",mutation)
+ refused("other new scalar changes refuse",lambda x:x["rows"][0]["newScalarMetadata"].update(opening_network_value_q8="0"))
  refused("relational row digest mismatch refuses",lambda x:x["rows"][0]["relationalBindings"].update(eventRowsSha256="f"*64))
  for label,mutation in [
   ("event row content", "UPDATE proof_indexer.events SET payload=payload||'{"+'"changed":true'+ "}'::jsonb WHERE event_id=1"),
@@ -253,11 +301,11 @@ try:
  except ValueError:pass
  check("publisher routes only to exact captured local PostgreSQL endpoint",lambda:None)
 
- combined={**m,"qualified":True,"mode":"after-drain","sourceState":"committed","format":"work-batch-bounded-reseal-qualification-v3","ordinaryRelationalSuffixVerified":True,"fullRawSuffixVerified":True,"noDerivedEventsVerified":True,"noBatchLookingRecordsVerified":True,"declaration":q["declaration"],"nativeCatalogSha256":old_sha,"earliestSelection":{"verified":True},"sourceManifestSha256":"f"*64,
+ combined={**m,"qualified":True,"mode":"after-drain","sourceState":"committed","format":"work-batch-bounded-reseal-qualification-v4","ordinaryRelationalSuffixVerified":True,"fullRawSuffixVerified":True,"ordinaryDerivedClosuresVerified":True,"noBatchLookingRecordsVerified":True,"declaration":q["declaration"],"nativeCatalogSha256":old_sha,"earliestSelection":{"verified":True},"sourceManifestSha256":"f"*64,
   "databaseName":"postgres","runtimeSources":m["runtimeFiles"],"canonicalRebuild":rebuild,
   "checkpoint":{k:v for k,v in m["checkpoint"].items() if k!="rebuild"},"blocks":copy.deepcopy(m["rows"])}
  for row in combined["blocks"]:
-  row.update(baselineExactlyReproduced=True,compatibilityDeterministic=True,economicStateEqual=True,workGenericIdStateEqual=True,projectionEqual=True,eventsAndFeesEqual=True,rawProtocolCandidateCount=row["unchangedScalarMetadata"]["raw_protocol_candidate_count"],protocolRecordCount=row["unchangedScalarMetadata"]["protocol_record_count"],batchLookingCount=0,ordinaryEventSetVerified=True,ordinaryRecordsVerified=True,noDerivedEventsVerified=True)
+  row.update(baselineExactlyReproduced=True,compatibilityDeterministic=True,economicStateEqual=True,workGenericIdStateEqual=True,projectionEqual=True,eventsAndFeesEqual=True,rawProtocolCandidateCount=row["oldScalarMetadata"]["raw_protocol_candidate_count"],protocolRecordCount=row["oldScalarMetadata"]["protocol_record_count"],batchLookingCount=0,ordinaryEventSetVerified=True,ordinaryRecordsVerified=True,ordinaryDerivedClosuresVerified=True,eventSetProvenanceOnly=True)
  pre=OUT/"fixture-combined-preflight.json";pre.write_text(pub.stable(combined))
  prepared=pub.prepare_manifest(combined,str(pre),pub.sha(pre.read_bytes()),baseline,newcat)
  pub.validate_manifest(prepared,old_sha,newhash);pub.verify_evidence(prepared,verify_runtime=False)
@@ -284,7 +332,7 @@ try:
  for label,mutation in [
   ("over512 blocks",lambda x:x.update(rows=x["rows"]*257)),
   ("over128MiB native",lambda x:x["rows"][0].update(newNativeBytes=pub.MAX_NATIVE_BYTES+1)),
-  ("over1024 records",lambda x:x["rows"][0]["unchangedScalarMetadata"].update(protocol_record_count=1025)),
+  ("over1024 records",lambda x:x["rows"][0]["oldScalarMetadata"].update(protocol_record_count=1025)),
   ("resource receipt mismatch",lambda x:x["resourceUsage"].update(rawBlockBytes=1)),
   ("extra replacement field",lambda x:x["rows"][0]["replacementFields"].update(freeBalance="1")),
  ]:
@@ -319,9 +367,12 @@ try:
  assert accepted["returncode"]==0 and accepted["commitSent"] and fence_calls==[True]
  result=json.loads([x for x in accepted["stdout"].splitlines() if x.strip()][-1]);new_state=snapshot()
  assert result["originalArchivesRetained"] and result["oldChunksRetained"]
+ assert all(actual["originalScalarsPreserved"] and actual["currentScalarsQualified"] and actual["oldScalarMetadataSha256"]==row["oldScalarMetadataSha256"] and actual["newScalarMetadataSha256"]==row["newScalarMetadataSha256"] for actual,row in zip(result["blocks"],m["rows"]))
+ check("publication binds preserved original and qualified current scalar commitments",lambda:None)
  check("qualified ordinary-event and empty block publication commits",lambda:None)
- assert [{k:v for k,v in r.items() if k!="payload"} for r in new_state["main"]]==[{k:v for k,v in r.items() if k!="payload"} for r in old_state["main"]]
- check("all original scalars including exact created_at are preserved",lambda:None)
+ assert [{k:v for k,v in r.items() if k not in ("payload","event_set_sha256")} for r in new_state["main"]]==[{k:v for k,v in r.items() if k not in ("payload","event_set_sha256")} for r in old_state["main"]]
+ assert [r["event_set_sha256"] for r in new_state["main"][1:]]==[r["newScalarMetadata"]["event_set_sha256"] for r in m["rows"]]
+ check("only qualified event-set SHA changes; all other scalars and exact created_at persist",lambda:None)
  assert new_state["archive"]==old_state["archive"]
  assert set(old_state["chunks"])<=set(new_state["chunks"])
  check("original archive rows and every old content chunk remain unchanged",lambda:None)
@@ -357,7 +408,7 @@ try:
  # Evict replacement hot slots through ordinary, fully verified future inserts.
  for idx,row in enumerate(m["rows"],1):
   height=row["height"]+128;hash_value=("8" if idx==1 else "9")*64
-  scalar=copy.deepcopy(row["unchangedScalarMetadata"]);scalar.update(block_height=height,block_hash=hash_value)
+  scalar=copy.deepcopy(row["oldScalarMetadata"]);scalar.update(block_height=height,block_hash=hash_value)
   future={"model":"fixture-future-transition","height":height,"closingSufficientState":{"future":True}}
   sql("INSERT INTO proof_indexer.blocks VALUES('livenet',"+str(height)+","+pub.literal(hash_value)+",true);INSERT INTO proof_indexer.work_amo_block_transitions SELECT (jsonb_populate_record(NULL::proof_indexer.work_amo_block_transitions,"+lit({**scalar,"payload":future})+")).*;")
   hot=val("SELECT to_jsonb(h) - 'payload' FROM proof_indexer.work_transition_hot_slots_v1 h WHERE network='livenet' AND slot=mod("+str(row["height"])+",128);")
@@ -366,7 +417,7 @@ try:
    full=val("SELECT proof_indexer.read_work_transition_payload_v1('livenet',"+str(row["height"])+","+pub.literal(row["hash"])+","+lit(pointer)+");")
    assert full==expected
  check("cache-miss reconstruction verifies both original and replacement digests",lambda:None)
- restored=val((ROOT/"verify-supersessions.sql").read_text())
+ restored=val("SET TIME ZONE 'America/Toronto';\n"+(ROOT/"verify-supersessions.sql").read_text())
  assert restored["rowCount"]==2 and restored["allOriginalAndReplacementFramesVerified"] is True
  assert all(r["original_verified"] and r["replacement_verified"] and r["currently_selected"] and r["current_metadata_verified"] for r in restored["rows"])
  check("successor restore readcheck verifies both immutable versions and current metadata",lambda:None)
@@ -382,7 +433,7 @@ try:
  try:pub.private_read(str(p),pin);raise AssertionError("Source drift accepted")
  except ValueError:pass
  check("source input digest drift fails before SQL dispatch",lambda:None)
- receipt={"format":"isolated-native-supersession-fixture-v1","passed":len(passed),"tests":passed,"baselineContractSha256":old_sha,"replacementContractSha256":newhash,"productionConnectionUsed":False,"fixturesOnly":True}
+ receipt={"format":"isolated-native-supersession-fixture-v1","passed":len(passed),"tests":passed,"baselineContractSha256":old_sha,"replacementContractSha256":newhash,"productionConnectionUsed":False,"fixturesOnly":True,"derivedClosure":args.derived_closure}
  (OUT/"fixture-result.json").write_text(json.dumps(receipt,indent=2)+"\n")
  print(json.dumps(receipt),flush=True)
 finally:

@@ -170,6 +170,24 @@ class AdapterTests(unittest.TestCase):
   self.replace_after(q);self.run_accept()
   row=json.loads(self.accepted.read_text())['overlays'][0]
   self.assertIn({'path':str(self.inner/'qualification-before.json'),'sha256':self.before['sha256']},row['evidence'])
+ def test_derived_closure_extension_uses_shared_v4_validator(self):
+  prior=json.loads((self.inner/'qualification-before.json').read_text())
+  q=fixtures.qualification_fixture(self.m,'after-drain',2)
+  row=q['blocks'][1];row.update(protocolRecordCount=1,rawProtocolCandidateCount=1,emptyEventSetVerified=False)
+  fixtures.bind_event_set_fixture(row,derived=1);q['resourceUsage']['ordinaryRecords']=1
+  fixtures.cached_extension(prior,q,self.before['sha256']);self.replace_after(q);self.run_accept()
+ def test_derived_closure_missing_proof_or_scalar_drift_refuses_inventory_change(self):
+  prior=json.loads((self.inner/'qualification-before.json').read_text())
+  q=fixtures.qualification_fixture(self.m,'after-drain',2)
+  row=q['blocks'][1];row.update(protocolRecordCount=1,rawProtocolCandidateCount=1,emptyEventSetVerified=False)
+  fixtures.bind_event_set_fixture(row,derived=1);q['resourceUsage']['ordinaryRecords']=1
+  fixtures.cached_extension(prior,q,self.before['sha256'])
+  for mutate in (lambda x:x.update(ordinaryDerivedClosuresVerified=False),
+                 lambda x:x['blocks'][1]['newScalarMetadata'].update(created_at='changed'),
+                 lambda x:x['blocks'][1]['relationalBindings'].update(eventCount=1)):
+   changed=copy.deepcopy(q);mutate(changed);self.replace_after(changed)
+   with self.assertRaises(ValueError):self.run_accept()
+   self.assertEqual(mod.sha(self.accepted.read_bytes()),self.a['acceptedSha256'])
  def test_extension_without_cache_revalidation_refuses(self):
   q=fixtures.qualification_fixture(self.m,'after-drain',2)
   q['priorManifestSha256']=self.before['sha256'];self.replace_after(q)

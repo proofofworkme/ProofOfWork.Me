@@ -50,7 +50,7 @@ REPLAY_RESOURCE_LIMITS = {
     'maxQualificationReceiptBytes': QUALIFICATION_RECEIPT_BYTES,
     'maxOrdinaryRecords': 1024,
 }
-QUALIFICATION_FORMAT = 'work-batch-bounded-reseal-qualification-v3'
+QUALIFICATION_FORMAT = 'work-batch-bounded-reseal-qualification-v4'
 NATIVE_HELPER = 'server/db/native-transition-storage.mjs'
 ROOT_JSON = frozenset({'package.json', 'package-lock.json',
     'WORK_MARKET_V1_REFUNDS_959061.json', 'WORK_MARKET_V2_STALE_REFUND_REVIEW_959301.json'})
@@ -492,12 +492,12 @@ def validate_qualification_bounds(value):
         and all(isinstance(row.get('hash'),str) and SHA.fullmatch(row['hash']) for row in blocks)
         and prefix.get('hash')==blocks[-1]['hash'], 'Qualification suffix is not exact and bounded')
     for key in ('ordinaryRelationalSuffixVerified','fullRawSuffixVerified',
-                'noDerivedEventsVerified','noBatchLookingRecordsVerified'):
+                'ordinaryDerivedClosuresVerified','noBatchLookingRecordsVerified'):
         require(value.get(key) is True,'Qualification ordinary semantic parity is unavailable: '+key)
     totals={'nativePayloadBytes':0,'newNativePayloadBytes':0,'rawBlockBytes':0,'ordinaryRecords':0}
     for row in blocks:
         for key in ('nativePayloadBytes','oldNativeBytes','newNativeBytes','rawBlockBytes',
-                    'rawProtocolCandidateCount','protocolRecordCount','batchLookingCount'):
+                    'rawProtocolCandidateCount','protocolRecordCount','derivedEventCount','eventCount','batchLookingCount'):
             require(type(row.get(key)) is int and row[key]>=0,'Qualification row counter invalid: '+key)
         require(row['batchLookingCount']==0 and row['oldNativeBytes']==row['nativePayloadBytes']
             and 0<row['nativePayloadBytes']<=REPLAY_RESOURCE_LIMITS['maxNativePayloadBytesPerBlock']
@@ -506,27 +506,54 @@ def validate_qualification_bounds(value):
             'Qualification contains a batch or oversized native/raw block')
         for key in ('baselineExactlyReproduced','compatibilityDeterministic','economicStateEqual',
                     'workGenericIdStateEqual','projectionEqual','eventsAndFeesEqual',
-                    'ordinaryEventSetVerified','ordinaryRecordsVerified','noDerivedEventsVerified'):
+                    'ordinaryEventSetVerified','eventSetProvenanceOnly','ordinaryRecordsVerified','ordinaryDerivedClosuresVerified'):
             require(row.get(key) is True,'Qualification block semantic parity missing: '+key)
         relational=row.get('relationalBindings',{})
         require(type(relational.get('eventCount')) is int and relational['eventCount']>=0
             and type(relational.get('recordCount')) is int
-            and relational['eventCount']==relational['recordCount']==row['rawProtocolCandidateCount']==row['protocolRecordCount']
+            and relational['recordCount']==row['rawProtocolCandidateCount']==row['protocolRecordCount']
+            and relational['eventCount']==row['eventCount']==row['protocolRecordCount']+row['derivedEventCount']
+            and row['derivedEventCount']<=row['protocolRecordCount']
             and all(isinstance(relational.get(key),str) and SHA.fullmatch(relational[key])
                     for key in ('eventRowsSha256','recordRowsSha256')),
             'Qualification ordinary relational evidence differs')
         replacements=row.get('replacementFields',{})
         require(isinstance(replacements,dict) and set(replacements)=={
-            'workBatchV1','transitionChainCommitment','replayRecords','traces','replayDescriptorCommitment'}
+            'workBatchV1','transitionChainCommitment','replayRecords','traces','replayDescriptorCommitment','eventSetCommitment'}
             and isinstance(row.get('allowedChangedFields'),list)
             and row['allowedChangedFields']==sorted(set(row['allowedChangedFields']))
             and set(row['allowedChangedFields']).issubset(replacements)
             and {'workBatchV1','transitionChainCommitment'}.issubset(row['allowedChangedFields']),
             'Qualification replacement scope is not exact')
         require(all(isinstance(row.get(key),str) and SHA.fullmatch(row[key])
-            for key in ('oldNativeSha256','newNativeSha256','oldScalarMetadataSha256','newScalarMetadataSha256','currentMainRowSha256'))
-            and row['oldScalarMetadataSha256']==row['newScalarMetadataSha256'],
+            for key in ('oldNativeSha256','newNativeSha256','oldScalarMetadataSha256','newScalarMetadataSha256','currentMainRowSha256')),
             'Qualification native/scalar binding differs')
+        old_event=row.get('oldEventSetCommitment');new_event=row.get('newEventSetCommitment')
+        old_scalar=row.get('oldScalarMetadata');new_scalar=row.get('newScalarMetadata')
+        require(not any(key in row for key in
+                ('eventSetCommitment','unchangedScalarMetadata','unchangedScalarMetadataSha256'))
+            and isinstance(old_event,dict) and isinstance(new_event,dict)
+            and all(set(item)=={'model','payloadBytes','sha256','eventCount'}
+                and item['model']=='canonical-work-amo-event-set-sha256-v1'
+                and type(item['eventCount']) is int and item['eventCount']==row['eventCount']
+                and type(item['payloadBytes']) is int and item['payloadBytes']>=0
+                and isinstance(item['sha256'],str) and SHA.fullmatch(item['sha256'])
+                for item in (old_event,new_event))
+            and {**old_event,'sha256':new_event['sha256']}==new_event
+            and replacements['eventSetCommitment']==new_event,
+            'Qualification event-set provenance differs')
+        require(isinstance(old_scalar,dict) and isinstance(new_scalar,dict)
+            and old_scalar.get('event_set_sha256')==old_event['sha256']
+            and new_scalar.get('event_set_sha256')==new_event['sha256']
+            and {**old_scalar,'event_set_sha256':new_scalar['event_set_sha256']}==new_scalar
+            and all(type(old_scalar.get(key)) is int and old_scalar[key]==row[target]
+                for key,target in (('raw_protocol_candidate_count','rawProtocolCandidateCount'),
+                    ('protocol_record_count','protocolRecordCount'),('event_count','eventCount')))
+            and ((old_scalar==new_scalar)==
+                (row['oldScalarMetadataSha256']==row['newScalarMetadataSha256']))
+            and ((old_event==new_event)==('eventSetCommitment' not in row['allowedChangedFields']))
+            and (row['derivedEventCount']>0 or old_event==new_event),
+            'Qualification scalar changes exceed event-set provenance')
         if row['protocolRecordCount']==0:
             require(row.get('emptyEventSetVerified') is True,'Empty suffix block lacks exact event proof')
         totals['nativePayloadBytes']+=row['nativePayloadBytes']
@@ -892,9 +919,10 @@ def publication_result(final, prepared, qualification):
         'Published suffix differs')
     for actual,expected in zip(blocks,proof['blocks']):
         require(all(actual.get(key)==expected[key] for key in
-            ('height','hash','oldNativeSha256','newNativeSha256'))
+            ('height','hash','oldNativeSha256','newNativeSha256',
+             'oldScalarMetadataSha256','newScalarMetadataSha256'))
             and all(actual.get(key) is True for key in
-                ('originalArchiveRetained','currentMetadataVerified','originalScalarsVerified',
+                ('originalArchiveRetained','currentMetadataVerified','originalScalarsPreserved','currentScalarsQualified',
                  'hotSlotVerified','historicalReadVerified','relationalRowsVerified'))
             and actual.get('cacheMode')==('hot' if expected['height']>=proof['fixedPrefix']['through']-127 else 'cold'),
             'Native block publication postcondition differs')

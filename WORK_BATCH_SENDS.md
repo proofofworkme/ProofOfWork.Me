@@ -150,8 +150,13 @@ registry-fee accounting event and does not make attachments valid for batch send
 This exception is not activation evidence. Do not invent a confirmation height,
 write pins or activation marker. If D+1 was already sealed without this context,
 ordinary restart cannot establish the missing activation: use a separately
-reviewed canonical replay procedure before enabling writes. Existing marker-loss,
-projection parity, exact-tip readiness and independent write-switch gates remain.
+reviewed canonical replay procedure before enabling writes. The bounded repair
+also preserves existing `buy5` purchases and their derived listing closures:
+economic results and relational history stay exact while explicitly identified
+chain references and dependent commitments are recomputed. See the
+[repair contract](deploy/work-batch-replay/README.md) for its supported scope,
+immutable originals and validation gates. Existing marker-loss, projection parity,
+exact-tip readiness and independent write-switch gates remain.
 
 ## Activation and release handoff
 

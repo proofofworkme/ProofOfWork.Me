@@ -104,7 +104,7 @@
           "sha256": "eb969c3efeb587ce8fe5cc45099680295b4fd21089305e58daf9125827d2bb3d"
         }
       },
-      "unchangedScalarMetadata": {
+      "oldScalarMetadata": {
         "network": "livenet",
         "block_height": 973104,
         "block_hash": "00000000000000000001628a6ee144e0a149a23e4898d790eeec2719eff565d8",
@@ -130,8 +130,7 @@
         "complete": true,
         "created_at": "2026-10-25T18:03:06.179Z",
         "work_token_state_model": "canonical-work-token-state-subatoms-v3"
-      },
-      "unchangedScalarMetadataSha256": "3625791c321ce73a9354fa48d72e633ae0c152885d84dc9f044f22818a5606db"
+      }
     },
     {
       "height": 973105,
@@ -165,7 +164,7 @@
           "sha256": "0e01f37764a9f8ba24eef2ed6d04572150743990bf48ec6e85a8142ac5db834e"
         }
       },
-      "unchangedScalarMetadata": {
+      "oldScalarMetadata": {
         "network": "livenet",
         "block_height": 973105,
         "block_hash": "0000000000000000000088514496a84d7975689ca65df8099ac8d68177425c43",
@@ -191,8 +190,2196 @@
         "complete": true,
         "created_at": "2026-10-25T18:13:02.006Z",
         "work_token_state_model": "canonical-work-token-state-subatoms-v3"
-      },
-      "unchangedScalarMetadataSha256": "a53f9f09c6ab07b2957dcd53ef2590c8c96a76ac80d21f6b8cc5653c6aadfd24"
+      }
     }
-  ]
+  ],
+  "derivedClosureFixture": {
+    "format": "canonical-buy5-derived-closure-shape-fixture-v1",
+    "provenanceSha256": "2ac147cf229a52d290b2a8287d6b66f1a9156f72ce821eb6fc6dffdaa77273a2",
+    "sourceHeight": 973218,
+    "sourceHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+    "qualification": "Exact recorded descriptor/trace shape, synthetic block positions in the disposable fixture; never publication evidence.",
+    "old": {
+      "records": [
+        {
+          "derived": [
+            {
+              "closedListing": {
+                "amountStorageModel": "work-subatoms-v2",
+                "amountAtoms": "749030366",
+                "frozenTerms": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                  "listingBlockHeight": 962589,
+                  "listingBlockIndex": 979,
+                  "listingBondContributionQ8": "2969307712800",
+                  "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                  "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                  "listingProtocolVout": 1,
+                  "listingRecordOrdinal": 0,
+                  "unitAmountSubatoms": "749030366",
+                  "unitFaceProofs": 25000,
+                  "unitMinimumPriceSats": "25000",
+                  "unitPriceSats": "25000",
+                  "version": "pwt-sale-v8"
+                },
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "priceSats": "25000",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "version": "pwt-sale-v8",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                },
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+              },
+              "kind": "token-listing-closed",
+              "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+              "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+              "chargesTransactionFee": false,
+              "claimsEconomicOutputs": false,
+              "containerPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "derivedId": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:973218:1227:2:1",
+              "derivedIndex": 0,
+              "materializationPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "economicDelta": false,
+              "projectionPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 1
+              },
+              "rawCandidate": false,
+              "parentTransitionChainCommitmentAfter": {
+                "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+                "payloadBytes": 8460,
+                "sha256": "de51c4fb7dc94db5ca56ab39308e1d3dbc4f186cab392bde9d1901bcc8055c90"
+              }
+            }
+          ],
+          "rawCandidate": true,
+          "outcome": {
+            "kind": "pwt1-valid",
+            "reasonCode": "",
+            "semanticKind": "token-sale",
+            "valid": true
+          },
+          "output": {
+            "buyerAddress": "19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4",
+            "frozenTerms": {
+              "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+              "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+              "bondTransitionModel": "canonical-compute-then-bond-v1",
+              "stateOrderModel": "canonical-proof-state-order-v1",
+              "unitModel": "canonical-work-amo-proof-unit-v3",
+              "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+              "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+              "listingBlockHeight": 962589,
+              "listingBlockIndex": 979,
+              "listingBondContributionQ8": "2969307712800",
+              "listingNetworkValueAfterQ8": "700906162510642214130994645",
+              "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+              "listingProtocolVout": 1,
+              "listingRecordOrdinal": 0,
+              "unitAmountSubatoms": "749030366",
+              "unitFaceProofs": 25000,
+              "unitMinimumPriceSats": "25000",
+              "unitPriceSats": "25000",
+              "version": "pwt-sale-v8"
+            },
+            "listing": {
+              "amountStorageModel": "work-subatoms-v2",
+              "amountAtoms": "749030366",
+              "frozenTerms": {
+                "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                "bondTransitionModel": "canonical-compute-then-bond-v1",
+                "stateOrderModel": "canonical-proof-state-order-v1",
+                "unitModel": "canonical-work-amo-proof-unit-v3",
+                "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                "listingBlockHeight": 962589,
+                "listingBlockIndex": 979,
+                "listingBondContributionQ8": "2969307712800",
+                "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                "listingProtocolVout": 1,
+                "listingRecordOrdinal": 0,
+                "unitAmountSubatoms": "749030366",
+                "unitFaceProofs": 25000,
+                "unitMinimumPriceSats": "25000",
+                "unitPriceSats": "25000",
+                "version": "pwt-sale-v8"
+              },
+              "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+              "priceSats": "25000",
+              "saleAuthorization": {
+                "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                "bondTransitionModel": "canonical-compute-then-bond-v1",
+                "stateOrderModel": "canonical-proof-state-order-v1",
+                "unitModel": "canonical-work-amo-proof-unit-v3",
+                "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                "anchorSigHashType": 131,
+                "anchorType": "sale-ticket-v1",
+                "anchorValueSats": 546,
+                "anchorVout": 2,
+                "buyerAddress": "",
+                "expiresAt": "",
+                "network": "livenet",
+                "nonce": "msuecd97-suo139v7",
+                "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                "ticker": "WORK",
+                "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                "unitFaceProofs": 25000,
+                "version": "pwt-sale-v8",
+                "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+              },
+              "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+            },
+            "projection": {
+              "buyerAddress": "19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4",
+              "frozenTerms": {
+                "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                "bondTransitionModel": "canonical-compute-then-bond-v1",
+                "stateOrderModel": "canonical-proof-state-order-v1",
+                "unitModel": "canonical-work-amo-proof-unit-v3",
+                "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                "listingBlockHeight": 962589,
+                "listingBlockIndex": 979,
+                "listingBondContributionQ8": "2969307712800",
+                "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                "listingProtocolVout": 1,
+                "listingRecordOrdinal": 0,
+                "unitAmountSubatoms": "749030366",
+                "unitFaceProofs": 25000,
+                "unitMinimumPriceSats": "25000",
+                "unitPriceSats": "25000",
+                "version": "pwt-sale-v8"
+              },
+              "listing": {
+                "amountStorageModel": "work-subatoms-v2",
+                "amountAtoms": "749030366",
+                "frozenTerms": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                  "listingBlockHeight": 962589,
+                  "listingBlockIndex": 979,
+                  "listingBondContributionQ8": "2969307712800",
+                  "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                  "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                  "listingProtocolVout": 1,
+                  "listingRecordOrdinal": 0,
+                  "unitAmountSubatoms": "749030366",
+                  "unitFaceProofs": 25000,
+                  "unitMinimumPriceSats": "25000",
+                  "unitPriceSats": "25000",
+                  "version": "pwt-sale-v8"
+                },
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "priceSats": "25000",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "version": "pwt-sale-v8",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                },
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+              },
+              "derived": [
+                {
+                  "closedListing": {
+                    "amountStorageModel": "work-subatoms-v2",
+                    "amountAtoms": "749030366",
+                    "frozenTerms": {
+                      "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                      "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                      "bondTransitionModel": "canonical-compute-then-bond-v1",
+                      "stateOrderModel": "canonical-proof-state-order-v1",
+                      "unitModel": "canonical-work-amo-proof-unit-v3",
+                      "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                      "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                      "listingBlockHeight": 962589,
+                      "listingBlockIndex": 979,
+                      "listingBondContributionQ8": "2969307712800",
+                      "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                      "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                      "listingProtocolVout": 1,
+                      "listingRecordOrdinal": 0,
+                      "unitAmountSubatoms": "749030366",
+                      "unitFaceProofs": 25000,
+                      "unitMinimumPriceSats": "25000",
+                      "unitPriceSats": "25000",
+                      "version": "pwt-sale-v8"
+                    },
+                    "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                    "priceSats": "25000",
+                    "saleAuthorization": {
+                      "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                      "bondTransitionModel": "canonical-compute-then-bond-v1",
+                      "stateOrderModel": "canonical-proof-state-order-v1",
+                      "unitModel": "canonical-work-amo-proof-unit-v3",
+                      "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                      "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                      "anchorSigHashType": 131,
+                      "anchorType": "sale-ticket-v1",
+                      "anchorValueSats": 546,
+                      "anchorVout": 2,
+                      "buyerAddress": "",
+                      "expiresAt": "",
+                      "network": "livenet",
+                      "nonce": "msuecd97-suo139v7",
+                      "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                      "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                      "ticker": "WORK",
+                      "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                      "unitFaceProofs": 25000,
+                      "version": "pwt-sale-v8",
+                      "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                      "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                      "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                    },
+                    "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+                  },
+                  "kind": "token-listing-closed",
+                  "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "chargesTransactionFee": false,
+                  "claimsEconomicOutputs": false,
+                  "containerPosition": {
+                    "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                    "blockHeight": 973218,
+                    "blockTransactionIndex": 1227,
+                    "protocolVout": 2,
+                    "recordOrdinal": 0
+                  },
+                  "derivedId": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:973218:1227:2:1",
+                  "derivedIndex": 0,
+                  "materializationPosition": {
+                    "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                    "blockHeight": 973218,
+                    "blockTransactionIndex": 1227,
+                    "protocolVout": 2,
+                    "recordOrdinal": 0
+                  },
+                  "economicDelta": false,
+                  "projectionPosition": {
+                    "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                    "blockHeight": 973218,
+                    "blockTransactionIndex": 1227,
+                    "protocolVout": 2,
+                    "recordOrdinal": 1
+                  },
+                  "rawCandidate": false
+                }
+              ],
+              "kind": "token-sale",
+              "parsed": {
+                "buyerAddress": "19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4",
+                "kind": "buy",
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "payload": "pwt1:buy5:36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9:19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4:eyJhbW91bnRNb2RlbCI6ImNhbm9uaWNhbC13b3JrLWFtby1wcm9vZi11bml0LWFtb3VudC12MyIsImFuY2hvclNjcmlwdFB1YktleSI6Ijc2YTkxNDZjMTQ3YWUyODFjNzE3YzVkOGQzN2Y4ZThlYjQwNmQyZTQxOWIyODU4OGFjIiwiYW5jaG9yU2lnSGFzaFR5cGUiOjEzMSwiYW5jaG9yVHlwZSI6InNhbGUtdGlja2V0LXYxIiwiYW5jaG9yVmFsdWVTYXRzIjo1NDYsImFuY2hvclZvdXQiOjIsImJvbmRUcmFuc2l0aW9uTW9kZWwiOiJjYW5vbmljYWwtY29tcHV0ZS10aGVuLWJvbmQtdjEiLCJibG9ja1NlcXVlbmNlck1vZGVsIjoiY2Fub25pY2FsLXdvcmstYW1vLWZ1bGwtcG9zaXRpb24tYmxvY2stc2VxdWVuY2VyLXY0IiwiYnV5ZXJBZGRyZXNzIjoiIiwiZXhwaXJlc0F0IjoiIiwibmV0d29yayI6ImxpdmVuZXQiLCJub25jZSI6Im1zdWVjZDk3LXN1bzEzOXY3IiwicmVnaXN0cnlBZGRyZXNzIjoiMTYzOFZuNkt0bUs4cDVyNG9HdkFYcTlubVpiMWVtVTFEViIsInNlbGxlckFkZHJlc3MiOiIxQXJVV2hHamNkZ1JoSjlOTXdzTlFpU1M5S0VRb0JVSDlkIiwic2VsbGVyUHVibGljS2V5IjoiMDJmYWRkODRhOWU1YjhjN2QxZTUxZWI1Mzc5M2RmOGE2MzEzZTY4MWVlYzg5ZmU3MDg4ZTIwNGIxZWE3YjIxYTEyIiwic3RhdGVPcmRlck1vZGVsIjoiY2Fub25pY2FsLXByb29mLXN0YXRlLW9yZGVyLXYxIiwidGlja2VyIjoiV09SSyIsInRva2VuSWQiOiJkNGU1ZWJmMTFkMTA0ZDZhNjNmYjc0ZTQyMDk0MzY0YjI1YTVmNzE5OWEwOWU1YzBlNzE0MDg5NzI0NjZhOGI4IiwidW5pdEZhY2VQcm9vZnMiOjI1MDAwLCJ1bml0TW9kZWwiOiJjYW5vbmljYWwtd29yay1hbW8tcHJvb2YtdW5pdC12MyIsInVuaXRXb3JrT3JhY2xlTW9kZWwiOiJjYW5vbmljYWwtd29yay1wcmVmaXgtYmVmb3JlLWFjdGlvbi12MSIsInZlcnNpb24iOiJwd3Qtc2FsZS12OCIsImFuY2hvclNpZ25hdHVyZSI6IjMwNDQwMjIwMzdhMmQ3MTI3N2I4MDljMTgzNDA0NGI3NjYyYzYzOWQ2OTQ2NWQwMGE5N2YyOWE2NDc0YjU1MmU2ZTFhYzE3NTAyMjA2MDJlZjRmNzU0ZjQzMGRmOGRhNDgyMDRmYjk2ODU2YzVmNzQwZTQxMDdhN2M4M2IyODU0ZDIzM2ZmZDgxMWUyODMiLCJhbmNob3JUeGlkIjoiMzZjZjMwZmM2OGVlYTlkMGFjNjkxYjRlNjg3Njg2NmJkZjMzZWEyYWIxZjk5YmI1ODNkNmJlNTIyNDlhNGRjOSJ9",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "version": "pwt-sale-v8",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9"
+                },
+                "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8"
+              },
+              "position": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "protocol": "pwt1",
+              "reasonCode": "",
+              "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9",
+              "valid": true
+            }
+          },
+          "position": {
+            "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+            "blockHeight": 973218,
+            "blockTransactionIndex": 1227,
+            "protocolVout": 2,
+            "recordOrdinal": 0
+          },
+          "protocol": "pwt1",
+          "rawWitness": {
+            "model": "canonical-raw-protocol-record-v1",
+            "rawRecordParts": [
+              {
+                "decodeDetail": "",
+                "decodeValid": true,
+                "payloadHex": "707774313a627579353a333663663330666336386565613964306163363931623465363837363836366264663333656132616231663939626235383364366265353232343961346463393a31394d58556d4267424e336e4a723256317976456479735a42423863595361486b343a65794a6862573931626e524e6232526c62434936496d4e68626d397561574e686243313362334a724c57467462793177636d39765a693131626d6c304c57467462335675644331324d794973496d467559326876636c4e6a636d6c7764464231596b746c65534936496a633259546b784e445a6a4d545133595755794f44466a4e7a4533597a566b4f47517a4e3259345a54686c596a51774e6d51795a5451784f5749794f4455344f47466a496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397956486c775a534936496e4e686247557464476c6a613256304c585978496977695957356a61473979566d4673645756545958527a496a6f314e445973496d467559326876636c5a76645851694f6a4973496d4a76626d5255636d467563326c30615739755457396b5a5777694f694a6a59573576626d6c6a5957777459323974634856305a533130614756754c574a76626d5174646a45694c434a696247396a61314e6c6358566c626d4e6c636b31765a475673496a6f695932467562323570593246734c586476636d7374595731764c575a31624777746347397a6158527062323474596d7876593273746332567864575675593256794c58593049697769596e56355a584a425a4752795a584e7a496a6f69496977695a58687761584a6c63304630496a6f6949697769626d56306432397961794936496d7870646d56755a5851694c434a756232356a5a534936496d317a6457566a5a446b334c584e31627a457a4f58593349697769636d566e61584e30636e6c425a4752795a584e7a496a6f694d54597a4f465a754e6b743062557334634456794e473948646b465963546c75625670694d5756745654464556694973496e4e6c6247786c636b466b5a484a6c63334d694f69497851584a5656326848616d4e6b5a314a6f536a6c4f5458647a546c467055314d355330565262304a5653446c6b4969776963325673624756795548566962476c6a53325635496a6f694d444a6d5957526b4f4452684f575531596a686a4e3251785a5455785a5749314d7a63354d32526d4f4745324d7a457a5a5459344d57566c597a67355a6d55334d4467345a5449774e4749785a574533596a497859544579496977696333526864475650636d526c636b31765a475673496a6f695932467562323570593246734c5842796232396d4c584e305958526c4c5739795a4756794c5859784969776964476c6a61325679496a6f695630395353794973496e527661325675535751694f694a6b4e4755315a574a6d4d54466b4d5441305a445a684e6a4e6d596a63305a5451794d446b304d7a5930596a49315954566d4e7a45354f5745774f575531597a426c4e7a45304d4467354e7a49304e6a5a684f474934496977696457357064455a6859325651636d39765a6e4d694f6a49314d4441774c434a31626d6c305457396b5a5777694f694a6a59573576626d6c6a5957777464323979617931686257387463484a766232597464573570644331324d794973496e56756158525862334a7254334a685932786c5457396b5a5777694f694a6a59573576626d6c6a595777746432397961793177636d566d61586774596d566d62334a6c4c57466a64476c76626931324d534973496e5a6c636e4e70623234694f694a7764335174633246735a5331324f434973496d467559326876636c4e705a323568644856795a534936496a4d774e4451774d6a49774d7a64684d6d51334d5449334e3249344d446c6a4d54677a4e4441304e4749334e6a5979597a597a4f5751324f5451324e5751774d4745354e3259794f5745324e446330596a55314d6d55325a544668597a45334e5441794d6a41324d444a6c5a6a526d4e7a55305a6a517a4d47526d4f4752684e4467794d44526d596a6b324f445532597a566d4e7a51775a5451784d4464684e324d344d3249794f4455305a44497a4d325a6d5a4467784d5755794f444d694c434a68626d4e6f62334a5565476c6b496a6f694d7a5a6a5a6a4d775a6d4d324f47566c59546c6b4d47466a4e6a6b78596a526c4e6a67334e6a67324e6d4a6b5a6a4d7a5a574579595749785a6a6b35596d49314f444e6b4e6d4a6c4e5449794e446c684e47526a4f534a39",
+                "prefix": "pwt1:",
+                "protocolVout": 2,
+                "reasonCode": "",
+                "scriptPubKeyHex": "6a4d8a06707774313a627579353a333663663330666336386565613964306163363931623465363837363836366264663333656132616231663939626235383364366265353232343961346463393a31394d58556d4267424e336e4a723256317976456479735a42423863595361486b343a65794a6862573931626e524e6232526c62434936496d4e68626d397561574e686243313362334a724c57467462793177636d39765a693131626d6c304c57467462335675644331324d794973496d467559326876636c4e6a636d6c7764464231596b746c65534936496a633259546b784e445a6a4d545133595755794f44466a4e7a4533597a566b4f47517a4e3259345a54686c596a51774e6d51795a5451784f5749794f4455344f47466a496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397956486c775a534936496e4e686247557464476c6a613256304c585978496977695957356a61473979566d4673645756545958527a496a6f314e445973496d467559326876636c5a76645851694f6a4973496d4a76626d5255636d467563326c30615739755457396b5a5777694f694a6a59573576626d6c6a5957777459323974634856305a533130614756754c574a76626d5174646a45694c434a696247396a61314e6c6358566c626d4e6c636b31765a475673496a6f695932467562323570593246734c586476636d7374595731764c575a31624777746347397a6158527062323474596d7876593273746332567864575675593256794c58593049697769596e56355a584a425a4752795a584e7a496a6f69496977695a58687761584a6c63304630496a6f6949697769626d56306432397961794936496d7870646d56755a5851694c434a756232356a5a534936496d317a6457566a5a446b334c584e31627a457a4f58593349697769636d566e61584e30636e6c425a4752795a584e7a496a6f694d54597a4f465a754e6b743062557334634456794e473948646b465963546c75625670694d5756745654464556694973496e4e6c6247786c636b466b5a484a6c63334d694f69497851584a5656326848616d4e6b5a314a6f536a6c4f5458647a546c467055314d355330565262304a5653446c6b4969776963325673624756795548566962476c6a53325635496a6f694d444a6d5957526b4f4452684f575531596a686a4e3251785a5455785a5749314d7a63354d32526d4f4745324d7a457a5a5459344d57566c597a67355a6d55334d4467345a5449774e4749785a574533596a497859544579496977696333526864475650636d526c636b31765a475673496a6f695932467562323570593246734c5842796232396d4c584e305958526c4c5739795a4756794c5859784969776964476c6a61325679496a6f695630395353794973496e527661325675535751694f694a6b4e4755315a574a6d4d54466b4d5441305a445a684e6a4e6d596a63305a5451794d446b304d7a5930596a49315954566d4e7a45354f5745774f575531597a426c4e7a45304d4467354e7a49304e6a5a684f474934496977696457357064455a6859325651636d39765a6e4d694f6a49314d4441774c434a31626d6c305457396b5a5777694f694a6a59573576626d6c6a5957777464323979617931686257387463484a766232597464573570644331324d794973496e56756158525862334a7254334a685932786c5457396b5a5777694f694a6a59573576626d6c6a595777746432397961793177636d566d61586774596d566d62334a6c4c57466a64476c76626931324d534973496e5a6c636e4e70623234694f694a7764335174633246735a5331324f434973496d467559326876636c4e705a323568644856795a534936496a4d774e4451774d6a49774d7a64684d6d51334d5449334e3249344d446c6a4d54677a4e4441304e4749334e6a5979597a597a4f5751324f5451324e5751774d4745354e3259794f5745324e446330596a55314d6d55325a544668597a45334e5441794d6a41324d444a6c5a6a526d4e7a55305a6a517a4d47526d4f4752684e4467794d44526d596a6b324f445532597a566d4e7a51775a5451784d4464684e324d344d3249794f4455305a44497a4d325a6d5a4467784d5755794f444d694c434a68626d4e6f62334a5565476c6b496a6f694d7a5a6a5a6a4d775a6d4d324f47566c59546c6b4d47466a4e6a6b78596a526c4e6a67334e6a67324e6d4a6b5a6a4d7a5a574579595749785a6a6b35596d49314f444e6b4e6d4a6c4e5449794e446c684e47526a4f534a39",
+                "text": "pwt1:buy5:36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9:19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4:eyJhbW91bnRNb2RlbCI6ImNhbm9uaWNhbC13b3JrLWFtby1wcm9vZi11bml0LWFtb3VudC12MyIsImFuY2hvclNjcmlwdFB1YktleSI6Ijc2YTkxNDZjMTQ3YWUyODFjNzE3YzVkOGQzN2Y4ZThlYjQwNmQyZTQxOWIyODU4OGFjIiwiYW5jaG9yU2lnSGFzaFR5cGUiOjEzMSwiYW5jaG9yVHlwZSI6InNhbGUtdGlja2V0LXYxIiwiYW5jaG9yVmFsdWVTYXRzIjo1NDYsImFuY2hvclZvdXQiOjIsImJvbmRUcmFuc2l0aW9uTW9kZWwiOiJjYW5vbmljYWwtY29tcHV0ZS10aGVuLWJvbmQtdjEiLCJibG9ja1NlcXVlbmNlck1vZGVsIjoiY2Fub25pY2FsLXdvcmstYW1vLWZ1bGwtcG9zaXRpb24tYmxvY2stc2VxdWVuY2VyLXY0IiwiYnV5ZXJBZGRyZXNzIjoiIiwiZXhwaXJlc0F0IjoiIiwibmV0d29yayI6ImxpdmVuZXQiLCJub25jZSI6Im1zdWVjZDk3LXN1bzEzOXY3IiwicmVnaXN0cnlBZGRyZXNzIjoiMTYzOFZuNkt0bUs4cDVyNG9HdkFYcTlubVpiMWVtVTFEViIsInNlbGxlckFkZHJlc3MiOiIxQXJVV2hHamNkZ1JoSjlOTXdzTlFpU1M5S0VRb0JVSDlkIiwic2VsbGVyUHVibGljS2V5IjoiMDJmYWRkODRhOWU1YjhjN2QxZTUxZWI1Mzc5M2RmOGE2MzEzZTY4MWVlYzg5ZmU3MDg4ZTIwNGIxZWE3YjIxYTEyIiwic3RhdGVPcmRlck1vZGVsIjoiY2Fub25pY2FsLXByb29mLXN0YXRlLW9yZGVyLXYxIiwidGlja2VyIjoiV09SSyIsInRva2VuSWQiOiJkNGU1ZWJmMTFkMTA0ZDZhNjNmYjc0ZTQyMDk0MzY0YjI1YTVmNzE5OWEwOWU1YzBlNzE0MDg5NzI0NjZhOGI4IiwidW5pdEZhY2VQcm9vZnMiOjI1MDAwLCJ1bml0TW9kZWwiOiJjYW5vbmljYWwtd29yay1hbW8tcHJvb2YtdW5pdC12MyIsInVuaXRXb3JrT3JhY2xlTW9kZWwiOiJjYW5vbmljYWwtd29yay1wcmVmaXgtYmVmb3JlLWFjdGlvbi12MSIsInZlcnNpb24iOiJwd3Qtc2FsZS12OCIsImFuY2hvclNpZ25hdHVyZSI6IjMwNDQwMjIwMzdhMmQ3MTI3N2I4MDljMTgzNDA0NGI3NjYyYzYzOWQ2OTQ2NWQwMGE5N2YyOWE2NDc0YjU1MmU2ZTFhYzE3NTAyMjA2MDJlZjRmNzU0ZjQzMGRmOGRhNDgyMDRmYjk2ODU2YzVmNzQwZTQxMDdhN2M4M2IyODU0ZDIzM2ZmZDgxMWUyODMiLCJhbmNob3JUeGlkIjoiMzZjZjMwZmM2OGVlYTlkMGFjNjkxYjRlNjg3Njg2NmJkZjMzZWEyYWIxZjk5YmI1ODNkNmJlNTIyNDlhNGRjOSJ9"
+              }
+            ]
+          },
+          "stateDelta": {
+            "baseContributions": [
+              {
+                "field": "tokenMarketplaceFeeSats",
+                "value": "546"
+              },
+              {
+                "field": "tokenSaleVolumeSats",
+                "value": "25000"
+              }
+            ],
+            "creditFixedQ8": "0",
+            "creditFixedSats": "25546",
+            "economicOutputs": [
+              {
+                "address": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                "attributedSats": "546",
+                "outputSats": "546",
+                "role": "pwt-token-registry",
+                "vout": 1
+              },
+              {
+                "address": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                "attributedSats": "25000",
+                "outputSats": "25546",
+                "role": "pwt-seller",
+                "vout": 0
+              }
+            ],
+            "movement": {
+              "amountStorageModel": "work-subatoms-v2",
+              "amountSubatoms": "749030366",
+              "identity": "sale:71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:2:0"
+            }
+          },
+          "transitionChainCommitmentAfter": {
+            "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+            "payloadBytes": 8460,
+            "sha256": "de51c4fb7dc94db5ca56ab39308e1d3dbc4f186cab392bde9d1901bcc8055c90"
+          },
+          "transactionMinerFeeSats": "521",
+          "transactionProtocolRecordCount": 1,
+          "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9"
+        },
+        {
+          "chargesTransactionFee": false,
+          "derived": true,
+          "outcome": {
+            "kind": "pwt1-valid",
+            "reasonCode": "",
+            "semanticKind": "token-listing-closed",
+            "valid": true
+          },
+          "output": {
+            "projection": {
+              "closedListing": {
+                "amountStorageModel": "work-subatoms-v2",
+                "amountAtoms": "749030366",
+                "frozenTerms": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                  "listingBlockHeight": 962589,
+                  "listingBlockIndex": 979,
+                  "listingBondContributionQ8": "2969307712800",
+                  "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                  "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                  "listingProtocolVout": 1,
+                  "listingRecordOrdinal": 0,
+                  "unitAmountSubatoms": "749030366",
+                  "unitFaceProofs": 25000,
+                  "unitMinimumPriceSats": "25000",
+                  "unitPriceSats": "25000",
+                  "version": "pwt-sale-v8"
+                },
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "priceSats": "25000",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "version": "pwt-sale-v8",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                },
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+              },
+              "kind": "token-listing-closed",
+              "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+              "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+              "chargesTransactionFee": false,
+              "claimsEconomicOutputs": false,
+              "containerPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "derivedId": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:973218:1227:2:1",
+              "derivedIndex": 0,
+              "materializationPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "economicDelta": false,
+              "projectionPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 1
+              },
+              "rawCandidate": false,
+              "parentTransitionChainCommitmentAfter": {
+                "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+                "payloadBytes": 8460,
+                "sha256": "de51c4fb7dc94db5ca56ab39308e1d3dbc4f186cab392bde9d1901bcc8055c90"
+              },
+              "derived": true,
+              "position": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 1
+              },
+              "protocol": "pwt1",
+              "reasonCode": "",
+              "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9",
+              "valid": true
+            }
+          },
+          "parentPosition": {
+            "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+            "blockHeight": 973218,
+            "blockTransactionIndex": 1227,
+            "protocolVout": 2,
+            "recordOrdinal": 0
+          },
+          "position": {
+            "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+            "blockHeight": 973218,
+            "blockTransactionIndex": 1227,
+            "protocolVout": 2,
+            "recordOrdinal": 1
+          },
+          "protocol": "pwt1",
+          "rawCandidate": false,
+          "rawWitness": {
+            "descriptor": {
+              "closedListing": {
+                "amountStorageModel": "work-subatoms-v2",
+                "amountAtoms": "749030366",
+                "frozenTerms": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                  "listingBlockHeight": 962589,
+                  "listingBlockIndex": 979,
+                  "listingBondContributionQ8": "2969307712800",
+                  "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                  "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                  "listingProtocolVout": 1,
+                  "listingRecordOrdinal": 0,
+                  "unitAmountSubatoms": "749030366",
+                  "unitFaceProofs": 25000,
+                  "unitMinimumPriceSats": "25000",
+                  "unitPriceSats": "25000",
+                  "version": "pwt-sale-v8"
+                },
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "priceSats": "25000",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "version": "pwt-sale-v8",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                },
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+              },
+              "kind": "token-listing-closed",
+              "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+              "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+              "chargesTransactionFee": false,
+              "claimsEconomicOutputs": false,
+              "containerPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "derivedId": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:973218:1227:2:1",
+              "derivedIndex": 0,
+              "materializationPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "economicDelta": false,
+              "projectionPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 1
+              },
+              "rawCandidate": false,
+              "parentTransitionChainCommitmentAfter": {
+                "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+                "payloadBytes": 8460,
+                "sha256": "de51c4fb7dc94db5ca56ab39308e1d3dbc4f186cab392bde9d1901bcc8055c90"
+              }
+            },
+            "model": "canonical-work-amo-v5-derived-child-v1",
+            "parentPosition": {
+              "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+              "blockHeight": 973218,
+              "blockTransactionIndex": 1227,
+              "protocolVout": 2,
+              "recordOrdinal": 0
+            },
+            "parentProtocol": "pwt1"
+          },
+          "parentTransitionChainCommitmentAfter": {
+            "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+            "payloadBytes": 8460,
+            "sha256": "de51c4fb7dc94db5ca56ab39308e1d3dbc4f186cab392bde9d1901bcc8055c90"
+          },
+          "stateDelta": {
+            "baseContributions": [],
+            "creditFixedQ8": "0",
+            "creditFixedSats": "0",
+            "economicOutputs": []
+          },
+          "transactionMinerFeeSats": "521",
+          "transactionProtocolRecordCount": 1,
+          "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9"
+        }
+      ],
+      "traces": [
+        {
+          "bondContributionQ8": "300187574465968",
+          "kind": "protocol-record",
+          "networkValueAfterQ8": "5183006396328877494513697655",
+          "networkValueBeforeQ8": "5183006396328577306939231687",
+          "output": {
+            "buyerAddress": "19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4",
+            "frozenTerms": {
+              "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+              "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+              "bondTransitionModel": "canonical-compute-then-bond-v1",
+              "stateOrderModel": "canonical-proof-state-order-v1",
+              "unitModel": "canonical-work-amo-proof-unit-v3",
+              "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+              "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+              "listingBlockHeight": 962589,
+              "listingBlockIndex": 979,
+              "listingBondContributionQ8": "2969307712800",
+              "listingNetworkValueAfterQ8": "700906162510642214130994645",
+              "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+              "listingProtocolVout": 1,
+              "listingRecordOrdinal": 0,
+              "unitAmountSubatoms": "749030366",
+              "unitFaceProofs": 25000,
+              "unitMinimumPriceSats": "25000",
+              "unitPriceSats": "25000",
+              "version": "pwt-sale-v8"
+            },
+            "listing": {
+              "amountStorageModel": "work-subatoms-v2",
+              "amountAtoms": "749030366",
+              "frozenTerms": {
+                "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                "bondTransitionModel": "canonical-compute-then-bond-v1",
+                "stateOrderModel": "canonical-proof-state-order-v1",
+                "unitModel": "canonical-work-amo-proof-unit-v3",
+                "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                "listingBlockHeight": 962589,
+                "listingBlockIndex": 979,
+                "listingBondContributionQ8": "2969307712800",
+                "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                "listingProtocolVout": 1,
+                "listingRecordOrdinal": 0,
+                "unitAmountSubatoms": "749030366",
+                "unitFaceProofs": 25000,
+                "unitMinimumPriceSats": "25000",
+                "unitPriceSats": "25000",
+                "version": "pwt-sale-v8"
+              },
+              "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+              "priceSats": "25000",
+              "saleAuthorization": {
+                "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                "bondTransitionModel": "canonical-compute-then-bond-v1",
+                "stateOrderModel": "canonical-proof-state-order-v1",
+                "unitModel": "canonical-work-amo-proof-unit-v3",
+                "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                "anchorSigHashType": 131,
+                "anchorType": "sale-ticket-v1",
+                "anchorValueSats": 546,
+                "anchorVout": 2,
+                "buyerAddress": "",
+                "expiresAt": "",
+                "network": "livenet",
+                "nonce": "msuecd97-suo139v7",
+                "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                "ticker": "WORK",
+                "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                "unitFaceProofs": 25000,
+                "version": "pwt-sale-v8",
+                "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+              },
+              "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+            },
+            "projection": {
+              "buyerAddress": "19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4",
+              "frozenTerms": {
+                "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                "bondTransitionModel": "canonical-compute-then-bond-v1",
+                "stateOrderModel": "canonical-proof-state-order-v1",
+                "unitModel": "canonical-work-amo-proof-unit-v3",
+                "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                "listingBlockHeight": 962589,
+                "listingBlockIndex": 979,
+                "listingBondContributionQ8": "2969307712800",
+                "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                "listingProtocolVout": 1,
+                "listingRecordOrdinal": 0,
+                "unitAmountSubatoms": "749030366",
+                "unitFaceProofs": 25000,
+                "unitMinimumPriceSats": "25000",
+                "unitPriceSats": "25000",
+                "version": "pwt-sale-v8"
+              },
+              "listing": {
+                "amountStorageModel": "work-subatoms-v2",
+                "amountAtoms": "749030366",
+                "frozenTerms": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                  "listingBlockHeight": 962589,
+                  "listingBlockIndex": 979,
+                  "listingBondContributionQ8": "2969307712800",
+                  "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                  "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                  "listingProtocolVout": 1,
+                  "listingRecordOrdinal": 0,
+                  "unitAmountSubatoms": "749030366",
+                  "unitFaceProofs": 25000,
+                  "unitMinimumPriceSats": "25000",
+                  "unitPriceSats": "25000",
+                  "version": "pwt-sale-v8"
+                },
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "priceSats": "25000",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "version": "pwt-sale-v8",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                },
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+              },
+              "derived": [
+                {
+                  "closedListing": {
+                    "amountStorageModel": "work-subatoms-v2",
+                    "amountAtoms": "749030366",
+                    "frozenTerms": {
+                      "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                      "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                      "bondTransitionModel": "canonical-compute-then-bond-v1",
+                      "stateOrderModel": "canonical-proof-state-order-v1",
+                      "unitModel": "canonical-work-amo-proof-unit-v3",
+                      "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                      "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                      "listingBlockHeight": 962589,
+                      "listingBlockIndex": 979,
+                      "listingBondContributionQ8": "2969307712800",
+                      "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                      "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                      "listingProtocolVout": 1,
+                      "listingRecordOrdinal": 0,
+                      "unitAmountSubatoms": "749030366",
+                      "unitFaceProofs": 25000,
+                      "unitMinimumPriceSats": "25000",
+                      "unitPriceSats": "25000",
+                      "version": "pwt-sale-v8"
+                    },
+                    "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                    "priceSats": "25000",
+                    "saleAuthorization": {
+                      "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                      "bondTransitionModel": "canonical-compute-then-bond-v1",
+                      "stateOrderModel": "canonical-proof-state-order-v1",
+                      "unitModel": "canonical-work-amo-proof-unit-v3",
+                      "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                      "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                      "anchorSigHashType": 131,
+                      "anchorType": "sale-ticket-v1",
+                      "anchorValueSats": 546,
+                      "anchorVout": 2,
+                      "buyerAddress": "",
+                      "expiresAt": "",
+                      "network": "livenet",
+                      "nonce": "msuecd97-suo139v7",
+                      "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                      "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                      "ticker": "WORK",
+                      "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                      "unitFaceProofs": 25000,
+                      "version": "pwt-sale-v8",
+                      "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                      "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                      "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                    },
+                    "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+                  },
+                  "kind": "token-listing-closed",
+                  "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "chargesTransactionFee": false,
+                  "claimsEconomicOutputs": false,
+                  "containerPosition": {
+                    "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                    "blockHeight": 973218,
+                    "blockTransactionIndex": 1227,
+                    "protocolVout": 2,
+                    "recordOrdinal": 0
+                  },
+                  "derivedId": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:973218:1227:2:1",
+                  "derivedIndex": 0,
+                  "materializationPosition": {
+                    "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                    "blockHeight": 973218,
+                    "blockTransactionIndex": 1227,
+                    "protocolVout": 2,
+                    "recordOrdinal": 0
+                  },
+                  "economicDelta": false,
+                  "projectionPosition": {
+                    "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                    "blockHeight": 973218,
+                    "blockTransactionIndex": 1227,
+                    "protocolVout": 2,
+                    "recordOrdinal": 1
+                  },
+                  "rawCandidate": false
+                }
+              ],
+              "kind": "token-sale",
+              "parsed": {
+                "buyerAddress": "19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4",
+                "kind": "buy",
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "payload": "pwt1:buy5:36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9:19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4:eyJhbW91bnRNb2RlbCI6ImNhbm9uaWNhbC13b3JrLWFtby1wcm9vZi11bml0LWFtb3VudC12MyIsImFuY2hvclNjcmlwdFB1YktleSI6Ijc2YTkxNDZjMTQ3YWUyODFjNzE3YzVkOGQzN2Y4ZThlYjQwNmQyZTQxOWIyODU4OGFjIiwiYW5jaG9yU2lnSGFzaFR5cGUiOjEzMSwiYW5jaG9yVHlwZSI6InNhbGUtdGlja2V0LXYxIiwiYW5jaG9yVmFsdWVTYXRzIjo1NDYsImFuY2hvclZvdXQiOjIsImJvbmRUcmFuc2l0aW9uTW9kZWwiOiJjYW5vbmljYWwtY29tcHV0ZS10aGVuLWJvbmQtdjEiLCJibG9ja1NlcXVlbmNlck1vZGVsIjoiY2Fub25pY2FsLXdvcmstYW1vLWZ1bGwtcG9zaXRpb24tYmxvY2stc2VxdWVuY2VyLXY0IiwiYnV5ZXJBZGRyZXNzIjoiIiwiZXhwaXJlc0F0IjoiIiwibmV0d29yayI6ImxpdmVuZXQiLCJub25jZSI6Im1zdWVjZDk3LXN1bzEzOXY3IiwicmVnaXN0cnlBZGRyZXNzIjoiMTYzOFZuNkt0bUs4cDVyNG9HdkFYcTlubVpiMWVtVTFEViIsInNlbGxlckFkZHJlc3MiOiIxQXJVV2hHamNkZ1JoSjlOTXdzTlFpU1M5S0VRb0JVSDlkIiwic2VsbGVyUHVibGljS2V5IjoiMDJmYWRkODRhOWU1YjhjN2QxZTUxZWI1Mzc5M2RmOGE2MzEzZTY4MWVlYzg5ZmU3MDg4ZTIwNGIxZWE3YjIxYTEyIiwic3RhdGVPcmRlck1vZGVsIjoiY2Fub25pY2FsLXByb29mLXN0YXRlLW9yZGVyLXYxIiwidGlja2VyIjoiV09SSyIsInRva2VuSWQiOiJkNGU1ZWJmMTFkMTA0ZDZhNjNmYjc0ZTQyMDk0MzY0YjI1YTVmNzE5OWEwOWU1YzBlNzE0MDg5NzI0NjZhOGI4IiwidW5pdEZhY2VQcm9vZnMiOjI1MDAwLCJ1bml0TW9kZWwiOiJjYW5vbmljYWwtd29yay1hbW8tcHJvb2YtdW5pdC12MyIsInVuaXRXb3JrT3JhY2xlTW9kZWwiOiJjYW5vbmljYWwtd29yay1wcmVmaXgtYmVmb3JlLWFjdGlvbi12MSIsInZlcnNpb24iOiJwd3Qtc2FsZS12OCIsImFuY2hvclNpZ25hdHVyZSI6IjMwNDQwMjIwMzdhMmQ3MTI3N2I4MDljMTgzNDA0NGI3NjYyYzYzOWQ2OTQ2NWQwMGE5N2YyOWE2NDc0YjU1MmU2ZTFhYzE3NTAyMjA2MDJlZjRmNzU0ZjQzMGRmOGRhNDgyMDRmYjk2ODU2YzVmNzQwZTQxMDdhN2M4M2IyODU0ZDIzM2ZmZDgxMWUyODMiLCJhbmNob3JUeGlkIjoiMzZjZjMwZmM2OGVlYTlkMGFjNjkxYjRlNjg3Njg2NmJkZjMzZWEyYWIxZjk5YmI1ODNkNmJlNTIyNDlhNGRjOSJ9",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "version": "pwt-sale-v8",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9"
+                },
+                "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8"
+              },
+              "position": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "protocol": "pwt1",
+              "reasonCode": "",
+              "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9",
+              "valid": true
+            }
+          },
+          "position": {
+            "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+            "blockHeight": 973218,
+            "blockTransactionIndex": 1227,
+            "protocolVout": 2,
+            "recordOrdinal": 0
+          },
+          "rawWitness": {
+            "model": "canonical-raw-protocol-record-v1",
+            "rawRecordParts": [
+              {
+                "decodeDetail": "",
+                "decodeValid": true,
+                "payloadHex": "707774313a627579353a333663663330666336386565613964306163363931623465363837363836366264663333656132616231663939626235383364366265353232343961346463393a31394d58556d4267424e336e4a723256317976456479735a42423863595361486b343a65794a6862573931626e524e6232526c62434936496d4e68626d397561574e686243313362334a724c57467462793177636d39765a693131626d6c304c57467462335675644331324d794973496d467559326876636c4e6a636d6c7764464231596b746c65534936496a633259546b784e445a6a4d545133595755794f44466a4e7a4533597a566b4f47517a4e3259345a54686c596a51774e6d51795a5451784f5749794f4455344f47466a496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397956486c775a534936496e4e686247557464476c6a613256304c585978496977695957356a61473979566d4673645756545958527a496a6f314e445973496d467559326876636c5a76645851694f6a4973496d4a76626d5255636d467563326c30615739755457396b5a5777694f694a6a59573576626d6c6a5957777459323974634856305a533130614756754c574a76626d5174646a45694c434a696247396a61314e6c6358566c626d4e6c636b31765a475673496a6f695932467562323570593246734c586476636d7374595731764c575a31624777746347397a6158527062323474596d7876593273746332567864575675593256794c58593049697769596e56355a584a425a4752795a584e7a496a6f69496977695a58687761584a6c63304630496a6f6949697769626d56306432397961794936496d7870646d56755a5851694c434a756232356a5a534936496d317a6457566a5a446b334c584e31627a457a4f58593349697769636d566e61584e30636e6c425a4752795a584e7a496a6f694d54597a4f465a754e6b743062557334634456794e473948646b465963546c75625670694d5756745654464556694973496e4e6c6247786c636b466b5a484a6c63334d694f69497851584a5656326848616d4e6b5a314a6f536a6c4f5458647a546c467055314d355330565262304a5653446c6b4969776963325673624756795548566962476c6a53325635496a6f694d444a6d5957526b4f4452684f575531596a686a4e3251785a5455785a5749314d7a63354d32526d4f4745324d7a457a5a5459344d57566c597a67355a6d55334d4467345a5449774e4749785a574533596a497859544579496977696333526864475650636d526c636b31765a475673496a6f695932467562323570593246734c5842796232396d4c584e305958526c4c5739795a4756794c5859784969776964476c6a61325679496a6f695630395353794973496e527661325675535751694f694a6b4e4755315a574a6d4d54466b4d5441305a445a684e6a4e6d596a63305a5451794d446b304d7a5930596a49315954566d4e7a45354f5745774f575531597a426c4e7a45304d4467354e7a49304e6a5a684f474934496977696457357064455a6859325651636d39765a6e4d694f6a49314d4441774c434a31626d6c305457396b5a5777694f694a6a59573576626d6c6a5957777464323979617931686257387463484a766232597464573570644331324d794973496e56756158525862334a7254334a685932786c5457396b5a5777694f694a6a59573576626d6c6a595777746432397961793177636d566d61586774596d566d62334a6c4c57466a64476c76626931324d534973496e5a6c636e4e70623234694f694a7764335174633246735a5331324f434973496d467559326876636c4e705a323568644856795a534936496a4d774e4451774d6a49774d7a64684d6d51334d5449334e3249344d446c6a4d54677a4e4441304e4749334e6a5979597a597a4f5751324f5451324e5751774d4745354e3259794f5745324e446330596a55314d6d55325a544668597a45334e5441794d6a41324d444a6c5a6a526d4e7a55305a6a517a4d47526d4f4752684e4467794d44526d596a6b324f445532597a566d4e7a51775a5451784d4464684e324d344d3249794f4455305a44497a4d325a6d5a4467784d5755794f444d694c434a68626d4e6f62334a5565476c6b496a6f694d7a5a6a5a6a4d775a6d4d324f47566c59546c6b4d47466a4e6a6b78596a526c4e6a67334e6a67324e6d4a6b5a6a4d7a5a574579595749785a6a6b35596d49314f444e6b4e6d4a6c4e5449794e446c684e47526a4f534a39",
+                "prefix": "pwt1:",
+                "protocolVout": 2,
+                "reasonCode": "",
+                "scriptPubKeyHex": "6a4d8a06707774313a627579353a333663663330666336386565613964306163363931623465363837363836366264663333656132616231663939626235383364366265353232343961346463393a31394d58556d4267424e336e4a723256317976456479735a42423863595361486b343a65794a6862573931626e524e6232526c62434936496d4e68626d397561574e686243313362334a724c57467462793177636d39765a693131626d6c304c57467462335675644331324d794973496d467559326876636c4e6a636d6c7764464231596b746c65534936496a633259546b784e445a6a4d545133595755794f44466a4e7a4533597a566b4f47517a4e3259345a54686c596a51774e6d51795a5451784f5749794f4455344f47466a496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397956486c775a534936496e4e686247557464476c6a613256304c585978496977695957356a61473979566d4673645756545958527a496a6f314e445973496d467559326876636c5a76645851694f6a4973496d4a76626d5255636d467563326c30615739755457396b5a5777694f694a6a59573576626d6c6a5957777459323974634856305a533130614756754c574a76626d5174646a45694c434a696247396a61314e6c6358566c626d4e6c636b31765a475673496a6f695932467562323570593246734c586476636d7374595731764c575a31624777746347397a6158527062323474596d7876593273746332567864575675593256794c58593049697769596e56355a584a425a4752795a584e7a496a6f69496977695a58687761584a6c63304630496a6f6949697769626d56306432397961794936496d7870646d56755a5851694c434a756232356a5a534936496d317a6457566a5a446b334c584e31627a457a4f58593349697769636d566e61584e30636e6c425a4752795a584e7a496a6f694d54597a4f465a754e6b743062557334634456794e473948646b465963546c75625670694d5756745654464556694973496e4e6c6247786c636b466b5a484a6c63334d694f69497851584a5656326848616d4e6b5a314a6f536a6c4f5458647a546c467055314d355330565262304a5653446c6b4969776963325673624756795548566962476c6a53325635496a6f694d444a6d5957526b4f4452684f575531596a686a4e3251785a5455785a5749314d7a63354d32526d4f4745324d7a457a5a5459344d57566c597a67355a6d55334d4467345a5449774e4749785a574533596a497859544579496977696333526864475650636d526c636b31765a475673496a6f695932467562323570593246734c5842796232396d4c584e305958526c4c5739795a4756794c5859784969776964476c6a61325679496a6f695630395353794973496e527661325675535751694f694a6b4e4755315a574a6d4d54466b4d5441305a445a684e6a4e6d596a63305a5451794d446b304d7a5930596a49315954566d4e7a45354f5745774f575531597a426c4e7a45304d4467354e7a49304e6a5a684f474934496977696457357064455a6859325651636d39765a6e4d694f6a49314d4441774c434a31626d6c305457396b5a5777694f694a6a59573576626d6c6a5957777464323979617931686257387463484a766232597464573570644331324d794973496e56756158525862334a7254334a685932786c5457396b5a5777694f694a6a59573576626d6c6a595777746432397961793177636d566d61586774596d566d62334a6c4c57466a64476c76626931324d534973496e5a6c636e4e70623234694f694a7764335174633246735a5331324f434973496d467559326876636c4e705a323568644856795a534936496a4d774e4451774d6a49774d7a64684d6d51334d5449334e3249344d446c6a4d54677a4e4441304e4749334e6a5979597a597a4f5751324f5451324e5751774d4745354e3259794f5745324e446330596a55314d6d55325a544668597a45334e5441794d6a41324d444a6c5a6a526d4e7a55305a6a517a4d47526d4f4752684e4467794d44526d596a6b324f445532597a566d4e7a51775a5451784d4464684e324d344d3249794f4455305a44497a4d325a6d5a4467784d5755794f444d694c434a68626d4e6f62334a5565476c6b496a6f694d7a5a6a5a6a4d775a6d4d324f47566c59546c6b4d47466a4e6a6b78596a526c4e6a67334e6a67324e6d4a6b5a6a4d7a5a574579595749785a6a6b35596d49314f444e6b4e6d4a6c4e5449794e446c684e47526a4f534a39",
+                "text": "pwt1:buy5:36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9:19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4:eyJhbW91bnRNb2RlbCI6ImNhbm9uaWNhbC13b3JrLWFtby1wcm9vZi11bml0LWFtb3VudC12MyIsImFuY2hvclNjcmlwdFB1YktleSI6Ijc2YTkxNDZjMTQ3YWUyODFjNzE3YzVkOGQzN2Y4ZThlYjQwNmQyZTQxOWIyODU4OGFjIiwiYW5jaG9yU2lnSGFzaFR5cGUiOjEzMSwiYW5jaG9yVHlwZSI6InNhbGUtdGlja2V0LXYxIiwiYW5jaG9yVmFsdWVTYXRzIjo1NDYsImFuY2hvclZvdXQiOjIsImJvbmRUcmFuc2l0aW9uTW9kZWwiOiJjYW5vbmljYWwtY29tcHV0ZS10aGVuLWJvbmQtdjEiLCJibG9ja1NlcXVlbmNlck1vZGVsIjoiY2Fub25pY2FsLXdvcmstYW1vLWZ1bGwtcG9zaXRpb24tYmxvY2stc2VxdWVuY2VyLXY0IiwiYnV5ZXJBZGRyZXNzIjoiIiwiZXhwaXJlc0F0IjoiIiwibmV0d29yayI6ImxpdmVuZXQiLCJub25jZSI6Im1zdWVjZDk3LXN1bzEzOXY3IiwicmVnaXN0cnlBZGRyZXNzIjoiMTYzOFZuNkt0bUs4cDVyNG9HdkFYcTlubVpiMWVtVTFEViIsInNlbGxlckFkZHJlc3MiOiIxQXJVV2hHamNkZ1JoSjlOTXdzTlFpU1M5S0VRb0JVSDlkIiwic2VsbGVyUHVibGljS2V5IjoiMDJmYWRkODRhOWU1YjhjN2QxZTUxZWI1Mzc5M2RmOGE2MzEzZTY4MWVlYzg5ZmU3MDg4ZTIwNGIxZWE3YjIxYTEyIiwic3RhdGVPcmRlck1vZGVsIjoiY2Fub25pY2FsLXByb29mLXN0YXRlLW9yZGVyLXYxIiwidGlja2VyIjoiV09SSyIsInRva2VuSWQiOiJkNGU1ZWJmMTFkMTA0ZDZhNjNmYjc0ZTQyMDk0MzY0YjI1YTVmNzE5OWEwOWU1YzBlNzE0MDg5NzI0NjZhOGI4IiwidW5pdEZhY2VQcm9vZnMiOjI1MDAwLCJ1bml0TW9kZWwiOiJjYW5vbmljYWwtd29yay1hbW8tcHJvb2YtdW5pdC12MyIsInVuaXRXb3JrT3JhY2xlTW9kZWwiOiJjYW5vbmljYWwtd29yay1wcmVmaXgtYmVmb3JlLWFjdGlvbi12MSIsInZlcnNpb24iOiJwd3Qtc2FsZS12OCIsImFuY2hvclNpZ25hdHVyZSI6IjMwNDQwMjIwMzdhMmQ3MTI3N2I4MDljMTgzNDA0NGI3NjYyYzYzOWQ2OTQ2NWQwMGE5N2YyOWE2NDc0YjU1MmU2ZTFhYzE3NTAyMjA2MDJlZjRmNzU0ZjQzMGRmOGRhNDgyMDRmYjk2ODU2YzVmNzQwZTQxMDdhN2M4M2IyODU0ZDIzM2ZmZDgxMWUyODMiLCJhbmNob3JUeGlkIjoiMzZjZjMwZmM2OGVlYTlkMGFjNjkxYjRlNjg3Njg2NmJkZjMzZWEyYWIxZjk5YmI1ODNkNmJlNTIyNDlhNGRjOSJ9"
+              }
+            ]
+          },
+          "reasonCode": "",
+          "stateDelta": {
+            "baseContributions": [
+              {
+                "field": "tokenMarketplaceFeeSats",
+                "value": "546"
+              },
+              {
+                "field": "tokenSaleVolumeSats",
+                "value": "25000"
+              }
+            ],
+            "creditFixedQ8": "0",
+            "creditFixedSats": "25546",
+            "economicOutputs": [
+              {
+                "address": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                "attributedSats": "546",
+                "outputSats": "546",
+                "role": "pwt-token-registry",
+                "vout": 1
+              },
+              {
+                "address": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                "attributedSats": "25000",
+                "outputSats": "25546",
+                "role": "pwt-seller",
+                "vout": 0
+              }
+            ],
+            "movement": {
+              "amountStorageModel": "work-subatoms-v2",
+              "amountSubatoms": "749030366",
+              "identity": "sale:71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:2:0"
+            }
+          },
+          "transitionChainCommitmentAfter": {
+            "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+            "payloadBytes": 8460,
+            "sha256": "de51c4fb7dc94db5ca56ab39308e1d3dbc4f186cab392bde9d1901bcc8055c90"
+          },
+          "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9",
+          "valid": true
+        },
+        {
+          "creditFixedQ8Added": "52100000000",
+          "networkValueAfterQ8": "5183006396328877982107909664",
+          "networkValueBeforeQ8": "5183006396328877494513697655",
+          "transactionMinerFeeSats": "521",
+          "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9",
+          "valid": true,
+          "transitionChainCommitmentAfter": {
+            "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+            "payloadBytes": 595,
+            "sha256": "1650682245475190fa32c362e0f2594f170e3db3ada4c225dbbe1711e475295b"
+          },
+          "kind": "transaction-fee",
+          "reasonCode": ""
+        }
+      ]
+    },
+    "new": {
+      "records": [
+        {
+          "derived": [
+            {
+              "closedListing": {
+                "amountStorageModel": "work-subatoms-v2",
+                "amountAtoms": "749030366",
+                "frozenTerms": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                  "listingBlockHeight": 962589,
+                  "listingBlockIndex": 979,
+                  "listingBondContributionQ8": "2969307712800",
+                  "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                  "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                  "listingProtocolVout": 1,
+                  "listingRecordOrdinal": 0,
+                  "unitAmountSubatoms": "749030366",
+                  "unitFaceProofs": 25000,
+                  "unitMinimumPriceSats": "25000",
+                  "unitPriceSats": "25000",
+                  "version": "pwt-sale-v8"
+                },
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "priceSats": "25000",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "version": "pwt-sale-v8",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                },
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+              },
+              "kind": "token-listing-closed",
+              "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+              "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+              "chargesTransactionFee": false,
+              "claimsEconomicOutputs": false,
+              "containerPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "derivedId": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:973218:1227:2:1",
+              "derivedIndex": 0,
+              "materializationPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "economicDelta": false,
+              "projectionPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 1
+              },
+              "rawCandidate": false,
+              "parentTransitionChainCommitmentAfter": {
+                "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+                "payloadBytes": 8460,
+                "sha256": "08361093e502c7f84000619cb53a003d40d05433043ea7625fa74d330ca7f568"
+              }
+            }
+          ],
+          "rawCandidate": true,
+          "outcome": {
+            "kind": "pwt1-valid",
+            "reasonCode": "",
+            "semanticKind": "token-sale",
+            "valid": true
+          },
+          "output": {
+            "buyerAddress": "19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4",
+            "frozenTerms": {
+              "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+              "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+              "bondTransitionModel": "canonical-compute-then-bond-v1",
+              "stateOrderModel": "canonical-proof-state-order-v1",
+              "unitModel": "canonical-work-amo-proof-unit-v3",
+              "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+              "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+              "listingBlockHeight": 962589,
+              "listingBlockIndex": 979,
+              "listingBondContributionQ8": "2969307712800",
+              "listingNetworkValueAfterQ8": "700906162510642214130994645",
+              "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+              "listingProtocolVout": 1,
+              "listingRecordOrdinal": 0,
+              "unitAmountSubatoms": "749030366",
+              "unitFaceProofs": 25000,
+              "unitMinimumPriceSats": "25000",
+              "unitPriceSats": "25000",
+              "version": "pwt-sale-v8"
+            },
+            "listing": {
+              "amountStorageModel": "work-subatoms-v2",
+              "amountAtoms": "749030366",
+              "frozenTerms": {
+                "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                "bondTransitionModel": "canonical-compute-then-bond-v1",
+                "stateOrderModel": "canonical-proof-state-order-v1",
+                "unitModel": "canonical-work-amo-proof-unit-v3",
+                "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                "listingBlockHeight": 962589,
+                "listingBlockIndex": 979,
+                "listingBondContributionQ8": "2969307712800",
+                "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                "listingProtocolVout": 1,
+                "listingRecordOrdinal": 0,
+                "unitAmountSubatoms": "749030366",
+                "unitFaceProofs": 25000,
+                "unitMinimumPriceSats": "25000",
+                "unitPriceSats": "25000",
+                "version": "pwt-sale-v8"
+              },
+              "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+              "priceSats": "25000",
+              "saleAuthorization": {
+                "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                "bondTransitionModel": "canonical-compute-then-bond-v1",
+                "stateOrderModel": "canonical-proof-state-order-v1",
+                "unitModel": "canonical-work-amo-proof-unit-v3",
+                "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                "anchorSigHashType": 131,
+                "anchorType": "sale-ticket-v1",
+                "anchorValueSats": 546,
+                "anchorVout": 2,
+                "buyerAddress": "",
+                "expiresAt": "",
+                "network": "livenet",
+                "nonce": "msuecd97-suo139v7",
+                "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                "ticker": "WORK",
+                "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                "unitFaceProofs": 25000,
+                "version": "pwt-sale-v8",
+                "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+              },
+              "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+            },
+            "projection": {
+              "buyerAddress": "19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4",
+              "frozenTerms": {
+                "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                "bondTransitionModel": "canonical-compute-then-bond-v1",
+                "stateOrderModel": "canonical-proof-state-order-v1",
+                "unitModel": "canonical-work-amo-proof-unit-v3",
+                "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                "listingBlockHeight": 962589,
+                "listingBlockIndex": 979,
+                "listingBondContributionQ8": "2969307712800",
+                "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                "listingProtocolVout": 1,
+                "listingRecordOrdinal": 0,
+                "unitAmountSubatoms": "749030366",
+                "unitFaceProofs": 25000,
+                "unitMinimumPriceSats": "25000",
+                "unitPriceSats": "25000",
+                "version": "pwt-sale-v8"
+              },
+              "listing": {
+                "amountStorageModel": "work-subatoms-v2",
+                "amountAtoms": "749030366",
+                "frozenTerms": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                  "listingBlockHeight": 962589,
+                  "listingBlockIndex": 979,
+                  "listingBondContributionQ8": "2969307712800",
+                  "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                  "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                  "listingProtocolVout": 1,
+                  "listingRecordOrdinal": 0,
+                  "unitAmountSubatoms": "749030366",
+                  "unitFaceProofs": 25000,
+                  "unitMinimumPriceSats": "25000",
+                  "unitPriceSats": "25000",
+                  "version": "pwt-sale-v8"
+                },
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "priceSats": "25000",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "version": "pwt-sale-v8",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                },
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+              },
+              "derived": [
+                {
+                  "closedListing": {
+                    "amountStorageModel": "work-subatoms-v2",
+                    "amountAtoms": "749030366",
+                    "frozenTerms": {
+                      "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                      "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                      "bondTransitionModel": "canonical-compute-then-bond-v1",
+                      "stateOrderModel": "canonical-proof-state-order-v1",
+                      "unitModel": "canonical-work-amo-proof-unit-v3",
+                      "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                      "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                      "listingBlockHeight": 962589,
+                      "listingBlockIndex": 979,
+                      "listingBondContributionQ8": "2969307712800",
+                      "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                      "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                      "listingProtocolVout": 1,
+                      "listingRecordOrdinal": 0,
+                      "unitAmountSubatoms": "749030366",
+                      "unitFaceProofs": 25000,
+                      "unitMinimumPriceSats": "25000",
+                      "unitPriceSats": "25000",
+                      "version": "pwt-sale-v8"
+                    },
+                    "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                    "priceSats": "25000",
+                    "saleAuthorization": {
+                      "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                      "bondTransitionModel": "canonical-compute-then-bond-v1",
+                      "stateOrderModel": "canonical-proof-state-order-v1",
+                      "unitModel": "canonical-work-amo-proof-unit-v3",
+                      "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                      "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                      "anchorSigHashType": 131,
+                      "anchorType": "sale-ticket-v1",
+                      "anchorValueSats": 546,
+                      "anchorVout": 2,
+                      "buyerAddress": "",
+                      "expiresAt": "",
+                      "network": "livenet",
+                      "nonce": "msuecd97-suo139v7",
+                      "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                      "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                      "ticker": "WORK",
+                      "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                      "unitFaceProofs": 25000,
+                      "version": "pwt-sale-v8",
+                      "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                      "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                      "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                    },
+                    "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+                  },
+                  "kind": "token-listing-closed",
+                  "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "chargesTransactionFee": false,
+                  "claimsEconomicOutputs": false,
+                  "containerPosition": {
+                    "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                    "blockHeight": 973218,
+                    "blockTransactionIndex": 1227,
+                    "protocolVout": 2,
+                    "recordOrdinal": 0
+                  },
+                  "derivedId": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:973218:1227:2:1",
+                  "derivedIndex": 0,
+                  "materializationPosition": {
+                    "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                    "blockHeight": 973218,
+                    "blockTransactionIndex": 1227,
+                    "protocolVout": 2,
+                    "recordOrdinal": 0
+                  },
+                  "economicDelta": false,
+                  "projectionPosition": {
+                    "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                    "blockHeight": 973218,
+                    "blockTransactionIndex": 1227,
+                    "protocolVout": 2,
+                    "recordOrdinal": 1
+                  },
+                  "rawCandidate": false
+                }
+              ],
+              "kind": "token-sale",
+              "parsed": {
+                "buyerAddress": "19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4",
+                "kind": "buy",
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "payload": "pwt1:buy5:36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9:19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4:eyJhbW91bnRNb2RlbCI6ImNhbm9uaWNhbC13b3JrLWFtby1wcm9vZi11bml0LWFtb3VudC12MyIsImFuY2hvclNjcmlwdFB1YktleSI6Ijc2YTkxNDZjMTQ3YWUyODFjNzE3YzVkOGQzN2Y4ZThlYjQwNmQyZTQxOWIyODU4OGFjIiwiYW5jaG9yU2lnSGFzaFR5cGUiOjEzMSwiYW5jaG9yVHlwZSI6InNhbGUtdGlja2V0LXYxIiwiYW5jaG9yVmFsdWVTYXRzIjo1NDYsImFuY2hvclZvdXQiOjIsImJvbmRUcmFuc2l0aW9uTW9kZWwiOiJjYW5vbmljYWwtY29tcHV0ZS10aGVuLWJvbmQtdjEiLCJibG9ja1NlcXVlbmNlck1vZGVsIjoiY2Fub25pY2FsLXdvcmstYW1vLWZ1bGwtcG9zaXRpb24tYmxvY2stc2VxdWVuY2VyLXY0IiwiYnV5ZXJBZGRyZXNzIjoiIiwiZXhwaXJlc0F0IjoiIiwibmV0d29yayI6ImxpdmVuZXQiLCJub25jZSI6Im1zdWVjZDk3LXN1bzEzOXY3IiwicmVnaXN0cnlBZGRyZXNzIjoiMTYzOFZuNkt0bUs4cDVyNG9HdkFYcTlubVpiMWVtVTFEViIsInNlbGxlckFkZHJlc3MiOiIxQXJVV2hHamNkZ1JoSjlOTXdzTlFpU1M5S0VRb0JVSDlkIiwic2VsbGVyUHVibGljS2V5IjoiMDJmYWRkODRhOWU1YjhjN2QxZTUxZWI1Mzc5M2RmOGE2MzEzZTY4MWVlYzg5ZmU3MDg4ZTIwNGIxZWE3YjIxYTEyIiwic3RhdGVPcmRlck1vZGVsIjoiY2Fub25pY2FsLXByb29mLXN0YXRlLW9yZGVyLXYxIiwidGlja2VyIjoiV09SSyIsInRva2VuSWQiOiJkNGU1ZWJmMTFkMTA0ZDZhNjNmYjc0ZTQyMDk0MzY0YjI1YTVmNzE5OWEwOWU1YzBlNzE0MDg5NzI0NjZhOGI4IiwidW5pdEZhY2VQcm9vZnMiOjI1MDAwLCJ1bml0TW9kZWwiOiJjYW5vbmljYWwtd29yay1hbW8tcHJvb2YtdW5pdC12MyIsInVuaXRXb3JrT3JhY2xlTW9kZWwiOiJjYW5vbmljYWwtd29yay1wcmVmaXgtYmVmb3JlLWFjdGlvbi12MSIsInZlcnNpb24iOiJwd3Qtc2FsZS12OCIsImFuY2hvclNpZ25hdHVyZSI6IjMwNDQwMjIwMzdhMmQ3MTI3N2I4MDljMTgzNDA0NGI3NjYyYzYzOWQ2OTQ2NWQwMGE5N2YyOWE2NDc0YjU1MmU2ZTFhYzE3NTAyMjA2MDJlZjRmNzU0ZjQzMGRmOGRhNDgyMDRmYjk2ODU2YzVmNzQwZTQxMDdhN2M4M2IyODU0ZDIzM2ZmZDgxMWUyODMiLCJhbmNob3JUeGlkIjoiMzZjZjMwZmM2OGVlYTlkMGFjNjkxYjRlNjg3Njg2NmJkZjMzZWEyYWIxZjk5YmI1ODNkNmJlNTIyNDlhNGRjOSJ9",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "version": "pwt-sale-v8",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9"
+                },
+                "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8"
+              },
+              "position": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "protocol": "pwt1",
+              "reasonCode": "",
+              "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9",
+              "valid": true
+            }
+          },
+          "position": {
+            "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+            "blockHeight": 973218,
+            "blockTransactionIndex": 1227,
+            "protocolVout": 2,
+            "recordOrdinal": 0
+          },
+          "protocol": "pwt1",
+          "rawWitness": {
+            "model": "canonical-raw-protocol-record-v1",
+            "rawRecordParts": [
+              {
+                "decodeDetail": "",
+                "decodeValid": true,
+                "payloadHex": "707774313a627579353a333663663330666336386565613964306163363931623465363837363836366264663333656132616231663939626235383364366265353232343961346463393a31394d58556d4267424e336e4a723256317976456479735a42423863595361486b343a65794a6862573931626e524e6232526c62434936496d4e68626d397561574e686243313362334a724c57467462793177636d39765a693131626d6c304c57467462335675644331324d794973496d467559326876636c4e6a636d6c7764464231596b746c65534936496a633259546b784e445a6a4d545133595755794f44466a4e7a4533597a566b4f47517a4e3259345a54686c596a51774e6d51795a5451784f5749794f4455344f47466a496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397956486c775a534936496e4e686247557464476c6a613256304c585978496977695957356a61473979566d4673645756545958527a496a6f314e445973496d467559326876636c5a76645851694f6a4973496d4a76626d5255636d467563326c30615739755457396b5a5777694f694a6a59573576626d6c6a5957777459323974634856305a533130614756754c574a76626d5174646a45694c434a696247396a61314e6c6358566c626d4e6c636b31765a475673496a6f695932467562323570593246734c586476636d7374595731764c575a31624777746347397a6158527062323474596d7876593273746332567864575675593256794c58593049697769596e56355a584a425a4752795a584e7a496a6f69496977695a58687761584a6c63304630496a6f6949697769626d56306432397961794936496d7870646d56755a5851694c434a756232356a5a534936496d317a6457566a5a446b334c584e31627a457a4f58593349697769636d566e61584e30636e6c425a4752795a584e7a496a6f694d54597a4f465a754e6b743062557334634456794e473948646b465963546c75625670694d5756745654464556694973496e4e6c6247786c636b466b5a484a6c63334d694f69497851584a5656326848616d4e6b5a314a6f536a6c4f5458647a546c467055314d355330565262304a5653446c6b4969776963325673624756795548566962476c6a53325635496a6f694d444a6d5957526b4f4452684f575531596a686a4e3251785a5455785a5749314d7a63354d32526d4f4745324d7a457a5a5459344d57566c597a67355a6d55334d4467345a5449774e4749785a574533596a497859544579496977696333526864475650636d526c636b31765a475673496a6f695932467562323570593246734c5842796232396d4c584e305958526c4c5739795a4756794c5859784969776964476c6a61325679496a6f695630395353794973496e527661325675535751694f694a6b4e4755315a574a6d4d54466b4d5441305a445a684e6a4e6d596a63305a5451794d446b304d7a5930596a49315954566d4e7a45354f5745774f575531597a426c4e7a45304d4467354e7a49304e6a5a684f474934496977696457357064455a6859325651636d39765a6e4d694f6a49314d4441774c434a31626d6c305457396b5a5777694f694a6a59573576626d6c6a5957777464323979617931686257387463484a766232597464573570644331324d794973496e56756158525862334a7254334a685932786c5457396b5a5777694f694a6a59573576626d6c6a595777746432397961793177636d566d61586774596d566d62334a6c4c57466a64476c76626931324d534973496e5a6c636e4e70623234694f694a7764335174633246735a5331324f434973496d467559326876636c4e705a323568644856795a534936496a4d774e4451774d6a49774d7a64684d6d51334d5449334e3249344d446c6a4d54677a4e4441304e4749334e6a5979597a597a4f5751324f5451324e5751774d4745354e3259794f5745324e446330596a55314d6d55325a544668597a45334e5441794d6a41324d444a6c5a6a526d4e7a55305a6a517a4d47526d4f4752684e4467794d44526d596a6b324f445532597a566d4e7a51775a5451784d4464684e324d344d3249794f4455305a44497a4d325a6d5a4467784d5755794f444d694c434a68626d4e6f62334a5565476c6b496a6f694d7a5a6a5a6a4d775a6d4d324f47566c59546c6b4d47466a4e6a6b78596a526c4e6a67334e6a67324e6d4a6b5a6a4d7a5a574579595749785a6a6b35596d49314f444e6b4e6d4a6c4e5449794e446c684e47526a4f534a39",
+                "prefix": "pwt1:",
+                "protocolVout": 2,
+                "reasonCode": "",
+                "scriptPubKeyHex": "6a4d8a06707774313a627579353a333663663330666336386565613964306163363931623465363837363836366264663333656132616231663939626235383364366265353232343961346463393a31394d58556d4267424e336e4a723256317976456479735a42423863595361486b343a65794a6862573931626e524e6232526c62434936496d4e68626d397561574e686243313362334a724c57467462793177636d39765a693131626d6c304c57467462335675644331324d794973496d467559326876636c4e6a636d6c7764464231596b746c65534936496a633259546b784e445a6a4d545133595755794f44466a4e7a4533597a566b4f47517a4e3259345a54686c596a51774e6d51795a5451784f5749794f4455344f47466a496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397956486c775a534936496e4e686247557464476c6a613256304c585978496977695957356a61473979566d4673645756545958527a496a6f314e445973496d467559326876636c5a76645851694f6a4973496d4a76626d5255636d467563326c30615739755457396b5a5777694f694a6a59573576626d6c6a5957777459323974634856305a533130614756754c574a76626d5174646a45694c434a696247396a61314e6c6358566c626d4e6c636b31765a475673496a6f695932467562323570593246734c586476636d7374595731764c575a31624777746347397a6158527062323474596d7876593273746332567864575675593256794c58593049697769596e56355a584a425a4752795a584e7a496a6f69496977695a58687761584a6c63304630496a6f6949697769626d56306432397961794936496d7870646d56755a5851694c434a756232356a5a534936496d317a6457566a5a446b334c584e31627a457a4f58593349697769636d566e61584e30636e6c425a4752795a584e7a496a6f694d54597a4f465a754e6b743062557334634456794e473948646b465963546c75625670694d5756745654464556694973496e4e6c6247786c636b466b5a484a6c63334d694f69497851584a5656326848616d4e6b5a314a6f536a6c4f5458647a546c467055314d355330565262304a5653446c6b4969776963325673624756795548566962476c6a53325635496a6f694d444a6d5957526b4f4452684f575531596a686a4e3251785a5455785a5749314d7a63354d32526d4f4745324d7a457a5a5459344d57566c597a67355a6d55334d4467345a5449774e4749785a574533596a497859544579496977696333526864475650636d526c636b31765a475673496a6f695932467562323570593246734c5842796232396d4c584e305958526c4c5739795a4756794c5859784969776964476c6a61325679496a6f695630395353794973496e527661325675535751694f694a6b4e4755315a574a6d4d54466b4d5441305a445a684e6a4e6d596a63305a5451794d446b304d7a5930596a49315954566d4e7a45354f5745774f575531597a426c4e7a45304d4467354e7a49304e6a5a684f474934496977696457357064455a6859325651636d39765a6e4d694f6a49314d4441774c434a31626d6c305457396b5a5777694f694a6a59573576626d6c6a5957777464323979617931686257387463484a766232597464573570644331324d794973496e56756158525862334a7254334a685932786c5457396b5a5777694f694a6a59573576626d6c6a595777746432397961793177636d566d61586774596d566d62334a6c4c57466a64476c76626931324d534973496e5a6c636e4e70623234694f694a7764335174633246735a5331324f434973496d467559326876636c4e705a323568644856795a534936496a4d774e4451774d6a49774d7a64684d6d51334d5449334e3249344d446c6a4d54677a4e4441304e4749334e6a5979597a597a4f5751324f5451324e5751774d4745354e3259794f5745324e446330596a55314d6d55325a544668597a45334e5441794d6a41324d444a6c5a6a526d4e7a55305a6a517a4d47526d4f4752684e4467794d44526d596a6b324f445532597a566d4e7a51775a5451784d4464684e324d344d3249794f4455305a44497a4d325a6d5a4467784d5755794f444d694c434a68626d4e6f62334a5565476c6b496a6f694d7a5a6a5a6a4d775a6d4d324f47566c59546c6b4d47466a4e6a6b78596a526c4e6a67334e6a67324e6d4a6b5a6a4d7a5a574579595749785a6a6b35596d49314f444e6b4e6d4a6c4e5449794e446c684e47526a4f534a39",
+                "text": "pwt1:buy5:36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9:19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4:eyJhbW91bnRNb2RlbCI6ImNhbm9uaWNhbC13b3JrLWFtby1wcm9vZi11bml0LWFtb3VudC12MyIsImFuY2hvclNjcmlwdFB1YktleSI6Ijc2YTkxNDZjMTQ3YWUyODFjNzE3YzVkOGQzN2Y4ZThlYjQwNmQyZTQxOWIyODU4OGFjIiwiYW5jaG9yU2lnSGFzaFR5cGUiOjEzMSwiYW5jaG9yVHlwZSI6InNhbGUtdGlja2V0LXYxIiwiYW5jaG9yVmFsdWVTYXRzIjo1NDYsImFuY2hvclZvdXQiOjIsImJvbmRUcmFuc2l0aW9uTW9kZWwiOiJjYW5vbmljYWwtY29tcHV0ZS10aGVuLWJvbmQtdjEiLCJibG9ja1NlcXVlbmNlck1vZGVsIjoiY2Fub25pY2FsLXdvcmstYW1vLWZ1bGwtcG9zaXRpb24tYmxvY2stc2VxdWVuY2VyLXY0IiwiYnV5ZXJBZGRyZXNzIjoiIiwiZXhwaXJlc0F0IjoiIiwibmV0d29yayI6ImxpdmVuZXQiLCJub25jZSI6Im1zdWVjZDk3LXN1bzEzOXY3IiwicmVnaXN0cnlBZGRyZXNzIjoiMTYzOFZuNkt0bUs4cDVyNG9HdkFYcTlubVpiMWVtVTFEViIsInNlbGxlckFkZHJlc3MiOiIxQXJVV2hHamNkZ1JoSjlOTXdzTlFpU1M5S0VRb0JVSDlkIiwic2VsbGVyUHVibGljS2V5IjoiMDJmYWRkODRhOWU1YjhjN2QxZTUxZWI1Mzc5M2RmOGE2MzEzZTY4MWVlYzg5ZmU3MDg4ZTIwNGIxZWE3YjIxYTEyIiwic3RhdGVPcmRlck1vZGVsIjoiY2Fub25pY2FsLXByb29mLXN0YXRlLW9yZGVyLXYxIiwidGlja2VyIjoiV09SSyIsInRva2VuSWQiOiJkNGU1ZWJmMTFkMTA0ZDZhNjNmYjc0ZTQyMDk0MzY0YjI1YTVmNzE5OWEwOWU1YzBlNzE0MDg5NzI0NjZhOGI4IiwidW5pdEZhY2VQcm9vZnMiOjI1MDAwLCJ1bml0TW9kZWwiOiJjYW5vbmljYWwtd29yay1hbW8tcHJvb2YtdW5pdC12MyIsInVuaXRXb3JrT3JhY2xlTW9kZWwiOiJjYW5vbmljYWwtd29yay1wcmVmaXgtYmVmb3JlLWFjdGlvbi12MSIsInZlcnNpb24iOiJwd3Qtc2FsZS12OCIsImFuY2hvclNpZ25hdHVyZSI6IjMwNDQwMjIwMzdhMmQ3MTI3N2I4MDljMTgzNDA0NGI3NjYyYzYzOWQ2OTQ2NWQwMGE5N2YyOWE2NDc0YjU1MmU2ZTFhYzE3NTAyMjA2MDJlZjRmNzU0ZjQzMGRmOGRhNDgyMDRmYjk2ODU2YzVmNzQwZTQxMDdhN2M4M2IyODU0ZDIzM2ZmZDgxMWUyODMiLCJhbmNob3JUeGlkIjoiMzZjZjMwZmM2OGVlYTlkMGFjNjkxYjRlNjg3Njg2NmJkZjMzZWEyYWIxZjk5YmI1ODNkNmJlNTIyNDlhNGRjOSJ9"
+              }
+            ]
+          },
+          "stateDelta": {
+            "baseContributions": [
+              {
+                "field": "tokenMarketplaceFeeSats",
+                "value": "546"
+              },
+              {
+                "field": "tokenSaleVolumeSats",
+                "value": "25000"
+              }
+            ],
+            "creditFixedQ8": "0",
+            "creditFixedSats": "25546",
+            "economicOutputs": [
+              {
+                "address": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                "attributedSats": "546",
+                "outputSats": "546",
+                "role": "pwt-token-registry",
+                "vout": 1
+              },
+              {
+                "address": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                "attributedSats": "25000",
+                "outputSats": "25546",
+                "role": "pwt-seller",
+                "vout": 0
+              }
+            ],
+            "movement": {
+              "amountStorageModel": "work-subatoms-v2",
+              "amountSubatoms": "749030366",
+              "identity": "sale:71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:2:0"
+            }
+          },
+          "transitionChainCommitmentAfter": {
+            "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+            "payloadBytes": 8460,
+            "sha256": "08361093e502c7f84000619cb53a003d40d05433043ea7625fa74d330ca7f568"
+          },
+          "transactionMinerFeeSats": "521",
+          "transactionProtocolRecordCount": 1,
+          "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9"
+        },
+        {
+          "chargesTransactionFee": false,
+          "derived": true,
+          "outcome": {
+            "kind": "pwt1-valid",
+            "reasonCode": "",
+            "semanticKind": "token-listing-closed",
+            "valid": true
+          },
+          "output": {
+            "projection": {
+              "closedListing": {
+                "amountStorageModel": "work-subatoms-v2",
+                "amountAtoms": "749030366",
+                "frozenTerms": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                  "listingBlockHeight": 962589,
+                  "listingBlockIndex": 979,
+                  "listingBondContributionQ8": "2969307712800",
+                  "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                  "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                  "listingProtocolVout": 1,
+                  "listingRecordOrdinal": 0,
+                  "unitAmountSubatoms": "749030366",
+                  "unitFaceProofs": 25000,
+                  "unitMinimumPriceSats": "25000",
+                  "unitPriceSats": "25000",
+                  "version": "pwt-sale-v8"
+                },
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "priceSats": "25000",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "version": "pwt-sale-v8",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                },
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+              },
+              "kind": "token-listing-closed",
+              "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+              "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+              "chargesTransactionFee": false,
+              "claimsEconomicOutputs": false,
+              "containerPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "derivedId": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:973218:1227:2:1",
+              "derivedIndex": 0,
+              "materializationPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "economicDelta": false,
+              "projectionPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 1
+              },
+              "rawCandidate": false,
+              "parentTransitionChainCommitmentAfter": {
+                "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+                "payloadBytes": 8460,
+                "sha256": "08361093e502c7f84000619cb53a003d40d05433043ea7625fa74d330ca7f568"
+              },
+              "derived": true,
+              "position": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 1
+              },
+              "protocol": "pwt1",
+              "reasonCode": "",
+              "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9",
+              "valid": true
+            }
+          },
+          "parentPosition": {
+            "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+            "blockHeight": 973218,
+            "blockTransactionIndex": 1227,
+            "protocolVout": 2,
+            "recordOrdinal": 0
+          },
+          "position": {
+            "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+            "blockHeight": 973218,
+            "blockTransactionIndex": 1227,
+            "protocolVout": 2,
+            "recordOrdinal": 1
+          },
+          "protocol": "pwt1",
+          "rawCandidate": false,
+          "rawWitness": {
+            "descriptor": {
+              "closedListing": {
+                "amountStorageModel": "work-subatoms-v2",
+                "amountAtoms": "749030366",
+                "frozenTerms": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                  "listingBlockHeight": 962589,
+                  "listingBlockIndex": 979,
+                  "listingBondContributionQ8": "2969307712800",
+                  "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                  "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                  "listingProtocolVout": 1,
+                  "listingRecordOrdinal": 0,
+                  "unitAmountSubatoms": "749030366",
+                  "unitFaceProofs": 25000,
+                  "unitMinimumPriceSats": "25000",
+                  "unitPriceSats": "25000",
+                  "version": "pwt-sale-v8"
+                },
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "priceSats": "25000",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "version": "pwt-sale-v8",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                },
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+              },
+              "kind": "token-listing-closed",
+              "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+              "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+              "chargesTransactionFee": false,
+              "claimsEconomicOutputs": false,
+              "containerPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "derivedId": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:973218:1227:2:1",
+              "derivedIndex": 0,
+              "materializationPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "economicDelta": false,
+              "projectionPosition": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 1
+              },
+              "rawCandidate": false,
+              "parentTransitionChainCommitmentAfter": {
+                "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+                "payloadBytes": 8460,
+                "sha256": "08361093e502c7f84000619cb53a003d40d05433043ea7625fa74d330ca7f568"
+              }
+            },
+            "model": "canonical-work-amo-v5-derived-child-v1",
+            "parentPosition": {
+              "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+              "blockHeight": 973218,
+              "blockTransactionIndex": 1227,
+              "protocolVout": 2,
+              "recordOrdinal": 0
+            },
+            "parentProtocol": "pwt1"
+          },
+          "parentTransitionChainCommitmentAfter": {
+            "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+            "payloadBytes": 8460,
+            "sha256": "08361093e502c7f84000619cb53a003d40d05433043ea7625fa74d330ca7f568"
+          },
+          "stateDelta": {
+            "baseContributions": [],
+            "creditFixedQ8": "0",
+            "creditFixedSats": "0",
+            "economicOutputs": []
+          },
+          "transactionMinerFeeSats": "521",
+          "transactionProtocolRecordCount": 1,
+          "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9"
+        }
+      ],
+      "traces": [
+        {
+          "bondContributionQ8": "300187574465968",
+          "kind": "protocol-record",
+          "networkValueAfterQ8": "5183006396328877494513697655",
+          "networkValueBeforeQ8": "5183006396328577306939231687",
+          "output": {
+            "buyerAddress": "19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4",
+            "frozenTerms": {
+              "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+              "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+              "bondTransitionModel": "canonical-compute-then-bond-v1",
+              "stateOrderModel": "canonical-proof-state-order-v1",
+              "unitModel": "canonical-work-amo-proof-unit-v3",
+              "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+              "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+              "listingBlockHeight": 962589,
+              "listingBlockIndex": 979,
+              "listingBondContributionQ8": "2969307712800",
+              "listingNetworkValueAfterQ8": "700906162510642214130994645",
+              "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+              "listingProtocolVout": 1,
+              "listingRecordOrdinal": 0,
+              "unitAmountSubatoms": "749030366",
+              "unitFaceProofs": 25000,
+              "unitMinimumPriceSats": "25000",
+              "unitPriceSats": "25000",
+              "version": "pwt-sale-v8"
+            },
+            "listing": {
+              "amountStorageModel": "work-subatoms-v2",
+              "amountAtoms": "749030366",
+              "frozenTerms": {
+                "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                "bondTransitionModel": "canonical-compute-then-bond-v1",
+                "stateOrderModel": "canonical-proof-state-order-v1",
+                "unitModel": "canonical-work-amo-proof-unit-v3",
+                "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                "listingBlockHeight": 962589,
+                "listingBlockIndex": 979,
+                "listingBondContributionQ8": "2969307712800",
+                "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                "listingProtocolVout": 1,
+                "listingRecordOrdinal": 0,
+                "unitAmountSubatoms": "749030366",
+                "unitFaceProofs": 25000,
+                "unitMinimumPriceSats": "25000",
+                "unitPriceSats": "25000",
+                "version": "pwt-sale-v8"
+              },
+              "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+              "priceSats": "25000",
+              "saleAuthorization": {
+                "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                "bondTransitionModel": "canonical-compute-then-bond-v1",
+                "stateOrderModel": "canonical-proof-state-order-v1",
+                "unitModel": "canonical-work-amo-proof-unit-v3",
+                "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                "anchorSigHashType": 131,
+                "anchorType": "sale-ticket-v1",
+                "anchorValueSats": 546,
+                "anchorVout": 2,
+                "buyerAddress": "",
+                "expiresAt": "",
+                "network": "livenet",
+                "nonce": "msuecd97-suo139v7",
+                "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                "ticker": "WORK",
+                "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                "unitFaceProofs": 25000,
+                "version": "pwt-sale-v8",
+                "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+              },
+              "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+            },
+            "projection": {
+              "buyerAddress": "19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4",
+              "frozenTerms": {
+                "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                "bondTransitionModel": "canonical-compute-then-bond-v1",
+                "stateOrderModel": "canonical-proof-state-order-v1",
+                "unitModel": "canonical-work-amo-proof-unit-v3",
+                "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                "listingBlockHeight": 962589,
+                "listingBlockIndex": 979,
+                "listingBondContributionQ8": "2969307712800",
+                "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                "listingProtocolVout": 1,
+                "listingRecordOrdinal": 0,
+                "unitAmountSubatoms": "749030366",
+                "unitFaceProofs": 25000,
+                "unitMinimumPriceSats": "25000",
+                "unitPriceSats": "25000",
+                "version": "pwt-sale-v8"
+              },
+              "listing": {
+                "amountStorageModel": "work-subatoms-v2",
+                "amountAtoms": "749030366",
+                "frozenTerms": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                  "listingBlockHeight": 962589,
+                  "listingBlockIndex": 979,
+                  "listingBondContributionQ8": "2969307712800",
+                  "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                  "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                  "listingProtocolVout": 1,
+                  "listingRecordOrdinal": 0,
+                  "unitAmountSubatoms": "749030366",
+                  "unitFaceProofs": 25000,
+                  "unitMinimumPriceSats": "25000",
+                  "unitPriceSats": "25000",
+                  "version": "pwt-sale-v8"
+                },
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "priceSats": "25000",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "version": "pwt-sale-v8",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                },
+                "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+              },
+              "derived": [
+                {
+                  "closedListing": {
+                    "amountStorageModel": "work-subatoms-v2",
+                    "amountAtoms": "749030366",
+                    "frozenTerms": {
+                      "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                      "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                      "bondTransitionModel": "canonical-compute-then-bond-v1",
+                      "stateOrderModel": "canonical-proof-state-order-v1",
+                      "unitModel": "canonical-work-amo-proof-unit-v3",
+                      "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                      "listingBlockHash": "0000000000000000000227561a6e524541bb3454ed05eda7d7e39e1fc64d0d2e",
+                      "listingBlockHeight": 962589,
+                      "listingBlockIndex": 979,
+                      "listingBondContributionQ8": "2969307712800",
+                      "listingNetworkValueAfterQ8": "700906162510642214130994645",
+                      "listingNetworkValueBeforeQ8": "700906162510639244823281845",
+                      "listingProtocolVout": 1,
+                      "listingRecordOrdinal": 0,
+                      "unitAmountSubatoms": "749030366",
+                      "unitFaceProofs": 25000,
+                      "unitMinimumPriceSats": "25000",
+                      "unitPriceSats": "25000",
+                      "version": "pwt-sale-v8"
+                    },
+                    "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                    "priceSats": "25000",
+                    "saleAuthorization": {
+                      "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                      "bondTransitionModel": "canonical-compute-then-bond-v1",
+                      "stateOrderModel": "canonical-proof-state-order-v1",
+                      "unitModel": "canonical-work-amo-proof-unit-v3",
+                      "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                      "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                      "anchorSigHashType": 131,
+                      "anchorType": "sale-ticket-v1",
+                      "anchorValueSats": 546,
+                      "anchorVout": 2,
+                      "buyerAddress": "",
+                      "expiresAt": "",
+                      "network": "livenet",
+                      "nonce": "msuecd97-suo139v7",
+                      "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                      "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                      "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                      "ticker": "WORK",
+                      "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                      "unitFaceProofs": 25000,
+                      "version": "pwt-sale-v8",
+                      "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                      "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                      "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4"
+                    },
+                    "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d"
+                  },
+                  "kind": "token-listing-closed",
+                  "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "chargesTransactionFee": false,
+                  "claimsEconomicOutputs": false,
+                  "containerPosition": {
+                    "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                    "blockHeight": 973218,
+                    "blockTransactionIndex": 1227,
+                    "protocolVout": 2,
+                    "recordOrdinal": 0
+                  },
+                  "derivedId": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:973218:1227:2:1",
+                  "derivedIndex": 0,
+                  "materializationPosition": {
+                    "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                    "blockHeight": 973218,
+                    "blockTransactionIndex": 1227,
+                    "protocolVout": 2,
+                    "recordOrdinal": 0
+                  },
+                  "economicDelta": false,
+                  "projectionPosition": {
+                    "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                    "blockHeight": 973218,
+                    "blockTransactionIndex": 1227,
+                    "protocolVout": 2,
+                    "recordOrdinal": 1
+                  },
+                  "rawCandidate": false
+                }
+              ],
+              "kind": "token-sale",
+              "parsed": {
+                "buyerAddress": "19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4",
+                "kind": "buy",
+                "listingId": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9",
+                "payload": "pwt1:buy5:36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9:19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4:eyJhbW91bnRNb2RlbCI6ImNhbm9uaWNhbC13b3JrLWFtby1wcm9vZi11bml0LWFtb3VudC12MyIsImFuY2hvclNjcmlwdFB1YktleSI6Ijc2YTkxNDZjMTQ3YWUyODFjNzE3YzVkOGQzN2Y4ZThlYjQwNmQyZTQxOWIyODU4OGFjIiwiYW5jaG9yU2lnSGFzaFR5cGUiOjEzMSwiYW5jaG9yVHlwZSI6InNhbGUtdGlja2V0LXYxIiwiYW5jaG9yVmFsdWVTYXRzIjo1NDYsImFuY2hvclZvdXQiOjIsImJvbmRUcmFuc2l0aW9uTW9kZWwiOiJjYW5vbmljYWwtY29tcHV0ZS10aGVuLWJvbmQtdjEiLCJibG9ja1NlcXVlbmNlck1vZGVsIjoiY2Fub25pY2FsLXdvcmstYW1vLWZ1bGwtcG9zaXRpb24tYmxvY2stc2VxdWVuY2VyLXY0IiwiYnV5ZXJBZGRyZXNzIjoiIiwiZXhwaXJlc0F0IjoiIiwibmV0d29yayI6ImxpdmVuZXQiLCJub25jZSI6Im1zdWVjZDk3LXN1bzEzOXY3IiwicmVnaXN0cnlBZGRyZXNzIjoiMTYzOFZuNkt0bUs4cDVyNG9HdkFYcTlubVpiMWVtVTFEViIsInNlbGxlckFkZHJlc3MiOiIxQXJVV2hHamNkZ1JoSjlOTXdzTlFpU1M5S0VRb0JVSDlkIiwic2VsbGVyUHVibGljS2V5IjoiMDJmYWRkODRhOWU1YjhjN2QxZTUxZWI1Mzc5M2RmOGE2MzEzZTY4MWVlYzg5ZmU3MDg4ZTIwNGIxZWE3YjIxYTEyIiwic3RhdGVPcmRlck1vZGVsIjoiY2Fub25pY2FsLXByb29mLXN0YXRlLW9yZGVyLXYxIiwidGlja2VyIjoiV09SSyIsInRva2VuSWQiOiJkNGU1ZWJmMTFkMTA0ZDZhNjNmYjc0ZTQyMDk0MzY0YjI1YTVmNzE5OWEwOWU1YzBlNzE0MDg5NzI0NjZhOGI4IiwidW5pdEZhY2VQcm9vZnMiOjI1MDAwLCJ1bml0TW9kZWwiOiJjYW5vbmljYWwtd29yay1hbW8tcHJvb2YtdW5pdC12MyIsInVuaXRXb3JrT3JhY2xlTW9kZWwiOiJjYW5vbmljYWwtd29yay1wcmVmaXgtYmVmb3JlLWFjdGlvbi12MSIsInZlcnNpb24iOiJwd3Qtc2FsZS12OCIsImFuY2hvclNpZ25hdHVyZSI6IjMwNDQwMjIwMzdhMmQ3MTI3N2I4MDljMTgzNDA0NGI3NjYyYzYzOWQ2OTQ2NWQwMGE5N2YyOWE2NDc0YjU1MmU2ZTFhYzE3NTAyMjA2MDJlZjRmNzU0ZjQzMGRmOGRhNDgyMDRmYjk2ODU2YzVmNzQwZTQxMDdhN2M4M2IyODU0ZDIzM2ZmZDgxMWUyODMiLCJhbmNob3JUeGlkIjoiMzZjZjMwZmM2OGVlYTlkMGFjNjkxYjRlNjg3Njg2NmJkZjMzZWEyYWIxZjk5YmI1ODNkNmJlNTIyNDlhNGRjOSJ9",
+                "saleAuthorization": {
+                  "amountModel": "canonical-work-amo-proof-unit-amount-v3",
+                  "anchorScriptPubKey": "76a9146c147ae281c717c5d8d37f8e8eb406d2e419b28588ac",
+                  "anchorSigHashType": 131,
+                  "anchorType": "sale-ticket-v1",
+                  "anchorValueSats": 546,
+                  "anchorVout": 2,
+                  "bondTransitionModel": "canonical-compute-then-bond-v1",
+                  "blockSequencerModel": "canonical-work-amo-full-position-block-sequencer-v4",
+                  "buyerAddress": "",
+                  "expiresAt": "",
+                  "network": "livenet",
+                  "nonce": "msuecd97-suo139v7",
+                  "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                  "sellerAddress": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                  "sellerPublicKey": "02fadd84a9e5b8c7d1e51eb53793df8a6313e681eec89fe7088e204b1ea7b21a12",
+                  "stateOrderModel": "canonical-proof-state-order-v1",
+                  "ticker": "WORK",
+                  "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8",
+                  "unitFaceProofs": 25000,
+                  "unitModel": "canonical-work-amo-proof-unit-v3",
+                  "unitWorkOracleModel": "canonical-work-prefix-before-action-v1",
+                  "version": "pwt-sale-v8",
+                  "anchorSignature": "3044022037a2d71277b809c1834044b7662c639d69465d00a97f29a6474b552e6e1ac1750220602ef4f754f430df8da48204fb96856c5f740e4107a7c83b2854d233ffd811e283",
+                  "anchorTxid": "36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9"
+                },
+                "tokenId": "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8"
+              },
+              "position": {
+                "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+                "blockHeight": 973218,
+                "blockTransactionIndex": 1227,
+                "protocolVout": 2,
+                "recordOrdinal": 0
+              },
+              "protocol": "pwt1",
+              "reasonCode": "",
+              "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9",
+              "valid": true
+            }
+          },
+          "position": {
+            "blockHash": "0000000000000000000170f43d5bf6fe82a1c7f101dce501f09f3cee9674c4fc",
+            "blockHeight": 973218,
+            "blockTransactionIndex": 1227,
+            "protocolVout": 2,
+            "recordOrdinal": 0
+          },
+          "rawWitness": {
+            "model": "canonical-raw-protocol-record-v1",
+            "rawRecordParts": [
+              {
+                "decodeDetail": "",
+                "decodeValid": true,
+                "payloadHex": "707774313a627579353a333663663330666336386565613964306163363931623465363837363836366264663333656132616231663939626235383364366265353232343961346463393a31394d58556d4267424e336e4a723256317976456479735a42423863595361486b343a65794a6862573931626e524e6232526c62434936496d4e68626d397561574e686243313362334a724c57467462793177636d39765a693131626d6c304c57467462335675644331324d794973496d467559326876636c4e6a636d6c7764464231596b746c65534936496a633259546b784e445a6a4d545133595755794f44466a4e7a4533597a566b4f47517a4e3259345a54686c596a51774e6d51795a5451784f5749794f4455344f47466a496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397956486c775a534936496e4e686247557464476c6a613256304c585978496977695957356a61473979566d4673645756545958527a496a6f314e445973496d467559326876636c5a76645851694f6a4973496d4a76626d5255636d467563326c30615739755457396b5a5777694f694a6a59573576626d6c6a5957777459323974634856305a533130614756754c574a76626d5174646a45694c434a696247396a61314e6c6358566c626d4e6c636b31765a475673496a6f695932467562323570593246734c586476636d7374595731764c575a31624777746347397a6158527062323474596d7876593273746332567864575675593256794c58593049697769596e56355a584a425a4752795a584e7a496a6f69496977695a58687761584a6c63304630496a6f6949697769626d56306432397961794936496d7870646d56755a5851694c434a756232356a5a534936496d317a6457566a5a446b334c584e31627a457a4f58593349697769636d566e61584e30636e6c425a4752795a584e7a496a6f694d54597a4f465a754e6b743062557334634456794e473948646b465963546c75625670694d5756745654464556694973496e4e6c6247786c636b466b5a484a6c63334d694f69497851584a5656326848616d4e6b5a314a6f536a6c4f5458647a546c467055314d355330565262304a5653446c6b4969776963325673624756795548566962476c6a53325635496a6f694d444a6d5957526b4f4452684f575531596a686a4e3251785a5455785a5749314d7a63354d32526d4f4745324d7a457a5a5459344d57566c597a67355a6d55334d4467345a5449774e4749785a574533596a497859544579496977696333526864475650636d526c636b31765a475673496a6f695932467562323570593246734c5842796232396d4c584e305958526c4c5739795a4756794c5859784969776964476c6a61325679496a6f695630395353794973496e527661325675535751694f694a6b4e4755315a574a6d4d54466b4d5441305a445a684e6a4e6d596a63305a5451794d446b304d7a5930596a49315954566d4e7a45354f5745774f575531597a426c4e7a45304d4467354e7a49304e6a5a684f474934496977696457357064455a6859325651636d39765a6e4d694f6a49314d4441774c434a31626d6c305457396b5a5777694f694a6a59573576626d6c6a5957777464323979617931686257387463484a766232597464573570644331324d794973496e56756158525862334a7254334a685932786c5457396b5a5777694f694a6a59573576626d6c6a595777746432397961793177636d566d61586774596d566d62334a6c4c57466a64476c76626931324d534973496e5a6c636e4e70623234694f694a7764335174633246735a5331324f434973496d467559326876636c4e705a323568644856795a534936496a4d774e4451774d6a49774d7a64684d6d51334d5449334e3249344d446c6a4d54677a4e4441304e4749334e6a5979597a597a4f5751324f5451324e5751774d4745354e3259794f5745324e446330596a55314d6d55325a544668597a45334e5441794d6a41324d444a6c5a6a526d4e7a55305a6a517a4d47526d4f4752684e4467794d44526d596a6b324f445532597a566d4e7a51775a5451784d4464684e324d344d3249794f4455305a44497a4d325a6d5a4467784d5755794f444d694c434a68626d4e6f62334a5565476c6b496a6f694d7a5a6a5a6a4d775a6d4d324f47566c59546c6b4d47466a4e6a6b78596a526c4e6a67334e6a67324e6d4a6b5a6a4d7a5a574579595749785a6a6b35596d49314f444e6b4e6d4a6c4e5449794e446c684e47526a4f534a39",
+                "prefix": "pwt1:",
+                "protocolVout": 2,
+                "reasonCode": "",
+                "scriptPubKeyHex": "6a4d8a06707774313a627579353a333663663330666336386565613964306163363931623465363837363836366264663333656132616231663939626235383364366265353232343961346463393a31394d58556d4267424e336e4a723256317976456479735a42423863595361486b343a65794a6862573931626e524e6232526c62434936496d4e68626d397561574e686243313362334a724c57467462793177636d39765a693131626d6c304c57467462335675644331324d794973496d467559326876636c4e6a636d6c7764464231596b746c65534936496a633259546b784e445a6a4d545133595755794f44466a4e7a4533597a566b4f47517a4e3259345a54686c596a51774e6d51795a5451784f5749794f4455344f47466a496977695957356a6147397955326c6e5347467a61465235634755694f6a457a4d5377695957356a6147397956486c775a534936496e4e686247557464476c6a613256304c585978496977695957356a61473979566d4673645756545958527a496a6f314e445973496d467559326876636c5a76645851694f6a4973496d4a76626d5255636d467563326c30615739755457396b5a5777694f694a6a59573576626d6c6a5957777459323974634856305a533130614756754c574a76626d5174646a45694c434a696247396a61314e6c6358566c626d4e6c636b31765a475673496a6f695932467562323570593246734c586476636d7374595731764c575a31624777746347397a6158527062323474596d7876593273746332567864575675593256794c58593049697769596e56355a584a425a4752795a584e7a496a6f69496977695a58687761584a6c63304630496a6f6949697769626d56306432397961794936496d7870646d56755a5851694c434a756232356a5a534936496d317a6457566a5a446b334c584e31627a457a4f58593349697769636d566e61584e30636e6c425a4752795a584e7a496a6f694d54597a4f465a754e6b743062557334634456794e473948646b465963546c75625670694d5756745654464556694973496e4e6c6247786c636b466b5a484a6c63334d694f69497851584a5656326848616d4e6b5a314a6f536a6c4f5458647a546c467055314d355330565262304a5653446c6b4969776963325673624756795548566962476c6a53325635496a6f694d444a6d5957526b4f4452684f575531596a686a4e3251785a5455785a5749314d7a63354d32526d4f4745324d7a457a5a5459344d57566c597a67355a6d55334d4467345a5449774e4749785a574533596a497859544579496977696333526864475650636d526c636b31765a475673496a6f695932467562323570593246734c5842796232396d4c584e305958526c4c5739795a4756794c5859784969776964476c6a61325679496a6f695630395353794973496e527661325675535751694f694a6b4e4755315a574a6d4d54466b4d5441305a445a684e6a4e6d596a63305a5451794d446b304d7a5930596a49315954566d4e7a45354f5745774f575531597a426c4e7a45304d4467354e7a49304e6a5a684f474934496977696457357064455a6859325651636d39765a6e4d694f6a49314d4441774c434a31626d6c305457396b5a5777694f694a6a59573576626d6c6a5957777464323979617931686257387463484a766232597464573570644331324d794973496e56756158525862334a7254334a685932786c5457396b5a5777694f694a6a59573576626d6c6a595777746432397961793177636d566d61586774596d566d62334a6c4c57466a64476c76626931324d534973496e5a6c636e4e70623234694f694a7764335174633246735a5331324f434973496d467559326876636c4e705a323568644856795a534936496a4d774e4451774d6a49774d7a64684d6d51334d5449334e3249344d446c6a4d54677a4e4441304e4749334e6a5979597a597a4f5751324f5451324e5751774d4745354e3259794f5745324e446330596a55314d6d55325a544668597a45334e5441794d6a41324d444a6c5a6a526d4e7a55305a6a517a4d47526d4f4752684e4467794d44526d596a6b324f445532597a566d4e7a51775a5451784d4464684e324d344d3249794f4455305a44497a4d325a6d5a4467784d5755794f444d694c434a68626d4e6f62334a5565476c6b496a6f694d7a5a6a5a6a4d775a6d4d324f47566c59546c6b4d47466a4e6a6b78596a526c4e6a67334e6a67324e6d4a6b5a6a4d7a5a574579595749785a6a6b35596d49314f444e6b4e6d4a6c4e5449794e446c684e47526a4f534a39",
+                "text": "pwt1:buy5:36cf30fc68eea9d0ac691b4e6876866bdf33ea2ab1f99bb583d6be52249a4dc9:19MXUmBgBN3nJr2V1yvEdysZBB8cYSaHk4:eyJhbW91bnRNb2RlbCI6ImNhbm9uaWNhbC13b3JrLWFtby1wcm9vZi11bml0LWFtb3VudC12MyIsImFuY2hvclNjcmlwdFB1YktleSI6Ijc2YTkxNDZjMTQ3YWUyODFjNzE3YzVkOGQzN2Y4ZThlYjQwNmQyZTQxOWIyODU4OGFjIiwiYW5jaG9yU2lnSGFzaFR5cGUiOjEzMSwiYW5jaG9yVHlwZSI6InNhbGUtdGlja2V0LXYxIiwiYW5jaG9yVmFsdWVTYXRzIjo1NDYsImFuY2hvclZvdXQiOjIsImJvbmRUcmFuc2l0aW9uTW9kZWwiOiJjYW5vbmljYWwtY29tcHV0ZS10aGVuLWJvbmQtdjEiLCJibG9ja1NlcXVlbmNlck1vZGVsIjoiY2Fub25pY2FsLXdvcmstYW1vLWZ1bGwtcG9zaXRpb24tYmxvY2stc2VxdWVuY2VyLXY0IiwiYnV5ZXJBZGRyZXNzIjoiIiwiZXhwaXJlc0F0IjoiIiwibmV0d29yayI6ImxpdmVuZXQiLCJub25jZSI6Im1zdWVjZDk3LXN1bzEzOXY3IiwicmVnaXN0cnlBZGRyZXNzIjoiMTYzOFZuNkt0bUs4cDVyNG9HdkFYcTlubVpiMWVtVTFEViIsInNlbGxlckFkZHJlc3MiOiIxQXJVV2hHamNkZ1JoSjlOTXdzTlFpU1M5S0VRb0JVSDlkIiwic2VsbGVyUHVibGljS2V5IjoiMDJmYWRkODRhOWU1YjhjN2QxZTUxZWI1Mzc5M2RmOGE2MzEzZTY4MWVlYzg5ZmU3MDg4ZTIwNGIxZWE3YjIxYTEyIiwic3RhdGVPcmRlck1vZGVsIjoiY2Fub25pY2FsLXByb29mLXN0YXRlLW9yZGVyLXYxIiwidGlja2VyIjoiV09SSyIsInRva2VuSWQiOiJkNGU1ZWJmMTFkMTA0ZDZhNjNmYjc0ZTQyMDk0MzY0YjI1YTVmNzE5OWEwOWU1YzBlNzE0MDg5NzI0NjZhOGI4IiwidW5pdEZhY2VQcm9vZnMiOjI1MDAwLCJ1bml0TW9kZWwiOiJjYW5vbmljYWwtd29yay1hbW8tcHJvb2YtdW5pdC12MyIsInVuaXRXb3JrT3JhY2xlTW9kZWwiOiJjYW5vbmljYWwtd29yay1wcmVmaXgtYmVmb3JlLWFjdGlvbi12MSIsInZlcnNpb24iOiJwd3Qtc2FsZS12OCIsImFuY2hvclNpZ25hdHVyZSI6IjMwNDQwMjIwMzdhMmQ3MTI3N2I4MDljMTgzNDA0NGI3NjYyYzYzOWQ2OTQ2NWQwMGE5N2YyOWE2NDc0YjU1MmU2ZTFhYzE3NTAyMjA2MDJlZjRmNzU0ZjQzMGRmOGRhNDgyMDRmYjk2ODU2YzVmNzQwZTQxMDdhN2M4M2IyODU0ZDIzM2ZmZDgxMWUyODMiLCJhbmNob3JUeGlkIjoiMzZjZjMwZmM2OGVlYTlkMGFjNjkxYjRlNjg3Njg2NmJkZjMzZWEyYWIxZjk5YmI1ODNkNmJlNTIyNDlhNGRjOSJ9"
+              }
+            ]
+          },
+          "reasonCode": "",
+          "stateDelta": {
+            "baseContributions": [
+              {
+                "field": "tokenMarketplaceFeeSats",
+                "value": "546"
+              },
+              {
+                "field": "tokenSaleVolumeSats",
+                "value": "25000"
+              }
+            ],
+            "creditFixedQ8": "0",
+            "creditFixedSats": "25546",
+            "economicOutputs": [
+              {
+                "address": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+                "attributedSats": "546",
+                "outputSats": "546",
+                "role": "pwt-token-registry",
+                "vout": 1
+              },
+              {
+                "address": "1ArUWhGjcdgRhJ9NMwsNQiSS9KEQoBUH9d",
+                "attributedSats": "25000",
+                "outputSats": "25546",
+                "role": "pwt-seller",
+                "vout": 0
+              }
+            ],
+            "movement": {
+              "amountStorageModel": "work-subatoms-v2",
+              "amountSubatoms": "749030366",
+              "identity": "sale:71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9:2:0"
+            }
+          },
+          "transitionChainCommitmentAfter": {
+            "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+            "payloadBytes": 8460,
+            "sha256": "08361093e502c7f84000619cb53a003d40d05433043ea7625fa74d330ca7f568"
+          },
+          "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9",
+          "valid": true
+        },
+        {
+          "creditFixedQ8Added": "52100000000",
+          "networkValueAfterQ8": "5183006396328877982107909664",
+          "networkValueBeforeQ8": "5183006396328877494513697655",
+          "transactionMinerFeeSats": "521",
+          "txid": "71f840a21d47ffd56137875f92efe1f5c2b0ae4eab2bd87705b41728c787f2f9",
+          "valid": true,
+          "transitionChainCommitmentAfter": {
+            "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+            "payloadBytes": 595,
+            "sha256": "d1545a1c53dff67c691538ade1b1ae600eba01835fadd582670ee6e0f7216ba2"
+          },
+          "kind": "transaction-fee",
+          "reasonCode": ""
+        }
+      ]
+    },
+    "oldEventSetCommitment": {
+      "model": "canonical-work-amo-event-set-sha256-v1",
+      "payloadBytes": 1754,
+      "sha256": "95f1ff5d3be6e3f530b23e3030dd5caa26da29b5f342fec1686d44ffde133308",
+      "eventCount": 2
+    },
+    "newEventSetCommitment": {
+      "model": "canonical-work-amo-event-set-sha256-v1",
+      "payloadBytes": 1754,
+      "sha256": "2675bd9bcee09673a6b37ce1d417cd00bcb6984dd80b72c5feb684cd167e8062",
+      "eventCount": 2
+    }
+  }
 }

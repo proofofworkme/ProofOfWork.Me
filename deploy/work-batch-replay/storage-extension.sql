@@ -14,16 +14,17 @@ CREATE TABLE proof_indexer.work_batch_transition_supersessions_v1 (
  old_archive_sha256 text NOT NULL CHECK(old_archive_sha256~'^[0-9a-f]{64}$'),
  new_metadata jsonb NOT NULL CHECK(jsonb_typeof(new_metadata)='object'),
  new_manifest jsonb NOT NULL CHECK((new_manifest->>'model'='audit31-native-jsonb-chunks-v1' AND new_manifest->>'sha256'~'^[0-9a-f]{64}$' AND jsonb_typeof(new_manifest->'parts')='array') IS TRUE),
- replacement_fields jsonb NOT NULL CHECK((jsonb_typeof(replacement_fields)='object' AND replacement_fields ?& ARRAY['workBatchV1','transitionChainCommitment','replayRecords','replayDescriptorCommitment','traces'] AND replacement_fields-ARRAY['workBatchV1','transitionChainCommitment','replayRecords','replayDescriptorCommitment','traces']='{}'::jsonb
- AND jsonb_typeof(replacement_fields->'replayRecords')='array' AND jsonb_array_length(replacement_fields->'replayRecords')<=1024
+ replacement_fields jsonb NOT NULL CHECK((jsonb_typeof(replacement_fields)='object' AND replacement_fields ?& ARRAY['workBatchV1','transitionChainCommitment','replayRecords','replayDescriptorCommitment','traces','eventSetCommitment'] AND replacement_fields-ARRAY['workBatchV1','transitionChainCommitment','replayRecords','replayDescriptorCommitment','traces','eventSetCommitment']='{}'::jsonb
+ AND jsonb_typeof(replacement_fields->'replayRecords')='array' AND jsonb_array_length(replacement_fields->'replayRecords')<=2048
  AND jsonb_typeof(replacement_fields->'traces')='array' AND jsonb_array_length(replacement_fields->'traces')<=2048
  AND jsonb_typeof(replacement_fields->'replayDescriptorCommitment')='object'
+ AND jsonb_typeof(replacement_fields->'eventSetCommitment')='object'
  AND jsonb_typeof(replacement_fields->'transitionChainCommitment')='object') IS TRUE),
  relational_bindings jsonb NOT NULL CHECK((jsonb_typeof(relational_bindings)='object'
  AND relational_bindings ?& ARRAY['eventCount','eventRowsSha256','recordCount','recordRowsSha256']
  AND relational_bindings-ARRAY['eventCount','eventRowsSha256','recordCount','recordRowsSha256']='{}'::jsonb
- AND (relational_bindings->>'eventCount')::integer BETWEEN 0 AND 1024
- AND (relational_bindings->>'recordCount')::integer=(relational_bindings->>'eventCount')::integer
+ AND (relational_bindings->>'recordCount')::integer BETWEEN 0 AND 1024
+ AND (relational_bindings->>'eventCount')::integer BETWEEN (relational_bindings->>'recordCount')::integer AND 2*(relational_bindings->>'recordCount')::integer
  AND relational_bindings->>'eventRowsSha256'~'^[0-9a-f]{64}$'
  AND relational_bindings->>'recordRowsSha256'~'^[0-9a-f]{64}$') IS TRUE),
  created_at timestamptz NOT NULL DEFAULT now(),
@@ -31,7 +32,9 @@ CREATE TABLE proof_indexer.work_batch_transition_supersessions_v1 (
  UNIQUE(network,block_height),
  CHECK((old_main->>'network'=network AND (old_main->>'block_height')::integer=block_height AND old_main->>'block_hash'=block_hash) IS TRUE),
  CHECK((old_main->'payload'->'__powNativeStorage'->>'model'='proof-indexer-native-transition-chunks-v1' AND old_main->'payload'->'__powNativeStorage'->>'sha256'=old_archive_sha256) IS TRUE),
- CHECK((new_metadata=old_main-ARRAY['payload','created_at']) IS TRUE),
+ CHECK((new_metadata-'event_set_sha256'=old_main-ARRAY['payload','created_at','event_set_sha256']
+  AND new_metadata->>'event_set_sha256'=replacement_fields->'eventSetCommitment'->>'sha256'
+  AND new_metadata->>'event_set_sha256'~'^[0-9a-f]{64}$') IS TRUE),
  CHECK((replacement_fields->'workBatchV1'->'declaration'->>'txid'=incident_txid) IS TRUE),
  CHECK(((replacement_fields->'workBatchV1'->>'activationHeight')::integer=973104) IS TRUE)
 ) TABLESPACE proof_indexer_large_state_v1;
@@ -48,6 +51,9 @@ CREATE OR REPLACE FUNCTION proof_indexer.encode_native_work_transition_v1()
 AS $function$
 DECLARE manifest jsonb; native_timestamp timestamptz; replacement proof_indexer.work_batch_transition_supersessions_v1%ROWTYPE;
  original jsonb; old_item jsonb; new_item jsonb; field text; ordinal integer;
+ old_clean jsonb; new_clean jsonb; old_parent jsonb; new_parent jsonb;
+ old_descriptor jsonb; new_descriptor jsonb; old_witness jsonb; new_witness jsonb;
+ witness_path text[]; paths text[][]; raw_count integer:=0; child_count integer:=0; parent_count integer;
 BEGIN
  IF NEW.payload ? '__powNativeStorage' THEN RAISE EXCEPTION 'Native storage envelope cannot be supplied as protocol evidence';END IF;
  -- The only alternate interpretation is an immutable, prequalified incident row.
@@ -65,13 +71,19 @@ BEGIN
    WHERE a.network=NEW.network AND a.block_height=NEW.block_height AND a.block_hash=NEW.block_hash
     AND a.payload->>'sha256'=replacement.old_archive_sha256;
   IF original ? 'workBatchV1' OR NEW.payload IS DISTINCT FROM original||replacement.replacement_fields
-   OR jsonb_array_length(NEW.payload->'replayRecords') IS DISTINCT FROM NEW.protocol_record_count
+   OR jsonb_array_length(NEW.payload->'replayRecords') IS DISTINCT FROM NEW.event_count
    OR NEW.raw_protocol_candidate_count IS DISTINCT FROM NEW.protocol_record_count
-   OR NEW.event_count IS DISTINCT FROM NEW.protocol_record_count
+   OR NEW.event_count NOT BETWEEN NEW.protocol_record_count AND 2*NEW.protocol_record_count
    OR NEW.event_count IS DISTINCT FROM (replacement.relational_bindings->>'eventCount')::integer
+   OR NEW.protocol_record_count IS DISTINCT FROM (replacement.relational_bindings->>'recordCount')::integer
    OR jsonb_array_length(NEW.payload->'traces') IS DISTINCT FROM NEW.protocol_record_count+NEW.transaction_count
+   OR NEW.event_set_sha256 IS DISTINCT FROM NEW.payload->'eventSetCommitment'->>'sha256'
+   OR replacement.old_main->>'event_set_sha256' IS DISTINCT FROM original->'eventSetCommitment'->>'sha256'
+   OR NEW.event_set_model IS DISTINCT FROM NEW.payload->'eventSetCommitment'->>'model'
+   OR NEW.event_set_payload_bytes IS DISTINCT FROM (NEW.payload->'eventSetCommitment'->>'payloadBytes')::integer
+   OR NEW.event_count IS DISTINCT FROM (NEW.payload->'eventSetCommitment'->>'eventCount')::integer
   THEN RAISE EXCEPTION 'Unsupported replay interpretation shape';END IF;
-  FOREACH field IN ARRAY ARRAY['transitionChainCommitment','replayDescriptorCommitment'] LOOP
+  FOREACH field IN ARRAY ARRAY['transitionChainCommitment','replayDescriptorCommitment','eventSetCommitment'] LOOP
    IF (jsonb_typeof(original->field)='object' AND jsonb_typeof(NEW.payload->field)='object'
     AND (original->field)-'sha256'=(NEW.payload->field)-'sha256'
     AND original->field->>'sha256'~'^[0-9a-f]{64}$'
@@ -84,19 +96,86 @@ BEGIN
    THEN RAISE EXCEPTION 'Replay array shape changed';END IF;
    FOR ordinal IN 0..jsonb_array_length(original->field)-1 LOOP
     old_item:=original->field->ordinal;new_item:=NEW.payload->field->ordinal;
-    IF (jsonb_typeof(old_item)='object' AND jsonb_typeof(new_item)='object'
-     AND old_item#-'{transitionChainCommitmentAfter,sha256}'=new_item#-'{transitionChainCommitmentAfter,sha256}'
-     AND jsonb_typeof(old_item->'transitionChainCommitmentAfter')='object'
-     AND old_item->'transitionChainCommitmentAfter'->>'sha256'~'^[0-9a-f]{64}$'
-     AND new_item->'transitionChainCommitmentAfter'->>'sha256'~'^[0-9a-f]{64}$') IS NOT TRUE
-    THEN RAISE EXCEPTION 'Replay record or trace changed beyond chain witness';END IF;
-    IF field='replayRecords' AND (old_item->'rawCandidate'='true'::jsonb AND old_item->'derived'='[]'::jsonb
-      AND old_item->>'protocol'=ANY(ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1','pwc1'])) IS NOT TRUE
-    THEN RAISE EXCEPTION 'Derived or unsupported replay record';END IF;
-    IF field='traces' AND (old_item->>'kind'=ANY(ARRAY['protocol-record','transaction-fee'])) IS NOT TRUE
-    THEN RAISE EXCEPTION 'Unsupported replay trace';END IF;
+    old_clean:=old_item;new_clean:=new_item;
+    IF field='traces' THEN
+     IF (old_item->>'kind'=ANY(ARRAY['protocol-record','transaction-fee'])) IS NOT TRUE
+     THEN RAISE EXCEPTION 'Unsupported replay trace';END IF;
+     paths:=ARRAY[ARRAY['transitionChainCommitmentAfter']];
+    ELSIF old_item->'rawCandidate'='true'::jsonb THEN
+     raw_count:=raw_count+1;
+     IF (old_item->>'protocol'=ANY(ARRAY['pwm1','pwa1','pwid1','pwdns1','pwb1','pwt1','pwc1'])
+      AND jsonb_typeof(old_item->'derived')='array' AND jsonb_array_length(old_item->'derived') BETWEEN 0 AND 1) IS NOT TRUE
+     THEN RAISE EXCEPTION 'Unsupported raw replay record';END IF;
+     paths:=ARRAY[ARRAY['transitionChainCommitmentAfter']];
+     IF jsonb_array_length(old_item->'derived')=1 THEN
+      old_descriptor:=old_item->'derived'->0;new_descriptor:=new_item->'derived'->0;
+      IF (old_item->>'protocol'='pwt1' AND old_item#>>'{outcome,semanticKind}'='token-sale'
+       AND old_item#>'{outcome,valid}'='true'::jsonb
+       AND old_item#>>'{rawWitness,model}'='canonical-raw-protocol-record-v1'
+       AND jsonb_array_length(old_item#>'{rawWitness,rawRecordParts}')=1
+       AND old_item#>>'{rawWitness,rawRecordParts,0,text}' LIKE 'pwt1:buy5:%'
+       AND old_descriptor->>'kind'='token-listing-closed' AND old_descriptor->'derivedIndex'='0'::jsonb
+       AND old_descriptor->'rawCandidate'='false'::jsonb AND old_descriptor->'economicDelta'='false'::jsonb
+       AND old_descriptor->'chargesTransactionFee'='false'::jsonb AND old_descriptor->'claimsEconomicOutputs'='false'::jsonb
+       AND old_descriptor->'containerPosition'=old_item->'position'
+       AND old_descriptor->'materializationPosition'=old_item->'position'
+       AND (old_descriptor->'projectionPosition')-'recordOrdinal'=(old_item->'position')-'recordOrdinal'
+       AND (old_descriptor#>>'{projectionPosition,recordOrdinal}')::integer=(old_item#>>'{position,recordOrdinal}')::integer+1
+       AND old_descriptor->'parentTransitionChainCommitmentAfter'=old_item->'transitionChainCommitmentAfter'
+       AND new_descriptor->'parentTransitionChainCommitmentAfter'=new_item->'transitionChainCommitmentAfter') IS NOT TRUE
+      THEN RAISE EXCEPTION 'Unsupported derived closure parent';END IF;
+      SELECT count(*) INTO parent_count FROM jsonb_array_elements(NEW.payload->'replayRecords') c
+       WHERE c->'rawCandidate'='false'::jsonb AND c->>'txid'=new_item->>'txid' AND c->'parentPosition'=new_item->'position'
+        AND c#>'{rawWitness,descriptor}'=new_descriptor;
+      IF parent_count<>1 THEN RAISE EXCEPTION 'Derived closure child is not unique';END IF;
+      old_witness:=old_descriptor->'parentTransitionChainCommitmentAfter';new_witness:=new_descriptor->'parentTransitionChainCommitmentAfter';
+      IF (old_witness-'sha256'=new_witness-'sha256'
+       AND old_witness->>'sha256'~'^[0-9a-f]{64}$' AND new_witness->>'sha256'~'^[0-9a-f]{64}$') IS NOT TRUE
+      THEN RAISE EXCEPTION 'Derived closure witness metadata changed';END IF;
+      old_clean:=old_clean#-'{derived,0,parentTransitionChainCommitmentAfter,sha256}';
+      new_clean:=new_clean#-'{derived,0,parentTransitionChainCommitmentAfter,sha256}';
+     END IF;
+    ELSIF old_item->'rawCandidate'='false'::jsonb THEN
+     child_count:=child_count+1;
+     SELECT count(*) INTO parent_count FROM jsonb_array_elements(NEW.payload->'replayRecords') p
+      WHERE p->'rawCandidate'='true'::jsonb AND p->>'txid'=new_item->>'txid' AND p->'position'=new_item->'parentPosition';
+     IF parent_count<>1 THEN RAISE EXCEPTION 'Derived closure parent is not unique';END IF;
+     SELECT p INTO STRICT new_parent FROM jsonb_array_elements(NEW.payload->'replayRecords') p
+      WHERE p->'rawCandidate'='true'::jsonb AND p->>'txid'=new_item->>'txid' AND p->'position'=new_item->'parentPosition';
+     SELECT p INTO STRICT old_parent FROM jsonb_array_elements(original->'replayRecords') p
+      WHERE p->'rawCandidate'='true'::jsonb AND p->>'txid'=old_item->>'txid' AND p->'position'=old_item->'parentPosition';
+     old_descriptor:=old_parent->'derived'->0;new_descriptor:=new_parent->'derived'->0;
+     IF (old_item->>'protocol'='pwt1' AND old_item->'derived'='true'::jsonb
+      AND old_item#>>'{outcome,semanticKind}'='token-listing-closed'
+      AND old_item#>'{outcome,valid}'='true'::jsonb AND old_item->'chargesTransactionFee'='false'::jsonb
+      AND old_item#>>'{rawWitness,model}'='canonical-work-amo-v5-derived-child-v1'
+      AND old_item#>>'{rawWitness,parentProtocol}'='pwt1'
+      AND old_item#>'{rawWitness,parentPosition}'=old_item->'parentPosition'
+      AND new_item#>'{rawWitness,descriptor}'=new_descriptor AND old_item#>'{rawWitness,descriptor}'=old_descriptor
+      AND old_item->'position'=old_descriptor->'projectionPosition' AND new_item->'position'=new_descriptor->'projectionPosition'
+      AND (old_item#>'{output,projection}') @> old_descriptor AND (new_item#>'{output,projection}') @> new_descriptor
+      AND old_item->'parentTransitionChainCommitmentAfter'=old_parent->'transitionChainCommitmentAfter'
+      AND new_item->'parentTransitionChainCommitmentAfter'=new_parent->'transitionChainCommitmentAfter') IS NOT TRUE
+     THEN RAISE EXCEPTION 'Unsupported derived listing closure';END IF;
+     old_clean:=old_clean#-'{parentTransitionChainCommitmentAfter,sha256}'#-'{rawWitness,descriptor,parentTransitionChainCommitmentAfter,sha256}'#-'{output,projection,parentTransitionChainCommitmentAfter,sha256}';
+     new_clean:=new_clean#-'{parentTransitionChainCommitmentAfter,sha256}'#-'{rawWitness,descriptor,parentTransitionChainCommitmentAfter,sha256}'#-'{output,projection,parentTransitionChainCommitmentAfter,sha256}';
+     paths:=ARRAY[ARRAY['parentTransitionChainCommitmentAfter']];
+    ELSE RAISE EXCEPTION 'Replay raw-candidate flag changed';END IF;
+    FOREACH witness_path SLICE 1 IN ARRAY paths LOOP
+     old_witness:=old_item#>witness_path;new_witness:=new_item#>witness_path;
+     IF (jsonb_typeof(old_witness)='object' AND jsonb_typeof(new_witness)='object'
+      AND old_witness-'sha256'=new_witness-'sha256'
+      AND old_witness->>'sha256'~'^[0-9a-f]{64}$' AND new_witness->>'sha256'~'^[0-9a-f]{64}$') IS NOT TRUE
+     THEN RAISE EXCEPTION 'Replay witness metadata changed';END IF;
+     old_clean:=old_clean#-(witness_path||'sha256'::text);new_clean:=new_clean#-(witness_path||'sha256'::text);
+    END LOOP;
+    IF (jsonb_typeof(old_item)='object' AND jsonb_typeof(new_item)='object' AND old_clean=new_clean) IS NOT TRUE
+    THEN RAISE EXCEPTION 'Replay record or trace changed beyond qualified witnesses';END IF;
    END LOOP;
   END LOOP;
+  IF raw_count<>NEW.protocol_record_count OR child_count<>NEW.event_count-NEW.protocol_record_count
+   OR (child_count=0 AND original->'eventSetCommitment' IS DISTINCT FROM NEW.payload->'eventSetCommitment')
+  THEN RAISE EXCEPTION 'Replay raw/derived counts differ';END IF;
   NEW.created_at:=(replacement.old_main->>'created_at')::timestamptz;
   IF NEW.block_height >= (SELECT max(block_height) FROM proof_indexer.work_transition_archive_v1 WHERE network=NEW.network)-127
    AND NOT EXISTS(SELECT 1 FROM proof_indexer.work_transition_hot_slots_v1 WHERE network=NEW.network AND slot=mod(NEW.block_height,128) AND block_height=NEW.block_height AND block_hash=NEW.block_hash AND payload_sha256=replacement.new_manifest->>'sha256') THEN

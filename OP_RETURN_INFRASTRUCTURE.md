@@ -8657,11 +8657,20 @@ the attached proofs and ordinary WORK transfer retain their existing accounting.
 If activation block 973104 is already sealed without that context, use the
 separate [bounded replay controller](deploy/work-batch-replay/README.md).
 Qualify the complete raw-block suffix from 973104 through a fixed checkpoint,
-with a ceiling of 512 blocks and 1,024 ordinary, non-derived records. Full raw
-blocks must contain no batch attempt. Reproduce every retained result, scalar
-seal, event-set commitment and projection exactly. Only the declaration context,
-transition-chain witnesses, and their replay-descriptor commitment may change;
-signed records, outputs, balances, fees and relational events remain exact.
+with a ceiling of 512 blocks and 1,024 ordinary records. Qualification v4 also
+reproduces at most one existing listing-closed child per valid `buy5` purchase,
+with at most 2,048 events. Full raw blocks must contain no batch attempt; other
+derived forms and multipart records remain unsupported. Independently reproduce
+every original result and scalar seal, then verify equal economic state, sale
+terms, fees, ownership, positions and projections under the corrected context.
+Only the declaration context, explicitly enumerated transition-chain SHA leaves
+and their dependent replay/event-set commitments may change. The corresponding
+current `event_set_sha256` is the sole allowed scalar difference. Preserve the
+original complete row and native frame, qualify the replacement metadata
+separately, and keep every relational event and raw-output row byte-identical.
+The earlier v3 attempt refused the valid sale/closure pair at block 973218 before
+source writes or publication; failed partial evidence cannot supply a cached
+prefix or authorize activation.
 A completed qualification may supply a cached prefix after draining only when
 every prior Core block, native digest, scalar seal and relational fingerprint
 is independently revalidated under the same pinned source. Qualify any new

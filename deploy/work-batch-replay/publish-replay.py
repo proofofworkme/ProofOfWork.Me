@@ -2,7 +2,7 @@
 """Exact incident proposal. Rendering is default; execution requires --execute.
 One transaction installs the reviewed extension, publishes the qualified ordinary-event
 suffix, and derives its activation marker. This never restores services."""
-import argparse, base64, hashlib, json, os, pwd, re, stat, subprocess, threading, urllib.request
+import argparse, base64, copy, hashlib, json, os, pwd, re, stat, subprocess, threading, urllib.request
 from pathlib import Path
 
 INCIDENT = "b7c620e48c2d725a143cecd7f7808036d89907124d410ba57d272d34e650cc28"
@@ -19,7 +19,7 @@ MAX_SQL_BYTES=128*1024*1024
 MAX_NATIVE_BYTES=128*1024*1024
 MAX_TOTAL_NATIVE_BYTES=8*1024*1024*1024
 MAX_RAW_BYTES=2*1024*1024*1024
-REPLACEMENT_FIELDS={"workBatchV1","transitionChainCommitment","replayRecords","replayDescriptorCommitment","traces"}
+REPLACEMENT_FIELDS={"workBatchV1","transitionChainCommitment","replayRecords","replayDescriptorCommitment","traces","eventSetCommitment"}
 def private_read(path, expected, limit=MAX_INPUT_BYTES, root_owned=True):
  p=Path(path)
  if p.resolve()!=p or not re.fullmatch(r"[0-9a-f]{64}", expected): raise ValueError("Invalid pinned input")
@@ -59,6 +59,23 @@ def helper_contract(data):
  query=re.search(r'const CONTRACT_QUERY = ("(?:[^"\\]|\\.)*");',text)
  if not expected or not query: raise ValueError("Unsupported native helper")
  return json.loads(expected[1]),json.loads(query[1]).removesuffix(" AS storage_contract")
+def validate_derived_closures(records, count, derived_count):
+ raw=[r for r in records if r.get("rawCandidate") is True];children=[r for r in records if r.get("rawCandidate") is False]
+ if len(raw)!=count or len(children)!=derived_count or len(raw)+len(children)!=len(records): raise ValueError("Replay candidate counts")
+ descriptors=0
+ for parent in raw:
+  derived=parent.get("derived")
+  if not isinstance(derived,list) or len(derived)>1: raise ValueError("Unsupported derived count")
+  if not derived: continue
+  descriptors+=1;descriptor=derived[0];witness=parent.get("rawWitness",{});parts=witness.get("rawRecordParts",[])
+  if parent.get("protocol")!="pwt1" or parent.get("outcome",{}).get("semanticKind")!="token-sale" or parent["outcome"].get("valid") is not True or witness.get("model")!="canonical-raw-protocol-record-v1" or len(parts)!=1 or not parts[0].get("text","").startswith("pwt1:buy5:"): raise ValueError("Only existing buy5 closure is supported")
+  position=parent["position"];projection={**position,"recordOrdinal":position["recordOrdinal"]+1}
+  if descriptor.get("kind")!="token-listing-closed" or descriptor.get("derivedIndex")!=0 or any(descriptor.get(k) is not False for k in ("rawCandidate","economicDelta","chargesTransactionFee","claimsEconomicOutputs")) or descriptor.get("containerPosition")!=position or descriptor.get("materializationPosition")!=position or descriptor.get("projectionPosition")!=projection or descriptor.get("parentTransitionChainCommitmentAfter")!=parent.get("transitionChainCommitmentAfter"): raise ValueError("Derived closure descriptor")
+  matches=[r for r in children if r.get("txid")==parent.get("txid") and r.get("parentPosition")==position]
+  if len(matches)!=1: raise ValueError("Derived closure parent/child binding")
+  child=matches[0];cw=child.get("rawWitness",{});output=child.get("output",{}).get("projection",{})
+  if child.get("protocol")!="pwt1" or child.get("derived") is not True or child.get("outcome",{}).get("semanticKind")!="token-listing-closed" or child["outcome"].get("valid") is not True or child.get("chargesTransactionFee") is not False or child.get("position")!=projection or cw.get("model")!="canonical-work-amo-v5-derived-child-v1" or cw.get("parentProtocol")!="pwt1" or cw.get("parentPosition")!=position or cw.get("descriptor")!=descriptor or child.get("parentTransitionChainCommitmentAfter")!=parent.get("transitionChainCommitmentAfter") or any(output.get(k)!=v for k,v in descriptor.items()): raise ValueError("Derived closure child")
+ if descriptors!=derived_count: raise ValueError("Orphan derived closure")
 def validate_manifest(m, old_sha, new_sha):
  if m.get("format")!="work-batch-native-supersession-manifest-v1": raise ValueError("Manifest format")
  for k in ("qualificationSha256","nativeBridgeSha256"):
@@ -80,16 +97,23 @@ def validate_manifest(m, old_sha, new_sha):
   if row.get("nativePayloadBytes")!=row["oldNativeBytes"] or type(row["rawBlockBytes"]) is not int or not 1<=row["rawBlockBytes"]<=4_000_000: raise ValueError("Raw/native byte evidence")
   context=row["replacementFields"]["workBatchV1"]
   if context["activationHeight"]!=973104 or context["declaration"]["txid"]!=INCIDENT: raise ValueError("Authority context")
-  scalar=row["unchangedScalarMetadata"];count=scalar["protocol_record_count"];transactions=scalar["transaction_count"]
+  scalar=row["oldScalarMetadata"];new_scalar=row["newScalarMetadata"];count=scalar["protocol_record_count"];transactions=scalar["transaction_count"]
   if type(count) is not int or not 0<=count<=1024 or type(transactions) is not int or not 0<=transactions<=count: raise ValueError("Ordinary record bound")
-  if any(scalar[k]!=count for k in ("raw_protocol_candidate_count","event_count")): raise ValueError("Derived or missing ordinary record")
+  events=row["eventCount"];derived=row["derivedEventCount"]
+  if type(events) is not int or type(derived) is not int or not 0<=derived<=count or events!=count+derived or scalar["event_count"]!=events or scalar["raw_protocol_candidate_count"]!=count: raise ValueError("Raw/derived count evidence")
+  if {k:v for k,v in scalar.items() if k!="event_set_sha256"}!={k:v for k,v in new_scalar.items() if k!="event_set_sha256"}: raise ValueError("Scalar change exceeds event-set provenance")
+  for key,value in (("old",scalar),("new",new_scalar)):
+   if sha(stable(value).encode())!=row[key+"ScalarMetadataSha256"]: raise ValueError("Scalar commitment")
+   event_set=row[key+"EventSetCommitment"]
+   if event_set["sha256"]!=value["event_set_sha256"] or event_set["model"]!=value["event_set_model"] or event_set["payloadBytes"]!=value["event_set_payload_bytes"] or event_set["eventCount"]!=events or not re.fullmatch(r"[0-9a-f]{64}",event_set["sha256"]): raise ValueError("Event-set scalar binding")
+  if {k:v for k,v in row["oldEventSetCommitment"].items() if k!="sha256"}!={k:v for k,v in row["newEventSetCommitment"].items() if k!="sha256"} or (derived==0 and row["oldEventSetCommitment"]!=row["newEventSetCommitment"]): raise ValueError("Event-set metadata change")
   bindings=row["relationalBindings"]
-  if set(bindings)!={"eventCount","eventRowsSha256","recordCount","recordRowsSha256"} or any(type(bindings[k]) is not int or bindings[k]!=count for k in ("eventCount","recordCount")): raise ValueError("Relational counts")
+  if set(bindings)!={"eventCount","eventRowsSha256","recordCount","recordRowsSha256"} or type(bindings["eventCount"]) is not int or type(bindings["recordCount"]) is not int or bindings["eventCount"]!=events or bindings["recordCount"]!=count: raise ValueError("Relational counts")
   if any(not re.fullmatch(r"[0-9a-f]{64}",bindings[k]) for k in ("eventRowsSha256","recordRowsSha256")): raise ValueError("Relational digest")
   replacement=row["replacementFields"]
-  if not isinstance(replacement["replayRecords"],list) or len(replacement["replayRecords"])!=count or not isinstance(replacement["traces"],list) or len(replacement["traces"])!=count+transactions: raise ValueError("Replay shape")
-  for record in replacement["replayRecords"]:
-   if record.get("rawCandidate") is not True or record.get("derived")!=[]: raise ValueError("Derived record")
+  if replacement["eventSetCommitment"]!=row["newEventSetCommitment"] or row.get("eventSetProvenanceOnly") is not True: raise ValueError("Event-set provenance evidence")
+  if not isinstance(replacement["replayRecords"],list) or len(replacement["replayRecords"])!=events or not isinstance(replacement["traces"],list) or len(replacement["traces"])!=count+transactions: raise ValueError("Replay shape")
+  validate_derived_closures(replacement["replayRecords"],count,derived)
   changed=row["allowedChangedFields"]
   if not isinstance(changed,list) or len(changed)!=len(set(changed)) or not {"workBatchV1","transitionChainCommitment"}<=set(changed)<=REPLACEMENT_FIELDS: raise ValueError("Changed field scope")
   totals["nativePayloadBytes"]+=row["oldNativeBytes"];totals["newNativePayloadBytes"]+=row["newNativeBytes"]
@@ -104,7 +128,7 @@ DO $qualification$
 DECLARE m jsonb := __MANIFEST__; qualified_block jsonb; current_transition proof_indexer.work_amo_block_transitions%ROWTYPE;
  a proof_indexer.work_transition_archive_v1%ROWTYPE; original jsonb; replacement jsonb;
  raw bytea; part bytea; digest bytea; parts jsonb; frame jsonb; oldrow jsonb;
- marker jsonb; scalar_expected jsonb; affected integer; position integer; expected_parent text;
+ marker jsonb; scalar_expected jsonb; new_scalar_expected jsonb; affected integer; position integer; expected_parent text;
  published jsonb:='[]'::jsonb; relational jsonb; cache_hot boolean; old_bytes bigint:=0; new_bytes bigint:=0; ordinary_records integer:=0; qualified_height integer; qualified_hash text;
 BEGIN
  IF current_database() IS DISTINCT FROM m->>'databaseName' OR current_setting('port')::integer IS DISTINCT FROM (m->'databaseEndpoint'->>'port')::integer
@@ -131,11 +155,14 @@ BEGIN
   SELECT * INTO STRICT current_transition FROM proof_indexer.work_amo_block_transitions
    WHERE network='livenet' AND block_height=(qualified_block->>'height')::integer AND block_hash=qualified_block->>'hash';
   oldrow:=to_jsonb(current_transition);
-  scalar_expected:=to_jsonb(jsonb_populate_record(NULL::proof_indexer.work_amo_block_transitions,qualified_block->'unchangedScalarMetadata'))-'payload';
-  IF encode(sha256(jsonb_send(oldrow)),'hex') IS DISTINCT FROM qualified_block->>'currentMainRowSha256'
+  scalar_expected:=to_jsonb(jsonb_populate_record(NULL::proof_indexer.work_amo_block_transitions,qualified_block->'oldScalarMetadata'))-'payload';
+  new_scalar_expected:=to_jsonb(jsonb_populate_record(NULL::proof_indexer.work_amo_block_transitions,qualified_block->'newScalarMetadata'))-'payload';
+  IF new_scalar_expected-'event_set_sha256' IS DISTINCT FROM scalar_expected-'event_set_sha256'
+   OR new_scalar_expected->>'event_set_sha256' IS DISTINCT FROM qualified_block#>>'{replacementFields,eventSetCommitment,sha256}'
+   OR encode(sha256(jsonb_send(oldrow)),'hex') IS DISTINCT FROM qualified_block->>'currentMainRowSha256'
    OR oldrow-'payload' IS DISTINCT FROM scalar_expected OR current_transition.previous_block_hash IS DISTINCT FROM expected_parent
    OR NOT(current_transition.complete AND current_transition.block_atomic AND current_transition.fee_once AND current_transition.invalid_zero)
-   OR current_transition.protocol_record_count NOT BETWEEN 0 AND 1024 OR current_transition.raw_protocol_candidate_count<>current_transition.protocol_record_count OR current_transition.event_count<>current_transition.protocol_record_count
+   OR current_transition.protocol_record_count NOT BETWEEN 0 AND 1024 OR current_transition.raw_protocol_candidate_count<>current_transition.protocol_record_count OR current_transition.event_count NOT BETWEEN current_transition.protocol_record_count AND 2*current_transition.protocol_record_count
    OR current_transition.payload ? 'workBatchV1'
    OR current_transition.payload->'__powNativeStorage'->>'sha256' IS DISTINCT FROM qualified_block->>'oldNativeSha256'
    OR NOT EXISTS(SELECT 1 FROM proof_indexer.blocks WHERE network=current_transition.network AND height=current_transition.block_height AND block_hash=current_transition.block_hash AND canonical=true)
@@ -154,7 +181,7 @@ BEGIN
    OR octet_length(jsonb_send(original)) IS DISTINCT FROM (qualified_block->>'oldNativeBytes')::integer
   THEN RAISE EXCEPTION 'Old payload drift';END IF;
   replacement:=original||(qualified_block->'replacementFields');raw:=jsonb_send(replacement);
-  IF replacement-ARRAY['workBatchV1','transitionChainCommitment','replayRecords','replayDescriptorCommitment','traces'] IS DISTINCT FROM original-ARRAY['workBatchV1','transitionChainCommitment','replayRecords','replayDescriptorCommitment','traces']
+  IF replacement-ARRAY['workBatchV1','transitionChainCommitment','replayRecords','replayDescriptorCommitment','traces','eventSetCommitment'] IS DISTINCT FROM original-ARRAY['workBatchV1','transitionChainCommitment','replayRecords','replayDescriptorCommitment','traces','eventSetCommitment']
    OR encode(sha256(raw),'hex') IS DISTINCT FROM qualified_block->>'newNativeSha256'
    OR octet_length(raw) IS DISTINCT FROM (qualified_block->>'newNativeBytes')::integer
   THEN RAISE EXCEPTION 'Qualified native bridge mismatch';END IF;
@@ -172,15 +199,15 @@ BEGIN
   frame:=jsonb_build_object('model','audit31-native-jsonb-chunks-v1','bytes',octet_length(raw),'sha256',qualified_block->>'newNativeSha256','parts',parts);
   INSERT INTO proof_indexer.work_batch_transition_supersessions_v1
    (network,block_height,block_hash,incident_txid,qualification_sha256,manifest_sha256,source_commit,source_tree,through_height,through_hash,old_main,old_archive_sha256,new_metadata,new_manifest,replacement_fields,relational_bindings)
-   VALUES(current_transition.network,current_transition.block_height,current_transition.block_hash,__INCIDENT__,m->>'qualificationSha256',__MANIFEST_SHA__,m->>'sourceCommit',m->>'sourceTree',(m->'checkpoint'->>'height')::integer,m->'checkpoint'->>'hash',oldrow,qualified_block->>'oldNativeSha256',oldrow-ARRAY['payload','created_at'],frame,qualified_block->'replacementFields',relational);
+   VALUES(current_transition.network,current_transition.block_height,current_transition.block_hash,__INCIDENT__,m->>'qualificationSha256',__MANIFEST_SHA__,m->>'sourceCommit',m->>'sourceTree',(m->'checkpoint'->>'height')::integer,m->'checkpoint'->>'hash',oldrow,qualified_block->>'oldNativeSha256',new_scalar_expected-'created_at',frame,qualified_block->'replacementFields',relational);
   DELETE FROM proof_indexer.work_amo_block_transitions WHERE network=current_transition.network AND block_height=current_transition.block_height AND block_hash=current_transition.block_hash AND to_jsonb(work_amo_block_transitions)=oldrow;
   GET DIAGNOSTICS affected=ROW_COUNT;
   IF affected<>1 THEN RAISE EXCEPTION 'Old row changed during publication';END IF;
   INSERT INTO proof_indexer.work_amo_block_transitions
-   SELECT (jsonb_populate_record(NULL::proof_indexer.work_amo_block_transitions,oldrow||jsonb_build_object('payload',replacement))).*;
+   SELECT (jsonb_populate_record(NULL::proof_indexer.work_amo_block_transitions,oldrow||new_scalar_expected||jsonb_build_object('payload',replacement))).*;
   SELECT * INTO STRICT current_transition FROM proof_indexer.work_amo_block_transitions WHERE network=current_transition.network AND block_height=current_transition.block_height;
   cache_hot:=current_transition.block_height>=(m->'checkpoint'->>'height')::integer-127;
-  IF to_jsonb(current_transition)-'payload' IS DISTINCT FROM oldrow-'payload'
+  IF to_jsonb(current_transition)-'payload' IS DISTINCT FROM new_scalar_expected
    OR current_transition.payload->'__powNativeStorage'->>'sha256' IS DISTINCT FROM qualified_block->>'newNativeSha256'
    OR proof_indexer.read_work_transition_payload_v1(current_transition.network,current_transition.block_height,current_transition.block_hash,current_transition.payload) IS DISTINCT FROM replacement
    OR NOT EXISTS(SELECT 1 FROM proof_indexer.work_transition_archive_v1 oldarchive WHERE oldarchive.network=current_transition.network AND oldarchive.block_hash=current_transition.block_hash AND to_jsonb(oldarchive)=to_jsonb(a))
@@ -196,7 +223,7 @@ BEGIN
     OR (marker->'declaration') @> (replacement->'workBatchV1'->'declaration') IS NOT TRUE
    THEN RAISE EXCEPTION 'Derived activation marker mismatch';END IF;
   END IF;
-  published:=published||jsonb_build_array(jsonb_build_object('height',current_transition.block_height,'hash',current_transition.block_hash,'oldNativeSha256',qualified_block->>'oldNativeSha256','newNativeSha256',qualified_block->>'newNativeSha256','originalArchiveRetained',true,'currentMetadataVerified',true,'originalScalarsVerified',true,'hotSlotVerified',true,'cacheMode',CASE WHEN cache_hot THEN 'hot' ELSE 'cold' END,'historicalReadVerified',true,'relationalRowsVerified',true));
+  published:=published||jsonb_build_array(jsonb_build_object('height',current_transition.block_height,'hash',current_transition.block_hash,'oldNativeSha256',qualified_block->>'oldNativeSha256','newNativeSha256',qualified_block->>'newNativeSha256','originalArchiveRetained',true,'currentMetadataVerified',true,'originalScalarsPreserved',true,'currentScalarsQualified',true,'oldScalarMetadataSha256',qualified_block->>'oldScalarMetadataSha256','newScalarMetadataSha256',qualified_block->>'newScalarMetadataSha256','hotSlotVerified',true,'cacheMode',CASE WHEN cache_hot THEN 'hot' ELSE 'cold' END,'historicalReadVerified',true,'relationalRowsVerified',true));
   expected_parent:=current_transition.block_hash;
  END LOOP;
  IF old_bytes IS DISTINCT FROM (m->'resourceUsage'->>'nativePayloadBytes')::bigint
@@ -231,8 +258,8 @@ def verify_evidence(m, verify_runtime=True):
  pref=m["evidence"]["preflight"]
  q=json.loads(private_read(pref["path"],pref["sha256"]))
  if pref["sha256"]!=m["qualificationSha256"] or pref["sha256"]!=m["nativeBridgeSha256"]: raise ValueError("Evidence pin mismatch")
- if q.get("format")!="work-batch-bounded-reseal-qualification-v3" or q.get("qualified") is not True or q.get("earliestSelection",{}).get("verified") is not True: raise ValueError("Unqualified evidence")
- if q.get("mode")!="after-drain" or q.get("sourceState")!="committed" or any(q.get(k) is not True for k in ("ordinaryRelationalSuffixVerified","fullRawSuffixVerified","noDerivedEventsVerified","noBatchLookingRecordsVerified")): raise ValueError("Publication requires drained committed qualification")
+ if q.get("format")!="work-batch-bounded-reseal-qualification-v4" or q.get("qualified") is not True or q.get("earliestSelection",{}).get("verified") is not True: raise ValueError("Unqualified evidence")
+ if q.get("mode")!="after-drain" or q.get("sourceState")!="committed" or any(q.get(k) is not True for k in ("ordinaryRelationalSuffixVerified","fullRawSuffixVerified","ordinaryDerivedClosuresVerified","noBatchLookingRecordsVerified")): raise ValueError("Publication requires drained committed qualification")
  if q.get("nativeCatalogSha256")!=sha(stable(m["oldCatalog"]).encode()): raise ValueError("Qualified catalog mismatch")
  declaration=q.get("declaration",{})
  expected={"txid":INCIDENT,"blockHeight":973103,"blockHash":"00000000000000000001fd3a7d7509d540d5e764e413d16acf9d07e090b8f47b","blockTransactionIndex":1621,"protocolVout":1,"recordOrdinal":0,"registryPaymentVout":2,"activationHeight":973104}
@@ -244,7 +271,7 @@ def verify_evidence(m, verify_runtime=True):
  if q["sourceCommit"]!=m["sourceCommit"] or q["sourceTree"]!=m["sourceTree"] or q["runtimeSources"]!=m["runtimeFiles"] or q["databaseName"]!=m["databaseName"] or q["databaseEndpoint"]!=m["databaseEndpoint"]: raise ValueError("Source/database binding")
  for row in q["blocks"]:
   if any(row.get(k) is not True for k in ("baselineExactlyReproduced","compatibilityDeterministic","economicStateEqual","workGenericIdStateEqual","projectionEqual","eventsAndFeesEqual")): raise ValueError("Qualification failure")
-  if row["rawProtocolCandidateCount"]!=row["unchangedScalarMetadata"]["raw_protocol_candidate_count"] or row["protocolRecordCount"]!=row["unchangedScalarMetadata"]["protocol_record_count"] or row["batchLookingCount"]!=0 or any(row.get(k) is not True for k in ("ordinaryEventSetVerified","ordinaryRecordsVerified","noDerivedEventsVerified")): raise ValueError("Ordinary qualification failure")
+  if row["rawProtocolCandidateCount"]!=row["oldScalarMetadata"]["raw_protocol_candidate_count"] or row["protocolRecordCount"]!=row["oldScalarMetadata"]["protocol_record_count"] or row["batchLookingCount"]!=0 or any(row.get(k) is not True for k in ("ordinaryEventSetVerified","ordinaryRecordsVerified","ordinaryDerivedClosuresVerified","eventSetProvenanceOnly")): raise ValueError("Ordinary qualification failure")
  if verify_runtime:
   for rel,pin in m["runtimeFiles"].items(): private_read(str(RUNTIME/rel),pin,20_000_000,root_owned=False)
 def prepare_manifest(preflight, preflight_path, preflight_sha, old_catalog, new_catalog):

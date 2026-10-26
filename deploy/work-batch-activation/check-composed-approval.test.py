@@ -8,6 +8,24 @@ C='f'*40;T='e'*40;H='d'*40;N='c'*64;META={'uid':1000,'gid':1000,'mode':0o640}
 def raw(v):return m.canonical(v)
 def digest(v):return m.sha(raw(v))
 def commitment(label):return {'model':'fixture','payloadBytes':10,'sha256':m.sha(label.encode())}
+def bind_event_set_fixture(row,derived=0):
+    count=row['protocolRecordCount'];events=count+derived
+    old={'model':'canonical-work-amo-event-set-sha256-v1','payloadBytes':100,'sha256':'a'*64,'eventCount':events}
+    new={**old,'sha256':'b'*64 if derived else old['sha256']}
+    scalar={'event_set_sha256':old['sha256'],'event_count':events,
+        'protocol_record_count':count,'raw_protocol_candidate_count':row['rawProtocolCandidateCount'],
+        'created_at':'2026-10-26T00:00:00Z','credit_supply':'100'}
+    row.update(derivedEventCount=derived,eventCount=events,eventSetProvenanceOnly=True,
+        oldEventSetCommitment=old,newEventSetCommitment=new,oldScalarMetadata=scalar,
+        newScalarMetadata={**scalar,'event_set_sha256':new['sha256']})
+    row['oldScalarMetadataSha256']=v['stable_json_sha256'](row['oldScalarMetadata'])
+    row['newScalarMetadataSha256']=v['stable_json_sha256'](row['newScalarMetadata'])
+    row['relationalBindings'].update(eventCount=events,recordCount=count)
+    row['replacementFields']['eventSetCommitment']=new
+    row['allowedChangedFields']=sorted((set(row['allowedChangedFields'])-{'eventSetCommitment'})|
+        ({'eventSetCommitment'} if derived else set()))
+    return row
+
 class Fixture:
  def __init__(self):
   self.trees={m.B3:'1'*40,m.A3:'2'*40,C:T};self.hashes={k:m.sha(k.encode())for k in m.SOURCE_FILES};self.ancestor=lambda a,b:True
@@ -28,14 +46,15 @@ class Fixture:
   block={'height':973104,'hash':'b'*64,'oldNativeSha256':'c'*64,'newNativeSha256':'d'*64,'replacementFields':{'workBatchV1':{'activationHeight':973104},'transitionChainCommitment':commitment('new')},'allowedChangedFields':['transitionChainCommitment','workBatchV1'],'rawProtocolCandidateCount':0,'protocolRecordCount':0,'batchLookingCount':0}
   for k in ('baselineExactlyReproduced','compatibilityDeterministic','economicStateEqual','workGenericIdStateEqual','projectionEqual','eventsAndFeesEqual','emptyEventSetVerified'):block[k]=True
   marker={'model':'canonical-work-batch-v1-activation-marker-v1','network':'livenet','activationHeight':973104,'declaration':decl,'evidenceCommitment':evidence,'activationBlock':{'height':973104,'hash':block['hash'],'previousBlockHash':m.D_HASH,'transitionChainCommitment':block['replacementFields']['transitionChainCommitment']}}
-  self.q={'format':'work-batch-bounded-reseal-qualification-v3','mode':'after-drain','sourceState':'committed','qualified':True,'readOnly':True,'liveModified':False,'relationalEmptySuffixVerified':True,'earliestSelection':{'verified':True},'fixedPrefixRemainsCanonical':True,'sourceCommit':C,'sourceTree':T,'sourceManifestSha256':'a'*64,'runtimeSources':{x['path']:x['after']for x in self.manifests[-1]['sources']},'declaration':{**decl,'signatureVerified':True,'inputPrevoutsVerified':1,'evidenceCommitment':evidence},'anchor':{'height':973103,'hash':m.D_HASH},'proposedMarker':marker,'maxSuffixBlocks':512,'blocks':[block],'fixedPrefix':{'from':973104,'through':973104,'hash':block['hash'],'rebuildSha256':'1'*64},'checkpoint':{'snapshotId':'checkpoint','height':973104,'hash':block['hash']},'canonicalRebuild':{'complete':True},'databaseName':'fixture','databaseEndpoint':{'port':55431,'unixSocketDirectories':'/tmp/private-fixture'}}
-  block.update(nativePayloadBytes=100,oldNativeBytes=100,newNativeBytes=120,rawBlockBytes=1000,oldScalarMetadataSha256='8'*64,newScalarMetadataSha256='8'*64,currentMainRowSha256='9'*64,relationalBindings={'eventCount':0,'recordCount':0,'eventRowsSha256':'a'*64,'recordRowsSha256':'b'*64},ordinaryEventSetVerified=True,ordinaryRecordsVerified=True,noDerivedEventsVerified=True)
+  self.q={'format':'work-batch-bounded-reseal-qualification-v4','mode':'after-drain','sourceState':'committed','qualified':True,'readOnly':True,'liveModified':False,'relationalEmptySuffixVerified':True,'earliestSelection':{'verified':True},'fixedPrefixRemainsCanonical':True,'sourceCommit':C,'sourceTree':T,'sourceManifestSha256':'a'*64,'runtimeSources':{x['path']:x['after']for x in self.manifests[-1]['sources']},'declaration':{**decl,'signatureVerified':True,'inputPrevoutsVerified':1,'evidenceCommitment':evidence},'anchor':{'height':973103,'hash':m.D_HASH},'proposedMarker':marker,'maxSuffixBlocks':512,'blocks':[block],'fixedPrefix':{'from':973104,'through':973104,'hash':block['hash'],'rebuildSha256':'1'*64},'checkpoint':{'snapshotId':'checkpoint','height':973104,'hash':block['hash']},'canonicalRebuild':{'complete':True},'databaseName':'fixture','databaseEndpoint':{'port':55431,'unixSocketDirectories':'/tmp/private-fixture'}}
+  block.update(nativePayloadBytes=100,oldNativeBytes=100,newNativeBytes=120,rawBlockBytes=1000,oldScalarMetadataSha256='8'*64,newScalarMetadataSha256='8'*64,currentMainRowSha256='9'*64,relationalBindings={'eventCount':0,'recordCount':0,'eventRowsSha256':'a'*64,'recordRowsSha256':'b'*64},ordinaryEventSetVerified=True,ordinaryRecordsVerified=True,ordinaryDerivedClosuresVerified=True)
   block['replacementFields'].update(replayRecords=[],traces=[],replayDescriptorCommitment=commitment('empty'))
-  self.q.update(verifierSha256='0'*64,firstPartySourceHashes={},nodeSha256=N,declarationTxid=m.TX,nativeCatalogSha256='a'*64,resourceLimits=copy.deepcopy(v['REPLAY_RESOURCE_LIMITS']),resourceUsage={'nativePayloadBytes':100,'newNativePayloadBytes':120,'rawBlockBytes':1000,'ordinaryRecords':0},ordinaryRelationalSuffixVerified=True,fullRawSuffixVerified=True,noDerivedEventsVerified=True,noBatchLookingRecordsVerified=True)
+  self.q.update(verifierSha256='0'*64,firstPartySourceHashes={},nodeSha256=N,declarationTxid=m.TX,nativeCatalogSha256='a'*64,resourceLimits=copy.deepcopy(v['REPLAY_RESOURCE_LIMITS']),resourceUsage={'nativePayloadBytes':100,'newNativePayloadBytes':120,'rawBlockBytes':1000,'ordinaryRecords':0},ordinaryRelationalSuffixVerified=True,fullRawSuffixVerified=True,ordinaryDerivedClosuresVerified=True,noBatchLookingRecordsVerified=True)
   self.q['canonicalRebuild'].update(indexedThroughBlock=973104,indexedThroughBlockHash=block['hash'],active=False)
+  bind_event_set_fixture(block)
   self.prior=copy.deepcopy(self.q);self.prior['mode']='before-drain'
   self.prepared={'format':'work-batch-native-supersession-dispatch-v1','status':'rendered-only','committed':False,'manifestSha256':'5'*64,'sqlSha256':'6'*64}
-  self.native={'format':'work-batch-native-supersession-dispatch-v1','status':'committed','committed':True,'postconditionsVerified':True,'commitSent':True,'returncode':0,'fenceError':None,'manifestSha256':'5'*64,'sqlSha256':'6'*64,'result':{'format':'work-batch-native-supersession-result-v1','manifestSha256':'5'*64,'originalArchivesRetained':True,'oldChunksRetained':True,'currentMetadataVerified':True,'markerVerified':True,'marker':copy.deepcopy(marker),'blocks':[{**{k:block[k]for k in ('height','hash','oldNativeSha256','newNativeSha256')},'originalArchiveRetained':True,'hotSlotVerified':True,'currentMetadataVerified':True,'originalScalarsVerified':True,'historicalReadVerified':True,'relationalRowsVerified':True,'cacheMode':'hot'}]}}
+  self.native={'format':'work-batch-native-supersession-dispatch-v1','status':'committed','committed':True,'postconditionsVerified':True,'commitSent':True,'returncode':0,'fenceError':None,'manifestSha256':'5'*64,'sqlSha256':'6'*64,'result':{'format':'work-batch-native-supersession-result-v1','manifestSha256':'5'*64,'originalArchivesRetained':True,'oldChunksRetained':True,'currentMetadataVerified':True,'markerVerified':True,'marker':copy.deepcopy(marker),'blocks':[{**{k:block[k]for k in ('height','hash','oldNativeSha256','newNativeSha256','oldScalarMetadataSha256','newScalarMetadataSha256')},'originalArchiveRetained':True,'hotSlotVerified':True,'currentMetadataVerified':True,'originalScalarsPreserved':True,'currentScalarsQualified':True,'historicalReadVerified':True,'relationalRowsVerified':True,'cacheMode':'hot'}]}}
   self.receipts[-1]['writesDisabledStatus']={'protocol':'work-batch-v1','network':'livenet','active':True,'writeEnabled':False,'ready':False,'declarationTxid':m.TX,'activationHeight':973104,'limits':{'minRecipients':2,'maxRecipients':256,'maxPayloadBytes':65536},'registryFeeProofs':546,'reasonCode':'work-batch-writes-disabled','checkedTipHeight':973104,'checkedTipHash':block['hash']}
  def args(self):
   prior=raw(self.prior);self.q['priorManifestSha256']=m.sha(prior);self.q['cacheRevalidation']={'model':'work-batch-qualified-prefix-cache-v1','priorManifestSha256':m.sha(prior),'from':973104,'through':self.prior['fixedPrefix']['through'],'blocks':len(self.prior['blocks']),'priorBlocksSha256':v['stable_json_sha256'](self.prior['blocks']),'canonicalPrefixVerified':True,'nativeAndScalarBindingsVerified':True,'relationalBindingsVerified':True,'closingStateAndProjectionVerified':True};qualification=raw(self.q);self.native['result']['qualificationSha256']=m.sha(qualification);native=raw(self.native);prepared=raw(self.prepared)
@@ -91,7 +110,7 @@ class CompositionTests(unittest.TestCase):
    f=Fixture();change(f)
    with self.assertRaises(ValueError):f.derive()
  def test_native_block_current_metadata_and_original_scalars_required(self):
-  for key in ('currentMetadataVerified','originalScalarsVerified','historicalReadVerified','relationalRowsVerified'):
+  for key in ('currentMetadataVerified','originalScalarsPreserved','currentScalarsQualified','historicalReadVerified','relationalRowsVerified'):
    for missing in (False,True):
     f=Fixture();block=f.native['result']['blocks'][0]
     if missing:block.pop(key)
@@ -110,7 +129,17 @@ class CompositionTests(unittest.TestCase):
    f=Fixture();change(f.q)
    with self.assertRaises(ValueError):f.derive()
  def test_exact_revalidated_prefix_can_extend_with_preserved_ordinary_evidence(self):
-  f=Fixture();q=f.q;row=copy.deepcopy(q['blocks'][0]);row.update(height=973105,hash='e'*64,protocolRecordCount=1,rawProtocolCandidateCount=1,emptyEventSetVerified=False);row['relationalBindings'].update(eventCount=1,recordCount=1);row['replacementFields']['replayRecords']=[{'rawCandidate':True,'rawWitness':{'text':'é\u2028𐀀'},'derived':[]}];q['blocks'].append(row);q['fixedPrefix'].update(through=973105,hash=row['hash']);q['checkpoint'].update(height=973105,hash=row['hash']);q['canonicalRebuild'].update(indexedThroughBlock=973105,indexedThroughBlockHash=row['hash']);q['resourceUsage']={'nativePayloadBytes':200,'newNativePayloadBytes':240,'rawBlockBytes':2000,'ordinaryRecords':1};published=copy.deepcopy(f.native['result']['blocks'][0]);published.update(height=973105,hash=row['hash']);f.native['result']['blocks'].append(published);f.receipts[-1]['writesDisabledStatus'].update(checkedTipHeight=973105,checkedTipHash=row['hash']);self.assertEqual(f.derive()['composition']['replay']['through'],973105)
+  f=Fixture();q=f.q;row=copy.deepcopy(q['blocks'][0]);row.update(height=973105,hash='e'*64,protocolRecordCount=1,rawProtocolCandidateCount=1,emptyEventSetVerified=False);row['relationalBindings'].update(eventCount=1,recordCount=1);row['replacementFields']['replayRecords']=[{'rawCandidate':True,'rawWitness':{'text':'é\u2028𐀀'},'derived':[]}];bind_event_set_fixture(row);q['blocks'].append(row);q['fixedPrefix'].update(through=973105,hash=row['hash']);q['checkpoint'].update(height=973105,hash=row['hash']);q['canonicalRebuild'].update(indexedThroughBlock=973105,indexedThroughBlockHash=row['hash']);q['resourceUsage']={'nativePayloadBytes':200,'newNativePayloadBytes':240,'rawBlockBytes':2000,'ordinaryRecords':1};published=copy.deepcopy(f.native['result']['blocks'][0]);published.update(**{k:row[k]for k in ('height','hash','oldScalarMetadataSha256','newScalarMetadataSha256')});f.native['result']['blocks'].append(published);f.receipts[-1]['writesDisabledStatus'].update(checkedTipHeight=973105,checkedTipHash=row['hash']);self.assertEqual(f.derive()['composition']['replay']['through'],973105)
+ def test_derived_closure_requires_new_scalar_receipt_and_preserves_relational_proof(self):
+  f=Fixture();row=f.q['blocks'][0];row.update(protocolRecordCount=1,rawProtocolCandidateCount=1,emptyEventSetVerified=False);bind_event_set_fixture(row,derived=1);f.q['resourceUsage']['ordinaryRecords']=1;f.prior=copy.deepcopy(f.q);f.prior['mode']='before-drain';actual=f.native['result']['blocks'][0]
+  actual.update(**{k:row[k]for k in ('oldScalarMetadataSha256','newScalarMetadataSha256')})
+  f.derive()
+  for key in ('oldScalarMetadataSha256','newScalarMetadataSha256'):
+   original=actual[key];actual[key]='0'*64
+   with self.assertRaisesRegex(ValueError,'Published block differs'):f.derive()
+   actual[key]=original
+  f.q['blocks'][0]['newScalarMetadata']['credit_supply']='101'
+  with self.assertRaises(ValueError):f.derive()
  def test_legacy_version_or_native_cache_mode_refused(self):
   f=Fixture();f.q['format']='work-batch-bounded-reseal-qualification-v2'
   with self.assertRaises(ValueError):f.derive()

@@ -9,13 +9,25 @@ enable WORK writes, or change authority service/configuration state.
 
 The early compatibility controller must refuse after D+1 is sealed. This late
 controller requires fresh proof for every complete block 973104 through H,
-bounded to 512 blocks and 1,024 ordinary, non-derived protocol records in total.
-Full Core block bytes must contain no batch attempt. Declaration/input signatures,
-canonical coverage, original scalar seals, baseline replay, repeated compatible
-replay, unchanged economic results and projections, and the derived marker must
-agree. Unsupported derived records, any semantic difference, incomplete evidence
-or a resource ceiling refuses publication. No generic backfill or tip-only marker
-is permitted.
+bounded to 512 blocks and 1,024 ordinary protocol records in total. Qualification
+v4 also reproduces the existing listing-closed child of a valid `buy5` purchase:
+at most one child per record and 2,048 events in total. Full Core block bytes must
+contain no batch attempt. Other derived forms and multipart records remain
+unsupported. Declaration/input signatures, canonical coverage, original scalar
+seals, baseline replay, repeated compatible replay, unchanged economic results
+and projections, and the derived marker must agree. Any other semantic difference,
+incomplete evidence or resource ceiling refuses publication. No generic backfill
+or tip-only marker is permitted.
+
+The earlier v3 qualification refused block 973218 because one `buy5` record
+produced both a sale and a listing closure. That attempt recovered before source
+writes or publication. Its failed partial receipt remains evidence, not a valid
+cached prefix. The targeted read-only replay independently reproduced the stored
+purchase and proved equal economic, WORK, generic-credit and ID state and equal
+projections; only explicit chain references and dependent commitments differed.
+The diagnostic SHA-256 is
+`2ac147cf229a52d290b2a8287d6b66f1a9156f72ce821eb6fc6dffdaa77273a2`.
+A fresh complete v4 qualification is required before publication.
 
 Each original and corrected native payload is limited to 128 MiB; cumulative
 original and corrected native bytes are each limited to 8 GiB. Cumulative raw
@@ -49,11 +61,24 @@ The publisher installs the catalog extension, immutable versions, exact current
 row replacements, and derived D+1 marker in one SERIALIZABLE transaction.
 For empty blocks, only `workBatchV1` and `transitionChainCommitment` change.
 For ordinary nonempty blocks, `replayRecords`, `traces` and
-`replayDescriptorCommitment` also change. Within each existing record or trace,
-only `transitionChainCommitmentAfter.sha256` may differ; its model and payload
-length, every other nested field and the exact array order remain unchanged. Event-set commitments, projections and
-all scalar metadata remain exact. Original archives/chunks and historical
-summaries remain readable. The native hot cache keeps its existing 128-height
+`replayDescriptorCommitment` also change. A supported purchase's derived listing
+closure additionally changes `eventSetCommitment.sha256` and the matching current
+scalar `event_set_sha256`. Independently rebuild the parent and child from the
+canonical replay; never copy retained descriptors as proof of a new interpretation.
+Only the enumerated transition-chain SHA leaves may differ: the parent's direct
+chain witness and derived child's parent-chain witness, and the child's parent
+reference in its direct field, raw descriptor and output projection. Trace changes
+remain limited to their direct chain SHA. Commitment models, payload lengths,
+event counts, array order, positions, child identity, sale terms, fees, balances
+and all other nested fields remain exact. Every other current scalar and every
+relational event and raw-output row remains byte-identical. Preserve the original
+scalar row, event-set hash and native frame in immutable supersession evidence;
+verify the current row against the separately qualified replacement metadata.
+Original archives/chunks and historical summaries remain readable. Stored
+relational enrichment retains its original chain hashes as historical evidence.
+Canonical backfill validates the stored child identity, position, zero-economic
+flags, outcome and fee, then binds the current native derived witness and event-set
+seal; it does not assert that those historical enrichment hashes are current. The native hot cache keeps its existing 128-height
 policy; older replacements are verified through cold reconstruction.
 The summary freshness fix lets the ordinary generator replace a stale current
 summary when its transition source hash/chain/event-set binding changes.

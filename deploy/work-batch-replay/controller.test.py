@@ -12,6 +12,24 @@ EXEC_START_ACTIVE = ('{ path=/opt/node/bin/node ; argv[]=/opt/node/bin/node serv
     ' ; ignore_errors=no ; start_time=[Sat 2026-10-24 18:44:16 UTC] ; stop_time=[n/a]'
     ' ; pid=3713663 ; code=(null) ; status=0/0 }')
 
+def bind_event_set_fixture(row,derived=0):
+    count=row['protocolRecordCount'];events=count+derived
+    old={'model':'canonical-work-amo-event-set-sha256-v1','payloadBytes':100,'sha256':'a'*64,'eventCount':events}
+    new={**old,'sha256':'b'*64 if derived else old['sha256']}
+    scalar={'event_set_sha256':old['sha256'],'event_count':events,
+        'protocol_record_count':count,'raw_protocol_candidate_count':row['rawProtocolCandidateCount'],
+        'created_at':'2026-10-26T00:00:00Z','credit_supply':'100'}
+    row.update(derivedEventCount=derived,eventCount=events,eventSetProvenanceOnly=True,
+        oldEventSetCommitment=old,newEventSetCommitment=new,oldScalarMetadata=scalar,
+        newScalarMetadata={**scalar,'event_set_sha256':new['sha256']})
+    row['oldScalarMetadataSha256']=module.stable_json_sha256(row['oldScalarMetadata'])
+    row['newScalarMetadataSha256']=module.stable_json_sha256(row['newScalarMetadata'])
+    row['relationalBindings'].update(eventCount=events,recordCount=count)
+    row['replacementFields']['eventSetCommitment']=new
+    row['allowedChangedFields']=sorted((set(row['allowedChangedFields'])-{'eventSetCommitment'})|
+        ({'eventSetCommitment'} if derived else set()))
+    return row
+
 def qualification_fixture(m,mode='before-drain',count=1,records=0):
     rows=[]
     for i in range(count):
@@ -23,7 +41,7 @@ def qualification_fixture(m,mode='before-drain',count=1,records=0):
             'rawProtocolCandidateCount':n,'protocolRecordCount':n,'batchLookingCount':0,
             **{key:True for key in ('baselineExactlyReproduced','compatibilityDeterministic',
                 'economicStateEqual','workGenericIdStateEqual','projectionEqual','eventsAndFeesEqual',
-                'ordinaryEventSetVerified','ordinaryRecordsVerified','noDerivedEventsVerified')},
+                'ordinaryEventSetVerified','ordinaryRecordsVerified','ordinaryDerivedClosuresVerified')},
             'emptyEventSetVerified':n==0,
             'relationalBindings':{'eventCount':n,'recordCount':n,
                 'eventRowsSha256':'a'*64,'recordRowsSha256':'b'*64},
@@ -31,6 +49,7 @@ def qualification_fixture(m,mode='before-drain',count=1,records=0):
                 'transitionChainCommitment':{'sha256':'c'*64},'replayRecords':[],
                 'traces':[],'replayDescriptorCommitment':{'sha256':'d'*64}},
             'allowedChangedFields':['transitionChainCommitment','workBatchV1']})
+    for row in rows:bind_event_set_fixture(row)
     through=973103+count;block_hash=rows[-1]['hash']
     value={'format':module.QUALIFICATION_FORMAT,'qualified':True,'readOnly':True,'liveModified':False,
         'mode':mode,'verifierSha256':'9'*64,'sourceState':'committed','sourceCommit':m['sourceCommit'],'sourceTree':m['sourceTree'],
@@ -43,7 +62,7 @@ def qualification_fixture(m,mode='before-drain',count=1,records=0):
         'fixedPrefixRemainsCanonical':True,'proposedMarkerPersisted':False,'maxSuffixBlocks':512,
         'resourceLimits':copy.deepcopy(module.REPLAY_RESOURCE_LIMITS),
         **{key:True for key in ('ordinaryRelationalSuffixVerified','fullRawSuffixVerified',
-            'noDerivedEventsVerified','noBatchLookingRecordsVerified')},
+            'ordinaryDerivedClosuresVerified','noBatchLookingRecordsVerified')},
         'resourceUsage':{'nativePayloadBytes':count*1000,'newNativePayloadBytes':count*1100,
             'rawBlockBytes':count*2000,'ordinaryRecords':records},
         'fixedPrefix':{'from':973104,'through':through,'hash':block_hash,'rebuildSha256':'1'*64},
@@ -489,7 +508,8 @@ class ControllerTests(unittest.TestCase):
         proof={'qualified':True,'mode':'after-drain','priorManifestSha256':'b'*64,
             'databaseName':'exact_fixture_database','proposedMarker':{'declared':'fixture'},
             'fixedPrefix':{'through':973104},'blocks':[{'height':973104,'hash':'d'*64,
-                'oldNativeSha256':'e'*64,'newNativeSha256':'f'*64}]}
+                'oldNativeSha256':'e'*64,'newNativeSha256':'f'*64,
+                 'oldScalarMetadataSha256':'a'*64,'newScalarMetadataSha256':'b'*64}]}
         path=self.backup/'qualification-after.json';path.write_text(json.dumps(proof));path.chmod(0o600)
         ref={'path':str(path),'sha256':module.sha(path.read_bytes())}
         prepared={'manifestSha256':'a'*64,'sqlSha256':'c'*64}
@@ -501,7 +521,7 @@ class ControllerTests(unittest.TestCase):
                 'originalArchivesRetained':True,'oldChunksRetained':True,
                 'currentMetadataVerified':True,'markerVerified':True,'marker':proof['proposedMarker'],
                 'blocks':[{**proof['blocks'][0],'originalArchiveRetained':True,
-                    'currentMetadataVerified':True,'originalScalarsVerified':True,'hotSlotVerified':True,'historicalReadVerified':True,'relationalRowsVerified':True,'cacheMode':'hot'}]}}
+                    'currentMetadataVerified':True,'originalScalarsPreserved':True,'currentScalarsQualified':True,'hotSlotVerified':True,'historicalReadVerified':True,'relationalRowsVerified':True,'cacheMode':'hot'}]}}
         return proof,ref,prepared,final
 
     def test_commit_requires_exact_immutable_archive_current_hot_and_marker_proof(self):
@@ -513,7 +533,7 @@ class ControllerTests(unittest.TestCase):
         for field in ('oldChunksRetained','originalArchivesRetained','currentMetadataVerified','markerVerified'):
             changed=copy.deepcopy(final);changed['result'][field]=False
             with self.assertRaises(ValueError):module.publication_result(changed,prepared,ref)
-        for field in ('originalArchiveRetained','currentMetadataVerified','originalScalarsVerified','hotSlotVerified','historicalReadVerified','relationalRowsVerified'):
+        for field in ('originalArchiveRetained','currentMetadataVerified','originalScalarsPreserved','currentScalarsQualified','hotSlotVerified','historicalReadVerified','relationalRowsVerified'):
             changed=copy.deepcopy(final);changed['result']['blocks'][0][field]=False
             with self.assertRaises(ValueError):module.publication_result(changed,prepared,ref)
         for mutate in (lambda f:f['result'].update(marker={'wrong':True}),
@@ -678,7 +698,7 @@ class ControllerTests(unittest.TestCase):
             lambda q:q['resourceUsage'].update(rawBlockBytes=0),
             lambda q:q['resourceLimits'].update(maxRawBlockBytes=3*1024**3),
             lambda q:q['blocks'][0].update(batchLookingCount=1),
-            lambda q:q['blocks'][0].update(noDerivedEventsVerified=False),
+            lambda q:q['blocks'][0].update(ordinaryDerivedClosuresVerified=False),
             lambda q:q['blocks'][0].pop('currentMainRowSha256'),
             lambda q:q['blocks'][0].update(projectionEqual=False),
             lambda q:q['blocks'][0]['replacementFields'].update(closingTokenState={}),
@@ -690,6 +710,56 @@ class ControllerTests(unittest.TestCase):
             row.update(nativePayloadBytes=32*1024**2,oldNativeBytes=32*1024**2)
         good['resourceUsage']['nativePayloadBytes']=512*32*1024**2
         with self.assertRaisesRegex(ValueError,'cumulative'):module.validate_qualification_bounds(good)
+
+    def test_derived_closure_requires_exact_counts_six_fields_and_scalar_exception(self):
+        good=qualification_fixture(self.manifest,records=1)
+        bind_event_set_fixture(good['blocks'][0],derived=1)
+        self.assertEqual(module.validate_qualification_bounds(good)[0]['eventCount'],2)
+        for mutate in (
+            lambda q:q.update(format='work-batch-bounded-reseal-qualification-v3'),
+            lambda q:q.update(ordinaryDerivedClosuresVerified=False),
+            lambda q:q['blocks'][0].update(derivedEventCount=2),
+            lambda q:q['blocks'][0].update(eventCount=1),
+            lambda q:q['blocks'][0].update(rawProtocolCandidateCount=2),
+            lambda q:q['blocks'][0]['relationalBindings'].update(eventCount=1),
+            lambda q:q['blocks'][0]['relationalBindings'].update(recordCount=2),
+            lambda q:q['blocks'][0].update(eventSetProvenanceOnly=False),
+            lambda q:q['blocks'][0].update(ordinaryDerivedClosuresVerified=False),
+            lambda q:q['blocks'][0]['replacementFields'].pop('eventSetCommitment'),
+            lambda q:q['blocks'][0]['replacementFields'].update(eventSetCommitment=q['blocks'][0]['oldEventSetCommitment']),
+            lambda q:q['blocks'][0]['newEventSetCommitment'].update(payloadBytes=101),
+            lambda q:q['blocks'][0]['newScalarMetadata'].update(credit_supply='101'),
+            lambda q:q['blocks'][0]['newScalarMetadata'].update(created_at='changed'),
+            lambda q:q['blocks'][0]['newScalarMetadata'].update(event_count=1),
+            lambda q:q['blocks'][0]['newScalarMetadata'].update(event_set_sha256='0'*64),
+            lambda q:q['blocks'][0].update(newScalarMetadataSha256=q['blocks'][0]['oldScalarMetadataSha256']),
+            lambda q:q['blocks'][0].update(unchangedScalarMetadata={}),
+        ):
+            changed=copy.deepcopy(good);mutate(changed)
+            with self.assertRaises(ValueError):module.validate_qualification_bounds(changed)
+
+    def test_ordinary_block_cannot_change_event_set_and_cache_cannot_hide_derived_drift(self):
+        before=qualification_fixture(self.manifest,records=1)
+        changed=copy.deepcopy(before);bind_event_set_fixture(changed['blocks'][0],derived=1)
+        changed['blocks'][0].update(derivedEventCount=0,eventCount=1)
+        changed['blocks'][0]['relationalBindings']['eventCount']=1
+        for field in ('oldScalarMetadata','newScalarMetadata'):changed['blocks'][0][field]['event_count']=1
+        with self.assertRaises(ValueError):module.validate_qualification_bounds(changed)
+        bind_event_set_fixture(before['blocks'][0],derived=1)
+        after=cached_extension(before,copy.deepcopy(before),'a'*64);after['mode']='after-drain'
+        self.assertTrue(module.validate_cached_prefix(before,after,'a'*64))
+        after['blocks'][0]['relationalBindings']['eventRowsSha256']='c'*64
+        with self.assertRaises(ValueError):module.validate_cached_prefix(before,after,'a'*64)
+
+    def test_publication_requires_qualified_current_and_preserved_original_scalar_hashes(self):
+        proof,ref,prepared,final=self.make_publication()
+        module.publication_result(final,prepared,ref)
+        for field in ('oldScalarMetadataSha256','newScalarMetadataSha256'):
+            changed=copy.deepcopy(final);changed['result']['blocks'][0][field]='0'*64
+            with self.assertRaises(ValueError):module.publication_result(changed,prepared,ref)
+        changed=copy.deepcopy(final);row=changed['result']['blocks'][0]
+        row.pop('originalScalarsPreserved');row.pop('currentScalarsQualified');row['originalScalarsVerified']=True
+        with self.assertRaises(ValueError):module.publication_result(changed,prepared,ref)
 
     def test_http_postflight_requires_active_exact_declaration_with_writes_off(self):
         good={'protocol':'work-batch-v1','network':'livenet','active':True,'writeEnabled':False,'ready':False,
