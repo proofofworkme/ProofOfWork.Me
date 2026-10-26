@@ -114,6 +114,21 @@ python3 -I -B deploy/work-batch-replay/release.py plan \
   --replay-source-manifest-sha256 EXACT_SHA256
 ```
 
+The source stage keeps the exact committed Git package lock. A single accepted
+A3 dependency compatibility lane permits Git lock SHA-256
+`77170945a8cbc8a94c3e6d63b2faef6516317de6a1ad3e894ec363f77c243b14`
+with captured runtime lock
+`1f6d39daa9d62f3ce75e804333f04031a934f6f50690734df7f00effb7f3f4b6`
+and installed hidden lock
+`2463141898c4cbc3b775420a89e8ae71b12e9d82cf0bc39fd154922a332256aa`.
+It binds the exact successful A3 plan, post-install and completion evidence.
+The only permitted difference adds Space Grotesk 5.3.0 and its root dependency
+while omitting the root MIT metadata; every other package and root field must
+match, including installed replay dependencies. The manifest records this
+provenance, and both qualification source fences recheck the installed lock,
+module link and accepted evidence. This does not install or update packages;
+all other unequal lock pairs fail closed.
+
 ## Apply and verify
 
 The explicit overlay command is the only live action. Dispatch it once in a

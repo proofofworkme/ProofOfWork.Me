@@ -29,6 +29,33 @@ def save(p,b):
  try:
   with os.fdopen(fd,'wb',closefd=False)as f:f.write(b);f.flush();os.fsync(fd)
  finally:os.close(fd)
+# One accepted A3 font-only discrepancy; never infer compatibility from live hashes.
+A3_LOCK_PINS={'source': '77170945a8cbc8a94c3e6d63b2faef6516317de6a1ad3e894ec363f77c243b14', 'runtime': '1f6d39daa9d62f3ce75e804333f04031a934f6f50690734df7f00effb7f3f4b6', 'installed': '2463141898c4cbc3b775420a89e8ae71b12e9d82cf0bc39fd154922a332256aa'}
+A3_LOCK_EVIDENCE={'plan': {'path': '/tmp/proofofwork-amo-browse-release-20261025T180738Z/runtime-plan/plan.json', 'sha256': '08e65c5f6268978926e394c5b08c64a84f8e33c6488b33814739edd7c06d0f0f'}, 'postInstall': {'path': '/tmp/proofofwork-amo-browse-release-20261025T180738Z/runtime-post-install.json', 'sha256': '3ed3e517a41184c0df718ab79bc673f89ce16bcd9661b615b774e0dd3ba49ed4'}, 'completion': {'path': '/data/proofofwork-release-backups/runtime-latest-eb0a2cf01b51-20261025T183504Z/completion.json', 'sha256': 'b763018f4a599807440db3bc75a67f88d26b51668e823425e516a7a9c9aa4651'}}
+FONT='@fontsource-variable/space-grotesk'
+def font_only_lock_semantics(source,runtime,installed):
+ source=json.loads(json.dumps(source));runtime=json.loads(json.dumps(runtime));installed=json.loads(json.dumps(installed));font='node_modules/'+FONT
+ require(font not in source['packages'] and runtime['packages'].get(font,{}).get('version')=='5.3.0','Unexpected font package')
+ require(runtime['packages']['']['dependencies'].pop(FONT,None)=='^5.3.0' and source['packages'][''].get('license')=='MIT' and 'license' not in runtime['packages'][''],'Unexpected font root metadata')
+ runtime['packages']['']['license']='MIT';font_row=runtime['packages'].pop(font)
+ require(runtime==source,'Non-font dependency/root metadata differs')
+ require({k:v for k,v in installed.items() if k!='packages'}=={k:v for k,v in source.items() if k!='packages'} and '' not in installed['packages'] and installed['packages'].get(font)==font_row,'Installed dependency metadata differs')
+ require(all(k==font or k in source['packages'] and v==source['packages'][k] for k,v in installed['packages'].items()),'Installed non-font package differs')
+ require(all('node_modules/'+name in installed['packages'] for name in source['packages']['']['dependencies']),'Installed direct dependency missing')
+ return True
+def dependency_lock_evidence(lock,runtime,active,node_modules,capture):
+ if sha(runtime)==sha(lock):return None
+ require(sha(lock)==A3_LOCK_PINS['source'] and sha(runtime)==A3_LOCK_PINS['runtime'],'Dependency lock differs')
+ require(capture['sources'].get('package-lock.json',{}).get('sha256')==A3_LOCK_PINS['runtime'],'Captured dependency lock differs')
+ require(str(node_modules)=='/opt/proofofwork-api/node_modules' and node_modules.resolve()==node_modules,'Installed dependency root differs')
+ installed_path=node_modules/'.package-lock.json';installed=read(installed_path,A3_LOCK_PINS['installed'],1024*1024)
+ records={key:json.loads(read(v['path'],v['sha256'],8*1024**2)) for key,v in A3_LOCK_EVIDENCE.items()}
+ require(records['plan']['sourceCommit']==BASE and records['plan']['runtimeManifestTemplate']['dependencies']['package-lock.json']==A3_LOCK_PINS['runtime'],'Accepted A3 plan differs')
+ require(records['postInstall']['sourceCommit']==BASE and records['postInstall']['planSha256']==A3_LOCK_EVIDENCE['plan']['sha256'] and records['postInstall'].get('completeImportClosureVerified') is True and records['postInstall'].get('sourceMetadataVerified') is True,'Accepted A3 install differs')
+ require(records['completion']['sourceCommit']==BASE and records['completion'].get('runtimeSourceModified') is False,'Accepted A3 completion differs')
+ font_only_lock_semantics(json.loads(lock),json.loads(runtime),json.loads(installed))
+ return {'model':'accepted-a3-font-only-lock-v1','reason':'Accepted A3 adds only Space Grotesk 5.3.0 and its root dependency while omitting root MIT metadata; replay dependencies are identical.','sourceLockSha256':sha(lock),'runtimeLock':{'path':str(active/'package-lock.json'),'sha256':sha(runtime)},'installedLock':{'path':str(installed_path),'sha256':sha(installed)},'nodeModulesPath':str(node_modules),'acceptedEvidence':A3_LOCK_EVIDENCE,'nonFontPackagesAndRootFieldsEqual':True,'installedNonFontPackagesEqual':True}
+
 def build(a):
  repo=a.source_root.resolve();require(repo==a.source_root and COMMIT.fullmatch(a.source_commit) and COMMIT.fullmatch(a.source_tree),'Exact source required')
  def git(*args):return subprocess.check_output(['/usr/bin/git','--no-optional-locks','-C',str(repo),*args],timeout=15)
@@ -72,10 +99,11 @@ def build(a):
   else:require(files[group+'/'+name]['sha256']==sha(b),'Package source differs')
   files[group+'/'+name]={'sha256':sha(b),'bytes':len(b),'origin':{'commit':commit,'blob':git('rev-parse',commit+':'+name).decode().strip(),'path':name}}
  old=read(active/'server/db/native-transition-storage.mjs',OLD_HELPER);key='accepted-overlay/server/db/native-transition-storage.mjs';save(root/key,old);files[key]={'sha256':OLD_HELPER,'bytes':len(old),'origin':{'acceptedOverlay':True,'expectedCatalogSha256':OLD_CONTRACT}}
- lock=git('show',a.source_commit+':package-lock.json');require(sha(read(active/'package-lock.json'))==sha(lock),'Dependency lock differs');save(root/'package-lock.json',lock)
+ lock=git('show',a.source_commit+':package-lock.json');runtime_lock=read(active/'package-lock.json');dependency_evidence=dependency_lock_evidence(lock,runtime_lock,active,a.node_modules,cap);save(root/'package-lock.json',lock)
  require(a.node_modules.is_absolute() and a.node_modules.resolve()==a.node_modules and a.node_modules.is_dir(),'Canonical installed dependencies required');os.symlink(a.node_modules,root/'node_modules')
  roles={k:g+'/'+n for k,(g,n)in ROLES.items()};roles['nativeStorage']=key
  manifest={'format':'work-batch-replay-source-manifest-v1','sourceState':'committed','sourceRoot':str(repo),'sourceCommit':a.source_commit,'sourceTree':a.source_tree,'baselineSourceCommit':BASE,'root':str(root),'modules':roles,'files':dict(sorted(files.items())),'node':{'path':str(a.node_path),'sha256':cap['nodeSha256']},'packageRoot':str(root/'compatible'),'packageLock':{'path':str(root/'package-lock.json'),'sha256':sha(lock)},'nativeCatalogSha256':OLD_CONTRACT,'maxSuffixBlocks':512,'resourceLimits':{'maxNativePayloadBytes':8*1024**3,'maxRawBlockBytes':2*1024**3,'maxNativePayloadBytesPerBlock':128*1024**2,'maxQualificationReceiptBytes':32*1024**2,'maxOrdinaryRecords':1024},'runtimeSources':{n:r['after']for n,r in sorted(rows.items())},'compositionManifestSha256':sha(raw),'lineage':[{'path':str(a.composition),'sha256':sha(raw)}]}
+ if dependency_evidence is not None:manifest['dependencyEvidence']=dependency_evidence
  require(read(a.composition,a.composition_sha256)==raw and read(a.capture,c['captureSha256'])==capraw,'Evidence changed');require(git('rev-parse','HEAD').decode().strip()==a.source_commit and not git('status','--porcelain','--untracked-files=no').strip(),'Source changed')
  data=(json.dumps(manifest,sort_keys=True,indent=2)+'\n').encode();save(root/'source-manifest.json',data);return {'path':str(root/'source-manifest.json'),'sha256':sha(data),'files':len(files),'productionMutation':False}
 def main():

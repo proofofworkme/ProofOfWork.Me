@@ -165,4 +165,28 @@ class SourceManifestTests(unittest.TestCase):
   for path in ('../escape','a/../b','/absolute','a\\b','a\nb','a\x00b'):
    with self.assertRaises(ValueError):generator.relative(path)
 
+class DependencyLockTests(unittest.TestCase):
+ def fixture(self):
+  source={'name':'fixture','version':'1','lockfileVersion':3,'requires':True,'packages':{'':{'name':'fixture','license':'MIT','dependencies':{'pg':'^8.0.0'}},'node_modules/pg':{'version':'8.0.0','integrity':'fixed'},'node_modules/dev-only':{'version':'1','dev':True}}}
+  runtime=copy.deepcopy(source);runtime['packages'][''].pop('license');runtime['packages']['']['dependencies'][generator.FONT]='^5.3.0';runtime['packages']['node_modules/'+generator.FONT]={'version':'5.3.0','integrity':'font'}
+  installed={k:copy.deepcopy(v) for k,v in runtime.items() if k!='packages'};installed['packages']={k:copy.deepcopy(v) for k,v in runtime['packages'].items() if k not in ('','node_modules/dev-only')}
+  return source,runtime,installed
+ def test_exact_lock_fast_path_is_unchanged(self):
+  with patch.object(generator,'read',side_effect=AssertionError('must not read compatibility evidence')):
+   self.assertIsNone(generator.dependency_lock_evidence(b'{}',b'{}',pathlib.Path('/unused'),pathlib.Path('/unused'),{}))
+ def test_fixed_pair_rejects_unreviewed_lock_bytes(self):
+  with self.assertRaisesRegex(ValueError,'Dependency lock differs'):
+   generator.dependency_lock_evidence(b'{}',b'{"other":true}',pathlib.Path('/unused'),pathlib.Path('/unused'),{})
+ def test_font_only_delta_accepts_without_modifying_inputs(self):
+  values=self.fixture();before=copy.deepcopy(values)
+  self.assertTrue(generator.font_only_lock_semantics(*values));self.assertEqual(values,before)
+ def test_every_other_root_and_package_change_refuses(self):
+  changes=[lambda s,r,i:r['packages']['node_modules/pg'].update(version='9'),lambda s,r,i:r['packages'][''].update(engines={'node':'other'}),lambda s,r,i:r.update(requires=False),lambda s,r,i:r['packages']['node_modules/'+generator.FONT].update(version='5.4.0'),lambda s,r,i:r['packages']['']['dependencies'].update({generator.FONT:'^5.4.0'}),lambda s,r,i:r['packages'][''].update(license='MIT'),lambda s,r,i:i['packages']['node_modules/pg'].update(integrity='other'),lambda s,r,i:i['packages'].update({'node_modules/foreign':{'version':'1'}}),lambda s,r,i:i['packages'].pop('node_modules/pg'),lambda s,r,i:i['packages']['node_modules/'+generator.FONT].update(integrity='other')]
+  for change in changes:
+   values=self.fixture();change(*values)
+   with self.assertRaises(ValueError):generator.font_only_lock_semantics(*values)
+ def test_production_lock_authority_is_exact(self):
+  self.assertEqual(generator.A3_LOCK_PINS,{'source':'77170945a8cbc8a94c3e6d63b2faef6516317de6a1ad3e894ec363f77c243b14','runtime':'1f6d39daa9d62f3ce75e804333f04031a934f6f50690734df7f00effb7f3f4b6','installed':'2463141898c4cbc3b775420a89e8ae71b12e9d82cf0bc39fd154922a332256aa'})
+  self.assertEqual(set(generator.A3_LOCK_EVIDENCE),{'plan','postInstall','completion'})
+
 if __name__=='__main__':unittest.main()
