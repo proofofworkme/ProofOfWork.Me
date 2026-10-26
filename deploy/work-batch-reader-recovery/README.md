@@ -69,6 +69,9 @@ The committed `rehearsal.py` first dispatches the isolated candidate, then its
 `work-batch-summary-rehearsal-qualified-v1` qualification. Overlay requires that
 qualification's exact path/hash, plan, two source hashes, predecessor and all
 eight unpublished canonical summaries; an exploratory result is insufficient.
+Each inherited required `EnvironmentFile` is passed separately, in its original
+order. Preserve any startup-refusal evidence and use a fresh release identity
+for the corrected rehearsal; do not replace or retry the failed unit.
 
 ```sh
 /usr/bin/python3 -I -B "$SRC/deploy/work-batch-reader-recovery/rehearsal.py" \

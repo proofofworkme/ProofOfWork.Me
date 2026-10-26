@@ -148,7 +148,18 @@ def save(path, raw, mode=0o600):
         os.fsync(stream.fileno())
 
 
-def command(plan, output, service_properties):
+def environment_files(value):
+    pattern = r'(/[^\s]+) \(ignore_errors=no\)'
+    require(not re.sub(pattern, '', value).strip(), 'Unsupported environment file configuration')
+    return re.findall(pattern, value)
+
+
+def require_environment_files(actual, expected):
+    require(environment_files(actual) == environment_files(expected),
+            'Rehearsal inherited environment file order or paths differ')
+
+
+def command(plan, output, service_properties, inherited_files=()):
     manifest = plan['runtimeManifestTemplate']
     unit = 'pow-batch-summary-rehearsal-' + manifest['releaseId']
     args = ['systemd-run', '--unit=' + unit, '--service-type=exec']
@@ -173,6 +184,9 @@ def command(plan, output, service_properties):
     }
     for key, value in properties.items():
         args.append('--property=' + key + '=' + value)
+    # systemd-run treats each EnvironmentFile property as one filename.
+    for path in inherited_files:
+        args.append('--property=EnvironmentFile=' + path)
     for key in ['ENABLE_STARTUP_EXPENSIVE_PREWARM', 'ENABLE_API_LEDGER_BACKGROUND_REFRESH',
                 'ENABLE_SUMMARY_TOKEN_REFRESH', 'ENABLE_REQUEST_LEDGER_RECOVERY']:
         args.append('--setenv=' + key + '=0')
@@ -205,13 +219,15 @@ def qualify(args, plan, manifest, candidates, ns):
     state = {key: ns['ctl']('show', unit, '--value', '-p', key) for key in
              ['ActiveState', 'SubState', 'Result', 'ExecMainStatus', 'MainPID', 'InvocationID',
               'ProtectSystem', 'NoNewPrivileges', 'ReadWritePaths', 'User', 'WorkingDirectory',
-              'BindReadOnlyPaths', 'ExecStart']}
+              'BindReadOnlyPaths', 'ExecStart', 'EnvironmentFiles']}
     require(state['ActiveState'] == 'active' and state['SubState'] == 'exited' and
             state['Result'] == 'success' and state['ExecMainStatus'] == '0' and state['MainPID'] == '0' and
             re.fullmatch('[0-9a-f]{32}', state['InvocationID']) and state['ProtectSystem'] == 'strict' and
             state['NoNewPrivileges'] == 'yes' and state['ReadWritePaths'] == '' and
             state['User'] == 'powadmin' and state['WorkingDirectory'] == str(RUNTIME),
             'Rehearsal is not a successful terminal read-only execution')
+    require_environment_files(state['EnvironmentFiles'],
+        ns['ctl']('show', 'proofofwork-api.service', '--value', '-p', 'EnvironmentFiles'))
     expected_binds = {str(output / name) + ':' + str(RUNTIME / target) for name, target in
                       [('api.mjs', API), ('postgres.mjs', POSTGRES), ('reader.mjs', READER),
                        ]}
@@ -302,11 +318,9 @@ def main():
     props = {key: ns['ctl']('show', 'proofofwork-api.service', '--value', '-p', key)
              for key in ['Environment', 'PassEnvironment', 'UnsetEnvironment']}
     files = ns['ctl']('show', 'proofofwork-api.service', '--value', '-p', 'EnvironmentFiles')
-    pattern = r'(/[^\s]+) \(ignore_errors=no\)'
-    require(not re.sub(pattern, '', files).strip(), 'Unsupported environment file configuration')
-    props['EnvironmentFile'] = ' '.join(re.findall(pattern, files))
+    inherited_files = environment_files(files)
     ns['require_restart_configuration'](manifest['restartConfigurationSha256'])
-    invocation = command(plan, args.output, props)
+    invocation = command(plan, args.output, props, inherited_files)
     receipt = {'format': 'work-batch-summary-rehearsal-dispatch-v1', 'planSha256': sha(raw),
                'sourceCommit': manifest['sourceCommit'], 'releaseId': manifest['releaseId'],
                'candidateHashes': {name: sha(value) for name, value in candidates.items()},

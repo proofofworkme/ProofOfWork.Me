@@ -111,7 +111,7 @@ assert.equal(calls, 3);
 
     def test_service_is_bounded_readonly_and_uses_only_existing_mount_targets(self):
         plan = {'runtimeManifestTemplate': {'releaseId': 'a' * 12 + '-20261026T220000Z'}, 'nodePath': '/usr/bin/node'}
-        args = r.command(plan, Path('/tmp/proofofwork-rehearsal'), {'EnvironmentFile': '/private/example.env'})
+        args = r.command(plan, Path('/tmp/proofofwork-rehearsal'), {}, ['/private/example.env'])
         for property in ['ProtectSystem=strict', 'NoNewPrivileges=true', 'CapabilityBoundingSet=',
                          'MemoryMax=2G', 'MemorySwapMax=0', 'RuntimeMaxSec=300',
                          'RemainAfterExit=yes', 'User=powadmin']:
@@ -123,6 +123,49 @@ assert.equal(calls, 3);
         self.assertFalse(any('ReadWritePaths=' in arg for arg in args))
         self.assertEqual(args[-3], '--import')
         self.assertTrue(args[-2].startswith('data:text/javascript;base64,'))
+
+    def test_inherited_environment_files_are_separate_and_ordered(self):
+        paths = ['/etc/proofofwork-api/bitcoin-rpc.env',
+                 '/etc/proofofwork-api/proof-indexer-db.env',
+                 '/etc/proofofwork-api/internal-verifier.env']
+        serialized = '\n'.join(path + ' (ignore_errors=no)' for path in paths)
+        self.assertEqual(r.environment_files(serialized), paths)
+        plan = {'runtimeManifestTemplate': {'releaseId': 'a' * 12 + '-20261026T220000Z'},
+                'nodePath': '/usr/bin/node'}
+        inherited = {'Environment': 'FIXTURE=inline', 'PassEnvironment': 'PASSED',
+                     'UnsetEnvironment': 'REMOVED'}
+        args = r.command(plan, Path('/tmp/proofofwork-rehearsal'), inherited,
+                         r.environment_files(serialized))
+        self.assertEqual([arg for arg in args if arg.startswith('--property=EnvironmentFile=')],
+                         ['--property=EnvironmentFile=' + path for path in paths])
+        for key, value in inherited.items():
+            self.assertIn('--property=' + key + '=' + value, args)
+        self.assertEqual(r.environment_files(serialized + '\n' + paths[0] + ' (ignore_errors=no)'),
+                         paths + paths[:1])
+        self.assertEqual(r.environment_files(''), [])
+        self.assertFalse(any(arg.startswith('--property=EnvironmentFile=') for arg in
+                             r.command(plan, Path('/tmp/proofofwork-rehearsal'), inherited)))
+
+    def test_unsupported_environment_file_serialization_refuses(self):
+        for value in ['/private/optional.env (ignore_errors=yes)',
+                      '/private/first.env /private/second.env (ignore_errors=no)',
+                      '/private/required.env (ignore_errors=no) trailing',
+                      'relative.env (ignore_errors=no)']:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                r.environment_files(value)
+
+    def test_actual_environment_file_inheritance_requires_exact_order_and_paths(self):
+        paths = ['/private/rpc.env', '/private/database.env', '/private/verifier.env']
+        def serialized(items):
+            return '\n'.join(path + ' (ignore_errors=no)' for path in items)
+        expected = serialized(paths)
+        r.require_environment_files(expected, expected)
+        for actual in [serialized(paths[::-1]), serialized(paths[:-1]),
+                       serialized(paths + paths[:1]), serialized(paths[:2] + ['/private/foreign.env']),
+                       expected.replace('ignore_errors=no', 'ignore_errors=yes', 1),
+                       ' '.join(paths) + ' (ignore_errors=no)']:
+            with self.subTest(actual=actual), self.assertRaises(ValueError):
+                r.require_environment_files(actual, expected)
 
 
 if __name__ == '__main__':
