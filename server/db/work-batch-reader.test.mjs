@@ -8,6 +8,7 @@ import { payments, script } from "bitcoinjs-lib";
 import { buildWorkBatchPayload, parseWorkBatchPayload, WORK_BATCH_TOKEN_ID } from "../../src/shared/protocol/workBatch.mjs";
 import { workBatchDeclarationCommitment, WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY, WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, normalizeWorkBatchDeclarationPins, WORK_BATCH_DECLARATION_COMMITMENT_MODEL, workBatchActivationMarkerFromTransition } from "../work-batch-declaration.mjs";
 import { readWorkBatchDiscoveryCheckpoint, assertCanonicalWorkBatchChild, verifiedWorkBatchEventIds, readWorkBatchDeclarationCandidates, readWorkBatchActivationMarker, assertNoSealedWorkBatchAuthority } from "./work-batch-reader.mjs";
+import { rowsWithCanonicalTransferFees } from "./proof-index-reader.mjs";
 
 function fixture() {
   const receiver = n => payments.p2pkh({ hash: Buffer.alloc(20, n) }).address;
@@ -47,6 +48,114 @@ function fixture() {
   };
   return { parent, children, evidence, rows: children.map((payload, index) => ({ event_id: 11 + index, payload })) };
 }
+
+function indexedBatchFixture() {
+  const f = fixture();
+  // The writer stores this provenance on every event. The parent-evidence
+  // SELECT returns those exact payloads, before display normalization.
+  f.parent.indexedFrom = "token-transfer-batches";
+  for (const payload of f.children) payload.indexedFrom = "token-transfers";
+  f.rows = [{ event_id: 10, status: "confirmed", payload: f.parent },
+    ...f.rows.map(row => ({ ...row, status: "confirmed" }))];
+  return f;
+}
+
+test("transfer-fee caller qualifies exact indexed batch parent and children before display normalization", async () => {
+  for (const indexes of [[0, 1, 2], [0], [1]]) {
+    const f = indexedBatchFixture();
+    const rows = indexes.map(index => structuredClone(f.rows[index]));
+    const before = JSON.stringify({ rows, evidence: f.evidence });
+    let calls = 0;
+    const pool = { query: async (sql, args) => {
+      calls++;
+      assert.match(sql, /canonical_work_batch_parent_evidence/u);
+      assert.deepEqual(args, ["livenet", rows.map(row => row.event_id)]);
+      return { rows: [f.evidence] };
+    } };
+    const result = await rowsWithCanonicalTransferFees(pool, rows, "livenet");
+    assert.equal(calls, 1, "even a parent-only or single-child request qualifies the whole family");
+    assert.equal(result, rows);
+    assert.equal(JSON.stringify({ rows, evidence: f.evidence }), before);
+    assert.ok(result.every(row => row.payload.indexedFrom ===
+      (row.payload.kind === "token-transfer-batch" ? "token-transfer-batches" : "token-transfers")));
+    assert.ok(result.filter(row => row.payload.kind === "token-transfer").every(row => row.payload.paidSats === 0));
+  }
+});
+
+test("transfer-fee caller still rejects indexed payload tampering and incomplete batch siblings", async () => {
+  for (const mutate of [
+    ({ rows }) => { rows[0].payload.indexedFrom = "different-provenance"; },
+    ({ rows }) => { rows[1].payload.indexedFrom = "different-provenance"; },
+    ({ rows }) => { rows[1].payload.amountSubatoms = "2"; },
+    ({ rows }) => { rows[0].payload.senderAddress = rows[1].payload.recipientAddress; },
+    ({ evidence }) => { evidence.siblings.pop(); },
+    ({ evidence }) => { evidence.siblings[1].payload.paidSats = 546; },
+  ]) {
+    const f = indexedBatchFixture();
+    const input = { rows: structuredClone(f.rows), evidence: structuredClone(f.evidence) };
+    mutate(input);
+    await assert.rejects(() => rowsWithCanonicalTransferFees({ query: async () => ({ rows: [input.evidence] }) },
+      input.rows, "livenet"), /Canonical WORK batch/u);
+  }
+  const f = indexedBatchFixture();
+  f.evidence.siblings.pop();
+  await assert.rejects(() => rowsWithCanonicalTransferFees({ query: async () => ({ rows: [f.evidence] }) },
+    [f.rows[0]], "livenet"), /recipient set is incomplete/u);
+});
+
+test("indexed batch qualification preserves generic transfer fee recovery in the same result page", async () => {
+  const f = indexedBatchFixture();
+  const tokenId = "e".repeat(64), txid = "f".repeat(64);
+  const senderAddress = f.parent.senderAddress, recipientAddress = f.children[0].recipientAddress;
+  const registryAddress = payments.p2pkh({ hash: Buffer.alloc(20, 9) }).address;
+  const position = { ...f.children[0].containerPosition, blockTransactionIndex: 4, recordOrdinal: 0 };
+  const payload = `pwt1:send:${tokenId}:7:${recipientAddress}`;
+  const generic = { event_id: 20, status: "confirmed", payload: {
+    indexedFrom: "canonical-raw-block-replay", network: "livenet", txid, tokenId, amount: "7",
+    protocol: "pwt1", kind: "token-transfer", confirmed: true, valid: true,
+    _workAmoV5ReplayBound: true, workAmoV5RawCandidate: true,
+    workAmoV5ReplayOutcome: { kind: "pwt1-valid", valid: true, reasonCode: "" },
+    position, payload, senderAddress, recipientAddress,
+  } };
+  const projection = { txid, tokenId, amount: "7", position, protocol: "pwt1", kind: "token-transfer",
+    valid: true, senderAddress, recipientAddress,
+    parsed: { kind: "send", tokenId, amount: "7", recipientAddress, payload } };
+  const evidence = { event_id: 20, network: "livenet", txid, token_id: tokenId, registry_address: registryAddress,
+    block_hash: position.blockHash, block_height: position.blockHeight, block_index: position.blockTransactionIndex,
+    op_return_vout: position.protocolVout, record_ordinal: 0, raw_txid: txid,
+    raw_marker: { network: "livenet", blockHash: position.blockHash, height: position.blockHeight,
+      blockIndex: position.blockTransactionIndex },
+    carrier_output: { value: 0, scriptpubkey: Buffer.from(script.compile([106, Buffer.from(payload)])).toString("hex") },
+    outputs: [{ vout: 0, address: registryAddress, value_sats: "546" }],
+    traces: [{ kind: "protocol-record", valid: true, reasonCode: "", txid, position,
+      output: { projection }, transitionChainCommitmentAfter: f.evidence.parent_records[0].transitionChainCommitmentAfter,
+      stateDelta: { baseContributions: [{ field: "tokenTransferFlowSats", value: "546" }],
+        economicOutputs: [{ role: "pwt-token-registry", vout: 0, address: registryAddress,
+          outputSats: "546", attributedSats: "546" }] } }],
+  };
+  const rows = [...f.rows, generic];
+  const before = JSON.stringify(rows);
+  const calls = [];
+  const pool = { query: async (sql, args) => {
+    if (sql.includes("canonical_work_batch_parent_evidence")) {
+      calls.push("batch"); assert.deepEqual(args, ["livenet", [10, 11, 12]]);
+      return { rows: [f.evidence] };
+    }
+    assert.match(sql, /canonical_transfer_registry_attribution/u);
+    calls.push("generic"); assert.deepEqual(args, ["livenet", [20]]);
+    return { rows: [evidence] };
+  } };
+  const result = await rowsWithCanonicalTransferFees(pool, rows, "livenet");
+  assert.deepEqual(calls, ["batch", "generic"]);
+  assert.equal(JSON.stringify(rows), before, "stored rows remain untouched");
+  for (let index = 0; index < 3; index++) assert.equal(result[index], rows[index]);
+  assert.equal(result[3].payload.paidSats, 546);
+  assert.equal(result[3].payload.registryMutationFeeSats, 546);
+  assert.equal(result[3].payload.registryAddress, registryAddress);
+  assert.equal(Object.hasOwn(result[3].payload, "indexedFrom"), false, "generic display projection remains normalized");
+  evidence.traces[0].stateDelta.baseContributions[0].value = "1092";
+  await assert.rejects(() => rowsWithCanonicalTransferFees(pool, rows, "livenet"), /registry attribution/u);
+});
 
 test("confirmed batch receipts require exact accepted descriptor, position and zero economic delta", () => {
   const f = fixture();

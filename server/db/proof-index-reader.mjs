@@ -16974,9 +16974,10 @@ export function canonicalTransferFeeProjection(payload, evidence) {
 
 export async function rowsWithCanonicalTransferFees(pool, rows, network) {
   if (network !== "livenet") return rows;
+  // Qualify the exact stored payload before removing display-only metadata.
+  // The parent verifier compares against the original sealed event rows.
   await verifiedWorkBatchEventIds(pool, rows
-    .map(row => ({ ...row, payload: canonicalEventPayload(row.payload) }))
-    .filter(row => (row.status === "confirmed" || row.payload.confirmed === true) && row.payload.valid === true),
+    .filter(row => (row.status === "confirmed" || row.payload?.confirmed === true) && row.payload?.valid === true),
   network);
   const candidates = rows.filter((row) => {
     const p = canonicalEventPayload(row.payload);
