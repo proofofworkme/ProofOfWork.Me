@@ -1592,6 +1592,19 @@ function isolatedFunction(path, name, globals = {}) {
         canonicalCreditValueFieldsFromRecord: [
           "canonicalNonNegativeIntegerText",
         ],
+        isWorkBatchTransferParent: [],
+        isWorkBatchTransferChild: [],
+        workBatchChildIdentityFields: ["isWorkBatchTransferChild"],
+        workBatchEconomicTransfer: [
+          "isWorkBatchTransferParent", "canonicalNonNegativeIntegerText",
+        ],
+        economicTokenTransfersFromState: [
+          "isWorkBatchTransferChild", "workBatchEconomicTransfer",
+        ],
+        zeroWorkBatchChildEconomicFields: [],
+        tokenCreditAmountMovedFields: [
+          "isWorkBatchTransferChild", "isWorkBatchTransferParent", "workBatchEconomicTransfer",
+        ],
         canonicalWorkTransferValueProjectionFromState: [
           "tokenCreditAmountMovedFields",
         ],
@@ -1603,6 +1616,7 @@ function isolatedFunction(path, name, globals = {}) {
         creditNetworkValueMetrics: [
           "assertUniqueCreditValueReplayPositions",
           "creditReplayRecordIdentity",
+          "isWorkBatchTransferParent",
         ],
         creditMovementIdentity: ["canonicalTokenReplayPosition"],
         creditNetworkValueEventDetailFor: ["creditMovementIdentity"],
@@ -1615,7 +1629,15 @@ function isolatedFunction(path, name, globals = {}) {
         growthActualLiveTotalSatsAtProvider: [
           "assertUniqueCreditValueReplayPositions",
           "creditReplayRecordIdentity",
+          "isWorkBatchTransferParent",
         ],
+        growthRealEventItems: ["isWorkBatchTransferChild", "isWorkBatchTransferParent"],
+        workFloorPayloadFromState: ["economicTokenTransfersFromState"],
+        workAmoV5HistoricalMovements: ["economicTokenTransfersFromState", "isWorkBatchTransferParent"],
+        inceptionPreBondLiveNetworkValueQ8: ["economicTokenTransfersFromState"],
+        ledgerWithReplayedCreditNetworkValues: ["economicTokenTransfersFromState"],
+        buildCanonicalLedgerPayload: ["economicTokenTransfersFromState"],
+        tokenValueStateFromIndexedActivity: ["workBatchEconomicTransfer"],
         idVerifierItemsFromState: ["canonicalVerifierItemPosition"],
         inceptionIssuanceMetadataFromMints: [
           "attachedWorkSubatomsBigInt",
@@ -1673,7 +1695,7 @@ function isolatedFunction(path, name, globals = {}) {
         workAmoV5ClosingSummaryProjection: [
           "workAmoV5DnsGrowthOverlayFromActualValue",
         ],
-        buildIndexedCanonicalLedgerPayload: ["tokenStateWithVerifiedClosingCreditAggregates"],
+        buildIndexedCanonicalLedgerPayload: ["tokenStateWithVerifiedClosingCreditAggregates", "economicTokenTransfersFromState"],
         tokenStateWithVerifiedClosingCreditAggregates: [
           "canonicalClosingCreditAggregatePrefixes",
           "workAmoV5ExactValueAliases",
@@ -1696,6 +1718,7 @@ function isolatedFunction(path, name, globals = {}) {
           "canonicalCreditValueFieldsFromRecord",
           "presentNonNegativeNumber",
           "tokenCreditAmountMovedFields",
+          "workBatchChildIdentityFields",
         ],
         tokenMarketLifecycleOverlayFromCreditListings: [
           "canonicalEventIdentityDetails",
@@ -1727,10 +1750,15 @@ function isolatedFunction(path, name, globals = {}) {
         tokenTransferFromIndexedActivityItem: [
           "canonicalCreditValueFieldsFromRecord",
           "tokenCreditAmountMovedFields",
+          "workBatchChildIdentityFields",
         ],
         tokenStateWithCreditNetworkValueDetails: [
           "creditNetworkValueEventDetailFor",
           "tokenCreditAmountMovedFields",
+          "zeroWorkBatchChildEconomicFields",
+          "isWorkBatchTransferParent",
+          "isWorkBatchTransferChild",
+          "workBatchEconomicTransfer",
         ],
         tokenVerifierItemsFromState: ["canonicalVerifierItemPosition"],
         workQ16SummaryUnitPriceDescriptor: [

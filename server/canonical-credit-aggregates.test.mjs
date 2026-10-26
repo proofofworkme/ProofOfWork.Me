@@ -27,6 +27,12 @@ const coreFunctions = [
   "assertCanonicalCreditAggregateResponse",
   "payloadIndexedThroughBlockHash",
   "workAmoV5ExactValueAliases",
+  "isWorkBatchTransferParent",
+  "isWorkBatchTransferChild",
+  "workBatchEconomicTransfer",
+  "economicTokenTransfersFromState",
+  "zeroWorkBatchChildEconomicFields",
+  "canonicalNonNegativeIntegerText",
 ];
 function runtime(names = [], globals = {}) {
   const context = vm.createContext({

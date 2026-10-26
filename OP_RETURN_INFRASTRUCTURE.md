@@ -8647,6 +8647,17 @@ The dormant installation uses the fixed-scope
 [batch deployment controller](deploy/work-batch-sends/README.md), preserving
 accepted runtime overlays and keeping capture, plan and rollback evidence on the VPS.
 
+Canonical summary projection qualifies stored batch payloads before removing
+display metadata, and values each accepted parent once. Recipient projections
+retain balances and history with no independent fee or movement contribution.
+The batch at block 973284 exposed both a metadata-order failure and a summary
+classification failure; the strict closing-state guard must remain unchanged.
+The [forward recovery controller](deploy/work-batch-reader-recovery/README.md)
+binds the failed reader installation and its retained custody, rehearses the
+composed reader/API against the existing database in a read-only service, and
+requires all eight summaries at the same live node tip before acceptance.
+This repair does not replay or rewrite accepted transactions or declarations.
+
 The original authority declaration
 `b7c620e48c2d725a143cecd7f7808036d89907124d410ba57d272d34e650cc28`
 confirmed in block 973103 at transaction index 1621. Its exact carrier at vout 1,
