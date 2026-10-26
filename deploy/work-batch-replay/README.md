@@ -170,6 +170,9 @@ preserved dependencies are checked again before publication.
 The controller prepares and pins the publication manifest/rendered SQL, records
 dispatch intent, then executes with the exact database name discovered by the
 READ ONLY qualification, with its captured local socket/port checked again.
+The restricted API role supplies its own backend identity; a bounded local
+postgres READ ONLY query must observe that same active backend and postmaster
+before supplying the socket setting, which the publisher checks again.
 Before COMMIT, first-party Core must still return the exact declaration and
 checkpoint block hashes; failed Core or source checks roll back the transaction.
 The immutable `publication-dispatch.json.result.json`
