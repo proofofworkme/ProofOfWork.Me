@@ -19636,6 +19636,86 @@ async function pruneLedgerSnapshots(
   };
 }
 
+async function canonicalSummaryTransitionSourceCurrent(
+  client, payload, indexedThroughBlock, indexedThroughBlockHash,
+) {
+  if (NETWORK !== "livenet" || indexedThroughBlock < WORK_AMO_V5_ACTIVATION_HEIGHT) {
+    return true;
+  }
+  const candidate = objectPayload(payload?.sourceHashes?.workAmoV5Transition);
+  if (!Number.isSafeInteger(indexedThroughBlock) || !payload?.snapshotId ||
+      !/^[0-9a-f]{64}$/u.test(indexedThroughBlockHash) || !candidate) return false;
+  // Only inline seal metadata is needed; native storage retains these fields.
+  // Bind both stored source-hash locations, without hydrating historical states.
+  const result = await client.query(`
+    SELECT transition.block_hash, transition.block_height, transition.model,
+      transition.state_commitment_model,
+      transition.closing_network_value_q8::text,
+      transition.closing_state_sha256, transition.closing_state_payload_bytes,
+      transition.event_set_model, transition.event_set_sha256,
+      transition.event_set_payload_bytes, transition.event_count,
+      transition.payload->'blockDescriptorCommitment' AS block_descriptor,
+      transition.payload->>'blockDescriptorModel' AS block_descriptor_model,
+      transition.payload->'blockTransactionCount' AS block_transaction_count,
+      transition.payload->'closingStateCommitment' AS closing_commitment,
+      transition.payload->'eventSetCommitment' AS event_set,
+      transition.payload->'transitionChainCommitment' AS transition_chain,
+      transition.payload->>'transitionChainModel' AS transition_chain_model,
+      snapshot.source_hashes->'workAmoV5Transition' AS stored_source
+    FROM proof_indexer.work_amo_block_transitions transition
+    JOIN proof_indexer.blocks block
+      ON block.network = transition.network AND block.height = transition.block_height
+     AND block.block_hash = transition.block_hash
+     AND block.previous_block_hash = transition.previous_block_hash
+     AND block.canonical = true
+    JOIN proof_indexer.ledger_snapshots snapshot
+      ON snapshot.network = transition.network AND snapshot.snapshot_id = $4
+     AND snapshot.indexed_through_block = transition.block_height
+     AND snapshot.source_hashes->>'blockScan' = transition.block_hash
+    WHERE transition.network = $1 AND transition.block_height = $2
+      AND transition.block_hash = $3 AND transition.complete = true
+      AND transition.block_atomic = true AND transition.fee_once = true
+      AND transition.invalid_zero = true
+    LIMIT 2
+  `, [NETWORK, indexedThroughBlock, indexedThroughBlockHash, payload.snapshotId]);
+  const row = result.rows.length === 1 ? result.rows[0] : null;
+  const commitment = (value, model) => value?.model === model &&
+    Number.isSafeInteger(value.payloadBytes) && value.payloadBytes > 0 &&
+    /^[0-9a-f]{64}$/u.test(value.sha256 ?? "");
+  if (!row || row.block_height !== indexedThroughBlock || row.block_hash !== indexedThroughBlockHash ||
+      ![WORK_AMO_V5_BLOCK_SEQUENCER_MODEL, WORK_AMO_V8_BLOCK_SEQUENCER_MODEL].includes(row.model) ||
+      row.state_commitment_model !== WORK_AMO_V5_STATE_COMMITMENT_MODEL ||
+      row.block_descriptor_model !== WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL ||
+      row.transition_chain_model !== WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL ||
+      !Number.isSafeInteger(row.block_transaction_count) || row.block_transaction_count < 1 ||
+      !/^(0|[1-9][0-9]*)$/u.test(row.closing_network_value_q8 ?? "") ||
+      !commitment(row.block_descriptor, WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL) ||
+      !commitment(row.closing_commitment, WORK_AMO_V5_STATE_COMMITMENT_MODEL) ||
+      !commitment(row.event_set, WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL) ||
+      !commitment(row.transition_chain, WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL) ||
+      row.closing_commitment.sha256 !== row.closing_state_sha256 ||
+      row.closing_commitment.payloadBytes !== row.closing_state_payload_bytes ||
+      row.event_set.model !== row.event_set_model ||
+      row.event_set.sha256 !== row.event_set_sha256 ||
+      row.event_set.payloadBytes !== row.event_set_payload_bytes ||
+      row.event_set.eventCount !== row.event_count) return false;
+  // This is the transition evidence emitted by the canonical ledger generator.
+  const expected = {
+    blockHash: row.block_hash, blockHeight: row.block_height,
+    blockDescriptorCommitment: row.block_descriptor,
+    blockDescriptorModel: row.block_descriptor_model,
+    blockTransactionCount: row.block_transaction_count,
+    closingStateCommitment: row.closing_commitment,
+    eventSetCommitment: row.event_set,
+    model: WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
+    networkValueQ8: row.closing_network_value_q8,
+    transitionChainCommitment: row.transition_chain,
+    transitionChainModel: row.transition_chain_model,
+  };
+  return canonicalJsonText(candidate) === canonicalJsonText(expected) &&
+    canonicalJsonText(row.stored_source) === canonicalJsonText(expected);
+}
+
 async function storeCanonicalSummarySnapshot(client, options = {}) {
   const latestCheckpoint = await latestBlockScanCheckpoint(client, {
     useStoredCheckpoint: true,
@@ -19693,7 +19773,10 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     );
     if (
       storedExactWorkState.ready &&
-      canonicalSummarySnapshotStorageEligible(storedExactPayload)
+      canonicalSummarySnapshotStorageEligible(storedExactPayload) &&
+      await canonicalSummaryTransitionSourceCurrent(
+        client, storedExactPayload, requiredCheckpointHeight, requiredCheckpointHash,
+      )
     ) {
       return {
         indexedThroughBlock: requiredCheckpointHeight,
@@ -19748,12 +19831,18 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
         workAmountStorageModel,
       )
     : { ready: false, required: false, state: null };
+  const previousTransitionSourceCurrent = previousPayload
+    ? await canonicalSummaryTransitionSourceCurrent(
+        client, previousPayload, previousCoverage, previousIndexedThroughBlockHash,
+      )
+    : false;
   if (
     !checkpointRequired &&
     previousCoverage === latestIndexedHeight &&
     previousIndexedThroughBlockHash === latestIndexedThroughBlockHash &&
     previousStorageEligible &&
     previousWorkState.ready &&
+    previousTransitionSourceCurrent &&
     canonicalSummaryAccountingModelsCurrent(previousPayload?.summaryPayloads, {
       workAmountStorageModel,
     }) &&
@@ -19813,14 +19902,16 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
         (
           !previousPayload ||
           !previousStorageEligible ||
-          !previousWorkState.ready
+          !previousWorkState.ready ||
+          !previousTransitionSourceCurrent
         )
       ) ||
       !canonicalSummaryRefreshCanDefer(error)
     ) {
       throw error;
     }
-    if (!previousPayload || !previousStorageEligible || !previousWorkState.ready) {
+    if (!previousPayload || !previousStorageEligible || !previousWorkState.ready ||
+        !previousTransitionSourceCurrent) {
       console.error(
         JSON.stringify({
           error: error?.message ?? String(error),

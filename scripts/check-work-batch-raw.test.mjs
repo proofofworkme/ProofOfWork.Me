@@ -33,6 +33,7 @@ import { validateWorkBatchV1RawTransaction, validateWorkBatchV1PendingDecision }
 import {
   WORK_BATCH_ACTIVATION_META_KEY, WORK_BATCH_DECLARATION_COMMITMENT_MODEL, WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT,
   normalizeWorkBatchDeclarationPins, validateWorkBatchActivationMarker, workBatchActivationMarkerFromTransition,
+  WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY, workBatchDeclarationPaymentOrderValid,
 } from "../server/work-batch-declaration.mjs";
 
 const ACTOR = createOwnerOutputCommitmentFixture().ownerAddress;
@@ -387,7 +388,7 @@ function pendingBatchFunctions() {
     WORK_TOKEN_TICKER: "WORK", TOKEN_MIN_MUTATION_PRICE_SATS: 546,
     canonicalRawProtocolRecordSetFromTransaction, validateWorkBatchV1RawTransaction,
     parseTokenPayload: payload => parseWorkBatchPayload(payload),
-    workAmoV5CanonicalPayloadCommitment, isDeepStrictEqual,
+    workAmoV5CanonicalPayloadCommitment, workBatchDeclarationPaymentOrderValid, isDeepStrictEqual,
     transactionTxid: tx => tx.txid, transactionConfirmed: tx => tx.status?.confirmed === true,
     transactionBlockHash: tx => tx.status?.block_hash, transactionBlockHeight: tx => tx.status?.block_height,
     transactionBlockIndex: tx => tx._powBlockIndex, tokenTransactionTime: () => 1_700_000_000_000,
@@ -574,4 +575,26 @@ test("raw replay rejects declaration authority below the declared history floor"
   const floor = { ...ACTIVE, activationHeight: WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT + 1,
     declaration: { ...ACTIVE.declaration, blockHeight: WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT } };
   assert.equal(replay([transaction()], { workBatchV1: floor }).events[0].valid, true);
+});
+
+
+test("bootstrap compatibility reaches confirmed replay and API admission but never changes batch payment order", () => {
+  const context = { ...ACTIVE,
+    declaration: { ...ACTIVE.declaration, ...WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY } };
+  const active = replay([transaction()], { workBatchV1: context });
+  assert.equal(active.events[0].valid, true);
+  assert.equal(active.economicState.baseState.tokenTransferFlowSats, "546");
+  assert.equal(active.feeTransitions.length, 1);
+  assert.deepEqual(active.workBatchV1.declaration, context.declaration);
+  const { workBatchReadContextActive } = pendingBatchFunctions();
+  assert.equal(workBatchReadContextActive(context, HEIGHT), true);
+  assert.equal(workBatchReadContextActive(context, HEIGHT - 1), false);
+  assertInvalidBatch(replay([transaction()], { workBatchV1: context, height: HEIGHT - 1 }));
+  for (const mutation of [{ txid: "f".repeat(64) }, { protocolVout: 0 },
+    { registryPaymentVout: 3 }, { recordOrdinal: 1 }]) {
+    const invalid = { ...context, declaration: { ...context.declaration, ...mutation } };
+    assert.equal(workBatchReadContextActive(invalid, HEIGHT), false);
+    assertInvalidBatch(replay([transaction()], { workBatchV1: invalid }));
+  }
+  assertInvalidBatch(replay([transaction({ carrierFirst: true })], { workBatchV1: context }));
 });

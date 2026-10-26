@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { payments, script } from "bitcoinjs-lib";
 import { buildWorkBatchPayload, parseWorkBatchPayload, WORK_BATCH_TOKEN_ID } from "../../src/shared/protocol/workBatch.mjs";
-import { workBatchDeclarationCommitment, WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, normalizeWorkBatchDeclarationPins, WORK_BATCH_DECLARATION_COMMITMENT_MODEL, workBatchActivationMarkerFromTransition } from "../work-batch-declaration.mjs";
+import { workBatchDeclarationCommitment, WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY, WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, normalizeWorkBatchDeclarationPins, WORK_BATCH_DECLARATION_COMMITMENT_MODEL, workBatchActivationMarkerFromTransition } from "../work-batch-declaration.mjs";
 import { readWorkBatchDiscoveryCheckpoint, assertCanonicalWorkBatchChild, verifiedWorkBatchEventIds, readWorkBatchDeclarationCandidates, readWorkBatchActivationMarker, assertNoSealedWorkBatchAuthority } from "./work-batch-reader.mjs";
 
 function fixture() {
@@ -100,6 +100,7 @@ test("declaration discovery uses complete historical coverage and reports trunca
     assert.equal(params[4], Buffer.from(commitment.protocolRecord).toString("hex"));
     assert.equal(params[6], 2);
     assert.equal(params[15], WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT);
+    assert.deepEqual(params.slice(17), [WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY.txid, 2, 1, 0]);
     assert.match(sql, /tx.block_height >= \$16/u);
     return { rows: [0, 1].map(index => ({ ...base, txid: String(index + 1).repeat(64), block_height: 1_000_000,
       block_hash: hash, block_index: index, protocol_vout: 1, record_ordinal: 0, registry_payment_vout: 0 })) };
@@ -411,6 +412,25 @@ test("PostgreSQL reader qualifies partial and historical prefixes and rejects mi
         expectedTipHeight: floor, expectedTipHash: blockHash(floor),
         after: { blockHeight: floor, blockTransactionIndex: 2147483647, txid: "f".repeat(64) } });
       assert.equal(empty.complete, true); assert.deepEqual(empty.candidates, []);
+    }
+
+    // The exception changes only the payment hint for the exact declaration.
+    // Candidate authority and unique-payment validity are still checked in Core.
+    for (const variant of [
+      { txid: WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY.txid, paymentVout: 2, carrierVout: 1, ordinal: 0, expected: 2 },
+      { txid: "e".repeat(64), paymentVout: 2, carrierVout: 1, ordinal: 0, expected: null },
+      { txid: WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY.txid, paymentVout: 3, carrierVout: 1, ordinal: 0, expected: null },
+      { txid: WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY.txid, paymentVout: 2, carrierVout: 0, ordinal: 0, expected: null },
+      { txid: WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY.txid, paymentVout: 2, carrierVout: 1, ordinal: 1, expected: null },
+    ]) {
+      const data = rowsFor();
+      for (const row of data.transactions.filter(row => row.block_height === floor)) row.txid = variant.txid;
+      Object.assign(data.op_returns.at(-1), { txid: variant.txid, vout: variant.carrierVout, output_index: variant.ordinal });
+      Object.assign(data.tx_outputs.at(-1), { txid: variant.txid, vout: variant.paymentVout });
+      const page = await readWorkBatchDeclarationCandidates(fixturePool(data), "livenet", {
+        expectedTipHeight: floor, expectedTipHash: blockHash(floor) });
+      assert.equal(page.candidates.length, 1);
+      assert.equal(page.candidates[0].registryPaymentVout, variant.expected);
     }
 
     // A retained base, rather than the numerical replay start alone, proves

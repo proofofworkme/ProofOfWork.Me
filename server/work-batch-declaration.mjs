@@ -16,6 +16,14 @@ import {
 
 export const WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT = 972965;
 
+// User-authorized bootstrap compatibility for this already-broadcast declaration
+// only. Keep its signed declaration text unchanged; this is not a general
+// relaxation of declaration ordering or of batch-transfer payment rules.
+export const WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY = Object.freeze({
+  txid: "b7c620e48c2d725a143cecd7f7808036d89907124d410ba57d272d34e650cc28",
+  registryPaymentVout: 2, protocolVout: 1, recordOrdinal: 0,
+});
+
 export const WORK_BATCH_DECLARATION_EVIDENCE_MODEL = "canonical-work-batch-v1-declaration-evidence-v1";
 export const WORK_BATCH_DECLARATION_COMMITMENT_MODEL = "canonical-work-batch-v1-authority-commitment-v1";
 export const WORK_BATCH_DECLARATION_AUTHORITY_ADDRESS = "1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv";
@@ -89,6 +97,14 @@ export function workBatchDeclarationCommitment() {
   });
 }
 
+export function workBatchDeclarationPaymentOrderValid(value) {
+  if (!value || !integer(value.registryPaymentVout) || !integer(value.protocolVout) ||
+      value.recordOrdinal !== 0) return false;
+  return value.registryPaymentVout < value.protocolVout ||
+    Object.entries(WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY)
+      .every(([field, expected]) => value[field] === expected);
+}
+
 export function normalizeWorkBatchDeclarationPins(value = WORK_BATCH_DECLARATION_PINS) {
   const commitment = workBatchDeclarationCommitment();
   if (!value || typeof value !== "object" || Array.isArray(value) ||
@@ -96,7 +112,7 @@ export function normalizeWorkBatchDeclarationPins(value = WORK_BATCH_DECLARATION
       !integer(value.blockHeight, WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT) || !integer(value.blockTransactionIndex) ||
       !integer(value.protocolVout) || value.protocolVout > 0xffffffff ||
       value.recordOrdinal !== 0 || !integer(value.registryPaymentVout) ||
-      value.registryPaymentVout >= value.protocolVout ||
+      !workBatchDeclarationPaymentOrderValid(value) ||
       !integer(value.activationHeight, 1) || value.activationHeight !== value.blockHeight + 1) return null;
   const fixed = {
     authorityScriptPubKey: WORK_BATCH_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,

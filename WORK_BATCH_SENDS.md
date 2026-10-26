@@ -1,7 +1,8 @@
 # WORK Batch Sends V1
 
-Status: implemented as a staged additive protocol. No real declaration pins are
-included in source. Deployment alone does not activate batch sends. The wallet
+Status: implemented as an additive protocol with official writes disabled by
+default. The source records the exact bootstrap declaration compatibility below.
+Deployment alone does not activate batch sends. The wallet
 and broadcast API refuse preparation/admission until exact declaration evidence,
 Q16 replay, relational parity, the current chain checkpoint, existing WORK write
 admission and the independent batch write switch are ready.
@@ -110,7 +111,7 @@ exact bytes is `server/work-batch-declaration.mjs`. Do not edit a declared text
 retrospectively.
 
 The earliest exact valid declaration confirmed at or after block **972965** is
-authoritative. This fixed lower bound is part of the unpublished declaration;
+authoritative. This fixed lower bound is part of the exact declaration;
 earlier history is deterministically prebatch. Input zero spends the
 existing declaration-authority script; the declaration pays at least 546 proofs
 to the registry in one unambiguous output before its unique exact carrier.
@@ -124,6 +125,34 @@ the complete carrier is 5,965 bytes with SHA-256
 These replace the earlier unpublished commitments; regenerate from the released
 source and exclude the generator's display newline when reviewing exact bytes.
 
+## Exact bootstrap compatibility
+
+On 2026-10-25 the authority owner explicitly authorized use of the original
+already-broadcast declaration transaction
+`b7c620e48c2d725a143cecd7f7808036d89907124d410ba57d272d34e650cc28`,
+including its intentional proof payment and WORK self-transfer. Its unique
+546-proof registry payment is at vout **2**, after the exact declaration carrier
+at vout **1**, record ordinal **0**. The implementation accepts only this exact
+transaction/position tuple as an exception to the declaration payment-order
+clause. Every other declaration still requires its registry payment before its
+carrier. The existing batch-send payment-order rule is unchanged.
+
+The published `declarationEvidenceRule` says "before". This is an explicit,
+user-authorized bootstrap compatibility exception to that clause; it is not a
+claim that the published wording already allowed this shape. The declaration
+text, 5,958/5,965-byte commitments and hashes above remain unchanged. Raw txid,
+input-zero authority, unique qualifying registry payment, exact unique carrier,
+canonical confirmation and position, earliest valid declaration selection and
+D+1 activation are still independently verified. The attached `send3` retains
+its existing replay and accounting; the exception creates no transfer or second
+registry-fee accounting event and does not make attachments valid for batch sends.
+
+This exception is not activation evidence. Do not invent a confirmation height,
+write pins or activation marker. If D+1 was already sealed without this context,
+ordinary restart cannot establish the missing activation: use a separately
+reviewed canonical replay procedure before enabling writes. Existing marker-loss,
+projection parity, exact-tip readiness and independent write-switch gates remain.
+
 ## Activation and release handoff
 
 1. Finish source review, replay/persistence and wallet tests, repository hygiene
@@ -131,10 +160,13 @@ source and exclude the generator's display newline when reviewing exact bytes.
    Deploy and verify automatic read discovery before declaration publication.
 2. The authority wallet owner reviews the exact generated declaration and its
    commitments, then signs and broadcasts locally. An agent never handles keys
-   or signs on the owner's behalf. Existing Computer Mail can carry the exact
-   text with one registry recipient, 546 proofs, no WORK, and no subject, CC,
-   reply or attachment. Compare the prepared review's exact carrier to the
-   released commitment before the owner continues to the wallet. Canonical
+   or signs on the owner's behalf. Preserve the exact carrier text without
+   subject, CC, reply or attachment wrappers. Additional proofs and independent
+   WORK transfers can carry signal when their records preserve the declaration
+   authority, exact carrier and required registry payment. Ordinary declarations
+   retain the payment-before-carrier rule; the exact bootstrap exception above
+   recognizes the original transaction. Compare the prepared review's exact
+   carrier and output positions before the owner continues to the wallet. Canonical
    indexing continues while the declaration awaits confirmation; there is no
    confirmation-time indexing hold.
 3. Once the declaration confirms in block D at or after 972965, sequential

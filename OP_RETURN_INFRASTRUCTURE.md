@@ -8584,7 +8584,7 @@ synchronization requirements are recorded in
 `audits/2026-10-23-api-readiness-latency-r2/scope.json`. No additional import,
 database change or replay of committed recovery writes is authorized.
 
-## WORK batch runtime (staged)
+## WORK batch runtime
 
 The additive [WORK Batch Sends V1](WORK_BATCH_SENDS.md) lane keeps official writes
 disabled by default. Confirmed reads discover the earliest exact Core-verified
@@ -8608,6 +8608,42 @@ flag alone is not activation evidence.
 The dormant installation uses the fixed-scope
 [batch deployment controller](deploy/work-batch-sends/README.md), preserving
 accepted runtime overlays and keeping capture, plan and rollback evidence on the VPS.
+
+The original authority declaration
+`b7c620e48c2d725a143cecd7f7808036d89907124d410ba57d272d34e650cc28`
+confirmed in block 973103 at transaction index 1621. Its exact carrier at vout 1,
+registry payment at vout 2 and record ordinal 0 form the approved bootstrap
+ordering exception. The published declaration text and its hashes are unchanged;
+the attached proofs and ordinary WORK transfer retain their existing accounting.
+
+If activation block 973104 is already sealed without that context, use the
+separate [bounded replay controller](deploy/work-batch-replay/README.md).
+Qualify the complete raw-block suffix from 973104 through a fixed checkpoint,
+with a ceiling of 512 blocks and 1,024 ordinary, non-derived records. Full raw
+blocks must contain no batch attempt. Reproduce every retained result, scalar
+seal, event-set commitment and projection exactly. Only the declaration context,
+transition-chain witnesses, and their replay-descriptor commitment may change;
+signed records, outputs, balances, fees and relational events remain exact.
+A completed qualification may supply a cached prefix after draining only when
+every prior Core block, native digest, scalar seal and relational fingerprint
+is independently revalidated under the same pinned source. Qualify any new
+extension through the final drained checkpoint; never infer its validity from
+the older proof. Preserve original immutable archives and chunks, append explicit
+corrected-interpretation evidence, and derive the marker from the corrected
+973104 seal in the same publication transaction.
+Summary reuse must bind the current transition commitments even when balances
+and the block hash are unchanged. Keep writes disabled through source, storage,
+summary and same-tip verification. Failures after source installation require
+forward recovery with applications drained; they do not authorize old-source
+rollback or deletion of historical evidence.
+
+The native storage contract adds one immutable, incident-bound supersession table
+and preserves both archived interpretations. Active full logical backups include
+the new table and functions. Historical restore tools that require the current
+pointer to equal the original archive remain historical; new restore qualification
+must also run the bounded `verify-supersessions.sql` read check and the current
+native contract checks. That read check alone is not a complete restore or
+availability assertion.
 
 The C3 metadata path keeps the outer readiness read that identifies shared
 in-flight work. Its recursive owner skips only its unused preliminary read and

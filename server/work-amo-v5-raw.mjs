@@ -3,7 +3,7 @@ import * as bitcoin from "bitcoinjs-lib";
 import { verifyCodeTransaction } from "../src/shared/protocol/codeRepository.mjs";
 import { exactCodeOutputProofs } from "./code-repositories.mjs";
 import { parseWorkBatchPayload, workBatchNonSelfAmountSubatoms } from "../src/shared/protocol/workBatch.mjs";
-import { WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT } from "./work-batch-declaration.mjs";
+import { WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, workBatchDeclarationPaymentOrderValid } from "./work-batch-declaration.mjs";
 import { validateWorkBatchV1RawTransaction } from "./work-batch-transaction.mjs";
 import {
   DNS_SUBDOMAIN_ACTIVATION_HEIGHT,
@@ -5226,7 +5226,7 @@ function normalizedWorkBatchV1ReplayContext({ blockHeight, workBatchV1 }) {
     !declarationBlockHash ||
     Object.values(declarationPosition).some(value => value === null) ||
     declarationPosition.recordOrdinal !== 0 ||
-    declarationPosition.registryPaymentVout >= declarationPosition.protocolVout ||
+    !workBatchDeclarationPaymentOrderValid({ txid: declarationTxid, ...declarationPosition }) ||
     !evidenceCommitment ||
     typeof evidenceCommitment.model !== "string" ||
     !evidenceCommitment.model ||

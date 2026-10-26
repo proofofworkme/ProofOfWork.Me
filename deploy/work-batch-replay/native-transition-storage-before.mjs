@@ -1,0 +1,26 @@
+import { createHash } from 'node:crypto';
+
+// Additional storage admission. Original catalogue, epoch and all mathematical
+// proof gates remain mandatory; this does not replace or loosen any of them.
+const EXPECTED_CONTRACT_SHA256 = "ac97a8a4892c710aa712975fde9cc1a926c0ba20ef54722def9b1e6b827dec94";
+const CONTRACT_QUERY = "SELECT jsonb_build_object(\n 'role',(SELECT jsonb_build_object('name',r.rolname,'canLogin',r.rolcanlogin,'superuser',r.rolsuper,'createRole',r.rolcreaterole,'createDb',r.rolcreatedb,'replication',r.rolreplication,'bypassRls',r.rolbypassrls,'membershipEdges',(SELECT count(*) FROM pg_auth_members WHERE roleid=r.oid OR member=r.oid),'schemaUsage',has_schema_privilege(r.oid,'proof_indexer','USAGE'),'schemaCreate',has_schema_privilege(r.oid,'proof_indexer','CREATE')) FROM pg_roles r WHERE r.rolname='proof_indexer_transition_storage_owner'),\n 'relations',COALESCE((SELECT jsonb_agg(jsonb_build_object(\n  'name',c.relname,'kind',c.relkind,'persistence',c.relpersistence,'owner',pg_get_userbyid(c.relowner),'accessMethod',am.amname,'rls',c.relrowsecurity,'forceRls',c.relforcerowsecurity,'options',c.reloptions,\n  'rules',(SELECT count(*) FROM pg_rewrite WHERE ev_class=c.oid),\n  'inheritance',(SELECT count(*) FROM pg_inherits WHERE inhrelid=c.oid OR inhparent=c.oid),\n  'acl',COALESCE((SELECT jsonb_agg(jsonb_build_array(CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,a.privilege_type,a.is_grantable) ORDER BY a.grantee,a.privilege_type) FROM aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a),'[]'::jsonb),\n  'columns',(SELECT jsonb_agg(jsonb_build_array(attname,format_type(atttypid,atttypmod),attnotnull,attstorage,attcompression,pg_get_expr(d.adbin,d.adrelid)) ORDER BY attnum) FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped),\n  'constraints',COALESCE((SELECT jsonb_agg(jsonb_build_array(conname,contype,convalidated,pg_get_constraintdef(oid)) ORDER BY conname) FROM pg_constraint WHERE conrelid=c.oid),'[]'::jsonb),\n  'indexes',COALESCE((SELECT jsonb_agg(pg_get_indexdef(indexrelid) ORDER BY pg_get_indexdef(indexrelid)) FROM pg_index WHERE indrelid=c.oid),'[]'::jsonb),\n  'triggers',COALESCE((SELECT jsonb_agg(jsonb_build_array(tgname,tgenabled,pg_get_triggerdef(oid)) ORDER BY tgname) FROM pg_trigger WHERE tgrelid=c.oid AND NOT tgisinternal),'[]'::jsonb),\n  'viewDefinition',CASE WHEN c.relkind='v' THEN pg_get_viewdef(c.oid) ELSE NULL END\n ) ORDER BY c.relname) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace LEFT JOIN pg_am am ON am.oid=c.relam WHERE n.nspname='proof_indexer' AND c.relname IN ('work_transition_chunks_v1','work_transition_archive_v1','work_transition_archive_native_v1','work_transition_hot_slots_v1')),'[]'::jsonb),\n 'functions',COALESCE((SELECT jsonb_agg(jsonb_build_object('name',p.proname,'identity',pg_get_function_identity_arguments(p.oid),'owner',pg_get_userbyid(p.proowner),'language',l.lanname,'securityDefiner',p.prosecdef,'strict',p.proisstrict,'volatility',p.provolatile,'settings',p.proconfig,'definition',pg_get_functiondef(p.oid),\n  'acl',COALESCE((SELECT jsonb_agg(jsonb_build_array(CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,a.privilege_type,a.is_grantable) ORDER BY a.grantee,a.privilege_type) FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a),'[]'::jsonb)) ORDER BY p.proname,pg_get_function_identity_arguments(p.oid)) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN pg_language l ON l.oid=p.prolang WHERE n.nspname='proof_indexer' AND p.proname IN ('reject_work_transition_archive_mutation_v1','reconstruct_work_transition_payload_v1','insert_work_transition_archive_native_v1','work_transition_metadata_v1','verify_work_transition_hot_slot_v1','encode_native_work_transition_v1','read_work_transition_payload_v1')),'[]'::jsonb),\n 'canonicalEncodingTrigger',COALESCE((SELECT jsonb_agg(jsonb_build_array(t.tgname,t.tgenabled,pg_get_triggerdef(t.oid)) ORDER BY t.tgname) FROM pg_trigger t WHERE t.tgrelid='proof_indexer.work_amo_block_transitions'::regclass AND t.tgname='work_transition_native_encoded_v1'),'[]'::jsonb)\n) AS storage_contract";
+function stable(value) {
+ if (Array.isArray(value)) return '['+value.map(stable).join(',')+']';
+ if (value && typeof value==='object') return '{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+stable(value[key])).join(',')+'}';
+ return JSON.stringify(value);
+}
+export function nativeTransitionStorageContractReady(contract) {
+ if (!contract || typeof contract!=='object' || Array.isArray(contract)) return false;
+ return createHash('sha256').update(stable(contract)).digest('hex') === EXPECTED_CONTRACT_SHA256;
+}
+export function nativeTransitionStorageContractSql() {
+ return '('+CONTRACT_QUERY.replace(/ AS storage_contract$/, '')+')';
+}
+export async function assertNativeTransitionStorageContract(client) {
+ const result=await client.query(CONTRACT_QUERY);
+ if (result.rows.length!==1 || !nativeTransitionStorageContractReady(result.rows[0]?.storage_contract)) {
+  const error=new Error('Canonical transition storage is unavailable.');
+  error.code='WORK_TRANSITION_STORAGE_UNAVAILABLE';
+  throw error;
+ }
+}

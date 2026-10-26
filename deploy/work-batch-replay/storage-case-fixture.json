@@ -1,0 +1,198 @@
+{
+  "notice": "Public declaration/scalar fixture only; native payloads are generated synthetically in a disposable database. This is not publication authority.",
+  "anchor": {
+    "height": 973103,
+    "hash": "00000000000000000001fd3a7d7509d540d5e764e413d16acf9d07e090b8f47b",
+    "nativeSha256": "0b914e095e768fd6707ea591fb15d4e06fdc9047442df91c58346cb6045f432b",
+    "payloadCommitment": "018b58703efa5ea9821293d04b76f59c1067a5c804d621eec6e5b0b97d8d5eac",
+    "closingStateCommitment": {
+      "model": "canonical-work-amo-sufficient-state-sha256-v1",
+      "sha256": "ad4b6fe89ad7c5259f0895afff552d36ec2593cc7922c34bab715999a91d4b33",
+      "payloadBytes": 2531405
+    },
+    "closingWorkProjectionCommitment": "db402e43b854528edd07e5d7b85a8a8f2109265e4a6158123d959a17f72a4b60",
+    "unchanged": true
+  },
+  "proposedMarker": {
+    "model": "canonical-work-batch-v1-activation-marker-v1",
+    "network": "livenet",
+    "activationHeight": 973104,
+    "declaration": {
+      "txid": "b7c620e48c2d725a143cecd7f7808036d89907124d410ba57d272d34e650cc28",
+      "blockHeight": 973103,
+      "blockHash": "00000000000000000001fd3a7d7509d540d5e764e413d16acf9d07e090b8f47b",
+      "blockTransactionIndex": 1621,
+      "protocolVout": 1,
+      "recordOrdinal": 0,
+      "registryPaymentVout": 2,
+      "activationHeight": 973104,
+      "authorityScriptPubKey": "76a91499b91dd27a616a71c0a1e9db6a86ceb8cff284c588ac",
+      "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+      "minimumPaymentSats": 546,
+      "payloadBytes": 5965,
+      "payloadSha256": "f1527f240dcc7210ef7bb5ebd33417fbecb1c8ea8dcc1b2bf2917f42b7e20ae4"
+    },
+    "evidenceCommitment": {
+      "model": "canonical-work-batch-v1-authority-commitment-v1",
+      "payloadBytes": 651,
+      "sha256": "7304382c42414dfd4b37a289b19b7e23cf0c02d32fd681acaeeef7956f79c1bc"
+    },
+    "activationBlock": {
+      "height": 973104,
+      "hash": "00000000000000000001628a6ee144e0a149a23e4898d790eeec2719eff565d8",
+      "previousBlockHash": "00000000000000000001fd3a7d7509d540d5e764e413d16acf9d07e090b8f47b",
+      "transitionChainCommitment": {
+        "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+        "payloadBytes": 1025,
+        "sha256": "eb969c3efeb587ce8fe5cc45099680295b4fd21089305e58daf9125827d2bb3d"
+      }
+    }
+  },
+  "declaration": {
+    "txid": "b7c620e48c2d725a143cecd7f7808036d89907124d410ba57d272d34e650cc28",
+    "blockHeight": 973103,
+    "blockHash": "00000000000000000001fd3a7d7509d540d5e764e413d16acf9d07e090b8f47b",
+    "blockTransactionIndex": 1621,
+    "protocolVout": 1,
+    "recordOrdinal": 0,
+    "registryPaymentVout": 2,
+    "activationHeight": 973104,
+    "authorityScriptPubKey": "76a91499b91dd27a616a71c0a1e9db6a86ceb8cff284c588ac",
+    "registryAddress": "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
+    "minimumPaymentSats": 546,
+    "payloadBytes": 5965,
+    "payloadSha256": "f1527f240dcc7210ef7bb5ebd33417fbecb1c8ea8dcc1b2bf2917f42b7e20ae4",
+    "rawSha256": "fde6dbce90de8902d03e61623996bf4812600adae69b59384743896dee03d254",
+    "inputPrevoutsVerified": 1,
+    "signatureVerified": true,
+    "evidenceCommitment": {
+      "model": "canonical-work-batch-v1-authority-commitment-v1",
+      "payloadBytes": 651,
+      "sha256": "7304382c42414dfd4b37a289b19b7e23cf0c02d32fd681acaeeef7956f79c1bc"
+    }
+  },
+  "rows": [
+    {
+      "height": 973104,
+      "hash": "00000000000000000001628a6ee144e0a149a23e4898d790eeec2719eff565d8",
+      "oldNativeSha256": "52b7d5e626148ed5e4ff9e9b2a22558cb31badb6902ad3bd4ef749dc5fb95639",
+      "newNativeSha256": "f7fbc6e758a0eaffb9e625bab54bfd6dec39cbb887137e0317e081e262251ad1",
+      "newNativeBytes": 12190150,
+      "oldSemanticSha256": "ee258b56858d2cdddad4da43ddc089ca53f0327b1cd6aad17d36ffb07171d795",
+      "newSemanticSha256": "ac69230240f2e342893c7fcc86cee77b73f667d516b64cadf4b166b0dbd78954",
+      "replacementFields": {
+        "workBatchV1": {
+          "activationHeight": 973104,
+          "declaration": {
+            "txid": "b7c620e48c2d725a143cecd7f7808036d89907124d410ba57d272d34e650cc28",
+            "blockHash": "00000000000000000001fd3a7d7509d540d5e764e413d16acf9d07e090b8f47b",
+            "blockHeight": 973103,
+            "blockTransactionIndex": 1621,
+            "protocolVout": 1,
+            "recordOrdinal": 0,
+            "registryPaymentVout": 2
+          },
+          "evidenceCommitment": {
+            "model": "canonical-work-batch-v1-authority-commitment-v1",
+            "payloadBytes": 651,
+            "sha256": "7304382c42414dfd4b37a289b19b7e23cf0c02d32fd681acaeeef7956f79c1bc"
+          }
+        },
+        "transitionChainCommitment": {
+          "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+          "payloadBytes": 1025,
+          "sha256": "eb969c3efeb587ce8fe5cc45099680295b4fd21089305e58daf9125827d2bb3d"
+        }
+      },
+      "unchangedScalarMetadata": {
+        "network": "livenet",
+        "block_height": 973104,
+        "block_hash": "00000000000000000001628a6ee144e0a149a23e4898d790eeec2719eff565d8",
+        "previous_block_hash": "00000000000000000001fd3a7d7509d540d5e764e413d16acf9d07e090b8f47b",
+        "model": "canonical-work-amo-full-position-block-sequencer-v4",
+        "state_commitment_model": "canonical-work-amo-sufficient-state-sha256-v1",
+        "opening_network_value_q8": "5183006396328519755849655154",
+        "closing_network_value_q8": "5183006396328519755849655154",
+        "opening_state_sha256": "ad4b6fe89ad7c5259f0895afff552d36ec2593cc7922c34bab715999a91d4b33",
+        "closing_state_sha256": "9e93f0844ff6fb834751e733507885eb7b6ba5267f3862e090e1cc1baca741a7",
+        "opening_state_payload_bytes": 2531405,
+        "closing_state_payload_bytes": 2531405,
+        "protocol_record_count": 0,
+        "raw_protocol_candidate_count": 0,
+        "transaction_count": 0,
+        "event_count": 0,
+        "event_set_model": "canonical-work-amo-event-set-sha256-v1",
+        "event_set_sha256": "43aabdf35a03c5f633796dcb27fa5486f589bf9f0dd5731ff80bf330fa36efb8",
+        "event_set_payload_bytes": 61,
+        "block_atomic": true,
+        "fee_once": true,
+        "invalid_zero": true,
+        "complete": true,
+        "created_at": "2026-10-25T18:03:06.179Z",
+        "work_token_state_model": "canonical-work-token-state-subatoms-v3"
+      },
+      "unchangedScalarMetadataSha256": "3625791c321ce73a9354fa48d72e633ae0c152885d84dc9f044f22818a5606db"
+    },
+    {
+      "height": 973105,
+      "hash": "0000000000000000000088514496a84d7975689ca65df8099ac8d68177425c43",
+      "oldNativeSha256": "35fcf09dc703017a16ef596009983be655f276688718d623bc08a4facf167b43",
+      "newNativeSha256": "87a547be568b865ef27437b9cff88d17dbbf55849bc08b2c583dc1280d208b1c",
+      "newNativeBytes": 12190150,
+      "oldSemanticSha256": "84dfab497184ca1c325fe23851ed04259be59c1a1172cad3759ddd2f18de30c6",
+      "newSemanticSha256": "b5a6f7d080a73af070275b95e7d260df48af5005902bd3ea153700a61919ce53",
+      "replacementFields": {
+        "workBatchV1": {
+          "activationHeight": 973104,
+          "declaration": {
+            "txid": "b7c620e48c2d725a143cecd7f7808036d89907124d410ba57d272d34e650cc28",
+            "blockHash": "00000000000000000001fd3a7d7509d540d5e764e413d16acf9d07e090b8f47b",
+            "blockHeight": 973103,
+            "blockTransactionIndex": 1621,
+            "protocolVout": 1,
+            "recordOrdinal": 0,
+            "registryPaymentVout": 2
+          },
+          "evidenceCommitment": {
+            "model": "canonical-work-batch-v1-authority-commitment-v1",
+            "payloadBytes": 651,
+            "sha256": "7304382c42414dfd4b37a289b19b7e23cf0c02d32fd681acaeeef7956f79c1bc"
+          }
+        },
+        "transitionChainCommitment": {
+          "model": "canonical-work-amo-raw-transition-chain-sha256-v1",
+          "payloadBytes": 1025,
+          "sha256": "0e01f37764a9f8ba24eef2ed6d04572150743990bf48ec6e85a8142ac5db834e"
+        }
+      },
+      "unchangedScalarMetadata": {
+        "network": "livenet",
+        "block_height": 973105,
+        "block_hash": "0000000000000000000088514496a84d7975689ca65df8099ac8d68177425c43",
+        "previous_block_hash": "00000000000000000001628a6ee144e0a149a23e4898d790eeec2719eff565d8",
+        "model": "canonical-work-amo-full-position-block-sequencer-v4",
+        "state_commitment_model": "canonical-work-amo-sufficient-state-sha256-v1",
+        "opening_network_value_q8": "5183006396328519755849655154",
+        "closing_network_value_q8": "5183006396328519755849655154",
+        "opening_state_sha256": "9e93f0844ff6fb834751e733507885eb7b6ba5267f3862e090e1cc1baca741a7",
+        "closing_state_sha256": "1bfb5ca5864f48cfc6a88958788c510a129134cc2846e8810ebf330eae8cc6a9",
+        "opening_state_payload_bytes": 2531405,
+        "closing_state_payload_bytes": 2531405,
+        "protocol_record_count": 0,
+        "raw_protocol_candidate_count": 0,
+        "transaction_count": 0,
+        "event_count": 0,
+        "event_set_model": "canonical-work-amo-event-set-sha256-v1",
+        "event_set_sha256": "43aabdf35a03c5f633796dcb27fa5486f589bf9f0dd5731ff80bf330fa36efb8",
+        "event_set_payload_bytes": 61,
+        "block_atomic": true,
+        "fee_once": true,
+        "invalid_zero": true,
+        "complete": true,
+        "created_at": "2026-10-25T18:13:02.006Z",
+        "work_token_state_model": "canonical-work-token-state-subatoms-v3"
+      },
+      "unchangedScalarMetadataSha256": "a53f9f09c6ab07b2957dcd53ef2590c8c96a76ac80d21f6b8cc5653c6aadfd24"
+    }
+  ]
+}

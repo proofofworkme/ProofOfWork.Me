@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { normalizeWorkBatchDeclarationPins, WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY } from "./work-batch-declaration.mjs";
 import { completeWorkBatchDeclarationDiscovery, discoverWorkBatchDeclaration, verifyWorkBatchDeclarationSelection } from "./work-batch-selection.mjs";
 
 const hash = "a".repeat(64);
@@ -168,4 +169,20 @@ test("one canonical replay invocation completes beyond64 copies with fresh proce
     checkpoint: { blockHeight: 1000000, blockHash: hash },
     readCandidates: async () => { throw new Error("Core unavailable"); },
   }), /Core unavailable/u);
+});
+
+
+test("bootstrap ordering compatibility never overrides an earlier valid declaration", async () => {
+  const earlier = normalizeWorkBatchDeclarationPins({ txid: "d".repeat(64), blockHash: hash,
+    blockHeight: 1000000, blockTransactionIndex: 1, protocolVout: 1,
+    registryPaymentVout: 0, recordOrdinal: 0, activationHeight: 1000001 });
+  const compatible = normalizeWorkBatchDeclarationPins({ ...earlier,
+    ...WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY, blockTransactionIndex: 2 });
+  const run = rows => verifyWorkBatchDeclarationSelection({ pins: compatible,
+    readCandidates: async () => ({ candidates: rows, complete: true, overflow: false,
+      scan: { complete: true, indexedThroughBlock: 1000000, blockHash: hash } }),
+    validateCandidate: async row => normalizeWorkBatchDeclarationPins(row),
+  });
+  await assert.rejects(run([earlier, compatible]), /not-earliest/u);
+  assert.equal(await run([compatible]), true);
 });

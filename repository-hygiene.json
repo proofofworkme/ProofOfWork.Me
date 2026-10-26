@@ -261,7 +261,8 @@
       "deploy/audit32-first-batch/README.md",
       "deploy/monitoring-reconciliation/README.md",
       "deploy/work-batch-sends/README.md",
-      "deploy/work-batch-activation/README.md"
+      "deploy/work-batch-activation/README.md",
+      "deploy/work-batch-replay/README.md"
     ]
   },
   "protectedTrackedPaths": [

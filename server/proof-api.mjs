@@ -65,7 +65,7 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
 import { parseWorkBatchPayload, WORK_BATCH_PROTOCOL_PREFIX } from "../src/shared/protocol/workBatch.mjs";
 import { workBatchConfiguration, resolveWorkBatchReadConfiguration, loadWorkBatchActivation, workBatchPublicStatus } from "./work-batch-runtime.mjs";
-import { WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, workBatchDeclarationCommitment, workBatchDeclarationEvidenceFromTransaction } from "./work-batch-declaration.mjs";
+import { WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, workBatchDeclarationCommitment, workBatchDeclarationEvidenceFromTransaction, workBatchDeclarationPaymentOrderValid } from "./work-batch-declaration.mjs";
 import { validateWorkBatchV1RawTransaction } from "./work-batch-transaction.mjs";
 import { completeWorkBatchDeclarationDiscovery, discoverWorkBatchDeclaration, verifyWorkBatchDeclarationSelection } from "./work-batch-selection.mjs";
 import { verifyBitcoinMessageSignature } from "./bitcoin-message-verifier.mjs";
@@ -22672,7 +22672,7 @@ function workBatchReadContextActive(context, height) {
     /^[0-9a-f]{64}$/u.test(String(context.declaration?.blockHash ?? "")) &&
     ["blockTransactionIndex", "protocolVout", "recordOrdinal", "registryPaymentVout"].every(field =>
       Number.isSafeInteger(context.declaration?.[field]) && context.declaration[field] >= 0) &&
-    context.declaration.recordOrdinal === 0 && context.declaration.registryPaymentVout < context.declaration.protocolVout &&
+    context.declaration.recordOrdinal === 0 && workBatchDeclarationPaymentOrderValid(context.declaration) &&
     /^[0-9a-f]{64}$/u.test(String(context.evidenceCommitment?.sha256 ?? "")) &&
     typeof context.evidenceCommitment?.model === "string" && context.evidenceCommitment.model.length > 0 &&
     Number.isSafeInteger(context.evidenceCommitment?.payloadBytes) && context.evidenceCommitment.payloadBytes > 0 &&

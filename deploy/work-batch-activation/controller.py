@@ -18,6 +18,10 @@ SWITCH = 'WORK_BATCH_WRITES_ENABLED'
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 COMMIT = re.compile(r'[0-9a-f]{40}\Z')
 MIN_HEIGHT = 972965
+# Exact user-authorized bootstrap exception; the published text remains intact.
+DECLARATION_ORDER_COMPATIBILITY = {
+    'txid':'b7c620e48c2d725a143cecd7f7808036d89907124d410ba57d272d34e650cc28',
+    'registryPaymentVout':2, 'protocolVout':1, 'recordOrdinal':0}
 MAX_INPUT = 2*1024*1024
 
 def require(value, message):
@@ -35,7 +39,8 @@ def public_pins(pins):
     require(all(type(result[k]) is int and 0 <= result[k] <= 2147483647
         for k in FIELDS if k not in ('txid','blockHash')), 'Invalid declaration position')
     require(result['blockHeight'] >= MIN_HEIGHT and result['activationHeight'] == result['blockHeight']+1
-        and result['recordOrdinal'] == 0 and result['registryPaymentVout'] < result['protocolVout'],
+        and result['recordOrdinal'] == 0 and (result['registryPaymentVout'] < result['protocolVout']
+            or all(result[key] == value for key,value in DECLARATION_ORDER_COMPATIBILITY.items())),
         'Invalid declaration boundary')
     return result
 

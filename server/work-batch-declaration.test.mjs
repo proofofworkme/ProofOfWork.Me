@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { address, networks, script } from "bitcoinjs-lib";
 import {
   workBatchActivationMarkerFromTransition, validateWorkBatchActivationMarker,
-  WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT,
+  WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY,
   WORK_BATCH_DECLARATION_AUTHORITY_SCRIPT_PUBKEY,
   WORK_BATCH_DECLARATION_REGISTRY_ADDRESS,
   buildWorkBatchDeclarationText, normalizeWorkBatchDeclarationPins,
@@ -114,4 +114,45 @@ test("only unpublished declarations at or after the fixed floor can establish au
   assert.ok(normalizeWorkBatchDeclarationPins({ ...pins, blockHeight: minimum, activationHeight: minimum + 1 }));
   assert.match(buildWorkBatchDeclarationText(), /minimumDeclarationBlockHeight=972965/u);
   assert.match(buildWorkBatchDeclarationText(), /earliest exact valid declaration at or after minimumDeclarationBlockHeight/u);
+});
+
+
+test("bootstrap ordering compatibility binds one exact txid and tuple without waiving evidence", () => {
+  const compatiblePins = { ...pins, ...WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY };
+  assert.ok(normalizeWorkBatchDeclarationPins(compatiblePins));
+  for (const mutation of [{ txid: "c".repeat(64) }, { protocolVout: 0 },
+    { registryPaymentVout: 3 }, { recordOrdinal: 1 }, { registryPaymentVout: "2" }]) {
+    assert.equal(normalizeWorkBatchDeclarationPins({ ...compatiblePins, ...mutation }), null);
+  }
+  const compatibleTransaction = () => {
+    const tx = transaction();
+    tx.txid = compatiblePins.txid;
+    tx.vout = [
+      { value: 546, scriptpubkey: WORK_BATCH_DECLARATION_AUTHORITY_SCRIPT_PUBKEY },
+      tx.vout[1], tx.vout[0],
+      carrier("pwt1:send3:d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8:18000000000000000000000:1F1p9UEHuH5KTFR7Zsx93Khdrqhj6t5nFv"),
+      { value: 888, scriptpubkey: WORK_BATCH_DECLARATION_AUTHORITY_SCRIPT_PUBKEY },
+    ];
+    return tx;
+  };
+  const item = workBatchDeclarationEvidenceFromTransaction(compatibleTransaction(), compatiblePins, { canonical: true });
+  assert.equal(item.evidenceComplete, true);
+  assert.equal(item.registryPaymentSats, "546");
+  assert.equal(workBatchActivationFromEvidence(item, { expectedDeclaration: compatiblePins,
+    indexedThroughBlock: pins.blockHeight }).active, false);
+  const context = { evidence: item, expectedDeclaration: compatiblePins, indexedThroughBlock: pins.activationHeight };
+  assert.equal(workBatchDeclarationStatus(context).active, true);
+  assert.equal(workBatchDeclarationStatus(context).writesAllowed, false);
+  assert.equal(workBatchDeclarationEvidenceFromTransaction(compatibleTransaction(), compatiblePins).evidenceComplete, false);
+  for (const mutate of [
+    tx => { tx._powCanonicalRpcHydration = false; }, tx => { tx.status.confirmed = false; },
+    tx => { tx.txid = "c".repeat(64); }, tx => { tx.status.block_hash = "c".repeat(64); },
+    tx => { tx._powBlockIndex++; }, tx => { tx.vin[0].prevout.scriptpubkey = "00"; },
+    tx => { tx.vout[2].value = 545; }, tx => { tx.vout.push(tx.vout[2]); },
+    tx => { tx.vout.push(tx.vout[1]); },
+    tx => { tx.vout[1] = carrier(workBatchDeclarationCommitment().protocolRecord + "\n"); },
+  ]) {
+    const tx = compatibleTransaction(); mutate(tx);
+    assert.equal(workBatchDeclarationEvidenceFromTransaction(tx, compatiblePins, { canonical: true }).evidenceComplete, false);
+  }
 });

@@ -1,0 +1,1017 @@
+{
+  "role": {
+    "name": "proof_indexer_transition_storage_owner",
+    "canLogin": false,
+    "createDb": false,
+    "bypassRls": false,
+    "superuser": false,
+    "createRole": false,
+    "replication": false,
+    "schemaUsage": true,
+    "schemaCreate": false,
+    "membershipEdges": 0
+  },
+  "functions": [
+    {
+      "acl": [
+        [
+          "proof_indexer_transition_storage_owner",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "name": "encode_native_work_transition_v1",
+      "owner": "proof_indexer_transition_storage_owner",
+      "strict": false,
+      "identity": "",
+      "language": "plpgsql",
+      "settings": [
+        "search_path=pg_catalog, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION proof_indexer.encode_native_work_transition_v1()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'pg_temp'\nAS $function$\nDECLARE manifest jsonb; native_timestamp timestamptz;\nBEGIN\n IF NEW.payload ? '__powNativeStorage' THEN RAISE EXCEPTION 'Native storage envelope cannot be supplied as protocol evidence';END IF;\n INSERT INTO proof_indexer.work_transition_archive_native_v1(\"network\",\"block_height\",\"block_hash\",\"previous_block_hash\",\"model\",\"state_commitment_model\",\"opening_network_value_q8\",\"closing_network_value_q8\",\"opening_state_sha256\",\"closing_state_sha256\",\"opening_state_payload_bytes\",\"closing_state_payload_bytes\",\"protocol_record_count\",\"raw_protocol_candidate_count\",\"transaction_count\",\"event_count\",\"event_set_model\",\"event_set_sha256\",\"event_set_payload_bytes\",\"block_atomic\",\"fee_once\",\"invalid_zero\",\"complete\",\"payload\",\"created_at\",\"work_token_state_model\")VALUES(NEW.\"network\",NEW.\"block_height\",NEW.\"block_hash\",NEW.\"previous_block_hash\",NEW.\"model\",NEW.\"state_commitment_model\",NEW.\"opening_network_value_q8\",NEW.\"closing_network_value_q8\",NEW.\"opening_state_sha256\",NEW.\"closing_state_sha256\",NEW.\"opening_state_payload_bytes\",NEW.\"closing_state_payload_bytes\",NEW.\"protocol_record_count\",NEW.\"raw_protocol_candidate_count\",NEW.\"transaction_count\",NEW.\"event_count\",NEW.\"event_set_model\",NEW.\"event_set_sha256\",NEW.\"event_set_payload_bytes\",NEW.\"block_atomic\",NEW.\"fee_once\",NEW.\"invalid_zero\",NEW.\"complete\",NEW.\"payload\",NEW.\"created_at\",NEW.\"work_token_state_model\" );\n SELECT payload,created_at INTO manifest,native_timestamp FROM proof_indexer.work_transition_archive_v1 WHERE network=NEW.network AND block_height=NEW.block_height AND block_hash=NEW.block_hash;\n NEW.created_at:=native_timestamp;\n -- A derived cache never changes the immutable archive or publication order.\n -- Historical warmup first fills the immutable archive. Large-payload cache\n -- admission is confined to its latest 128 heights; identical retries do not\n -- generate another heap/TOAST version. Older/fork records remain lossless.\n IF NEW.block_height >= (SELECT max(block_height) FROM proof_indexer.work_transition_archive_v1 WHERE network=NEW.network)-127\n AND NOT EXISTS(SELECT 1 FROM proof_indexer.work_transition_hot_slots_v1 WHERE network=NEW.network AND slot=mod(NEW.block_height,128) AND block_height=NEW.block_height AND block_hash=NEW.block_hash AND payload_sha256=manifest->>'sha256') THEN\n INSERT INTO proof_indexer.work_transition_hot_slots_v1 VALUES(NEW.network,mod(NEW.block_height,128),NEW.block_height,NEW.block_hash,manifest->>'sha256',NEW.payload)\n ON CONFLICT(network,slot) DO UPDATE SET block_height=EXCLUDED.block_height,block_hash=EXCLUDED.block_hash,payload_sha256=EXCLUDED.payload_sha256,payload=EXCLUDED.payload;\n END IF;\n NEW.payload:=proof_indexer.work_transition_metadata_v1(NEW.payload)||jsonb_build_object('__powNativeStorage',jsonb_build_object('model','proof-indexer-native-transition-chunks-v1','sha256',manifest->>'sha256'));\n RETURN NEW;\nEND$function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": [
+        [
+          "proof_indexer_transition_storage_owner",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "name": "insert_work_transition_archive_native_v1",
+      "owner": "proof_indexer_transition_storage_owner",
+      "strict": false,
+      "identity": "",
+      "language": "plpgsql",
+      "settings": [
+        "search_path=pg_catalog, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION proof_indexer.insert_work_transition_archive_native_v1()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'pg_temp'\nAS $function$\nDECLARE raw bytea;part bytea;h bytea;parts jsonb:='[]'::jsonb;pos integer;manifest jsonb;\nBEGIN\n raw:=jsonb_send(NEW.payload);\n IF octet_length(raw)>268435456 THEN RAISE EXCEPTION 'Native row envelope';END IF;\n FOR pos IN 0..((octet_length(raw)-1)/65536) LOOP\n  part:=substring(raw FROM pos*65536+1 FOR 65536);h:=sha256(part);\n  INSERT INTO proof_indexer.work_transition_chunks_v1 VALUES(h,part)ON CONFLICT DO NOTHING;\n  IF NOT EXISTS(SELECT 1 FROM proof_indexer.work_transition_chunks_v1 WHERE hash=h AND data=part)THEN RAISE EXCEPTION 'Chunk collision/corruption';END IF;\n  parts:=parts||jsonb_build_array(encode(h,'hex'));\n END LOOP;\n manifest:=jsonb_build_object('model','audit31-native-jsonb-chunks-v1','bytes',octet_length(raw),'sha256',encode(sha256(raw),'hex'),'parts',parts);\n INSERT INTO proof_indexer.work_transition_archive_v1(\"network\",\"block_height\",\"block_hash\",\"previous_block_hash\",\"model\",\"state_commitment_model\",\"opening_network_value_q8\",\"closing_network_value_q8\",\"opening_state_sha256\",\"closing_state_sha256\",\"opening_state_payload_bytes\",\"closing_state_payload_bytes\",\"protocol_record_count\",\"raw_protocol_candidate_count\",\"transaction_count\",\"event_count\",\"event_set_model\",\"event_set_sha256\",\"event_set_payload_bytes\",\"block_atomic\",\"fee_once\",\"invalid_zero\",\"complete\",\"payload\",\"created_at\",\"work_token_state_model\")VALUES(NEW.\"network\",NEW.\"block_height\",NEW.\"block_hash\",NEW.\"previous_block_hash\",NEW.\"model\",NEW.\"state_commitment_model\",NEW.\"opening_network_value_q8\",NEW.\"closing_network_value_q8\",NEW.\"opening_state_sha256\",NEW.\"closing_state_sha256\",NEW.\"opening_state_payload_bytes\",NEW.\"closing_state_payload_bytes\",NEW.\"protocol_record_count\",NEW.\"raw_protocol_candidate_count\",NEW.\"transaction_count\",NEW.\"event_count\",NEW.\"event_set_model\",NEW.\"event_set_sha256\",NEW.\"event_set_payload_bytes\",NEW.\"block_atomic\",NEW.\"fee_once\",NEW.\"invalid_zero\",NEW.\"complete\",manifest,NEW.\"created_at\",NEW.\"work_token_state_model\")ON CONFLICT DO NOTHING;\n IF NOT EXISTS(SELECT 1 FROM proof_indexer.work_transition_archive_v1 f WHERE f.network=NEW.network AND f.block_height=NEW.block_height AND f.block_hash=NEW.block_hash AND f.payload->>'sha256'=manifest->>'sha256' AND ROW(f.\"network\",f.\"block_height\",f.\"block_hash\",f.\"previous_block_hash\",f.\"model\",f.\"state_commitment_model\",f.\"opening_network_value_q8\",f.\"closing_network_value_q8\",f.\"opening_state_sha256\",f.\"closing_state_sha256\",f.\"opening_state_payload_bytes\",f.\"closing_state_payload_bytes\",f.\"protocol_record_count\",f.\"raw_protocol_candidate_count\",f.\"transaction_count\",f.\"event_count\",f.\"event_set_model\",f.\"event_set_sha256\",f.\"event_set_payload_bytes\",f.\"block_atomic\",f.\"fee_once\",f.\"invalid_zero\",f.\"complete\",f.\"work_token_state_model\")IS NOT DISTINCT FROM ROW(NEW.\"network\",NEW.\"block_height\",NEW.\"block_hash\",NEW.\"previous_block_hash\",NEW.\"model\",NEW.\"state_commitment_model\",NEW.\"opening_network_value_q8\",NEW.\"closing_network_value_q8\",NEW.\"opening_state_sha256\",NEW.\"closing_state_sha256\",NEW.\"opening_state_payload_bytes\",NEW.\"closing_state_payload_bytes\",NEW.\"protocol_record_count\",NEW.\"raw_protocol_candidate_count\",NEW.\"transaction_count\",NEW.\"event_count\",NEW.\"event_set_model\",NEW.\"event_set_sha256\",NEW.\"event_set_payload_bytes\",NEW.\"block_atomic\",NEW.\"fee_once\",NEW.\"invalid_zero\",NEW.\"complete\",NEW.\"work_token_state_model\"))THEN RAISE EXCEPTION 'Conflicting canonical transition';END IF;\n RETURN NEW;\nEND$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": [
+        [
+          "proof_indexer",
+          "EXECUTE",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "name": "read_work_transition_payload_v1",
+      "owner": "proof_indexer_transition_storage_owner",
+      "strict": true,
+      "identity": "n text, h integer, bh text, p jsonb",
+      "language": "plpgsql",
+      "settings": [
+        "search_path=pg_catalog, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION proof_indexer.read_work_transition_payload_v1(n text, h integer, bh text, p jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE STRICT\n SET search_path TO 'pg_catalog', 'pg_temp'\nAS $function$\nDECLARE original jsonb; manifest jsonb;\nBEGIN\n -- Native rows remain valid during local operator staging; all existing native\n -- consumer proof gates still run. Encoded rows require the exact model/hash.\n IF NOT(p ? '__powNativeStorage') THEN RETURN p;END IF;\n IF p->'__powNativeStorage'->>'model' IS DISTINCT FROM 'proof-indexer-native-transition-chunks-v1' THEN RAISE EXCEPTION 'Unknown native transition storage model';END IF;\n SELECT payload INTO manifest FROM proof_indexer.work_transition_archive_v1 WHERE network=n AND block_height=h AND block_hash=bh;\n IF manifest IS NULL OR manifest->>'sha256' IS DISTINCT FROM p->'__powNativeStorage'->>'sha256' THEN RAISE EXCEPTION 'Missing or stale native transition frame';END IF;\n SELECT payload INTO original FROM proof_indexer.work_transition_hot_slots_v1 WHERE network=n AND slot=mod(h,128) AND block_height=h AND block_hash=bh AND payload_sha256=manifest->>'sha256';\n IF original IS NULL THEN original:=proof_indexer.reconstruct_work_transition_payload_v1(manifest);END IF;\n IF proof_indexer.work_transition_metadata_v1(original) IS DISTINCT FROM p-'__powNativeStorage' THEN RAISE EXCEPTION 'Native transition metadata mismatch';END IF;\n RETURN original;\nEND$function$\n",
+      "volatility": "s",
+      "securityDefiner": false
+    },
+    {
+      "acl": [
+        [
+          "proof_indexer",
+          "EXECUTE",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "name": "reconstruct_work_transition_payload_v1",
+      "owner": "proof_indexer_transition_storage_owner",
+      "strict": true,
+      "identity": "manifest jsonb",
+      "language": "plpgsql",
+      "settings": [
+        "search_path=pg_catalog, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION proof_indexer.reconstruct_work_transition_payload_v1(manifest jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE STRICT\n SET search_path TO 'pg_catalog', 'pg_temp'\nAS $function$\nDECLARE b bytea; expected bytea; n integer; c integer;\nBEGIN\n IF manifest->>'model' IS DISTINCT FROM 'audit31-native-jsonb-chunks-v1' OR jsonb_typeof(manifest->'parts') IS DISTINCT FROM 'array' THEN RAISE EXCEPTION 'Unknown native frame'; END IF;\n n:=(manifest->>'bytes')::integer;c:=jsonb_array_length(manifest->'parts');\n IF n<2 OR n>268435456 OR c<>((n+65535)/65536) THEN RAISE EXCEPTION 'Native envelope'; END IF;\n expected:=decode(manifest->>'sha256','hex');\n SELECT string_agg(ch.data,''::bytea ORDER BY p.ord) INTO b FROM jsonb_array_elements_text(manifest->'parts')WITH ORDINALITY p(hash,ord) JOIN proof_indexer.work_transition_chunks_v1 ch ON ch.hash=decode(p.hash,'hex') AND sha256(ch.data)=ch.hash;\n IF b IS NULL OR octet_length(b)<>n OR sha256(b)<>expected OR get_byte(b,0)<>1 THEN RAISE EXCEPTION 'Native missing/corrupt chunk';END IF;\n RETURN convert_from(substring(b FROM 2),'UTF8')::jsonb;\nEND$function$\n",
+      "volatility": "s",
+      "securityDefiner": false
+    },
+    {
+      "acl": [
+        [
+          "proof_indexer_transition_storage_owner",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "name": "reject_work_transition_archive_mutation_v1",
+      "owner": "proof_indexer_transition_storage_owner",
+      "strict": false,
+      "identity": "",
+      "language": "plpgsql",
+      "settings": [
+        "search_path=pg_catalog, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION proof_indexer.reject_work_transition_archive_mutation_v1()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'pg_temp'\nAS $function$BEGIN RAISE EXCEPTION 'Immutable transition evidence'; END$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": [
+        [
+          "proof_indexer_transition_storage_owner",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "name": "verify_work_transition_hot_slot_v1",
+      "owner": "proof_indexer_transition_storage_owner",
+      "strict": false,
+      "identity": "",
+      "language": "plpgsql",
+      "settings": [
+        "search_path=pg_catalog, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION proof_indexer.verify_work_transition_hot_slot_v1()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'pg_temp'\nAS $function$\nDECLARE expected text;\nBEGIN\n SELECT payload->>'sha256' INTO expected FROM proof_indexer.work_transition_archive_v1 WHERE network=NEW.network AND block_height=NEW.block_height AND block_hash=NEW.block_hash;\n IF expected IS NULL OR NEW.payload_sha256 IS DISTINCT FROM expected OR encode(sha256(jsonb_send(NEW.payload)),'hex') IS DISTINCT FROM expected THEN RAISE EXCEPTION 'Unverified native transition hot slot';END IF;\n RETURN NEW;\nEND$function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": [
+        [
+          "proof_indexer",
+          "EXECUTE",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "name": "work_transition_metadata_v1",
+      "owner": "proof_indexer_transition_storage_owner",
+      "strict": true,
+      "identity": "p jsonb",
+      "language": "sql",
+      "settings": [
+        "search_path=pg_catalog, pg_temp"
+      ],
+      "definition": "CREATE OR REPLACE FUNCTION proof_indexer.work_transition_metadata_v1(p jsonb)\n RETURNS jsonb\n LANGUAGE sql\n IMMUTABLE STRICT\n SET search_path TO 'pg_catalog', 'pg_temp'\nAS $function$\n SELECT (p-ARRAY['openingSufficientState','closingSufficientState','closingTokenState','closingIdState','closingGenericTokenState','closingWorkProjection']::text[])\n  ||CASE WHEN (p->'closingSufficientState') ? 'tokenStateCommitment'\n  THEN jsonb_build_object('closingSufficientState',jsonb_build_object('tokenStateCommitment',p->'closingSufficientState'->'tokenStateCommitment')) ELSE '{}'::jsonb END\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    }
+  ],
+  "relations": [
+    {
+      "acl": [
+        [
+          "proof_indexer",
+          "SELECT",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "DELETE",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "INSERT",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "REFERENCES",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "SELECT",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "TRIGGER",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "TRUNCATE",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "UPDATE",
+          false
+        ]
+      ],
+      "rls": false,
+      "kind": "v",
+      "name": "work_transition_archive_native_v1",
+      "owner": "proof_indexer_transition_storage_owner",
+      "rules": 1,
+      "columns": [
+        [
+          "network",
+          "text",
+          false,
+          "x",
+          "",
+          null
+        ],
+        [
+          "block_height",
+          "integer",
+          false,
+          "p",
+          "",
+          null
+        ],
+        [
+          "block_hash",
+          "text",
+          false,
+          "x",
+          "",
+          null
+        ],
+        [
+          "previous_block_hash",
+          "text",
+          false,
+          "x",
+          "",
+          null
+        ],
+        [
+          "model",
+          "text",
+          false,
+          "x",
+          "",
+          null
+        ],
+        [
+          "state_commitment_model",
+          "text",
+          false,
+          "x",
+          "",
+          null
+        ],
+        [
+          "opening_network_value_q8",
+          "numeric",
+          false,
+          "m",
+          "",
+          null
+        ],
+        [
+          "closing_network_value_q8",
+          "numeric",
+          false,
+          "m",
+          "",
+          null
+        ],
+        [
+          "opening_state_sha256",
+          "text",
+          false,
+          "x",
+          "",
+          null
+        ],
+        [
+          "closing_state_sha256",
+          "text",
+          false,
+          "x",
+          "",
+          null
+        ],
+        [
+          "opening_state_payload_bytes",
+          "integer",
+          false,
+          "p",
+          "",
+          null
+        ],
+        [
+          "closing_state_payload_bytes",
+          "integer",
+          false,
+          "p",
+          "",
+          null
+        ],
+        [
+          "protocol_record_count",
+          "integer",
+          false,
+          "p",
+          "",
+          null
+        ],
+        [
+          "raw_protocol_candidate_count",
+          "integer",
+          false,
+          "p",
+          "",
+          null
+        ],
+        [
+          "transaction_count",
+          "integer",
+          false,
+          "p",
+          "",
+          null
+        ],
+        [
+          "event_count",
+          "integer",
+          false,
+          "p",
+          "",
+          null
+        ],
+        [
+          "event_set_model",
+          "text",
+          false,
+          "x",
+          "",
+          null
+        ],
+        [
+          "event_set_sha256",
+          "text",
+          false,
+          "x",
+          "",
+          null
+        ],
+        [
+          "event_set_payload_bytes",
+          "integer",
+          false,
+          "p",
+          "",
+          null
+        ],
+        [
+          "block_atomic",
+          "boolean",
+          false,
+          "p",
+          "",
+          null
+        ],
+        [
+          "fee_once",
+          "boolean",
+          false,
+          "p",
+          "",
+          null
+        ],
+        [
+          "invalid_zero",
+          "boolean",
+          false,
+          "p",
+          "",
+          null
+        ],
+        [
+          "complete",
+          "boolean",
+          false,
+          "p",
+          "",
+          null
+        ],
+        [
+          "payload",
+          "jsonb",
+          false,
+          "x",
+          "",
+          null
+        ],
+        [
+          "created_at",
+          "timestamp with time zone",
+          false,
+          "p",
+          "",
+          "now()"
+        ],
+        [
+          "work_token_state_model",
+          "text",
+          false,
+          "x",
+          "",
+          null
+        ]
+      ],
+      "indexes": [],
+      "options": null,
+      "forceRls": false,
+      "triggers": [
+        [
+          "insert_native",
+          "O",
+          "CREATE TRIGGER insert_native INSTEAD OF INSERT ON proof_indexer.work_transition_archive_native_v1 FOR EACH ROW EXECUTE FUNCTION proof_indexer.insert_work_transition_archive_native_v1()"
+        ]
+      ],
+      "constraints": [],
+      "inheritance": 0,
+      "persistence": "p",
+      "accessMethod": null,
+      "viewDefinition": " SELECT network,\n    block_height,\n    block_hash,\n    previous_block_hash,\n    model,\n    state_commitment_model,\n    opening_network_value_q8,\n    closing_network_value_q8,\n    opening_state_sha256,\n    closing_state_sha256,\n    opening_state_payload_bytes,\n    closing_state_payload_bytes,\n    protocol_record_count,\n    raw_protocol_candidate_count,\n    transaction_count,\n    event_count,\n    event_set_model,\n    event_set_sha256,\n    event_set_payload_bytes,\n    block_atomic,\n    fee_once,\n    invalid_zero,\n    complete,\n    proof_indexer.reconstruct_work_transition_payload_v1(payload) AS payload,\n    created_at,\n    work_token_state_model\n   FROM proof_indexer.work_transition_archive_v1;"
+    },
+    {
+      "acl": [
+        [
+          "proof_indexer",
+          "SELECT",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "DELETE",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "INSERT",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "REFERENCES",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "SELECT",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "TRIGGER",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "TRUNCATE",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "UPDATE",
+          false
+        ]
+      ],
+      "rls": false,
+      "kind": "r",
+      "name": "work_transition_archive_v1",
+      "owner": "proof_indexer_transition_storage_owner",
+      "rules": 0,
+      "columns": [
+        [
+          "network",
+          "text",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "block_height",
+          "integer",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "block_hash",
+          "text",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "previous_block_hash",
+          "text",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "model",
+          "text",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "state_commitment_model",
+          "text",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "opening_network_value_q8",
+          "numeric",
+          true,
+          "m",
+          "",
+          null
+        ],
+        [
+          "closing_network_value_q8",
+          "numeric",
+          true,
+          "m",
+          "",
+          null
+        ],
+        [
+          "opening_state_sha256",
+          "text",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "closing_state_sha256",
+          "text",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "opening_state_payload_bytes",
+          "integer",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "closing_state_payload_bytes",
+          "integer",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "protocol_record_count",
+          "integer",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "raw_protocol_candidate_count",
+          "integer",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "transaction_count",
+          "integer",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "event_count",
+          "integer",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "event_set_model",
+          "text",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "event_set_sha256",
+          "text",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "event_set_payload_bytes",
+          "integer",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "block_atomic",
+          "boolean",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "fee_once",
+          "boolean",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "invalid_zero",
+          "boolean",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "complete",
+          "boolean",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "payload",
+          "jsonb",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "created_at",
+          "timestamp with time zone",
+          true,
+          "p",
+          "",
+          "now()"
+        ],
+        [
+          "work_token_state_model",
+          "text",
+          false,
+          "x",
+          "",
+          null
+        ]
+      ],
+      "indexes": [
+        "CREATE INDEX work_transition_archive_height_v1 ON proof_indexer.work_transition_archive_v1 USING btree (network, block_height)",
+        "CREATE UNIQUE INDEX work_transition_archive_v1_pkey ON proof_indexer.work_transition_archive_v1 USING btree (network, block_hash)"
+      ],
+      "options": null,
+      "forceRls": false,
+      "triggers": [
+        [
+          "immutable_frames",
+          "O",
+          "CREATE TRIGGER immutable_frames BEFORE DELETE OR UPDATE ON proof_indexer.work_transition_archive_v1 FOR EACH ROW EXECUTE FUNCTION proof_indexer.reject_work_transition_archive_mutation_v1()"
+        ]
+      ],
+      "constraints": [
+        [
+          "work_amo_block_transitions_complete",
+          "c",
+          true,
+          "CHECK (((block_atomic = true) AND (fee_once = true) AND (invalid_zero = true) AND (complete = true)))"
+        ],
+        [
+          "work_amo_block_transitions_counts",
+          "c",
+          true,
+          "CHECK (((opening_state_payload_bytes > 0) AND (closing_state_payload_bytes > 0) AND (protocol_record_count >= 0) AND (raw_protocol_candidate_count >= 0) AND (transaction_count >= 0) AND (event_count >= 0) AND (event_set_payload_bytes > 0)))"
+        ],
+        [
+          "work_amo_block_transitions_hashes",
+          "c",
+          true,
+          "CHECK (((block_hash ~ '^[0-9a-f]{64}$'::text) AND (previous_block_hash ~ '^[0-9a-f]{64}$'::text) AND (opening_state_sha256 ~ '^[0-9a-f]{64}$'::text) AND (closing_state_sha256 ~ '^[0-9a-f]{64}$'::text) AND (event_set_sha256 ~ '^[0-9a-f]{64}$'::text)))"
+        ],
+        [
+          "work_amo_block_transitions_height_positive",
+          "c",
+          true,
+          "CHECK ((block_height > 0))"
+        ],
+        [
+          "work_amo_block_transitions_models",
+          "c",
+          true,
+          "CHECK (((model = ANY (ARRAY['canonical-work-amo-full-position-block-sequencer-v1'::text, 'canonical-work-amo-full-position-block-sequencer-v2'::text, 'canonical-work-amo-full-position-block-sequencer-v3'::text, 'canonical-work-amo-full-position-block-sequencer-v4'::text])) AND (state_commitment_model = 'canonical-work-amo-sufficient-state-sha256-v1'::text) AND (((model = ANY (ARRAY['canonical-work-amo-full-position-block-sequencer-v1'::text, 'canonical-work-amo-full-position-block-sequencer-v2'::text])) AND (work_token_state_model IS NULL)) OR ((model = 'canonical-work-amo-full-position-block-sequencer-v3'::text) AND (work_token_state_model = 'canonical-work-token-state-subatoms-v2'::text)) OR ((model = 'canonical-work-amo-full-position-block-sequencer-v4'::text) AND (work_token_state_model = 'canonical-work-token-state-subatoms-v3'::text))) AND (event_set_model = 'canonical-work-amo-event-set-sha256-v1'::text)))"
+        ],
+        [
+          "work_amo_block_transitions_values_integer",
+          "c",
+          true,
+          "CHECK ((((opening_network_value_q8)::text ~ '^(0|[1-9][0-9]*)$'::text) AND ((closing_network_value_q8)::text ~ '^(0|[1-9][0-9]*)$'::text) AND (closing_network_value_q8 >= opening_network_value_q8)))"
+        ],
+        [
+          "work_transition_archive_v1_pkey",
+          "p",
+          true,
+          "PRIMARY KEY (network, block_hash)"
+        ]
+      ],
+      "inheritance": 0,
+      "persistence": "p",
+      "accessMethod": "heap",
+      "viewDefinition": null
+    },
+    {
+      "acl": [
+        [
+          "proof_indexer",
+          "SELECT",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "DELETE",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "INSERT",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "REFERENCES",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "SELECT",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "TRIGGER",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "TRUNCATE",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "UPDATE",
+          false
+        ]
+      ],
+      "rls": false,
+      "kind": "r",
+      "name": "work_transition_chunks_v1",
+      "owner": "proof_indexer_transition_storage_owner",
+      "rules": 0,
+      "columns": [
+        [
+          "hash",
+          "bytea",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "data",
+          "bytea",
+          true,
+          "x",
+          "",
+          null
+        ]
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX work_transition_chunks_v1_pkey ON proof_indexer.work_transition_chunks_v1 USING btree (hash)"
+      ],
+      "options": null,
+      "forceRls": false,
+      "triggers": [
+        [
+          "immutable_chunks",
+          "O",
+          "CREATE TRIGGER immutable_chunks BEFORE DELETE OR UPDATE ON proof_indexer.work_transition_chunks_v1 FOR EACH ROW EXECUTE FUNCTION proof_indexer.reject_work_transition_archive_mutation_v1()"
+        ]
+      ],
+      "constraints": [
+        [
+          "work_transition_chunks_v1_check",
+          "c",
+          true,
+          "CHECK ((hash = sha256(data)))"
+        ],
+        [
+          "work_transition_chunks_v1_data_check",
+          "c",
+          true,
+          "CHECK (((octet_length(data) >= 1) AND (octet_length(data) <= 65536)))"
+        ],
+        [
+          "work_transition_chunks_v1_pkey",
+          "p",
+          true,
+          "PRIMARY KEY (hash)"
+        ]
+      ],
+      "inheritance": 0,
+      "persistence": "p",
+      "accessMethod": "heap",
+      "viewDefinition": null
+    },
+    {
+      "acl": [
+        [
+          "proof_indexer",
+          "SELECT",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "DELETE",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "INSERT",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "REFERENCES",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "SELECT",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "TRIGGER",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "TRUNCATE",
+          false
+        ],
+        [
+          "proof_indexer_transition_storage_owner",
+          "UPDATE",
+          false
+        ]
+      ],
+      "rls": false,
+      "kind": "r",
+      "name": "work_transition_hot_slots_v1",
+      "owner": "proof_indexer_transition_storage_owner",
+      "rules": 0,
+      "columns": [
+        [
+          "network",
+          "text",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "slot",
+          "smallint",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "block_height",
+          "integer",
+          true,
+          "p",
+          "",
+          null
+        ],
+        [
+          "block_hash",
+          "text",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "payload_sha256",
+          "text",
+          true,
+          "x",
+          "",
+          null
+        ],
+        [
+          "payload",
+          "jsonb",
+          true,
+          "x",
+          "",
+          null
+        ]
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX work_transition_hot_slots_v1_pkey ON proof_indexer.work_transition_hot_slots_v1 USING btree (network, slot)"
+      ],
+      "options": null,
+      "forceRls": false,
+      "triggers": [
+        [
+          "work_transition_hot_slot_protected_v1",
+          "O",
+          "CREATE TRIGGER work_transition_hot_slot_protected_v1 BEFORE DELETE ON proof_indexer.work_transition_hot_slots_v1 FOR EACH ROW EXECUTE FUNCTION proof_indexer.reject_work_transition_archive_mutation_v1()"
+        ],
+        [
+          "work_transition_hot_slot_verified_v1",
+          "O",
+          "CREATE TRIGGER work_transition_hot_slot_verified_v1 BEFORE INSERT OR UPDATE ON proof_indexer.work_transition_hot_slots_v1 FOR EACH ROW EXECUTE FUNCTION proof_indexer.verify_work_transition_hot_slot_v1()"
+        ]
+      ],
+      "constraints": [
+        [
+          "work_transition_hot_slots_v1_check",
+          "c",
+          true,
+          "CHECK ((slot = mod(block_height, 128)))"
+        ],
+        [
+          "work_transition_hot_slots_v1_pkey",
+          "p",
+          true,
+          "PRIMARY KEY (network, slot)"
+        ],
+        [
+          "work_transition_hot_slots_v1_slot_check",
+          "c",
+          true,
+          "CHECK (((slot >= 0) AND (slot <= 127)))"
+        ]
+      ],
+      "inheritance": 0,
+      "persistence": "p",
+      "accessMethod": "heap",
+      "viewDefinition": null
+    }
+  ],
+  "canonicalEncodingTrigger": [
+    [
+      "work_transition_native_encoded_v1",
+      "O",
+      "CREATE TRIGGER work_transition_native_encoded_v1 BEFORE INSERT ON proof_indexer.work_amo_block_transitions FOR EACH ROW EXECUTE FUNCTION proof_indexer.encode_native_work_transition_v1()"
+    ]
+  ]
+}

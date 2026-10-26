@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { workBatchDeclarationCommitment, WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, WORK_BATCH_ACTIVATION_META_KEY, validateWorkBatchActivationMarker, normalizeWorkBatchDeclarationPins } from "../work-batch-declaration.mjs";
+import { workBatchDeclarationCommitment, WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY, WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, WORK_BATCH_ACTIVATION_META_KEY, validateWorkBatchActivationMarker, normalizeWorkBatchDeclarationPins } from "../work-batch-declaration.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
 import { parseWorkBatchPayload, WORK_BATCH_TOKEN_ID } from "../../src/shared/protocol/workBatch.mjs";
@@ -230,7 +230,9 @@ export async function readWorkBatchDeclarationCandidates(pool, network, options 
         (SELECT min(payment.vout) FROM proof_indexer.tx_outputs payment
           WHERE payment.network = tx.network AND payment.txid = tx.txid
             AND payment.address = $8 AND payment.value_sats >= 546
-            AND payment.vout < carrier.vout) AS registry_payment_vout
+            AND (payment.vout < carrier.vout OR
+               (tx.txid = $18 AND payment.vout = $19 AND carrier.vout = $20
+                 AND carrier.output_index = $21))) AS registry_payment_vout
       FROM covered_scan scan
       JOIN proof_indexer.op_returns carrier
         ON carrier.network = $1 AND carrier.protocol = 'pwm1'
@@ -259,7 +261,11 @@ export async function readWorkBatchDeclarationCandidates(pool, network, options 
     limit + 1, "1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV",
     after?.blockHeight ?? null, after?.blockTransactionIndex ?? null, after?.txid ?? null,
     JSON.stringify(witness.rebuild), witness.snapshotId, witness.coverageHeight, witness.coverageHash,
-    WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, witness.retainedBaseHeight]);
+    WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, witness.retainedBaseHeight,
+    WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY.txid,
+    WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY.registryPaymentVout,
+    WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY.protocolVout,
+    WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY.recordOrdinal]);
   const scan = result.rows[0];
   exactWorkBatchPrefixRow(scan, witness);
   const rows = result.rows.filter(row => row.txid);

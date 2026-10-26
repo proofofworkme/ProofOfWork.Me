@@ -72,6 +72,14 @@ class ControllerTests(unittest.TestCase):
         for bad in [{'blockHeight':972964,'activationHeight':972965},{'recordOrdinal':1},
             {'registryPaymentVout':1},{'activationHeight':972967},{'txid':'A'*64},{'protocolVout':True}]:
             with self.subTest(bad=bad),self.assertRaises(ValueError):c.public_pins({**PINS,**bad})
+    def test_bootstrap_ordering_exception_is_exact_and_keeps_other_pin_gates(self):
+        pins={**PINS,**c.DECLARATION_ORDER_COMPATIBILITY}
+        self.assertEqual(c.public_pins(pins),pins)
+        self.assertIn('WORK_BATCH_DECLARATION_REGISTRY_PAYMENT_VOUT=2',c.render(pins,False).decode())
+        for bad in [{'txid':'d'*64},{'registryPaymentVout':3},{'protocolVout':0},
+            {'recordOrdinal':1},{'blockHeight':972964,'activationHeight':972965},
+            {'activationHeight':972967},{'registryPaymentVout':'2'}]:
+            with self.subTest(bad=bad),self.assertRaises(ValueError):c.public_pins({**pins,**bad})
     def test_stage_creation_and_exact_restore(self):
         result=self.run_apply('stage-disabled')
         self.assertTrue(result['complete']);self.assertFalse(result['owned']['enabled'])

@@ -13,6 +13,16 @@ publication remains a separate, user-authorized action signed in the local
 authority wallet. The earliest eligible declaration block is 972965; read
 activation begins at D+1. This workflow does not hold indexing before publication.
 
+The sole declaration-order compatibility exception is transaction
+`b7c620e48c2d725a143cecd7f7808036d89907124d410ba57d272d34e650cc28`
+with registry vout 2, carrier vout 1 and ordinal 0. This explicitly authorized
+bootstrap exception preserves the original declaration text and its hashes;
+all confirmation, authority, earliest-selection, D+1, parity and write gates
+remain required. See [Exact bootstrap compatibility](../../WORK_BATCH_SENDS.md#exact-bootstrap-compatibility).
+It does not authorize configuration or replay. If D+1 was already sealed without
+batch context, a separately reviewed canonical replay is required before this
+controller can enable writes; never manufacture the activation marker.
+
 ## Authority and inputs
 
 Use only the final reviewed source commit and successful dormant deployment
@@ -60,6 +70,34 @@ whatever runtime hashes it happens to capture for these reviewed hashes.
 Accepted subsequent runtime changes require a new reviewed composition and
 approval. No deploy, configuration or restart is authorized merely by preparing
 this source or an approval object.
+
+For the original declaration repair after the intervening AMO release, use
+`prepare-composed-approval.py`. It requires the exact ordered successful
+B3 batch, A3 AMO, and final replay manifests and receipts. The first two pairs
+have fixed historical hashes. Each later before-hash and dependency must extend
+the preceding approved after-hashes; current file presence cannot supply missing
+provenance. The final layer must also prove the qualified full prefix, atomic
+native publication, retained original evidence, and active reads with writes
+disabled. The final source commit/tree and activation helper bytes remain pinned.
+
+The root-private chain input has format
+`work-batch-activation-composition-input-v1` and three ordered `layers`;
+each layer contains `manifest` and `receipt` objects with exact absolute
+`path` and `sha256` fields. Run:
+
+```text
+python3 -I -B deploy/work-batch-activation/prepare-composed-approval.py \
+  --chain /PRIVATE_VPS_PATH/release-chain.json \
+  --chain-sha256 EXACT_CHAIN_SHA256 \
+  --source-root /PRIVATE_VPS_PATH/CLEAN_FINAL_SOURCE \
+  --source-commit FINAL_REVIEWED_COMMIT --source-tree FINAL_REVIEWED_TREE \
+  --runtime-status-sha256 REVIEWED_POST_DEPLOYMENT_STATUS_SHA256 \
+  --node-path /opt/REVIEWED_NODE/bin/node \
+  --output /PRIVATE_VPS_PATH/activation-approval.json
+```
+
+The composed approval is still only an input to the separate fresh captures and
+disabled-stage/enable operations below. It does not enable writes.
 
 ## Evidence and operations
 
@@ -162,7 +200,8 @@ restore old read-era code to make recovery appear complete.
 
 ## Validation
 
-`npm run check:work-batch:activation` runs mocked controller and probe tests.
+`npm run check:work-batch:activation` runs mocked controller, probe and ordered
+release-composition tests.
 The tests exercise source approval, exact file creation/update ownership,
 publication races, restart/postflight failure recovery, disabled operation without
 chain health, private configuration inheritance, canonical declaration/marker
