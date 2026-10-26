@@ -256,3 +256,17 @@ confirmation is uncertain requires evidence review before any code rollback.
 It returns activation, write/readiness flags, exact checked tip, declaration
 identity, limits and the 546-proof registry payment. A boolean from a browser,
 test fixture or environment variable cannot establish chain authority.
+
+## Stored recipient evidence and display metadata
+
+Qualify the original stored parent and recipient payloads before applying display
+normalization. The strict accepted-parent comparison includes stored metadata such
+as `indexedFrom`; stripping that field from only one side falsely rejects an
+otherwise valid batch. Keep full sibling, carrier, descriptor and canonical-seal
+checks intact, then normalize verified payloads for presentation.
+
+The confirmed batch `b25e6ae7f963af289ba8cb3edae76ef285d3d124204a0e4cd514df0933938322`
+at block 973284 exposed this caller-order regression: its one parent and twelve
+recipients passed unchanged validation, while pre-validation metadata removal
+blocked summary publication. This is a read-path correction; it does not change
+the transaction, accepted balances, declaration, replay rules or sealed history.
