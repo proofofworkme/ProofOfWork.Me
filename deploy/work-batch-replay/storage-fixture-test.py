@@ -160,7 +160,7 @@ try:
   row["oldEventSetCommitment"]=copy.deepcopy(payloads[idx]["eventSetCommitment"])
   row["newEventSetCommitment"]=copy.deepcopy(row["replacementFields"]["eventSetCommitment"])
   row["newScalarMetadata"]={**row["oldScalarMetadata"],"event_set_sha256":row["newEventSetCommitment"]["sha256"]}
-  for prefix in ("old","new"):row[prefix+"ScalarMetadataSha256"]=pub.sha(pub.stable(row[prefix+"ScalarMetadata"]).encode())
+  for prefix in ("old","new"):row[prefix+"ScalarMetadataSha256"]=pub.scalar_commitment(row[prefix+"ScalarMetadata"])
   row["eventCount"]=row["oldScalarMetadata"]["event_count"];row["derivedEventCount"]=row["eventCount"]-row["oldScalarMetadata"]["protocol_record_count"]
   row["eventSetProvenanceOnly"]=True
   row["allowedChangedFields"]=[key for key in pub.REPLACEMENT_FIELDS if payloads[idx].get(key)!=row["replacementFields"][key]]
@@ -174,6 +174,19 @@ try:
  m["proposedMarker"]["activationBlock"]["transitionChainCommitment"]=m["rows"][0]["replacementFields"]["transitionChainCommitment"]
  m["resourceUsage"]={"nativePayloadBytes":sum(r["oldNativeBytes"] for r in m["rows"]),"newNativePayloadBytes":sum(r["newNativeBytes"] for r in m["rows"]),"rawBlockBytes":sum(r["rawBlockBytes"] for r in m["rows"]),"ordinaryRecords":sum(r["oldScalarMetadata"]["protocol_record_count"] for r in m["rows"])}
  pub.validate_manifest(m,old_sha,newhash)
+ # Public scalar-only vector from qualified block 973104; the recorded digest
+ # was produced by the JavaScript canonical payload helper, not this publisher.
+ scalar_vector=json.loads('{"block_atomic":true,"block_hash":"00000000000000000001628a6ee144e0a149a23e4898d790eeec2719eff565d8","block_height":973104,"closing_network_value_q8":"5183006396328519755849655154","closing_state_payload_bytes":2531405,"closing_state_sha256":"9e93f0844ff6fb834751e733507885eb7b6ba5267f3862e090e1cc1baca741a7","complete":true,"created_at":"2026-10-25 18:03:06.179839+00","event_count":0,"event_set_model":"canonical-work-amo-event-set-sha256-v1","event_set_payload_bytes":61,"event_set_sha256":"43aabdf35a03c5f633796dcb27fa5486f589bf9f0dd5731ff80bf330fa36efb8","fee_once":true,"invalid_zero":true,"model":"canonical-work-amo-full-position-block-sequencer-v4","network":"livenet","opening_network_value_q8":"5183006396328519755849655154","opening_state_payload_bytes":2531405,"opening_state_sha256":"ad4b6fe89ad7c5259f0895afff552d36ec2593cc7922c34bab715999a91d4b33","previous_block_hash":"00000000000000000001fd3a7d7509d540d5e764e413d16acf9d07e090b8f47b","protocol_record_count":0,"raw_protocol_candidate_count":0,"state_commitment_model":"canonical-work-amo-sufficient-state-sha256-v1","transaction_count":0,"work_token_state_model":"canonical-work-token-state-subatoms-v3"}')
+ assert pub.scalar_commitment(scalar_vector)=="2e9047712caa60f540d58eae77db1f805c7ae236e1b7e78f09e2d255d1e38c8e"
+ assert pub.sha(pub.stable(scalar_vector).encode())=="90f44a098dd92e8cf0a18c54de39e2814242b2199cbb801f7173a032190da8c9"
+ assert pub.scalar_commitment(scalar_vector)!=pub.sha(pub.stable(scalar_vector).encode())
+ check("recorded JavaScript scalar commitment uses its canonical payload domain",lambda:None)
+ for prefix in ("old","new"):
+  bad=copy.deepcopy(m)
+  bad["rows"][0][prefix+"ScalarMetadataSha256"]=pub.sha(pub.stable(bad["rows"][0][prefix+"ScalarMetadata"]).encode())
+  try:pub.validate_manifest(bad,old_sha,newhash);raise AssertionError("Bare scalar digest accepted")
+  except ValueError as error:assert str(error)=="Scalar commitment"
+  check(prefix+" bare scalar digest is rejected before publication",lambda:None)
  def render(x): return pub.render_transaction(x,pub.sha(pub.stable(x).encode()),extension,old_query,new_query)
  if not args.long_suffix:
   sql(render(m).replace("COMMIT;\nSELECT result FROM replay_publication_result;","SELECT result FROM replay_publication_result;\nROLLBACK;"))

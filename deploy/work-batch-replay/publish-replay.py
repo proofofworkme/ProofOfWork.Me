@@ -14,6 +14,9 @@ TARGETS = (
 )
 def stable(value): return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 def sha(value): return hashlib.sha256(value).hexdigest()
+def scalar_commitment(value):
+ # Match preflight workAmoV5CanonicalPayloadCommitment; catalogs use bare SHA.
+ return sha(stable({"model":"canonical-work-amo-payload-sha256-v1","value":value}).encode())
 MAX_INPUT_BYTES=32*1024*1024
 MAX_SQL_BYTES=128*1024*1024
 MAX_NATIVE_BYTES=128*1024*1024
@@ -103,7 +106,7 @@ def validate_manifest(m, old_sha, new_sha):
   if type(events) is not int or type(derived) is not int or not 0<=derived<=count or events!=count+derived or scalar["event_count"]!=events or scalar["raw_protocol_candidate_count"]!=count: raise ValueError("Raw/derived count evidence")
   if {k:v for k,v in scalar.items() if k!="event_set_sha256"}!={k:v for k,v in new_scalar.items() if k!="event_set_sha256"}: raise ValueError("Scalar change exceeds event-set provenance")
   for key,value in (("old",scalar),("new",new_scalar)):
-   if sha(stable(value).encode())!=row[key+"ScalarMetadataSha256"]: raise ValueError("Scalar commitment")
+   if scalar_commitment(value)!=row[key+"ScalarMetadataSha256"]: raise ValueError("Scalar commitment")
    event_set=row[key+"EventSetCommitment"]
    if event_set["sha256"]!=value["event_set_sha256"] or event_set["model"]!=value["event_set_model"] or event_set["payloadBytes"]!=value["event_set_payload_bytes"] or event_set["eventCount"]!=events or not re.fullmatch(r"[0-9a-f]{64}",event_set["sha256"]): raise ValueError("Event-set scalar binding")
   if {k:v for k,v in row["oldEventSetCommitment"].items() if k!="sha256"}!={k:v for k,v in row["newEventSetCommitment"].items() if k!="sha256"} or (derived==0 and row["oldEventSetCommitment"]!=row["newEventSetCommitment"]): raise ValueError("Event-set metadata change")
