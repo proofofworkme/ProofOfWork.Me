@@ -233,7 +233,7 @@ def replace_owned(h, pins, enabled, owned, save):
     try:
         owned_file(h,owned,absent=owned is None)
         if owned is None:
-            os.link(temp,DROPIN,follow_symlinks=False)
+            h['rename_absent'](temp,DROPIN)
         else:
             # Move the incumbent before deciding it may be removed. A foreign
             # inode raced into the pathname is retained, never overwritten.
@@ -245,7 +245,7 @@ def replace_owned(h, pins, enabled, owned, save):
             h['rename_absent'](DROPIN,previous); h['sync'](DROPIN.parent); h['sync'](quarantine)
             try:
                 owned_at(h,previous,owned)
-                os.link(temp,DROPIN,follow_symlinks=False)
+                h['rename_absent'](temp,DROPIN)
                 h['sync'](DROPIN.parent)
                 owned_file(h,candidate)
                 owned_at(h,previous,owned)

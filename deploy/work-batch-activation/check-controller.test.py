@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -I
-import copy, importlib.util, json, os, stat, tempfile, unittest
+import copy, importlib.util, json, os, stat, tempfile, types, unittest
 from pathlib import Path
 from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('activation',Path(__file__).with_name('controller.py'))
@@ -12,10 +12,6 @@ EXEC_START=('{ path=/opt/node/bin/node ; argv[]=/opt/node/bin/node app.mjs ; ign
     ' ; pid=3713663 ; code=(null) ; status=0/0 }')
 PINS={'txid':'a'*64,'blockHash':'b'*64,'blockHeight':972965,'activationHeight':972966,
     'blockTransactionIndex':1,'protocolVout':1,'recordOrdinal':0,'registryPaymentVout':0}
-def read(path,limit=10*1024**2,absent=False):
-    if absent and not path.exists(): return None
-    if path.is_symlink(): raise ValueError('symlink')
-    return path.read_bytes()
 def row(active='active'):
     return {'ActiveState':active,'MainPID':'11' if active=='active' else '0','WorkingDirectory':str(c.ROOT)}
 class ControllerTests(unittest.TestCase):
@@ -24,6 +20,32 @@ class ControllerTests(unittest.TestCase):
         self.root=Path(self.tmp.name);self.drop=self.root/'dropins'/'zzzzz-work-batch-writes.conf'
         self.drop.parent.mkdir(mode=0o755)
         self.pathpatch=patch.object(c,'DROPIN',self.drop);self.pathpatch.start()
+        if os.geteuid()!=0:
+            # CI simulates only root ownership inside this private fixture.
+            # Production safe_read, link counts and renameat2 remain real.
+            real_identity=c.file_identity;real_trusted=c.trusted_directory
+            def fixture(path):return path==self.root or self.root in path.parents
+            def identity(path):
+                result=real_identity(path)
+                if fixture(path):
+                    self.assertEqual(result[2:4],[os.geteuid(),os.getegid()]);result[2:4]=[0,0]
+                return result
+            def trusted(path):
+                real_lstat=Path.lstat
+                def lstat(path,*args,**kwargs):
+                    info=real_lstat(path,*args,**kwargs)
+                    if fixture(path):
+                        self.assertEqual((info.st_uid,info.st_gid),(os.geteuid(),os.getegid()))
+                        fields={name:getattr(info,name) for name in dir(info) if name.startswith('st_')}
+                        fields.update(st_uid=0,st_gid=0);return types.SimpleNamespace(**fields)
+                    return info
+                with patch.object(Path,'lstat',lstat):real_trusted(path)
+            def fchown(fd,uid,gid):
+                info=os.fstat(fd)
+                self.assertEqual((uid,gid),(0,0))
+                self.assertEqual((info.st_uid,info.st_gid),(os.geteuid(),os.getegid()))
+            for target,name,value in ((c,'file_identity',identity),(c,'trusted_directory',trusted),(os,'fchown',fchown)):
+                handle=patch.object(target,name,value);handle.start();self.addCleanup(handle.stop)
         self.events=[];self.records=[]
         self.units=(c.API,c.WORKER)
         self.gate=('gateway.socket','gateway.service')
@@ -46,7 +68,7 @@ class ControllerTests(unittest.TestCase):
         def gateway_check(actual,pins):
             c.require(all(actual[u]['ActiveState']==pins['active'][u] and
                 actual[u]['UnitFileState']==pins['unitFileStates'][u] for u in self.gate),'gateway differs')
-        self.h={'safe_read':read,'sync':lambda p:None,'rename_absent':lambda a,b:os.rename(a,b),'states':states,'gateway_states':lambda:copy.deepcopy(self.gateway),
+        self.h={'safe_read':helper.safe_read,'sync':lambda p:None,'rename_absent':helper.rename_absent,'states':states,'gateway_states':lambda:copy.deepcopy(self.gateway),
             'GATEWAY':self.gate,'AUTHORITY':self.auth,'SEARCH':self.search,'ctl':ctl,'drain_apps':drain,
             'require_gateway_baseline':gateway_check,'normalize_exec_start':helper.normalize_exec_start}
         self.approval={'sourceCommit':'c'*40}
@@ -199,14 +221,50 @@ class ControllerTests(unittest.TestCase):
         with self.assertRaises(ValueError):c.replace_owned(self.h,PINS,True,owned,lambda *_:None)
         self.assertEqual(self.drop.read_text(),'foreign')
     def test_publication_race_preserves_foreign_target_and_owned_quarantine(self):
-        owned=self.owned();original=os.link
-        def link(source,target,**kw):
+        owned=self.owned();original=self.h['rename_absent']
+        def rename(source,target):
             if target==self.drop:self.drop.write_text('foreign')
-            return original(source,target,**kw)
-        with patch.object(os,'link',side_effect=link),self.assertRaises(FileExistsError):
+            return original(source,target)
+        self.h['rename_absent']=rename
+        with self.assertRaises(FileExistsError):
             c.replace_owned(self.h,PINS,True,owned,lambda *_:None)
         self.assertEqual(self.drop.read_text(),'foreign')
         self.assertEqual(len(list(self.drop.parent.glob('.work-batch-activation-recovery-*/previous.conf'))),1)
+    def test_existing_replacements_keep_single_link_and_prepared_inode(self):
+        owned=self.owned()
+        for enabled in (True,False):
+            saved=[]
+            def save(candidate,phase):
+                saved.append((phase,copy.deepcopy(candidate)))
+                if phase=='published':
+                    self.assertEqual(self.drop.lstat().st_nlink,1)
+                    self.assertEqual(list(self.drop.parent.glob('.work-batch-activation-*')),[])
+            owned=c.replace_owned(self.h,PINS,enabled,owned,save)
+            self.assertEqual(owned['identity'],saved[0][1]['identity'])
+            self.assertEqual(owned['identity'],c.file_identity(self.drop))
+            self.assertEqual(helper.safe_read(self.drop),c.render(PINS,enabled))
+            self.assertEqual(self.drop.lstat().st_nlink,1)
+            self.assertEqual([phase for phase,_ in saved],['prepared','quarantine-prepared','published'])
+    def test_owned_dropin_with_extra_hard_link_is_refused(self):
+        owned=self.owned();alias=self.root/'unexpected-alias'
+        os.link(self.drop,alias)
+        with self.assertRaisesRegex(ValueError,'Unsafe source file'):
+            c.replace_owned(self.h,PINS,True,owned,lambda *_:self.fail('unsafe file journaled'))
+        self.assertEqual(self.drop.read_bytes(),c.render(PINS,False))
+        self.assertEqual(self.drop.lstat().st_ino,alias.lstat().st_ino)
+    def test_changed_prepared_inode_is_retained_with_owned_quarantine(self):
+        owned=self.owned()
+        def save(candidate,phase):
+            if phase=='prepared':
+                temp,=self.drop.parent.glob('.work-batch-activation-*')
+                foreign=self.root/'foreign-temp';foreign.write_text('foreign');foreign.chmod(0o644)
+                os.replace(foreign,temp)
+        with self.assertRaisesRegex(ValueError,'Refuse foreign or changed drop-in'):
+            c.replace_owned(self.h,PINS,True,owned,save)
+        self.assertEqual(self.drop.read_text(),'foreign')
+        previous,=self.drop.parent.glob('.work-batch-activation-recovery-*/previous.conf')
+        self.assertEqual(c.file_identity(previous),owned['identity'])
+        self.assertEqual(helper.safe_read(previous),c.render(PINS,False))
     def configuration_fixture(self,owned=None):
         unit=self.root/'example.service';unit.write_text('[Service]\nExecStart=/opt/node/bin/node app.mjs\n');unit.chmod(0o644)
         env=self.root/'private.env';env.write_text('PRIVATE_TOKEN=private-test-value\n');env.chmod(0o640)

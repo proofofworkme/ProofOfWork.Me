@@ -172,9 +172,10 @@ process batch variables must exactly match the owned drop-in after restoration.
 
 ## Failure and recovery
 
-Creation uses a no-replace link. Updates move the incumbent into a unique,
-root-private directory on the same filesystem, verify its exact inode/hash and
-metadata, and publish with no replacement. Foreign raced-in files are preserved.
+Creation and updates publish with an atomic no-replace rename that consumes the
+temporary pathname without creating a second hard link. Updates first move the
+incumbent into a unique, root-private directory on the same filesystem and verify
+its exact inode/hash and metadata. Foreign raced-in files are preserved.
 Only the verified owned former inode may be removed. Intent is persisted before
 publication; ambiguous recovery files remain on the VPS for operator review.
 
@@ -200,8 +201,10 @@ restore old read-era code to make recovery appear complete.
 
 ## Validation
 
-`npm run check:work-batch:activation` runs mocked controller, probe and ordered
-release-composition tests.
+`npm run check:work-batch:activation` runs controller tests with real filesystem
+reads, inode/link-count checks and no-replace publication, plus probe and ordered
+release-composition tests. Service/probe boundaries are mocked; non-root CI
+simulates root ownership only inside its private fixtures.
 The tests exercise source approval, exact file creation/update ownership,
 publication races, restart/postflight failure recovery, disabled operation without
 chain health, private configuration inheritance, canonical declaration/marker
