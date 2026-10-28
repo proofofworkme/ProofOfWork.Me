@@ -43245,6 +43245,30 @@ function tokenMintHistoryItemKey(item) {
 }
 
 function tokenTransferHistoryItemKey(item) {
+  if (item?.confirmed === false && isWorkBatchTransferChild(item)) {
+    const network = String(item.network ?? "").trim().toLowerCase();
+    const txid = String(item.txid ?? "").trim().toLowerCase();
+    const position = item.containerPosition;
+    const index = item.batchRecipientIndex;
+    const count = item.batchRecipientCount;
+    if (!network || !/^[0-9a-f]{64}$/u.test(txid) ||
+        !Number.isSafeInteger(item.protocolVout) || item.protocolVout < 0 ||
+        !Number.isSafeInteger(position?.recordOrdinal) || position.recordOrdinal < 0 ||
+        position.protocolVout !== item.protocolVout ||
+        !Number.isSafeInteger(item.recordOrdinal) ||
+        !Number.isSafeInteger(index) || index < 0 ||
+        !Number.isSafeInteger(count) || count < (item.transferVersion === "mailbatch1" ? 1 : 2) ||
+        count > 256 || index >= count || item.recordOrdinal !== position.recordOrdinal + 1 + index) {
+      throw new Error("Pending WORK batch recipient position is incomplete.");
+    }
+    // Pending recipients share a carrier, but each retains its own derived
+    // ordinal. This is an identity key, not canonical economic qualification.
+    return [
+      String(item.tokenId).trim().toLowerCase(), network, txid,
+      "pending-" + item.transferVersion, item.protocolVout,
+      position.recordOrdinal, item.recordOrdinal,
+    ].join(":");
+  }
   const blockHeight =
     item?.blockHeight !== undefined &&
     item?.blockHeight !== null &&
@@ -53237,7 +53261,18 @@ async function currentProofIndexTokenTablePayloadForLedger(
     return null;
   }
 
-  return payload;
+  // Token-table reads also serve pending wallet/history visibility. Canonical
+  // value replay must use confirmed history before merging or qualifying batch
+  // families, while leaving the shared reader payload unchanged.
+  return {
+    ...payload,
+    ...(Array.isArray(payload.transfers) ? {
+      transfers: payload.transfers.filter((item) => item?.confirmed !== false),
+    } : {}),
+    ...(Array.isArray(payload.transferBatches) ? {
+      transferBatches: payload.transferBatches.filter((item) => item?.confirmed !== false),
+    } : {}),
+  };
 }
 
 function tokenTablePayloadHasConservedBalances(payload) {
