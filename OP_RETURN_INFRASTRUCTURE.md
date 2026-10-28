@@ -8768,3 +8768,29 @@ cache-key construction; the final independent readiness sweep remains
 authoritative, including when evidence fails. Forced reads, pending expiry,
 reader freshness fences and snapshot validation are unchanged. The focused
 `check:work-amo-v8-metadata-readiness` suite covers this boundary.
+
+## WORK Mail batch runtime
+
+The additive [WORK Mail extension](WORK_MAIL_BATCH_SENDS.md) has its own wire,
+`workMailBatchV1` replay context, discovery module, persistent activation marker
+and uncached `/api/v1/work-mail-batch-status` gate. It preserves the original
+standalone batch declaration and accepted runtime overlays. The declaration
+floor is 973283; the first exact valid authority declaration activates at D+1.
+Ordinary proof payments and legacy WORK signal may accompany that declaration,
+with its unique qualifying registry output before or after the exact carrier.
+
+Use the [Mail batch controller](deploy/mail-work-batch/README.md) to install read
+support before publication. Candidate-source discovery must prove no eligible
+Mail declaration at the current canonical checkpoint before source mutation,
+and again after draining the worker. This forward release performs no historical
+reseal. The worker discovers and persists D+1 authority without operator pins.
+The independent API-only `zzzzz-work-mail-batch-writes.conf` uses
+`WORK_MAIL_BATCH_DECLARATION_*`, `WORK_MAIL_BATCH_ACTIVATION_HEIGHT` and
+`WORK_MAIL_BATCH_WRITES_ENABLED`, while preserving the original batch drop-in.
+
+The fixed runtime scope includes the API, raw replay, relational reader, indexer
+writer, the four new declaration/runtime/selection/transaction modules, new Mail
+discovery and projection readers, and the shared wire codec. No schema, package,
+service-unit or native-storage wrapper change is required. Source, build,
+verification and the single latest verified backup remain on the VPS; normal
+release synchronization and retention completion still apply.

@@ -2463,7 +2463,7 @@ expect(
       app,
     ) &&
     /async function reviewAndSendAction[\s\S]*const preflight =[\s\S]*await revalidate\((?:attempted\?\.txid)?\)[\s\S]*await preflight\(\)[\s\S]*beforeBroadcast: preflight/.test(app) &&
-    /async function sendOpReturn[\s\S]*preparedWorkAttachmentMode =[\s\S]*await freshWorkWriteMode\(\)[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedWorkAttachmentMode\)/.test(
+    /async function sendOpReturn[\s\S]*preparedWorkAttachmentMode =[\s\S]*await freshWorkWriteMode\(\)[\s\S]*const assertCurrentMailWork = async[\s\S]*await freshWorkWriteMode\(preparedWorkAttachmentMode\)[\s\S]*await assertCurrentMailWork\(\)[\s\S]*beforeBroadcast:[\s\S]*await assertCurrentMailWork\(\)/.test(
       app,
     ) &&
     /async function createInfinityBond[\s\S]*preparedBondWorkMode = \(await freshWorkWriteMode\(\)\)\.mode[\s\S]*beforeBroadcast:[\s\S]*freshWorkWriteMode\(preparedBondWorkMode\)/.test(

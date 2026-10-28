@@ -507,6 +507,7 @@ function v8MarketplaceActionFixture(action, overrides = {}) {
     ["workAmoV8ReplayPrecisionOptions"],
     {
       workBatchReplayContext: async () => null,
+      workMailBatchReplayContext: async () => null,
       WORK_ATOMIC_PROJECTION_MODEL: "work-atoms-v1",
       WORK_SUBATOM_PROJECTION_MODEL: "work-subatoms-v2",
       discoverExactWorkAmoV8Declaration: async () => {
@@ -558,6 +559,7 @@ function v8MarketplaceActionFixture(action, overrides = {}) {
     ["workAmoV8ReplayPrecisionOptions"],
     {
       workBatchReplayContext: async () => null,
+      workMailBatchReplayContext: async () => null,
       WORK_ATOMIC_PROJECTION_MODEL: "work-atoms-v1",
       WORK_SUBATOM_PROJECTION_MODEL: "work-subatoms-v2",
       discoverExactWorkAmoV8Declaration: async (

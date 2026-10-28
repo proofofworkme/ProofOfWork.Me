@@ -7,6 +7,8 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as units from "../server/work-units.mjs";
 import * as bonds from "../server/bond-units.mjs";
 import { WORK_AMO_V5_ACTIVATION_HEIGHT, compareWorkAmoUtf8, workAmoV5CanonicalPayloadCommitment } from "../server/work-amo-v5.mjs";
+import { buildWorkMailBatchPayload, workMailBatchEnvelopeMatches } from "../src/shared/protocol/workMailBatch.mjs";
+import { verifiedWorkMailBatchEventIds } from "../server/db/work-mail-batch-reader.mjs";
 import { buildWorkBatchPayload } from "../src/shared/protocol/workBatch.mjs";
 import { verifiedWorkBatchEventIds } from "../server/db/work-batch-reader.mjs";
 
@@ -52,6 +54,7 @@ const constantNames = [
 ];
 const api = vm.createContext({
   ...units, ...bonds, Buffer, WORK_AMO_V5_ACTIVATION_HEIGHT, compareWorkAmoUtf8,
+  buildWorkMailBatchPayload, workMailBatchEnvelopeMatches, workAmoV5CanonicalPayloadCommitment,
   VALUE_Q8_SCALE: 100_000_000n,
   TOKEN_SEND_SUBATOMS_ACTION: "send3", TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: "buy5",
   INFINITY_BOND_KIND: "infinity-bond", INCEPTION_BOND_KIND: "inception-bond",
@@ -92,7 +95,7 @@ const readerFunctions = new Map(readerParsed.statements.filter(ts.isFunctionDecl
 const readerConstants = new Map(readerParsed.statements.filter(ts.isVariableStatement)
   .flatMap(node => node.declarationList.declarations)
   .map(node => [node.name.getText(readerParsed), node.getText(readerParsed)]));
-const reader = vm.createContext({ ...units, Buffer, WORK_AMO_V5_ACTIVATION_HEIGHT, verifiedWorkBatchEventIds });
+const reader = vm.createContext({ ...units, Buffer, WORK_AMO_V5_ACTIVATION_HEIGHT, verifiedWorkBatchEventIds, verifiedWorkMailBatchEventIds });
 vm.runInContext([
   ...["VERIFIED_WORK_BATCH_EVENT_ROWS", "BITCOIN_GENESIS_TIME_MS", "INFINITY_BOND_MEMO", "INFINITY_BOND_KIND",
     "INCEPTION_BOND_MEMO", "INCEPTION_BOND_KIND", "BOND_TAGS"].map(name => {

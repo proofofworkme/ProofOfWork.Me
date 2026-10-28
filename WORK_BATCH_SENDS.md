@@ -307,3 +307,10 @@ activity projection, source fingerprints and historical movement reconstruction
 must all retain the accepted parent. A failed read-path release is recovered
 forward with its exact installed-source and custody evidence; it is not a reason
 to restore the known-broken reader or resend the transaction.
+
+## Ordinary Mail extension
+
+[WORK Mail Attachments V1](WORK_MAIL_BATCH_SENDS.md) defines the separate
+`mailbatch1` form. It has its own forward declaration and activation gate.
+The standalone `batch1` association prohibition and original signed declaration
+remain unchanged.

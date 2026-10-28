@@ -8,6 +8,7 @@ import * as bitcoin from "bitcoinjs-lib";
 import * as units from "../server/work-units.mjs";
 import * as bonds from "../server/bond-units.mjs";
 import { WORK_AMO_V5_ACTIVATION_HEIGHT, workAmoV5CanonicalPayloadCommitment } from "../server/work-amo-v5.mjs";
+import { buildWorkMailBatchPayload, workMailBatchEnvelopeMatches } from "../src/shared/protocol/workMailBatch.mjs";
 import { buildWorkBatchPayload } from "../src/shared/protocol/workBatch.mjs";
 
 const source = readFileSync(new URL("../server/proof-api.mjs", import.meta.url), "utf8");
@@ -29,13 +30,13 @@ const names = [
 const constants = ["WORK_TOKEN_MAX_SUPPLY", "WORK_TOKEN_MAX_SUPPLY_ATOMS", "WORK_TOKEN_MAX_SUPPLY_SUBATOMS",
   "TOKEN_MIN_MUTATION_PRICE_SATS", "WORK_TRANSFER_VALUE_PROJECTION_MODEL", "CREDIT_NETWORK_VALUE_FIELD_NAMES",
   "WORK_TRANSFER_VALUE_PROJECTION_FIELD_NAMES", "WORK_BATCH_TRANSFER_VALUE_PROJECTION_MODEL",
-  "WORK_BATCH_TRANSFER_VALUE_PROJECTION_FIELD_NAMES"];
+  "WORK_MAIL_BATCH_TRANSFER_VALUE_PROJECTION_MODEL", "WORK_BATCH_TRANSFER_VALUE_PROJECTION_FIELD_NAMES"];
 function context(text = source) {
   const parsed = ts.createSourceFile("api.mjs", text, ts.ScriptTarget.Latest, true);
   const functions = new Map(parsed.statements.filter(ts.isFunctionDeclaration).map(n => [n.name.text, n.getText(parsed)]));
   const values = new Map(parsed.statements.filter(ts.isVariableStatement).flatMap(n => n.declarationList.declarations)
     .map(n => [n.name.getText(parsed), n.getText(parsed)]));
-  const result = vm.createContext({ ...units, ...bonds, Buffer, WORK_AMO_V5_ACTIVATION_HEIGHT,
+  const result = vm.createContext({ ...units, ...bonds, Buffer, WORK_AMO_V5_ACTIVATION_HEIGHT, buildWorkMailBatchPayload, workMailBatchEnvelopeMatches, workAmoV5CanonicalPayloadCommitment,
     VALUE_Q8_SCALE: 100_000_000n, TOKEN_SEND_SUBATOMS_ACTION: "send3",
     TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: "buy5", BOND_TOKEN_IDS: new Set(),
     // Ordering and pending totals are outside the snapshot-value merge boundary.
