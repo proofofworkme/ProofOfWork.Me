@@ -225,8 +225,10 @@ function reconstructWithReader(input) {
     "tokenRegistryAddressFromPayload",
   ]);
   const relation = item => ({
-    network: item.network, txid: item.txid, status: "confirmed", transaction_status: "confirmed",
-    effective_status: "confirmed", block_height: item.blockHeight, transaction_block_height: item.blockHeight,
+    network: item.network, txid: item.txid,
+    status: item.confirmed === false ? "pending" : "confirmed",
+    transaction_status: item.confirmed === false ? "pending" : "confirmed",
+    effective_status: item.confirmed === false ? "pending" : "confirmed", block_height: item.blockHeight, transaction_block_height: item.blockHeight,
     block_index: item.blockIndex, transaction_block_index: item.blockIndex,
     op_return_vout: item.protocolVout, record_ordinal: item.recordOrdinal,
     block_hash: item.blockHash, canonical_block_hash: item.blockHash,
@@ -509,4 +511,110 @@ test("Mail consumer never repairs from an unqualified or relabelled v2 family", 
     const projection = produce(state);mutate(projection);
     assert.equal(api.tokenStateWithCanonicalWorkTransferValues(state, projection), state);
   }
+});
+
+
+function identifiedFamily(count, txByte, { pending = false, version = "batch1" } = {}) {
+  const state = stateFixture({ count, self: false, version });
+  for (const item of [...state.transferBatches, ...state.transfers]) {
+    item.txid = txByte.repeat(32);
+    if (item.derivedId) item.derivedId = item.txid + ":" + item.recordOrdinal;
+    item.confirmed = !pending;
+    if (pending) {
+      item.blockHash = "";
+      delete item.blockHeight; delete item.blockIndex;
+      if (item.containerPosition) {
+        item.containerPosition.blockHash = "";
+        delete item.containerPosition.blockHeight;
+        delete item.containerPosition.blockTransactionIndex;
+      }
+    }
+  }
+  return reconstructWithReader(state);
+}
+
+async function canonicalTableBoundary(payload, { fallback = false } = {}) {
+  let fallbackCalls = 0;
+  const boundary = vm.createContext({
+    URLSearchParams, console,
+    SUMMARY_EXACT_CHECKPOINT_PROOF_INDEX_READ_WAIT_MS: 100,
+    SUMMARY_PROOF_INDEX_READ_WAIT_MS: 100,
+    proofIndexReadFeatureEnabled: () => true,
+    payloadWithFallbackAfterMs: promise => promise,
+    proofIndexCanonicalSummaryTokenTablePayload: async () => fallback ? null : payload,
+    proofIndexTokenPayload: async () => { fallbackCalls++; return payload; },
+    rejectEmptyMainnetTokenPayload: () => false,
+    proofIndexPayloadIndexedThroughBlock: value => value.indexedThroughBlock,
+    payloadIndexedThroughBlockHash: value => value.indexedThroughBlockHash,
+  });
+  load(boundary, apiSource, ["currentProofIndexTokenTablePayloadForLedger"]);
+  const result = await boundary.currentProofIndexTokenTablePayloadForLedger("livenet", "pending family fixture", {
+    exactHeight: payload.indexedThroughBlock, exactHash: payload.indexedThroughBlockHash,
+  });
+  assert.equal(fallbackCalls, Number(fallback));
+  return result;
+}
+
+for (const fallback of [false, true])
+  test("canonical token-table boundary excludes 189 pending children before merging (fallback=" + fallback + ")", async () => {
+    const confirmed = [identifiedFamily(12, "12"), identifiedFamily(7, "07")];
+    const pending = identifiedFamily(189, "89", { pending: true });
+    // The real reader intentionally returns pending wallet/history records. In
+    // particular an absent child block hash differs from the raw parent's "".
+    assert.equal(pending.transferBatches[0].blockHash, "");
+    assert.equal(pending.transfers[0].blockHash, undefined);
+    const table = {
+      amountStorageModel: units.WORK_SUBATOM_PROJECTION_MODEL,
+      indexedThroughBlock: 973_574, indexedThroughBlockHash: "cd".repeat(32),
+      transfers: [...confirmed.flatMap(value => value.transfers), ...pending.transfers],
+      transferBatches: [...confirmed.flatMap(value => value.transferBatches), ...pending.transferBatches],
+    };
+    const before = JSON.stringify(table);
+    const canonical = await canonicalTableBoundary(table, { fallback });
+    assert.equal(canonical.transfers.length, 19);
+    assert.equal(canonical.transferBatches.length, 2);
+    const merged = {
+      ...canonical,
+      transfers: api.mergeTokenStateItemsByKey([], canonical.transfers, api.tokenTransferHistoryItemKey, api.mergeTokenTransferRecord),
+      transferBatches: api.mergeTokenStateItemsByKey([], canonical.transferBatches, api.tokenTransferHistoryItemKey, api.mergeCreditNetworkValueRecord),
+    };
+    assert.equal(api.economicTokenTransfersFromState(merged).length, 2);
+    assert.equal(accepts(produce(merged)), true);
+    assert.equal(JSON.stringify(table), before, "canonical view does not erase public pending visibility");
+    assert.equal(table.transfers.filter(item => item.confirmed === false).length, 189);
+    const corrupt = structuredClone(table);
+    corrupt.transfers[0].minerFeeSats = 1;
+    const corruptCanonical = await canonicalTableBoundary(corrupt, { fallback });
+    assert.throws(() => api.economicTokenTransfersFromState(corruptCanonical), /differs from its economic parent/u);
+  });
+
+for (const version of ["batch1", "mailbatch1"])
+  test("pending " + version + " history preserves all 189 children across repeated merges", () => {
+    const pending = identifiedFamily(189, "89", { pending: true, version });
+    const keys = pending.transfers.map(api.tokenTransferHistoryItemKey);
+    assert.equal(new Set(keys).size, 189);
+    const merged = api.mergeTokenStateItemsByKey(pending.transfers, pending.transfers,
+      api.tokenTransferHistoryItemKey, api.mergeTokenTransferRecord);
+    assert.equal(merged.length, 189);
+    assert.deepEqual(Array.from(merged, item => item.recordOrdinal), Array.from({ length: 189 }, (_, i) => i + 1));
+    assert.ok(merged.every(item => item.confirmed === false && item.paidSats === 0 && item.minerFeeSats === 0));
+  });
+
+test("pending batch history refuses malformed positions without changing legacy identities", () => {
+  const child = identifiedFamily(2, "89", { pending: true }).transfers[0];
+  for (const mutate of [
+    value => { delete value.recordOrdinal; },
+    value => { value.recordOrdinal = "1"; },
+    value => { value.protocolVout = -1; },
+    value => { value.containerPosition.protocolVout++; },
+    value => { value.containerPosition.recordOrdinal = -1; },
+    value => { value.batchRecipientIndex = value.batchRecipientCount; },
+    value => { value.batchRecipientCount = 257; },
+    value => { value.txid = "invalid"; },
+  ]) {
+    const invalid = structuredClone(child); mutate(invalid);
+    assert.throws(() => api.tokenTransferHistoryItemKey(invalid), /Pending WORK batch recipient position/u);
+  }
+  const legacy = { tokenId: "legacy", txid: "legacy-tx", confirmed: false, protocolVout: 3, recordOrdinal: 9 };
+  assert.equal(api.tokenTransferHistoryItemKey(legacy), "legacy:legacy-tx:event:3");
 });

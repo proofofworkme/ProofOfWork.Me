@@ -8661,6 +8661,15 @@ accepted runtime overlays and keeping capture, plan and rollback evidence on the
 Canonical summary projection qualifies stored batch payloads before removing
 display metadata, and values each accepted parent once. Recipient projections
 retain balances and history with no independent fee or movement contribution.
+Canonical token-table summary inputs exclude explicitly pending transfers and
+batch parents before generic history merging and economic-family qualification,
+including when the exact-checkpoint reader falls back to the general token
+reader. This creates a separate confirmed view; public pending wallet/history
+records remain visible with each batch child's full carrier and record ordinal.
+Malformed pending batch positions fail closed rather than collapsing recipients
+onto one carrier key. Confirmed family completeness, identity and zero-child-fee
+checks remain strict. These source safeguards require live rehearsal and release
+verification; they are not evidence that a deployment has completed.
 The batch at block 973284 exposed a metadata-order failure, a summary
 classification failure, and normalized activity enrichment that copied the
 transaction miner fee onto derived recipients. Qualified recipient projections
