@@ -1,7 +1,10 @@
 import { parseBoostWorkTip } from "../src/shared/protocol/boostTip.mjs";
 import { canonicalSealTime } from "../server/canonical-seal-time.mjs";
 import { WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT } from "../server/work-batch-declaration.mjs";
+import { WORK_MAIL_BATCH_MIN_DECLARATION_BLOCK_HEIGHT } from "../server/work-mail-batch-declaration.mjs";
 import { buildWorkBatchPayload, parseWorkBatchPayload, WORK_BATCH_PROTOCOL_PREFIX } from "../src/shared/protocol/workBatch.mjs";
+import { buildWorkMailBatchPayload, parseWorkMailBatchPayload, workMailBatchEnvelopeMatches, WORK_MAIL_BATCH_PROTOCOL_PREFIX } from "../src/shared/protocol/workMailBatch.mjs";
+import { verifiedWorkMailBatchEventIds } from "../server/db/work-mail-batch-reader.mjs";
 import { verifiedWorkBatchEventIds } from "../server/db/work-batch-reader.mjs";
 import { notificationAddressKey } from "../server/notification-query.mjs";
 import { measurePrivatePhase as measureMarketplaceReadPhase } from "../server/wallet-read-observation.mjs";
@@ -1284,9 +1287,15 @@ function isolatedFunction(path, name, globals = {}) {
     canonicalSealTime,
     buildWorkBatchPayload,
     parseWorkBatchPayload,
+    buildWorkMailBatchPayload,
+    parseWorkMailBatchPayload,
+    workMailBatchEnvelopeMatches,
+    verifiedWorkMailBatchEventIds,
     workAmoV5CanonicalPayloadCommitment,
     WORK_BATCH_PROTOCOL_PREFIX,
+    WORK_MAIL_BATCH_PROTOCOL_PREFIX,
     WORK_BATCH_TRANSFER_VALUE_PROJECTION_MODEL: "canonical-work-batch-transfer-value-projection-v1",
+    WORK_MAIL_BATCH_TRANSFER_VALUE_PROJECTION_MODEL: "canonical-work-batch-transfer-value-projection-v2",
     verifiedWorkBatchEventIds,
     notificationAddressKey,
     measureMarketplaceReadPhase,
@@ -2040,6 +2049,7 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           rebuildConfirmedCreditBalancesFromCanonicalEvents: [
             "assertCanonicalWorkProjection",
+            "verifiedWorkBatchFamilyEventIds",
           ],
           seedCanonicalWorkDefinition: [
             "currentWorkProjectionModel",
@@ -71528,6 +71538,13 @@ check("AMO V5 raw replay executes ID, generic-token, and WORK buys atomically", 
         assert.equal(height, blockHeight);
         assert.ok(height < WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT,
           "this legacy fixture predates batch declarations");
+        return null;
+      },
+      workMailBatchReplayContext: async (network, height) => {
+        assert.equal(network, "livenet");
+        assert.equal(height, blockHeight);
+        assert.ok(height < WORK_MAIL_BATCH_MIN_DECLARATION_BLOCK_HEIGHT,
+          "this legacy fixture predates Mail batch declarations");
         return null;
       },
     },

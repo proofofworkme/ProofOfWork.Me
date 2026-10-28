@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
+import { validateWorkMailBatchV1TransactionShape } from "../../server/work-mail-batch-transaction.mjs";
+import { parseWorkMailBatchPayload } from "../../src/shared/protocol/workMailBatch.mjs";
 import { parseWorkBatchPayload } from "../../src/shared/protocol/workBatch.mjs";
 import { composerAppearance, composerViewports, expectAlignedFields, expectComposerContained, expectFeePresetsContained } from "../fixtures/composerGeometry.mjs";
 import { createAmoBrowseFixture } from "../fixtures/amoBrowseFixture.mjs";
@@ -865,6 +867,7 @@ async function installApiFixtures(
     pendingV8Listing = false,
     remoteV8MarketListings = false,
     marketRegistryState,
+    mailBatchMode = "inactive",
   } = {},
 ) {
   const requests = [];
@@ -888,7 +891,16 @@ async function installApiFixtures(
     let json = {};
     let status = 200;
 
-    if (pathname.endsWith(`/address/${SENDER}/mail`)) {
+    if (pathname === "/api/v1/work-mail-batch-status") {
+      if (mailBatchMode === "unavailable") { status = 503; json = { error: "unavailable" }; }
+      else {
+        const active = mailBatchMode !== "inactive";
+        json = { ...batchStatusFixture(active), protocol: "work-mail-batch-v1",
+          active, writeEnabled: mailBatchMode === "ready", ready: mailBatchMode === "ready",
+          reasonCode: mailBatchMode === "inactive" ? "work-mail-batch-declaration-unconfigured" : mailBatchMode === "ready" ? null : "work-mail-batch-writes-disabled",
+          limits: { minRecipients: 1, maxRecipients: 256, maxPayloadBytes: 65536 } };
+      }
+    } else if (pathname.endsWith(`/address/${SENDER}/mail`)) {
       json = {
         address: SENDER,
         network: "livenet",
@@ -1766,6 +1778,76 @@ test("standalone INCB stays idle with a labeled preview on scoped checkpoint and
   await expect(page.locator(".desktop-route-status.status.good")).toHaveCount(0);
 });
 
+for (const viewport of [{ width: 320, height: 568 }, { width: 1440, height: 900 }]) {
+  test(`Mail WORK batch reviews 78 To/CC recipients with one fee at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await installWallet(page); await installApiFixtures(page, { mailBatchMode: "ready" });
+    await openConnectedCompose(page); await fillReadyMail(page, "0.0000000000000001");
+    const recipients = [SENDER, WORK_REGISTRY, ...batchFixtureAddresses(76)];
+    await page.getByRole("combobox", { name: "To", exact: true }).fill(recipients.slice(0, 40).join(", "));
+    await page.getByRole("combobox", { name: "CC", exact: true }).fill([recipients[0], ...recipients.slice(40)].join(", "));
+    await expect(page.getByText("WORK attachment: 546 proofs once for all recipients. Mail payments and the miner fee are separate.", { exact: true })).toBeVisible();
+    await expect(page.locator(".mail-send-button")).toBeEnabled();
+    await page.locator(".mail-send-button").click();
+    const review = page.getByRole("dialog", { name: "Review mail transaction" });
+    await expect(review.locator(".review-work")).toHaveCount(78);
+    await expect(review.locator(".review-fields")).toContainText("0.0000000000000078 WORK");
+    await expect(review.locator(".review-fields")).toContainText("546 proofs");
+    expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+    expect(await review.evaluate(element => element.scrollWidth <= element.clientWidth + 2)).toBe(true);
+    await review.getByRole("button", { name: "Continue to wallet" }).click();
+    await expect.poll(() => page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(1);
+    const hex = await page.evaluate(() => window.__mailComposeFixture.psbtHexes[0]);
+    const psbt = bitcoin.Psbt.fromHex(hex), payloads = opReturnPayloads(hex);
+    const batch = parseWorkMailBatchPayload(payloads.find(value => value.startsWith("pwt1:mailbatch1:")));
+    expect(batch.recipients.map(row => row.recipientAddress)).toEqual(recipients);
+    expect(batch.totalAmountSubatoms).toBe("78");
+    expect(payloads.filter(value => value.startsWith("pwt1:send"))).toHaveLength(0);
+    const pwmIndexes = psbt.txOutputs.flatMap((output, index) => output.script[0] === bitcoin.opcodes.OP_RETURN &&
+      Buffer.from(bitcoin.script.decompile(output.script)[1]).toString().startsWith("pwm1:") ? [index] : []);
+    const registry = psbt.txOutputs[Math.max(...pwmIndexes) + 1];
+    expect(bitcoin.address.fromOutputScript(registry.script)).toBe(WORK_REGISTRY);
+    expect(registry.value).toBe(546n);
+    expect(psbt.data.inputs.every(input => input.sighashType === bitcoin.Transaction.SIGHASH_ALL)).toBe(true);
+  });
+}
+test("Mail WORK batch preserves a one-recipient reply, subject and file envelope", async ({ page }) => {
+  await installWallet(page); await installApiFixtures(page, { mailBatchMode: "ready", inboxMessage: true });
+  await openConnectedInboxReply(page);
+  await page.getByLabel("WORK each").fill("0.0000000000000001");
+  await page.getByLabel("Message").fill("incb"); // A file/reply remains Mail, unlike a naked bond action.
+  await page.locator('form.compose-pane input[type="file"]').setInputFiles({ name: "evidence.txt", mimeType: "text/plain", buffer: Buffer.from("Verified file fixture") });
+  await expect(page.getByText("evidence.txt", { exact: true })).toBeVisible();
+  await page.locator(".mail-send-button").click();
+  const review = page.getByRole("dialog", { name: "Review mail transaction" });
+  await expect(review.locator(".review-work")).toHaveCount(1);
+  await expect(review.locator(".review-fields")).toContainText("546 proofs");
+  await review.getByRole("button", { name: "Continue to wallet" }).click();
+  await expect.poll(() => page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(1);
+  const hex = await page.evaluate(() => window.__mailComposeFixture.psbtHexes[0]);
+  const psbt = bitcoin.Psbt.fromHex(hex), tx = bitcoin.Transaction.fromBuffer(psbt.data.globalMap.unsignedTx.toBuffer());
+  const vout = tx.outs.map(output => ({ scriptpubkey: Buffer.from(output.script).toString("hex"), value: output.value.toString() }));
+  const protocolVout = vout.findIndex(output => Buffer.from(output.scriptpubkey, "hex").includes(Buffer.from("pwt1:mailbatch1:")));
+  const validation = validateWorkMailBatchV1TransactionShape({ transaction: { txid: tx.getId(), hex: tx.toHex(), vout }, protocolVout, senderAddress: SENDER });
+  expect(validation.valid, validation.reasonCode).toBe(true);
+  expect(validation.parsed.recipientCount).toBe(1);
+  expect(validation.mailEnvelope.kind).toBe("file");
+  expect(opReturnPayloads(hex)).toContain(`pwm1:r:${"3".repeat(64)}`);
+});
+
+for (const mailBatchMode of ["inactive", "paused", "unavailable"]) {
+  test(`Mail WORK ${mailBatchMode} never silently signs a 78-recipient legacy fallback`, async ({ page }) => {
+    await installWallet(page); await installApiFixtures(page, { mailBatchMode });
+    await openConnectedCompose(page); await fillReadyMail(page, "0.0000000000000001");
+    await page.getByRole("combobox", { name: "To", exact: true }).fill(batchFixtureAddresses(78).join(", "));
+    await expect(page.locator(".mail-send-button")).toBeDisabled();
+    await expect(page.locator("#compose-send-status")).toContainText(mailBatchMode === "inactive" ? "at most 10" : mailBatchMode === "paused" ? "paused" : "unavailable");
+    expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+    await page.getByLabel("WORK each").fill("0");
+    await expect(page.locator(".mail-send-button")).toBeEnabled();
+  });
+}
+
 test("pre-V8 mail prepares send2 once and exposes the busy state", async ({
   page,
 }) => {
@@ -1964,7 +2046,7 @@ test("Unknown Mail broadcast persists its txid and draft until a status check re
   });
   await page.locator(".mail-send-button").click();
   await page.getByRole("dialog").getByRole("button", { name: "Continue to wallet" }).click();
-  await expect(page.locator(".status-text")).toContainText("Broadcast outcome unknown");
+  await expect(page.locator(".status-text")).toContainText("Signed transaction outcome requires a status check");
   expect(broadcastCalls).toBe(1);
   await expect(page.locator(".mail-send-button")).toBeDisabled();
   await expect(page.getByLabel("Message")).toHaveValue("Mail admission browser contract");

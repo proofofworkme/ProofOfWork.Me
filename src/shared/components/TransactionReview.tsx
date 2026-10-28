@@ -11,6 +11,7 @@ export type MailTransactionReview = {
   recipients: { address: string; label: string; role: "To" | "CC"; proofs: string; work?: string }[];
   registry?: { address: string; proofs: string };
   totalWork?: string;
+  workAttachmentFeeLabel?: string;
   subject: string;
   message: string;
   attachment?: { name: string; size: number; sha256: string };
@@ -35,6 +36,7 @@ export function TransactionReview({ review, onCancel, onApprove, returnFocus }: 
       <code className="review-exact">{recipient.address}</code>
       {recipient.work ? <p className="review-work"><code>{recipient.work} WORK</code> attached to this recipient</p> : null}
     </li>)}</ul>
+    {review.workAttachmentFeeLabel ? <p className="field-note">{review.workAttachmentFeeLabel}</p> : null}
     <dl className="review-fields">
       {review.totalWork ? <div><dt>Total WORK attached</dt><dd><code>{review.totalWork} WORK</code></dd></div> : null}
       {review.registry ? <div><dt>WORK registry payment</dt><dd><code>{review.registry.proofs} proofs</code><code className="review-exact">{review.registry.address}</code></dd></div> : null}
