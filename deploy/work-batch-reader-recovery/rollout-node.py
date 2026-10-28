@@ -69,7 +69,7 @@ def rollout(plan):
     ns['require_apps_drained']()
     ns['require_restart_configuration'](manifest['restartConfigurationSha256'])
     files = manifest['searchHold']['bindings']['files']
-    args = ['--release-id',prior['manifest']['releaseId'],'--attempt','initial',
+    args = ['--release-id',manifest['searchHold']['bindings']['releaseId'],'--attempt','initial',
         '--service-sha256',files[ns['SEARCH'][0]],'--timer-sha256',files[ns['SEARCH'][1]]]
     held = prior['outcome']['hold']
     outcome = {'format':'proof-of-work-work-batch-reader-recovery-rollout-result-v1','releaseId':plan['releaseId'],'hold':held}

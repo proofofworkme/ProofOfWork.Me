@@ -151,14 +151,15 @@ def extend_inventory(m,r,accepted,evidence,actual_reader,baseline_reader,predece
         need(row['path'] not in overlays,'Duplicate accepted overlay')
         overlays[row['path']]=copy.deepcopy(row)
     actual={}
-    prior=predecessor['manifest'];prior_rows=rows_by_predecessor(prior)
+    lineage=predecessor_lineage(predecessor)
     for name,row in rows_by_path(m['sources']).items():
         accepted_before=row['before']
-        if name in prior_rows:
-            # The reviewed recovery candidate may correct the failed reader again;
-            # its before bytes must still be the predecessor's owned publication.
-            need(row['before']==prior_rows[name]['after'],'Broken predecessor-to-recovery byte chain')
-            accepted_before=prior_rows[name]['before']
+        for prior_rows in reversed(lineage):
+            if name in prior_rows:
+                # Walk every explicitly verified failed generation back to the
+                # still-accepted original bytes; never accept an intermediate.
+                need(accepted_before==prior_rows[name]['after'],'Broken predecessor-to-recovery byte chain')
+                accepted_before=prior_rows[name]['before']
         mode=m['sourceMetadata'][name]['mode']
         git_mode='100755' if mode&0o111 else '100644'
         if name in NEW:
@@ -179,11 +180,17 @@ def extend_inventory(m,r,accepted,evidence,actual_reader,baseline_reader,predece
     result=copy.deepcopy(accepted);result['overlays']=[overlays[name] for name in sorted(overlays)]
     return result,actual
 
-def rows_by_predecessor(prior):
-    rows=prior.get('sources',[])
-    need(len(rows)==1 and rows[0]['path']=='server/db/proof-index-reader.mjs',
-        'Expanded predecessor acceptance scope')
-    return {row['path']:row for row in rows}
+def predecessor_lineage(predecessor):
+    ancestors=predecessor.get('ancestors',[])
+    need(type(ancestors)is list and len(ancestors)<=1,'Expanded predecessor lineage')
+    result=[]
+    for index,frame in enumerate(ancestors+[predecessor]):
+        rows=frame['manifest'].get('sources',[])
+        expected=TARGETS if ancestors and index==1 else frozenset({'server/db/proof-index-reader.mjs'})
+        need(type(rows)is list and len(rows)==len(expected)
+            and {row.get('path')for row in rows}==expected,'Expanded predecessor acceptance scope')
+        result.append({row['path']:row for row in rows})
+    return result
 
 def validate_dispatch(a,m,r,dispatch):
     need(dispatch.get('format')=='proof-of-work-work-batch-reader-recovery-node-dispatch-receipt-v1'
@@ -239,9 +246,18 @@ def acceptance(engine,controller,a,plan,approval_reference):
         qualification=pinned(Path(ref['path']),ref['sha256'],'summary-rehearsal-qualified.json')
         controller['validate_rehearsal'](qualification,plan,a['plan']['sha256'])
         predecessor=controller['predecessor_fence'](m['predecessor'],current=False)
-        for key in ('plan','manifest','receipt','dispatch'):
-            ref=m['predecessor'][key];path=Path(ref['path'])
-            pinned(path,ref['sha256'],None if engine['BASE'] in path.parents else 'predecessor-'+key+'.json')
+        predecessor_lineage(predecessor)
+        for index,frame in enumerate(predecessor.get('ancestors',[])+[predecessor]):
+            contract=frame.get('contract',m['predecessor'])
+            prefix='predecessor-'+(str(index)+'-' if predecessor.get('ancestors') else '')
+            for key in ('plan','manifest','receipt','dispatch'):
+                ref=contract[key];path=Path(ref['path'])
+                pinned(path,ref['sha256'],None if engine['BASE'] in path.parents else prefix+key+'.json')
+            # A terminal recovery predecessor has its own successful read-only
+            # rehearsal. Preserve it as history, never as the new approval.
+            if frame.get('ancestors'):
+                ref=frame['dispatch']['rehearsal']
+                pinned(Path(ref['path']),ref['sha256'],prefix+'summary-rehearsal-qualified.json')
         origins_raw=engine['encode']({'format':'work-batch-reader-recovery-retained-evidence-v1','copies':retained})
         origins_path=custody/'evidence-origins.json'
         engine['save'](origins_path,origins_raw)

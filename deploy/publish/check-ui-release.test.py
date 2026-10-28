@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import types
 import unittest
 from unittest.mock import patch
@@ -371,6 +372,25 @@ class ReleaseRefusals(unittest.TestCase):
                     run.assert_not_called()
                 self.assertFalse(log.exists())
 
+    def test_transport_parent_passes_exact_unit_and_ssh_deadlines(self):
+        bundle = self.base/'bundle.tgz'; bundle.write_bytes(b'approved')
+        plan = {**self.plan(), 'preservingTransportSha256': self.release.digest(ROOT/'remote_transport.py'),
+                'localBundles': {'source': str(bundle)},
+                'source': {'compressedBytes': 8, 'sha256': self.release.digest(bundle)}}
+        path = self.base/'plan.json'; path.write_bytes(raw_json(plan))
+        log = self.base/'transport.log'
+        with patch.object(sys, 'argv', ['transport_preserve.py', str(path), 'source', str(log)]), \
+                patch.object(subprocess, 'run') as run:
+            self.transport.main()
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.kwargs['timeout'], 6300)
+        command = shlex.split(run.call_args.args[0][-1])
+        self.assertIn('--property=RuntimeMaxSec=6000', command)
+        self.assertIn('--property=TimeoutStopSec=30s', command)
+        self.assertIn('--property=KillMode=control-group', command)
+        self.assertIn('--property=MemoryMax=4G', command)
+        self.assertIn('--property=MemorySwapMax=0', command)
+
     def test_hash_bound_remote_reads_refuse_unsafe_or_changed_inputs(self):
         # Root ownership is simulated only for this unprivileged local fixture;
         # actual regular/link/hardlink/mode/hash/size checks remain exercised.
@@ -468,6 +488,142 @@ class ReleaseRefusals(unittest.TestCase):
                 namespace['run'](['/usr/bin/python3', '-I', '-B', '-c', 'import time; time.sleep(3)'],
                                  'too-slow.log', timeout=0.01)
         finally: os.close(descriptor)
+
+
+class TransportStreamDeadlines(unittest.TestCase):
+    """Exercise the actual pump with disposable pipes, never SSH or UI paths."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='pow-transport-deadline-', dir='/tmp')
+        self.base = Path(self.temporary.name)
+        self.lock = os.open(self.base / 'fixture.lock', os.O_CREAT | os.O_RDONLY, 0o600)
+        self.ns = functions_only('remote_transport.py', {'run'})
+        self.ns.update(out=self.base, env={'PATH': '/usr/bin:/bin'}, lock_fd=self.lock,
+                       captured_log_bytes=0, TOTAL_LOG_CEILING=16*1024**2)
+        self.children = []
+        original = subprocess.Popen
+        def tracked(*args, **kwargs):
+            child = original(*args, **kwargs); self.children.append(child); return child
+        self.processes = patch.object(subprocess, 'Popen', side_effect=tracked)
+        self.processes.start()
+
+    def tearDown(self):
+        self.processes.stop()
+        for child in self.children:
+            self.assertIsNotNone(child.poll(), 'Fixture child escaped the bounded pump')
+        os.close(self.lock)
+        self.temporary.cleanup()
+
+    def run_child(self, code, source, length, name='child.log', timeout=3):
+        return self.ns['run'](['/usr/bin/python3', '-I', '-B', '-c', code], name,
+                              source=source, length=length, timeout=timeout)
+
+    def test_large_early_stdout_and_partial_input_are_drained_together(self):
+        payload = bytes(range(256))*1024
+        read_fd, write_fd = os.pipe()
+        def produce():
+            with os.fdopen(write_fd, 'wb', buffering=0) as output:
+                for offset in range(0, len(payload), 4093):
+                    part = payload[offset:offset+4093]
+                    while part: part = part[output.write(part):]
+        writer = threading.Thread(target=produce)
+        writer.start()
+        code = ('import hashlib,sys\n'
+                'sys.stdout.write("x"*131072);sys.stdout.flush()\n'
+                'data=sys.stdin.buffer.read()\n'
+                'print("\\n"+hashlib.sha256(data).hexdigest()+":"+str(len(data)))')
+        try:
+            with os.fdopen(read_fd, 'rb', buffering=0) as source:
+                self.run_child(code, source, len(payload))
+                self.assertTrue(os.get_blocking(source.fileno()))
+        finally:
+            writer.join(timeout=1)
+        self.assertFalse(writer.is_alive())
+        self.assertEqual((self.base/'child.log').read_bytes(), b'x'*131072+b'\n'+
+                         hashlib.sha256(payload).hexdigest().encode()+b':262144\n')
+
+    def test_stalled_upstream_times_out_and_retains_partial_child_evidence(self):
+        read_fd, write_fd = os.pipe()
+        partial = self.base / 'partial-evidence'
+        code = f'import pathlib,sys;pathlib.Path({str(partial)!r}).write_bytes(b"partial");print("started",flush=True);sys.stdin.buffer.read()'
+        try:
+            with os.fdopen(read_fd, 'rb', buffering=0) as source:
+                with self.assertRaisesRegex(AssertionError, 'Child deadline exceeded'):
+                    self.run_child(code, source, 1, timeout=0.3)
+                self.assertTrue(os.get_blocking(source.fileno()))
+        finally: os.close(write_fd)
+        self.assertEqual(partial.read_bytes(), b'partial')
+        self.assertEqual((self.base/'child.log').read_bytes(), b'started\n')
+
+    def test_child_that_will_not_read_cannot_block_input_write_past_deadline(self):
+        with tempfile.TemporaryFile() as source:
+            source.write(b'x'*262144); source.seek(0)
+            with self.assertRaisesRegex(AssertionError, 'Child deadline exceeded'):
+                self.run_child('import time;print("blocked",flush=True);time.sleep(30)', source, 262144, timeout=0.3)
+            self.assertTrue(os.get_blocking(source.fileno()))
+        self.assertEqual((self.base/'child.log').read_bytes(), b'blocked\n')
+
+    def test_upstream_must_close_after_exact_length_under_same_deadline(self):
+        read_fd, write_fd = os.pipe(); os.write(write_fd, b'abc')
+        try:
+            with os.fdopen(read_fd, 'rb', buffering=0) as source:
+                with self.assertRaisesRegex(AssertionError, 'Child deadline exceeded'):
+                    self.run_child('import sys;print(len(sys.stdin.buffer.read()),flush=True)', source, 3, timeout=0.3)
+        finally: os.close(write_fd)
+        self.assertEqual((self.base/'child.log').read_bytes(), b'3\n')
+
+    def test_truncated_and_extra_input_refuse_without_reusing_logs(self):
+        for data, length, reason in [(b'abc', 4, 'Truncated input'), (b'abcd', 3, 'Extra transport bytes')]:
+            with self.subTest(reason=reason), tempfile.TemporaryFile() as source:
+                source.write(data); source.seek(0)
+                with self.assertRaisesRegex(AssertionError, reason):
+                    self.run_child('import sys;sys.stdin.buffer.read()', source, length, name=reason+'.log')
+                self.assertTrue(os.get_blocking(source.fileno()))
+        self.assertEqual(len(list(self.base.glob('*.log'))), 2)
+
+    def test_post_input_child_stall_still_expires(self):
+        with tempfile.TemporaryFile() as source:
+            source.write(b'abc'); source.seek(0)
+            with self.assertRaisesRegex(AssertionError, 'Child deadline exceeded'):
+                self.run_child('import sys,time;print(len(sys.stdin.buffer.read()),flush=True);time.sleep(30)', source, 3, timeout=0.3)
+        self.assertEqual((self.base/'child.log').read_bytes(), b'3\n')
+
+    def test_receive_budget_allows_observed_712_seconds_without_long_sleep(self):
+        calls = iter([0])
+        self.ns['time'] = types.SimpleNamespace(monotonic=lambda: next(calls, 712))
+        with tempfile.TemporaryFile() as source:
+            source.write(b'abc'); source.seek(0)
+            self.run_child('import sys;print(len(sys.stdin.buffer.read()))', source, 3, timeout=1800)
+        self.assertEqual((self.base/'child.log').read_bytes(), b'3\n')
+        calls = iter([0])
+        with tempfile.TemporaryFile() as source:
+            source.write(b'abc'); source.seek(0)
+            with self.assertRaisesRegex(AssertionError, 'Child deadline exceeded'):
+                self.run_child('import sys;sys.stdin.buffer.read()', source, 3, name='old-budget.log', timeout=600)
+
+    def test_both_receivers_and_parent_wrapper_use_finite_nested_budgets(self):
+        tree = ast.parse((ROOT/'remote_transport.py').read_bytes())
+        values = {}
+        names = {'RECEIVE_TIMEOUT_SECONDS', 'TRANSPORT_RUNTIME_SECONDS'}
+        assignments = [node for node in tree.body if isinstance(node, ast.Assign) and
+                       any(isinstance(target, ast.Name) and target.id in names for target in node.targets)]
+        exec(compile(ast.Module(body=assignments, type_ignores=[]), '<budget-fixture>', 'exec'), values)
+        self.assertEqual(values['RECEIVE_TIMEOUT_SECONDS'], 1800)
+        self.assertEqual(values['TRANSPORT_RUNTIME_SECONDS'], 6000)
+        receivers = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and
+                     isinstance(node.func, ast.Name) and node.func.id == 'run' and len(node.args) > 1 and
+                     isinstance(node.args[1], ast.Constant) and node.args[1].value == 'receiver.log']
+        self.assertEqual(len(receivers), 2)
+        for receiver in receivers:
+            timeout = next(keyword.value for keyword in receiver.keywords if keyword.arg == 'timeout')
+            self.assertIsInstance(timeout, ast.Name)
+            self.assertEqual(timeout.id, 'RECEIVE_TIMEOUT_SECONDS')
+        wrapper = safe_module('transport_preserve.py')
+        self.assertEqual(wrapper.TRANSPORT_RUNTIME_SECONDS, values['TRANSPORT_RUNTIME_SECONDS'])
+        self.assertEqual(wrapper.TRANSPORT_REMOTE_TIMEOUT_SECONDS, 6300)
+        bounded_children = 1800+120+600+900+600+600+8*90
+        self.assertEqual(values['TRANSPORT_RUNTIME_SECONDS']-bounded_children, 660)
+        self.assertGreater(wrapper.TRANSPORT_REMOTE_TIMEOUT_SECONDS, 6000+2*60+30)
 
 
 class PublishCompatibilityTimeout(unittest.TestCase):

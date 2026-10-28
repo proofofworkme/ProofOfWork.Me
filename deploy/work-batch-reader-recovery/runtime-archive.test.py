@@ -282,6 +282,59 @@ class ArchiveTests(unittest.TestCase):
   prior=copy.deepcopy(self.predecessor);prior['manifest']['sources'].append(prior['manifest']['sources'][0])
   with self.assertRaisesRegex(ValueError,'predecessor acceptance scope'):
    a.extend_inventory(self.m,self.r,self.accepted_value,[],self.actual,lambda name:None,prior)
+ def second_failure(self):
+  original=copy.deepcopy(self.predecessor)
+  rows=[]
+  for current in self.m['sources']:
+   row=copy.deepcopy(current);row['after']=current['before']
+   rows.append(row)
+  original['contract']={}
+  for key in ('plan','manifest','receipt','dispatch'):
+   path=self.root/('first-failure-'+key+'.json');raw=encode({'firstFailure':key})
+   path.write_bytes(raw);original['contract'][key]={'path':str(path),'sha256':a.sha(raw)}
+  qpath=self.root/'first-recovery-rehearsal.json';qraw=encode({'previousRehearsal':'qualified-history-only'})
+  qpath.write_bytes(qraw)
+  self.predecessor={'manifest':{'sources':rows},'ancestors':[original],
+   'contract':copy.deepcopy(self.m['predecessor']),
+   'dispatch':{'rehearsal':{'path':str(qpath),'sha256':a.sha(qraw)}}}
+ def test_two_failed_attempts_preserve_all_generations_and_rehearsal_custody(self):
+  self.second_failure();self.run_accept()
+  accepted=json.loads(self.accepted.read_bytes())
+  mapping=json.loads((self.custody/'evidence-origins.json').read_bytes())
+  self.assertEqual(len(mapping['copies']),13)
+  for copy_row in mapping['copies']:
+   self.assertEqual(Path(copy_row['origin']['path']).read_bytes(),Path(copy_row['retained']['path']).read_bytes())
+  self.assertTrue((self.custody/'predecessor-1-summary-rehearsal-qualified.json').exists())
+  for row in accepted['overlays']:
+   if row['path']in a.TARGETS:
+    self.assertEqual(len(row['evidence']),16)
+    self.assertTrue(all(self.base in Path(ref['path']).parents for ref in row['evidence']))
+  self.assertEqual(json.loads((self.custody/'source-overlays-before.json').read_bytes()),self.accepted_value)
+ def test_four_generation_reader_and_three_generation_api_never_accept_intermediate_hashes(self):
+  self.second_failure()
+  for current,prior in zip(self.m['sources'],self.predecessor['manifest']['sources']):
+   self.assertEqual(current['path'],prior['path'])
+   prior['after']=a.sha(('second failed '+current['path']).encode());current['before']=prior['after']
+  result,_=a.extend_inventory(self.m,self.r,self.accepted_value,[],self.actual,lambda name:None,self.predecessor)
+  for current in self.m['sources']:
+   self.assertEqual(next(row for row in result['overlays']if row['path']==current['path'])['sha256'],current['after'])
+  wrong=copy.deepcopy(self.accepted_value)
+  next(row for row in wrong['overlays']if row['path']=='server/proof-api.mjs')['sha256']=self.predecessor['manifest']['sources'][1]['after']
+  with self.assertRaisesRegex(ValueError,'Accepted before hash'):
+   a.extend_inventory(self.m,self.r,wrong,[],self.actual,lambda name:None,self.predecessor)
+ def test_missing_nested_or_extra_ancestor_refuses_acceptance(self):
+  self.second_failure();self.predecessor['ancestors'].append(copy.deepcopy(self.predecessor['ancestors'][0]))
+  with self.assertRaisesRegex(ValueError,'Expanded predecessor lineage'):
+   a.extend_inventory(self.m,self.r,self.accepted_value,[],self.actual,lambda name:None,self.predecessor)
+ def test_broken_nested_reader_chain_refuses_acceptance(self):
+  self.second_failure();self.predecessor['ancestors'][0]['manifest']['sources'][0]['after']='0'*64
+  with self.assertRaisesRegex(ValueError,'byte chain'):
+   a.extend_inventory(self.m,self.r,self.accepted_value,[],self.actual,lambda name:None,self.predecessor)
+ def test_nested_evidence_changed_during_acceptance_refuses(self):
+  self.second_failure();ref=self.predecessor['ancestors'][0]['contract']['receipt']
+  Path(ref['path']).write_bytes(b'foreign')
+  with self.assertRaisesRegex(ValueError,'digest differs'):self.run_accept()
+  self.assertEqual(a.sha(self.accepted.read_bytes()),self.pin)
  def test_missing_search_restore_refuses_successful_inner_receipt(self):
   dispatch=copy.deepcopy(self.dispatch);outcome=json.loads(dispatch['stdout']);outcome.pop('searchRestore');dispatch['stdout']=json.dumps(outcome)
   with self.assertRaisesRegex(ValueError,'Search restoration'):a.validate_dispatch(self.approval,self.m,self.r,dispatch)

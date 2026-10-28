@@ -508,6 +508,52 @@ try {
     "future work succeeds after a silent-peer reset",
   );
 
+  // A slow general-history request must not reset the separate canonical DNS
+  // proof connection. Exercise actual sockets and the same watchdog behavior.
+  const isolationClock = new ManualClock();
+  const generalLane = client({ maxInFlight: 1, maxQueue: 0,
+    expiredOperationGraceMs: 25, testHooks: isolationClock.hooks() });
+  const summaryLane = client({ maxInFlight: 1, maxQueue: 0,
+    expiredOperationGraceMs: 25, testHooks: isolationClock.hooks() });
+  const generalStall = generalLane.request("test.general-history-stall", [], 100);
+  const generalRequest = await within(fake.nextRequest(record => record.payload.method === "test.general-history-stall"));
+  const firstDns = summaryLane.request("blockchain.block.header", [973537], 1_000);
+  const firstDnsRequest = await within(fake.nextRequest(record => record.payload.method === "blockchain.block.header"));
+  ok(firstDnsRequest.connectionId !== generalRequest.connectionId, "DNS uses its own persistent socket");
+  const generalRejection = rejects(generalStall,
+    error => error instanceof ElectrumDeadlineError && error.phase === "response",
+    "general history still expires at its own deadline");
+  isolationClock.advance(100);
+  await generalRejection;
+  isolationClock.advance(25);
+  equal(generalLane.snapshot().stats.deadlineResets, 1, "general lane watchdog resets its own socket");
+  equal(summaryLane.snapshot().stats.resets, 0, "general reset does not reset canonical DNS");
+  equal(summaryLane.snapshot().inFlight, 1, "canonical DNS proof remains in flight");
+  firstDnsRequest.reply("header-before");
+  equal(await firstDns, "header-before", "pending canonical header survives general reset");
+  for (const [method, params, response] of [
+    ["blockchain.scripthash.get_history", ["dns-fixture"], "history-before"],
+    ["blockchain.scripthash.get_history", ["dns-fixture"], "history-after"],
+    ["blockchain.block.header", [973537], "header-after"],
+  ]) {
+    const promise = summaryLane.request(method, params, 1_000);
+    const request = await within(fake.nextRequest(record => record.payload.method === method));
+    equal(request.connectionId, firstDnsRequest.connectionId, "all four DNS proofs reuse the isolated socket");
+    request.reply(response);
+    equal(await promise, response, "canonical DNS sequence completes after unrelated reset");
+  }
+  const ownDnsTimeout = summaryLane.request("test.dns-own-timeout", [], 100);
+  await within(fake.nextRequest(record => record.payload.method === "test.dns-own-timeout"));
+  const ownDnsRejection = rejects(ownDnsTimeout,
+    error => error instanceof ElectrumDeadlineError && error.phase === "response",
+    "canonical DNS lane still fails on its own proof timeout");
+  isolationClock.advance(100);
+  await ownDnsRejection;
+  isolationClock.advance(25);
+  deepEqual({ inFlight: summaryLane.snapshot().inFlight, queued: summaryLane.snapshot().queued,
+    singleflight: summaryLane.snapshot().singleflight }, { inFlight: 0, queued: 0, singleflight: 0 },
+  "canonical DNS timeout retains bounded cleanup");
+
   const capped = client({
     maxInFlight: 2,
     maxQueue: 2,

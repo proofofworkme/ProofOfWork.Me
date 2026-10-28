@@ -21,6 +21,11 @@ SEARCH = ('proofofwork-search-index.service', 'proofofwork-search-index.timer')
 NEW = frozenset()
 ALLOWED = frozenset({'server/db/proof-index-reader.mjs', 'server/proof-api.mjs'})
 PREDECESSOR_CONTROLLER_SHA = 'f17799cea310a3d0a97c936a6608c7b4447e7d41da076bcdb0c950050c967dc1'
+RECOVERY_PREDECESSOR_CONTROLLER_SHA = '6284e5a121db3b90b42f8aff6225b33194aefba91063b8e3c46a57b9c9be0070'
+RECOVERY_PREDECESSOR_COMMIT = '7b9242a24ee15bc28194d97270bf1dea2e9b6f31'
+RECOVERY_PREDECESSOR_RELEASE = '7b9242a24ee1-20261028T101200Z'
+RECOVERY_PREDECESSOR_PLAN_SHA = 'c5a3c9064f54c2ba5f1ecb7581cd60f6961d0e0f7a2bccef31feab66e5656e86'
+RECOVERY_PREDECESSOR_MANIFEST_SHA = '400af71d06b97bdd647f358f897d7ab752e70e012ef821e02d51861a71af03cc'
 READER = 'server/db/proof-index-reader.mjs'
 METADATA_TEMPLATE = 'src/shared/protocol/publishArticle.mjs'
 # Must match the final accepted pre-batch release before planning or deployment.
@@ -82,23 +87,28 @@ def validate_rehearsal(value, plan, plan_sha256):
 def load_predecessor(p):
     """Read immutable failed-attempt evidence; never relabel it successful/accepted."""
     require(type(p)is dict and set(p)=={'format','plan','manifest','receipt','dispatch','unit'}
-        and p['format']=='work-batch-reader-recovery-predecessor-v1','Invalid predecessor contract')
+        and p['format'] in ('work-batch-reader-recovery-predecessor-v1',
+            'work-batch-reader-recovery-predecessor-v2'),'Invalid predecessor contract')
+    recovery=p['format']=='work-batch-reader-recovery-predecessor-v2'
+    family='work-batch-reader-recovery' if recovery else 'work-batch-reader-fix'
+    allowed=ALLOWED if recovery else frozenset({READER})
     plan=json.loads(evidence_reference(p['plan']));m=json.loads(evidence_reference(p['manifest']))
     r=json.loads(evidence_reference(p['receipt']));dispatch=json.loads(evidence_reference(p['dispatch']))
     raw=base64.b64decode(plan['controllerBase64'],validate=True)
-    require(sha(raw)==plan['controllerSha256']==PREDECESSOR_CONTROLLER_SHA,'Wrong predecessor controller')
-    old={'__name__':'_frozen_reader_fix'};exec(compile(raw,'frozen-reader-fix-scoped-node.py','exec'),old)
-    require(old['ALLOWED']==frozenset({READER}) and old['BASE_SOURCE_COMMIT']==BASE_SOURCE_COMMIT,
+    require(sha(raw)==plan['controllerSha256']==(RECOVERY_PREDECESSOR_CONTROLLER_SHA if recovery
+        else PREDECESSOR_CONTROLLER_SHA),'Wrong predecessor controller')
+    old={'__name__':'_frozen_reader_fix'};exec(compile(raw,'frozen-'+family+'-scoped-node.py','exec'),old)
+    require(old['ALLOWED']==allowed and old['BASE_SOURCE_COMMIT']==BASE_SOURCE_COMMIT,
         'Wrong predecessor source scope')
     expected=json.loads(json.dumps(plan['runtimeManifestTemplate']))
     expected['searchHold']['markerSha256']=m.get('searchHold',{}).get('markerSha256')
-    require(plan.get('format')=='proof-of-work-work-batch-reader-fix-rollout-plan-v1'
+    require(plan.get('format')=='proof-of-work-'+family+'-rollout-plan-v1'
         and m==expected and plan['sourceCommit']==m['sourceCommit'] and plan['releaseId']==m['releaseId'],
         'Predecessor manifest differs from reviewed plan')
     old['validate_manifest'](m)
     directory=Path(r.get('rollbackRoot',''))
     require(directory.parent==BACKUPS and directory.resolve(strict=True)==directory
-        and re.fullmatch('work-batch-reader-fix-'+re.escape(m['releaseId'])+r'-[0-9]{8}T[0-9]{6}Z',directory.name)
+        and re.fullmatch(family+'-'+re.escape(m['releaseId'])+r'-[0-9]{8}T[0-9]{6}Z',directory.name)
         and Path(p['manifest']['path'])==directory/'manifest.json'
         and Path(p['receipt']['path'])==directory/'receipt.json','Wrong predecessor custody')
     info=directory.lstat();require(stat.S_ISDIR(info.st_mode) and info.st_uid==info.st_gid==0
@@ -112,42 +122,69 @@ def load_predecessor(p):
         and r.get('recoveryErrorClass')=='ValueError' and 'completedAt' not in r and 'postflight' not in r,
         'Predecessor is not the completed forward-only failure')
     require(r.get('sources')==[{k:v for k,v in row.items() if k!='base64'} for row in m['sources']]
-        and r.get('dependencyCount')==len(m['dependencies']) and set(r.get('createdHelpers',{}))=={READER},
+        and r.get('dependencyCount')==len(m['dependencies']) and set(r.get('createdHelpers',{}))==allowed,
         'Predecessor source publication evidence differs')
     outcome=json.loads(dispatch.get('stdout','{}'))
-    require(dispatch.get('format')=='proof-of-work-work-batch-reader-fix-node-dispatch-receipt-v1'
+    require(dispatch.get('format')=='proof-of-work-'+family+'-node-dispatch-receipt-v1'
         and dispatch.get('planSha256')==p['plan']['sha256'] and dispatch.get('releaseId')==m['releaseId']
         and dispatch.get('dispatchStatus')=='refused' and type(dispatch.get('exitCode'))is int
-        and dispatch['exitCode']!=0 and outcome.get('format')=='proof-of-work-work-batch-reader-fix-rollout-result-v1'
+        and dispatch['exitCode']!=0 and outcome.get('format')=='proof-of-work-'+family+'-rollout-result-v1'
         and outcome.get('releaseId')==m['releaseId'] and 'searchRestoreDeferred' in outcome
         and 'searchRestore' not in outcome and 'overlay' not in outcome,'Predecessor dispatcher is not terminal held failure')
-    require(p['unit']=='pow-work-batch-reader-fix-'+m['sourceCommit'][:12]+'.service',
-        'Wrong predecessor unit identity')
-    return {'plan':plan,'manifest':m,'receipt':r,'dispatch':dispatch,'outcome':outcome,'old':old}
+    require(p['unit']==('pow-work-batch-reader-recovery-'+m['releaseId']+'.service' if recovery
+        else 'pow-work-batch-reader-fix-'+m['sourceCommit'][:12]+'.service'),'Wrong predecessor unit identity')
+    ancestors=[]
+    if recovery:
+        # Exactly one additional, source-pinned failed attempt. The frozen 6284
+        # controller admits only the original one-file 914 failure; no recursion
+        # or caller-supplied controller trust is introduced here.
+        require(m['sourceCommit']==RECOVERY_PREDECESSOR_COMMIT and m['releaseId']==RECOVERY_PREDECESSOR_RELEASE
+            and p['plan']['sha256']==RECOVERY_PREDECESSOR_PLAN_SHA
+            and p['manifest']['sha256']==RECOVERY_PREDECESSOR_MANIFEST_SHA
+            and r.get('predecessor')==m['predecessor'],'Wrong fixed recovery predecessor')
+        ancestor=old['load_predecessor'](m['predecessor'])
+        require(m['predecessor']['format']=='work-batch-reader-recovery-predecessor-v1'
+            and r['authority']==ancestor['receipt']['authority']
+            and outcome.get('hold')==ancestor['outcome'].get('hold'),'Original authority or Search hold lineage differs')
+        ref=dispatch.get('rehearsal')
+        qualification=json.loads(evidence_reference(ref))
+        old['validate_rehearsal'](qualification,plan,p['plan']['sha256'])
+        ancestor['contract']=m['predecessor'];ancestors.append(ancestor)
+    return {'plan':plan,'manifest':m,'receipt':r,'dispatch':dispatch,'outcome':outcome,'old':old,
+        'contract':p,'ancestors':ancestors}
+
 
 def predecessor_fence(p, current=True):
     v=load_predecessor(p);m=v['manifest'];r=v['receipt'];old=v['old']
     unit=dict(line.split('=',1)for line in ctl('show',p['unit'],'-p','ActiveState','-p','MainPID','-p','ExecMainStatus').splitlines())
     require(unit.get('ActiveState')in ('inactive','failed') and unit.get('MainPID')=='0'
         and unit.get('ExecMainStatus')=='1','Predecessor is still running or has an unexpected terminal state')
-    row=m['sources'][0];owned=r['createdHelpers'][READER]
-    require(owned.get('published')is True and owned.get('candidateSha256')==row['after']
-        and owned.get('baselineIdentity')==m['sourceIdentities'][READER],'Predecessor publication journal differs')
-    quarantine=Path(owned['quarantine']);q=quarantine.lstat()
-    require(quarantine.parent==QUARANTINE_PARENT and quarantine.resolve(strict=True)==quarantine
-        and stat.S_ISDIR(q.st_mode) and q.st_uid==q.st_gid==0 and stat.S_IMODE(q.st_mode)==0o700
-        and quarantine.name.startswith('.proofofwork-work-batch-reader-fix-')
-        and Path(owned['beforePath'])==quarantine/'before-0.mjs','Wrong retained predecessor inode custody')
-    before=Path(owned['beforePath'])
-    require(creation_identity(before.lstat())==owned['baselineIdentity'] and sha(safe_read(before))==row['before']
-        and sha(safe_read(Path(r['rollbackRoot'])/'before-0.mjs'))==row['before'],
-        'Original accepted reader inode or byte evidence changed')
+    family='work-batch-reader-recovery' if v['ancestors'] else 'work-batch-reader-fix'
+    if v['ancestors']:
+        # The original accepted inode remains in its first quarantine even
+        # though its later installed reader now resides in the next quarantine.
+        old['predecessor_fence'](m['predecessor'],current=False)
+    for index,row in enumerate(m['sources']):
+        name=row['path'];owned=r['createdHelpers'][name]
+        require(owned.get('published')is True and owned.get('candidateSha256')==row['after']
+            and owned.get('baselineIdentity')==m['sourceIdentities'][name],'Predecessor publication journal differs')
+        quarantine=Path(owned['quarantine']);q=quarantine.lstat()
+        require(quarantine.parent==QUARANTINE_PARENT and quarantine.resolve(strict=True)==quarantine
+            and stat.S_ISDIR(q.st_mode) and q.st_uid==q.st_gid==0 and stat.S_IMODE(q.st_mode)==0o700
+            and quarantine.name.startswith('.proofofwork-'+family+'-')
+            and Path(owned['beforePath'])==quarantine/('before-'+str(index)+'.mjs'),
+            'Wrong retained predecessor inode custody')
+        before=Path(owned['beforePath'])
+        require(creation_identity(before.lstat())==owned['baselineIdentity'] and sha(safe_read(before))==row['before']
+            and sha(safe_read(Path(r['rollbackRoot'])/('before-'+str(index)+'.mjs')))==row['before'],
+            'Original accepted source inode or byte evidence changed')
     accepted_inventory_fence(m['acceptedInventorySha256'])
     require_restart_configuration(m['restartConfigurationSha256'])
     if current:
         require_apps_drained();old['installed_source_fence'](ROOT,m,r['createdHelpers'])
         metadata_fence(ROOT,m['dependencyMetadata'],installed=True)
-        require(all(sha(safe_read(ROOT/name))==(row['after'] if name==READER else expected)
+        changed={row['path']:row['after'] for row in m['sources']}
+        require(all(sha(safe_read(ROOT/name))==changed.get(name,expected)
             for name,expected in m['dependencies'].items()),'Preserved predecessor dependency changed')
         require(states(AUTHORITY)==r['authority'],'Authority process changed since predecessor')
         require_search_held(states(SEARCH))
@@ -278,7 +315,7 @@ def validate_manifest(m):
     require(isinstance(hold, dict) and set(hold) == {'markerSha256', 'bindings'} and
         SHA.fullmatch(hold['markerSha256']), 'Missing Search hold')
     bindings = hold['bindings']
-    require(isinstance(bindings, dict) and bindings.get('releaseId') == load_predecessor(m['predecessor'])['manifest']['releaseId'] and
+    require(isinstance(bindings, dict) and bindings.get('releaseId') == load_predecessor(m['predecessor'])['manifest']['searchHold']['bindings']['releaseId'] and
         set(bindings.get('files', {})) == set(SEARCH) and
         all(SHA.fullmatch(value) for value in bindings['files'].values()), 'Wrong Search bindings')
     require(isinstance(m.get('sourceIdentities'),dict) and set(m['sourceIdentities'])==ALLOWED
@@ -296,7 +333,7 @@ def validate_manifest(m):
     for key in ('baselineHead','baseSourceCommit','acceptedInventorySha256','restartConfigurationSha256',
             'nodeSha256','gateway','protectedServices','batchAuthority','searchHold','dependencyMetadata'):
         require(m[key]==pm[key],'Recovery changes predecessor preservation contract: '+key)
-    expected=dict(pm['dependencies']);expected[READER]=pm['sources'][0]['after']
+    expected=dict(pm['dependencies']);expected.update({row['path']:row['after']for row in pm['sources']})
     require(m['dependencies']==expected and m.get('nodePath')==prior['plan']['nodePath'],
         'Recovery dependency/Node closure differs from predecessor')
     require(m['sourceMetadata']=={name:pm['dependencyMetadata'][name]for name in ALLOWED},
@@ -304,7 +341,8 @@ def validate_manifest(m):
     by_path={row['path']:row for row in rows}
     require(all(by_path[name]['before']==expected[name] for name in ALLOWED)
         and by_path['server/proof-api.mjs']['after']!=expected['server/proof-api.mjs']
-        and m['sourceIdentities'][READER]==pr['createdHelpers'][READER]['candidateIdentity'],
+        and all(m['sourceIdentities'][row['path']]==pr['createdHelpers'][row['path']]['candidateIdentity']
+            for row in pm['sources']),
         'Recovery does not preserve the exact installed reader lineage')
     return candidates
 

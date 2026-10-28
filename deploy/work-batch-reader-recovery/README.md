@@ -2,9 +2,10 @@
 
 This controller completes the failed `work-batch-reader-fix` incident. It changes
 only the existing `server/db/proof-index-reader.mjs` and `server/proof-api.mjs`.
-The reader starts from the exact installed predecessor candidate and receives
-the reviewed child fee projection correction; the API receives the reviewed
-growth-accounting correction. Both resulting hashes are bound to the committed
+The reader starts from the exact installed predecessor candidate and preserves
+the reviewed child fee projection correction. The API retains the reviewed
+growth-accounting correction and can receive the summary-transport isolation
+follow-up. Both resulting hashes are bound to the committed
 composition plan and successful full-summary rehearsal. It performs no SQL,
 replay, reseal, declaration, activation-config, Git, authority-service, or cleanup
 operation.
@@ -42,6 +43,23 @@ The expected predecessor controller is pinned to
 It must report installed, source-writes-started, forward-recovery-required,
 source-rollback-prohibited and recovery-incomplete; rolled-back must be false.
 The accepted source inventory must still be the original captured inventory.
+
+The summary-transport follow-up may instead use
+`work-batch-reader-recovery-predecessor-v2`, with the same six fields. This form
+admits only recovery commit `7b9242a24ee15bc28194d97270bf1dea2e9b6f31`, release
+`7b9242a24ee1-20261028T101200Z`, and its frozen controller hash
+`6284e5a121db3b90b42f8aff6225b33194aefba91063b8e3c46a57b9c9be0070`.
+It requires that attempt's actual terminal failed receipt and dispatch, including
+its successful unpublished rehearsal, before capture or apply. A running attempt
+cannot be used as a predecessor. Its frozen verifier also verifies the original
+one-file failure; this is a fixed two-attempt chain, not recursive trust in an
+operator-supplied controller.
+
+Both installed files and their retained before-inodes must match the second
+attempt. The reader can retain its corrected bytes while the API receives the
+reviewed Electrum isolation change. Original authority processes, accepted source
+inventory, configuration and the first attempt's Search hold remain bound.
+Search restoration uses that original hold's release identity.
 
 With `SRC`, `OPS`, `COMMIT`, and `RELEASE_ID` set to reviewed absolute VPS paths and
 the final source identity, run these preparation commands in order:
@@ -140,10 +158,12 @@ acceptedSha256, previousCompletion path/hash/archiveSha256, and heldSha256.
 The dispatch binds the mandatory rehearsal qualification. Archive acceptance
 rechecks it against the exact plan and retains a hash-identical custody copy.
 
-For the reader, acceptance proves the chain from accepted C2 bytes to the failed
-predecessor's installed reader to the reviewed recovery reader. The API must
-start at its original accepted before hash. The adapter does not pretend that
-the failed installation was already accepted. It preserves all unrelated
+For the reader, acceptance proves the chain from accepted C2 bytes through each
+admitted failed installation to the reviewed recovery reader. With a v2
+predecessor, it similarly walks the API's two installed generations back to its
+original accepted before hash. Both failed attempts' evidence and the earlier
+rehearsal remain retained. The adapter does not pretend that a failed
+installation was already accepted. It preserves all unrelated
 overlays and retains hash-identical copies of any compact evidence outside
 `/data/proofofwork-release-backups` in the new archive custody, with origin maps.
 

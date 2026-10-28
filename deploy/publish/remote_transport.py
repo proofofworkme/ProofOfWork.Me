@@ -27,6 +27,8 @@ PERMISSION_SURFACES = [*PAGES_SURFACES, 'permission']
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C', 'GIT_OPTIONAL_LOCKS': '0'}
 EVIDENCE_RESERVE = 32*1024**2
 TOTAL_LOG_CEILING = 16*1024**2
+RECEIVE_TIMEOUT_SECONDS = 1800
+TRANSPORT_RUNTIME_SECONDS = 6000
 captured_log_bytes = 0
 
 
@@ -171,32 +173,60 @@ def run(argv, name, *, source=None, length=0, extra=None, timeout=600, file_limi
         resource.setrlimit(resource.RLIMIT_FSIZE, (file_limit, file_limit))
     with (out / name).open('xb') as log:
         child = subprocess.Popen(argv, env={**env, **(extra or {})}, cwd='/',
-            stdin=subprocess.PIPE if source else subprocess.DEVNULL,
+            stdin=subprocess.PIPE if source is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             pass_fds=(lock_fd,), start_new_session=True, preexec_fn=limits)
-        selector = selectors.DefaultSelector(); selector.register(child.stdout, selectors.EVENT_READ)
+        # Poll also supports regular-file fixture inputs. The live source and
+        # child pipes must never block outside the same finite deadline.
+        selector = selectors.PollSelector()
         deadline = time.monotonic() + timeout; count = 0
+        source_fd = None; source_blocking = None; pending = b''; remaining = length
         try:
-            if source:
-                remaining = length
-                while remaining:
-                    data = source.read(min(65536, remaining)); assert data, 'Truncated input'
-                    child.stdin.write(data); remaining -= len(data)
-                child.stdin.close()
+            selector.register(child.stdout, selectors.EVENT_READ, 'output')
+            if source is not None:
+                assert type(length) is int and length > 0
+                source_fd = source.fileno(); source_blocking = os.get_blocking(source_fd)
+                os.set_blocking(source_fd, False); os.set_blocking(child.stdin.fileno(), False)
+                selector.register(source_fd, selectors.EVENT_READ, 'source')
             while selector.get_map():
-                assert time.monotonic() < deadline, 'Child deadline exceeded'
-                for key, _ in selector.select(timeout=0.5):
-                    data = os.read(key.fileobj.fileno(), 65536)
-                    if not data:
-                        selector.unregister(key.fileobj); continue
-                    count += len(data); captured_log_bytes += len(data)
-                    assert count <= 4*1024**2 and captured_log_bytes <= TOTAL_LOG_CEILING, 'Child log bound exceeded'
-                    log.write(data)
+                left = deadline - time.monotonic()
+                assert left > 0, 'Child deadline exceeded'
+                for key, _ in selector.select(timeout=min(0.5, left)):
+                    if key.data == 'source':
+                        try: data = os.read(source_fd, min(65536, remaining) if remaining else 1)
+                        except BlockingIOError: continue
+                        if not remaining:
+                            assert data == b'', 'Extra transport bytes'
+                            selector.unregister(source_fd); continue
+                        assert data, 'Truncated input'
+                        pending = data; remaining -= len(data)
+                        selector.unregister(source_fd)
+                        selector.register(child.stdin, selectors.EVENT_WRITE, 'input')
+                    elif key.data == 'input':
+                        try: written = os.write(child.stdin.fileno(), pending)
+                        except BlockingIOError: continue
+                        assert written > 0, 'Child input write failed'
+                        pending = pending[written:]
+                        if not pending:
+                            selector.unregister(child.stdin)
+                            if not remaining: child.stdin.close()
+                            # After the last byte, require upstream EOF under
+                            # this deadline too, rather than block after run().
+                            selector.register(source_fd, selectors.EVENT_READ, 'source')
+                    else:
+                        data = os.read(key.fileobj.fileno(), 65536)
+                        if not data:
+                            selector.unregister(key.fileobj); continue
+                        count += len(data); captured_log_bytes += len(data)
+                        assert count <= 4*1024**2 and captured_log_bytes <= TOTAL_LOG_CEILING, 'Child log bound exceeded'
+                        log.write(data)
+            assert time.monotonic() < deadline, 'Child deadline exceeded'
             assert child.wait(timeout=max(0.001, deadline-time.monotonic())) == 0, name
         finally:
             if child.poll() is None:
                 os.killpg(child.pid, signal.SIGKILL); child.wait(timeout=15)
             if child.stdin and not child.stdin.closed: child.stdin.close()
+            if source_blocking is not None: os.set_blocking(source_fd, source_blocking)
             selector.close(); child.stdout.close()
             log.flush(); os.fsync(log.fileno())
 
@@ -475,7 +505,8 @@ fields = dict(line.split('=', 1) for line in subprocess.check_output([
     '/usr/bin/systemctl', 'show', unit, '-p', 'ActiveState', '-p', 'MainPID',
     '-p', 'KillMode', '-p', 'RuntimeMaxUSec', '-p', 'ControlGroup'], env=ENV, text=True, timeout=10).splitlines())
 assert fields['ActiveState'] == 'active' and fields['MainPID'] == str(os.getpid())
-assert fields['KillMode'] == 'control-group' and fields['RuntimeMaxUSec'] == '20min'
+expected_runtime = f'{TRANSPORT_RUNTIME_SECONDS // 3600}h {TRANSPORT_RUNTIME_SECONDS % 3600 // 60}min'
+assert fields['KillMode'] == 'control-group' and fields['RuntimeMaxUSec'] == expected_runtime
 assert fields['ControlGroup'].endswith('/' + unit)
 assert any(line.endswith(':' + fields['ControlGroup']) for line in Path('/proc/self/cgroup').read_text().splitlines())
 lock = Path('/run/proofofwork-ui/deploy.lock'); before = lock.lstat()
@@ -558,7 +589,7 @@ if phase == 'source':
     receiver_code = source_receiver_code(tools / 'stream-ui-bundle.py', p['helperSha256']['receiver'], evidence_root)
     run(['/usr/bin/python3', '-I', '-B', '-c', receiver_code, kind, release,
          str(part['compressedBytes']), part['sha256'], str(evidence_root)], 'receiver.log',
-         source=sys.stdin.buffer, length=part['compressedBytes'])
+         source=sys.stdin.buffer, length=part['compressedBytes'], timeout=RECEIVE_TIMEOUT_SECONDS)
 elif phase == 'surfaces-stage':
     assert not any(key in p for key in ('resumeSurfaces', 'preservedStageResume', 'preservedCapacityResume'))
     run(['/usr/bin/python3', '-I', '-B', str(tools / 'release.py'), 'admit-ui',
@@ -567,7 +598,7 @@ elif phase == 'surfaces-stage':
         '--helper-sha', 'capacity=' + helpers['capacity']['sha256']], 'receive-admission.log', timeout=120)
     run(['/usr/bin/python3', '-I', '-B', str(tools / 'stream-ui-bundle.py'), kind, release,
          str(part['compressedBytes']), part['sha256']], 'receiver.log',
-         source=sys.stdin.buffer, length=part['compressedBytes'])
+         source=sys.stdin.buffer, length=part['compressedBytes'], timeout=RECEIVE_TIMEOUT_SECONDS)
 assert sys.stdin.buffer.read(1) == b'', 'Extra transport bytes'
 stage = BASE / ('proofofwork-www-stage-' + release)
 if phase != 'source':

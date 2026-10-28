@@ -10,6 +10,8 @@ import os
 import contextlib
 
 ROOT = Path(__file__).resolve().parent
+TRANSPORT_RUNTIME_SECONDS = 6000
+TRANSPORT_REMOTE_TIMEOUT_SECONDS = 6300
 
 
 @contextlib.contextmanager
@@ -89,7 +91,7 @@ def main():
     unit = 'proofofwork-recovery-ui-transport-' + p['releaseId'] + '-' + args.phase + '-' + p['publicationAttempt'] + '.service'
     argv = ['/usr/bin/systemd-run', '--unit=' + unit,
         '--service-type=exec', '--wait', '--pipe', '--property=User=root', '--property=Group=root',
-        '--property=KillMode=control-group', '--property=RuntimeMaxSec=20min', '--property=TimeoutStopSec=30s',
+        '--property=KillMode=control-group', '--property=RuntimeMaxSec=' + str(TRANSPORT_RUNTIME_SECONDS), '--property=TimeoutStopSec=30s',
         '--property=MemoryMax=4G', '--property=MemorySwapMax=0', '--property=TasksMax=128', '--property=UMask=0077',
         '/usr/bin/python3', '-I', '-B', '-c', script.decode(), remote_plan, sha, args.phase]
     bootstrap = "import os,subprocess,sys; assert os.geteuid()==os.getegid()==0; fields=dict(line.split('=',1) for line in subprocess.check_output(['/usr/bin/systemctl','show',sys.argv[1],'-p','LoadState','-p','ActiveState','-p','MainPID'],text=True,timeout=10).splitlines()); assert fields=={'LoadState':'not-found','ActiveState':'inactive','MainPID':'0'},'Transport unit namespace occupied; preserve evidence and reconcile'; os.execv(sys.argv[2],sys.argv[2:])"
@@ -99,7 +101,7 @@ def main():
     assert args.log.resolve() == args.log and str(args.log).startswith('/tmp/')
     context = contextlib.nullcontext(subprocess.DEVNULL) if args.phase in ('surfaces-stage-resume', 'preserved-stage-resume', 'preserved-capacity-resume') else bundle_source(p, kind, args.bundle_host)
     with context as source, args.log.open('xb') as log:
-        subprocess.run(ssh, stdin=source, stdout=log, stderr=subprocess.STDOUT, timeout=1230, check=True)
+        subprocess.run(ssh, stdin=source, stdout=log, stderr=subprocess.STDOUT, timeout=TRANSPORT_REMOTE_TIMEOUT_SECONDS, check=True)
 
 
 if __name__ == '__main__':

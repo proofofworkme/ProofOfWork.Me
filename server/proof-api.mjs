@@ -528,13 +528,42 @@ const ELECTRUM_INTERACTIVE_MAX_IN_FLIGHT = Number(
 const ELECTRUM_INTERACTIVE_MAX_QUEUE = Number(
   process.env.ELECTRUM_INTERACTIVE_MAX_QUEUE ?? 32,
 );
+function electrumReadLaneLimits(maxInFlight, maxQueue) {
+  if (!Number.isSafeInteger(maxInFlight) || maxInFlight < 1 || maxInFlight > 1_024) {
+    throw new TypeError("Electrum maxInFlight must be an integer from 1 through 1024.");
+  }
+  if (!Number.isSafeInteger(maxQueue) || maxQueue < 0 || maxQueue > 100_000) {
+    throw new TypeError("Electrum maxQueue must be an integer from 0 through 100000.");
+  }
+  // Reserve capacity, rather than adding it. A configured single slot cannot
+  // be split safely, so that configuration retains its original shared lane.
+  const summaryInFlight = Math.min(2, maxInFlight - 1);
+  const summaryQueue = summaryInFlight ? Math.min(8, maxQueue) : 0;
+  return {
+    shared: { maxInFlight: maxInFlight - summaryInFlight, maxQueue: maxQueue - summaryQueue },
+    summary: summaryInFlight ? { maxInFlight: summaryInFlight, maxQueue: summaryQueue } : null,
+  };
+}
+const ELECTRUM_READ_LANE_LIMITS = electrumReadLaneLimits(
+  ELECTRUM_MAX_IN_FLIGHT, ELECTRUM_MAX_QUEUE,
+);
 const ELECTRUM_CLIENT = createElectrumClient({
   host: ELECTRUM_HOST,
-  maxInFlight: ELECTRUM_MAX_IN_FLIGHT,
-  maxQueue: ELECTRUM_MAX_QUEUE,
+  ...ELECTRUM_READ_LANE_LIMITS.shared,
   maxResponseBytes: ELECTRUM_MAX_RESPONSE_BYTES,
   port: ELECTRUM_PORT,
 });
+// Canonical summary DNS proofs must not lose their socket when an unrelated
+// address-history request expires. This persistent lane keeps all proof and
+// deadline checks while sharing the existing total request/queue budget.
+const ELECTRUM_CANONICAL_SUMMARY_CLIENT = ELECTRUM_READ_LANE_LIMITS.summary
+  ? createElectrumClient({
+      host: ELECTRUM_HOST,
+      ...ELECTRUM_READ_LANE_LIMITS.summary,
+      maxResponseBytes: ELECTRUM_MAX_RESPONSE_BYTES,
+      port: ELECTRUM_PORT,
+    })
+  : ELECTRUM_CLIENT;
 // Wallet UTXO and readiness probes must not queue behind large background
 // history recovery sweeps on the shared transport. A small independent lane
 // keeps user-facing reads bounded while still querying the same local electrs
@@ -14455,11 +14484,13 @@ async function fetchAddressTransactionsPage(
   });
 }
 
-async function fetchExactAddressHistoryFromElectrum(address, network) {
+async function fetchExactAddressHistoryFromElectrum(
+  address, network, { request = electrumRequest } = {},
+) {
   if (network !== "livenet" || !ELECTRUM_HOST || !ELECTRUM_PORT) {
     throw new Error("The first-party Electrum address reader is unavailable.");
   }
-  const history = await electrumRequest(
+  const history = await request(
     "blockchain.scripthash.get_history",
     [scriptHashForAddress(address, network)],
     ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS,
@@ -14699,6 +14730,10 @@ function scriptHashForScriptHex(scriptHex) {
 
 function electrumRequest(method, params, timeoutMs = 30_000) {
   return ELECTRUM_CLIENT.request(method, params, timeoutMs);
+}
+
+function canonicalSummaryElectrumRequest(method, params, timeoutMs = 30_000) {
+  return ELECTRUM_CANONICAL_SUMMARY_CLIENT.request(method, params, timeoutMs);
 }
 
 function interactiveElectrumRequest(method, params, timeoutMs = 30_000) {
@@ -36368,7 +36403,7 @@ async function dnsPayloadWithAdditiveRecords(payload, state, checkpoint, network
   return dnsPayloadWithSubdomainPageLinks({ ...children, ...pages }, state, checkpoint, network);
 }
 
-async function dnsRegistryPayload(network) {
+async function dnsRegistryPayload(network, { request = electrumRequest } = {}) {
   const registryAddress = dnsRegistryAddressForNetwork(network);
   if (!registryAddress) {
     return {
@@ -36400,9 +36435,9 @@ async function dnsRegistryPayload(network) {
     await bitcoinRpc("getblockchaininfo", []),
   );
   if (!checkpoint) throw new Error("DNS canonical checkpoint is unavailable.");
-  await registryAuditElectrumCheckpoint(checkpoint);
+  await registryAuditElectrumCheckpoint(checkpoint, { request });
   const coverage = electrumAddressHistoryCoverage(
-    await fetchExactAddressHistoryFromElectrum(registryAddress, network),
+    await fetchExactAddressHistoryFromElectrum(registryAddress, network, { request }),
   );
   const confirmedTxs = await hydrateExactConfirmedRegistryHistory(
     coverage.entries, network,
@@ -36414,12 +36449,12 @@ async function dnsRegistryPayload(network) {
   );
   const txs = [...confirmedTxs, ...pendingTxs];
   const finalCoverage = electrumAddressHistoryCoverage(
-    await fetchExactAddressHistoryFromElectrum(registryAddress, network),
+    await fetchExactAddressHistoryFromElectrum(registryAddress, network, { request }),
   );
   const finalCheckpoint = exactCoreTipFromBlockchainInfo(
     await bitcoinRpc("getblockchaininfo", []),
   );
-  await registryAuditElectrumCheckpoint(checkpoint);
+  await registryAuditElectrumCheckpoint(checkpoint, { request });
   if (coverage.snapshotSha256 !== finalCoverage.snapshotSha256 ||
       finalCheckpoint?.height !== checkpoint.height ||
       finalCheckpoint?.blockHash !== checkpoint.blockHash) {
@@ -53257,7 +53292,7 @@ async function buildIndexedCanonicalLedgerPayload(
       replayBridgeEra,
     }),
     payloadWithFallbackAfterMs(
-      dnsRegistryPayload(network),
+      dnsRegistryPayload(network, { request: canonicalSummaryElectrumRequest }),
       null,
       SUMMARY_PROOF_INDEX_READ_WAIT_MS,
     ).catch(() => null),
@@ -54132,7 +54167,7 @@ async function buildCanonicalLedgerPayload(network, fresh = false) {
           emptyRegistryState,
         ),
     payloadWithFallbackAfterMs(
-      dnsRegistryPayload(network),
+      dnsRegistryPayload(network, { request: canonicalSummaryElectrumRequest }),
       null,
       SUMMARY_PROOF_INDEX_READ_WAIT_MS,
     ).catch(() => null),
@@ -80367,7 +80402,7 @@ function registryAuditAttemptParity(
   };
 }
 
-async function registryAuditElectrumCheckpoint(checkpoint) {
+async function registryAuditElectrumCheckpoint(checkpoint, { request = electrumRequest } = {}) {
   const height = registryAuditInteger(
     checkpoint?.height,
     "ID registry audit Electrum checkpoint height",
@@ -80378,7 +80413,7 @@ async function registryAuditElectrumCheckpoint(checkpoint) {
     "ID registry audit Electrum checkpoint hash",
   );
   const headerHex = String(
-    await electrumRequest(
+    await request(
       "blockchain.block.header",
       [height],
       ADDRESS_ELECTRUM_HISTORY_TIMEOUT_MS,
