@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -I
 """Offline predecessor, ownership and supervisor tests; no production calls."""
-import ast,base64,copy,contextlib,hashlib,importlib.util,io,json,os,stat,tempfile,types,unittest
+import ast,base64,builtins,copy,contextlib,hashlib,importlib.util,io,json,os,stat,tempfile,types,unittest
 from pathlib import Path
 from unittest.mock import Mock,patch
 
@@ -137,6 +137,134 @@ class PredecessorTests(unittest.TestCase):
         row['base64']=base64.b64encode(b'unreviewed reader bytes').decode()
         with self.assertRaisesRegex(ValueError,'Candidate bytes differ'):C.validate_manifest(m)
 
+
+class RecoveryPredecessorTests(PredecessorTests):
+    """Real publication/inode fixtures; the frozen controller seam is mocked
+    only to avoid requiring historical Git objects in an offline unit suite."""
+    def setUp(self):
+        super().setUp()
+        self.original_p=copy.deepcopy(self.p);self.original_m=copy.deepcopy(self.m)
+        self.original_r=copy.deepcopy(self.r);self.original_inner=self.inner
+        m=PredecessorTests.recovery_manifest(self);m['sourceCommit']=C.RECOVERY_PREDECESSOR_COMMIT
+        m['releaseId']=C.RECOVERY_PREDECESSOR_RELEASE
+        # Simulate both actual 7b924 source publications, preserving original
+        # reader and API inodes exactly as the live installer does.
+        reader=next(row for row in m['sources']if row['path']==C.READER)
+        new=base64.b64decode(reader['base64'])+b'// child fee correction\n'
+        reader.update(after=C.sha(new),base64=base64.b64encode(new).decode())
+        inner=self.base/('work-batch-reader-recovery-'+m['releaseId']+'-20261028T102042Z')
+        inner.mkdir(mode=0o700)
+        created={}
+        for index,row in enumerate(m['sources']):
+            (inner/('before-'+str(index)+'.mjs')).write_bytes((self.fixture.root/row['path']).read_bytes())
+            (inner/('candidate-'+str(index)+'.mjs')).write_bytes(base64.b64decode(row['base64']))
+        metadata={name:tuple(m['sourceMetadata'][name][k]for k in ('uid','gid','mode'))for name in C.ALLOWED}
+        self.start(patch.object(C,'QUARANTINE_PARENT',self.tmp/'quarantine'))
+        C.install(self.fixture.root,inner,m['sources'],metadata,True,'successor-fixture',created,lambda:None,
+            m['sourceIdentities'],m['sourceParents'])
+        frozen=b'# fixed offline historical-controller interface\n'
+        self.start(patch.object(C,'RECOVERY_PREDECESSOR_CONTROLLER_SHA',C.sha(frozen)))
+        def historical_exec(code,ns):
+            if code.co_filename=='frozen-work-batch-reader-recovery-scoped-node.py':
+                ns.update({key:getattr(C,key)for key in ('ALLOWED','BASE_SOURCE_COMMIT','validate_manifest',
+                    'load_predecessor','predecessor_fence','validate_rehearsal','installed_source_fence')})
+            else:builtins.exec(code,ns)
+        self.start(patch.object(C,'exec',historical_exec,create=True))
+        self.m=m;self.inner=inner
+        self.plan={'format':'proof-of-work-work-batch-reader-recovery-rollout-plan-v1',
+            'sourceCommit':m['sourceCommit'],'releaseId':m['releaseId'],'controllerBase64':base64.b64encode(frozen).decode(),
+            'controllerSha256':C.sha(frozen),'runtimeManifestTemplate':copy.deepcopy(m),'nodePath':m['nodePath']}
+        self.r={key:copy.deepcopy(m[key])for key in ('format','sourceCommit','releaseId','baselineHead','baseSourceCommit',
+            'restartConfigurationSha256','sourceMetadata','dependencyMetadata','gateway','protectedServices','predecessor')}
+        self.r.update(rollbackRoot=str(inner),manifestSha256=C.sha(encoded(m)),installed=True,sourceWritesStarted=True,
+            stopRequested=True,sourceRollbackProhibited=True,forwardRecoveryRequired=True,recoveryIncomplete=True,
+            rolledBack=False,errorClass='ValueError',recoveryErrorClass='ValueError',createdHelpers=created,
+            dependencyCount=len(m['dependencies']),authority=copy.deepcopy(self.original_r['authority']),
+            sources=[{k:v for k,v in row.items()if k!='base64'}for row in m['sources']])
+        gate=RehearsalGateTests();gate.setUp();q=gate.value
+        q.update(sourceCommit=m['sourceCommit'],releaseId=m['releaseId'],planSha256=C.sha(encoded(self.plan)),
+            predecessor=m['predecessor'],candidateHashes={row['path']:row['after']for row in m['sources']},
+            unit='pow-batch-summary-rehearsal-'+m['releaseId']+'.service')
+        self.q=q;self.qpath=self.tmp/'old-recovery-qualification.json';self.qpath.write_bytes(encoded(q))
+        self.dispatch={'format':'proof-of-work-work-batch-reader-recovery-node-dispatch-receipt-v1',
+            'planSha256':C.sha(encoded(self.plan)),'releaseId':m['releaseId'],'dispatchStatus':'refused','exitCode':1,
+            'rehearsal':{'path':str(self.qpath),'sha256':C.sha(encoded(q))},
+            'stdout':json.dumps({'format':'proof-of-work-work-batch-reader-recovery-rollout-result-v1',
+                'releaseId':m['releaseId'],'hold':{'ok':True},'searchRestoreDeferred':'retain hold'})}
+        self.p={'format':'work-batch-reader-recovery-predecessor-v2',
+            'unit':'pow-work-batch-reader-recovery-'+m['releaseId']+'.service'}
+        self.values={'plan':self.plan,'manifest':self.m,'receipt':self.r,'dispatch':self.dispatch}
+        self.refresh()
+        self.start(patch.object(C,'RECOVERY_PREDECESSOR_PLAN_SHA',self.p['plan']['sha256']))
+        self.start(patch.object(C,'RECOVERY_PREDECESSOR_MANIFEST_SHA',self.p['manifest']['sha256']))
+        original=Path.lstat
+        def directory(path,*args,**kwargs):
+            value=original(path,*args,**kwargs)
+            if path in (self.inner,self.original_inner):
+                fields={k:getattr(value,k)for k in dir(value)if k.startswith('st_')};fields.update(st_uid=0,st_gid=0)
+                return types.SimpleNamespace(**fields)
+            return value
+        self.start(patch.object(Path,'lstat',directory))
+    def refresh(self):
+        # Keep original attempt files immutable when creating successor fixture.
+        if not hasattr(self,'original_p'):return super().refresh()
+        self.r['manifestSha256']=C.sha(encoded(self.m));self.dispatch['planSha256']=C.sha(encoded(self.plan))
+        for key,value in self.values.items():
+            path=(self.inner/(key+'.json') if key in ('manifest','receipt') else self.tmp/('recovery-'+key+'.json'))
+            raw=encoded(value);path.write_bytes(raw);self.p[key]={'path':str(path),'sha256':C.sha(raw)}
+    def recovery_manifest(self):
+        if not hasattr(self,'original_p'):return super().recovery_manifest()
+        m=copy.deepcopy(self.m);m['predecessor']=self.p
+        m['sourceCommit']='c'*40;m['releaseId']='c'*12+'-20261028T113000Z'
+        m['dependencies'].update({row['path']:row['after']for row in self.m['sources']})
+        for row in m['sources']:
+            raw=(self.fixture.root/row['path']).read_bytes();new=raw if row['path']==C.READER else raw+b'// isolated Electrum lane\n'
+            row.update(before=C.sha(raw),after=C.sha(new),base64=base64.b64encode(new).decode())
+        m['sourceIdentities']={name:C.creation_identity((self.fixture.root/name).lstat())for name in C.ALLOWED}
+        return m
+    def test_exact_failed_attempt_loads_without_relabelling(self):
+        v=C.load_predecessor(self.p)
+        self.assertEqual(len(v['ancestors']),1);self.assertEqual(v['ancestors'][0]['contract'],self.original_p)
+        self.assertTrue(v['receipt']['recoveryIncomplete']);self.assertFalse(v['receipt']['rolledBack'])
+    def test_original_quarantined_inode_verified(self):
+        self.fence_patches();C.predecessor_fence(self.p,current=False)
+        original=Path(self.original_r['createdHelpers'][C.READER]['beforePath'])
+        original.write_bytes(b'foreign original bytes')
+        with self.assertRaisesRegex(ValueError,'inode or byte evidence'):C.predecessor_fence(self.p,current=False)
+    def test_reviewed_reader_correction_keeps_the_exact_predecessor_baseline(self):
+        m=self.recovery_manifest();rows={row['path']:row for row in m['sources']}
+        self.assertEqual(rows[C.READER]['before'],rows[C.READER]['after'])
+        self.assertNotEqual(rows['server/proof-api.mjs']['before'],rows['server/proof-api.mjs']['after'])
+        self.assertEqual(set(C.validate_manifest(m)),C.ALLOWED)
+    def test_other_recovery_commit_or_recursive_lineage_refuses(self):
+        old=copy.deepcopy(self.m)
+        self.m['sourceCommit']='f'*40;self.plan['sourceCommit']=self.m['sourceCommit'];self.plan['runtimeManifestTemplate']=copy.deepcopy(self.m)
+        self.r['sourceCommit']=self.m['sourceCommit'];self.refresh()
+        with self.assertRaises(ValueError):C.load_predecessor(self.p)
+        self.m.clear();self.m.update(old);self.plan['sourceCommit']=self.m['sourceCommit'];self.r['sourceCommit']=self.m['sourceCommit']
+        self.m['predecessor']['format']='work-batch-reader-recovery-predecessor-v2';self.plan['runtimeManifestTemplate']=copy.deepcopy(self.m);self.refresh()
+        with self.assertRaises(ValueError):C.load_predecessor(self.p)
+    def test_stale_predecessor_rehearsal_refuses(self):
+        self.q['candidateHashes'][C.READER]='0'*64;self.qpath.write_bytes(encoded(self.q))
+        self.dispatch['rehearsal']['sha256']=C.sha(encoded(self.q));self.refresh()
+        with self.assertRaisesRegex(ValueError,'Rehearsal source'):C.load_predecessor(self.p)
+    def test_original_authority_and_hold_are_not_rebound_to_later_attempt(self):
+        old=copy.deepcopy(self.r['authority']);self.r['authority']={'core':{'MainPID':'99'}};self.refresh()
+        with self.assertRaisesRegex(ValueError,'Original authority'):C.load_predecessor(self.p)
+        self.r['authority']=old
+        outcome=json.loads(self.dispatch['stdout']);outcome['hold']={'ok':True,'foreign':True}
+        self.dispatch['stdout']=json.dumps(outcome);self.refresh()
+        with self.assertRaisesRegex(ValueError,'Original authority'):C.load_predecessor(self.p)
+    def test_same_source_identity_cannot_replace_reviewed_plan_bytes(self):
+        self.plan['unreviewed-extra']='same source identity, changed plan';self.refresh()
+        with self.assertRaisesRegex(ValueError,'fixed recovery predecessor'):C.load_predecessor(self.p)
+    def test_prior_failure_receipt_cannot_admit_an_unknown_source_or_more_ancestors(self):
+        self.p['format']='work-batch-reader-recovery-predecessor-v3'
+        with self.assertRaisesRegex(ValueError,'contract'):C.load_predecessor(self.p)
+    def test_changed_api_owned_identity_refuses_next_candidate(self):
+        m=self.recovery_manifest();m['sourceIdentities']['server/proof-api.mjs'][1]+=1
+        with self.assertRaisesRegex(ValueError,'reader lineage'):C.validate_manifest(m)
+
 class PublicationTests(unittest.TestCase):
     def setUp(self):
         handle=patch.object(OLD,'module',C);handle.start();self.addCleanup(handle.stop)
@@ -168,11 +296,11 @@ def sha(raw):return hashlib.sha256(raw).hexdigest()
             'searchHoldControllerBase64':base64.b64encode(b'holder').decode(),'searchHoldControllerSha256':C.sha(b'holder'),
             'runtimeManifestTemplate':{'predecessor':{},'sourceCommit':'a'*40,'releaseId':'a'*12+'-20261026T220000Z',
                 'batchAuthority':{},'sourceMetadata':{},'restartConfigurationSha256':'a'*64,
-                'searchHold':{'bindings':{'files':{'search.service':'1'*64,'search.timer':'2'*64}}}}}
+                'searchHold':{'bindings':{'releaseId':'original-hold-release','files':{'search.service':'1'*64,'search.timer':'2'*64}}}}}
     def test_success_restores_original_hold_only_after_overlay(self):
         with patch.object(S.os,'geteuid',return_value=0),patch.object(S,'invoke',side_effect=[{'installed':True},{'ok':True}])as call,contextlib.redirect_stdout(io.StringIO()):
             S.rollout(self.plan())
-        self.assertEqual(call.call_count,2);self.assertIn('restore',call.call_args_list[1].args[1]);self.assertIn('old-release',call.call_args_list[1].args[1])
+        self.assertEqual(call.call_count,2);self.assertIn('restore',call.call_args_list[1].args[1]);self.assertIn('original-hold-release',call.call_args_list[1].args[1]);self.assertNotIn('old-release',call.call_args_list[1].args[1])
     def test_any_overlay_failure_keeps_original_hold(self):
         for error in (ValueError('refusal'),S.ControllerStillRunning('unknown')):
             with patch.object(S.os,'geteuid',return_value=0),patch.object(S,'invoke',side_effect=error)as call,contextlib.redirect_stdout(io.StringIO()):

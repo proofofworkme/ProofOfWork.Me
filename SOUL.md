@@ -864,3 +864,9 @@ rules. Derived recipient rows never manufacture extra payments or movement.
 The approved original WORK declaration retains its attached proofs and WORK.
 Recognize its exact bootstrap exception, preserve the signed text and economic
 history, and repair derived index evidence when needed.
+
+Canonical summary publication must not share a failure domain with background
+address-history sweeps when the configured transport budget permits isolation.
+Reserve bounded capacity without increasing the total request budget. Keep
+exact chain, history and economic guards intact; successful health probes or
+isolated diagnostics do not establish that a summary was published.

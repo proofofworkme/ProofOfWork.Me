@@ -495,6 +495,17 @@ durable inputs do not count as another scratch copy. The 5 GiB scratch ceiling,
 10 GiB root reserve plus growth headroom, shared deploy lock, stream/expansion
 bounds, detached Git source attestation and archive checks are unchanged.
 
+The October 28 streamed release exposed a child deadline that elapsed while
+blocking on its input feed, before the outer service deadline. Current transport
+drains child output while feeding input under one enforced deadline, including
+blocked input and backpressure. The receiver allows 1,800 seconds; the transport
+unit allows 6,000 seconds with its existing 30-second stop grace; the remote
+supervisor allows 6,300 seconds. Release-specific local relays must allow 6,600
+seconds so they cannot expire first. The larger finite bounds cover receiving,
+staging, archive construction and verification; they do not relax size, capacity,
+hash, provenance or receipt checks. A partial extraction without a verified
+receiver receipt remains a failed attempt and cannot use verified-input resume.
+
 A verified surface receipt that stopped at scratch admission can continue only
 through the explicit `surfaces-stage-resume` phase with a fresh attempt/unit
 and receipt directory. Its plan pins the original plan, receiver receipt and
@@ -8668,6 +8679,26 @@ configuration or weakening readiness. They do not guarantee catch-up: postflight
 failure drains the apps for explicit forward recovery, while a parent or Search
 timeout retains uncertainty rather than claiming completion.
 This repair does not replay or rewrite accepted transactions or declarations.
+
+The October 28 recovery caught the canonical scan up to Core, then exposed a
+separate transport failure: background address-history requests could exhaust
+their deadline and reset the shared Electrum connection while canonical DNS
+proof reads were using it. An independent four-read DNS diagnostic completed in
+under one second with identical opening/closing history and header commitments;
+the live shared connection was still failing. This is transport evidence, not a
+published canonical summary or completed release.
+
+Canonical ledger DNS reads reserve a small persistent Electrum lane from the
+existing general connection budget. With the production limits, general work
+has six in-flight requests and 248 queued requests, and the summary lane has two
+in flight and eight queued. Wallet/health transport is unchanged. A configuration
+that permits only one in-flight request retains its shared client rather than
+exceeding that limit. The DNS history deadlines, response-size cap, opening and
+closing Core/header/history checks, exact hydration and completeness guards
+remain mandatory. An isolated lane does not make an unavailable Electrs service
+authoritative or permit publication from incomplete evidence.
+`npm run check:electrum-client` covers independent socket resets, capacity
+reservation and the actual DNS proof path, including its failure guards.
 
 The original authority declaration
 `b7c620e48c2d725a143cecd7f7808036d89907124d410ba57d272d34e650cc28`
