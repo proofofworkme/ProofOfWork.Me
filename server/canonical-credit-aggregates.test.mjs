@@ -413,19 +413,27 @@ test("actual indexed builder reconciles both token states before metrics, hashes
   const state = staleState();
   const phases = [];
   const global = ledgerGlobals();
+  const canonicalSummaryElectrumRequest = () => {
+    throw new Error("The mocked DNS boundary must not make a network request");
+  };
   const api = runtime([
     "buildIndexedCanonicalLedgerPayload", "tokenStateWithCreditNetworkValueDetails",
     "activeCanonicalSummaryReplayTokenBridgeEra",
     "ledgerSnapshotChecks", "exactCreditFrozenValueComponentsAgree",
   ], {
     ...global,
+    canonicalSummaryElectrumRequest,
     console: { error() {} },
     WORK_ATOMIC_PROJECTION_MODEL: "fixture-q8", WORK_SUBATOM_PROJECTION_MODEL: "fixture-q16",
     SUMMARY_PROOF_INDEX_READ_WAIT_MS: 1, CANONICAL_CONFIRMED_TIP_CUTOFF_MS: 1,
     workAmoV8ReplayPrecisionOptions: async () => ({ workAmountStorageModel: "fixture-q16" }),
     indexedActivityStateForCanonicalLedger: async () => ({ activity: ledgerInput().activity }),
     indexedRegistryStateForCanonicalLedger: async () => ({ records: [], sales: [], activity: [] }),
-    dnsRegistryPayload: async () => ({ records: [], sales: [], activity: [], pendingEvents: [] }),
+    dnsRegistryPayload: async (network, options) => {
+      assert.equal(network, "livenet");
+      assert.equal(options.request, canonicalSummaryElectrumRequest);
+      return { records: [], sales: [], activity: [], pendingEvents: [] };
+    },
     dnsActivityStateForCanonicalLedger: () => ({ activity: [] }),
     btcUsdPricePayload: async () => null,
     payloadWithFallbackAfterMs: (value) => value,
