@@ -1,0 +1,899 @@
+#!/usr/bin/python3 -I
+"""Hash-fenced WORK pending-summary API overlay; Search must already be held by its pinned controller.
+
+Changes only the fixed runtime allowlist and API/dependent-worker plus pinned gateway
+activation. No database, config, timer, Git or authority-service mutation.
+Original source inodes remain in private quarantine. After source-write intent, recovery is forward-only; no active read era is rolled back.
+"""
+import base64, ctypes, datetime, fcntl, hashlib, json, os, re, shlex, stat, subprocess, sys, time, urllib.request
+from pathlib import Path, PurePosixPath
+
+ROOT = Path('/opt/proofofwork-api')
+QUARANTINE_PARENT = Path('/opt')
+BACKUPS = Path('/data/proofofwork-release-backups')
+LOCK = Path('/run/proofofwork-audit29-ops.lock')
+HOLD = Path('/run/proofofwork-search-release.hold')
+UNITS = ('proofofwork-api.service', 'proofofwork-indexer-worker.service')
+PROTECTED = UNITS
+GATEWAY = ('proofofwork-api-wg.socket', 'proofofwork-api-wg.service')
+AUTHORITY = ('bitcoind.service', 'electrs.service', 'postgresql@16-main.service')
+SEARCH = ('proofofwork-search-index.service', 'proofofwork-search-index.timer')
+NEW = frozenset()
+ALLOWED = frozenset({'server/proof-api.mjs'})
+METADATA_TEMPLATE = 'src/shared/protocol/publishArticle.mjs'
+# Must match the final accepted pre-batch release before planning or deployment.
+BASE_SOURCE_COMMIT = '3a3d1416659d9332dc0ed71d7abe69543394182f'
+ENTRYPOINTS = ('server/proof-api.mjs', 'scripts/backfill-proof-indexer.mjs',
+    'scripts/backfill-proof-search.mjs', 'scripts/run-proof-indexer-worker.mjs')
+IMPORT = re.compile(r'''(?:\b(?:import|export)\s+[^;]*?\bfrom\s*|\bimport\s*\(?\s*)['"](\.[^'"]+)['"]''')
+SHA = re.compile('[0-9a-f]{64}\\Z')
+ROOT_JSON = frozenset({'package.json', 'package-lock.json',
+    'WORK_MARKET_V1_REFUNDS_959061.json', 'WORK_MARKET_V2_STALE_REFUND_REVIEW_959301.json'})
+
+ACCEPTED_OVERLAYS = Path('/etc/proofofwork-retention/node-source-overlays.json')
+
+def require(value, message):
+    if not value: raise ValueError(message)
+
+# Finite incident patch: every other accepted V6 byte must survive the inverse.
+ACCEPTED_API_SHA256 = '40b0b29f1908cedca617d77712f8d8c68ec8a9b00eff41855d92d52ed3d0d5cf'
+EXPECTED_CANDIDATE_SHA256 = 'e2e7bcb416844f24ab2a9c7c3d30b995abffe3946a0c4918435f7dbe2cf8e328'
+ACCEPTED_INVENTORY_SHA256 = 'a12c90cbc46acf48bf9363c28e5e2786061c3d1b86955f42dfc234ff7d04a3e1'
+PATCH_BASE_COMMIT = 'e97f1d1beb0162998ceeb20bd4497fa52a36c694'
+PATCH_COMMIT = 'd3b09c98f1f6a875a91c2b086a6b676d3f2fb81d'
+POSTFLIGHT_TIMEOUT_SECONDS = 3600
+PATCHES = {'tokenTransferHistoryItemKey': {'beforeSha256': '308bc6dc93b6f317e87bac9252d0d55ece241318a3857ed9fec07e8b916854ac',
+                                 'afterSha256': '4fbe57a69708fdeaacb362f5e4108d20e15d65e684881975a993f90e53c7bf71',
+                                 'before': b'function tokenTransferHistoryItemKey(item) {\n',
+                                 'after': b'function tokenTransferHistoryItemKey(item) {\n  if (item?.confirm'
+                                          b'ed === false && isWorkBatchTransferChild(item)) {\n    const netw'
+                                          b'ork = String(item.network ?? "").trim().toLowerCase();\n    const'
+                                          b' txid = String(item.txid ?? "").trim().toLowerCase();\n    const '
+                                          b'position = item.containerPosition;\n    const index = item.batchR'
+                                          b'ecipientIndex;\n    const count = item.batchRecipientCount;\n '
+                                          b'   if (!network || !/^[0-9a-f]{64}$/u.test(txid) ||\n        !Num'
+                                          b'ber.isSafeInteger(item.protocolVout) || item.protocolVout < 0 ||'
+                                          b'\n        !Number.isSafeInteger(position?.recordOrdinal) || posit'
+                                          b'ion.recordOrdinal < 0 ||\n        position.protocolVout !== item.'
+                                          b'protocolVout ||\n        !Number.isSafeInteger(item.recordOrdinal'
+                                          b') ||\n        !Number.isSafeInteger(index) || index < 0 ||\n  '
+                                          b'      !Number.isSafeInteger(count) || count < (item.transferVers'
+                                          b'ion === "mailbatch1" ? 1 : 2) ||\n        count > 256 || index >='
+                                          b' count || item.recordOrdinal !== position.recordOrdinal + 1 + in'
+                                          b'dex) {\n      throw new Error("Pending WORK batch recipient posit'
+                                          b'ion is incomplete.");\n    }\n    // Pending recipients share '
+                                          b'a carrier, but each retains its own derived\n    // ordinal. This'
+                                          b' is an identity key, not canonical economic qualification.\n    r'
+                                          b'eturn [\n      String(item.tokenId).trim().toLowerCase(), network'
+                                          b', txid,\n      "pending-" + item.transferVersion, item.protocolVo'
+                                          b'ut,\n      position.recordOrdinal, item.recordOrdinal,\n    ].'
+                                          b'join(":");\n  }\n'},
+ 'currentProofIndexTokenTablePayloadForLedger': {'beforeSha256': '10e3acf5690a97434993fe9ab967582d5b739c35a6b938fa7592b1b37afc27e0',
+                                                 'afterSha256': '9df0c7a2ad1cf5c28fd2da3e56cd060027a0f7a7e82f7cd4c09c13c8cdc1cc71',
+                                                 'before': b'  return payload;\n',
+                                                 'after': b'  // Token-table reads also serve pending wallet'
+                                                          b'/history visibility. Canonical\n  // value replay'
+                                                          b' must use confirmed history before merging or qu'
+                                                          b'alifying batch\n  // families, while leaving the '
+                                                          b'shared reader payload unchanged.\n  return {\n'
+                                                          b'    ...payload,\n    ...(Array.isArray(payload.tr'
+                                                          b'ansfers) ? {\n      transfers: payload.transfers.'
+                                                          b'filter((item) => item?.confirmed !== false),\n   '
+                                                          b' } : {}),\n    ...(Array.isArray(payload.transfer'
+                                                          b'Batches) ? {\n      transferBatches: payload.tran'
+                                                          b'sferBatches.filter((item) => item?.confirmed !=='
+                                                          b' false),\n    } : {}),\n  };\n'}}
+
+def sha(raw): return hashlib.sha256(raw).hexdigest()
+
+def identity(info):
+    return tuple(getattr(info, key) for key in ('st_dev', 'st_ino', 'st_mode',
+        'st_uid', 'st_gid', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns'))
+
+def source_path(value):
+    require(isinstance(value, str), 'Non-text source path')
+    p = PurePosixPath(value)
+    require(str(p) == value and not p.is_absolute() and '\\' not in value and
+        not any(part in ('', '.', '..') for part in value.split('/')) and
+        not any(ord(c) < 32 or ord(c) == 127 for c in value), 'Unsafe source path')
+    require(value in ROOT_JSON or
+        value.startswith(('server/', 'scripts/', 'src/shared/protocol/', 'src/features/identity/'))
+        and value.endswith(('.mjs', '.js', '.json', '.sql')), 'Unapproved dependency path')
+    return value
+
+def safe_read(path, limit=10*1024**2, absent=False):
+    require(path.is_absolute() and path.parent.resolve(strict=True) == path.parent,
+        'Noncanonical parent')
+    if absent and not os.path.lexists(path): return None
+    info = path.lstat()
+    require(path.resolve(strict=True) == path and stat.S_ISREG(info.st_mode) and
+        info.st_nlink == 1 and not info.st_mode & 0o7022 and info.st_size <= limit,
+        'Unsafe source file')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOATIME)
+    with os.fdopen(fd, 'rb') as stream:
+        require(identity(os.fstat(stream.fileno())) == identity(info), 'Source changed')
+        raw = stream.read(limit+1)
+        require(identity(os.fstat(stream.fileno())) == identity(info), 'Source changed')
+    require(identity(path.lstat()) == identity(info) and len(raw) == info.st_size,
+        'Source changed')
+    return raw
+
+def relative_import(parent, target):
+    parts = list(PurePosixPath(parent).parent.parts)
+    for part in target.split('/'):
+        if part == '..':
+            require(parts, 'Import escaped runtime'); parts.pop()
+        elif part not in ('', '.'): parts.append(part)
+    return source_path('/'.join(parts))
+
+def dependency_closure(root, candidates=None):
+    candidates = candidates or {}; seen = set(); pending = list(ENTRYPOINTS)
+    while pending:
+        path = pending.pop()
+        if path in seen: continue
+        require(len(seen) < 2000, 'Oversized dependency closure'); seen.add(source_path(path))
+        raw = candidates.get(path)
+        if raw is None: raw = safe_read(root/path)
+        for target in IMPORT.findall(raw.decode('utf-8')):
+            dependency = relative_import(path, target)
+            if dependency.endswith(('.mjs', '.js', '.json')): pending.append(dependency)
+    return seen
+
+def function_slice(raw, name):
+    matches=list(re.finditer(rb'(?m)^(?:async )?function '+re.escape(name.encode())+rb'\(',raw))
+    require(len(matches)==1,'Patch function is absent or ambiguous: '+name)
+    start=matches[0].start(); following=re.search(rb'(?m)^(?:async )?function ',raw[matches[0].end():])
+    require(following is not None,'Patch function boundary unavailable: '+name)
+    end=matches[0].end()+following.start()
+    return start,end,raw[start:end]
+
+def patch_provenance(after):
+    return {'format':'work-batch-pending-summary-exact-patch-v1',
+        'acceptedSourceCommit':BASE_SOURCE_COMMIT,'acceptedSourceSha256':ACCEPTED_API_SHA256,
+        'patchBaseCommit':PATCH_BASE_COMMIT,'patchCommit':PATCH_COMMIT,
+        'functions':{name:{key:row[key] for key in ('beforeSha256','afterSha256')} for name,row in PATCHES.items()},
+        'candidateSha256':after,'inverseSha256':ACCEPTED_API_SHA256}
+
+def transform_patch(raw, forward):
+    expected=ACCEPTED_API_SHA256 if forward else EXPECTED_CANDIDATE_SHA256
+    require(sha(raw)==expected,'Exact accepted V6 / pending-summary candidate differs')
+    result=raw
+    for name,row in PATCHES.items():
+        start,end,body=function_slice(result,name)
+        old,new=('before','after') if forward else ('after','before')
+        require(sha(body)==row[old+'Sha256'] and body.count(row[old])==1,
+            'Exact reviewed patch function differs: '+name)
+        changed=body.replace(row[old],row[new],1)
+        require(sha(changed)==row[new+'Sha256'],'Patch function result differs: '+name)
+        result=result[:start]+changed+result[end:]
+    require(sha(result)==(EXPECTED_CANDIDATE_SHA256 if forward else ACCEPTED_API_SHA256),
+        'Whole candidate inverse does not preserve accepted V6 bytes')
+    return result
+
+def validate_candidate_patch(raw,before):
+    require(before==ACCEPTED_API_SHA256,'Pending-summary patch requires actual accepted V6 API')
+    transform_patch(raw,False)
+    return raw
+
+
+def validate_manifest(m):
+    require(m.get('format') == 'proof-of-work-work-batch-pending-summary-fix-scoped-runtime-v1', 'Wrong manifest')
+    require(m.get('baseSourceCommit') == BASE_SOURCE_COMMIT, 'Wrong approved base source commit')
+    require(m.get('services') == list(UNITS) and re.fullmatch(
+        '[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', m.get('releaseId', '')), 'Wrong release/services')
+    require(all(re.fullmatch('[0-9a-f]{40}', m.get(key, '')) for key in
+        ('sourceCommit', 'sourceTree', 'baselineHead')), 'Invalid Git pins')
+    require(m['releaseId'].split('-',1)[0] == m['sourceCommit'][:12], 'Release does not bind source commit')
+    require(m.get('acceptedInventorySha256')==ACCEPTED_INVENTORY_SHA256,'Wrong accepted V6 overlay inventory pin')
+    rows = m.get('sources')
+    require(isinstance(rows, list) and len(rows) == len(ALLOWED) and
+        {row.get('path') for row in rows} == ALLOWED, 'Wrong WORK pending-summary API source allowlist')
+    candidates = {}
+    for row in rows:
+        require(set(row) == {'path', 'before', 'after', 'base64'}, 'Unknown source fields')
+        require((row['before'] is None) == (row['path'] in NEW) and
+            (row['before'] is None or isinstance(row['before'], str) and SHA.fullmatch(row['before'])),
+            'Invalid creation-only source baseline')
+        require(isinstance(row['after'], str) and SHA.fullmatch(row['after']), 'Invalid candidate pin')
+        raw = base64.b64decode(row['base64'], validate=True)
+        require(len(raw) <= 10*1024**2 and sha(raw) == row['after'], 'Candidate bytes differ')
+        raw.decode('utf-8'); candidates[row['path']] = raw
+    metadata = m.get('sourceMetadata')
+    require(isinstance(metadata, dict) and set(metadata) == ALLOWED, 'Missing exact source metadata')
+    require(all(isinstance(row, dict) and set(row) == {'uid', 'gid', 'mode'}
+        and all(type(row[key]) is int and row[key] >= 0 for key in row)
+        and row['mode'] <= 0o777 and not row['mode'] & 0o022
+        for row in metadata.values()), 'Unsafe source metadata')
+    deps = m.get('dependencies')
+    require(isinstance(deps, dict) and 1 <= len(deps) <= 2000 and
+        {'package.json', 'package-lock.json'} <= deps.keys(), 'Missing dependencies')
+    require(not NEW.intersection(deps) and METADATA_TEMPLATE in deps,
+        'Creation-only helpers must be absent; metadata template must be pinned')
+    for path, expected in deps.items():
+        source_path(path); require(isinstance(expected, str) and SHA.fullmatch(expected), 'Invalid dependency pin')
+    dependency_metadata = m.get('dependencyMetadata')
+    require(isinstance(dependency_metadata, dict) and set(dependency_metadata) == set(deps),
+        'Missing exact dependency metadata')
+    require(all(isinstance(row, dict) and set(row) == {'uid', 'gid', 'mode'}
+        and all(type(row[key]) is int and row[key] >= 0 for key in row)
+        and row['mode'] <= 0o777 and not row['mode'] & 0o022
+        for row in dependency_metadata.values()), 'Unsafe dependency metadata')
+    require(all(metadata[name] == dependency_metadata[METADATA_TEMPLATE] for name in NEW),
+        'New helper metadata differs from pinned template')
+    require(isinstance(m.get('restartConfigurationSha256'),str) and
+        SHA.fullmatch(m['restartConfigurationSha256']), 'Missing restart configuration pin')
+    require(isinstance(m.get('nodeSha256'), str) and SHA.fullmatch(m['nodeSha256']), 'Missing Node pin')
+    protected = m.get('protectedServices')
+    require(isinstance(protected, dict) and set(protected) == {'files', 'states'}
+        and set(protected['files']) == set(PROTECTED)
+        and set(protected['states']) == set(PROTECTED), 'Missing protected service pins')
+    require(all(isinstance(value, str) and SHA.fullmatch(value) for value in protected['files'].values())
+        and all(isinstance(row, dict) and set(row) == {'ActiveState', 'MainPID', 'WorkingDirectory'}
+            and row['ActiveState'] in ('active','inactive','failed','activating') and isinstance(row['MainPID'], str)
+            and row['MainPID'].isdigit() and int(row['MainPID']) >= 0
+            and row['WorkingDirectory'] == str(ROOT) for row in protected['states'].values()),
+        'Invalid protected service pins')
+    gateway = m.get('gateway')
+    require(isinstance(gateway, dict) and set(gateway) == {'files', 'active', 'unitFileStates'}
+        and all(isinstance(gateway[key], dict) and set(gateway[key]) == set(GATEWAY)
+            for key in gateway), 'Missing gateway pins')
+    require(all(isinstance(value, str) and SHA.fullmatch(value) for value in gateway['files'].values())
+        and all(value in ('active', 'inactive') for value in gateway['active'].values())
+        and all(isinstance(value, str) and value in ('enabled', 'disabled', 'static')
+            for value in gateway['unitFileStates'].values()), 'Invalid gateway pins')
+    hold = m.get('searchHold')
+    require(isinstance(hold, dict) and set(hold) == {'markerSha256', 'bindings'} and
+        SHA.fullmatch(hold['markerSha256']), 'Missing Search hold')
+    bindings = hold['bindings']
+    require(isinstance(bindings, dict) and bindings.get('releaseId') == m['releaseId'] and
+        set(bindings.get('files', {})) == set(SEARCH) and
+        all(SHA.fullmatch(value) for value in bindings['files'].values()), 'Wrong Search bindings')
+    require(isinstance(m.get('sourceIdentities'),dict) and set(m['sourceIdentities'])==ALLOWED
+        and isinstance(m.get('sourceParents'),dict) and set(m['sourceParents'])==ALLOWED,
+        'Missing source inode/parent pins')
+    require(all(m['sourceIdentities'][name] is None if name in NEW else
+        isinstance(m['sourceIdentities'][name],list) and len(m['sourceIdentities'][name])==7
+        and all(type(v) is int and v>=0 for v in m['sourceIdentities'][name]) for name in ALLOWED),
+        'Invalid baseline source inode pins')
+    require(all(isinstance(v,list) and len(v)==5 and all(type(x) is int and x>=0 for x in v)
+        for v in m['sourceParents'].values()), 'Invalid source parent pins')
+    validate_service_baseline(protected['states'])
+    validate_batch_authority(m.get('batchAuthority',{}))
+    row=m['sources'][0]
+    validate_candidate_patch(candidates[row['path']],row['before'])
+    require(m.get('patchProvenance')==patch_provenance(row['after']),'Exact patch provenance differs')
+    return candidates
+
+def fence(root, m, candidates):
+    for row in m['sources']:
+        raw = safe_read(root/row['path'], absent=row['before'] is None)
+        require((sha(raw) if raw is not None else None) == row['before'], 'Source changed: '+row['path'])
+    for path, expected in m['dependencies'].items():
+        require(sha(safe_read(root/path)) == expected, 'Dependency changed: '+path)
+    metadata_fence(root, m['dependencyMetadata'])
+    required = dependency_closure(root) | dependency_closure(root, candidates)
+    require(required <= m['dependencies'].keys() | NEW, 'Unpinned runtime dependency')
+
+def metadata_fence(root, metadata, installed=False):
+    for name, expected in metadata.items():
+        if name in NEW and not installed:
+            require(not os.path.lexists(root/name), 'Creation-only helper already exists: '+name)
+            info = (root/METADATA_TEMPLATE).lstat()
+        else:
+            info = (root/name).lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+            and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) ==
+                (expected['uid'], expected['gid'], expected['mode']),
+            'Source metadata changed: '+name)
+
+def process_environment(pid):
+    require(isinstance(pid, str) and pid.isdigit() and int(pid) > 0, 'Invalid runtime PID')
+    with open('/proc/'+pid+'/environ','rb') as stream: raw = stream.read(1024*1024+1)
+    require(len(raw) <= 1024*1024, 'Oversized runtime environment')
+    return dict(item.decode('utf-8').split('=',1) for item in raw.split(b'\0') if b'=' in item)
+
+def normalize_exec_start(value):
+    # systemctl includes process state in ExecStart; retain the exact command.
+    stamp = r'\[(?:n/a|(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} UTC)\]'
+    fields = ('argv[]', 'ignore_errors', 'start_time', 'stop_time', 'pid', 'code', 'status')
+    require(all(value.count(' ; '+field+'=') == 1 for field in fields),
+        'Unsupported ExecStart serialization')
+    match = re.fullmatch(
+        r'(\{ path=/[^\s;{}]+ ; argv\[\]=[^\r\n{}]+ ; ignore_errors=(?:yes|no))'
+        r' ; start_time='+stamp+r' ; stop_time='+stamp+
+        r' ; pid=(?:0|[1-9][0-9]*) ; code=(?:\(null\)|exited|killed)'
+        r' ; status=(?:0|[1-9][0-9]*)(?:/(?:0|[A-Z][A-Z0-9]*))? \}', value)
+    require(match is not None, 'Unsupported ExecStart serialization')
+    return (match.group(1)+' ; start_time=[n/a] ; stop_time=[n/a]'
+        ' ; pid=0 ; code=(null) ; status=0/0 }')
+
+
+def restart_configuration_pin():
+    manager = ctl('show-environment')
+    pins = {'managerEnvironment':manager}
+    for unit in (*UNITS,*GATEWAY):
+        properties = {key:ctl('show',unit,'--value','-p',key) for key in
+            ('Environment','EnvironmentFiles','PassEnvironment','UnsetEnvironment','ExecStart','WorkingDirectory','FragmentPath','DropInPaths','Listen','Service','Accept','Requires','PartOf')}
+        if unit.endswith('.socket'):
+            require(properties['ExecStart']=='','Unexpected socket command')
+        else:
+            properties['ExecStart'] = normalize_exec_start(properties['ExecStart'])
+        files = properties['EnvironmentFiles']
+        pattern = r'(/[^\s]+) \(ignore_errors=(?:yes|no)\)'
+        require(not re.sub(pattern,'',files).strip(), 'Unsupported environment-file configuration')
+        source_pins = {}
+        for name in re.findall(pattern,files):
+            raw = safe_read(Path(name),1024*1024,absent=True)
+            source_pins[name] = sha(raw) if raw is not None else None
+        for name in [properties['FragmentPath'], *shlex.split(properties['DropInPaths'])]:
+            require(name.startswith('/'), 'Unsupported service configuration path')
+            source_pins[name] = sha(safe_read(Path(name),1024*1024))
+        pins[unit] = {'properties':properties,'files':source_pins}
+    # Only this digest leaves the function. Environment values remain private.
+    return sha(json.dumps(pins,sort_keys=True,separators=(',',':')).encode())
+
+def require_restart_configuration(expected):
+    require(restart_configuration_pin() == expected, 'Restart configuration changed')
+
+def validate_service_baseline(value):
+    require(type(value)is dict and set(value)==set(UNITS),'Missing runtime service baseline')
+    for unit,row in value.items():
+        require(row.get('WorkingDirectory')==str(ROOT) and str(row.get('MainPID','')).isdigit(),
+            'Unsafe runtime service baseline')
+        if unit==UNITS[0]:
+            require(row.get('ActiveState')=='active' and int(row['MainPID'])>0,'API process unavailable')
+        else:
+            require((row.get('ActiveState')=='active' and int(row['MainPID'])>0) or
+                (row.get('ActiveState')in ('inactive','failed','activating') and row['MainPID']=='0'),
+                'Unsupported degraded worker state')
+
+def require_service_baseline(actual,captured):
+    validate_service_baseline(captured);validate_service_baseline(actual)
+    require(actual[UNITS[0]]==captured[UNITS[0]],'Captured API process changed')
+    # This incident's worker may cycle through its configured restart loop.
+    # Its effective unit/Node/source configuration is fenced separately; drain
+    # and a zero-PID check remain mandatory before any source publication.
+
+def capture_api_environment():
+    before=states((UNITS[0],));row=before[UNITS[0]]
+    require(row['ActiveState']=='active' and row['MainPID'].isdigit() and int(row['MainPID'])>0
+        and row['WorkingDirectory']==str(ROOT),'API process unavailable')
+    environment=process_environment(row['MainPID'])
+    require(states((UNITS[0],))==before,'API changed during environment capture')
+    return environment
+
+def local_json(path):
+    environment=capture_api_environment();port=environment.get('PORT','8081')
+    require(port.isdigit() and 1<=int(port)<=65535,'Invalid local API port')
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self,*args,**kwargs):return None
+    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
+    with opener.open('http://127.0.0.1:'+port+path,timeout=5)as response:
+        raw=response.read(2*1024**2+1)
+        require(response.status==200 and len(raw)<=2*1024**2,'Invalid local API response')
+    value=json.loads(raw);require(type(value)is dict,'Invalid local API object');return value
+
+def validate_batch_authority(value):
+    require(type(value)is dict and set(value)=={'protocol','network','active','writeEnabled',
+        'declarationTxid','activationHeight','limits','registryFeeProofs'} and
+        value['protocol']=='work-batch-v1' and value['network']=='livenet' and
+        value['active']is True and value['writeEnabled']is True and
+        re.fullmatch('[0-9a-f]{64}',value['declarationTxid'] or '') and
+        type(value['activationHeight'])is int and value['activationHeight']>0 and
+        value['limits']=={'minRecipients':2,'maxRecipients':256,'maxPayloadBytes':65536} and
+        value['registryFeeProofs']==546,'Existing batch authority unavailable or changed')
+    return value
+
+def batch_authority(value=None):
+    value=local_json('/api/v1/work-batch-status')if value is None else value
+    selected={key:value.get(key)for key in ('protocol','network','active','writeEnabled',
+        'declarationTxid','activationHeight','limits','registryFeeProofs')}
+    return validate_batch_authority(selected)
+
+SUMMARY_KEYS=frozenset(('growthSummary','inceptionSummary','infinitySummary','logSummary',
+    'marketplaceSummary','tokenSummary','workFloor','workSummary'))
+def canonical_health(value):
+    checks=value.get('checks',{});index=checks.get('index',{});node=checks.get('node',{});worker=checks.get('worker',{})
+    summary=index.get('summarySnapshot',{});height=node.get('tipHeight');block_hash=node.get('bestBlockHash')
+    require(value.get('ok')is True and value.get('ready')is True and node.get('ok')is True and
+        node.get('initialBlockDownload')is False and node.get('txindexSynced')is True and
+        type(height)is int and height>0 and type(block_hash)is str and SHA.fullmatch(block_hash),
+        'Canonical node health unavailable')
+    require(index.get('complete')is True and index.get('checkpointCanonical')is True and
+        value.get('indexedThroughBlock')==value.get('tipHeight')==index.get('indexedThroughBlock')==
+        index.get('scanTipHeight')==height and value.get('lagBlocks')==0 and
+        index.get('checkpointHash')==index.get('canonicalCheckpointHash')==block_hash,
+        'Canonical scan is not at the node tip')
+    require(summary.get('ok')is True and summary.get('eligible')is True and
+        summary.get('indexedThroughBlock')==height and summary.get('blockHash')==block_hash and
+        type(summary.get('snapshotId'))is str and 0<len(summary['snapshotId'])<=128 and
+        SUMMARY_KEYS<=summary.get('coverageByKey',{}).keys() and
+        all(summary['coverageByKey'][key]==height for key in SUMMARY_KEYS),
+        'Canonical summary has not caught up')
+    require(worker.get('ok')is True and worker.get('proofReady')is True and
+        worker.get('consecutiveFailures')==0,'Canonical worker is not healthy')
+    return {'tipHeight':height,'tipHash':block_hash,'summarySnapshotId':summary['snapshotId'],
+        'summaryCoverage':{key:summary['coverageByKey'][key]for key in sorted(SUMMARY_KEYS)}}
+
+def validate_postflight(value,authority):
+    require(type(value)is dict and value.get('format')=='work-batch-pending-summary-fix-postflight-v1' and
+        all(value.get(key)is True for key in ('qualified','summaryCaughtUp','workBatchReady')) and
+        value.get('batchAuthority')==authority and type(value.get('tipHeight'))is int and
+        value['tipHeight']>0 and SHA.fullmatch(value.get('tipHash','')) and
+        type(value.get('summarySnapshotId'))is str and 0<len(value['summarySnapshotId'])<=128 and
+        type(value.get('summaryCoverage'))is dict and set(value['summaryCoverage'])==SUMMARY_KEYS and
+        all(height==value['tipHeight']for height in value['summaryCoverage'].values()),
+        'Incomplete canonical reader postflight')
+    validate_batch_authority(authority)
+    return value
+
+def require_postflight(authority,timeout_seconds=POSTFLIGHT_TIMEOUT_SECONDS):
+    deadline=time.monotonic()+timeout_seconds
+    while True:
+        try:
+            first=canonical_health(local_json('/health'))
+            batch=local_json('/api/v1/work-batch-status')
+            require(batch_authority(batch)==authority and batch.get('ready')is True and
+                batch.get('checkedTipHeight')==first['tipHeight'] and batch.get('checkedTipHash')==first['tipHash'],
+                'Batch readiness does not match canonical tip')
+            second=canonical_health(local_json('/health'))
+            require(first==second,'Canonical tip or summary moved during postflight')
+            return validate_postflight({'format':'work-batch-pending-summary-fix-postflight-v1','qualified':True,
+                'summaryCaughtUp':True,'workBatchReady':True,'batchAuthority':authority,**second,
+                'checkedAt':datetime.datetime.now(datetime.timezone.utc).isoformat()},authority)
+        except (OSError,ValueError,KeyError,TypeError):
+            if time.monotonic()>=deadline:raise ValueError('Canonical reader postflight unavailable')from None
+            time.sleep(2)
+
+KNOWN_FAMILIES = {
+    'b25e6ae7f963af289ba8cb3edae76ef285d3d124204a0e4cd514df0933938322':(973284,12,546),
+    '69c1720dd6967e9ec035bbe56c5e0fe3b95a00ae721b8312d32f24a520b7b1d5':(973567,7,None),
+}
+PENDING_BATCH_TXID = '8632e39f90e78df86c7bd998aa806b4cdeb9d4b179a0c41e253da0c3a3b84c43'
+REHEARSAL_ADAPTERS = frozenset(('api.mjs','reader.mjs','worker.mjs','postgres.mjs','fetch-guard.mjs'))
+REHEARSAL_EVIDENCE = REHEARSAL_ADAPTERS | {'intent.json','dispatch.json','stdout','stderr'}
+
+def validate_family_proof(row,txid,height,count,miner=None):
+    require(type(row)is dict and row.get('txid')==txid and type(row.get('height'))is int
+        and row['height']==height and type(row.get('recipientCount'))is int and row['recipientCount']==count
+        and row.get('parentCount')==1 and row.get('childCount')==count
+        and row.get('registryPaymentSats')==546 and row.get('zeroFeeChildren')is True
+        and type(row.get('minerFeeSats'))is int and 0<=row['minerFeeSats']<=9007199254740991
+        and (miner is None or row['minerFeeSats']==miner),'Confirmed economic family proof differs')
+
+def validate_call_families(call):
+    families=call.get('knownConfirmedFamilies')
+    require(type(families)is list and len(families)==2 and
+        {r.get('txid') for r in families if type(r)is dict}==set(KNOWN_FAMILIES),'Missing original confirmed families')
+    for row in families:
+        height,count,miner=KNOWN_FAMILIES[row['txid']]
+        validate_family_proof(row,row['txid'],height,count,miner)
+    p=call.get('pendingHistoryProof')
+    require(type(p)is dict and p.get('txid')==PENDING_BATCH_TXID and p.get('state')in ('pending','confirmed','absent')
+        and p.get('canonicalPendingTransfers')==0 and p.get('canonicalPendingParents')==0
+        and p.get('identityError')is False and all(type(p.get(k))is int for k in ('inputCount','uniqueKeys','preservedCount'))
+        and p['inputCount']==p['uniqueKeys']==p['preservedCount'],'Pending visibility or canonical exclusion proof differs')
+    if p['state']=='pending':require(p['inputCount']==189 and p.get('confirmedFamily')is None,'Pending recipient history incomplete')
+    elif p['state']=='absent':require(p['inputCount']==0 and p.get('confirmedFamily')is None,'Absent mempool family was fabricated')
+    else:
+        require(p['inputCount']==0,'Unexpected observed pending count after confirmation')
+        row=p.get('confirmedFamily');height=row.get('height') if type(row)is dict else None
+        require(type(height)is int and 973575<=height<=call['indexedThroughBlock'],'Confirmed pending-family height differs')
+        validate_family_proof(row,PENDING_BATCH_TXID,height,189)
+
+
+def validate_rehearsal(value,plan_sha,manifest,helper_sha):
+    require(type(value)is dict and value.get('format')=='work-batch-pending-summary-rehearsal-qualified-v1'
+        and value.get('qualified')is True and SHA.fullmatch(plan_sha or '')
+        and value.get('planSha256')==plan_sha and value.get('sourceCommit')==manifest['sourceCommit']
+        and value.get('sourceTree')==manifest['sourceTree'] and value.get('releaseId')==manifest['releaseId']
+        and value.get('candidateHashes')=={row['path']:row['after'] for row in manifest['sources']}
+        and value.get('dependencyHashes')==manifest['dependencies']
+        and SHA.fullmatch(helper_sha or '') and value.get('rehearsalHelperSha256')==helper_sha,
+        'Rehearsal identity or exact candidate closure differs')
+    result=value.get('result',{})
+    require(type(result)is dict and result.get('ok')is True and result.get('published')is False
+        and result.get('format')=='work-batch-pending-summary-readonly-rehearsal-v1'
+        and result.get('publicationAccountingCurrent')is True and result.get('twoCalls')is True
+        and type(result.get('indexedThroughBlock'))is int and result['indexedThroughBlock']>=973575
+        and SHA.fullmatch(result.get('indexedThroughBlockHash',''))
+        and re.fullmatch('[0-9a-f]{24}',result.get('snapshotId',''))
+        and result.get('summaryKeys')==sorted(SUMMARY_KEYS), 'Canonical two-call rehearsal unavailable')
+    calls=result.get('calls')
+    require(type(calls)is list and len(calls)==2,'Rehearsal requires two actual summary calls')
+    for call in calls:
+        require(type(call)is dict and call.get('ok')is True and call.get('published')is False
+            and call.get('publicationAccountingCurrent')is True
+            and all(call.get(key)==result[key] for key in ('indexedThroughBlock','indexedThroughBlockHash','snapshotId','summaryKeys')),
+            'Rehearsal calls do not agree at one canonical checkpoint')
+        validate_call_families(call)
+    require(all(result.get(k)==calls[-1].get(k) for k in ('knownConfirmedFamilies','pendingHistoryProof')),
+        'Rehearsal family summary differs')
+    require(type(value.get('adapterHashes'))is dict and set(value['adapterHashes'])==REHEARSAL_ADAPTERS
+        and all(SHA.fullmatch(v or '') for v in value['adapterHashes'].values())
+        and SHA.fullmatch(value.get('dispatchSha256',''))
+        and type(value.get('unit'))is str and value['unit'].endswith('.service')
+        and re.fullmatch('[0-9a-f]{32}',value.get('invocationId','')),
+        'Missing native rehearsal evidence')
+    refs=value.get('evidenceReferences')
+    require(type(refs)is dict and set(refs)==REHEARSAL_EVIDENCE,'Missing physical rehearsal evidence')
+    for name,row in refs.items():
+        require(type(row)is dict and set(row)=={'path','sha256','bytes'} and type(row['path'])is str
+            and Path(row['path']).is_absolute() and SHA.fullmatch(row['sha256'] or '')
+            and type(row['bytes'])is int and 0<=row['bytes']<=8*1024**2,'Malformed rehearsal evidence reference')
+        if name in REHEARSAL_ADAPTERS:require(row['sha256']==value['adapterHashes'][name],'Adapter evidence digest differs')
+    require(refs['dispatch.json']['sha256']==value['dispatchSha256'],'Dispatch evidence digest differs')
+    properties=value.get('nativeProperties')
+    require(type(properties)is dict and all(properties.get(k)==v for k,v in {
+        'LoadState':'loaded','ActiveState':'active','SubState':'exited','MainPID':'0',
+        'ExecMainStatus':'0','Result':'success','InvocationID':value['invocationId'],
+        'ProtectSystem':'strict','NoNewPrivileges':'yes','ReadWritePaths':'','User':'powadmin',
+        'WorkingDirectory':str(ROOT),'MemoryMax':str(2*1024**3),'MemorySwapMax':'0',
+        'CPUQuotaPerSecUSec':'1s','RuntimeMaxUSec':'5min','TimeoutStopUSec':'15s',
+        'KillMode':'control-group','RemainAfterExit':'yes'}.items()),
+        'Rehearsal native terminal is not successful')
+    return value
+
+def require_rehearsal_binding(manifest):
+    binding=manifest.get('rehearsal')
+    require(type(binding)is dict and set(binding)=={'path','sha256','planSha256','helperSha256'},
+        'Mandatory rehearsal binding missing before source intent')
+    path=Path(binding['path']);require(path.is_absolute(),'Invalid rehearsal path')
+    raw=safe_read(path,8*1024**2)
+    require(sha(raw)==binding['sha256'],'Rehearsal qualification changed')
+    return validate_rehearsal(json.loads(raw),binding['planSha256'],manifest,binding['helperSha256'])
+
+
+def ctl(*args):
+    return subprocess.check_output(['/usr/bin/systemctl', *args], text=True, timeout=30,
+        env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'}).strip()
+
+def states(units):
+    return {unit: dict(line.split('=', 1) for line in ctl('show', unit, '-p', 'ActiveState',
+        '-p', 'MainPID', '-p', 'WorkingDirectory').splitlines()) for unit in units}
+
+def require_protected_services(pins, phase='baseline'):
+    require(phase in ('baseline', 'drained', 'restored'), 'Unknown protected service phase')
+    actual = states(PROTECTED)
+    require(set(actual)==set(PROTECTED),'Incomplete protected service state')
+    if phase == 'baseline':
+        require_service_baseline(actual,pins['states'])
+    elif phase == 'drained':
+        require(all(row['ActiveState'] == 'inactive' and row['MainPID'] == '0'
+            and row['WorkingDirectory'] == str(ROOT) for row in actual.values()),
+            'Dependent worker not drained')
+    else:
+        require(all(row['ActiveState'] == 'active' and row['WorkingDirectory'] == str(ROOT)
+            and row['MainPID'].isdigit() and int(row['MainPID']) > 0 for row in actual.values()),
+            'Dependent worker not restored')
+    for name, expected in pins['files'].items():
+        require(sha(safe_read(Path('/etc/systemd/system')/name,65536)) == expected,
+            'Protected service unit changed')
+
+def require_search_held(search):
+    service, timer = search[SEARCH[0]], search[SEARCH[1]]
+    require(service['ActiveState'] in ('inactive','failed') and service['MainPID'] == '0'
+        and timer['ActiveState'] == 'inactive', 'Search not held')
+
+def gateway_states():
+    return {unit: dict(line.split('=', 1) for line in ctl('show', unit,
+        '-p', 'ActiveState', '-p', 'UnitFileState', '-p', 'MainPID').splitlines()) for unit in GATEWAY}
+
+def require_gateway_baseline(actual, pins):
+    require(all(actual[unit]['ActiveState'] == pins['active'][unit]
+        and actual[unit]['UnitFileState'] == pins['unitFileStates'][unit]
+        for unit in GATEWAY), 'Gateway activation or enablement changed')
+
+def require_apps_drained():
+    gateway = gateway_states()
+    require(all(row['ActiveState'] == 'inactive' for row in gateway.values())
+        and gateway[GATEWAY[1]]['MainPID'] == '0'
+        and all(row['ActiveState'] == 'inactive' and row['MainPID'] == '0'
+            for row in states(UNITS).values()), 'Apps or gateway not drained')
+
+def drain_apps():
+    # Disable socket activation before stopping its Requires=API proxy. This
+    # matches the accepted Audit23 drain and prevents a request canceling stop.
+    for unit in (*GATEWAY, UNITS[1], UNITS[0]):
+        subprocess.run(['/usr/bin/systemctl', 'stop', unit], check=True, timeout=120)
+    require_apps_drained()
+
+def restore_apps(gateway_pins):
+    for unit in UNITS:
+        subprocess.run(['/usr/bin/systemctl', 'start', unit], check=True, timeout=60)
+    for unit in GATEWAY:
+        if gateway_pins['active'][unit] == 'active':
+            subprocess.run(['/usr/bin/systemctl', 'start', unit], check=True, timeout=60)
+    require(all(row['ActiveState'] == 'active' and row['WorkingDirectory'] == str(ROOT)
+        and row['MainPID'].isdigit() and int(row['MainPID']) > 0
+        for row in states(UNITS).values()), 'Runtime services not restored')
+    require_gateway_baseline(gateway_states(), gateway_pins)
+
+def restore_verified_apps(m, authority, search, hold_raw):
+    restore_apps(m['gateway'])
+    require_protected_services(m['protectedServices'], 'restored')
+    require(states(AUTHORITY)==authority and states(SEARCH)==search
+        and safe_read(HOLD,65536)==hold_raw, 'Unrelated recovery state changed')
+    return states(UNITS)
+
+def restore_baseline_apps(m,authority,search,hold_raw):
+    # A previously failed/restarting zero-PID worker is left quiescent on a
+    # pre-write refusal; never claim that restarting the known-broken code healed it.
+    baseline=m['protectedServices']['states'];validate_service_baseline(baseline)
+    for unit in UNITS:
+        if baseline[unit]['ActiveState']=='active':
+            subprocess.run(['/usr/bin/systemctl','start',unit],check=True,timeout=60)
+    for unit in GATEWAY:
+        if m['gateway']['active'][unit]=='active':
+            subprocess.run(['/usr/bin/systemctl','start',unit],check=True,timeout=60)
+    actual=states(UNITS)
+    for unit,row in actual.items():
+        require(row['WorkingDirectory']==str(ROOT),'Baseline working directory changed')
+        if baseline[unit]['ActiveState']=='active':
+            require(row['ActiveState']=='active' and row['MainPID'].isdigit() and int(row['MainPID'])>0,
+                'Baseline running service not restored')
+        else:require(row['ActiveState']=='inactive' and row['MainPID']=='0','Degraded worker not quiescent')
+    require_gateway_baseline(gateway_states(),m['gateway'])
+    require(states(AUTHORITY)==authority and states(SEARCH)==search and safe_read(HOLD,65536)==hold_raw,
+        'Unrelated baseline recovery state changed')
+    require_restart_configuration(m['restartConfigurationSha256'])
+    return actual
+
+def durable(path, raw):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'wb') as output: output.write(raw); output.flush(); os.fsync(output.fileno())
+
+def sync(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try: os.fsync(fd)
+    finally: os.close(fd)
+
+def parent_identity(info):
+    return [info.st_dev,info.st_ino,info.st_uid,info.st_gid,stat.S_IMODE(info.st_mode)]
+
+def creation_identity(info):
+    # Inode ownership survives removing the temporary link; link-count/ctime do not.
+    return [info.st_dev, info.st_ino, info.st_uid, info.st_gid,
+        stat.S_IMODE(info.st_mode), info.st_size, info.st_mtime_ns]
+
+def rename_absent(source, target):
+    # Linux no-replace rename keeps concurrent destination files intact.
+    libc = ctypes.CDLL(None, use_errno=True)
+    rename = libc.renameat2
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(-100, os.fsencode(source), -100, os.fsencode(target), 1) != 0:
+        number = ctypes.get_errno()
+        raise OSError(number, os.strerror(number), str(target))
+
+def require_quarantine_parent(root):
+    info = QUARANTINE_PARENT.lstat()
+    require(QUARANTINE_PARENT.resolve(strict=True) == QUARANTINE_PARENT
+        and stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o7022,
+        'Unsafe root-owned quarantine parent')
+    for name in ALLOWED:
+        parent = (root/name).parent
+        require(parent.resolve(strict=True) == parent and parent.stat().st_dev == info.st_dev,
+            'Quarantine must share every helper filesystem')
+
+def rename_absent_at(source_fd, source_name, target_fd, target_name):
+    libc=ctypes.CDLL(None,use_errno=True)
+    rename=libc.renameat2
+    rename.argtypes=[ctypes.c_int,ctypes.c_char_p,ctypes.c_int,ctypes.c_char_p,ctypes.c_uint]
+    rename.restype=ctypes.c_int
+    if rename(source_fd,os.fsencode(source_name),target_fd,os.fsencode(target_name),1)!=0:
+        number=ctypes.get_errno();raise OSError(number,os.strerror(number))
+
+def install(root, backup, rows, metadata, candidate, stamp, created, checkpoint=lambda:None,
+            source_identities=None,source_parents=None):
+    require(candidate is True, 'reader hotfix installation is forward-only')
+    require(set(source_identities or {})==ALLOWED and set(source_parents or {})==ALLOWED,
+        'Missing captured source identities')
+    require_quarantine_parent(root)
+    def check(row):
+        target=root/row['path']
+        if row['path'] in NEW:
+            require(not os.path.lexists(target) and source_identities[row['path']] is None,
+                'Creation-only source already exists: '+row['path'])
+        else:
+            require(sha(safe_read(target))==row['before'], 'Refuse overwrite of unexpected source: '+row['path'])
+            require(creation_identity(target.lstat())==source_identities[row['path']],
+                'Refuse changed source inode: '+row['path'])
+        require(parent_identity(target.parent.lstat())==source_parents[row['path']],
+            'Refuse changed source parent: '+row['path'])
+    for row in rows:check(row)
+    quarantine=QUARANTINE_PARENT/('.proofofwork-work-batch-pending-summary-fix-'+stamp+'-'+os.urandom(8).hex())
+    quarantine.mkdir(mode=0o700);sync(QUARANTINE_PARENT)
+    require(quarantine.resolve(strict=True)==quarantine and quarantine.stat().st_uid==0
+        and stat.S_IMODE(quarantine.stat().st_mode)==0o700,'Unsafe source quarantine')
+    qfd=os.open(quarantine,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+    try:
+        for index,row in enumerate(rows):
+            check(row);target=root/row['path']
+            pfd=os.open(target.parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+            try:
+                require(parent_identity(os.fstat(pfd))==source_parents[row['path']],'Source parent changed')
+                temp=quarantine/('candidate-'+str(index)+'.mjs')
+                raw=safe_read(backup/f'candidate-{index}.mjs')
+                require(sha(raw)==row['after'],'Candidate evidence changed')
+                durable(temp,raw)
+                uid,gid,mode=metadata[row['path']];os.chown(temp,uid,gid);os.chmod(temp,mode)
+                fd=os.open(temp,os.O_RDONLY|os.O_NOFOLLOW)
+                try:os.fsync(fd)
+                finally:os.close(fd)
+                temp_identity=creation_identity(temp.lstat())
+                old_name='before-'+str(index)+'.mjs'
+                created[row['path']]={'quarantine':str(quarantine),'beforePath':str(quarantine/old_name),
+                    'candidatePath':str(temp),'baselineIdentity':source_identities[row['path']],
+                    'candidateIdentity':temp_identity,'candidateSha256':row['after'],'published':False}
+                checkpoint()
+                check(row)
+                if row['path'] not in NEW:
+                    rename_absent_at(pfd,target.name,qfd,old_name)
+                    os.fsync(pfd);os.fsync(qfd)
+                    # Preserve raced-in foreign incumbents in private quarantine.
+                    require(creation_identity((quarantine/old_name).lstat())==source_identities[row['path']]
+                        and sha(safe_read(quarantine/old_name))==row['before'],'Moved source ownership changed')
+                require(creation_identity(temp.lstat())==temp_identity and sha(safe_read(temp))==row['after'],
+                    'Candidate inode or bytes changed before publication')
+                require(parent_identity(target.parent.lstat())==source_parents[row['path']]
+                    and parent_identity(os.fstat(pfd))==source_parents[row['path']],'Source parent changed')
+                rename_absent_at(qfd,temp.name,pfd,target.name)
+                require(creation_identity(os.stat(target.name,dir_fd=pfd,follow_symlinks=False))==temp_identity,
+                    'Published source inode changed')
+                os.fsync(qfd);os.fsync(pfd)
+                require(sha(safe_read(target))==row['after'] and creation_identity(target.lstat())==temp_identity,
+                    'Published source changed')
+                created[row['path']]['published']=True;checkpoint()
+            finally:os.close(pfd)
+    finally:os.close(qfd)
+
+
+def accepted_inventory_fence(expected):
+    require(expected==ACCEPTED_INVENTORY_SHA256,'Accepted inventory is not the approved V6 baseline')
+    info=ACCEPTED_OVERLAYS.lstat()
+    require(info.st_uid==0 and info.st_gid==0 and not info.st_mode & 0o022,
+        'Unsafe accepted inventory')
+    require(sha(safe_read(ACCEPTED_OVERLAYS,4*1024**2))==expected,'Accepted overlay inventory changed')
+
+def source_identity_fence(root,m):
+    for name in ALLOWED:
+        target=root/name
+        require(parent_identity(target.parent.lstat())==m['sourceParents'][name],'Source parent changed')
+        require((not os.path.lexists(target) and m['sourceIdentities'][name] is None) if name in NEW else
+            creation_identity(target.lstat())==m['sourceIdentities'][name],'Source identity changed')
+
+def installed_source_fence(root,m,created):
+    require(set(created)==ALLOWED,'Missing source publication journal')
+    for row in m['sources']:
+        target=root/row['path'];owned=created[row['path']]
+        require(owned.get('published') is True and
+            parent_identity(target.parent.lstat())==m['sourceParents'][row['path']] and
+            creation_identity(target.lstat())==owned['candidateIdentity'] and
+            sha(safe_read(target))==row['after'],'Installed source ownership changed')
+
+def main():
+    require(os.geteuid() == 0 and sys.flags.isolated and len(sys.argv) == 1,
+        'Root, python3 -I and manifest on stdin required')
+    os.umask(0o077); raw = sys.stdin.buffer.read(20*1024**2+1)
+    require(len(raw) <= 20*1024**2, 'Oversized manifest'); m = json.loads(raw); candidates = validate_manifest(m)
+    for path in (ROOT, BACKUPS):
+        info = path.lstat(); require(path.resolve(strict=True) == path and stat.S_ISDIR(info.st_mode)
+            and not info.st_mode & 0o7022, 'Unsafe runtime/backup root')
+    require_quarantine_parent(ROOT)
+    disk = os.statvfs(BACKUPS); require(disk.f_bavail*disk.f_frsize > 1024**3, 'Insufficient headroom')
+    info = LOCK.lstat(); require(LOCK.resolve(strict=True) == LOCK and stat.S_ISREG(info.st_mode)
+        and (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode), info.st_nlink) == (0,0,0o600,1), 'Unsafe ops lock')
+    fd = os.open(LOCK, os.O_RDONLY | os.O_NOFOLLOW); fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    require(identity(os.fstat(fd)) == identity(LOCK.stat()), 'Ops lock changed')
+    head = subprocess.check_output(['/usr/bin/git','-c',f'safe.directory={ROOT}','-C',str(ROOT),
+        'rev-parse','HEAD'],text=True).strip(); require(head == m['baselineHead'], 'Git identity changed')
+    fence(ROOT, m, candidates)
+    accepted_inventory_fence(m['acceptedInventorySha256'])
+    metadata_fence(ROOT, m['sourceMetadata'])
+    capture_api_environment()
+    source_identity_fence(ROOT,m)
+    require_restart_configuration(m['restartConfigurationSha256'])
+    require(batch_authority()==m['batchAuthority'],'Existing batch authority changed')
+    require_rehearsal_binding(m)
+    hold_raw = safe_read(HOLD,65536); require(sha(hold_raw) == m['searchHold']['markerSha256'], 'Search hold changed')
+    hold_info = HOLD.stat()
+    require((hold_info.st_uid,hold_info.st_gid,stat.S_IMODE(hold_info.st_mode),hold_info.st_nlink)
+        == (0,0,0o600,1), 'Unsafe Search hold owner/mode')
+    require(all(json.loads(hold_raw).get(k) == v for k,v in m['searchHold']['bindings'].items()), 'Wrong Search hold')
+    for name, expected in m['searchHold']['bindings']['files'].items():
+        require(sha(safe_read(Path('/etc/systemd/system')/name,65536)) == expected, 'Search unit changed')
+    search, authority, services = states(SEARCH), states(AUTHORITY), states(UNITS)
+    require_protected_services(m['protectedServices'])
+    require_search_held(search)
+    for name, expected in m['gateway']['files'].items():
+        require(sha(safe_read(Path('/etc/systemd/system')/name,65536)) == expected, 'Gateway unit changed')
+    require_gateway_baseline(gateway_states(), m['gateway'])
+    validate_service_baseline(services)
+    require(all(row['ActiveState'] == 'active' and int(row['MainPID']) > 0
+        for row in authority.values()), 'Authority unavailable')
+    node = Path(os.readlink('/proc/'+services[UNITS[0]]['MainPID']+'/exe'))
+    require(str(node).startswith('/opt/node-') and sha(safe_read(node,200*1024**2)) == m['nodeSha256'], 'Node changed')
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    backup = BACKUPS/('work-batch-pending-summary-fix-'+m['releaseId']+'-'+stamp); backup.mkdir(mode=0o700)
+    receipt = {'format':m['format'], 'releaseId':m['releaseId'], 'sourceCommit':m['sourceCommit'],
+        'sourceTree':m['sourceTree'],'patchProvenance':m['patchProvenance'],'rehearsal':m['rehearsal'],
+        'baselineHead':head, 'manifestSha256':sha(raw), 'rollbackRoot':str(backup),
+        'restartConfigurationSha256':m['restartConfigurationSha256'],
+        'dependencyCount':len(m['dependencies']), 'authority':authority, 'gateway':m['gateway'],
+        'protectedServices':m['protectedServices'], 'servicesBefore':services, 'installed':False,
+        'sourceMetadata':m['sourceMetadata'], 'dependencyMetadata':m['dependencyMetadata'],
+        'baseSourceCommit':m['baseSourceCommit'],
+        'createdHelpers':{},
+        'rolledBack':False, 'sources':[{k:v for k,v in row.items() if k != 'base64'} for row in m['sources']]}
+    def save():
+        temp = backup/'receipt.tmp'; durable(temp,(json.dumps(receipt,indent=2)+'\n').encode())
+        os.replace(temp,backup/'receipt.json'); sync(backup)
+    metadata = {}
+    for index, row in enumerate(m['sources']):
+        path = ROOT/row['path']; before = safe_read(path,absent=row['before'] is None)
+        expected = m['sourceMetadata'][row['path']]
+        metadata[row['path']] = tuple(expected[key] for key in ('uid','gid','mode'))
+        if before is not None: durable(backup/f'before-{index}.mjs',before)
+        candidate = backup/f'candidate-{index}.mjs'; durable(candidate,candidates[row['path']])
+        subprocess.run([str(node),'--check',str(candidate)],check=True,capture_output=True,timeout=30)
+    durable(backup/'manifest.json',raw); save(); fence(ROOT,m,candidates)
+    try:
+        receipt['stopRequested']=True; save()
+        drain_apps()
+        require_protected_services(m['protectedServices'], 'drained')
+        require(states(AUTHORITY)==authority
+            and states(SEARCH)==search and safe_read(HOLD,65536)==hold_raw,
+            'Unrelated state changed'); fence(ROOT,m,candidates)
+        metadata_fence(ROOT, m['sourceMetadata'])
+        source_identity_fence(ROOT,m)
+        accepted_inventory_fence(m['acceptedInventorySha256'])
+        require_restart_configuration(m['restartConfigurationSha256'])
+        fence(ROOT,m,candidates);source_identity_fence(ROOT,m)
+        require_rehearsal_binding(m)
+        receipt['sourceWritesStarted']=True; save()
+        install(ROOT,backup,m['sources'],metadata,True,stamp,receipt['createdHelpers'],save,
+            m['sourceIdentities'],m['sourceParents']); receipt['installed']=True; save()
+        require(all(sha(safe_read(ROOT/row['path']))==row['after'] for row in m['sources']), 'Installed bytes differ')
+        metadata_fence(ROOT, m['sourceMetadata'], installed=True)
+        metadata_fence(ROOT, m['dependencyMetadata'], installed=True)
+        require(all(sha(safe_read(ROOT/path))==expected for path,expected in m['dependencies'].items()
+            if path not in ALLOWED), 'Unrelated source changed')
+        accepted_inventory_fence(m['acceptedInventorySha256'])
+        installed_source_fence(ROOT,m,receipt['createdHelpers'])
+        require_apps_drained()
+        require_restart_configuration(m['restartConfigurationSha256'])
+        receipt['servicesAfter']=restore_verified_apps(m, authority, search, hold_raw)
+        receipt['postflight']=require_postflight(m['batchAuthority'])
+        installed_source_fence(ROOT,m,receipt['createdHelpers'])
+        metadata_fence(ROOT,m['dependencyMetadata'],installed=True)
+        require(all(sha(safe_read(ROOT/name))==expected for name,expected in m['dependencies'].items() if name not in ALLOWED),'Preserved dependency changed after restart')
+        accepted_inventory_fence(m['acceptedInventorySha256'])
+        require_restart_configuration(m['restartConfigurationSha256'])
+        receipt['completedAt']=datetime.datetime.now(datetime.timezone.utc).isoformat(); save(); print(json.dumps(receipt),flush=True)
+    except BaseException as error:
+        receipt['errorClass']=type(error).__name__
+        try:
+            drain_apps()
+            if receipt.get('sourceWritesStarted'):
+                receipt['sourceRollbackProhibited']=True
+                receipt['forwardRecoveryRequired']=True
+                raise ValueError('Source writes started; preserve new read code and recover forward')
+            require(all((not os.path.lexists(ROOT/row['path'])) if row['before'] is None
+                else sha(safe_read(ROOT/row['path'])) == row['before']
+                for row in m['sources']), 'Rollback bytes differ')
+            metadata_fence(ROOT, m['sourceMetadata'])
+            # A source-drift refusal is not a verified rollback until every
+            # preserved dependency also matches its captured baseline. Keep
+            # applications drained and Search held if that fence cannot pass.
+            fence(ROOT, m, candidates)
+            require_restart_configuration(m['restartConfigurationSha256'])
+            receipt['servicesAfterRollback']=restore_baseline_apps(m, authority, search, hold_raw)
+            receipt['baselineRecoveryMode']='captured-running-or-quiescent-worker'
+            receipt['rolledBack']=True
+        except BaseException as recovery_error:
+            receipt['recoveryIncomplete']=True; receipt['recoveryErrorClass']=type(recovery_error).__name__
+            save(); print(json.dumps(receipt),flush=True); raise
+        save(); print(json.dumps(receipt),flush=True); raise
+
+if __name__ == '__main__': main()

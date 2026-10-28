@@ -266,6 +266,7 @@
       "deploy/work-batch-replay/README.md",
       "deploy/work-batch-reader-fix/README.md",
       "deploy/work-batch-reader-recovery/README.md",
+      "deploy/work-batch-pending-summary-fix/README.md",
       "deploy/mail-work-batch/README.md"
     ]
   },
