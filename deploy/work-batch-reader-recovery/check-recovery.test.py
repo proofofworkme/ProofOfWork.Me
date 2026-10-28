@@ -1,8 +1,8 @@
 #!/usr/bin/python3 -I
 """Offline predecessor, ownership and supervisor tests; no production calls."""
-import base64,copy,contextlib,hashlib,importlib.util,io,json,os,stat,tempfile,types,unittest
+import ast,base64,copy,contextlib,hashlib,importlib.util,io,json,os,stat,tempfile,types,unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock,patch
 
 HERE=Path(__file__).parent
 def load(path,name):
@@ -10,6 +10,7 @@ def load(path,name):
     spec.loader.exec_module(module);return module
 C=load(HERE/'scoped-node.py','recovery_scoped')
 S=load(HERE/'rollout-node.py','recovery_supervisor')
+R=load(HERE/'release.py','recovery_release')
 OLD=load(HERE.parent/'work-batch-reader-fix/check-scoped-node.test.py','old_fixture')
 def encoded(value):return (json.dumps(value,sort_keys=True)+'\n').encode()
 
@@ -231,5 +232,91 @@ class RehearsalGateTests(unittest.TestCase):
                     patch.object(release.subprocess,'Popen')as dispatch:
                 with self.assertRaisesRegex(ValueError,'evidence changed'):release.overlay(args)
                 dispatch.assert_not_called()
+
+class DeadlineTests(unittest.TestCase):
+    def setUp(self):
+        fixture=PublicationTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
+        self.authority=fixture.manifest['batchAuthority']
+        self.health=OLD.ControllerTests.healthy(fixture)
+        self.batch={**self.authority,'ready':True,'checkedTipHeight':973285,'checkedTipHash':'a'*64}
+
+    def test_catchup_can_pass_after_old_deadline_without_weakening_health(self):
+        clock=[0]
+        def advance(seconds):self.assertEqual(seconds,2);clock[0]+=601
+        stale=copy.deepcopy(self.health);stale['checks']['index']['summarySnapshot']['indexedThroughBlock']=973283
+        with patch.object(C.time,'monotonic',side_effect=lambda:clock[0]),patch.object(C.time,'sleep',side_effect=advance),\
+                patch.object(C,'local_json',side_effect=[stale,stale,self.health,self.batch,self.health]):
+            proof=C.require_postflight(self.authority)
+        self.assertGreater(clock[0],600);self.assertLess(clock[0],C.POSTFLIGHT_TIMEOUT_SECONDS)
+        self.assertTrue(proof['qualified']);self.assertEqual(proof['summaryCoverage'],{k:973285 for k in C.SUMMARY_KEYS})
+
+    def test_elapsed_budget_does_not_admit_stale_summary_or_unready_worker_or_batch(self):
+        stale=copy.deepcopy(self.health);stale['checks']['index']['summarySnapshot']['coverageByKey']['workSummary']=973283
+        worker=copy.deepcopy(self.health);worker['checks']['worker']['proofReady']=False
+        for replies in ([stale],[worker],[self.health,{**self.batch,'ready':False}],
+                [self.health,{**self.batch,'checkedTipHash':'b'*64}],
+                [self.health,self.batch,{**self.health,'ready':False}]):
+            with self.subTest(replies=replies),patch.object(C,'local_json',side_effect=replies),\
+                    patch.object(C.time,'monotonic',side_effect=[0,C.POSTFLIGHT_TIMEOUT_SECONDS]),patch.object(C.time,'sleep')as sleep:
+                with self.assertRaisesRegex(ValueError,'postflight unavailable'):C.require_postflight(self.authority)
+                sleep.assert_not_called()
+
+    def test_true_postflight_timeout_runs_actual_forward_only_failure_handler(self):
+        tree=ast.parse(Path(C.__file__).read_bytes());main=next(n for n in tree.body if isinstance(n,ast.FunctionDef)and n.name=='main')
+        transaction=next(n for n in main.body if isinstance(n,ast.Try))
+        postflight=next(n for n in transaction.body if isinstance(n,ast.Assign)and ast.unparse(n.targets[0])=="receipt['postflight']")
+        code=compile(ast.fix_missing_locations(ast.Module(body=[ast.Try(body=[postflight],handlers=transaction.handlers,orelse=[],finalbody=[])],type_ignores=[])),'actual-timeout-handler','exec')
+        receipt={'installed':True,'sourceWritesStarted':True,'rolledBack':False};drain=Mock();save=Mock()
+        env={**vars(C),'m':{'batchAuthority':self.authority},'receipt':receipt,'drain_apps':drain,'save':save,'print':Mock()}
+        with patch.object(C,'local_json',side_effect=OSError('not ready')),\
+                patch.object(C.time,'monotonic',side_effect=[0,C.POSTFLIGHT_TIMEOUT_SECONDS]),patch.object(C.time,'sleep'):
+            with self.assertRaisesRegex(ValueError,'forward-only'):exec(code,env)
+        drain.assert_called_once();save.assert_called_once()
+        self.assertTrue(receipt['installed']);self.assertFalse(receipt['rolledBack'])
+        for key in ('sourceRollbackProhibited','forwardRecoveryRequired','recoveryIncomplete'):self.assertTrue(receipt[key])
+        self.assertNotIn('completedAt',receipt);self.assertNotIn('postflight',receipt)
+
+    def test_controller_and_search_receive_distinct_nested_deadlines(self):
+        for controller,timeout,raw in [(True,S.CONTROLLER_TIMEOUT_SECONDS,b'{"installed":true}'),
+                (False,S.SEARCH_RESTORE_TIMEOUT_SECONDS,b'{"ok":true}')]:
+            child=Mock();child.communicate.return_value=(raw,b'');child.returncode=0
+            with patch.object(S.subprocess,'Popen',return_value=child):S.invoke(b'# fixture',payload=b'input',require_recovery_receipt=controller)
+            child.communicate.assert_called_once_with(b'input',timeout=timeout)
+        self.assertEqual(C.POSTFLIGHT_TIMEOUT_SECONDS,3600)
+        self.assertGreaterEqual(S.CONTROLLER_TIMEOUT_SECONDS-C.POSTFLIGHT_TIMEOUT_SECONDS,1200)
+        longest=S.CONTROLLER_TIMEOUT_SECONDS+S.SEARCH_RESTORE_TIMEOUT_SECONDS+S.CONTROLLER_RECOVERY_GRACE_SECONDS
+        self.assertGreaterEqual(R.ROLLOUT_TIMEOUT_SECONDS-longest,600)
+        self.assertGreaterEqual(9000-(R.ROLLOUT_TIMEOUT_SECONDS+R.ROLLOUT_RECOVERY_GRACE_SECONDS),900)
+
+    def test_both_controller_and_search_timeout_preserve_uncertainty_after_grace(self):
+        for controller in (False,True):
+            child=Mock();child.poll.return_value=None
+            timeout=S.CONTROLLER_TIMEOUT_SECONDS if controller else S.SEARCH_RESTORE_TIMEOUT_SECONDS
+            child.communicate.side_effect=[S.subprocess.TimeoutExpired('fixture',timeout),
+                S.subprocess.TimeoutExpired('fixture',S.CONTROLLER_RECOVERY_GRACE_SECONDS)]
+            with patch.object(S.subprocess,'Popen',return_value=child):
+                with self.assertRaises(S.ControllerStillRunning):S.invoke(b'# fixture',require_recovery_receipt=controller)
+            self.assertEqual([c.kwargs['timeout']for c in child.communicate.call_args_list],[timeout,S.CONTROLLER_RECOVERY_GRACE_SECONDS])
+            child.send_signal.assert_called_once_with(S.signal.SIGINT)
+
+    def test_release_timeout_preserves_actual_output_without_success_claim(self):
+        fixture=RehearsalGateTests();fixture.setUp();plan=fixture.plan
+        plan.update(format='proof-of-work-work-batch-reader-recovery-rollout-plan-v1',
+            rolloutSupervisorSha256=C.sha((HERE/'rollout-node.py').read_bytes()),controllerSha256=C.sha((HERE/'scoped-node.py').read_bytes()))
+        fixture.value['planSha256']=C.sha(R.encoded(plan));qualification=encoded(fixture.value)
+        with tempfile.TemporaryDirectory()as tmp:
+            args=types.SimpleNamespace(plan=Path(tmp)/'plan',receipt=Path(tmp)/'receipt',rehearsal=Path(tmp)/'qualification',rehearsal_sha256=C.sha(qualification),phase='overlay')
+            args.plan.write_bytes(R.encoded(plan));args.plan.chmod(0o600)
+            child=Mock();child.poll.return_value=None
+            child.communicate.side_effect=[R.subprocess.TimeoutExpired('fixture',R.ROLLOUT_TIMEOUT_SECONDS),
+                R.subprocess.TimeoutExpired('fixture',R.ROLLOUT_RECOVERY_GRACE_SECONDS,output=b'actual partial stdout',stderr=b'actual partial stderr')]
+            with patch.object(R,'node_context'),patch.object(R,'private_output'),patch.object(R,'controller',return_value=C),\
+                    patch.object(C,'evidence_reference',return_value=qualification),patch.object(R.subprocess,'Popen',return_value=child):
+                with self.assertRaisesRegex(ValueError,'state is uncertain'):R.overlay(args)
+            result=json.loads(args.receipt.read_bytes())
+            self.assertEqual([c.kwargs['timeout']for c in child.communicate.call_args_list],[R.ROLLOUT_TIMEOUT_SECONDS,R.ROLLOUT_RECOVERY_GRACE_SECONDS])
+            self.assertEqual(result['dispatchStatus'],'uncertain-interruption');self.assertIsNone(result['exitCode'])
+            self.assertEqual(result['stdout'],'actual partial stdout');self.assertEqual(result['stderr'],'actual partial stderr')
+            self.assertNotIn('installed',result);child.send_signal.assert_called_once_with(R.signal.SIGINT)
 
 if __name__=='__main__':unittest.main()

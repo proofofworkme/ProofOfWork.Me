@@ -8659,6 +8659,14 @@ The [forward recovery controller](deploy/work-batch-reader-recovery/README.md)
 binds the failed reader installation and its retained custody, rehearses the
 composed reader/API against the existing database in a read-only service, and
 requires all eight summaries at the same live node tip before acceptance.
+Its fixed recovery budgets allow 3600 seconds for exact-tip postflight inside a
+4800-second scoped process. Search restoration retains its 1200-second deadline
+and 600-second interruption grace; the release parent allows 7200 seconds plus
+900 seconds of grace inside a 9000-second outer unit with a 900-second stop grace.
+These bounds accommodate catch-up after an interruption without changing worker
+configuration or weakening readiness. They do not guarantee catch-up: postflight
+failure drains the apps for explicit forward recovery, while a parent or Search
+timeout retains uncertainty rather than claiming completion.
 This repair does not replay or rewrite accepted transactions or declarations.
 
 The original authority declaration

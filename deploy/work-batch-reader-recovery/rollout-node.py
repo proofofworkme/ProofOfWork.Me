@@ -2,6 +2,10 @@
 """Explicit rollout dispatcher: preserve the Search hold on every error path."""
 import base64, copy, hashlib, json, os, signal, subprocess, sys
 
+CONTROLLER_TIMEOUT_SECONDS = 4800
+SEARCH_RESTORE_TIMEOUT_SECONDS = 1200
+CONTROLLER_RECOVERY_GRACE_SECONDS = 600
+
 class ControllerStillRunning(RuntimeError):
     """Keep Search held until an interrupted or incomplete rollback is recovered."""
 
@@ -14,12 +18,13 @@ def invoke(code, argv=(), payload=None, require_recovery_receipt=False):
     child = subprocess.Popen(['/usr/bin/python3', '-I', '-B', '-c', code.decode(), *argv],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
-        stdout, stderr = child.communicate(payload, timeout=1200)
+        timeout = CONTROLLER_TIMEOUT_SECONDS if require_recovery_receipt else SEARCH_RESTORE_TIMEOUT_SECONDS
+        stdout, stderr = child.communicate(payload, timeout=timeout)
     except BaseException:
         # SIGINT is a Python exception: both fixed controllers can finish their
         # existing rollback paths before this dispatcher leaves the hold scope.
         if child.poll() is None: child.send_signal(signal.SIGINT)
-        try: stdout, stderr = child.communicate(timeout=600)
+        try: stdout, stderr = child.communicate(timeout=CONTROLLER_RECOVERY_GRACE_SECONDS)
         except subprocess.TimeoutExpired:
             raise ControllerStillRunning('Controller rollback is still running; retain the Search hold for supervised recovery')
         if require_recovery_receipt:

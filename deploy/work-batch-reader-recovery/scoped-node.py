@@ -31,6 +31,7 @@ IMPORT = re.compile(r'''(?:\b(?:import|export)\s+[^;]*?\bfrom\s*|\bimport\s*\(?\
 SHA = re.compile('[0-9a-f]{64}\\Z')
 ROOT_JSON = frozenset({'package.json', 'package-lock.json',
     'WORK_MARKET_V1_REFUNDS_959061.json', 'WORK_MARKET_V2_STALE_REFUND_REVIEW_959301.json'})
+POSTFLIGHT_TIMEOUT_SECONDS = 3600
 
 ACCEPTED_OVERLAYS = Path('/etc/proofofwork-retention/node-source-overlays.json')
 
@@ -470,7 +471,7 @@ def validate_postflight(value,authority):
     validate_batch_authority(authority)
     return value
 
-def require_postflight(authority,timeout_seconds=600):
+def require_postflight(authority,timeout_seconds=POSTFLIGHT_TIMEOUT_SECONDS):
     deadline=time.monotonic()+timeout_seconds
     while True:
         try:
