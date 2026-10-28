@@ -35,11 +35,12 @@ class ArchiveTests(unittest.TestCase):
    'batchAuthority':self.authority,'acceptedInventorySha256':self.pin}
   prior_row=copy.deepcopy(next(row for row in rows if row['path']=='server/db/proof-index-reader.mjs'))
   prior_row['after']=prior_row['before'];prior_row['before']=a.sha(b'original accepted reader')
-  self.predecessor={'manifest':{'sources':[prior_row]}}
+  self.predecessor={'manifest':{'sources':[prior_row]},'contract':{'format':'work-batch-reader-recovery-predecessor-v1'}}
   next(row for row in self.accepted_value['overlays']if row['path']==prior_row['path'])['sha256']=prior_row['before']
   self.accepted.write_bytes(encode(self.accepted_value));self.pin=a.sha(self.accepted.read_bytes());self.m['acceptedInventorySha256']=self.pin
   self.predecessor_bytes={key:encode({'historical':key})for key in ('plan','manifest','receipt','dispatch')}
   self.m['predecessor']={key:{'path':str(self.root/('old-'+key+'.json')),'sha256':a.sha(raw)}for key,raw in self.predecessor_bytes.items()}
+  self.predecessor['contract'].update(copy.deepcopy(self.m['predecessor']))
   self.m['searchHold']['bindings']={'releaseId':'old-release','attempt':'initial','files':{}}
   self.plan={'format':'proof-of-work-work-batch-reader-recovery-rollout-plan-v1','sourceCommit':self.commit,'releaseId':self.rid,
    'controllerSha256':a.sha(b'controller'),'controllerBase64':base64.b64encode(b'controller').decode(),'runtimeManifestTemplate':copy.deepcopy(self.m)}
@@ -50,12 +51,12 @@ class ArchiveTests(unittest.TestCase):
    servicesAfter={name:{'ActiveState':'active','MainPID':'123','WorkingDirectory':'/opt/proofofwork-api'}for name in self.m['services']},
    sources=[{key:value for key,value in row.items()if key!='base64'}for row in rows],createdHelpers=journal,
    postflight=copy.deepcopy(self.postflight))
-  self.qualification={'format':'work-batch-summary-rehearsal-qualified-v1','qualified':True,
+  self.qualification={'format':'work-batch-summary-rehearsal-qualified-v2','qualified':True,
    'planSha256':a.sha(encode(self.plan)),'sourceCommit':self.commit,'releaseId':self.rid,
    'candidateHashes':{row['path']:row['after']for row in rows},'predecessor':self.m['predecessor'],
    'unit':'pow-batch-summary-rehearsal-'+self.rid+'.service','invocationId':'c'*32,
-   'dispatchSha256':'d'*64,'stdoutSha256':'e'*64,'adapterHashes':{name:'f'*64 for name in ('api.mjs','postgres.mjs','fetch-guard.mjs')},
-   'result':{'format':'work-batch-summary-readonly-rehearsal-v1','ok':True,'published':False,
+   'dispatchSha256':'d'*64,'stdoutSha256':'e'*64,'adapterHashes':{name:'f'*64 for name in ('api.mjs','postgres.mjs','fetch-guard.mjs','worker.mjs')},
+   'result':{'format':'work-batch-summary-readonly-rehearsal-v2','ok':True,'published':False,'publicationAccountingCurrent':True,
     'indexedThroughBlock':973285,'indexedThroughBlockHash':'f'*64,'snapshotId':'2'*24,
     'summaryKeys':sorted(self.postflight['summaryCoverage'])}}
   self.dispatch={'format':'proof-of-work-work-batch-reader-recovery-node-dispatch-receipt-v1','dispatchStatus':'completed','exitCode':0,
@@ -105,7 +106,7 @@ class ArchiveTests(unittest.TestCase):
  def actual(self,name):
   p=self.runtime/name;s=p.lstat();return {'sha256':a.sha(p.read_bytes()),'metadata':{'uid':s.st_uid,'gid':s.st_gid,'mode':stat.S_IMODE(s.st_mode)},'identity':ident(s)}
  def test_exact_approval_and_bundle(self):a.validate_approval(self.approval);self.assertEqual(set(self.bundle()),a.TARGETS)
- def test_fixed_creation_and_existing_scope(self):self.assertEqual(len(a.NEW),0);self.assertEqual(a.TARGETS,{'server/db/proof-index-reader.mjs','server/proof-api.mjs'})
+ def test_fixed_creation_and_existing_scope(self):self.assertEqual(len(a.NEW),0);self.assertEqual(a.TARGETS,{'server/db/proof-index-reader.mjs','server/proof-api.mjs','scripts/backfill-proof-indexer.mjs'})
  def test_success_preserves_untouched_overlays_and_all_original_evidence(self):
   self.run_accept();result=json.loads(self.accepted.read_bytes())
   self.assertEqual(next(row for row in result['overlays']if row['path']=='server/unchanged-overlay.mjs'),self.accepted_value['overlays'][-1])
@@ -286,16 +287,17 @@ class ArchiveTests(unittest.TestCase):
   original=copy.deepcopy(self.predecessor)
   rows=[]
   for current in self.m['sources']:
+   if current['path']not in a.HISTORICAL_TARGETS:continue
    row=copy.deepcopy(current);row['after']=current['before']
    rows.append(row)
-  original['contract']={}
+  original['contract']={'format':'work-batch-reader-recovery-predecessor-v1'}
   for key in ('plan','manifest','receipt','dispatch'):
    path=self.root/('first-failure-'+key+'.json');raw=encode({'firstFailure':key})
    path.write_bytes(raw);original['contract'][key]={'path':str(path),'sha256':a.sha(raw)}
   qpath=self.root/'first-recovery-rehearsal.json';qraw=encode({'previousRehearsal':'qualified-history-only'})
   qpath.write_bytes(qraw)
   self.predecessor={'manifest':{'sources':rows},'ancestors':[original],
-   'contract':copy.deepcopy(self.m['predecessor']),
+   'contract':{**copy.deepcopy(self.m['predecessor']),'format':'work-batch-reader-recovery-predecessor-v2'},
    'dispatch':{'rehearsal':{'path':str(qpath),'sha256':a.sha(qraw)}}}
  def test_two_failed_attempts_preserve_all_generations_and_rehearsal_custody(self):
   self.second_failure();self.run_accept()
@@ -312,8 +314,9 @@ class ArchiveTests(unittest.TestCase):
   self.assertEqual(json.loads((self.custody/'source-overlays-before.json').read_bytes()),self.accepted_value)
  def test_four_generation_reader_and_three_generation_api_never_accept_intermediate_hashes(self):
   self.second_failure()
-  for current,prior in zip(self.m['sources'],self.predecessor['manifest']['sources']):
-   self.assertEqual(current['path'],prior['path'])
+  current_by_path={row['path']:row for row in self.m['sources']}
+  for prior in self.predecessor['manifest']['sources']:
+   current=current_by_path[prior['path']]
    prior['after']=a.sha(('second failed '+current['path']).encode());current['before']=prior['after']
   result,_=a.extend_inventory(self.m,self.r,self.accepted_value,[],self.actual,lambda name:None,self.predecessor)
   for current in self.m['sources']:
@@ -324,7 +327,7 @@ class ArchiveTests(unittest.TestCase):
    a.extend_inventory(self.m,self.r,wrong,[],self.actual,lambda name:None,self.predecessor)
  def test_missing_nested_or_extra_ancestor_refuses_acceptance(self):
   self.second_failure();self.predecessor['ancestors'].append(copy.deepcopy(self.predecessor['ancestors'][0]))
-  with self.assertRaisesRegex(ValueError,'Expanded predecessor lineage'):
+  with self.assertRaisesRegex(ValueError,'predecessor acceptance order'):
    a.extend_inventory(self.m,self.r,self.accepted_value,[],self.actual,lambda name:None,self.predecessor)
  def test_broken_nested_reader_chain_refuses_acceptance(self):
   self.second_failure();self.predecessor['ancestors'][0]['manifest']['sources'][0]['after']='0'*64
@@ -334,6 +337,56 @@ class ArchiveTests(unittest.TestCase):
   self.second_failure();ref=self.predecessor['ancestors'][0]['contract']['receipt']
   Path(ref['path']).write_bytes(b'foreign')
   with self.assertRaisesRegex(ValueError,'digest differs'):self.run_accept()
+  self.assertEqual(a.sha(self.accepted.read_bytes()),self.pin)
+ def third_failure(self):
+  self.second_failure();second=copy.deepcopy(self.predecessor)
+  second['contract']={'format':'work-batch-reader-recovery-predecessor-v2'}
+  for key in ('plan','manifest','receipt','dispatch'):
+   path=self.root/('second-failure-'+key+'.json');raw=encode({'secondFailure':key})
+   path.write_bytes(raw);second['contract'][key]={'path':str(path),'sha256':a.sha(raw)}
+  rows=[]
+  for row in second['manifest']['sources']:
+   current=next(r for r in self.m['sources']if r['path']==row['path'])
+   row['after']=a.sha(('second generation '+row['path']).encode())
+   third=copy.deepcopy(row);third['before']=row['after'];third['after']=current['before'];rows.append(third)
+  qpath=self.root/'second-recovery-rehearsal.json';qraw=encode({'secondRehearsal':'qualified-history-only'});qpath.write_bytes(qraw)
+  self.predecessor={'manifest':{'sources':rows},'ancestors':[second['ancestors'][0],second],
+   'contract':{**copy.deepcopy(self.m['predecessor']),'format':'work-batch-reader-recovery-predecessor-v3'},
+   'dispatch':{'rehearsal':{'path':str(qpath),'sha256':a.sha(qraw)}}}
+ def test_three_failures_retain_original_custody_and_both_historical_rehearsals(self):
+  self.third_failure();self.run_accept()
+  mapping=json.loads((self.custody/'evidence-origins.json').read_bytes())
+  self.assertEqual(len(mapping['copies']),18)
+  for item in mapping['copies']:
+   self.assertEqual(Path(item['origin']['path']).read_bytes(),Path(item['retained']['path']).read_bytes())
+  for index in (1,2):self.assertTrue((self.custody/('predecessor-'+str(index)+'-summary-rehearsal-qualified.json')).exists())
+  result=json.loads(self.accepted.read_bytes())
+  self.assertEqual(json.loads((self.custody/'source-overlays-before.json').read_bytes()),self.accepted_value)
+  for row in result['overlays']:
+   if row['path']in a.TARGETS:self.assertEqual(len(row['evidence']),21)
+ def test_worker_before_must_match_original_accepted_inventory_or_git(self):
+  self.third_failure();name='scripts/backfill-proof-indexer.mjs'
+  a.extend_inventory(self.m,self.r,self.accepted_value,[],self.actual,lambda name:None,self.predecessor)
+  data=copy.deepcopy(self.accepted_value);next(r for r in data['overlays']if r['path']==name)['sha256']='0'*64
+  with self.assertRaisesRegex(ValueError,'Accepted before hash'):
+   a.extend_inventory(self.m,self.r,data,[],self.actual,lambda name:None,self.predecessor)
+  original=next(r for r in self.accepted_value['overlays']if r['path']==name)
+  data['overlays']=[r for r in data['overlays']if r['path']!=name]
+  a.extend_inventory(self.m,self.r,data,[],self.actual,lambda n:original if n==name else None,self.predecessor)
+ def test_worker_never_appears_in_fixed_historical_scopes(self):
+  self.third_failure();worker=next(r for r in self.m['sources']if r['path']=='scripts/backfill-proof-indexer.mjs')
+  self.predecessor['manifest']['sources'].append(copy.deepcopy(worker))
+  with self.assertRaisesRegex(ValueError,'acceptance scope'):a.predecessor_lineage(self.predecessor)
+ def test_fourth_missing_or_reordered_failure_refuses(self):
+  self.third_failure();original=copy.deepcopy(self.predecessor)
+  for ancestors in (original['ancestors']+[copy.deepcopy(original['ancestors'][0])],
+      list(reversed(original['ancestors'])),original['ancestors'][1:]):
+   value=copy.deepcopy(original);value['ancestors']=ancestors
+   with self.subTest(length=len(ancestors)),self.assertRaises(ValueError):a.predecessor_lineage(value)
+ def test_worker_accounting_rehearsal_failure_prevents_acceptance(self):
+  self.qualification['result']['publicationAccountingCurrent']=False
+  self.dispatch['rehearsal']['sha256']=a.sha(encode(self.qualification));self.approval['dispatch']['sha256']=a.sha(encode(self.dispatch))
+  with self.assertRaisesRegex(ValueError,'unpublished canonical summaries'):self.run_accept()
   self.assertEqual(a.sha(self.accepted.read_bytes()),self.pin)
  def test_missing_search_restore_refuses_successful_inner_receipt(self):
   dispatch=copy.deepcopy(self.dispatch);outcome=json.loads(dispatch['stdout']);outcome.pop('searchRestore');dispatch['stdout']=json.dumps(outcome)

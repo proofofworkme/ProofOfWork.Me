@@ -14,6 +14,28 @@ R=load(HERE/'release.py','recovery_release')
 OLD=load(HERE.parent/'work-batch-reader-fix/check-scoped-node.test.py','old_fixture')
 def encoded(value):return (json.dumps(value,sort_keys=True)+'\n').encode()
 
+def historical_interface(manifest):
+    expected=copy.deepcopy(manifest)
+    def validate_manifest(value):
+        C.require(value==expected,'Historical fixture manifest differs')
+    def validate_rehearsal(value,plan,pin):
+        C.require(value['format']=='work-batch-summary-rehearsal-qualified-v1'
+            and value['result']['format']=='work-batch-summary-readonly-rehearsal-v1'
+            and value['qualified']is True and value['planSha256']==pin
+            and value['sourceCommit']==expected['sourceCommit'] and value['releaseId']==expected['releaseId']
+            and value['predecessor']==expected['predecessor']
+            and value['candidateHashes']=={r['path']:r['after']for r in expected['sources']}
+            and set(value['adapterHashes'])=={'api.mjs','postgres.mjs','fetch-guard.mjs'},'Rehearsal source fixture differs')
+    return {**{key:getattr(C,key)for key in ('BASE_SOURCE_COMMIT','load_predecessor',
+        'predecessor_fence','installed_source_fence')},'ALLOWED':C.HISTORICAL_ALLOWED,
+        'validate_manifest':validate_manifest,'validate_rehearsal':validate_rehearsal}
+
+def historical_qualification(q):
+    q['format']='work-batch-summary-rehearsal-qualified-v1'
+    q['result']['format']='work-batch-summary-readonly-rehearsal-v1'
+    q['result'].pop('publicationAccountingCurrent',None);q['adapterHashes'].pop('worker.mjs',None)
+    return q
+
 class PredecessorTests(unittest.TestCase):
     def setUp(self):
         fixture=OLD.ControllerTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
@@ -103,28 +125,33 @@ class PredecessorTests(unittest.TestCase):
         self.fence_patches();path=Path(self.r['createdHelpers'][C.READER]['beforePath']);foreign=path.with_name('foreign')
         foreign.write_bytes(path.read_bytes());foreign.chmod(path.stat().st_mode&0o777);os.replace(foreign,path)
         with self.assertRaisesRegex(ValueError,'inode or byte evidence'):C.predecessor_fence(self.p,current=False)
-    def recovery_manifest(self):
+    def recovery_manifest(self, allowed=None):
+        allowed=C.ALLOWED if allowed is None else allowed
         m=copy.deepcopy(self.m);m.update(format='proof-of-work-work-batch-reader-recovery-scoped-runtime-v1',
             predecessor=self.p,nodePath=self.plan['nodePath'])
         m['dependencies'][C.READER]=self.m['sources'][0]['after']
         rows=[]
-        for name in sorted(C.ALLOWED):
+        for name in sorted(allowed):
             raw=(self.fixture.root/name).read_bytes();after=raw if name==C.READER else raw+b'// API growth fix\n'
             rows.append({'path':name,'before':C.sha(raw),'after':C.sha(after),'base64':base64.b64encode(after).decode()})
-        m['sources']=rows;m['sourceMetadata']={name:m['dependencyMetadata'][name]for name in C.ALLOWED}
-        m['sourceIdentities']={name:C.creation_identity((self.fixture.root/name).lstat())for name in C.ALLOWED}
-        m['sourceParents']={name:C.parent_identity((self.fixture.root/name).parent.lstat())for name in C.ALLOWED}
+        m['sources']=rows;m['sourceMetadata']={name:m['dependencyMetadata'][name]for name in allowed}
+        m['sourceIdentities']={name:C.creation_identity((self.fixture.root/name).lstat())for name in allowed}
+        m['sourceParents']={name:C.parent_identity((self.fixture.root/name).parent.lstat())for name in allowed}
         return m
     def test_recovery_manifest_preserves_installed_reader_and_all_dependency_pins(self):
-        self.assertEqual(set(C.validate_manifest(self.recovery_manifest())),C.ALLOWED)
+        m=self.recovery_manifest()
+        if self.p['format']!='work-batch-reader-recovery-predecessor-v3':
+            with self.assertRaisesRegex(ValueError,'fixed latest predecessor'):C.validate_manifest(m)
+        else:self.assertEqual(set(C.validate_manifest(m)),C.ALLOWED)
     def test_reviewed_reader_correction_keeps_the_exact_predecessor_baseline(self):
         m=self.recovery_manifest();row=next(r for r in m['sources']if r['path']==C.READER)
-        raw=base64.b64decode(row['base64'])+b'// reviewed child fee projection correction\n'
+        raw=base64.b64decode(row['base64'])+b'// unrelated new reader change\n'
         row.update(after=C.sha(raw),base64=base64.b64encode(raw).decode())
-        self.assertNotEqual(row['after'],row['before'])
-        self.assertEqual(C.validate_manifest(m)[C.READER],raw)
-        self.assertEqual(row['before'],self.m['sources'][0]['after'])
+        with self.assertRaises(ValueError):C.validate_manifest(m)
     def test_reader_baseline_or_unrelated_dependency_change_refuses(self):
+        if self.p['format']!='work-batch-reader-recovery-predecessor-v3':
+            with self.assertRaisesRegex(ValueError,'fixed latest predecessor'):C.validate_manifest(self.recovery_manifest())
+            return
         m=self.recovery_manifest();m['dependencies']['package.json']='0'*64
         with self.assertRaisesRegex(ValueError,'closure'):C.validate_manifest(m)
         m=self.recovery_manifest();row=next(r for r in m['sources']if r['path']==C.READER)
@@ -145,7 +172,7 @@ class RecoveryPredecessorTests(PredecessorTests):
         super().setUp()
         self.original_p=copy.deepcopy(self.p);self.original_m=copy.deepcopy(self.m)
         self.original_r=copy.deepcopy(self.r);self.original_inner=self.inner
-        m=PredecessorTests.recovery_manifest(self);m['sourceCommit']=C.RECOVERY_PREDECESSOR_COMMIT
+        m=PredecessorTests.recovery_manifest(self,C.HISTORICAL_ALLOWED);m['sourceCommit']=C.RECOVERY_PREDECESSOR_COMMIT
         m['releaseId']=C.RECOVERY_PREDECESSOR_RELEASE
         # Simulate both actual 7b924 source publications, preserving original
         # reader and API inodes exactly as the live installer does.
@@ -158,16 +185,16 @@ class RecoveryPredecessorTests(PredecessorTests):
         for index,row in enumerate(m['sources']):
             (inner/('before-'+str(index)+'.mjs')).write_bytes((self.fixture.root/row['path']).read_bytes())
             (inner/('candidate-'+str(index)+'.mjs')).write_bytes(base64.b64decode(row['base64']))
-        metadata={name:tuple(m['sourceMetadata'][name][k]for k in ('uid','gid','mode'))for name in C.ALLOWED}
+        metadata={name:tuple(m['sourceMetadata'][name][k]for k in ('uid','gid','mode'))for name in C.HISTORICAL_ALLOWED}
         self.start(patch.object(C,'QUARANTINE_PARENT',self.tmp/'quarantine'))
-        C.install(self.fixture.root,inner,m['sources'],metadata,True,'successor-fixture',created,lambda:None,
-            m['sourceIdentities'],m['sourceParents'])
+        with patch.object(C,'ALLOWED',C.HISTORICAL_ALLOWED):
+            C.install(self.fixture.root,inner,m['sources'],metadata,True,'successor-fixture',created,lambda:None,
+                m['sourceIdentities'],m['sourceParents'])
         frozen=b'# fixed offline historical-controller interface\n'
         self.start(patch.object(C,'RECOVERY_PREDECESSOR_CONTROLLER_SHA',C.sha(frozen)))
         def historical_exec(code,ns):
             if code.co_filename=='frozen-work-batch-reader-recovery-scoped-node.py':
-                ns.update({key:getattr(C,key)for key in ('ALLOWED','BASE_SOURCE_COMMIT','validate_manifest',
-                    'load_predecessor','predecessor_fence','validate_rehearsal','installed_source_fence')})
+                ns.update(historical_interface(m))
             else:builtins.exec(code,ns)
         self.start(patch.object(C,'exec',historical_exec,create=True))
         self.m=m;self.inner=inner
@@ -185,6 +212,7 @@ class RecoveryPredecessorTests(PredecessorTests):
         q.update(sourceCommit=m['sourceCommit'],releaseId=m['releaseId'],planSha256=C.sha(encoded(self.plan)),
             predecessor=m['predecessor'],candidateHashes={row['path']:row['after']for row in m['sources']},
             unit='pow-batch-summary-rehearsal-'+m['releaseId']+'.service')
+        historical_qualification(q)
         self.q=q;self.qpath=self.tmp/'old-recovery-qualification.json';self.qpath.write_bytes(encoded(q))
         self.dispatch={'format':'proof-of-work-work-batch-reader-recovery-node-dispatch-receipt-v1',
             'planSha256':C.sha(encoded(self.plan)),'releaseId':m['releaseId'],'dispatchStatus':'refused','exitCode':1,
@@ -217,10 +245,13 @@ class RecoveryPredecessorTests(PredecessorTests):
         m=copy.deepcopy(self.m);m['predecessor']=self.p
         m['sourceCommit']='c'*40;m['releaseId']='c'*12+'-20261028T113000Z'
         m['dependencies'].update({row['path']:row['after']for row in self.m['sources']})
-        for row in m['sources']:
-            raw=(self.fixture.root/row['path']).read_bytes();new=raw if row['path']==C.READER else raw+b'// isolated Electrum lane\n'
-            row.update(before=C.sha(raw),after=C.sha(new),base64=base64.b64encode(new).decode())
+        m['sources']=[]
+        for name in sorted(C.ALLOWED):
+            raw=(self.fixture.root/name).read_bytes();new=raw if name==C.READER else raw+b'// projection fix\n'
+            m['sources'].append({'path':name,'before':C.sha(raw),'after':C.sha(new),'base64':base64.b64encode(new).decode()})
+        m['sourceMetadata']={name:m['dependencyMetadata'][name]for name in C.ALLOWED}
         m['sourceIdentities']={name:C.creation_identity((self.fixture.root/name).lstat())for name in C.ALLOWED}
+        m['sourceParents']={name:C.parent_identity((self.fixture.root/name).parent.lstat())for name in C.ALLOWED}
         return m
     def test_exact_failed_attempt_loads_without_relabelling(self):
         v=C.load_predecessor(self.p)
@@ -232,17 +263,14 @@ class RecoveryPredecessorTests(PredecessorTests):
         original.write_bytes(b'foreign original bytes')
         with self.assertRaisesRegex(ValueError,'inode or byte evidence'):C.predecessor_fence(self.p,current=False)
     def test_reviewed_reader_correction_keeps_the_exact_predecessor_baseline(self):
-        m=self.recovery_manifest();rows={row['path']:row for row in m['sources']}
-        self.assertEqual(rows[C.READER]['before'],rows[C.READER]['after'])
-        self.assertNotEqual(rows['server/proof-api.mjs']['before'],rows['server/proof-api.mjs']['after'])
-        self.assertEqual(set(C.validate_manifest(m)),C.ALLOWED)
+        return PredecessorTests.test_reviewed_reader_correction_keeps_the_exact_predecessor_baseline(self)
     def test_other_recovery_commit_or_recursive_lineage_refuses(self):
         old=copy.deepcopy(self.m)
         self.m['sourceCommit']='f'*40;self.plan['sourceCommit']=self.m['sourceCommit'];self.plan['runtimeManifestTemplate']=copy.deepcopy(self.m)
         self.r['sourceCommit']=self.m['sourceCommit'];self.refresh()
         with self.assertRaises(ValueError):C.load_predecessor(self.p)
         self.m.clear();self.m.update(old);self.plan['sourceCommit']=self.m['sourceCommit'];self.r['sourceCommit']=self.m['sourceCommit']
-        self.m['predecessor']['format']='work-batch-reader-recovery-predecessor-v2';self.plan['runtimeManifestTemplate']=copy.deepcopy(self.m);self.refresh()
+        self.m['predecessor']['format']=self.p['format'];self.plan['runtimeManifestTemplate']=copy.deepcopy(self.m);self.refresh()
         with self.assertRaises(ValueError):C.load_predecessor(self.p)
     def test_stale_predecessor_rehearsal_refuses(self):
         self.q['candidateHashes'][C.READER]='0'*64;self.qpath.write_bytes(encoded(self.q))
@@ -259,18 +287,102 @@ class RecoveryPredecessorTests(PredecessorTests):
         self.plan['unreviewed-extra']='same source identity, changed plan';self.refresh()
         with self.assertRaisesRegex(ValueError,'fixed recovery predecessor'):C.load_predecessor(self.p)
     def test_prior_failure_receipt_cannot_admit_an_unknown_source_or_more_ancestors(self):
-        self.p['format']='work-batch-reader-recovery-predecessor-v3'
+        self.p['format']='work-batch-reader-recovery-predecessor-v4'
         with self.assertRaisesRegex(ValueError,'contract'):C.load_predecessor(self.p)
     def test_changed_api_owned_identity_refuses_next_candidate(self):
         m=self.recovery_manifest();m['sourceIdentities']['server/proof-api.mjs'][1]+=1
+        with self.assertRaises(ValueError):C.validate_manifest(m)
+
+class ProjectionPredecessorTests(RecoveryPredecessorTests):
+    """Third exact failed generation with real retained inodes, never a running unit."""
+    def setUp(self):
+        super().setUp()
+        self.second_p=copy.deepcopy(self.p);self.second_inner=self.inner
+        m=RecoveryPredecessorTests.recovery_manifest(self)
+        m['sourceCommit']=C.PROJECTION_PREDECESSOR_COMMIT;m['releaseId']=C.PROJECTION_PREDECESSOR_RELEASE
+        # The failed third generation published only the historical two paths.
+        m['sources']=[r for r in m['sources']if r['path']in C.HISTORICAL_ALLOWED]
+        for key in ('sourceMetadata','sourceIdentities','sourceParents'):
+            m[key]={name:value for name,value in m[key].items()if name in C.HISTORICAL_ALLOWED}
+        inner=self.base/('work-batch-reader-recovery-'+m['releaseId']+'-20261028T113821Z');inner.mkdir(mode=0o700)
+        for index,row in enumerate(m['sources']):
+            (inner/('before-'+str(index)+'.mjs')).write_bytes((self.fixture.root/row['path']).read_bytes())
+            (inner/('candidate-'+str(index)+'.mjs')).write_bytes(base64.b64decode(row['base64']))
+        created={};metadata={name:tuple(m['sourceMetadata'][name][k]for k in ('uid','gid','mode'))for name in C.HISTORICAL_ALLOWED}
+        with patch.object(C,'ALLOWED',C.HISTORICAL_ALLOWED):
+            C.install(self.fixture.root,inner,m['sources'],metadata,True,'third-fixture',created,lambda:None,
+                m['sourceIdentities'],m['sourceParents'])
+        frozen=b'# second fixed offline historical-controller interface\nGENERATION = 3\n'
+        self.start(patch.object(C,'PROJECTION_PREDECESSOR_CONTROLLER_SHA',C.sha(frozen)))
+        historical=C.exec
+        def third_exec(code,ns):
+            if code.co_filename=='frozen-work-batch-reader-recovery-scoped-node.py' and 'GENERATION' in code.co_names:
+                ns.update(historical_interface(m))
+            else:historical(code,ns)
+        self.start(patch.object(C,'exec',third_exec))
+        self.m=m;self.inner=inner
+        self.plan={'format':'proof-of-work-work-batch-reader-recovery-rollout-plan-v1',
+            'sourceCommit':m['sourceCommit'],'releaseId':m['releaseId'],'controllerBase64':base64.b64encode(frozen).decode(),
+            'controllerSha256':C.sha(frozen),'runtimeManifestTemplate':copy.deepcopy(m),'nodePath':m['nodePath']}
+        self.r={key:copy.deepcopy(m[key])for key in ('format','sourceCommit','releaseId','baselineHead','baseSourceCommit',
+            'restartConfigurationSha256','sourceMetadata','dependencyMetadata','gateway','protectedServices','predecessor')}
+        self.r.update(rollbackRoot=str(inner),manifestSha256=C.sha(encoded(m)),installed=True,sourceWritesStarted=True,
+            stopRequested=True,sourceRollbackProhibited=True,forwardRecoveryRequired=True,recoveryIncomplete=True,
+            rolledBack=False,errorClass='ValueError',recoveryErrorClass='ValueError',createdHelpers=created,
+            dependencyCount=len(m['dependencies']),authority=copy.deepcopy(self.original_r['authority']),
+            sources=[{k:v for k,v in row.items()if k!='base64'}for row in m['sources']])
+        gate=RehearsalGateTests();gate.setUp();q=historical_qualification(gate.value)
+        q.update(sourceCommit=m['sourceCommit'],releaseId=m['releaseId'],planSha256=C.sha(encoded(self.plan)),
+            predecessor=m['predecessor'],candidateHashes={row['path']:row['after']for row in m['sources']},
+            unit='pow-batch-summary-rehearsal-'+m['releaseId']+'.service')
+        self.q=q;self.qpath=self.tmp/'third-qualification.json';self.qpath.write_bytes(encoded(q))
+        self.dispatch={'format':'proof-of-work-work-batch-reader-recovery-node-dispatch-receipt-v1',
+            'planSha256':C.sha(encoded(self.plan)),'releaseId':m['releaseId'],'dispatchStatus':'refused','exitCode':1,
+            'rehearsal':{'path':str(self.qpath),'sha256':C.sha(encoded(q))},
+            'stdout':json.dumps({'format':'proof-of-work-work-batch-reader-recovery-rollout-result-v1',
+                'releaseId':m['releaseId'],'hold':{'ok':True},'searchRestoreDeferred':'retain hold'})}
+        self.p={'format':'work-batch-reader-recovery-predecessor-v3',
+            'unit':'pow-work-batch-reader-recovery-'+m['releaseId']+'.service'}
+        self.values={'plan':self.plan,'manifest':self.m,'receipt':self.r,'dispatch':self.dispatch}
+        self.refresh()
+        self.start(patch.object(C,'PROJECTION_PREDECESSOR_PLAN_SHA',self.p['plan']['sha256']))
+        self.start(patch.object(C,'PROJECTION_PREDECESSOR_MANIFEST_SHA',self.p['manifest']['sha256']))
+        original=Path.lstat
+        def directories(path,*args,**kwargs):
+            value=original(path,*args,**kwargs)
+            if path in (self.inner,self.second_inner):
+                fields={k:getattr(value,k)for k in dir(value)if k.startswith('st_')};fields.update(st_uid=0,st_gid=0)
+                return types.SimpleNamespace(**fields)
+            return value
+        self.start(patch.object(Path,'lstat',directories))
+    def refresh(self):
+        if not hasattr(self,'second_p'):return super().refresh()
+        self.r['manifestSha256']=C.sha(encoded(self.m));self.dispatch['planSha256']=C.sha(encoded(self.plan))
+        for key,value in self.values.items():
+            path=self.inner/(key+'.json') if key in ('manifest','receipt') else self.tmp/('third-'+key+'.json')
+            raw=encoded(value);path.write_bytes(raw);self.p[key]={'path':str(path),'sha256':C.sha(raw)}
+    def test_exact_failed_attempt_loads_without_relabelling(self):
+        v=C.load_predecessor(self.p)
+        self.assertEqual([frame['contract']for frame in v['ancestors']],[self.original_p,self.second_p])
+        self.assertTrue(v['receipt']['recoveryIncomplete']);self.assertFalse(v['receipt']['rolledBack'])
+    def test_worker_is_required_changed_existing_source_and_reader_is_retained(self):
+        m=self.recovery_manifest();self.assertEqual(set(C.validate_manifest(m)),C.ALLOWED)
+        self.assertEqual(C.NEW,frozenset())
+        row=next(r for r in m['sources']if r['path']==C.WORKER)
+        self.assertEqual(row['before'],self.m['dependencies'][C.WORKER])
+        row.update(after=row['before'],base64=base64.b64encode((self.fixture.root/C.WORKER).read_bytes()).decode())
         with self.assertRaisesRegex(ValueError,'reader lineage'):C.validate_manifest(m)
+    def test_worker_cannot_be_smuggled_into_historical_scope(self):
+        self.plan['controllerSha256']='0'*64;self.refresh()
+        with self.assertRaisesRegex(ValueError,'controller'):C.load_predecessor(self.p)
+
 
 class PublicationTests(unittest.TestCase):
     def setUp(self):
         handle=patch.object(OLD,'module',C);handle.start();self.addCleanup(handle.stop)
         OLD.ControllerTests.setUp(self)
     install=OLD.ControllerTests.install
-    test_two_file_publication=OLD.ControllerTests.test_forward_publication_preserves_before_inodes_and_single_link_candidates
+    test_three_file_publication=OLD.ControllerTests.test_forward_publication_preserves_before_inodes_and_single_link_candidates
     test_same_bytes_replacement=OLD.ControllerTests.test_same_bytes_replacement_inode_refuses_before_publication
     test_raced_incumbent=OLD.ControllerTests.test_raced_existing_source_is_retained_without_publication
     test_raced_destination=OLD.ControllerTests.test_raced_new_destination_is_never_overwritten
@@ -313,13 +425,13 @@ class RehearsalGateTests(unittest.TestCase):
             'runtimeManifestTemplate':{'sourceCommit':'a'*40,'releaseId':'a'*12+'-20261026T220000Z',
                 'predecessor':{'exact':'failed-attempt'},'sources':[{'path':name,'after':'b'*64}for name in sorted(C.ALLOWED)]}}
         self.pin=C.sha(encoded(self.plan))
-        self.value={'format':'work-batch-summary-rehearsal-qualified-v1','qualified':True,
+        self.value={'format':'work-batch-summary-rehearsal-qualified-v2','qualified':True,
             'planSha256':self.pin,'sourceCommit':self.plan['sourceCommit'],'releaseId':self.plan['releaseId'],
             'candidateHashes':{name:'b'*64 for name in C.ALLOWED},'predecessor':{'exact':'failed-attempt'},
             'unit':'pow-batch-summary-rehearsal-'+self.plan['releaseId']+'.service','invocationId':'c'*32,
             'dispatchSha256':'d'*64,'stdoutSha256':'e'*64,
-            'adapterHashes':{name:'f'*64 for name in ('api.mjs','postgres.mjs','fetch-guard.mjs')},
-            'result':{'format':'work-batch-summary-readonly-rehearsal-v1','ok':True,'published':False,
+            'adapterHashes':{name:'f'*64 for name in ('api.mjs','postgres.mjs','fetch-guard.mjs','worker.mjs')},
+            'result':{'format':'work-batch-summary-readonly-rehearsal-v2','ok':True,'published':False,'publicationAccountingCurrent':True,
                 'indexedThroughBlock':973288,'indexedThroughBlockHash':'1'*64,'snapshotId':'2'*24,
                 'summaryKeys':sorted(['growthSummary','inceptionSummary','infinitySummary','logSummary',
                     'marketplaceSummary','tokenSummary','workFloor','workSummary'])}}
@@ -345,6 +457,16 @@ class RehearsalGateTests(unittest.TestCase):
                 ('indexedThroughBlockHash',''),('snapshotId',''),('summaryKeys',['workSummary'])]:
             q=copy.deepcopy(self.value);q['result'][key]=value
             with self.subTest(key=key),self.assertRaises(ValueError):C.validate_rehearsal(q,self.plan,self.pin)
+    def test_legacy_qualification_or_missing_worker_publication_check_refuses(self):
+        cases=[]
+        q=copy.deepcopy(self.value);historical_qualification(q);cases.append(q)
+        q=copy.deepcopy(self.value);q['adapterHashes'].pop('worker.mjs');cases.append(q)
+        q=copy.deepcopy(self.value);q['candidateHashes'].pop(C.WORKER);cases.append(q)
+        q=copy.deepcopy(self.value);q['result'].pop('publicationAccountingCurrent');cases.append(q)
+        for value in (False,1,'true'):
+            q=copy.deepcopy(self.value);q['result']['publicationAccountingCurrent']=value;cases.append(q)
+        for q in cases:
+            with self.subTest(q=q),self.assertRaises(ValueError):C.validate_rehearsal(q,self.plan,self.pin)
     def test_overlay_requires_bound_evidence_before_process_creation(self):
         release=load(HERE/'release.py','recovery_release_gate')
         with tempfile.TemporaryDirectory()as tmp:

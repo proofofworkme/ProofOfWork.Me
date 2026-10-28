@@ -89,6 +89,16 @@ zero miner fee and no independent economic movement. Projection readers and
 balance rebuilds require the complete parent-bound recipient set; orphaned,
 duplicate or inconsistent children cannot become balances.
 
+The canonical transfer-value projection keeps recipient records in `items` and
+their complete valued parents in `transferBatches`, bound by
+`batchModel: "canonical-work-batch-transfer-value-projection-v1"`. Recipient
+identity includes the parent container position and recipient ordinal, so
+multiple recipients in one carrier remain distinct. Each child's economic
+values and fees stay zero during confirmation and live revaluation. The worker
+requires the complete matching family before admitting that zero-value form;
+it checks the parent's non-self aggregate and single payment separately.
+Ordinary transfer projections retain their existing accounting checks.
+
 Confirmed history remains authoritative. Pending replay applies the entire
 batch to one private state copy in the existing deterministic order and never
 mutates confirmed balances. Missing evidence is unavailable, not proof that a

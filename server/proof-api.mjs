@@ -6755,6 +6755,27 @@ const WORK_TRANSFER_VALUE_PROJECTION_FIELD_NAMES = [
   ...CREDIT_NETWORK_VALUE_FIELD_NAMES,
 ];
 
+const WORK_BATCH_TRANSFER_VALUE_PROJECTION_MODEL =
+  "canonical-work-batch-transfer-value-projection-v1";
+const WORK_BATCH_TRANSFER_VALUE_PROJECTION_FIELD_NAMES = [
+  "kind", "network", "valid", "transferVersion", "paidSats", "registryAddress",
+  "recipients", "recipientCount", "totalAmountSubatoms", "movementAmountSubatoms",
+  "batchRegistryPaymentSats", "batchPayloadCommitment", "transitionChainCommitmentAfter",
+  "batchRecipientIndex", "batchRecipientCount", "batchTotalAmountSubatoms",
+  "containerPosition", "derived", "derivedId", "parentTransitionChainCommitmentAfter",
+  "economicDelta", "chargesTransactionFee", "claimsEconomicOutputs", "rawCandidate",
+];
+
+function zeroWorkBatchProjectionEconomicFields(record) {
+  const projected = zeroWorkBatchChildEconomicFields(record);
+  for (const field of CREDIT_NETWORK_VALUE_FIELD_NAMES) {
+    if (field.endsWith("Q8")) projected[field] = "0";
+    else if (field.endsWith("Sats")) projected[field] = 0;
+  }
+  projected.creditFloorAtConfirmModel = "";
+  return projected;
+}
+
 function canonicalWorkTransferValueProjectionFromState(
   state,
   currentLiveFloorSats = 0,
@@ -6775,7 +6796,7 @@ function canonicalWorkTransferValueProjectionFromState(
   const liveFloorQ8 = decimalValueToQ8(
     String(currentLiveFloorSats ?? ""),
   );
-  const items = (Array.isArray(state?.transfers) ? state.transfers : [])
+  const transfers = (Array.isArray(state?.transfers) ? state.transfers : [])
     .filter(
       (item) =>
         item?.confirmed === true &&
@@ -6783,8 +6804,18 @@ function canonicalWorkTransferValueProjectionFromState(
         /^[0-9a-f]{64}$/u.test(
           String(item?.txid ?? "").trim().toLowerCase(),
         ),
-    )
-    .map((item) => {
+    );
+  const transferBatches = (Array.isArray(state?.transferBatches) ? state.transferBatches : [])
+    .filter((item) => item?.confirmed === true && isWorkTokenId(item?.tokenId));
+  const hasBatches = transferBatches.length > 0 || transfers.some(isWorkBatchTransferChild);
+  if (hasBatches) {
+    // A zero-valued recipient is permitted only after the complete family has
+    // passed the same canonical binding used by economic replay.
+    economicTokenTransfersFromState({ transfers, transferBatches });
+  }
+  const project = (item) => {
+      const batchParent = hasBatches && isWorkBatchTransferParent(item);
+      const batchChild = hasBatches && isWorkBatchTransferChild(item);
       const amountUnits =
         workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
           ? workSubatomsBigIntFromRecord(item, {
@@ -6800,6 +6831,13 @@ function canonicalWorkTransferValueProjectionFromState(
       for (const field of WORK_TRANSFER_VALUE_PROJECTION_FIELD_NAMES) {
         if (Object.prototype.hasOwnProperty.call(item, field)) {
           projected[field] = item[field];
+        }
+      }
+      if (batchParent || batchChild) {
+        for (const field of WORK_BATCH_TRANSFER_VALUE_PROJECTION_FIELD_NAMES) {
+          if (batchChild && ["recipients", "recipientCount", "totalAmountSubatoms",
+            "movementAmountSubatoms", "batchRegistryPaymentSats", "transitionChainCommitmentAfter"].includes(field)) continue;
+          if (Object.prototype.hasOwnProperty.call(item, field)) projected[field] = item[field];
         }
       }
       if (workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL) {
@@ -6819,6 +6857,14 @@ function canonicalWorkTransferValueProjectionFromState(
         projected,
         tokenCreditAmountMovedFields(projected),
       );
+      if (batchChild) {
+        // Table and indexed-activity transfer reconstruction may omit kind.
+        // The complete family above establishes this canonical child role.
+        return zeroWorkBatchProjectionEconomicFields({ ...projected, kind: "token-transfer" });
+      }
+      const economicAmountUnits = batchParent
+        ? BigInt(workBatchEconomicTransfer(item).amountSubatoms)
+        : amountUnits;
       const canonicalQ8 = (q8Field, decimalField) => {
         if (
           Object.prototype.hasOwnProperty.call(item, q8Field) &&
@@ -6889,7 +6935,7 @@ function canonicalWorkTransferValueProjectionFromState(
             ? WORK_SUBATOM_UNIT_SCALE
             : WORK_UNIT_SCALE;
         const creditLiveValueQ8 =
-          (amountUnits * liveFloorQ8) / unitScale;
+          (economicAmountUnits * liveFloorQ8) / unitScale;
         const creditLiveValueSats =
           q8ToCanonicalDecimal(creditLiveValueQ8);
         projected.creditLiveFloorSats = q8ToCanonicalDecimal(liveFloorQ8);
@@ -6912,19 +6958,38 @@ function canonicalWorkTransferValueProjectionFromState(
         }
       }
       return projected;
-    });
+    };
+  const items = transfers.map(project);
   return {
     amountStorageModel: workAmountStorageModel,
     items,
     model: WORK_TRANSFER_VALUE_PROJECTION_MODEL,
+    ...(hasBatches ? {
+      batchModel: WORK_BATCH_TRANSFER_VALUE_PROJECTION_MODEL,
+      transferBatches: transferBatches.map(project),
+    } : {}),
   };
 }
 
 function canonicalWorkTransferValueProjectionIsUsable(projection) {
-  return (
-    projection?.model === WORK_TRANSFER_VALUE_PROJECTION_MODEL &&
-    Array.isArray(projection?.items)
-  );
+  if (projection?.model !== WORK_TRANSFER_VALUE_PROJECTION_MODEL ||
+      !Array.isArray(projection?.items)) return false;
+  const hasBatches = projection.batchModel !== undefined ||
+    projection.transferBatches !== undefined ||
+    projection.items.some((item) => item?.amountVersion === "batch1" ||
+      item?.transferVersion === "batch1");
+  if (!hasBatches) return true;
+  if (projection.batchModel !== WORK_BATCH_TRANSFER_VALUE_PROJECTION_MODEL ||
+      !Array.isArray(projection.transferBatches)) return false;
+  try {
+    economicTokenTransfersFromState({
+      transfers: projection.items,
+      transferBatches: projection.transferBatches,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function tokenStateWithCanonicalWorkTransferValues(state, projection) {
@@ -6939,14 +7004,36 @@ function tokenStateWithCanonicalWorkTransferValues(state, projection) {
   const valuationOverlays = projection.items.filter((item) =>
     transferKeys.has(tokenTransferHistoryItemKey(item)),
   );
+  const hasBatches = projection.batchModel === WORK_BATCH_TRANSFER_VALUE_PROJECTION_MODEL;
+  const mergeValue = (current, incoming) => {
+    const merged = mergeTokenTransferRecord(current, incoming);
+    if (!hasBatches) return merged;
+    if (isWorkBatchTransferChild(incoming)) {
+      return zeroWorkBatchProjectionEconomicFields(merged);
+    }
+    if (isWorkBatchTransferParent(incoming)) {
+      return { ...merged, ...tokenCreditAmountMovedFields(merged) };
+    }
+    return merged;
+  };
+  const parentKeys = new Set((Array.isArray(state.transferBatches) ? state.transferBatches : [])
+    .map(tokenTransferHistoryItemKey).filter(Boolean));
   return tokenStateWithPendingStats({
     ...state,
     transfers: mergeTokenStateItemsByKey(
       state.transfers,
       valuationOverlays,
       tokenTransferHistoryItemKey,
-      mergeTokenTransferRecord,
+      mergeValue,
     ),
+    ...(hasBatches ? {
+      transferBatches: mergeTokenStateItemsByKey(
+        state.transferBatches,
+        projection.transferBatches.filter((item) => parentKeys.has(tokenTransferHistoryItemKey(item))),
+        tokenTransferHistoryItemKey,
+        mergeValue,
+      ),
+    } : {}),
   });
 }
 

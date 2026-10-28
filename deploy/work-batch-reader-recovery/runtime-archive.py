@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -I
-"""Exact two-file canonical summary recovery acceptance; unchanged canonical archive engine."""
+"""Exact three-file canonical summary recovery acceptance; unchanged canonical archive engine."""
 import argparse
 import base64
 import copy
@@ -20,7 +20,8 @@ ENGINE_SHA = '8ad039e14bf6b85f4c18bf0912676975111087ce90b300d0001e1629739663ae'
 HELD_SHA = 'c3bd35740d7fcc135839274c8228e38f7a45c23e33567743e0d77151b32451d9'
 HELD = Path('/etc/proofofwork-retention/audit28-held-review.json')
 NEW = frozenset()
-TARGETS = frozenset(('server/db/proof-index-reader.mjs','server/proof-api.mjs'))
+HISTORICAL_TARGETS = frozenset(('server/db/proof-index-reader.mjs','server/proof-api.mjs'))
+TARGETS = HISTORICAL_TARGETS | frozenset({'scripts/backfill-proof-indexer.mjs'})
 FAMILY = 'proof-of-work-work-batch-reader-recovery-scoped-runtime-v1'
 SHA = re.compile('[0-9a-f]{64}')
 
@@ -88,7 +89,7 @@ def committed_sources(a, engine_raw):
     return raw['deploy/work-batch-reader-recovery/scoped-node.py']
 
 def rows_by_path(rows):
-    need(type(rows)is list and len(rows)==len(TARGETS),'Wrong two-file scope')
+    need(type(rows)is list and len(rows)==len(TARGETS),'Wrong three-file scope')
     result={}
     for row in rows:
         need(type(row)is dict and row.get('path') not in result,'Duplicate source')
@@ -182,11 +183,13 @@ def extend_inventory(m,r,accepted,evidence,actual_reader,baseline_reader,predece
 
 def predecessor_lineage(predecessor):
     ancestors=predecessor.get('ancestors',[])
-    need(type(ancestors)is list and len(ancestors)<=1,'Expanded predecessor lineage')
+    need(type(ancestors)is list and len(ancestors)<=2,'Expanded predecessor lineage')
     result=[]
     for index,frame in enumerate(ancestors+[predecessor]):
         rows=frame['manifest'].get('sources',[])
-        expected=TARGETS if ancestors and index==1 else frozenset({'server/db/proof-index-reader.mjs'})
+        expected=HISTORICAL_TARGETS if index else frozenset({'server/db/proof-index-reader.mjs'})
+        need(frame.get('contract',{}).get('format')=='work-batch-reader-recovery-predecessor-v'+str(index+1),
+            'Wrong predecessor acceptance order')
         need(type(rows)is list and len(rows)==len(expected)
             and {row.get('path')for row in rows}==expected,'Expanded predecessor acceptance scope')
         result.append({row['path']:row for row in rows})
