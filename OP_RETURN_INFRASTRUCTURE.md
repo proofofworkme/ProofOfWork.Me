@@ -8668,7 +8668,7 @@ keep zero fees while coverage remains bound to the original relational evidence;
 the strict closing-state guard must remain unchanged.
 The [forward recovery controller](deploy/work-batch-reader-recovery/README.md)
 binds the failed reader installation and its retained custody, rehearses the
-composed reader/API against the existing database in a read-only service, and
+composed reader/API/worker against the existing database in a read-only service, and
 requires all eight summaries at the same live node tip before acceptance.
 Its fixed recovery budgets allow 3600 seconds for exact-tip postflight inside a
 4800-second scoped process. Search restoration retains its 1200-second deadline
@@ -8699,6 +8699,23 @@ remain mandatory. An isolated lane does not make an unavailable Electrs service
 authoritative or permit publication from incomplete evidence.
 `npm run check:electrum-client` covers independent socket resets, capacity
 reservation and the actual DNS proof path, including its failure guards.
+
+The subsequent unpublished bundle exposed another producer/consumer mismatch.
+The legacy transfer-value projection kept 286 movement records but discarded
+the batch family fields, copied zero confirmation values for the twelve
+recipients of
+`b25e6ae7f963af289ba8cb3edae76ef285d3d124204a0e4cd514df0933938322`,
+and independently recalculated their live values.
+Its older identity key also collided for recipients in the same carrier. The
+worker correctly refused publication. Preserve the physical recipient count,
+their complete identities and zero economic values, and carry the valued parent
+separately for one aggregate contribution. Publication requires complete family
+validation before any child exception; ordinary accounting checks remain intact.
+The version-2 read-only rehearsal imports a transformed copy of the actual
+candidate worker with its startup removed. It executes that worker's accounting
+predicate and checks each summary's coverage, checkpoint hash and snapshot ID.
+A successful version-1 rehearsal remains historical generation evidence and
+does not qualify this stronger publication check.
 
 The original authority declaration
 `b7c620e48c2d725a143cecd7f7808036d89907124d410ba57d272d34e650cc28`

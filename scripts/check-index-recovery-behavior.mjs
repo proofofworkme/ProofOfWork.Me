@@ -1,7 +1,7 @@
 import { parseBoostWorkTip } from "../src/shared/protocol/boostTip.mjs";
 import { canonicalSealTime } from "../server/canonical-seal-time.mjs";
 import { WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT } from "../server/work-batch-declaration.mjs";
-import { parseWorkBatchPayload, WORK_BATCH_PROTOCOL_PREFIX } from "../src/shared/protocol/workBatch.mjs";
+import { buildWorkBatchPayload, parseWorkBatchPayload, WORK_BATCH_PROTOCOL_PREFIX } from "../src/shared/protocol/workBatch.mjs";
 import { verifiedWorkBatchEventIds } from "../server/db/work-batch-reader.mjs";
 import { notificationAddressKey } from "../server/notification-query.mjs";
 import { measurePrivatePhase as measureMarketplaceReadPhase } from "../server/wallet-read-observation.mjs";
@@ -1282,8 +1282,11 @@ function isolatedFunction(path, name, globals = {}) {
     structuredClone,
     deduplicatedSummaryRead: async (_key, producer) => producer(),
     canonicalSealTime,
+    buildWorkBatchPayload,
     parseWorkBatchPayload,
+    workAmoV5CanonicalPayloadCommitment,
     WORK_BATCH_PROTOCOL_PREFIX,
+    WORK_BATCH_TRANSFER_VALUE_PROJECTION_MODEL: "canonical-work-batch-transfer-value-projection-v1",
     verifiedWorkBatchEventIds,
     notificationAddressKey,
     measureMarketplaceReadPhase,
@@ -1620,6 +1623,13 @@ function isolatedFunction(path, name, globals = {}) {
           "isWorkBatchTransferChild", "isWorkBatchTransferParent", "workBatchEconomicTransfer",
         ],
         canonicalWorkTransferValueProjectionFromState: [
+          "tokenCreditAmountMovedFields", "economicTokenTransfersFromState",
+          "zeroWorkBatchProjectionEconomicFields",
+        ],
+        zeroWorkBatchProjectionEconomicFields: ["zeroWorkBatchChildEconomicFields"],
+        canonicalWorkTransferValueProjectionIsUsable: ["economicTokenTransfersFromState"],
+        tokenStateWithCanonicalWorkTransferValues: [
+          "isWorkBatchTransferChild", "isWorkBatchTransferParent", "zeroWorkBatchProjectionEconomicFields",
           "tokenCreditAmountMovedFields",
         ],
         creditValueEventHeight: ["creditValueEventPosition"],

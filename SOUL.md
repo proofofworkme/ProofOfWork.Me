@@ -870,3 +870,9 @@ address-history sweeps when the configured transport budget permits isolation.
 Reserve bounded capacity without increasing the total request budget. Keep
 exact chain, history and economic guards intact; successful health probes or
 isolated diagnostics do not establish that a summary was published.
+
+The summary producer and its publication consumer must agree about the same
+economic event. Preserve each batch recipient's identity and balance history,
+but value only its complete verified parent once. A read-only release rehearsal
+must run the actual worker's accounting predicate as well as build the eight
+summaries; producing a bundle alone does not prove it can be published.

@@ -1,11 +1,13 @@
 # Forward recovery of the canonical WORK summaries
 
 This controller completes the failed `work-batch-reader-fix` incident. It changes
-only the existing `server/db/proof-index-reader.mjs` and `server/proof-api.mjs`.
+only the existing `server/db/proof-index-reader.mjs`, `server/proof-api.mjs`
+and `scripts/backfill-proof-indexer.mjs`.
 The reader starts from the exact installed predecessor candidate and preserves
 the reviewed child fee projection correction. The API retains the reviewed
 growth-accounting correction and can receive the summary-transport isolation
-follow-up. Both resulting hashes are bound to the committed
+follow-up. The worker receives the matching batch transfer-value publication
+check. All three resulting hashes are bound to the committed
 composition plan and successful full-summary rehearsal. It performs no SQL,
 replay, reseal, declaration, activation-config, Git, authority-service, or cleanup
 operation.
@@ -61,6 +63,17 @@ reviewed Electrum isolation change. Original authority processes, accepted sourc
 inventory, configuration and the first attempt's Search hold remain bound.
 Search restoration uses that original hold's release identity.
 
+The projection follow-up uses `work-batch-reader-recovery-predecessor-v3`.
+It admits only commit `7ce30976f8c615111da0ecc54cb0e5823994ab43`, release
+`7ce30976f8c6-20261028T112200Z`, and frozen controller
+`da1b1fc96fa36300730074b641bf9f00051327f05693ec56a063e4fecbd79b83`.
+Its exact plan and manifest are pinned in the controller; its actual terminal
+failed receipt and dispatch are mandatory. A running attempt is never eligible.
+The fixed three-attempt lineage preserves every earlier source quarantine,
+authority process and original Search hold. The worker was already part of the
+protected dependency closure; its accepted bytes and metadata remain the exact
+before state for this additional existing-file replacement.
+
 With `SRC`, `OPS`, `COMMIT`, and `RELEASE_ID` set to reviewed absolute VPS paths and
 the final source identity, run these preparation commands in order:
 
@@ -75,20 +88,25 @@ the final source identity, run these preparation commands in order:
 The plan composes from the original accepted source commit while preserving the
 actual installed overlays. A conflict requires a separately reviewed
 `--reviewed-merges` file with exact captured/base/candidate/result hashes. Review
-both source rows, the full dependency/metadata closure, Node, effective unit and
+all three source rows, the full dependency/metadata closure, Node, effective unit and
 environment digests, original service-restoration intent, predecessor evidence,
 and exact import closure. No source path may be added.
 
 Before apply, run the separately reviewed committed read-only summary rehearsal
-against those exact composed API and reader bytes. Its source/plan/predecessor
+against those exact composed API, reader and worker bytes. Its source/plan/predecessor
 pins must match this plan, and its checkpoint must include incident block 973284.
 The ordinary API entrypoint must
 not be started as a rehearsal: it starts listeners and background work.
 The committed `rehearsal.py` first dispatches the isolated candidate, then its
 `--verify` mode checks the actual successful terminal unit and emits a
-`work-batch-summary-rehearsal-qualified-v1` qualification. Overlay requires that
-qualification's exact path/hash, plan, two source hashes, predecessor and all
-eight unpublished canonical summaries; an exploratory result is insufficient.
+`work-batch-summary-rehearsal-qualified-v2` qualification. The worker adapter
+removes its startup before pool creation and exports only its pure publication
+checks. In addition to all eight summaries, qualification requires the actual
+worker accounting predicate and matching per-summary coverage, block hash and
+snapshot ID. All four private source mounts remain read-only. Overlay requires
+the qualification's exact path/hash, plan, three source hashes, four adapter
+hashes and predecessor; an exploratory result is insufficient. Earlier v1
+qualifications remain evidence for their original attempts only.
 Each inherited required `EnvironmentFile` is passed separately, in its original
 order. Preserve any startup-refusal evidence and use a fresh release identity
 for the corrected rehearsal; do not replace or retry the failed unit.
@@ -159,10 +177,11 @@ The dispatch binds the mandatory rehearsal qualification. Archive acceptance
 rechecks it against the exact plan and retains a hash-identical custody copy.
 
 For the reader, acceptance proves the chain from accepted C2 bytes through each
-admitted failed installation to the reviewed recovery reader. With a v2
-predecessor, it similarly walks the API's two installed generations back to its
-original accepted before hash. Both failed attempts' evidence and the earlier
-rehearsal remain retained. The adapter does not pretend that a failed
+admitted failed installation to the reviewed recovery reader. With a v2 or v3
+predecessor, it similarly walks the API's installed generations back to its
+original accepted before hash. The added worker path binds directly to its
+unchanged accepted before hash. All failed attempts' evidence and their earlier
+rehearsals remain retained. The adapter does not pretend that a failed
 installation was already accepted. It preserves all unrelated
 overlays and retains hash-identical copies of any compact evidence outside
 `/data/proofofwork-release-backups` in the new archive custody, with origin maps.

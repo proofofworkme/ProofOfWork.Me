@@ -59,6 +59,59 @@ class Rehearsal(unittest.TestCase):
             with self.assertRaises(ValueError):
                 r.transform_postgres(value)
 
+    def test_actual_worker_predicate_is_preserved_without_indexer_startup(self):
+        source = (ROOT / r.WORKER).read_bytes()
+        transformed = r.transform_worker(source)
+        self.assertEqual(transformed, source.split(r.WORKER_FOOTER.encode())[0] +
+                         b'\n' + r.WORKER_EXPORTS.encode())
+        self.assertNotIn(b'const pool = createProofIndexPool({', transformed)
+        self.assertNotIn(b'await pool.connect()', transformed)
+        self.assertIn(b'canonicalSummaryAccountingModelsCurrent,', transformed)
+        result = subprocess.run(['node', '--input-type=module', '--check'],
+                                input=transformed, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        for value in [source + r.WORKER_FOOTER.encode(),
+                      source.replace(b'const pool = createProofIndexPool({', b'const pool = otherPool({'),
+                      b'const pool = createProofIndexPool({});\n' + source,
+                      source.replace(b'function canonicalSummaryAccountingModelsCurrent(',
+                                     b'function renamedAccountingCheck(')]:
+            with self.assertRaises(ValueError):
+                r.transform_worker(value)
+
+    def test_eight_summaries_cannot_qualify_when_worker_accounting_rejects(self):
+        tail = r.TAIL.replace('await import("../scripts/backfill-proof-indexer.mjs")', 'worker')
+        javascript('''
+import assert from "node:assert/strict";
+const keys = ["growthSummary", "inceptionSummary", "infinitySummary", "logSummary",
+  "marketplaceSummary", "tokenSummary", "workFloor", "workSummary"];
+const hash = "a".repeat(64), snapshotId = "b".repeat(24), height = 973542;
+let accounting = true, corrupt = "", exitCode, checked = 0;
+const worker = {
+  summaryPayloadsWithAlignedWorkFloor: value => value,
+  canonicalSummaryAccountingModelsCurrent: value => { checked++; return accounting; },
+  canonicalSummaryCoverage: () => height,
+  summaryPayloadSnapshotId: value => value.snapshotId,
+};
+const proofIndexOperationalStatusPayload = async () => ({indexedThroughBlock: height, scan:{blockHash:hash}});
+const internalCanonicalSummaryPayload = async () => ({
+  indexedThroughBlock:height, indexedThroughBlockHash:hash, snapshotId,
+  summaryPayloads:Object.fromEntries(keys.map(key => [key, {
+    indexedThroughBlockHash:corrupt === "hash" && key === "logSummary" ? "c".repeat(64) : hash,
+    snapshotId:corrupt === "snapshot" && key === "workSummary" ? "d".repeat(24) : snapshotId,
+  }])),
+});
+process.exit = code => { exitCode = code; };
+console.log = () => {}; console.error = () => {};
+async function run() {
+''' + tail + '''
+}
+await run(); assert.equal(exitCode, 0);
+accounting = false; await run(); assert.equal(exitCode, 1);
+accounting = true; corrupt = "hash"; await run(); assert.equal(exitCode, 1);
+corrupt = "snapshot"; await run(); assert.equal(exitCode, 1);
+assert.equal(checked, 4);
+''')
+
     def test_sql_readonly_guard_and_connection_enforcement(self):
         javascript('''
 import assert from "node:assert/strict";
@@ -117,8 +170,8 @@ assert.equal(calls, 3);
                          'RemainAfterExit=yes', 'User=powadmin']:
             self.assertIn('--property=' + property, args)
         binds = next(arg for arg in args if arg.startswith('--property=BindReadOnlyPaths='))
-        self.assertEqual(len(binds.split('=', 2)[2].split()), 3)
-        for name in [r.API, r.READER, r.POSTGRES]:
+        self.assertEqual(len(binds.split('=', 2)[2].split()), 4)
+        for name in [r.API, r.READER, r.POSTGRES, r.WORKER]:
             self.assertIn(':' + str(r.RUNTIME / name), binds)
         self.assertFalse(any('ReadWritePaths=' in arg for arg in args))
         self.assertEqual(args[-3], '--import')

@@ -1,4 +1,4 @@
-import { parseWorkBatchPayload } from "../src/shared/protocol/workBatch.mjs";
+import { buildWorkBatchPayload, parseWorkBatchPayload } from "../src/shared/protocol/workBatch.mjs";
 import { verifiedWorkBatchEventIds, assertNoSealedWorkBatchAuthority } from "../server/db/work-batch-reader.mjs";
 import { validateWorkBatchV1PendingDecision } from "../server/work-batch-transaction.mjs";
 import {
@@ -18104,8 +18104,162 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}, options =
     summaryPayloads?.workSummary?.floor?.liveFloorSats ??
       summaryPayloads?.workSummary?.floor?.floorSats,
   );
+  // Recipient history is physical movement evidence, not a second economic
+  // charge. Only a complete, exact batch family can enter the zero-value lane.
+  const batchParents = workTransferProjection?.transferBatches ?? [];
+  const batchChildren = new Set();
+  const batchParentSet = new Set();
+  const batchPositionKey = (item, position = item) => [
+    item?.network, item?.txid, item?.blockHeight, item?.blockHash,
+    item?.blockIndex, position?.protocolVout, position?.recordOrdinal,
+  ].join(":");
+  const exactCommitment = (value, model) => value?.model === model &&
+    /^[0-9a-f]{64}$/u.test(value?.sha256 ?? "") &&
+    Number.isSafeInteger(value?.payloadBytes) && value.payloadBytes > 0;
+  const sameCommitment = (a, b) => ["model", "sha256", "payloadBytes"]
+    .every((field) => a?.[field] === b?.[field]);
+  const batchPositionCurrent = (item) =>
+    ["livenet", "testnet", "testnet4", "regtest"].includes(item?.network) &&
+    /^[0-9a-f]{64}$/u.test(item?.txid ?? "") &&
+    /^[0-9a-f]{64}$/u.test(item?.blockHash ?? "") &&
+    Number.isSafeInteger(item?.blockHeight) && item.blockHeight > 0 &&
+    [item?.blockIndex, item?.protocolVout, item?.recordOrdinal]
+      .every((value) => Number.isSafeInteger(value) && value >= 0);
+  const batchPrecisionCurrent = (item) =>
+    item?.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+    item?.precisionModel === WORK_PRECISION_V2_MODEL &&
+    item?.decimals === WORK_SUBATOM_DECIMALS &&
+    item?.unitScale === WORK_SUBATOM_UNIT_SCALE_TEXT &&
+    item?.amountVersion === "batch1";
+  const batchChildEconomicsCurrent = (item) => {
+    const requiredZeroQ8 = [
+      "creditValueAtConfirm", "creditLiveValue", "frozenNetworkValue",
+      "liveNetworkValue", "fixedEventFlow", "creditFloorAtConfirm", "creditLiveFloor",
+      "creditRevaluationFloor", "networkValueBeforeEvent", "liveNetworkValueBeforeEvent",
+    ];
+    return requiredZeroQ8.every((prefix) =>
+      exactInteger(item?.[`${prefix}Q8`]) === 0n &&
+      decimalQ8(item?.[`${prefix}Sats`]) === 0n) &&
+      ["paidSats", "registryMutationFeeSats", "minerFeeSats",
+        "canonicalMinerFeeSats", "attributedMinerFeeSats"]
+        .every((field) => exactInteger(item?.[field]) === 0n) &&
+      ["transactionMinerFeeSats", "proofPaymentSats", "salePaymentSats", "marketplaceMutationFeeSats", "arbSats"]
+        .every((field) => !hasValue(item, field) || exactInteger(item[field]) === 0n) &&
+      item?.creditFloorAtConfirmModel === "" &&
+      item?.creditAmountMovedSubatoms === "0" &&
+      item?.creditAmountMovedStorageModel === WORK_SUBATOM_PROJECTION_MODEL &&
+      item?.creditAmountMovedPrecisionModel === WORK_PRECISION_V2_MODEL &&
+      item?.creditAmountMovedDecimals === WORK_SUBATOM_DECIMALS &&
+      item?.creditAmountMovedUnitScale === WORK_SUBATOM_UNIT_SCALE_TEXT &&
+      decimalQ8(item?.creditAmountMoved) === 0n;
+  };
+  let batchFamiliesCurrent = Array.isArray(batchParents);
+  const hasBatchItems = workTransferProjectionItems.some((item) =>
+    item?.transferVersion === "batch1" || item?.amountVersion === "batch1" ||
+    item?.kind === "token-transfer-batch");
+  const hasBatchEnvelope = workTransferProjection?.batchModel !== undefined ||
+    workTransferProjection?.transferBatches !== undefined || hasBatchItems;
+  if (hasBatchEnvelope) {
+    batchFamiliesCurrent = batchFamiliesCurrent && q16Active &&
+      workTransferProjection?.batchModel === "canonical-work-batch-transfer-value-projection-v1" &&
+      batchParents.length > 0;
+    const parentsByKey = new Map();
+    const indicesByParent = new Map();
+    const batchTransactions = new Set();
+    const derivedIds = new Set();
+    try {
+      for (const parent of batchFamiliesCurrent ? batchParents : []) {
+        if (parent?.kind !== "token-transfer-batch" || parent.transferVersion !== "batch1" ||
+            parent.tokenId !== WORK_TOKEN_ID || parent.valid === false || parent.confirmed !== true ||
+            !batchPositionCurrent(parent) || !batchPrecisionCurrent(parent) ||
+            typeof parent.senderAddress !== "string" || !parent.senderAddress ||
+            !exactCommitment(parent.batchPayloadCommitment, "canonical-work-amo-payload-sha256-v1") ||
+            !exactCommitment(parent.transitionChainCommitmentAfter, "canonical-work-amo-raw-transition-chain-sha256-v1") ||
+            !["paidSats", "registryMutationFeeSats", "batchRegistryPaymentSats"]
+              .every((field) => exactInteger(parent[field]) === 546n)) {
+          batchFamiliesCurrent = false; break;
+        }
+        const payload = buildWorkBatchPayload(parent.recipients, { network: parent.network });
+        const parsed = parseWorkBatchPayload(payload, { network: parent.network });
+        const movement = parent.recipients.reduce((sum, row) => sum +
+          (row.recipientAddress === parent.senderAddress ? 0n : BigInt(row.amountSubatoms)), 0n);
+        const key = batchPositionKey(parent);
+        const miner = exactInteger(parent.minerFeeSats);
+        const transactionKey = `${parent.network}:${parent.txid}`;
+        if (!parsed || parent.recipientCount !== parsed.recipientCount ||
+            parent.totalAmountSubatoms !== parsed.totalAmountSubatoms ||
+            parent.amountSubatoms !== parsed.totalAmountSubatoms ||
+            parseWorkAmountToSubatoms(String(parent.amount)) !== parsed.totalAmountSubatoms ||
+            workAmountSubatomsFromRecord(parent, { sourceModel: WORK_SUBATOM_PROJECTION_MODEL }) !== parsed.totalAmountSubatoms ||
+            parent.movementAmountSubatoms !== movement.toString() ||
+            parent.creditAmountMovedSubatoms !== movement.toString() ||
+            parent.creditAmountMovedStorageModel !== WORK_SUBATOM_PROJECTION_MODEL ||
+            parent.creditAmountMovedPrecisionModel !== WORK_PRECISION_V2_MODEL ||
+            parent.creditAmountMovedDecimals !== WORK_SUBATOM_DECIMALS ||
+            parent.creditAmountMovedUnitScale !== WORK_SUBATOM_UNIT_SCALE_TEXT ||
+            !sameCommitment(parent.batchPayloadCommitment, workAmoV5CanonicalPayloadCommitment({ payload })) ||
+            parentsByKey.has(key) || batchTransactions.has(transactionKey) ||
+            miner === null || parent.canonicalMinerFeeCovered !== true ||
+            exactInteger(parent.canonicalMinerFeeSats) !== miner ||
+            exactInteger(parent.attributedMinerFeeSats) !== miner ||
+            (hasValue(parent, "transactionMinerFeeSats") && exactInteger(parent.transactionMinerFeeSats) !== miner) ||
+            exactInteger(parent.fixedEventFlowSats) !== 546n + miner ||
+            (hasValue(parent, "fixedEventFlowQ8") && exactInteger(parent.fixedEventFlowQ8) !== (546n + miner) * q8Scale) ||
+            ["proofPaymentSats", "salePaymentSats", "marketplaceMutationFeeSats", "arbSats"]
+              .some((field) => hasValue(parent, field) && exactInteger(parent[field]) !== 0n)) {
+          batchFamiliesCurrent = false; break;
+        }
+        parentsByKey.set(key, parent); indicesByParent.set(key, new Set()); batchParentSet.add(parent);
+        batchTransactions.add(transactionKey);
+      }
+      for (const item of batchFamiliesCurrent ? workTransferProjectionItems : []) {
+        if (item?.transferVersion !== "batch1") {
+          if (item?.kind === "token-transfer-batch" || item?.amountVersion === "batch1" ||
+              batchTransactions.has(`${item?.network}:${item?.txid}`)) batchFamiliesCurrent = false;
+          continue;
+        }
+        const key = batchPositionKey(item, item.containerPosition);
+        const parent = parentsByKey.get(key);
+        const seen = indicesByParent.get(key);
+        const index = item.batchRecipientIndex;
+        const recipient = parent?.recipients?.[index];
+        if (!parent || item.kind !== "token-transfer" || item.tokenId !== WORK_TOKEN_ID ||
+            item.valid === false || item.confirmed !== true || !batchPositionCurrent(item) ||
+            !batchPrecisionCurrent(item) || !Number.isSafeInteger(index) || index < 0 || !recipient ||
+            typeof item.derivedId !== "string" || !item.derivedId || derivedIds.has(item.derivedId) || item.derived === false ||
+            item.rawCandidate !== false || item.economicDelta !== false ||
+            item.chargesTransactionFee !== false || item.claimsEconomicOutputs !== false ||
+            item.batchRecipientCount !== parent.recipientCount ||
+            item.batchTotalAmountSubatoms !== parent.totalAmountSubatoms ||
+            item.senderAddress !== parent.senderAddress || item.recipientAddress !== recipient.recipientAddress ||
+            item.amountSubatoms !== recipient.amountSubatoms ||
+            parseWorkAmountToSubatoms(String(item.amount)) !== recipient.amountSubatoms ||
+            workAmountSubatomsFromRecord(item, { sourceModel: WORK_SUBATOM_PROJECTION_MODEL }) !== recipient.amountSubatoms ||
+            item.protocolVout !== parent.protocolVout || item.recordOrdinal !== parent.recordOrdinal + 1 + index ||
+            seen.has(index) || !sameCommitment(item.batchPayloadCommitment, parent.batchPayloadCommitment) ||
+            !sameCommitment(item.parentTransitionChainCommitmentAfter, parent.transitionChainCommitmentAfter) ||
+            !batchChildEconomicsCurrent(item)) {
+          batchFamiliesCurrent = false; break;
+        }
+        // Extra container position fields, when supplied, must agree too.
+        for (const [field, parentField] of [["blockHeight", "blockHeight"], ["blockHash", "blockHash"],
+          ["blockTransactionIndex", "blockIndex"]]) {
+          if (hasValue(item.containerPosition, field) && item.containerPosition[field] !== parent[parentField]) {
+            batchFamiliesCurrent = false;
+          }
+        }
+        seen.add(index); batchChildren.add(item); derivedIds.add(item.derivedId);
+      }
+      for (const [key, parent] of parentsByKey) {
+        if (indicesByParent.get(key).size !== parent.recipientCount) batchFamiliesCurrent = false;
+      }
+    } catch {
+      batchFamiliesCurrent = false;
+    }
+  }
   const workTransferProjectionItemKeys = workTransferProjectionItems.map(
     (item) => {
+      if (batchChildren.has(item)) return `batch-child:${batchPositionKey(item)}:${item.batchRecipientIndex}`;
       const identity = [
         item?._powEventIndex,
         item?.eventKeyVout,
@@ -18137,15 +18291,8 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}, options =
     workTransferProjectionItemKeys.every(Boolean) &&
     new Set(workTransferProjectionItemKeys).size ===
       workTransferProjectionItems.length;
-  const workTransferProjectionCurrent =
-    workTransferProjection?.model === WORK_TRANSFER_VALUE_PROJECTION_MODEL &&
-    Number.isSafeInteger(confirmedWorkTransfers) &&
-    confirmedWorkTransfers >= 0 &&
-    (confirmedWorkTransfers === 0 ||
-      (Number.isFinite(workLiveFloorSats) && workLiveFloorSats > 0)) &&
-    workTransferProjectionIdentitiesCurrent &&
-    workTransferProjectionItems.length === confirmedWorkTransfers &&
-    workTransferProjectionItems.every((item) => {
+  const transferValueCurrent =
+    (item, economicBatchParent = false) => {
       const confirmationModel = String(
         item?.creditFloorAtConfirmModel ?? "",
       );
@@ -18183,7 +18330,7 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}, options =
       let creditAmountUnits;
       let displayedAmountUnits;
       try {
-        creditAmountUnits = BigInt(
+        creditAmountUnits = economicBatchParent ? BigInt(item.movementAmountSubatoms) : BigInt(
           q16Active
             ? workAmountSubatomsFromRecord(item, {
                 allowZero: false,
@@ -18214,10 +18361,10 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}, options =
       );
       const creditValueAtConfirmQ8 = exactInteger(
         item?.creditValueAtConfirmQ8,
-        { positive: true },
+        { positive: !economicBatchParent },
       );
       const creditLiveValueQ8 = exactInteger(item?.creditLiveValueQ8, {
-        positive: true,
+        positive: !economicBatchParent,
       });
       const frozenNetworkValueQ8 = exactInteger(
         item?.frozenNetworkValueQ8,
@@ -18298,7 +18445,7 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}, options =
         /^[0-9a-f]{64}$/u.test(
           String(item?.txid ?? "").trim().toLowerCase(),
         ) &&
-        creditAmountUnits > 0n &&
+        (economicBatchParent ? creditAmountUnits >= 0n : creditAmountUnits > 0n) &&
         displayedAmountUnits === creditAmountUnits &&
         networkValueBeforeEventQ8 !== null &&
         expectedCreditFloorAtConfirmQ8 !== null &&
@@ -18334,7 +18481,18 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}, options =
             ) &&
             String(item?.valueSnapshotId ?? "").trim().length > 0))
       );
-    });
+    };
+  const workTransferProjectionCurrent =
+    workTransferProjection?.model === WORK_TRANSFER_VALUE_PROJECTION_MODEL &&
+    Number.isSafeInteger(confirmedWorkTransfers) &&
+    confirmedWorkTransfers >= 0 &&
+    (confirmedWorkTransfers === 0 ||
+      (Number.isFinite(workLiveFloorSats) && workLiveFloorSats > 0)) &&
+    batchFamiliesCurrent &&
+    workTransferProjectionIdentitiesCurrent &&
+    workTransferProjectionItems.length === confirmedWorkTransfers &&
+    workTransferProjectionItems.every((item) => batchChildren.has(item) || transferValueCurrent(item)) &&
+    [...batchParentSet].every((parent) => transferValueCurrent(parent, true));
   const confirmedIssuanceUnits = exactInteger(
     inceptionActual?.confirmedIssuanceUnits,
     { positive: true },

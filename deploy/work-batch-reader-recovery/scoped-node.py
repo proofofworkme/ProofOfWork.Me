@@ -19,13 +19,20 @@ GATEWAY = ('proofofwork-api-wg.socket', 'proofofwork-api-wg.service')
 AUTHORITY = ('bitcoind.service', 'electrs.service', 'postgresql@16-main.service')
 SEARCH = ('proofofwork-search-index.service', 'proofofwork-search-index.timer')
 NEW = frozenset()
-ALLOWED = frozenset({'server/db/proof-index-reader.mjs', 'server/proof-api.mjs'})
+HISTORICAL_ALLOWED = frozenset({'server/db/proof-index-reader.mjs', 'server/proof-api.mjs'})
+WORKER = 'scripts/backfill-proof-indexer.mjs'
+ALLOWED = HISTORICAL_ALLOWED | frozenset({WORKER})
 PREDECESSOR_CONTROLLER_SHA = 'f17799cea310a3d0a97c936a6608c7b4447e7d41da076bcdb0c950050c967dc1'
 RECOVERY_PREDECESSOR_CONTROLLER_SHA = '6284e5a121db3b90b42f8aff6225b33194aefba91063b8e3c46a57b9c9be0070'
 RECOVERY_PREDECESSOR_COMMIT = '7b9242a24ee15bc28194d97270bf1dea2e9b6f31'
 RECOVERY_PREDECESSOR_RELEASE = '7b9242a24ee1-20261028T101200Z'
 RECOVERY_PREDECESSOR_PLAN_SHA = 'c5a3c9064f54c2ba5f1ecb7581cd60f6961d0e0f7a2bccef31feab66e5656e86'
 RECOVERY_PREDECESSOR_MANIFEST_SHA = '400af71d06b97bdd647f358f897d7ab752e70e012ef821e02d51861a71af03cc'
+PROJECTION_PREDECESSOR_CONTROLLER_SHA = 'da1b1fc96fa36300730074b641bf9f00051327f05693ec56a063e4fecbd79b83'
+PROJECTION_PREDECESSOR_COMMIT = '7ce30976f8c615111da0ecc54cb0e5823994ab43'
+PROJECTION_PREDECESSOR_RELEASE = '7ce30976f8c6-20261028T112200Z'
+PROJECTION_PREDECESSOR_PLAN_SHA = '95dad5e57310d366a84656df593e2f333071235c583cca6d5b4d6499c3998e27'
+PROJECTION_PREDECESSOR_MANIFEST_SHA = '722aed45468af9a694e8f4e4b3c7404245d5e43b061b09698bb65d5ca5805001'
 READER = 'server/db/proof-index-reader.mjs'
 METADATA_TEMPLATE = 'src/shared/protocol/publishArticle.mjs'
 # Must match the final accepted pre-batch release before planning or deployment.
@@ -60,7 +67,7 @@ def validate_rehearsal(value, plan, plan_sha256):
     require(type(value)is dict and set(value)=={'format','qualified','planSha256','sourceCommit',
         'releaseId','candidateHashes','predecessor','unit','invocationId','result',
         'dispatchSha256','stdoutSha256','adapterHashes'},'Invalid rehearsal qualification')
-    require(value['format']=='work-batch-summary-rehearsal-qualified-v1' and value['qualified']is True
+    require(value['format']=='work-batch-summary-rehearsal-qualified-v2' and value['qualified']is True
         and value['planSha256']==plan_sha256 and SHA.fullmatch(plan_sha256)
         and value['sourceCommit']==m['sourceCommit']==plan['sourceCommit']
         and value['releaseId']==m['releaseId']==plan['releaseId']
@@ -70,12 +77,13 @@ def validate_rehearsal(value, plan, plan_sha256):
         and isinstance(value['invocationId'],str) and re.fullmatch('[0-9a-f]{32}',value['invocationId']),
         'Rehearsal source, predecessor or execution identity differs')
     require(all(isinstance(value[k],str) and SHA.fullmatch(value[k])for k in ('dispatchSha256','stdoutSha256'))
-        and type(value['adapterHashes'])is dict and set(value['adapterHashes'])=={'api.mjs','postgres.mjs','fetch-guard.mjs'}
+        and type(value['adapterHashes'])is dict and set(value['adapterHashes'])=={'api.mjs','postgres.mjs','fetch-guard.mjs','worker.mjs'}
         and all(isinstance(v,str)and SHA.fullmatch(v)for v in value['adapterHashes'].values()),
         'Rehearsal evidence pins differ')
     result=value['result']
-    require(type(result)is dict and result.get('format')=='work-batch-summary-readonly-rehearsal-v1'
+    require(type(result)is dict and result.get('format')=='work-batch-summary-readonly-rehearsal-v2'
         and result.get('ok')is True and result.get('published')is False
+        and result.get('publicationAccountingCurrent')is True
         and type(result.get('indexedThroughBlock'))is int and result['indexedThroughBlock']>=973284
         and isinstance(result.get('indexedThroughBlockHash'),str) and SHA.fullmatch(result['indexedThroughBlockHash'])
         and isinstance(result.get('snapshotId'),str) and re.fullmatch('[0-9a-f]{24}',result['snapshotId'])
@@ -88,15 +96,17 @@ def load_predecessor(p):
     """Read immutable failed-attempt evidence; never relabel it successful/accepted."""
     require(type(p)is dict and set(p)=={'format','plan','manifest','receipt','dispatch','unit'}
         and p['format'] in ('work-batch-reader-recovery-predecessor-v1',
-            'work-batch-reader-recovery-predecessor-v2'),'Invalid predecessor contract')
-    recovery=p['format']=='work-batch-reader-recovery-predecessor-v2'
+            'work-batch-reader-recovery-predecessor-v2',
+            'work-batch-reader-recovery-predecessor-v3'),'Invalid predecessor contract')
+    projection=p['format']=='work-batch-reader-recovery-predecessor-v3'
+    recovery=p['format']!='work-batch-reader-recovery-predecessor-v1'
     family='work-batch-reader-recovery' if recovery else 'work-batch-reader-fix'
-    allowed=ALLOWED if recovery else frozenset({READER})
+    allowed=HISTORICAL_ALLOWED if recovery else frozenset({READER})
     plan=json.loads(evidence_reference(p['plan']));m=json.loads(evidence_reference(p['manifest']))
     r=json.loads(evidence_reference(p['receipt']));dispatch=json.loads(evidence_reference(p['dispatch']))
     raw=base64.b64decode(plan['controllerBase64'],validate=True)
-    require(sha(raw)==plan['controllerSha256']==(RECOVERY_PREDECESSOR_CONTROLLER_SHA if recovery
-        else PREDECESSOR_CONTROLLER_SHA),'Wrong predecessor controller')
+    require(sha(raw)==plan['controllerSha256']==(PROJECTION_PREDECESSOR_CONTROLLER_SHA if projection
+        else RECOVERY_PREDECESSOR_CONTROLLER_SHA if recovery else PREDECESSOR_CONTROLLER_SHA),'Wrong predecessor controller')
     old={'__name__':'_frozen_reader_fix'};exec(compile(raw,'frozen-'+family+'-scoped-node.py','exec'),old)
     require(old['ALLOWED']==allowed and old['BASE_SOURCE_COMMIT']==BASE_SOURCE_COMMIT,
         'Wrong predecessor source scope')
@@ -135,21 +145,29 @@ def load_predecessor(p):
         else 'pow-work-batch-reader-fix-'+m['sourceCommit'][:12]+'.service'),'Wrong predecessor unit identity')
     ancestors=[]
     if recovery:
-        # Exactly one additional, source-pinned failed attempt. The frozen 6284
-        # controller admits only the original one-file 914 failure; no recursion
-        # or caller-supplied controller trust is introduced here.
-        require(m['sourceCommit']==RECOVERY_PREDECESSOR_COMMIT and m['releaseId']==RECOVERY_PREDECESSOR_RELEASE
-            and p['plan']['sha256']==RECOVERY_PREDECESSOR_PLAN_SHA
-            and p['manifest']['sha256']==RECOVERY_PREDECESSOR_MANIFEST_SHA
+        # Each recovery generation is fixed independently. Its pinned historical
+        # controller verifies the previous generation; caller-supplied recursion
+        # or arbitrary controller versions are never admitted.
+        prefix='PROJECTION' if projection else 'RECOVERY'
+        require(m['sourceCommit']==globals()[prefix+'_PREDECESSOR_COMMIT']
+            and m['releaseId']==globals()[prefix+'_PREDECESSOR_RELEASE']
+            and p['plan']['sha256']==globals()[prefix+'_PREDECESSOR_PLAN_SHA']
+            and p['manifest']['sha256']==globals()[prefix+'_PREDECESSOR_MANIFEST_SHA']
             and r.get('predecessor')==m['predecessor'],'Wrong fixed recovery predecessor')
         ancestor=old['load_predecessor'](m['predecessor'])
-        require(m['predecessor']['format']=='work-batch-reader-recovery-predecessor-v1'
-            and r['authority']==ancestor['receipt']['authority']
-            and outcome.get('hold')==ancestor['outcome'].get('hold'),'Original authority or Search hold lineage differs')
+        expected_format='work-batch-reader-recovery-predecessor-v2' if projection else 'work-batch-reader-recovery-predecessor-v1'
+        require(m['predecessor']['format']==expected_format,'Wrong fixed predecessor generation')
+        ancestor['contract']=m['predecessor']
+        ancestors=ancestor.get('ancestors',[])+[ancestor]
+        require(len(ancestors)==(2 if projection else 1)
+            and [frame['contract']['format']for frame in ancestors]==[
+                'work-batch-reader-recovery-predecessor-v'+str(i+1)for i in range(len(ancestors))]
+            and all(r['authority']==frame['receipt']['authority']
+                and outcome.get('hold')==frame['outcome'].get('hold')for frame in ancestors),
+            'Original authority or Search hold lineage differs')
         ref=dispatch.get('rehearsal')
         qualification=json.loads(evidence_reference(ref))
         old['validate_rehearsal'](qualification,plan,p['plan']['sha256'])
-        ancestor['contract']=m['predecessor'];ancestors.append(ancestor)
     return {'plan':plan,'manifest':m,'receipt':r,'dispatch':dispatch,'outcome':outcome,'old':old,
         'contract':p,'ancestors':ancestors}
 
@@ -329,6 +347,8 @@ def validate_manifest(m):
         for v in m['sourceParents'].values()), 'Invalid source parent pins')
     validate_service_baseline(protected['states'])
     validate_batch_authority(m.get('batchAuthority',{}))
+    require(m['predecessor']['format']=='work-batch-reader-recovery-predecessor-v3',
+        'Three-path recovery requires the fixed latest predecessor')
     prior=load_predecessor(m['predecessor']);pm=prior['manifest'];pr=prior['receipt']
     for key in ('baselineHead','baseSourceCommit','acceptedInventorySha256','restartConfigurationSha256',
             'nodeSha256','gateway','protectedServices','batchAuthority','searchHold','dependencyMetadata'):
@@ -341,6 +361,8 @@ def validate_manifest(m):
     by_path={row['path']:row for row in rows}
     require(all(by_path[name]['before']==expected[name] for name in ALLOWED)
         and by_path['server/proof-api.mjs']['after']!=expected['server/proof-api.mjs']
+        and by_path[READER]['after']==expected[READER]
+        and by_path[WORKER]['after']!=expected[WORKER]
         and all(m['sourceIdentities'][row['path']]==pr['createdHelpers'][row['path']]['candidateIdentity']
             for row in pm['sources']),
         'Recovery does not preserve the exact installed reader lineage')

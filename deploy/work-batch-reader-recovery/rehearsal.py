@@ -2,7 +2,7 @@
 """Run a reviewed recovery candidate's summary without changing live source or data.
 
 VPS only. The production controller's exact predecessor, source, configuration,
-dependency and inode fences still apply. Private bind mounts expose the two
+dependency and inode fences still apply. Private bind mounts expose the three
 candidate files only to this transient service. PostgreSQL starts read-only,
 the query guard disallows writes/session escapes, RPC methods are read-only,
 and the service filesystem is read-only. No API listener or startup jobs run.
@@ -19,10 +19,21 @@ import sys
 
 API = 'server/proof-api.mjs'
 READER = 'server/db/proof-index-reader.mjs'
+WORKER = 'scripts/backfill-proof-indexer.mjs'
 POSTGRES = 'server/db/postgres.mjs'
 RUNTIME = Path('/opt/proofofwork-api')
 FOOTER = '\nif (isMainThread) {\nserver.listen(PORT, HOST, () => {'
+WORKER_FOOTER = '\nif (DRY_RUN) {\n'
+WORKER_EXPORTS = '''
+export {
+  canonicalSummaryAccountingModelsCurrent,
+  canonicalSummaryCoverage,
+  summaryPayloadsWithAlignedWorkFloor,
+  summaryPayloadSnapshotId,
+};
+'''
 TAIL = '''
+const rehearsalWorker = await import("../scripts/backfill-proof-indexer.mjs");
 const rehearsalStatus = await proofIndexOperationalStatusPayload("livenet");
 const rehearsalHeight = Number(rehearsalStatus?.indexedThroughBlock);
 const rehearsalHash = String(rehearsalStatus?.scan?.blockHash ?? "");
@@ -33,17 +44,25 @@ try {
     checkpointHeight: rehearsalHeight, checkpointHash: rehearsalHash,
   });
   const keys = Object.keys(result.summaryPayloads ?? {}).sort();
+  const aligned = rehearsalWorker.summaryPayloadsWithAlignedWorkFloor(result.summaryPayloads);
+  const publicationAccountingCurrent = rehearsalWorker.canonicalSummaryAccountingModelsCurrent(aligned, {
+    workAmountStorageModel: result.workAmountStorageModel,
+  });
   if (keys.length !== 8 || result.indexedThroughBlock !== rehearsalHeight ||
-      result.indexedThroughBlockHash !== rehearsalHash) {
-    throw new Error("Rehearsal summary checkpoint or coverage differs");
+      result.indexedThroughBlockHash !== rehearsalHash ||
+      rehearsalWorker.canonicalSummaryCoverage(aligned) !== rehearsalHeight ||
+      !publicationAccountingCurrent || keys.some(key =>
+        rehearsalWorker.summaryPayloadSnapshotId(aligned[key]) !== result.snapshotId ||
+        aligned[key]?.indexedThroughBlockHash !== rehearsalHash)) {
+    throw new Error("Rehearsal publication accounting, snapshot, checkpoint or coverage differs");
   }
-  console.log(JSON.stringify({ format: "work-batch-summary-readonly-rehearsal-v1",
-    ok: true, published: false, indexedThroughBlock: rehearsalHeight,
+  console.log(JSON.stringify({ format: "work-batch-summary-readonly-rehearsal-v2",
+    ok: true, published: false, publicationAccountingCurrent, indexedThroughBlock: rehearsalHeight,
     indexedThroughBlockHash: rehearsalHash, snapshotId: result.snapshotId,
     summaryKeys: keys }));
   process.exit(0);
 } catch (error) {
-  console.error(JSON.stringify({ format: "work-batch-summary-readonly-rehearsal-v1",
+  console.error(JSON.stringify({ format: "work-batch-summary-readonly-rehearsal-v2",
     ok: false, published: false, indexedThroughBlock: rehearsalHeight,
     indexedThroughBlockHash: rehearsalHash,
     error: String(error?.message ?? error).slice(0, 4000) }));
@@ -139,6 +158,25 @@ def transform_postgres(raw):
     return source.encode()
 
 
+def transform_worker(raw):
+    """Expose the actual pure publication checks without starting the indexer."""
+    source = raw.decode('utf-8')
+    require(source.count(WORKER_FOOTER) == 1, 'Worker startup boundary is not unique')
+    prefix, footer = source.split(WORKER_FOOTER)
+    require(footer.count('const pool = createProofIndexPool({') == 1 and
+            footer.count('const client = await pool.connect();') == 1 and
+            footer.endswith('} finally {\n  await pool.end();\n}\n'),
+            'Worker startup footer changed')
+    require('const pool = createProofIndexPool({' not in prefix and
+            'await pool.connect()' not in prefix,
+            'Worker pool startup exists before the guarded boundary')
+    for name in ('canonicalSummaryAccountingModelsCurrent', 'canonicalSummaryCoverage',
+                 'summaryPayloadsWithAlignedWorkFloor', 'summaryPayloadSnapshotId'):
+        require(prefix.count('function ' + name + '(') == 1,
+                'Worker publication helper is missing or ambiguous: ' + name)
+    return (prefix + '\n' + WORKER_EXPORTS).encode()
+
+
 def save(path, raw, mode=0o600):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
     with os.fdopen(fd, 'wb') as stream:
@@ -180,6 +218,7 @@ def command(plan, output, service_properties, inherited_files=()):
             str(output / 'api.mjs') + ':' + str(RUNTIME / API),
             str(output / 'postgres.mjs') + ':' + str(RUNTIME / POSTGRES),
             str(output / 'reader.mjs') + ':' + str(RUNTIME / READER),
+            str(output / 'worker.mjs') + ':' + str(RUNTIME / WORKER),
         ]),
     }
     for key, value in properties.items():
@@ -202,18 +241,20 @@ def qualify(args, plan, manifest, candidates, ns):
     dispatch_raw = ns['safe_read'](output / 'dispatch.json', 65536)
     dispatch = json.loads(dispatch_raw)
     expected_hashes = {name: sha(value) for name, value in candidates.items()}
-    require(dispatch['dispatchExitCode'] == 0 and dispatch['planSha256'] == args.plan_sha256 and
+    require(dispatch['format'] == 'work-batch-summary-rehearsal-dispatch-v2' and
+            dispatch['dispatchExitCode'] == 0 and dispatch['planSha256'] == args.plan_sha256 and
             dispatch['sourceCommit'] == manifest['sourceCommit'] and
             dispatch['releaseId'] == manifest['releaseId'] and dispatch['candidateHashes'] == expected_hashes and
             dispatch['published'] is False and dispatch['productionSourceMutation'] is False,
             'Rehearsal dispatch identity differs')
     expected_adapters = {'api.mjs': transform_api(candidates[API]),
                          'postgres.mjs': transform_postgres(ns['safe_read'](RUNTIME / POSTGRES)),
-                         'fetch-guard.mjs': FETCH_GUARD.encode(), 'reader.mjs': candidates[READER]}
+                         'fetch-guard.mjs': FETCH_GUARD.encode(), 'reader.mjs': candidates[READER],
+                         'worker.mjs': transform_worker(candidates[WORKER])}
     for name, raw in expected_adapters.items():
         require(ns['safe_read'](output / name) == raw, 'Rehearsal source changed: ' + name)
     require(dispatch['adapterHashes'] == {name: sha(expected_adapters[name]) for name in
-                                         ['api.mjs', 'postgres.mjs', 'fetch-guard.mjs']},
+                                         ['api.mjs', 'postgres.mjs', 'fetch-guard.mjs', 'worker.mjs']},
             'Rehearsal adapter hashes differ')
     unit = 'pow-batch-summary-rehearsal-' + manifest['releaseId'] + '.service'
     state = {key: ns['ctl']('show', unit, '--value', '-p', key) for key in
@@ -230,6 +271,7 @@ def qualify(args, plan, manifest, candidates, ns):
         ns['ctl']('show', 'proofofwork-api.service', '--value', '-p', 'EnvironmentFiles'))
     expected_binds = {str(output / name) + ':' + str(RUNTIME / target) for name, target in
                       [('api.mjs', API), ('postgres.mjs', POSTGRES), ('reader.mjs', READER),
+                       ('worker.mjs', WORKER),
                        ]}
     actual_binds = state['BindReadOnlyPaths'].split()
     require(all(len(value.split(':')) in (2, 3) and
@@ -246,18 +288,19 @@ def qualify(args, plan, manifest, candidates, ns):
             value = json.loads(line)
         except ValueError:
             continue
-        if isinstance(value, dict) and value.get('format') == 'work-batch-summary-readonly-rehearsal-v1':
+        if isinstance(value, dict) and value.get('format') == 'work-batch-summary-readonly-rehearsal-v2':
             results.append(value)
     require(len(results) == 1, 'Missing or ambiguous rehearsal result')
     result = results[0]
     require(result.get('ok') is True and result.get('published') is False and
+            result.get('publicationAccountingCurrent') is True and
             type(result.get('indexedThroughBlock')) is int and result['indexedThroughBlock'] >= 973284 and
             re.fullmatch('[0-9a-f]{64}', result.get('indexedThroughBlockHash', '')) and
             re.fullmatch('[0-9a-f]{24}', result.get('snapshotId', '')) and
             result.get('summaryKeys') == sorted(['growthSummary', 'inceptionSummary', 'infinitySummary',
                 'logSummary', 'marketplaceSummary', 'tokenSummary', 'workFloor', 'workSummary']),
             'Canonical rehearsal did not validate all eight summaries')
-    receipt = {'format': 'work-batch-summary-rehearsal-qualified-v1', 'qualified': True,
+    receipt = {'format': 'work-batch-summary-rehearsal-qualified-v2', 'qualified': True,
                'planSha256': args.plan_sha256, 'sourceCommit': manifest['sourceCommit'],
                'releaseId': manifest['releaseId'], 'candidateHashes': expected_hashes,
                'predecessor': manifest['predecessor'], 'unit': unit,
@@ -308,10 +351,12 @@ def main():
         return
     api = transform_api(candidates[API])
     postgres = transform_postgres(ns['safe_read'](RUNTIME / POSTGRES))
+    worker = transform_worker(candidates[WORKER])
     os.umask(0o077)
     args.output.mkdir(mode=0o700)
     for name, data in [('api.mjs', api), ('postgres.mjs', postgres),
-                       ('reader.mjs', candidates[READER]), ('fetch-guard.mjs', FETCH_GUARD.encode())]:
+                       ('reader.mjs', candidates[READER]), ('fetch-guard.mjs', FETCH_GUARD.encode()),
+                       ('worker.mjs', worker)]:
         save(args.output / name, data, 0o644)
         subprocess.run([plan['nodePath'], '--check', str(args.output / name)], check=True,
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
@@ -321,11 +366,11 @@ def main():
     inherited_files = environment_files(files)
     ns['require_restart_configuration'](manifest['restartConfigurationSha256'])
     invocation = command(plan, args.output, props, inherited_files)
-    receipt = {'format': 'work-batch-summary-rehearsal-dispatch-v1', 'planSha256': sha(raw),
+    receipt = {'format': 'work-batch-summary-rehearsal-dispatch-v2', 'planSha256': sha(raw),
                'sourceCommit': manifest['sourceCommit'], 'releaseId': manifest['releaseId'],
                'candidateHashes': {name: sha(value) for name, value in candidates.items()},
                'adapterHashes': {name: sha((args.output / name).read_bytes()) for name in
-                                ['api.mjs', 'postgres.mjs', 'fetch-guard.mjs']},
+                                ['api.mjs', 'postgres.mjs', 'fetch-guard.mjs', 'worker.mjs']},
                'published': False, 'productionSourceMutation': False}
     save(args.output / 'intent.json', (json.dumps(receipt, indent=2) + '\n').encode())
     # The complete invocation contains inherited service environment values.
