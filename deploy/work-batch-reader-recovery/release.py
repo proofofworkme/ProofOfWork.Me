@@ -9,6 +9,8 @@ import argparse, base64, datetime, hashlib, importlib.util, json, os, re, signal
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+ROLLOUT_TIMEOUT_SECONDS = 7200
+ROLLOUT_RECOVERY_GRACE_SECONDS = 900
 def node_context():
     """All full evidence and plan operations belong on the node, never the operator."""
     runtime = Path('/opt/proofofwork-api')
@@ -197,12 +199,12 @@ def overlay(args):
     child = subprocess.Popen(['/usr/bin/python3','-I','-B','-c',script.decode()],
         stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
-        stdout, stderr = child.communicate(raw,timeout=1800)
+        stdout, stderr = child.communicate(raw,timeout=ROLLOUT_TIMEOUT_SECONDS)
         result = subprocess.CompletedProcess(child.args,child.returncode,stdout,stderr)
     except BaseException as error:
         if child.poll() is None: child.send_signal(signal.SIGINT)
         try:
-            stdout, stderr = child.communicate(timeout=900)
+            stdout, stderr = child.communicate(timeout=ROLLOUT_RECOVERY_GRACE_SECONDS)
         except subprocess.TimeoutExpired as waiting:
             stdout, stderr = waiting.stdout or b'', waiting.stderr or b''
         receipt = {'format':'proof-of-work-work-batch-reader-recovery-node-dispatch-receipt-v1','planSha256':sha(raw),

@@ -94,9 +94,25 @@ Only after source, composition, rehearsal, and operator review, run once on NODE
 ```
 
 Use a fresh systemd unit with CPUQuota=100%, MemoryMax=2G, MemorySwapMax=0,
-Nice=15 and idle I/O. A 3600-second outer runtime plus 900-second termination
-grace exceeds the controller's bounded waits. Preserve stdout/stderr on the VPS.
+Nice=15 and idle I/O. Use a 9000-second outer runtime plus 900-second termination
+grace. Preserve stdout/stderr on the VPS.
 Observe the one attempt; never signal, rerun, or replace it to force progress.
+
+The fixed deadline nesting accommodates the observed 244-block backlog after
+the October 28 interruption without changing worker configuration. Exact-tip
+postflight allows 3600 seconds; its scoped process allows 4800 seconds, reserving
+1200 seconds for source fences, syntax checks, drain and restoration around that
+gate. The existing Search restore helper keeps its 1200-second limit and
+600-second interruption grace. Normal supervisor child work can take 6000 seconds
+(4800 + 1200); a Search timeout can instead take 6600 seconds including its grace.
+An interrupted scoped process has 5400 seconds (4800 + 600 grace) and does not
+restore Search. The release parent allows 7200 seconds, leaving 600 seconds over
+the longest child path, then 900 seconds of interruption grace; 8100 seconds
+remains inside the 9000-second outer runtime. These are finite accommodations,
+not a catch-up guarantee. Postflight failure still drains the apps and requires
+explicit forward recovery. A parent or Search-helper timeout retains uncertain
+evidence; it does not by itself prove whether services remain restored. Advancing
+checkpoints alone never qualify completion.
 
 The controller takes the existing operations lock, verifies that apps and gateway
 are drained, and preserves authority processes and the inherited Search hold.
@@ -105,8 +121,8 @@ both earlier and new quarantines. Any failure leaves the apps drained and Search
 held for explicit forward recovery. Even a pre-write refusal cannot restore the
 known-broken predecessor API. Original failure receipts are never overwritten.
 
-After restoring the original API/worker/gateway activation, the unchanged
-600-second health gate requires a common Core/index/batch tip and hash, all eight
+After restoring the original API/worker/gateway activation, the 3600-second
+health gate retains the requirements for a common Core/index/batch tip and hash, all eight
 canonical summary coverage keys, healthy worker, exact original declaration and
 write-enabled authority, and a stable second health read. Only then does the
 supervisor restore the original Search timer using the original hold identity.
