@@ -8670,6 +8670,14 @@ Malformed pending batch positions fail closed rather than collapsing recipients
 onto one carrier key. Confirmed family completeness, identity and zero-child-fee
 checks remain strict. These source safeguards require live rehearsal and release
 verification; they are not evidence that a deployment has completed.
+The separate [pending-summary recovery controller](deploy/work-batch-pending-summary-fix/README.md)
+applies only the two reviewed API function changes to the accepted runtime.
+It admits the observed summary failure while preserving declaration authority,
+source and configuration fences, and requires a read-only rehearsal using the
+actual worker accounting predicate before publication. Completion requires all
+eight summaries and batch admission at the same current tip, followed by verified
+source acceptance and VPS retention. The Mail installer still requires a healthy
+existing batch capability; this recovery does not install or activate Mail.
 The batch at block 973284 exposed a metadata-order failure, a summary
 classification failure, and normalized activity enrichment that copied the
 transaction miner fee onto derived recipients. Qualified recipient projections
