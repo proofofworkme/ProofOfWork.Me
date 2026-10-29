@@ -41,6 +41,19 @@ test("recipient parsing preserves spaces and punctuation in IDs, and exact one-s
   for (const value of ["0", "-1", "1e2", "0.00000000000000001", "21000001", "Infinity", "1,000"]) assert.throws(() => workBatchAmountSubatoms(value));
 });
 
+test("an active batch pause is distinct from activation and does not deny an existing unsigned review", () => {
+  const paused = { ...ready(), ready: false, reasonCode: "work-batch-work-writes-paused" };
+  for (const previous of [undefined, ready()]) {
+    assert.throws(() => assertWorkBatchReady(paused, previous), error => {
+      assert.match(error.message, /currently paused.*work-batch-work-writes-paused/u);
+      assert.match(error.message, /No broadcast was attempted/u);
+      assert.doesNotMatch(error.message, /not active|No transaction was prepared/u);
+      return true;
+    });
+  }
+  assert.throws(() => assertWorkBatchReady({ ...paused, writeEnabled: false }), /sending is disabled/u);
+});
+
 test("78 recipients resolve in input order with bounded reads and exact total", async () => {
   let active = 0, peak = 0;
   const draft = await resolveWorkBatchDraft(Array.from({ length: 78 }, (_, i) => `id${i}`).join(", "), "2.1234567890123456", {

@@ -16,6 +16,14 @@ again before signing and broadcast; a changed receiver requires a fresh review.
 The 78-wallet distribution fits in one transaction, subject to the existing
 carrier byte limit and available funds.
 
+The batch section stays available in standalone Wallet and Computer while credit
+balances load and when another credit is selected for a single transfer. Batch
+preparation independently verifies fresh WORK capacity; the single-transfer
+selector does not choose the batch asset. Opening or refocusing the section
+refreshes its status without clearing the recipients or checked draft. A current
+pause is distinct from unconfirmed activation, and an unsigned review does not
+guarantee that the later signing or broadcast recheck will pass.
+
 A batch pays the WORK registry **546 proofs once**, plus the transaction's
 miner fee. It does not create a proof payment to each recipient. The sender
 must have the full WORK total available after existing reservations, and enough

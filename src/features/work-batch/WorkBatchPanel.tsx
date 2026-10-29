@@ -16,19 +16,79 @@ export function WorkBatchPanel({ address, network, recipients, amountEach, setRe
   const [draft, setDraft] = useState<WorkBatchDraft>();
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
-  const [refresh, setRefresh] = useState(0);
+  const details = useRef<HTMLDetailsElement>(null);
+  const statusFlight = useRef<Promise<void>>();
+  const statusActions = useRef({ refresh: () => {}, pause: () => {} });
+  const preparing = useRef(false);
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
   const controller = useRef<AbortController>();
   useEffect(() => {
-    const current = new AbortController();
-    setLoading(true); setStatus(undefined); setStatusError("");
-    if (network !== "livenet") { setLoading(false); return () => current.abort(); }
-    void loadStatus(current.signal).then(value => {
-      if (!current.signal.aborted) setStatus(readWorkBatchStatus(value));
-    }).catch(reason => {
-      if (!current.signal.aborted) setStatusError(reason instanceof Error ? reason.message : "Batch status unavailable.");
-    }).finally(() => { if (!current.signal.aborted) setLoading(false); });
-    return () => current.abort();
-  }, [network, loadStatus, refresh]);
+    let stopped = false;
+    let active = false;
+    let queued = false;
+    let current: AbortController | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let startedAt = -Infinity;
+    const visible = () => document.visibilityState === "visible";
+    const clearTimer = () => { clearTimeout(timer); timer = undefined; };
+    const pause = () => {
+      clearTimer(); queued = false; current?.abort();
+      setStatus(undefined); setLoading(false);
+    };
+    const refresh = () => {
+      if (stopped) return;
+      clearTimer(); setStatus(undefined); setStatusError("");
+      if (network !== "livenet" || !visible() || busyRef.current || preparing.current) { setLoading(false); return; }
+      setLoading(true);
+      if (active) {
+        if (current?.signal.aborted) queued = true;
+        return;
+      }
+      active = true; queued = false; startedAt = Date.now();
+      const request = new AbortController(); current = request;
+      const previous = statusFlight.current;
+      // Wait for a cancelled read to settle before starting its replacement.
+      // This also serializes a changed network or loadStatus callback.
+      statusFlight.current = (async () => {
+        try {
+          await previous;
+          if (stopped || request.signal.aborted) return;
+          const value = await loadStatus(request.signal);
+          if (!stopped && !request.signal.aborted) setStatus(readWorkBatchStatus(value));
+        } catch (reason) {
+          if (!stopped && !request.signal.aborted) setStatusError(reason instanceof Error ? reason.message : "Batch status unavailable.");
+        } finally {
+          active = false;
+          if (!stopped) {
+            if (queued && visible()) refresh();
+            else {
+              setLoading(false);
+              if (!request.signal.aborted && visible() && details.current?.open) timer = setTimeout(refresh, 30_000);
+            }
+          }
+        }
+      })();
+    };
+    const focused = () => { if (details.current?.open && Date.now() - startedAt >= 1_000) refresh(); };
+    const visibilityChanged = () => {
+      if (!visible()) pause();
+      else if (details.current?.open) refresh();
+    };
+    statusActions.current = { refresh, pause };
+    document.addEventListener("visibilitychange", visibilityChanged);
+    window.addEventListener("focus", focused);
+    refresh();
+    return () => {
+      stopped = true; queued = false; clearTimer(); current?.abort();
+      document.removeEventListener("visibilitychange", visibilityChanged);
+      window.removeEventListener("focus", focused);
+    };
+  }, [network, loadStatus]);
+  useEffect(() => {
+    if (busy) statusActions.current.pause();
+    else if (!preparing.current && details.current?.open) statusActions.current.refresh();
+  }, [busy]);
   useEffect(() => {
     controller.current?.abort(); setDraft(undefined); setError(""); setChecking(false);
     return () => controller.current?.abort();
@@ -41,17 +101,30 @@ export function WorkBatchPanel({ address, network, recipients, amountEach, setRe
     catch (reason) { if (!current.signal.aborted) setError(reason instanceof Error ? reason.message : "Recipients unavailable."); }
     finally { if (!current.signal.aborted) setChecking(false); }
   }
-  const ready = status?.ready === true && status.active && status.writeEnabled;
-  return <details className="work-batch-panel">
+  const ready = network === "livenet" && !loading && !statusError && status?.ready === true && status.active && status.writeEnabled;
+  async function prepareBatch() {
+    if (preparing.current || busy || checking || !draft || !address || !ready) return;
+    preparing.current = true; setError(""); statusActions.current.pause();
+    try { await onPrepare(draft); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Batch preparation unavailable."); }
+    finally { preparing.current = false; statusActions.current.refresh(); }
+  }
+  return <details ref={details} className="work-batch-panel" onToggle={event => {
+    if (event.currentTarget.open) statusActions.current.refresh();
+    else statusActions.current.pause();
+  }}>
     <summary>Send WORK to many</summary>
     <p>Send WORK to 2–256 wallets in one transaction. The whole batch pays one 546-proof registry fee, plus its miner fee.</p>
     <div className="work-batch-status" role="status">
       <span>{network !== "livenet" ? "Switch to Mainnet for WORK batch sending."
-        : loading ? "Checking batch activation…" : statusError || (ready ? "Batch sending is active. Current state is checked again before signing."
-          : `Batch sending is unavailable until its declaration is confirmed, activated, and verified${status?.reasonCode ? ` (${status.reasonCode})` : ""}.`)}</span>
-      <button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)} disabled={busy || loading}>Refresh status</button>
+        : loading ? "Checking batch availability…" : statusError || (ready ? "Batch sending is active. Current state is checked again before signing."
+          : status?.active && !status.writeEnabled ? `Batch sending is active, but writes are disabled. Refresh status before reviewing${status.reasonCode ? ` (${status.reasonCode})` : ""}.`
+          : status?.active ? `Batch sending is active but temporarily paused. Your recipients are kept; refresh status before reviewing${status.reasonCode ? ` (${status.reasonCode})` : ""}.`
+          : status ? `Batch sending is unavailable until its declaration is confirmed, activated, and verified${status.reasonCode ? ` (${status.reasonCode})` : ""}.`
+          : "Batch availability has not been verified. Refresh status before reviewing.")}</span>
+      <button type="button" className="secondary" onClick={() => statusActions.current.refresh()} disabled={busy || loading}>Refresh status</button>
     </div>
-    <form className="id-form" onSubmit={event => { event.preventDefault(); if (draft) void onPrepare(draft); }}>
+    <form className="id-form" onSubmit={event => { event.preventDefault(); void prepareBatch(); }}>
       <label>Recipients
         <textarea rows={5} value={recipients} disabled={busy} onChange={event => setRecipients(event.target.value)} placeholder="alice@proofofwork.me, bob@proofofwork.me" aria-describedby="work-batch-recipient-help" />
       </label>
