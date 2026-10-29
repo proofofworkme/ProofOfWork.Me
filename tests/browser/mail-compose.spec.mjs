@@ -59,6 +59,279 @@ function batchFixtureAddresses(count) {
   return Array.from({ length: count }, (_, index) => bitcoin.payments.p2wpkh({ hash: Buffer.from((index + 1).toString(16).padStart(40, "0"), "hex") }).address);
 }
 
+function pausedBatchStatusFixture() {
+  return { ...batchStatusFixture(), ready: false, reasonCode: "work-batch-work-writes-paused" };
+}
+
+function batchResponseGate() {
+  let release;
+  const promise = new Promise(resolve => { release = resolve; });
+  return { promise, release };
+}
+
+async function openBatchWalletSurface(page, surface) {
+  if (surface === "standalone") return openConnectedWallet(page);
+  await page.goto("/?folder=wallet", { waitUntil: "domcontentloaded" });
+  const connect = page.getByRole("button", { name: "Connect UniSat", exact: true }).first();
+  if (await connect.isVisible({ timeout: 1000 }).catch(() => false)) await connect.click();
+  await expect(page.locator(".topbar-wallet-button")).toContainText("1BPVvi1G");
+  await expect(page.locator(".token-wallet-workspace")).toBeVisible();
+}
+
+async function checkBatchRecipients(page, count = 2) {
+  const panel = page.locator(".work-batch-panel");
+  const recipients = batchFixtureAddresses(count);
+  await panel.getByRole("textbox", { name: "Recipients", exact: true }).fill(recipients.join(", "));
+  await panel.getByLabel("WORK each", { exact: true }).fill("0.0000000000000001");
+  await panel.getByRole("button", { name: "Check recipients", exact: true }).click();
+  await expect(panel.locator("tbody tr")).toHaveCount(count);
+  return { panel, recipients, review: panel.getByRole("button", { name: "Review WORK batch", exact: true }) };
+}
+
+async function forbidBatchBroadcasts(page) {
+  const requests = [];
+  await page.route("**/api/v1/broadcast/tx*", async route => {
+    requests.push(route.request().url());
+    await route.fulfill({ status: 503, json: { error: "Unexpected broadcast blocked by browser fixture." } });
+  });
+  return requests;
+}
+
+for (const surface of ["standalone", "computer"]) {
+  test(`WORK batch readiness: ${surface} keeps the section visible while credit balances are delayed`, async ({ page }) => {
+    await installWallet(page);
+    const fixture = await installApiFixtures(page, { holdWalletBalanceReads: true });
+    await page.route("**/api/v1/work-batch-status**", route => route.fulfill({ json: batchStatusFixture() }));
+    try {
+      await openBatchWalletSurface(page, surface);
+      await expect(page.getByText("Loading credit balances", { exact: true })).toBeVisible();
+      const summary = page.getByText("Send WORK to many", { exact: true });
+      await expect(summary).toBeVisible();
+      await summary.click();
+      const { panel } = await checkBatchRecipients(page, 78);
+      await expect(panel).toContainText("78 wallets");
+      await expect(panel.getByRole("textbox", { name: "Recipients", exact: true })).toHaveValue(batchFixtureAddresses(78).join(", "));
+      expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+    } finally { fixture.releaseWalletBalanceReads(); }
+  });
+
+  test(`WORK batch readiness: ${surface} preserves a two-recipient WORK batch while POWB is selected and WORK arrives later`, async ({ page }) => {
+    await installWallet(page);
+    const fixture = await installApiFixtures(page);
+    const broadcasts = await forbidBatchBroadcasts(page);
+    await page.route("**/api/v1/work-batch-status**", route => route.fulfill({ json: batchStatusFixture() }));
+    const work = authoritativeWorkState();
+    const bond = { ...workTokenDefinition(), ticker: "POWB", tokenId: POWB_TOKEN_ID, txid: POWB_TOKEN_ID,
+      decimals: 0, uncapped: true, maxSupply: null, mintAmount: "1", registryAddress: RECIPIENT };
+    const bondHolder = { address: SENDER, ticker: "POWB", tokenId: POWB_TOKEN_ID, balance: "100", pendingDelta: "0" };
+    let workArrived = false;
+    await page.route("**/api/v1/token**", route => {
+      const url = new URL(route.request().url());
+      if (!["/api/v1/token", "/api/v1/token-summary"].includes(url.pathname) || url.searchParams.get("fresh") === "1") return route.fallback();
+      return route.fulfill({ json: { ...work, tokens: workArrived ? [bond, ...work.tokens] : [bond],
+        holders: workArrived ? [bondHolder, ...work.holders] : [bondHolder],
+        canonicalWorkCapacities: workArrived ? work.canonicalWorkCapacities : [],
+        hasMore: false, collectionHasMore: { tokens: false }, totalCounts: { tokens: workArrived ? 2 : 1 } } });
+    });
+    await openBatchWalletSurface(page, surface);
+    const selector = page.locator("#wallet-send").getByRole("combobox", { name: "Credit", exact: true });
+    await expect(selector).toHaveValue(POWB_TOKEN_ID);
+    await page.getByText("Send WORK to many", { exact: true }).click();
+    const { panel, recipients, review } = await checkBatchRecipients(page);
+    workArrived = true;
+    await page.locator(".topbar-refresh-button").click();
+    await expect(selector.locator(`option[value="${WORK_TOKEN_ID}"]`)).toHaveCount(1);
+    await expect(selector).toHaveValue(POWB_TOKEN_ID);
+    await expect(panel.getByRole("textbox", { name: "Recipients", exact: true })).toHaveValue(recipients.join(", "));
+    await review.click();
+    const dialog = page.getByRole("dialog", { name: "Review WORK batch" });
+    await expect(dialog).toContainText("0.0000000000000002 WORK");
+    expect(fixture.requests.some(value => {
+      const url = new URL(value);
+      return url.pathname === "/api/v1/token" && url.searchParams.get("asset") === WORK_TOKEN_ID &&
+        url.searchParams.get("wallet") === "1" && url.searchParams.get("fresh") === "1";
+    })).toBe(true);
+    await dialog.getByRole("button", { name: "Continue to wallet" }).click();
+    await expect.poll(() => page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(1);
+    const psbt = bitcoin.Psbt.fromHex(await page.evaluate(() => window.__mailComposeFixture.psbtHexes[0]));
+    const payments = psbt.txOutputs.filter(output => output.address && output.address !== SENDER);
+    expect(payments.map(output => [output.address, output.value])).toEqual([[WORK_REGISTRY, 546n]]);
+    const carriers = psbt.txOutputs.filter(output => output.script[0] === 0x6a);
+    expect(carriers).toHaveLength(1);
+    const batch = parseWorkBatchPayload(Buffer.from(bitcoin.script.decompile(carriers[0].script)[1]).toString("utf8"));
+    expect(batch.recipientCount).toBe(2); expect(batch.totalAmountSubatoms).toBe("2");
+    expect(batch.recipients.map(row => row.recipientAddress)).toEqual(recipients);
+    expect(broadcasts).toHaveLength(0);
+  });
+
+  test(`WORK batch readiness: ${surface} refreshes paused status on reopen and refocus without losing the checked draft`, async ({ page }) => {
+    await page.clock.install();
+    await installWallet(page); await installApiFixtures(page);
+    const broadcasts = await forbidBatchBroadcasts(page);
+    let status = pausedBatchStatusFixture();
+    await page.route("**/api/v1/work-batch-status**", route => route.fulfill({ json: status }));
+    await openBatchWalletSurface(page, surface);
+    const summary = page.getByText("Send WORK to many", { exact: true });
+    await summary.click();
+    const { panel, recipients, review } = await checkBatchRecipients(page);
+    await expect(panel.locator(".work-batch-status")).toContainText("temporarily paused");
+    await expect(review).toBeDisabled();
+    await summary.click(); status = batchStatusFixture(); await summary.click();
+    await expect(review).toBeEnabled();
+    await expect(panel.getByRole("textbox", { name: "Recipients", exact: true })).toHaveValue(recipients.join(", "));
+    status = pausedBatchStatusFixture();
+    await page.clock.fastForward(2000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(panel.locator(".work-batch-status")).toContainText("temporarily paused");
+    await expect(review).toBeDisabled();
+    status = batchStatusFixture();
+    await page.clock.fastForward(2000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(review).toBeEnabled();
+    await expect(panel.locator("tbody tr")).toHaveCount(2);
+    expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+    expect(broadcasts).toHaveLength(0);
+  });
+
+  test(`WORK batch readiness: ${surface} refuses fresh paused status before signing an already reviewed batch`, async ({ page }) => {
+    await page.clock.install();
+    await installWallet(page); await installApiFixtures(page);
+    const broadcasts = await forbidBatchBroadcasts(page);
+    let status = batchStatusFixture(), statusReads = 0;
+    await page.route("**/api/v1/work-batch-status**", route => { statusReads++; return route.fulfill({ json: status }); });
+    await openBatchWalletSurface(page, surface);
+    await page.getByText("Send WORK to many", { exact: true }).click();
+    const { panel, recipients, review } = await checkBatchRecipients(page);
+    await review.click();
+    const dialog = page.getByRole("dialog", { name: "Review WORK batch" });
+    await expect(dialog).toBeVisible();
+    const readsAtReview = statusReads;
+    await page.clock.fastForward(35000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(dialog).toBeVisible();
+    expect(statusReads).toBe(readsAtReview);
+    status = pausedBatchStatusFixture();
+    await dialog.getByRole("button", { name: "Continue to wallet" }).click();
+    await expect(page.locator(".status-text")).toContainText("currently paused");
+    await expect(panel.locator(".work-batch-status")).toContainText("temporarily paused");
+    await expect(review).toBeDisabled();
+    await expect(panel.getByRole("textbox", { name: "Recipients", exact: true })).toHaveValue(recipients.join(", "));
+    expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+    expect(broadcasts).toHaveLength(0);
+  });
+}
+
+test("WORK batch readiness: failed preparation refreshes the displayed status and never opens signing", async ({ page }) => {
+  await installWallet(page); await installApiFixtures(page);
+  const broadcasts = await forbidBatchBroadcasts(page);
+  let status = batchStatusFixture();
+  await page.route("**/api/v1/work-batch-status**", route => route.fulfill({ json: status }));
+  await openConnectedWallet(page);
+  await page.getByText("Send WORK to many", { exact: true }).click();
+  const { panel, recipients, review } = await checkBatchRecipients(page, 78);
+  await expect(review).toBeEnabled();
+  status = pausedBatchStatusFixture();
+  await review.click();
+  await expect(page.locator(".status-text")).toContainText("currently paused");
+  await expect(page.getByRole("dialog", { name: "Review WORK batch" })).toHaveCount(0);
+  await expect(panel.locator(".work-batch-status")).toContainText("temporarily paused");
+  await expect(review).toBeDisabled();
+  await expect(panel.getByRole("textbox", { name: "Recipients", exact: true })).toHaveValue(recipients.join(", "));
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+  expect(broadcasts).toHaveLength(0);
+});
+
+test("WORK batch readiness: unavailable status stays closed to signing and manual refresh preserves the draft", async ({ page }) => {
+  await installWallet(page); await installApiFixtures(page);
+  const broadcasts = await forbidBatchBroadcasts(page);
+  let unavailable = true;
+  await page.route("**/api/v1/work-batch-status**", route => route.fulfill(unavailable
+    ? { status: 503, json: { error: "Batch status fixture is temporarily unavailable." } }
+    : { json: batchStatusFixture() }));
+  await openConnectedWallet(page);
+  await page.getByText("Send WORK to many", { exact: true }).click();
+  const { panel, recipients, review } = await checkBatchRecipients(page);
+  await expect(panel.locator(".work-batch-status")).toContainText(/unavailable|503/u);
+  await expect(review).toBeDisabled();
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+  unavailable = false;
+  await panel.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await expect(review).toBeEnabled();
+  await expect(panel.getByRole("textbox", { name: "Recipients", exact: true })).toHaveValue(recipients.join(", "));
+  await expect(panel.locator("tbody tr")).toHaveCount(2);
+  expect(broadcasts).toHaveLength(0);
+});
+
+test("WORK batch readiness: a ready status cannot bypass unavailable fresh WORK capacity", async ({ page }) => {
+  await installWallet(page);
+  const fixture = await installApiFixtures(page, { freshWorkWalletFailure: true });
+  const broadcasts = await forbidBatchBroadcasts(page);
+  await page.route("**/api/v1/work-batch-status**", route => route.fulfill({ json: batchStatusFixture() }));
+  await openConnectedWallet(page);
+  await page.getByText("Send WORK to many", { exact: true }).click();
+  const { panel, recipients, review } = await checkBatchRecipients(page);
+  const requestsBeforeReview = fixture.requests.length;
+  await review.click();
+  await expect(page.locator(".status-text")).toContainText(
+    "The ProofOfWork index is catching up to the latest block. No transaction was created. Try again in a moment.",
+    { timeout: 30_000 },
+  );
+  await expect(page.getByRole("dialog", { name: "Review WORK batch" })).toHaveCount(0);
+  await expect(panel.getByRole("textbox", { name: "Recipients", exact: true })).toHaveValue(recipients.join(", "));
+  expect(fixture.requests.slice(requestsBeforeReview).some(value => {
+    const url = new URL(value);
+    return url.pathname === "/api/v1/token" && url.searchParams.get("asset") === WORK_TOKEN_ID &&
+      url.searchParams.get("wallet") === "1" && url.searchParams.get("fresh") === "1";
+  })).toBe(true);
+  expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+  expect(broadcasts).toHaveLength(0);
+});
+
+test("WORK batch readiness: loading stays single flight and a cancelled ready response cannot re-enable the reopened panel", async ({ page }) => {
+  await page.clock.install();
+  await installWallet(page); await installApiFixtures(page);
+  const broadcasts = await forbidBatchBroadcasts(page);
+  const oldReady = batchResponseGate(), freshPaused = batchResponseGate();
+  let next = "ready", heldReady = 0, heldPaused = 0;
+  await page.route("**/api/v1/work-batch-status**", async route => {
+    const mode = next;
+    if (mode === "held-ready") { heldReady++; await oldReady.promise; }
+    if (mode === "held-paused") { heldPaused++; await freshPaused.promise; }
+    await route.fulfill({ json: mode === "held-paused" ? pausedBatchStatusFixture() : batchStatusFixture() });
+  });
+  try {
+    await openConnectedWallet(page);
+    const summary = page.getByText("Send WORK to many", { exact: true });
+    await summary.click();
+    const { panel, recipients, review } = await checkBatchRecipients(page);
+    await expect(review).toBeEnabled();
+    next = "held-ready";
+    await page.clock.fastForward(2000);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(() => heldReady).toBe(1);
+    await expect(panel.locator(".work-batch-status")).toContainText("Checking batch availability");
+    await expect(review).toBeDisabled();
+    await expect(panel.getByRole("button", { name: "Refresh status", exact: true })).toBeDisabled();
+    await page.clock.fastForward(2000);
+    await page.evaluate(async () => {
+      for (let index = 0; index < 8; index++) window.dispatchEvent(new Event("focus"));
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+    expect(heldReady).toBe(1);
+    await summary.click(); next = "held-paused"; await summary.click();
+    oldReady.release();
+    await expect.poll(() => heldPaused).toBe(1);
+    await expect(review).toBeDisabled();
+    await expect(panel.locator(".work-batch-status")).toContainText("Checking batch availability");
+    freshPaused.release();
+    await expect(panel.locator(".work-batch-status")).toContainText("temporarily paused");
+    await expect(review).toBeDisabled();
+    await expect(panel.getByRole("textbox", { name: "Recipients", exact: true })).toHaveValue(recipients.join(", "));
+    expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+    expect(broadcasts).toHaveLength(0);
+  } finally { oldReady.release(); freshPaused.release(); }
+});
+
 test("WORK batch remains unavailable before declared activation and preserves its checked draft", async ({ page }) => {
   await installWallet(page); await installApiFixtures(page);
   await page.route("**/api/v1/work-batch-status**", route => route.fulfill({ json: batchStatusFixture(false) }));

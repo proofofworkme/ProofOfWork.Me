@@ -36023,8 +36023,8 @@ export default function App() {
 
   async function transferWorkBatch(checked: WorkBatchDraft) {
     if (workBatchInFlightRef.current || actionInFlightRef.current) return;
-    if (!address || network !== "livenet" || !window.unisat?.signPsbt || !walletTransferToken || !isWorkToken(walletTransferToken)) {
-      setStatus({ tone: "bad", text: "Connect UniSat on Mainnet and select WORK before preparing a batch." });
+    if (!address || network !== "livenet" || !window.unisat?.signPsbt) {
+      setStatus({ tone: "bad", text: "Connect UniSat on Mainnet before preparing a WORK batch." });
       return;
     }
     workBatchInFlightRef.current = true;
@@ -43526,7 +43526,7 @@ function TokenWalletWorkspace({
               <p className="field-note bad">{transferDisabledReason}</p>
             ) : null}
           </form>
-          {transferToken && isWorkToken(transferToken) ? batchUi : null}
+          {batchUi}
           {transferFundingPrep}
         </section>
 

@@ -26,7 +26,10 @@ export function readWorkBatchStatus(value) {
 export function assertWorkBatchReady(value, previous) {
   const status = readWorkBatchStatus(value);
   if (!status.ready || !status.active || !status.writeEnabled) {
-    throw new Error(`WORK batch sending is not active and ready${status.reasonCode ? ` (${status.reasonCode})` : ""}. No transaction was prepared or broadcast.`);
+    const state = !status.active ? "is not active against its verified declaration"
+      : !status.writeEnabled ? "is disabled"
+      : "is currently paused";
+    throw new Error(`WORK batch sending ${state}${status.reasonCode ? ` (${status.reasonCode})` : ""}. Refresh status and review again when ready. No broadcast was attempted.`);
   }
   if (previous && (status.declarationTxid !== previous.declarationTxid || status.activationHeight !== previous.activationHeight ||
       status.checkedTipHeight < previous.checkedTipHeight ||
