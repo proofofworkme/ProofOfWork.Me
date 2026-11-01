@@ -34,7 +34,7 @@ def invoke(code, argv=(), payload=None, require_recovery_receipt=False):
     return json.loads(stdout)
 
 def rollout(plan):
-    if os.geteuid() != 0 or not sys.flags.isolated or plan.get('format') != 'proof-of-work-api-response-latency-rollout-plan-v1':
+    if os.geteuid() != 0 or not sys.flags.isolated or plan.get('format') != 'proof-of-work-api-response-latency-rollout-plan-v2':
         raise ValueError('Exact rollout plan, root and isolated Python required')
     controller = decoded(plan, 'controller'); holder = decoded(plan, 'searchHoldController')
     ns = {'__name__':'_api-response-latency_rollout_preflight'}; exec(compile(controller, 'api-response-latency-scoped-node.py','exec'),ns)
@@ -47,7 +47,7 @@ def rollout(plan):
     args = ['--release-id',plan['releaseId'],'--attempt','initial',
         '--service-sha256',files[ns['SEARCH'][0]],'--timer-sha256',files[ns['SEARCH'][1]]]
     held = invoke(holder, ['--phase','hold',*args])
-    outcome = {'format':'proof-of-work-api-response-latency-rollout-result-v1','releaseId':plan['releaseId'],'hold':held}
+    outcome = {'format':'proof-of-work-api-response-latency-rollout-result-v2','releaseId':plan['releaseId'],'hold':held}
     restore = True
     try:
         marker = ns['safe_read'](ns['HOLD'], 65536)

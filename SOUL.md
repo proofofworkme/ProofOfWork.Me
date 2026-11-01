@@ -884,6 +884,11 @@ cannot hide an unavailable history page or label a short preview as complete.
 Carry canonical event identity through display merging, including recipients
 that share a transaction and protocol output. Bound page reads without dropping
 the complete batch-family, canonical-position or economic evidence checks.
+Validate shared batch carrier and parent evidence once per family within one
+read, then validate every recipient against that exact evidence. Repeating the
+whole recipient vector for each child turns batch growth into shared API stalls.
+Never carry that qualification across requests or substitute it for checking
+off-page siblings, stored positions, zero child fees or Mail envelope evidence.
 
 Ordinary Mail has its own WORK batch attachment form. One transaction makes one
 546-proof WORK registry signal, while each recipient still receives the reviewed

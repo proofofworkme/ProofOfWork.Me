@@ -10,10 +10,14 @@ import { workBatchDeclarationCommitment, WORK_BATCH_DECLARATION_ORDER_COMPATIBIL
 import { readWorkBatchDiscoveryCheckpoint, assertCanonicalWorkBatchChild, verifiedWorkBatchEventIds, readWorkBatchDeclarationCandidates, readWorkBatchActivationMarker, assertNoSealedWorkBatchAuthority } from "./work-batch-reader.mjs";
 import { rowsWithCanonicalTransferFees } from "./proof-index-reader.mjs";
 
-function fixture() {
-  const receiver = n => payments.p2pkh({ hash: Buffer.alloc(20, n) }).address;
+function fixture(recipientCount = 2) {
+  const receiver = n => {
+    const hash = Buffer.alloc(20); hash.writeUInt32BE(n, 16);
+    return payments.p2pkh({ hash }).address;
+  };
   const senderAddress = receiver(3), txid = "a".repeat(64);
-  const wire = buildWorkBatchPayload([[receiver(1), "1"], [receiver(2), "20000000000000001"]]);
+  const wire = buildWorkBatchPayload(Array.from({ length: recipientCount }, (_, index) =>
+    [receiver(index + 1), index === 1 ? "20000000000000001" : String(index + 1)]));
   const batch = parseWorkBatchPayload(wire);
   const parentPosition = { blockHeight: 1_000_001, blockHash: "b".repeat(64), blockTransactionIndex: 3, protocolVout: 1, recordOrdinal: 0 };
   const commitment = { model: "canonical-work-amo-raw-transition-chain-sha256-v1", payloadBytes: 100, sha256: "c".repeat(64) };
@@ -58,6 +62,18 @@ function indexedBatchFixture() {
   f.rows = [{ event_id: 10, status: "confirmed", payload: f.parent },
     ...f.rows.map(row => ({ ...row, status: "confirmed" }))];
   return f;
+}
+
+async function measuredBatchReader() {
+  const url = new URL("./work-batch-reader.mjs", import.meta.url);
+  const source = readFileSync(url, "utf8")
+    .replace(/from "(\.[^"]+)"/gu, (_match, path) => `from ${JSON.stringify(new URL(path, url).href)}`)
+    .replace("parseWorkBatchPayload,", "parseWorkBatchPayload as originalParseWorkBatchPayload,") + `
+      let countedBatchParses = 0;
+      function parseWorkBatchPayload(...args) { countedBatchParses++; return originalParseWorkBatchPayload(...args); }
+      export function batchParseCount() { return countedBatchParses; }
+    `;
+  return import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 }
 
 test("transfer-fee caller qualifies exact indexed batch parent and children before display normalization", async () => {
@@ -193,6 +209,119 @@ test("read qualification verifies every sibling even when only the parent or one
   }
   await assert.rejects(() => verifiedWorkBatchEventIds({ query: async () => ({ rows: [] }) }, f.rows, "livenet"));
   await assert.rejects(() => verifiedWorkBatchEventIds(pool, f.rows, "testnet"));
+});
+
+test("256-recipient read qualifies one complete family across chunks without mutating inputs", async () => {
+  // JSON materialization matches PostgreSQL rather than sharing fixture objects
+  // that would hide repeated deep comparisons behind reference equality.
+  const f = JSON.parse(JSON.stringify(fixture(256)));
+  const measured = await measuredBatchReader();
+  const rows = structuredClone([{ event_id: 10, payload: f.parent }, ...f.rows]);
+  const before = JSON.stringify({ rows, evidence: f.evidence });
+  let queries = 0;
+  const pool = { query: async (sql, parameters) => {
+    queries++;
+    assert.match(sql, /canonical_work_batch_parent_evidence/u);
+    assert.deepEqual(parameters, ["livenet", rows.slice(0, 100).map(row => row.event_id)]);
+    return { rows: [f.evidence] };
+  } };
+  assert.deepEqual([...await measured.verifiedWorkBatchEventIds(pool, rows, "livenet")], rows.map(row => row.event_id));
+  assert.equal(queries, 1);
+  assert.equal(measured.batchParseCount(), 1, "the complete carrier is decoded and parsed once per qualified family");
+  assert.equal(JSON.stringify({ rows, evidence: f.evidence }), before);
+});
+
+test("qualified families still reject a forged requested payload in a later chunk", async () => {
+  const f = fixture(256);
+  for (const index of [100, 200, 255]) {
+    const rows = structuredClone(f.rows);
+    rows[index].payload.amountSubatoms = "999";
+    let queries = 0;
+    await assert.rejects(() => verifiedWorkBatchEventIds({ query: async () => {
+      queries++; return { rows: [f.evidence] };
+    } }, rows, "livenet"), /read differs from its accepted parent/u);
+    assert.equal(queries, 1);
+  }
+});
+
+test("requested batch identities are unique across chunk boundaries before any evidence query", async () => {
+  const f = fixture(256);
+  for (const id of [f.rows[0].event_id, 0, Number.MAX_SAFE_INTEGER + 1]) {
+    const rows = structuredClone(f.rows);
+    rows[200].event_id = id;
+    let queries = 0;
+    await assert.rejects(() => verifiedWorkBatchEventIds({ query: async () => {
+      queries++; return { rows: [f.evidence] };
+    } }, rows, "livenet"), /no unique event identity/u);
+    assert.equal(queries, 0);
+  }
+});
+
+test("complete family qualification is not reused across independent reads", async () => {
+  const f = fixture(256);
+  let queries = 0;
+  const pool = { query: async () => {
+    queries++; return { rows: [f.evidence] };
+  } };
+  assert.equal((await verifiedWorkBatchEventIds(pool, f.rows, "livenet")).size, 256);
+  f.evidence.siblings[255].payload.minerFeeSats = 1;
+  await assert.rejects(() => verifiedWorkBatchEventIds(pool, f.rows.slice(0, 1), "livenet"), /exact accepted parent descriptor/u);
+  assert.equal(queries, 2);
+});
+
+test("a parent-only request rejects every invalid full-family boundary at 256 recipients", async () => {
+  const original = fixture(256);
+  for (const mutate of [
+    evidence => { evidence.siblings.pop(); },
+    evidence => { evidence.siblings[255].position.recordOrdinal = 255; },
+    evidence => { evidence.siblings[255].payload.batchRecipientIndex = 254; },
+    evidence => { evidence.siblings[255].payload.workAmoV5ReplayRawWitness.descriptor.amountSubatoms = "999"; },
+    evidence => { evidence.siblings[255].payload.registryMutationFeeSats = 546; },
+    evidence => { evidence.siblings[255].event_id = evidence.siblings[0].event_id; },
+  ]) {
+    const evidence = structuredClone(original.evidence); mutate(evidence);
+    await assert.rejects(() => verifiedWorkBatchEventIds({ query: async () => ({ rows: [evidence] }) },
+      [{ event_id: 10, payload: original.parent }], "livenet"), /Canonical WORK batch/u);
+  }
+});
+
+test("standalone and family reads both reject every shared parent and carrier guard", async () => {
+  for (const mutate of [
+    evidence => { evidence.carrier_output.scriptpubkey = "6a01ff"; },
+    evidence => { evidence.parent_payload.kind = "token-transfer"; },
+    evidence => { evidence.parent_payload.protocol = "other"; },
+    evidence => { evidence.parent_payload.valid = false; },
+    evidence => { evidence.parent_payload.confirmed = false; },
+    evidence => { evidence.parent_payload._workAmoV5ReplayBound = false; },
+    evidence => { evidence.parent_payload.workAmoV5RawCandidate = false; },
+    evidence => { evidence.parent_payload.payload += "x"; },
+    evidence => { evidence.parent_records = []; },
+    evidence => { evidence.parent_records.push(structuredClone(evidence.parent_records[0])); },
+    evidence => { evidence.parent_records[0].rawCandidate = false; },
+    evidence => { evidence.parent_records[0].outcome.valid = false; },
+    evidence => { evidence.parent_records[0].outcome.kind = "invalid"; },
+    evidence => { evidence.parent_records[0].outcome.semanticKind = "token-transfer"; },
+    evidence => { evidence.parent_records[0].output.projection.kind = "token-transfer"; },
+    evidence => { evidence.parent_records[0].derived.pop(); },
+    evidence => { evidence.parent_records[0].txid = "f".repeat(64); },
+    evidence => { evidence.parent_records[0].position.recordOrdinal = 1; },
+    evidence => { evidence.parent_records[0].transitionChainCommitmentAfter.model = "invalid"; },
+    evidence => { evidence.parent_records[0].transitionChainCommitmentAfter.payloadBytes = 0; },
+    evidence => { evidence.parent_records[0].transitionChainCommitmentAfter.sha256 = "invalid"; },
+    evidence => { evidence.parent_payload.workAmoV5ReplayOutput = {}; },
+    evidence => { evidence.parent_records[0].output.amountSubatoms = "1"; },
+    evidence => { evidence.parent_records[0].output.totalAmountSubatoms = "1"; },
+    evidence => { evidence.parent_records[0].output.recipientCount = 1; },
+    evidence => { evidence.parent_records[0].output.recipients[1].amountSubatoms = "1"; },
+  ]) {
+    const f = fixture();
+    const evidence = structuredClone(f.evidence); mutate(evidence);
+    assert.throws(() => assertCanonicalWorkBatchChild(f.children[0], {
+      ...evidence, child_position: f.children[0].position,
+    }), /exact accepted parent descriptor/u);
+    await assert.rejects(() => verifiedWorkBatchEventIds({ query: async () => ({ rows: [evidence] }) },
+      f.rows.slice(0, 1), "livenet"), /Canonical WORK batch/u);
+  }
 });
 
 test("declaration discovery uses complete historical coverage and reports truncation", async () => {

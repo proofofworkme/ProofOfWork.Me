@@ -129,6 +129,20 @@ def rename_new(source, target):
     sync(source.parent); sync(target.parent)
 
 
+def archive_workspace(release, attempt):
+    """Reserve only this new release's archive work in the archive budget."""
+    assert re.fullmatch('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', release)
+    assert re.fullmatch('[a-z0-9][a-z0-9-]{0,30}', attempt)
+    directory(ARCHIVES)
+    workspace = ARCHIVES / ('.proofofwork-ui-archive-' + release + '-' + attempt)
+    # Exclusive creation refuses files, directories and dangling symlinks;
+    # failed work is retained and never reused by a later attempt.
+    workspace.mkdir(mode=0o700)
+    directory(workspace)
+    sync(ARCHIVES)
+    return workspace
+
+
 def payload_fingerprint(root):
     rows = []
     for path in [root, *sorted(root.rglob('*'))]:
@@ -685,9 +699,10 @@ if phase != 'source':
     capacity('check', ARCHIVES, upper + 65536, 'archive', inodes=16)
     for target in (archive, Path(str(archive)+'.sha256'), Path(str(archive)+'.provenance')):
         assert not os.path.lexists(target)
+    archive_work = archive_workspace(release, p['publicationAttempt'])
     archive_base = evidence_root / 'archive-base'
     archive_base.mkdir(mode=0o700); (archive_base / 'surfaces').mkdir(mode=0o755)
-    temporary = evidence_root / ('proofofwork-ui-release-' + release + '.tgz.incoming')
+    temporary = archive_work / ('proofofwork-ui-release-' + release + '.tgz.incoming')
     run(['/usr/bin/tar', '--sort=name', '--create', '--gzip', '--hard-dereference',
         '--file', str(temporary), '--transform=s|^proofofwork-|surfaces/|',
         '--directory', str(archive_base), 'surfaces', '--directory', str(stage),
@@ -696,7 +711,7 @@ if phase != 'source':
     temporary.chmod(0o644)
     with temporary.open('rb') as source:
         archive_sha = hashlib.file_digest(source, 'sha256').hexdigest()
-    checksum_temporary = evidence_root / 'archive.sha256.incoming'
+    checksum_temporary = archive_work / 'archive.sha256.incoming'
     with checksum_temporary.open('x') as output:
         output.write(archive_sha + '  ' + archive.name + '\n'); output.flush(); os.fsync(output.fileno())
     checksum_temporary.chmod(0o644); sync(temporary)
@@ -707,6 +722,7 @@ if phase != 'source':
              inodes=p['admissions']['source-receive']['inodes'])
     durable_json(out / 'receipt.json', {'ok': True, 'releaseId': release, 'phase': phase,
         'managedArchive': str(archive), 'archiveSha256': archive_sha, 'preservedInput': str(preserved),
+        'archiveWorkspace': str(archive_work),
         'inputFingerprint': input_before, 'stageModel': model,
         'candidateStorage': 'release-evidence-v1' if phase == 'preserved-stage-resume' else 'deploy-scratch',
         'completedCandidateAllocation': measured if phase == 'preserved-stage-resume' else None, 'productionPublished': False,

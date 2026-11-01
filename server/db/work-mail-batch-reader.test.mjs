@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-import { transaction, batchVout, ACTOR } from "../../tests/fixtures/workMailBatch.mjs";
+import { transaction, batchVout, recipients, ACTOR } from "../../tests/fixtures/workMailBatch.mjs";
 import { canonicalRawProtocolRecordSetFromTransaction } from "../canonical-op-return.mjs";
 import { validateWorkMailBatchV1RawTransaction } from "../work-mail-batch-transaction.mjs";
 import { workAmoV5CanonicalPayloadCommitment } from "../work-amo-v5.mjs";
 import { WORK_MAIL_BATCH_DECLARATION_COMMITMENT_MODEL } from "../work-mail-batch-declaration.mjs";
-import { validateWorkMailBatchProjectionEvents, verifiedWorkMailBatchEventIds } from "./work-mail-batch-reader.mjs";
+import { assertCanonicalWorkMailBatchChild, validateWorkMailBatchProjectionEvents, verifiedWorkMailBatchEventIds } from "./work-mail-batch-reader.mjs";
 
-function fixture() {
-  const tx = transaction(), vout = batchVout(tx);
+function fixture(count = 2) {
+  const tx = transaction({ vector: recipients(count) }), vout = batchVout(tx);
   const authority = validateWorkMailBatchV1RawTransaction({ transaction: tx, protocolVout: vout });
   assert.equal(authority.valid, true);
   const { parsed: batch, mailEnvelope } = authority;
@@ -46,6 +46,33 @@ function fixture() {
   return { transaction: tx, parent, children, parentRecord, mailRecord, activationContext };
 }
 
+function readerFixture(count = 2) {
+  const f = fixture(count);
+  const evidence = { parent_event_id: "10", parent_payload: f.parent, parent_records: [f.parentRecord], mail_records: [f.mailRecord],
+    transaction: f.transaction, carrier_output: f.transaction.vout[batchVout(f.transaction)], activation_context: f.activationContext,
+    siblings: f.children.map((payload, index) => ({ event_id: String(11 + index), payload, position: payload.position })) };
+  // PostgreSQL JSON has distinct nested objects, even where the fixture builder
+  // reused an object. Do not hide repeated work behind reference equality.
+  return JSON.parse(JSON.stringify({ evidence, requested: [
+    { event_id: 10, payload: f.parent }, ...f.children.map((payload, index) => ({ event_id: 11 + index, payload })),
+  ] }));
+}
+
+async function measuredReader() {
+  const url = new URL("./work-mail-batch-reader.mjs", import.meta.url);
+  const source = readFileSync(url, "utf8")
+    .replace(/from "(\.[^"]+)"/gu, (_match, path) => `from ${JSON.stringify(new URL(path, url).href)}`)
+    .replace("parseWorkMailBatchPayload,", "parseWorkMailBatchPayload as originalParseWorkMailBatchPayload,") + `
+      let countedMailBatchParses = 0;
+      function parseWorkMailBatchPayload(...args) { countedMailBatchParses++; return originalParseWorkMailBatchPayload(...args); }
+      export function mailBatchParseCount() { return countedMailBatchParses; }
+    `;
+  // Import into the same realm so deep equality retains its real prototype
+  // checks for the PWM recipient objects constructed inside the implementation.
+  const measured = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
+  return { reader: measured.verifiedWorkMailBatchEventIds, counts: { get parses() { return measured.mailBatchParseCount(); } } };
+}
+
 test("sealed Mail attachments bind the exact PWM parent, ordered payments and every WORK child", () => {
   assert.equal(validateWorkMailBatchProjectionEvents(fixture()).valid, true);
   for (const mutate of [ f => f.children.pop(), f => f.children.push(f.children[0]),
@@ -76,6 +103,65 @@ test("reader checks the complete accepted set even when a page requests only one
   await assert.rejects(() => verifiedWorkMailBatchEventIds(pool([]), requested));
   await assert.rejects(() => verifiedWorkMailBatchEventIds(pool([evidence]), requested, "testnet"));
   assert.deepEqual([...await verifiedWorkMailBatchEventIds(pool([]), [{ payload: { transferVersion: "batch1" } }])], []);
+});
+
+test("a maximum Mail batch qualifies each independent carrier envelope once across all read chunks", async () => {
+  const { evidence, requested } = readerFixture(256);
+  const { reader, counts } = await measuredReader();
+  let queries = 0;
+  const result = await reader({ query: async (_sql, params) => {
+    queries++; assert.equal(params[1].length, 100);
+    return { rows: [evidence] };
+  } }, requested);
+  assert.equal(result.size, 257);
+  assert.equal(queries, 1, "complete family evidence is not reread for later requested children");
+  assert.equal(counts.parses, 2, "the transaction and relational carrier envelopes are each parsed once");
+});
+
+test("cached later-chunk Mail requests still require exact payloads and unique identities", async () => {
+  const { evidence, requested } = readerFixture(128);
+  let queries = 0;
+  const pool = { query: async () => { queries++; return { rows: [evidence] }; } };
+  const changed = JSON.parse(JSON.stringify(requested));
+  changed.at(-1).payload.amountSubatoms = "1";
+  await assert.rejects(() => verifiedWorkMailBatchEventIds(pool, changed), /read differs/u);
+  assert.equal(queries, 1);
+  queries = 0;
+  await assert.rejects(() => verifiedWorkMailBatchEventIds(pool, [...requested, requested[0]]), /unique event identity/u);
+  assert.equal(queries, 0, "a duplicate across chunks must fail before any family reuse");
+});
+
+test("Mail family reuse never crosses calls or replaces relational position and PWM authority checks", async () => {
+  const { evidence, requested } = readerFixture(3);
+  let queries = 0, current = evidence;
+  const pool = { query: async () => { queries++; return { rows: [current] }; } };
+  await verifiedWorkMailBatchEventIds(pool, [requested[1]]);
+  for (const mutate of [
+    row => { row.siblings.at(-1).position.recordOrdinal++; },
+    row => { row.mail_records[0].outcome.valid = false; },
+    row => { row.activation_context = null; },
+    row => { row.siblings.at(-1).payload.mailEnvelope.recipients[0].amountSats = "1"; },
+    row => { row.siblings.at(-1).event_id = row.siblings[0].event_id; },
+  ]) {
+    current = JSON.parse(JSON.stringify(evidence)); mutate(current);
+    await assert.rejects(() => verifiedWorkMailBatchEventIds(pool, [requested[1]]), undefined, String(mutate));
+  }
+  assert.equal(queries, 6, "each read reloads and qualifies its full off-page family");
+});
+
+test("the standalone Mail child assertion fully revalidates parent and carrier evidence", () => {
+  const { evidence, requested } = readerFixture();
+  const child = requested[1].payload;
+  assert.equal(assertCanonicalWorkMailBatchChild(child, { ...evidence, child_position: evidence.siblings[0].position }), true);
+  for (const mutate of [
+    row => { row.parent_payload.workAmoV5ReplayOutput.recipientCount++; },
+    row => { row.parent_records[0].output.recipients[1].amountSubatoms = "1"; },
+    row => { row.parent_records[0].transitionChainCommitmentAfter.sha256 = "invalid"; },
+    row => { row.carrier_output = { scriptpubkey: "6a", value: "0" }; },
+  ]) {
+    const changed = JSON.parse(JSON.stringify(evidence)); mutate(changed);
+    assert.throws(() => assertCanonicalWorkMailBatchChild(child, { ...changed, child_position: changed.siblings[0].position }));
+  }
 });
 
 test("address Mail reader qualifies a retained parent even when every child row is missing", async () => {

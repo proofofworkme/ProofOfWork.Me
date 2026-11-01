@@ -78,6 +78,36 @@ class ArchiveTests(unittest.TestCase):
         bad = copy.deepcopy(receipt); bad['sources'][0]['after'] = 'wrong'
         with self.assertRaises(ValueError): check(bad)
 
+    def test_v2_batch_reader_receipt_is_exact_and_extends_existing_overlays(self):
+        family = 'proof-of-work-api-response-latency-scoped-runtime-v2'
+        rows = [{'path': name, 'before': 'e'*64, 'after': 'a'*64}
+                for name in sorted(m.BATCH_READ_TARGETS)]
+        manifest = {'format': family, 'sourceCommit': 'b'*40,
+                    'baselineHead': 'c'*40, 'sources': rows}
+        receipt = {**copy.deepcopy(manifest), 'manifestSha256': 'd'*64, 'installed': True,
+                   'rolledBack': False, 'completedAt': '2026-11-01', 'rollbackRoot': '/data/receipt'}
+        def check(candidate, result):
+            return m.receipt_sources(candidate, result, 'd'*64, 'b'*40, Path('/data/receipt'), 'c'*40)
+        bound = check(manifest, receipt)
+        accepted = {row['path']: {'sha256': 'e'*64} for row in rows}
+        accepted['server/unrelated.mjs'] = {'sha256': 'f'*64}
+        m.require_overlay_extension(bound, accepted, family)
+        self.assertEqual(accepted['server/unrelated.mjs']['sha256'], 'f'*64)
+        for paths in (set(m.TARGETS), m.BATCH_READ_TARGETS | {'server/unrelated.mjs'}):
+            changed = [{ 'path': name, 'before': 'e'*64, 'after': 'a'*64 } for name in paths]
+            with self.assertRaisesRegex(ValueError, 'acceptance scope'):
+                check({**manifest, 'sources': changed}, {**receipt, 'sources': changed})
+        with self.assertRaisesRegex(ValueError, 'acceptance scope'):
+            check({**manifest, 'format': 'proof-of-work-api-response-latency-scoped-runtime-v1'},
+                  {**receipt, 'format': 'proof-of-work-api-response-latency-scoped-runtime-v1'})
+        for name in m.BATCH_READ_TARGETS:
+            missing = copy.deepcopy(accepted); del missing[name]
+            with self.assertRaisesRegex(ValueError, 'overlay missing'):
+                m.require_overlay_extension(bound, missing, family)
+            drift = copy.deepcopy(accepted); drift[name]['sha256'] = '9'*64
+            with self.assertRaisesRegex(ValueError, 'extend accepted'):
+                m.require_overlay_extension(bound, drift, family)
+
     def test_amo_new_helper_receipt_is_exact_and_cannot_replace_prior_source(self):
         family = 'proof-of-work-amo-browse-scoped-runtime-v1'
         rows = [{'path': 'server/proof-api.mjs', 'before': 'e'*64, 'after': 'a'*64},

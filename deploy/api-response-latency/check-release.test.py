@@ -25,7 +25,7 @@ def sha(raw): return hashlib.sha256(raw).hexdigest()
 class RolloutTests(unittest.TestCase):
     def plan(self):
         code, holder = FAKE_CONTROLLER, b'# reviewed hold controller'
-        return {'format':'proof-of-work-api-response-latency-rollout-plan-v1','releaseId':'a'*12+'-20261007T010000Z','sourceCommit':'a'*40,
+        return {'format':'proof-of-work-api-response-latency-rollout-plan-v2','releaseId':'a'*12+'-20261007T010000Z','sourceCommit':'a'*40,
             'controllerBase64':base64.b64encode(code).decode(),'controllerSha256':R.sha(code),
             'searchHoldControllerBase64':base64.b64encode(holder).decode(),'searchHoldControllerSha256':R.sha(holder),
             'runtimeManifestTemplate':{'sourceCommit':'a'*40,'releaseId':'a'*12+'-20261007T010000Z',
@@ -97,7 +97,7 @@ class LocalPlanTests(unittest.TestCase):
     def test_changed_controller_capture_refuses_before_plan_directory(self):
         with tempfile.TemporaryDirectory(dir='/tmp') as name:
             root=Path(name);capture=root/'capture.json'
-            capture.write_text(json.dumps({'format':'proof-of-work-api-response-latency-runtime-capture-v1',
+            capture.write_text(json.dumps({'format':'proof-of-work-api-response-latency-runtime-capture-v2',
                 'root':str(R.controller().ROOT),'controllerSha256':'f'*64}))
             args=types.SimpleNamespace(repository=root,commit='a'*40,base_commit=R.controller().BASE_SOURCE_COMMIT,
                 output=root/'new',capture=capture,release_id='a'*12+'-20261008T010000Z')
@@ -134,7 +134,7 @@ class LocalPlanTests(unittest.TestCase):
                 'reason':'Reviewed exact additive import conflict'}
             manifest=root/'review.json'
             def load(value):
-                manifest.write_text(json.dumps({'format':'proof-of-work-api-response-latency-reviewed-merges-v1','sources':[value]}));manifest.chmod(0o600)
+                manifest.write_text(json.dumps({'format':'proof-of-work-api-response-latency-reviewed-merges-v2','sources':[value]}));manifest.chmod(0o600)
                 return R.reviewed_merges(manifest,ns)
             self.assertEqual(load(row)[row['path']]['mergedBytes'],source.read_bytes())
             for key,value,reason in [('path','server/db/postgres.mjs','allowlist'),
@@ -153,7 +153,7 @@ class LocalPlanTests(unittest.TestCase):
             self.assertFalse(args.output.exists())
     def test_dispatch_tool_hash_refusal_never_calls_ssh_or_claims_verified(self):
         with tempfile.TemporaryDirectory(dir='/tmp') as name:
-            root=Path(name);plan=root/'plan';plan.write_text(json.dumps({'format':'proof-of-work-api-response-latency-rollout-plan-v1','rolloutSupervisorSha256':'f'*64}))
+            root=Path(name);plan=root/'plan';plan.write_text(json.dumps({'format':'proof-of-work-api-response-latency-rollout-plan-v2','rolloutSupervisorSha256':'f'*64}))
             args=types.SimpleNamespace(plan=plan,receipt=root/'receipt',phase='overlay')
             with patch.object(R.subprocess,'run') as run:
                 with self.assertRaisesRegex(ValueError,'supervisor differs'):R.overlay(args)
@@ -161,7 +161,7 @@ class LocalPlanTests(unittest.TestCase):
             self.assertFalse(args.receipt.exists())
     def test_remote_overlay_refusal_preserves_receipt_and_never_reports_verified(self):
         with tempfile.TemporaryDirectory(dir='/tmp') as name:
-            root=Path(name);plan=root/'plan';plan.write_text(json.dumps({'format':'proof-of-work-api-response-latency-rollout-plan-v1','releaseId':'example',
+            root=Path(name);plan=root/'plan';plan.write_text(json.dumps({'format':'proof-of-work-api-response-latency-rollout-plan-v2','releaseId':'example',
                 'rolloutSupervisorSha256':R.sha((ROOT/'rollout-node.py').read_bytes())}))
             args=types.SimpleNamespace(plan=plan,receipt=root/'receipt',phase='overlay')
             result=types.SimpleNamespace(returncode=1,stdout=b'',stderr=b'overlay incomplete')
@@ -170,7 +170,7 @@ class LocalPlanTests(unittest.TestCase):
             self.assertEqual(printed.getvalue(),'');self.assertEqual(json.loads(args.receipt.read_text())['exitCode'],1)
     def test_remote_timeout_preserves_uncertain_receipt_without_claiming_installed(self):
         with tempfile.TemporaryDirectory(dir='/tmp') as name:
-            root=Path(name);plan=root/'plan';plan.write_text(json.dumps({'format':'proof-of-work-api-response-latency-rollout-plan-v1','releaseId':'example',
+            root=Path(name);plan=root/'plan';plan.write_text(json.dumps({'format':'proof-of-work-api-response-latency-rollout-plan-v2','releaseId':'example',
                 'rolloutSupervisorSha256':R.sha((ROOT/'rollout-node.py').read_bytes())}))
             args=types.SimpleNamespace(plan=plan,receipt=root/'receipt',phase='overlay')
             timeout=R.subprocess.TimeoutExpired('ssh',1200,output=b'{"hold":"retained"}',stderr=b'controller interrupted')
@@ -208,7 +208,7 @@ class ComposedPlanTests(unittest.TestCase):
         name='server/proof-api.mjs';sources[name].update(
             sha256=R.sha(active_reader),base64=base64.b64encode(active_reader).decode())
         candidates={name:candidate_reader}
-        snapshot={'format':'proof-of-work-api-response-latency-runtime-capture-v1',
+        snapshot={'format':'proof-of-work-api-response-latency-runtime-capture-v2',
             'root':str(self.C.ROOT),'controllerSha256':R.sha((ROOT/'scoped-node.py').read_bytes()),
             'sources':sources,'baselineHead':self.fixture.manifest['baselineHead'],
             'nodeSha256':self.fixture.manifest['nodeSha256'],'nodePath':'/opt/node-fixture/bin/node',

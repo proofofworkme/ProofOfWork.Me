@@ -23,9 +23,12 @@ TEMPLATE_SHA = 'd4c1e87e47e369104603c457a1ab6ceb90443488ad6d2b92c7246b29e563d04e
 VERIFIER = Path('/usr/local/sbin/proofofwork-node-overlay-source-health')
 VERIFIER_SHA = 'e93bdaebcdf8af0a13c04e00bc5ca5cefadf3662ae08ecf6e55888008ebba4ea'
 TARGETS = ('server/proof-api.mjs', 'server/db/proof-index-reader.mjs')
+BATCH_READ_TARGETS = frozenset(TARGETS) | {
+    'server/db/work-batch-reader.mjs', 'server/db/work-mail-batch-reader.mjs'}
 AMO_NEW = frozenset({'server/amo-browse-snapshot.mjs'})
 SOURCE_SCOPES = {
     'proof-of-work-api-response-latency-scoped-runtime-v1': (frozenset(TARGETS), frozenset()),
+    'proof-of-work-api-response-latency-scoped-runtime-v2': (BATCH_READ_TARGETS, frozenset()),
     'proof-of-work-amo-browse-scoped-runtime-v1': (AMO_NEW | {'server/proof-api.mjs'}, AMO_NEW),
 }
 OLD = tuple('proofofwork-node-release-' + name + '.tgz' for name in (

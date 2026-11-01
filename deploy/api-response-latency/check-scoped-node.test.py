@@ -29,7 +29,7 @@ class ControllerTests(unittest.TestCase):
             (self.root/path).chmod(0o640)
         deps = {str(path.relative_to(self.root)):module.sha(path.read_bytes())
             for path in self.root.rglob('*') if path.is_file()}
-        self.manifest = {'format':'proof-of-work-api-response-latency-scoped-runtime-v1',
+        self.manifest = {'format':'proof-of-work-api-response-latency-scoped-runtime-v2',
             'baseSourceCommit':module.BASE_SOURCE_COMMIT,
             'releaseId':'abcdef123456-20261007T010000Z', 'services':list(module.UNITS),
             'sourceCommit':'abcdef123456'+'a'*28, 'baselineHead':'b'*40, 'sources':rows,
@@ -69,12 +69,24 @@ class ControllerTests(unittest.TestCase):
         path.write_bytes(b'// drift\nexport {};\n')
         with self.assertRaisesRegex(ValueError,'Dependency changed'):module.fence(self.root,self.manifest,candidates)
 
-    def test_exact_api_and_reader_writes_and_dependent_worker_restart(self):
-        self.assertEqual(module.ALLOWED, {'server/proof-api.mjs', 'server/db/proof-index-reader.mjs'})
-        self.assertEqual(module.BASE_SOURCE_COMMIT, '4386187ecd5b83173dc4e6ebb8c780a83b9decb0')
+    def test_exact_api_and_batch_reader_writes_and_dependent_worker_restart(self):
+        self.assertEqual(module.ALLOWED, {'server/proof-api.mjs', 'server/db/proof-index-reader.mjs',
+            'server/db/work-batch-reader.mjs', 'server/db/work-mail-batch-reader.mjs'})
+        self.assertEqual(module.BASE_SOURCE_COMMIT, '09fedcd08eeeb78d13a64a37522b7df517ba1bf4')
         self.assertEqual(module.NEW, frozenset())
         self.assertEqual(module.UNITS, ('proofofwork-api.service', 'proofofwork-indexer-worker.service'))
         self.assertEqual(module.PROTECTED, module.UNITS)
+
+    def test_v1_receipt_cannot_authorize_v2_batch_helper_writes(self):
+        manifest = copy.deepcopy(self.manifest)
+        manifest['format'] = 'proof-of-work-api-response-latency-scoped-runtime-v1'
+        with self.assertRaisesRegex(ValueError, 'Wrong manifest'):
+            module.validate_manifest(manifest)
+        manifest = copy.deepcopy(self.manifest)
+        manifest['sources'] = [row for row in manifest['sources']
+            if row['path'] in {'server/proof-api.mjs', 'server/db/proof-index-reader.mjs'}]
+        with self.assertRaisesRegex(ValueError, 'source allowlist'):
+            module.validate_manifest(manifest)
 
     def test_pages_scope_and_manifest_cannot_authorize_api_response_latency_release(self):
         manifest = copy.deepcopy(self.manifest)
