@@ -22,6 +22,12 @@ provides an account-scoped draft collection and the existing Mail publication
 tools. ID registration remains on IDs, and asset management and trading remain
 in their existing workspaces.
 
+Pages uses the shared UniSat connection controller and restores an already
+authorized account on entry without making the editor Mainnet-only. Connect
+checks this origin's current account before requesting approval and retains the
+shared timeout and pending-approval recovery behavior. Draft collections remain
+scoped to their original network and address, including disconnected drafts.
+
 ## Authoring
 
 - Start a new page or an interactive app from the included templates.

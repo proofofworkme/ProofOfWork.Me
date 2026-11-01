@@ -38,15 +38,17 @@ async function fixture(page, options = {}) {
   await page.addInitScript(({ owner, utxo, theme }) => {
     localStorage.setItem("proofofwork-me-appearance-v1", theme);
     const handlers = new Map();
+    let approved = false;
     window.codeSignatureCalls = 0;
     window.codeAccounts = [owner];
     window.codeNetwork = "livenet";
     window.codeWalletEvent = (event, values) => {
-      if (event === "accountsChanged") window.codeAccounts = values;
+      if (event === "accountsChanged") { window.codeAccounts = values; approved = values.length > 0; }
       if (event === "networkChanged") window.codeNetwork = values;
       for (const handler of handlers.get(event) ?? []) handler(values);
     };
-    window.unisat = { getAccounts: async () => window.codeAccounts, requestAccounts: async () => window.codeAccounts,
+    window.unisat = { getAccounts: async () => approved ? window.codeAccounts : [], requestAccounts: async () => { approved = true; return window.codeAccounts; },
+      disconnect: async () => { approved = false; },
       getNetwork: async () => window.codeNetwork, getBitcoinUtxos: async () => [utxo],
       getChain: async () => ({ enum: window.codeNetwork === "livenet" ? "BITCOIN_MAINNET" : window.codeNetwork === "testnet4" ? "BITCOIN_TESTNET4" : "BITCOIN_TESTNET" }),
       on: (event, handler) => handlers.set(event, [...(handlers.get(event) ?? []), handler]),

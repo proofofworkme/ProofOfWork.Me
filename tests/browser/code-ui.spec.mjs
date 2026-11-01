@@ -29,10 +29,12 @@ const utxo = { txid: funding.getId(), vout: 0, value: 2_000_000, status: { confi
 async function fixture(page, { unavailable = false, wallet = false, corruptSource = false } = {}) {
   if (wallet) await page.addInitScript(({ owner, utxo }) => {
     const handlers = new Map();
+    let approved = false;
     window.codeSignatureCalls = 0;
     window.codeAccounts = [owner];
-    window.codeWalletEvent = (event, values) => { if (event === "accountsChanged") window.codeAccounts = values; for (const handler of handlers.get(event) ?? []) handler(values); };
-    window.unisat = { getAccounts: async () => window.codeAccounts, requestAccounts: async () => window.codeAccounts,
+    window.codeWalletEvent = (event, values) => { if (event === "accountsChanged") { window.codeAccounts = values; approved = values.length > 0; } for (const handler of handlers.get(event) ?? []) handler(values); };
+    window.unisat = { getAccounts: async () => approved ? window.codeAccounts : [], requestAccounts: async () => { approved = true; return window.codeAccounts; },
+      disconnect: async () => { approved = false; },
       getNetwork: async () => "livenet", getBitcoinUtxos: async () => [utxo],
       on: (event, handler) => handlers.set(event, [...(handlers.get(event) ?? []), handler]),
       removeListener: (event, handler) => handlers.set(event, (handlers.get(event) ?? []).filter(value => value !== handler)),
@@ -196,8 +198,29 @@ test("wallet account change invalidates an exact review before any signature", a
   expect(await page.evaluate(() => window.codeSignatureCalls)).toBe(0);
   await page.evaluate(address => window.codeWalletEvent("accountsChanged", [address]), foreign);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByText("Wallet account changed. Review Code actions again.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disconnect UniSat", exact: true })).toContainText(foreign.slice(0, 6));
   expect(await page.evaluate(() => window.codeSignatureCalls)).toBe(0);
+});
+
+test("Computer Code refuses a prepared review after a same-account provider event", async ({ page }) => {
+  await fixture(page, { wallet: true });
+  await page.goto("/?folder=code");
+  await page.getByRole("button", { name: "Connect UniSat", exact: true }).first().click();
+  await page.getByRole("button", { name: "New repository", exact: true }).click();
+  await page.getByRole("textbox", { name: "Repository name", exact: true }).fill("Same-account review fence");
+  await page.getByRole("button", { name: "Review repository", exact: true }).click();
+  const review = page.getByRole("dialog", { name: "Create public repository", exact: true });
+  await expect(review).toBeVisible();
+  await page.evaluate(address => window.codeWalletEvent("accountsChanged", [address]), owner);
+  // The workspace may close the review immediately or reject it at the
+  // pre-sign gate. A repeated address must never preserve earlier consent.
+  if (await review.isVisible()) {
+    await review.getByRole("button", { name: "Continue to wallet", exact: true }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Prepare a new Code review" })).toBeVisible();
+  }
+  await expect(review).toHaveCount(0);
+  expect(await page.evaluate(() => window.codeSignatureCalls)).toBe(0);
+  await expect(page.getByRole("textbox", { name: "Repository name", exact: true })).toHaveValue("Same-account review fence");
 });
 
 const savedDraftKey = `proofofwork.code.draft.v1:livenet:${owner}`;

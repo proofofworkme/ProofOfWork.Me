@@ -35,8 +35,10 @@ async function fixture(page, { unavailable = false, wallet = false, empty = fals
   const utxo = { txid: funding.getId(), vout: 0, value: 2_000_000, status: { confirmed: true } };
   if (wallet) await page.addInitScript(({ owner, utxo }) => {
     const handlers = new Map(); window.permissionSignatureCalls = 0; window.permissionAccounts = [owner];
-    window.permissionWalletEvent = (event, values) => { if (event === "accountsChanged") window.permissionAccounts = values; for (const handler of handlers.get(event) ?? []) handler(values); };
-    window.unisat = { getAccounts: async () => window.permissionAccounts, requestAccounts: async () => window.permissionAccounts,
+    let approved = false;
+    window.permissionWalletEvent = (event, values) => { if (event === "accountsChanged") { window.permissionAccounts = values; approved = values.length > 0; } for (const handler of handlers.get(event) ?? []) handler(values); };
+    window.unisat = { getAccounts: async () => approved ? window.permissionAccounts : [], requestAccounts: async () => { approved = true; return window.permissionAccounts; },
+      disconnect: async () => { approved = false; },
       getNetwork: async () => "livenet", getBitcoinUtxos: async () => [utxo],
       on: (event, handler) => handlers.set(event, [...(handlers.get(event) ?? []), handler]),
       removeListener: (event, handler) => handlers.set(event, (handlers.get(event) ?? []).filter(value => value !== handler)),
@@ -142,8 +144,27 @@ test("wallet grant review requests no signature and account switch invalidates r
   expect(await page.evaluate(() => window.permissionSignatureCalls)).toBe(0);
   await page.evaluate(value => window.permissionWalletEvent("accountsChanged", [value]), foreign);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByText("Wallet account changed. Review Permission actions again.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disconnect UniSat", exact: true })).toContainText(foreign.slice(0, 6));
   expect(await page.evaluate(() => window.permissionSignatureCalls)).toBe(0);
+});
+
+test("Computer Permission refuses a prepared review after a same-account provider event", async ({ page }) => {
+  test.skip(PERMISSION_ACTIVATION_HEIGHT === 0, "Source activation is deliberately closed until canonical pin review.");
+  await fixture(page, { wallet: true }); await page.goto("/?folder=permission");
+  await page.getByRole("button", { name: "Connect UniSat", exact: true }).first().click();
+  await page.getByRole("button", { name: "New permission", exact: true }).click();
+  await page.getByRole("textbox", { name: "Permission label", exact: true }).fill("Same-account grant review");
+  await page.getByRole("button", { name: "Review permission", exact: true }).click();
+  const review = page.getByRole("dialog", { name: "Create permission grant", exact: true });
+  await expect(review).toBeVisible();
+  await page.evaluate(address => window.permissionWalletEvent("accountsChanged", [address]), owner);
+  if (await review.isVisible()) {
+    await review.getByRole("button", { name: "Continue to wallet", exact: true }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Prepare a new review" })).toBeVisible();
+  }
+  await expect(review).toHaveCount(0);
+  expect(await page.evaluate(() => window.permissionSignatureCalls)).toBe(0);
+  await expect(page.getByRole("textbox", { name: "Permission label", exact: true })).toHaveValue("Same-account grant review");
 });
 
 test("unsupported wallet shows its reason and cannot prepare a permission review", async ({ page }) => {

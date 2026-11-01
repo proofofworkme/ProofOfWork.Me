@@ -37,8 +37,10 @@ async function fixture(page, { unavailable = false, empty = false, wallet = fals
   let workSpendable = workReward.amountSubatoms;
   if (wallet) await page.addInitScript(({ walletAddress, utxo }) => {
     const handlers = new Map(); window.jobsSignatureCalls = 0; window.jobsAccounts = [walletAddress];
-    window.jobsWalletEvent = (event, values) => { if (event === 'accountsChanged') window.jobsAccounts = values; for (const handler of handlers.get(event) ?? []) handler(values); };
-    window.unisat = { getAccounts: async () => window.jobsAccounts, requestAccounts: async () => window.jobsAccounts,
+    let approved = false;
+    window.jobsWalletEvent = (event, values) => { if (event === 'accountsChanged') { window.jobsAccounts = values; approved = values.length > 0; } for (const handler of handlers.get(event) ?? []) handler(values); };
+    window.unisat = { getAccounts: async () => approved ? window.jobsAccounts : [], requestAccounts: async () => { approved = true; return window.jobsAccounts; },
+      disconnect: async () => { approved = false; },
       getNetwork: async () => 'livenet', getBitcoinUtxos: async () => [utxo],
       on: (event, handler) => handlers.set(event, [...(handlers.get(event) ?? []), handler]),
       removeListener: (event, handler) => handlers.set(event, (handlers.get(event) ?? []).filter(value => value !== handler)),
@@ -200,9 +202,22 @@ test('wallet account change invalidates review before any signature', async ({ p
   await expect(page.getByRole('dialog', { name: 'Publish job', exact: true })).toBeVisible();
   await page.evaluate(address => window.jobsWalletEvent('accountsChanged', [address]), worker);
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByText('Wallet account changed. Review Jobs actions again.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Disconnect UniSat', exact: true })).toContainText(worker.slice(0, 6));
   expect(await page.evaluate(() => window.jobsSignatureCalls)).toBe(0);
   expect(await page.evaluate(address => JSON.parse(localStorage.getItem(`proofofwork.jobs.draft.v1:livenet:${address}`)).title, requester)).toBe('Local review brief');
+});
+test('Computer Jobs refuses a prepared review after a same-account provider event', async ({ page }) => {
+  await fixture(page, { wallet: true }); await page.goto('/?folder=jobs'); await connect(page); await prepareBrief(page);
+  const review = page.getByRole('dialog', { name: 'Publish job', exact: true });
+  await expect(review).toBeVisible();
+  await page.evaluate(address => window.jobsWalletEvent('accountsChanged', [address]), requester);
+  if (await review.isVisible()) {
+    await review.getByRole('button', { name: 'Continue to wallet', exact: true }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Prepare a new review' })).toBeVisible();
+  }
+  await expect(review).toHaveCount(0);
+  expect(await page.evaluate(() => window.jobsSignatureCalls)).toBe(0);
+  await expect(page.getByRole('textbox', { name: 'Job title', exact: false })).toHaveValue('Local review brief');
 });
 test('acceptance review pays the exact frozen worker reward and rejects a changed confirmed head', async ({ page }) => {
   const controller = await fixture(page, { wallet: true }); await page.goto(`/?jobs=1&job=${job.txid}`); await connect(page);

@@ -9,9 +9,11 @@ import { ActionRecoveryPanel } from "../../shared/components/ActionRecoveryPanel
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import { explorerTxUrl, type BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { useUnisatPresence } from "../../shared/wallet/useUnisatPresence";
+import { useWalletConnection, type EmbeddedWalletSession } from "../../shared/wallet/useWalletConnection";
+import { WalletConnectAction } from "../../shared/components/WalletConnectAction";
 import { readActionReceipts, saveActionReceipt, type ActionReceipt } from "../../shared/wallet/actionRecovery";
 import { attachmentFromFile } from "../../shared/protocol/mailAttachment";
-import { ensureWalletNetwork, getWalletNetwork, signAndBroadcastBoostPsbt } from "../boost/boostWallet";
+import { signAndBroadcastBoostPsbt } from "../boost/boostWallet";
 import { shortAddress } from "../../functions";
 import { fetchJob, fetchJobs, jobReward, JOB_STATUSES, JOB_TXID, type Job, type JobAction, type JobDetail, type JobEvent, type JobsList } from "./jobsApi";
 import { buildJobsPlan, emptyJobsDraft, isJobsDraft, JOB_ACTION_LABELS, jobsDraftFields, persistJobsDraft, restoreJobsDraft, type JobsDraft } from "./jobsProtocol";
@@ -20,7 +22,7 @@ import { downloadJobsFile, fetchJobsFile, type JobsFile } from "./jobsArtifacts"
 import { formatJobReward, formatJobWorkSubatoms, jobRewardFromMetadata, type JobReward } from "../../shared/protocol/jobs.mjs";
 import "./jobs.css";
 
-export type JobsRootProps = { embedded?: boolean; initialAddress?: string; initialNetwork?: BitcoinNetwork };
+export type JobsRootProps = { embedded?: boolean; initialAddress?: string; initialNetwork?: BitcoinNetwork; walletSession?: EmbeddedWalletSession };
 type Route = { job: string; mine: boolean; q: string; status: string };
 const compact = (value: string) => `${value.slice(0, 8)}…${value.slice(-6)}`;
 const errorText = (error: unknown) => error instanceof Error ? error.message : "Jobs is temporarily unavailable. Try again in a moment.";
@@ -84,9 +86,11 @@ function FileEvidence({ txid, network, own = false }: { txid: string; network: B
   </div>;
 }
 
-export default function JobsRoot({ embedded = false, initialAddress = "", initialNetwork }: JobsRootProps = {}) {
-  const [network, setNetwork] = useState<BitcoinNetwork>(() => { const value = new URLSearchParams(window.location.search).get("network"); return initialNetwork ?? (value === "testnet" || value === "testnet4" || value === "livenet" ? value : "livenet"); });
-  const [address, setAddress] = useState(initialAddress);
+export default function JobsRoot({ embedded = false, initialAddress = "", initialNetwork, walletSession }: JobsRootProps = {}) {
+  const [localNetwork, setNetwork] = useState<BitcoinNetwork>(() => { const value = new URLSearchParams(window.location.search).get("network"); return initialNetwork ?? (value === "testnet" || value === "testnet4" || value === "livenet" ? value : "livenet"); });
+  const [localAddress, setAddress] = useState(initialAddress);
+  const network = walletSession?.network ?? localNetwork;
+  const address = walletSession?.address ?? localAddress;
   const [hasUnisat] = useUnisatPresence();
   const [route, setRoute] = useState(initialRoute);
   const [query, setQuery] = useState(route.q);
@@ -103,8 +107,9 @@ export default function JobsRoot({ embedded = false, initialAddress = "", initia
   const [loadedKey, setLoadedKey] = useState("");
   const [draftError, setDraftError] = useState("");
   const [actionError, setActionError] = useState("");
-  const [actionBusy, setActionBusy] = useState(false);
+  const [transactionBusy, setActionBusy] = useState(false);
   const [prepared, setPrepared] = useState<PreparedJob>();
+  const preparedWalletRevision = useRef<number>();
   const [receipts, setReceipts] = useState<ActionReceipt[]>([]);
   const [recoveryError, setRecoveryError] = useState("");
   const [checking, setChecking] = useState(false);
@@ -116,6 +121,13 @@ export default function JobsRoot({ embedded = false, initialAddress = "", initia
   const state = useRef({ draft, draftKey, loadedKey, draftError, editor, prepared });
   state.current = { draft, draftKey, loadedKey, draftError, editor, prepared };
   const account = useRef({ address, network }); account.current = { address, network };
+  const walletConnection = useWalletConnection({
+    address, network, embedded, session: walletSession, hasUnisat,
+    beforeChange: () => preserveDraft(),
+    onChange: value => { setAddress(value.address); setNetwork(value.network); setPrepared(undefined); },
+    onInvalidate: () => setPrepared(undefined), onStatus: setStatus, onError: setActionError,
+  });
+  const actionBusy = transactionBusy || walletConnection.busy;
   const scope = JSON.stringify([address, network, draft, route.job, detail?.job.headTxid, editor]);
   const currentScope = useRef(scope); currentScope.current = scope;
   const job = detail?.job;
@@ -176,7 +188,11 @@ export default function JobsRoot({ embedded = false, initialAddress = "", initia
   useEffect(() => {
     setDraftError(""); setPrepared(undefined);
     try {
-      const raw = localStorage.getItem(draftKey); const value: unknown = raw ? JSON.parse(raw) : { ...emptyJobsDraft };
+      const raw = localStorage.getItem(draftKey);
+      const previous = state.current;
+      const carryDraft = !raw && address && previous.editor && previous.loadedKey === `proofofwork.jobs.draft.v1:${network}:disconnected`;
+      if (carryDraft) persistJobsDraft(localStorage, draftKey, previous.draft);
+      const value: unknown = raw ? JSON.parse(raw) : carryDraft ? previous.draft : { ...emptyJobsDraft };
       if (!isJobsDraft(value)) throw new Error("Saved Jobs draft is unreadable. Preserve local storage before repairing it.");
       if (state.current.editor && state.current.loadedKey && state.current.loadedKey !== draftKey) setStatus("The previous account's draft is saved separately. This account's Jobs draft is now loaded.");
       setDraft(value); setLoadedKey(draftKey);
@@ -190,13 +206,6 @@ export default function JobsRoot({ embedded = false, initialAddress = "", initia
     try { setReceipts(readActionReceipts(localStorage).filter(item => item.key.startsWith("jobs:"))); setRecoveryError(""); } catch (error) { setRecoveryError(errorText(error)); }
     void checkReceipts();
   }, [address, network, checkReceipts]);
-  useEffect(() => {
-    const wallet = window.unisat; if (!wallet) return;
-    const accounts = (...args: unknown[]) => { setAddress(Array.isArray(args[0]) ? String(args[0][0] ?? "") : ""); setPrepared(undefined); if (state.current.prepared) setActionError("Wallet account changed. Review Jobs actions again."); setStatus("Wallet account changed. Review Jobs actions again."); };
-    const changed = () => { setPrepared(undefined); void getWalletNetwork(wallet).then(value => { if (value) setNetwork(value); else setAddress(""); }).catch(() => setAddress("")); };
-    wallet.on?.("accountsChanged", accounts); wallet.on?.("networkChanged", changed); wallet.on?.("chainChanged", changed);
-    return () => { wallet.removeListener?.("accountsChanged", accounts); wallet.removeListener?.("networkChanged", changed); wallet.removeListener?.("chainChanged", changed); };
-  }, [hasUnisat]);
   const navigate = useCallback((next: Route) => {
     if (!preserveDraft()) return;
     window.history.pushState({}, "", routeHref(next)); setRoute(next); setQuery(next.q); setEditor(false); setPrepared(undefined); setActionError(""); setTab("brief"); setCopied(false);
@@ -212,22 +221,10 @@ export default function JobsRoot({ embedded = false, initialAddress = "", initia
     return () => controller.abort();
   }, [network, route.job, route.mine, route.q, route.status, route.mine ? address : "", attempt]);
 
-  async function connect() {
-    if (flight.current || !preserveDraft()) return;
-    const wallet = window.unisat; if (!wallet) { setActionError("Install UniSat to publish or act on a job."); return; }
-    flight.current = true; setActionBusy(true); setActionError("");
-    try {
-      const accounts = wallet.requestAccounts ? await wallet.requestAccounts() : await wallet.getAccounts?.();
-      if (!accounts?.[0]) throw new Error("UniSat did not return an address.");
-      const verified = await ensureWalletNetwork(wallet, network, accounts[0]);
-      const prior = state.current, nextKey = `proofofwork.jobs.draft.v1:${network}:${verified}`;
-      if (!account.current.address && prior.editor && prior.loadedKey === prior.draftKey && !localStorage.getItem(nextKey)) persistJobsDraft(localStorage, nextKey, prior.draft);
-      setAddress(verified); setStatus(`${shortAddress(verified)} connected. Signing stays in UniSat.`);
-    }
-    catch (error) { setActionError(errorText(error)); } finally { flight.current = false; if (alive.current) setActionBusy(false); }
-  }
+  const connect = walletConnection.connect;
   function changeNetwork(value: BitcoinNetwork) {
     if (flight.current || !preserveDraft()) return;
+    walletConnection.invalidate();
     setNetwork(value); setPrepared(undefined); setEditor(false);
     const url = new URL(window.location.href); url.searchParams.set("network", value); window.history.replaceState(window.history.state, "", url);
   }
@@ -256,16 +253,16 @@ export default function JobsRoot({ embedded = false, initialAddress = "", initia
   async function prepare(event: FormEvent) {
     event.preventDefault();
     if (flight.current || !planResult.plan || draftError || loadedKey !== draftKey) return;
-    const expected = scope, plan = planResult.plan;
-    const assertCurrent = () => { if (!alive.current || currentScope.current !== expected) throw new Error("Job fields, account, network or confirmed terms changed. Prepare a new review."); };
+    const expected = scope, plan = planResult.plan, expectedWalletRevision = walletConnection.getRevision();
+    const assertCurrent = () => { if (!alive.current || currentScope.current !== expected || walletConnection.getRevision() !== expectedWalletRevision) throw new Error("Job fields, account, network or confirmed terms changed. Prepare a new review."); };
     flight.current = true; setActionBusy(true); setActionError("");
-    try { await noDuplicate(plan.key); const value = await prepareJobsTransaction(plan, address, network, assertCurrent); await noDuplicate(plan.key); assertCurrent(); returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setPrepared(value); }
+    try { await noDuplicate(plan.key); const value = await prepareJobsTransaction(plan, address, network, assertCurrent); await noDuplicate(plan.key); assertCurrent(); returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; preparedWalletRevision.current = expectedWalletRevision; setPrepared(value); }
     catch (error) { if (alive.current) setActionError(errorText(error)); } finally { flight.current = false; if (alive.current) setActionBusy(false); }
   }
   async function sign() {
     if (flight.current || !prepared) return;
-    const reviewed = prepared, expected = scope;
-    const assertCurrent = () => { if (!alive.current || currentScope.current !== expected) throw new Error("Job fields, account, network or confirmed terms changed. Prepare a new review."); };
+    const reviewed = prepared, expected = scope, expectedWalletRevision = preparedWalletRevision.current;
+    const assertCurrent = () => { if (!alive.current || currentScope.current !== expected || walletConnection.getRevision() !== expectedWalletRevision) throw new Error("Job fields, account, network or confirmed terms changed. Prepare a new review."); };
     let receipt: ActionReceipt | undefined;
     flight.current = true; setActionBusy(true); setActionError("");
     try {
@@ -323,10 +320,10 @@ export default function JobsRoot({ embedded = false, initialAddress = "", initia
     </section>;
   }
   return <div className={`jobs-app${embedded ? " jobs-embedded-app" : ""}`}>
-    {!embedded && <AppHeader title="ProofOfWork Jobs" subtitle="Agree. Deliver. Get paid." address={address} network={network} hasUnisat={hasUnisat} busy={actionBusy || readBusy} connectWallet={() => void connect()} disconnectWallet={() => { if (preserveDraft()) setAddress(""); }} onNetworkChange={changeNetwork} onDomainNavigate={() => !preserveDraft()} onRefresh={() => setAttempt(value => value + 1)} onRefreshRecovery={() => void checkReceipts()} />}
+    {!embedded && <AppHeader title="ProofOfWork Jobs" subtitle="Agree. Deliver. Get paid." address={address} network={network} hasUnisat={hasUnisat} busy={actionBusy} connectWallet={() => void connect()} disconnectWallet={() => void walletConnection.disconnect()} onNetworkChange={changeNetwork} onDomainNavigate={() => !preserveDraft()} onRefresh={() => setAttempt(value => value + 1)} onRefreshRecovery={() => void checkReceipts()} />}
     <main className="jobs-workspace" id={embedded ? "jobs-workspace" : "main-content"}>
       <div className="jobs-workspace-heading"><div><span className="jobs-eyebrow"><BriefcaseBusiness size={16} /> PROOFOFWORK JOBS</span><h2>Work worth proving.</h2><p>Public briefs. Agreed scope. Delivered work. Direct payment in proofs or WORK credit.</p></div><button className="primary" type="button" onClick={() => begin("brief")} disabled={actionBusy}><Plus size={16} /> Post a job</button></div>
-      {embedded && <div className="jobs-embedded-account"><span>{address ? `Connected · ${shortAddress(address)}` : "Public board · connect to publish or work"}</span><div>{!address && <button className="secondary" type="button" onClick={() => void connect()} disabled={actionBusy}><Wallet size={15} /> Connect UniSat</button>}<button className="secondary" type="button" onClick={() => { setAttempt(value => value + 1); void checkReceipts(); }} disabled={readBusy || actionBusy}><RefreshCw size={15} /> Refresh</button></div></div>}
+      {embedded && <div className="jobs-embedded-account"><span>{address ? `Connected · ${shortAddress(address)}` : "Public board · connect to publish or work"}</span><div>{!address && <WalletConnectAction hasUnisat={hasUnisat} busy={actionBusy} onConnect={connect} />}<button className="secondary" type="button" onClick={() => { setAttempt(value => value + 1); void checkReceipts(); }} disabled={readBusy || actionBusy}><RefreshCw size={15} /> Refresh</button></div></div>}
       <ActionRecoveryPanel receipts={visibleReceipts} error={recoveryError} checking={checking} restoringDisabled={actionBusy} canRestore={item => Boolean(restoreJobsDraft(item.fields))} onRestore={restore} onCheck={() => void checkReceipts()} workspaceHref={() => embedded ? "/?folder=jobs" : "/?jobs=1"} />
       {status && <div className="jobs-notice" role="status"><CheckCircle2 size={17} /><span>{status}</span><button type="button" onClick={() => setStatus("")} aria-label="Dismiss status"><X size={15} /></button></div>}
       {actionError && <p className="jobs-notice is-error" role="alert">{actionError}</p>}
@@ -344,18 +341,18 @@ export default function JobsRoot({ embedded = false, initialAddress = "", initia
           {draftError && <p className="jobs-notice is-error" role="alert">{draftError}</p>}
           {planResult.error && <p className="jobs-muted" role="status">{planResult.error}</p>}
           {planResult.plan && <p className="jobs-muted">{planResult.plan.carrierBytes.toLocaleString()} / 100,000 on-chain script bytes</p>}
-          <div className="jobs-editor-actions"><button className="secondary" type="button" onClick={() => { if (preserveDraft()) setEditor(false); }} disabled={actionBusy}>Save draft and back</button>{address ? <button className="primary" type="submit" disabled={actionBusy || !planResult.plan || Boolean(draftError) || loadedKey !== draftKey || network !== "livenet"}>{actionBusy ? <RefreshCw className="refresh-spin" size={16} /> : <ShieldCheck size={16} />}{actionBusy ? "Preparing…" : "Review transaction"}</button> : <button className="primary" type="button" onClick={() => void connect()} disabled={actionBusy}><Wallet size={16} /> Connect to review</button>}</div>
+          <div className="jobs-editor-actions"><button className="secondary" type="button" onClick={() => { if (preserveDraft()) setEditor(false); }} disabled={actionBusy}>Save draft and back</button>{address ? <button className="primary" type="submit" disabled={actionBusy || !planResult.plan || Boolean(draftError) || loadedKey !== draftKey || network !== "livenet"}>{actionBusy ? <RefreshCw className="refresh-spin" size={16} /> : <ShieldCheck size={16} />}{actionBusy ? "Preparing…" : "Review transaction"}</button> : <WalletConnectAction hasUnisat={hasUnisat} busy={actionBusy} onConnect={connect} className="primary" label="Connect to review" />}</div>
         </form>
       </section> : <>
         {route.job ? <a className="jobs-back" href={routeHref({ ...route, job: "" })} onClick={event => followInternalLink(event, () => navigate({ ...route, job: "" }))}><ArrowLeft size={16} /> Back to jobs</a> : <><div className="jobs-board-tools"><div className="jobs-tabs" aria-label="Jobs board"><button type="button" aria-pressed={!route.mine} onClick={() => navigate({ ...route, mine: false })}>Browse jobs</button><button type="button" aria-pressed={route.mine} onClick={() => navigate({ ...route, mine: true })}>My Jobs</button></div><label className="jobs-status-filter">Status<select value={route.status} onChange={event => navigate({ ...route, status: event.target.value })}><option value="">All statuses</option>{JOB_STATUSES.map(value => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></label></div><form className="jobs-search" onSubmit={event => { event.preventDefault(); navigate({ ...route, q: query.trim() }); }}><label htmlFor="jobs-search-query"><Search size={17} /><span className="sr-only">Search jobs</span><input id="jobs-search-query" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search brief, scope, address or transaction" /></label><button className="secondary" type="submit">Search</button></form></>}
         {list?.stats?.paidProofs !== undefined && list.stats.paidWorkSubatoms !== undefined && <div className="jobs-paid-stats" aria-label="Confirmed Jobs reward payments"><div><span>Confirmed proof rewards paid</span><strong>{proofText(list.stats.paidProofs)} proofs</strong></div><div><span>Confirmed WORK rewards paid</span><strong>{workText(list.stats.paidWorkSubatoms)}</strong></div></div>}
         {list?.versions?.supported?.includes(2) && (!list.stats || list.stats.paidProofs === undefined || list.stats.paidWorkSubatoms === undefined) && <p className="jobs-muted" role="status">Confirmed Jobs reward totals unavailable.</p>}
         {draftPresent && <div className="jobs-saved-draft"><span>Saved local draft · {JOB_ACTION_LABELS[draft.action]}</span><button className="secondary" type="button" onClick={() => { if (preserveDraft()) setEditor(true); }} disabled={actionBusy}>Resume draft</button></div>}
-        {readBusy ? <div className="jobs-read-state" role="status"><RefreshCw className="refresh-spin" size={22} /><div><strong>Verifying confirmed Jobs records…</strong><p>Checking complete history at one chain checkpoint.</p></div></div> : readError ? <div className="jobs-read-state is-error" role="alert"><ShieldCheck size={24} /><div><strong>Jobs evidence unavailable</strong><p>{readError}</p><button className="secondary" type="button" onClick={() => setAttempt(value => value + 1)}><RefreshCw size={15} /> Retry verified read</button></div></div> : route.mine && !address && !route.job ? <div className="jobs-empty"><Wallet size={26} /><h3>Connect to see My Jobs</h3><p>Your requested, proposed and assigned work will appear after a verified account read.</p><button className="primary" type="button" onClick={() => void connect()}>Connect UniSat</button></div> : list ? <>
+        {readBusy ? <div className="jobs-read-state" role="status"><RefreshCw className="refresh-spin" size={22} /><div><strong>Verifying confirmed Jobs records…</strong><p>Checking complete history at one chain checkpoint.</p></div></div> : readError ? <div className="jobs-read-state is-error" role="alert"><ShieldCheck size={24} /><div><strong>Jobs evidence unavailable</strong><p>{readError}</p><button className="secondary" type="button" onClick={() => setAttempt(value => value + 1)}><RefreshCw size={15} /> Retry verified read</button></div></div> : route.mine && !address && !route.job ? <div className="jobs-empty"><Wallet size={26} /><h3>Connect to see My Jobs</h3><p>Your requested, proposed and assigned work will appear after a verified account read.</p><WalletConnectAction hasUnisat={hasUnisat} busy={actionBusy} onConnect={connect} className="primary" /></div> : list ? <>
           {list.jobs.length ? <div className="jobs-board">{list.jobs.map(item => <article className="jobs-card" key={item.txid}><div className="jobs-card-top"><span className={`jobs-badge is-${item.status}`}>{statusLabel(item.status)}</span><span>{dateText(item.blockTime)}</span></div><a className="jobs-card-title" href={routeHref({ ...route, job: item.txid })} onClick={event => followInternalLink(event, () => navigate({ ...route, job: item.txid }))}>{item.title}</a><p>{item.brief}</p><div className="jobs-card-reward"><strong><RewardValue reward={jobReward(item)} /></strong><small>{item.status === "paid" ? "Confirmed reward paid" : item.assignmentTxid ? "Agreed reward · unfunded" : "Offered reward · unfunded"}</small></div><div className="jobs-card-footer"><span title={item.requesterAddress}>Requester · {item.requesterId || shortAddress(item.requesterAddress)}</span><a href={routeHref({ ...route, job: item.txid })} onClick={event => followInternalLink(event, () => navigate({ ...route, job: item.txid }))}>View job <ArrowUpRight size={15} /></a></div></article>)}</div> : <div className="jobs-empty"><ClipboardList size={28} /><h3>{route.mine ? "No matching confirmed work" : route.q || route.status ? "No matching confirmed jobs" : "The first job starts here."}</h3><p>{route.mine ? "No requested, proposed or assigned jobs match this account and filter at the verified checkpoint." : route.q || route.status ? "Adjust the search or status to browse more jobs." : "Publish a clear brief and an offered reward. People and agents can propose work and deliver evidence."}</p><button className="primary" type="button" onClick={() => begin("brief")}><Plus size={16} /> Post a job</button></div>}
           {list.pagination.hasMore && <button className="secondary jobs-load-more" type="button" disabled={pageBusy} onClick={() => void loadMore()}>{pageBusy ? "Loading verified jobs…" : "Load more jobs"}</button>}
         </> : detail && job ? <section className="jobs-detail"><div className="jobs-detail-heading"><div><span className={`jobs-badge is-${job.status}`}>{statusLabel(job.status)}</span><h3>{job.title}</h3><p>Requester · {job.requesterId || shortAddress(job.requesterAddress)} · {dateText(job.blockTime)}</p></div><div className="jobs-detail-reward"><strong><RewardValue reward={jobReward(job)} /></strong><small>{job.status === "paid" ? "Confirmed reward paid" : "Reward promise · no escrow"}</small></div></div>
-          <div className="jobs-detail-actions">{!address ? <button className="secondary" type="button" onClick={() => void connect()}><Wallet size={15} /> Connect to participate</button> : null}{job.status === "open" && !requester && address && <button className="primary" type="button" disabled={actionDisabled} onClick={() => begin("propose")}><Handshake size={15} /> Propose work</button>}{worker && ["assigned", "delivered"].includes(job.status) && <button className="primary" type="button" disabled={actionDisabled} onClick={() => begin("deliver")}><FileUp size={15} /> Deliver work</button>}{requester && job.status === "delivered" && <button className="primary" type="button" disabled={actionDisabled} onClick={() => begin("accept")}><CheckCircle2 size={15} /> Accept and pay</button>}{requester && ["open", "assigned", "delivered"].includes(job.status) && <button className="secondary" type="button" disabled={actionDisabled} onClick={() => begin("cancel")}>Cancel job</button>}<button className="secondary" type="button" onClick={copyLink}>{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? "Link copied" : "Copy job link"}</button></div>
+          <div className="jobs-detail-actions">{!address ? <WalletConnectAction hasUnisat={hasUnisat} busy={actionBusy} onConnect={connect} label="Connect to participate" /> : null}{job.status === "open" && !requester && address && <button className="primary" type="button" disabled={actionDisabled} onClick={() => begin("propose")}><Handshake size={15} /> Propose work</button>}{worker && ["assigned", "delivered"].includes(job.status) && <button className="primary" type="button" disabled={actionDisabled} onClick={() => begin("deliver")}><FileUp size={15} /> Deliver work</button>}{requester && job.status === "delivered" && <button className="primary" type="button" disabled={actionDisabled} onClick={() => begin("accept")}><CheckCircle2 size={15} /> Accept and pay</button>}{requester && ["open", "assigned", "delivered"].includes(job.status) && <button className="secondary" type="button" disabled={actionDisabled} onClick={() => begin("cancel")}>Cancel job</button>}<button className="secondary" type="button" onClick={copyLink}>{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? "Link copied" : "Copy job link"}</button></div>
           <div className="jobs-tabs jobs-detail-tabs" aria-label="Job sections">{(["brief", "proposals", "deliveries", "receipt"] as const).map(value => <button key={value} type="button" aria-pressed={tab === value} onClick={() => setTab(value)}>{value === "brief" ? "Brief" : value === "receipt" ? "Work receipt" : value === "proposals" ? `Proposals (${detail.proposals.length})` : `Deliveries (${detail.deliveries.length})`}</button>)}</div>
           {tab === "brief" && <div className="jobs-detail-body"><h4>{job.assignmentTxid ? "Agreed scope" : "Brief and acceptance criteria"}</h4><p className="jobs-prose">{job.scope}</p>{job.assignmentTxid && (job.scope !== job.brief || JSON.stringify(jobReward(job)) !== JSON.stringify(jobReward(job, "offeredReward"))) && <details><summary>Original published brief</summary><p className="jobs-prose">{job.brief}</p><p className="jobs-muted">Originally offered: {rewardText(jobReward(job, "offeredReward"))}.</p></details>}<dl className="jobs-participants"><div><dt>Requester wallet</dt><dd><code className="jobs-exact">{job.requesterAddress}</code></dd></div>{job.workerAddress && <div><dt>Assigned worker wallet</dt><dd><code className="jobs-exact">{job.workerAddress}</code></dd></div>}</dl><p className="jobs-muted">Roles belong to the confirmed signing addresses. A PowID label does not transfer the agreement to another wallet.</p><TxLink txid={job.txid} network={network} label="Inspect original brief transaction" /></div>}
           {tab === "proposals" && <div className="jobs-detail-body">{detail.proposals.length ? detail.proposals.map(item => <article className="jobs-proposal" key={item.txid}><div><Handshake size={18} /><strong>{shortAddress(item.authorAddress)}</strong><span className="jobs-badge">{job.proposalTxid === item.txid ? "Assigned proposal" : "Confirmed proposal"}</span></div><p className="jobs-prose">{String(item.metadata.scope ?? "")}</p><strong>{rewardText(jobRewardFromMetadata(item.metadata))}</strong><div className="jobs-row-actions"><TxLink txid={item.txid} network={network} />{requester && job.status === "open" && item.valid && item.applied && <button className="primary" type="button" disabled={actionDisabled} onClick={() => begin("assign", item)}>Review assignment</button>}</div></article>) : <div className="jobs-empty"><h4>No confirmed proposals yet</h4><p>Proposals define a worker's scope and reward. Assignment records the requester's agreement.</p></div>}</div>}
