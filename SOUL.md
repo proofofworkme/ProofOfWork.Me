@@ -889,6 +889,11 @@ read, then validate every recipient against that exact evidence. Repeating the
 whole recipient vector for each child turns batch growth into shared API stalls.
 Never carry that qualification across requests or substitute it for checking
 off-page siblings, stored positions, zero child fees or Mail envelope evidence.
+History verification must inspect what a person can read, not only row counts.
+Transfer cards carry their verified recipient and exact amount; batch parents
+describe the aggregate once while children describe their individual transfers.
+Keep existing user or rich presentation text, raw evidence and fee attribution
+intact when filling missing display fields in paginated history.
 
 Ordinary Mail has its own WORK batch attachment form. One transaction makes one
 546-proof WORK registry signal, while each recipient still receives the reviewed

@@ -134,6 +134,35 @@ class CompleteSequence(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'before upload'):
             M.admit(required, self.exact_fit())
 
+    def test_scratch_inputs_charge_all_simultaneous_copies_and_keep_every_limit(self):
+        plan = {**self.plan, 'inputStorage': 'deploy-scratch-v1'}
+        required = M.requirements(plan, self.census)
+        both_inputs = 700000000
+        self.assertEqual(required['additionalBytes']['root'], self.required['additionalBytes']['root'])
+        self.assertEqual(required['additionalBytes']['scratch'], self.required['additionalBytes']['scratch'] + both_inputs)
+        for pool in ('backup', 'transport'):
+            self.assertEqual(required['additionalBytes'][pool], self.required['additionalBytes'][pool] - both_inputs)
+        self.assertEqual(required['additionalBytes']['transport'], M.EVIDENCE_BYTES)
+        self.assertEqual(required['limits'], M.LIMITS)
+        self.assertEqual(required['retirementCreditBytes'], 0)
+        self.assertEqual(required['futureHardlinkCreditBytes'], 0)
+        census = copy.deepcopy(self.census)
+        for pool in ('backup', 'transport', 'scratch'):
+            census['usage'][pool] = M.LIMITS[pool + 'BudgetBytes'] - required['additionalBytes'][pool]
+        census['availableBytes'] = M.LIMITS['rootReserveBytes'] + M.LIMITS['growthReserveBytes'] + required['additionalBytes']['root']
+        self.assertTrue(M.admit(required, census)['ok'])
+        for pool in ('backup', 'transport', 'scratch', 'root'):
+            changed = copy.deepcopy(census)
+            if pool == 'root': changed['availableBytes'] -= 1
+            else: changed['usage'][pool] += 1
+            with self.subTest(pool=pool), self.assertRaisesRegex(ValueError, 'before upload'):
+                M.admit(required, changed)
+        for key in ('resumeSurfaces', 'preservedStageResume', 'preservedCapacityResume'):
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'reconciliation'):
+                M.requirements({**plan, key: {}}, self.census)
+        with self.assertRaisesRegex(ValueError, 'known preserved input pool'):
+            M.requirements({**plan, 'inputStorage': 'arbitrary-pool'}, self.census)
+
     def test_archive_pool_allocation_admits_observed_refusal_without_retirement_credit(self):
         plan = copy.deepcopy(self.plan)
         plan['admissions']['surfaces-receive']['bytes'] = 393461760
@@ -205,7 +234,7 @@ class TransportPhaseOrder(unittest.TestCase):
     production rename, absence/inode assertions and branch ordering run intact.
     No systemd, SSH, archive creation or production module preamble executes.
     """
-    def run_transport(self, *, ineffective_rename=False):
+    def run_transport(self, *, ineffective_rename=False, scratch_inputs=False):
         path = PATH.with_name('remote_transport.py')
         nodes = ast.parse(path.read_bytes()).body
         def assignment(node, name):
@@ -231,7 +260,7 @@ class TransportPhaseOrder(unittest.TestCase):
             release = 'aaaaaaaaaaaa-20261018T082109Z'
             payload = scratch / ('proofofwork-ui-surfaces-' + release)
             evidence_root = evidence / release
-            preserved = evidence_root / payload.name
+            preserved = payload if scratch_inputs else evidence_root / payload.name
             stage = scratch / ('proofofwork-www-stage-' + release)
             fingerprint = {'sha256': 'f' * 64, 'entries': 3, 'regularBytes': 7}
             events, received_identity = [], []
@@ -259,7 +288,7 @@ class TransportPhaseOrder(unittest.TestCase):
                 elif name in ('stage-model.json', 'stager.log'):
                     # Both model and real stage launch must observe receipt
                     # completion and the same inode outside the scratch pool.
-                    self.assertFalse(payload.exists())
+                    self.assertEqual(payload.exists(), scratch_inputs)
                     self.assertEqual((preserved.stat().st_dev, preserved.stat().st_ino), received_identity[0])
                     self.assertTrue((evidence_root / 'incoming-receipt.json').is_file())
                     self.assertIn(str(preserved / 'surfaces'), argv)
@@ -275,10 +304,12 @@ class TransportPhaseOrder(unittest.TestCase):
                     self.fail('Unexpected process boundary: ' + name)
             scope.update(BASE=scratch, EVIDENCE=evidence, ARCHIVES=archives, out=out,
                 phase='surfaces-stage', release=release, evidence_root=evidence_root,
+                scratch_inputs=scratch_inputs, input_parent=scratch if scratch_inputs else evidence_root,
                 plan_sha='p' * 64, lock_fd=123, tools=root / 'tools', EVIDENCE_RESERVE=32*1024**2,
                 phase_capacity_source='fixture phase model', SURFACES=['fixture'],
                 helpers={'capacity': {'sha256': 'c' * 64}, 'stager': {'path': '/fixture/stager', 'sha256': 's' * 64}},
                 p={'admissions': {'surfaces-receive': {'bytes': 4096, 'inodes': 32}},
+                   'inputStorage': 'deploy-scratch-v1' if scratch_inputs else 'release-evidence-v1',
                    'surfaces': {'compressedBytes': 7, 'sha256': 'a' * 64},
                    'publicationAttempt': 'fixture', 'commit': 'a' * 40, 'tree': 'b' * 40,
                    'surfacesPayloadFingerprint': fingerprint, 'stageArchiveUpperBoundBytes': 8192},
@@ -307,6 +338,53 @@ class TransportPhaseOrder(unittest.TestCase):
     def test_failed_move_cannot_reach_model_or_stager(self):
         self.run_transport(ineffective_rename=True)
 
+    def test_scratch_input_keeps_same_received_inode_and_receipt_through_staging(self):
+        self.run_transport(scratch_inputs=True)
+
+    def test_scratch_source_uses_native_receiver_and_scratch_receipt_with_full_admission(self):
+        path = PATH.with_name('remote_transport.py')
+        nodes = ast.parse(path.read_bytes()).body
+        def assignment(node, name):
+            return isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)
+        start = next(i for i, node in enumerate(nodes) if assignment(node, 'kind'))
+        end = next(i for i in range(start, len(nodes)) if isinstance(nodes[i], ast.If) and ast.unparse(nodes[i].test) == "phase != 'source'")
+        receipt_assignment = next(node for node in nodes[end].orelse if assignment(node, 'source_receipt_path'))
+        code = compile(ast.Module(body=[*nodes[start:end], receipt_assignment], type_ignores=[]), str(path), 'exec')
+        with tempfile.TemporaryDirectory(prefix='pow-scratch-source-') as temporary:
+            root = Path(temporary); scratch, archives, evidence = [root / name for name in ('scratch', 'archives', 'evidence')]
+            for directory in (scratch, archives, evidence): directory.mkdir()
+            release = 'aaaaaaaaaaaa-20261101T024536Z'
+            archive = archives / ('proofofwork-ui-release-' + release + '.tgz')
+            archive.write_bytes(b'fixture archive')
+            Path(str(archive) + '.sha256').write_text('a' * 64 + '  ' + archive.name + '\n')
+            tools = root / 'tools'; admissions = []; received = []
+            def run(argv, name, **kwargs):
+                self.assertEqual(argv, ['/usr/bin/python3', '-I', '-B', str(tools / 'stream-ui-bundle.py'),
+                    'source', release, '7', 'b' * 64])
+                self.assertEqual(name, 'receiver.log')
+                self.assertEqual(kwargs['source'].read(kwargs['length']), b'fixture')
+                received.append(True)
+                (scratch / ('audit5-stream-source-' + release + '.json')).write_text('{"status":"verified"}')
+            scope = {'__name__': '_scratch_source_fixture', 'Path': Path, 'json': json,
+                'phase': 'source', 'release': release, 'scratch_inputs': True, 'input_parent': scratch,
+                'BASE': scratch, 'ARCHIVES': archives, 'EVIDENCE': evidence, 'evidence_root': evidence,
+                'tools': tools, 'EVIDENCE_RESERVE': 32*1024**2, 'RECEIVE_TIMEOUT_SECONDS': 1800,
+                'p': {'admissions': {'source-receive': {'bytes': 4096, 'inodes': 15000}},
+                      'source': {'compressedBytes': 7, 'sha256': 'b' * 64}},
+                'sys': types.SimpleNamespace(stdin=types.SimpleNamespace(buffer=io.BytesIO(b'fixture'))),
+                'bound': lambda *args: archive.read_bytes(), 'directory': lambda *args: None,
+                'validate_evidence_ancestors': lambda *args, **kwargs: None, 'run': run,
+                'capacity': lambda *args, **kwargs: admissions.append((args, kwargs)),
+                'source_receiver_code': lambda *args: self.fail('Scratch mode must use unchanged native receiver')}
+            exec(code, scope)
+            self.assertEqual(received, [True])
+            self.assertEqual(scope['source_receipt_path'], scratch / ('audit5-stream-source-' + release + '.json'))
+            self.assertTrue(scope['source_receipt_path'].is_file())
+            self.assertEqual([r[0] for r in admissions], [
+                ('check-scratch', scratch, 4096 + 32*1024**2, 'source-evidence'),
+                ('check', scratch, 4096 + 32*1024**2, 'source-receive')])
+            self.assertTrue(all(r[1]['inodes'] == 15000 for r in admissions))
+
 
 class ArchivePoolWork(unittest.TestCase):
     def setUp(self):
@@ -319,8 +397,8 @@ class ArchivePoolWork(unittest.TestCase):
         path = PATH.with_name('remote_transport.py')
         nodes = ast.parse(path.read_bytes()).body
         definitions = [node for node in nodes if isinstance(node, (ast.Import, ast.ImportFrom))
-            or isinstance(node, ast.FunctionDef) and node.name in ('directory', 'sync', 'rename_new', 'archive_workspace')]
-        self.scope = {'__name__': '_archive_pool_fixture', 'BASE': self.root, 'ARCHIVES': self.archives}
+            or isinstance(node, ast.FunctionDef) and node.name in ('directory', 'sync', 'rename_new', 'archive_workspace', 'input_paths', 'admit_fresh_scratch_inputs')]
+        self.scope = {'__name__': '_archive_pool_fixture', 'BASE': self.root, 'ARCHIVES': self.archives, 'EVIDENCE': self.evidence}
         exec(compile(ast.Module(body=definitions, type_ignores=[]), str(path), 'exec'), self.scope)
         # Only numeric root ownership is adapted for unprivileged test runners.
         # Real path, device, mode, symlink and exclusive-mkdir checks remain.
@@ -344,6 +422,64 @@ class ArchivePoolWork(unittest.TestCase):
         self.assertEqual(work.stat().st_dev, self.archives.stat().st_dev)
         with self.assertRaises(FileExistsError):
             self.scope['archive_workspace'](self.release, self.attempt)
+
+    def scratch_plan(self):
+        return {'releaseId': self.release, 'inputStorage': 'deploy-scratch-v1',
+                'preservedSourceCheckout': str(self.root / ('proofofwork-ui-source-' + self.release)),
+                'preservedSurfacesRoot': str(self.root / ('proofofwork-ui-surfaces-' + self.release) / 'surfaces')}
+
+    def test_scratch_input_namespace_refuses_occupied_paths_and_dangling_links(self):
+        plan = self.scratch_plan()
+        self.scope['admit_fresh_scratch_inputs'](plan)
+        for path in (Path(plan['preservedSourceCheckout']), Path(plan['preservedSurfacesRoot']).parent):
+            for kind in ('file', 'directory', 'symlink'):
+                with self.subTest(path=path.name, kind=kind):
+                    if kind == 'file': path.write_bytes(b'prior evidence')
+                    elif kind == 'directory': path.mkdir()
+                    else: path.symlink_to(self.root / 'absent')
+                    before = path.lstat()
+                    with self.assertRaisesRegex(AssertionError, 'namespace already occupied'):
+                        self.scope['admit_fresh_scratch_inputs'](plan)
+                    self.assertEqual(path.lstat().st_ino, before.st_ino)
+                    if kind == 'directory': path.rmdir()
+                    else: path.unlink()
+
+    def test_scratch_binding_refuses_other_pools_resume_keys_and_symlink_parent(self):
+        plan = self.scratch_plan()
+        with self.assertRaises(AssertionError):
+            self.scope['input_paths']({**plan, 'releaseId': 'bbbbbbbbbbbb-20261101T024536Z'})
+        for key in ('preservedSourceCheckout', 'preservedSurfacesRoot'):
+            with self.subTest(key=key), self.assertRaises(AssertionError):
+                self.scope['input_paths']({**plan, key: str(self.evidence / Path(plan[key]).name)})
+        for key in ('resumeSurfaces', 'preservedStageResume', 'preservedCapacityResume'):
+            with self.subTest(key=key), self.assertRaises(AssertionError):
+                self.scope['input_paths']({**plan, key: {}})
+        for storage in ('arbitrary', None):
+            with self.assertRaises(AssertionError): self.scope['input_paths']({**plan, 'inputStorage': storage})
+        alias = self.root / 'scratch-alias'; alias.symlink_to(self.root, target_is_directory=True)
+        self.scope['BASE'] = alias
+        forged = {**plan, 'preservedSourceCheckout': str(alias / Path(plan['preservedSourceCheckout']).name),
+                  'preservedSurfacesRoot': str(alias / Path(plan['preservedSurfacesRoot']).parent.name / 'surfaces')}
+        with self.assertRaises(AssertionError): self.scope['admit_fresh_scratch_inputs'](forged)
+
+    def test_publisher_binds_storage_mode_source_path_and_refuses_every_resume_key(self):
+        path = PATH.with_name('publish.py'); nodes = ast.parse(path.read_bytes()).body
+        start = next(i for i, node in enumerate(nodes) if isinstance(node, ast.Assert)
+                     and ast.unparse(node.test).startswith("plan['inputStorage'] in"))
+        end = next(i for i in range(start, len(nodes)) if isinstance(nodes[i], ast.Assert)
+                   and ast.unparse(nodes[i].test) == "plan['preservedSourceCheckout'] == source")
+        code = compile(ast.Module(body=nodes[start:end + 1], type_ignores=[]), str(path), 'exec')
+        plan = {'inputStorage': 'deploy-scratch-v1',
+                'preservedSourceCheckout': '/var/tmp/proofofwork-deploy/proofofwork-ui-source-' + self.release}
+        scope = {'plan': plan, 'release': self.release}; exec(code, scope)
+        self.assertEqual(scope['source'], plan['preservedSourceCheckout'])
+        altered = [{**plan, 'inputStorage': 'release-evidence-v1'},
+                   {**plan, 'inputStorage': 'other'},
+                   {**plan, 'preservedSourceCheckout': plan['preservedSourceCheckout'] + '-different'}]
+        altered += [{**plan, key: {}} for key in ('resumeSurfaces', 'preservedStageResume', 'preservedCapacityResume')]
+        for changed in altered:
+            with self.subTest(plan=changed), self.assertRaises(AssertionError):
+                exec(code, {'plan': changed, 'release': self.release})
 
     def test_occupied_file_and_dangling_symlink_refuse_without_replacing_evidence(self):
         for kind in ('file', 'symlink'):

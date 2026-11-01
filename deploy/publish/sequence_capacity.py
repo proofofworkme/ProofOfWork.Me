@@ -55,8 +55,9 @@ def capture(native):
 def requirements(plan, census):
     if census.get('limits') != LIMITS:
         raise ValueError('Whole-release census has different storage limits')
-    if plan.get('inputStorage') != 'release-evidence-v1':
-        raise ValueError('Whole-release model requires preserved release inputs')
+    storage = plan.get('inputStorage')
+    if storage not in ('release-evidence-v1', 'deploy-scratch-v1'):
+        raise ValueError('Whole-release model requires a known preserved input pool')
     if any(k in plan for k in ('resumeSurfaces', 'preservedStageResume', 'preservedCapacityResume')):
         raise ValueError('Interrupted releases require exact reconciliation, not fresh admission')
     incoming = integer(plan['admissions']['surfaces-receive']['bytes'])
@@ -73,13 +74,17 @@ def requirements(plan, census):
     # These phases cannot overlap. Keep the full verification cushion charged
     # to staging even though the controlled provenance process uses /tmp.
     scratch_peak = max(incoming, candidate + verification)
+    # Scratch inputs stay intact throughout source attestation and publication.
+    # Charge all copies concurrently; no future deletion or deduplication credit.
+    if storage == 'deploy-scratch-v1':
+        scratch_peak = incoming + source + candidate + verification
     extra = {
         'root': incoming + source + candidate + archive + verification + EVIDENCE_BYTES,
-        'backup': incoming + source + archive + old + EVIDENCE_BYTES,
+        'backup': (incoming + source if storage == 'release-evidence-v1' else 0) + archive + old + EVIDENCE_BYTES,
         # New archive work is created directly in the releases pool, including
         # its temporary file and sidecar. It never occupies transport evidence.
         # Keep the complete archive charge in backup and physical root peaks.
-        'transport': incoming + source + EVIDENCE_BYTES,
+        'transport': (incoming + source if storage == 'release-evidence-v1' else 0) + EVIDENCE_BYTES,
         'scratch': scratch_peak + EVIDENCE_BYTES,
     }
     inodes = (integer(plan['admissions']['source-receive']['inodes']) +

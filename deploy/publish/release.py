@@ -397,6 +397,8 @@ def committed_wrapper_sources():
 
 
 def make_plan(args):
+    input_storage = getattr(args, 'input_storage', 'release-evidence-v1')
+    assert input_storage in ('release-evidence-v1', 'deploy-scratch-v1'), 'Unknown release input storage'
     b = json.loads(Path(args.build_receipt).read_bytes())
     p = json.loads(Path(args.preflight).read_bytes())
     release_format = b.get('releaseFormat', 'proofofwork-ui-release-v3')
@@ -440,9 +442,12 @@ def make_plan(args):
          'retentionLifecycle': p['retentionLifecycle'],
          'retentionLocalSources': retention_sources,
          **tooling_binding,
-         'inputStorage': 'release-evidence-v1',
+         'inputStorage': input_storage,
          'preservedSourceCheckout': '/var/backups/proofofwork-ui/transport-evidence/' + b['releaseId'] + '/proofofwork-ui-source-' + b['releaseId'],
          'preservedSurfacesRoot': '/var/backups/proofofwork-ui/transport-evidence/' + b['releaseId'] + '/proofofwork-ui-surfaces-' + b['releaseId'] + '/surfaces'}
+    if input_storage == 'deploy-scratch-v1':
+        c['preservedSourceCheckout'] = '/var/tmp/proofofwork-deploy/proofofwork-ui-source-' + b['releaseId']
+        c['preservedSurfacesRoot'] = '/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-' + b['releaseId'] + '/surfaces'
     logical = {}; entries = {}
     for kind, record in b['bundles'].items():
         assert kind in ('source', 'surfaces')
@@ -472,6 +477,7 @@ def make_plan(args):
     capacity_args = [getattr(args, name, None) for name in ('capacity_plan', 'capacity_evidence', 'capacity_incoming_receipt', 'capacity_inventory')]
     assert all(capacity_args) or not any(capacity_args), 'Capacity resume requires plan, refusal, incoming receipt and inventory'
     assert sum(bool(any(values)) for values in (resume_args, preserved_args, capacity_args)) <= 1, 'Choose one explicit resume phase'
+    assert input_storage == 'release-evidence-v1' or not any((*resume_args, *preserved_args, *capacity_args)), 'Scratch inputs require a fresh release, never refusal reconciliation'
     old = p['oldManaged']
     c['stageArchiveUpperBoundBytes'] = old['logicalBytes'] + logical['surfaces'] + (old['entries']+entries['surfaces'])*2048 + 32*1024**2
     if all(resume_args): c['resumeSurfaces'] = surface_resume_binding(args, c)
@@ -561,6 +567,7 @@ def main():
     sub = parser.add_subparsers(dest='command', required=True)
     p = sub.add_parser('preflight'); p.add_argument('output'); p.set_defaults(fn=preflight)
     p = sub.add_parser('make-plan'); p.add_argument('build_receipt'); p.add_argument('preflight'); p.add_argument('output'); p.add_argument('--attempt', default='initial')
+    p.add_argument('--input-storage', choices=('release-evidence-v1', 'deploy-scratch-v1'), default='release-evidence-v1')
     p.add_argument('--resume-plan'); p.add_argument('--resume-evidence'); p.add_argument('--resume-inventory'); p.add_argument('--preserved-plan'); p.add_argument('--preserved-evidence'); p.add_argument('--preserved-incoming-receipt'); p.add_argument('--preserved-inventory'); p.set_defaults(fn=make_plan)
     p.add_argument('--capacity-plan'); p.add_argument('--capacity-evidence'); p.add_argument('--capacity-incoming-receipt'); p.add_argument('--capacity-inventory')
     p = sub.add_parser('upload-plan'); p.add_argument('plan'); p.set_defaults(fn=upload_plan)
