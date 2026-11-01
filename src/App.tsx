@@ -1413,6 +1413,10 @@ type PowActivityItem = {
   attributedMinerFeeSats?: number;
   attachedCredits?: MailAttachedCredit[];
   blockHeight?: number;
+  blockIndex?: number;
+  eventId?: string | number;
+  protocolVout?: number;
+  recordOrdinal?: number;
   confirmed: boolean;
   confirmationStatus?:
     | "confirmed"
@@ -1485,6 +1489,7 @@ const MARKETPLACE_MUTATION_KINDS = new Set<PowActivityKind>([
 ]);
 
 type PowActivityStats = {
+  snapshotId?: string;
   addresses?: number;
   confirmed?: number;
   dataBytes?: number;
@@ -1831,6 +1836,7 @@ type PowTokenWalletPreflightState = PowTokenSpendabilityState & {
 type PowActivityApiResponse = {
   activity?: PowActivityItem[];
   indexedAt?: string;
+  snapshotId?: string;
   source?: string;
   stats?: PowActivityStats;
   summaryOnly?: boolean;
@@ -16433,6 +16439,10 @@ async function fetchGlobalActivityHistoryPage(
   const payload = await fetchProofApiJson<
     PowPaginatedApiResponse<PowActivityItem>
   >(`/api/v1/log-history?${params.toString()}`, targetNetwork, { signal: options.signal });
+  if (!Array.isArray(payload.items) ||
+      (options.snapshotId && payload.snapshotId !== options.snapshotId)) {
+    throw new Error("Log history does not match the requested snapshot. Refresh to retry.");
+  }
   return {
     ...payload,
     items: Array.isArray(payload.items) ? payload.items : [],
@@ -22365,6 +22375,8 @@ export default function App() {
     PowPaginatedApiResponse<PowActivityItem> | undefined
   >();
   const [activityLoading, setActivityLoading] = useState(false);
+  const [activityHistoryReading, setActivityHistoryReading] = useState(false);
+  const [activityHistoryReadError, setActivityHistoryReadError] = useState("");
   const activitySearchGenerationRef = useRef(0);
   const activityHistoryGenerationRef = useRef(0);
   const activityHeadReadControllerRef = useRef<AbortController>();
@@ -27444,10 +27456,12 @@ export default function App() {
       const searchGeneration = activitySearchGenerationRef.current;
       const silent = !first;
       first = false;
-      await loadLogHead(silent, false, signal);
+      const head = await loadLogHead(silent, false, signal);
       if (cancelled || signal.aborted || activityLoadingOwnerRef.current || searchGeneration !== activitySearchGenerationRef.current) return;
       if (historyTarget) {
-        await loadLogHistoryPage(historyTarget.pageIndex, true, historyTarget.query, { signal });
+        await loadLogHistoryPage(historyTarget.pageIndex, true, historyTarget.query, {
+          signal, snapshotId: head?.snapshotId,
+        });
         const profile = activityProfileRef.current;
         if (!cancelled && !signal.aborted && !activityLoadingOwnerRef.current && !activityHeadBusyOwnerRef.current &&
             searchGeneration === activitySearchGenerationRef.current && profile && profile.query === activityQueryRef.current) {
@@ -29201,7 +29215,7 @@ export default function App() {
 
   function applyActivityPayload(payload: PowActivityApiResponse) {
     const activity = Array.isArray(payload.activity) ? payload.activity : [];
-    const stats = normalizeActivityStats(payload.stats, activity);
+    const stats = { ...normalizeActivityStats(payload.stats, activity), snapshotId: payload.snapshotId };
     const currentStats = acceptedActivityStatsRef.current;
     if (activity.length === 0 && activityStatsRegress(stats, currentStats)) {
       return { activity: idActivity, stats: currentStats ?? stats };
@@ -29242,7 +29256,7 @@ export default function App() {
     try {
       const payload = await fetchGlobalActivityPayload(network, fresh, true, readSignal);
       if (readSignal.aborted || activeWorkspaceStatusKeyRef.current !== requestWorkspaceKey) return undefined;
-      const { activity, stats } = applyActivityPayload(payload);
+      applyActivityPayload(payload);
       verifiedActivityReadRef.current = true;
       if (fresh) {
         clearLastGoodReadWarning(
@@ -29252,10 +29266,9 @@ export default function App() {
         );
       }
       if (!silent) {
-        const total = stats.total ?? activity.length;
         setStatusForWorkspace(requestWorkspaceKey, {
-          tone: "good",
-          text: `Log loaded from indexed ledger. ${total.toLocaleString()} computer action${total === 1 ? "" : "s"} tracked.`,
+          tone: "idle",
+          text: "Log summary loaded. Loading action history...",
         });
       }
       return payload;
@@ -29291,7 +29304,7 @@ export default function App() {
     query = activityProfileRef.current?.query === activityQueryRef.current
       ? activityProfileRef.current.address
       : activityQueryRef.current,
-    options: { snapshotId?: string; signal?: AbortSignal } = {},
+    options: { snapshotId?: string; signal?: AbortSignal; fresh?: boolean } = {},
   ) {
     if (silent && activityLoadingOwnerRef.current) return undefined;
     activityHistoryReadControllerRef.current?.abort();
@@ -29320,6 +29333,7 @@ export default function App() {
       return undefined;
     }
 
+    setActivityHistoryReading(true);
     if (!silent) {
       activityLoadingOwnerRef.current = controller;
       setActivityLoading(true);
@@ -29331,6 +29345,7 @@ export default function App() {
         pageSize: ACTIVITY_FEED_PAGE_SIZE,
         query,
         snapshotId: options.snapshotId,
+        fresh: options.fresh,
         signal,
       });
       if (!requestIsActive()) return undefined;
@@ -29339,10 +29354,18 @@ export default function App() {
         readSource,
         readAttempt,
       );
+      setActivityHistoryReadError("");
+      const total = page.totalCount ?? page.items?.length ?? 0;
+      setStatusForWorkspace(requestWorkspaceKey, {
+        tone: "good",
+        text: `Log history loaded. ${total.toLocaleString()} matching action${total === 1 ? "" : "s"}.`,
+      });
       return acceptActivityHistoryPage(cacheKey, page);
     } catch (error) {
       const cachedPage = activityHistoryPagesRef.current.get(cacheKey);
       if (!requestIsActive()) return undefined;
+      const historyError = errorMessage(error, "Computer log history failed.");
+      setActivityHistoryReadError(historyError);
       const retainedLastGood =
         Boolean(cachedPage) &&
         isTransientProofApiReadError(error) &&
@@ -29356,15 +29379,17 @@ export default function App() {
       if (retainedLastGood && cachedPage) {
         return acceptActivityHistoryPage(cacheKey, cachedPage);
       }
-      if (!silent && !retainedLastGood) {
-        setActivityHistoryPage(undefined);
+      if (!retainedLastGood) {
         setStatusForWorkspace(requestWorkspaceKey, {
           tone: "bad",
-          text: errorMessage(error, "Computer log history failed."),
+          text: historyError,
         });
       }
       return undefined;
     } finally {
+      if (activityHistoryReadControllerRef.current === controller) {
+        setActivityHistoryReading(false);
+      }
       if (activityLoadingOwnerRef.current === controller) {
         activityLoadingOwnerRef.current = undefined;
         setActivityLoading(false);
@@ -29396,23 +29421,33 @@ export default function App() {
 
   async function refreshLogSurface(silent = true, fresh = false, signal?: AbortSignal) {
     const historyTarget = activityHistoryRefreshTarget();
+    const target = activityQueryRef.current.trim();
     const searchGeneration = activitySearchGenerationRef.current;
     const head = await loadLogHead(silent, fresh, signal);
     if (signal?.aborted || searchGeneration !== activitySearchGenerationRef.current) {
       return head;
     }
-    if (historyTarget) {
+    if (fresh && !head) return head;
+    if (target) {
+      await loadActivityTarget(target, signal, { fresh, snapshotId: head?.snapshotId });
+    } else if (historyTarget) {
       await loadLogHistoryPage(
         historyTarget.pageIndex,
         true,
         historyTarget.query,
-        { signal },
+        { signal, fresh, snapshotId: head?.snapshotId },
       );
     }
     return head;
   }
 
-  async function loadActivityTarget(target = activityQuery, callerSignal?: AbortSignal) {
+  async function loadActivityTarget(
+    target = activityQuery,
+    callerSignal?: AbortSignal,
+    options: { fresh?: boolean; snapshotId?: string } = {},
+  ) {
+    setActivityHistoryReadError("");
+    setActivityHistoryReading(false);
     activityLoadingOwnerRef.current = undefined;
     setActivityLoading(false);
     activitySearchReadControllerRef.current?.abort();
@@ -29435,7 +29470,7 @@ export default function App() {
     if (!query) {
       setActivityProfile(undefined);
       setActivityMail([]);
-      await loadLogHistoryPage(0, true, "", { signal });
+      await loadLogHistoryPage(0, true, "", { ...options, signal });
       setStatusForWorkspace(requestWorkspaceKey, {
         tone: "idle",
         text: "Log search cleared.",
@@ -29460,8 +29495,10 @@ export default function App() {
           pageIndex: 0,
           pageSize: ACTIVITY_FEED_PAGE_SIZE,
           query: normalizedTxid,
+          snapshotId: options.snapshotId,
         });
         const page = await fetchGlobalActivityHistoryPage(network, {
+          ...options,
           pageIndex: 0,
           pageSize: ACTIVITY_FEED_PAGE_SIZE,
           query: normalizedTxid,
@@ -29525,6 +29562,7 @@ export default function App() {
         query: resolved.isId
           ? `${normalizePowId(query)}@proofofwork.me`
           : resolved.paymentAddress,
+        snapshotId: options.snapshotId,
       });
       cachedSearchProfile = {
         address: resolved.paymentAddress,
@@ -29537,6 +29575,7 @@ export default function App() {
         resolvedId: resolved.id,
       };
       const page = await fetchGlobalActivityHistoryPage(network, {
+        ...options,
         pageIndex: 0,
         pageSize: ACTIVITY_FEED_PAGE_SIZE,
         query: resolved.paymentAddress,
@@ -29608,6 +29647,8 @@ export default function App() {
   }
 
   function changeActivityQuery(query: string) {
+    setActivityHistoryReadError("");
+    setActivityHistoryReading(false);
     activityLoadingOwnerRef.current = undefined;
     activitySearchReadControllerRef.current?.abort();
     activityHistoryReadControllerRef.current?.abort();
@@ -29622,6 +29663,8 @@ export default function App() {
   }
 
   function clearActivity() {
+    setActivityHistoryReadError("");
+    setActivityHistoryReading(false);
     activityLoadingOwnerRef.current = undefined;
     activitySearchReadControllerRef.current?.abort();
     activityHistoryReadControllerRef.current?.abort();
@@ -38228,9 +38271,10 @@ export default function App() {
         accountStats={connectedAccountStats}
         activeNetwork={network}
         activityHistoryPage={activityHistoryPage}
+        historyReadError={activityHistoryReadError}
         activityStats={activityStats}
         degradedReadStatus={degradedReadStatus}
-        busy={activityLoading || busy}
+        busy={activityHistoryReading || activityLoading || busy}
         idActivity={idActivity.filter((item) => item.network === "livenet")}
         onNetworkChange={chooseNetwork}
         profile={activityProfile}
@@ -38249,10 +38293,6 @@ export default function App() {
         }
         onRefresh={() => {
           void refreshLogSurface(false, true);
-          const activeLogTarget = activityProfile?.query ?? activityQuery;
-          if (activeLogTarget.trim()) {
-            void loadActivityTarget(activeLogTarget);
-          }
         }}
         onSearch={(event) => {
           event.preventDefault();
@@ -38470,9 +38510,6 @@ export default function App() {
                 ) {
                   if (activeFolder === "log") {
                     void refreshLogSurface(false, true);
-                    if (activityProfile) {
-                      void loadActivityTarget(activityProfile.query);
-                    }
                     return;
                   }
 
@@ -39486,8 +39523,9 @@ export default function App() {
           <ActivityWorkspace
             activeNetwork={network}
             activityHistoryPage={activityHistoryPage}
+            historyReadError={activityHistoryReadError}
             activityStats={activityStats}
-            busy={activityLoading || busy}
+            busy={activityHistoryReading || activityLoading || busy}
             readError={status.tone === "bad" ? status.text : ""}
             idActivity={idActivity}
             profile={activityProfile}
@@ -39505,10 +39543,6 @@ export default function App() {
             }
             onRefresh={() => {
               void refreshLogSurface(false, true);
-              const activeLogTarget = activityProfile?.query ?? activityQuery;
-              if (activeLogTarget.trim()) {
-                void loadActivityTarget(activeLogTarget);
-              }
             }}
             onSearch={(event) => {
               event.preventDefault();
@@ -40811,6 +40845,7 @@ function ActivityApp({
   accountStats = [],
   activeNetwork,
   activityHistoryPage,
+  historyReadError,
   activityStats,
   busy,
   degradedReadStatus,
@@ -40829,6 +40864,7 @@ function ActivityApp({
   accountStats?: AppHeaderAccountStat[];
   activeNetwork: BitcoinNetwork;
   activityHistoryPage?: PowPaginatedApiResponse<PowActivityItem>;
+  historyReadError?: string;
   activityStats?: PowActivityStats;
   busy: boolean;
   degradedReadStatus?: WorkspaceStatus;
@@ -40865,6 +40901,7 @@ function ActivityApp({
       <ActivityWorkspace
         activeNetwork={activeNetwork}
         activityHistoryPage={activityHistoryPage}
+        historyReadError={historyReadError}
         activityStats={activityStats}
         busy={busy}
         readError={status.tone === "bad" ? status.text : ""}
@@ -40885,6 +40922,10 @@ function ActivityApp({
 }
 
 function activityKey(item: PowActivityItem) {
+  const position = [item.protocolVout, item.recordOrdinal];
+  if (position.every((value) => Number.isSafeInteger(value) && Number(value) >= 0)) {
+    return `${item.kind}-${item.network}-${item.txid}-${position.join(":")}`;
+  }
   if (item.kind === "token-listing-closed" && item.txid) {
     return `${item.kind}-${item.network}-${item.txid}`;
   }
@@ -40951,6 +40992,7 @@ function totalActivityDataBytes(items: PowActivityItem[]) {
 function ActivityWorkspace({
   activeNetwork,
   activityHistoryPage,
+  historyReadError = "",
   activityStats,
   busy,
   idActivity,
@@ -40966,6 +41008,7 @@ function ActivityWorkspace({
 }: {
   activeNetwork: BitcoinNetwork;
   activityHistoryPage?: PowPaginatedApiResponse<PowActivityItem>;
+  historyReadError?: string;
   activityStats?: PowActivityStats;
   busy: boolean;
   idActivity: PowActivityItem[];
@@ -41015,7 +41058,9 @@ function ActivityWorkspace({
       ACTIVITY_FEED_PAGE_SIZE,
     );
   const activityPage = serverPage ?? localPage;
-  const stats = !matchingProfile && !normalizedQuery ? activityStats : undefined;
+  const stats = !matchingProfile && !normalizedQuery &&
+    (!useServerPage || activityStats?.snapshotId === activityHistoryPage?.snapshotId)
+    ? activityStats : undefined;
   const resultsVerified = Boolean(useServerPage || stats);
   const readStateLabel = busy ? "Searching" : readError ? "Unavailable" : normalizedQuery ? "Search to verify" : "Loading";
   const totalCount = stats?.total ?? activityPage.totalCount;
@@ -41150,7 +41195,7 @@ function ActivityWorkspace({
                   : "from the confirmed Computer index."}
               </p>
             ) : null}
-            {resultsVerified && totalCount > ACTIVITY_FEED_PAGE_SIZE ? (
+            {useServerPage && totalCount > ACTIVITY_FEED_PAGE_SIZE ? (
               <p>
                 Showing paged results from {totalCount.toLocaleString()}{" "}
                 matching actions. Search an address, ID, txid, or app label to
@@ -41159,13 +41204,25 @@ function ActivityWorkspace({
             ) : null}
           </div>
         </div>
+        {historyReadError || (stats && !useServerPage) ? (
+          <div className="field-note" role="status">
+            <p>{historyReadError
+              ? `Action history unavailable. ${historyReadError}`
+              : "Loading action history."}{" "}
+              {useServerPage
+                ? "Showing the last verified history page."
+                : "Showing a summary preview; older actions and pagination are not loaded."}
+            </p>
+            {historyReadError ? <button className="secondary small" disabled={busy} onClick={onRefresh} type="button">Retry history</button> : null}
+          </div>
+        ) : null}
         {resultsVerified ? <ActivityFeed items={visibleItems} totalCount={totalCount} /> : (
           <div className="empty-state activity-empty" role="status">
             <h3>{busy ? "Searching log" : readError ? "Log unavailable" : normalizedQuery ? "Search to verify this query" : "Loading log"}</h3>
             <p>{readError || "Waiting for matching indexed results before reporting counts or an empty log."}</p>
           </div>
         )}
-        {resultsVerified ? <PaginationControls
+        {useServerPage ? <PaginationControls
           label="Actions"
           onPageChange={changePage}
           page={activityPage}

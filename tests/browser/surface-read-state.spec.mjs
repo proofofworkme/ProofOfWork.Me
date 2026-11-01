@@ -193,6 +193,75 @@ test("Log mounts one initial summary read and keeps its visible refresh schedule
   expect(summaryReads).toHaveLength(1);
 });
 
+for (const routePath of ["/?log=1", "/?folder=log"]) {
+  test(`Log exposes failed history, preserves batch recipients and recovers pagination at ${routePath}`, async ({ page }) => {
+    let historyAvailable = false;
+    let changedHead = false;
+    const historyReads = [];
+    const duplicateKeyErrors = [];
+    page.on("console", message => {
+      if (/same key/u.test(message.text())) duplicateKeyErrors.push(message.text());
+    });
+    const recipients = [0, 1, 2].map(recordOrdinal => ({
+      txid: HASH, eventId: String(100 + recordOrdinal), kind: "token-transfer", network: "livenet",
+      protocolVout: 3, recordOrdinal, blockHeight: 974041, blockIndex: 1,
+      confirmed: true, createdAt: NOW, title: `Batch recipient ${recordOrdinal + 1}`,
+      description: `WORK sent to recipient ${recordOrdinal + 1}.`, tags: ["WORK"],
+    }));
+    const actions = [...recipients, ...Array.from({ length: 48 }, (_, i) => ({
+      ...recipients[0], txid: (i + 1).toString(16).padStart(64, "0"),
+      eventId: String(200 + i), title: `Older action ${i + 1}`,
+    }))];
+    await page.route("**/api/v1/**", async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/api/v1/log-summary") {
+        return fulfill(route, { activity: recipients, summaryOnly: true,
+          snapshotId: changedHead ? "b".repeat(64) : HASH,
+          stats: { total: changedHead ? 52 : 51, confirmed: changedHead ? 52 : 51,
+            pending: 0, dataBytes: 300, indexedThroughBlock: 974041 } });
+      }
+      if (url.pathname === "/api/v1/log-history") {
+        historyReads.push(url);
+        if (!historyAvailable) return route.fulfill({ status: 503, contentType: "application/json",
+          body: JSON.stringify({ error: "History read unavailable" }) });
+        const pageIndex = Number(url.searchParams.get("page"));
+        const start = pageIndex * 50;
+        return fulfill(route, { items: actions.slice(start, start + 50), query: "", snapshotId: HASH,
+          totalCount: actions.length, page: pageIndex, pageSize: 50, start,
+          end: Math.min(start + 50, actions.length), indexedAt: NOW, indexedThroughBlock: 974041 });
+      }
+      return fallback(route);
+    });
+    await page.goto(routePath);
+    const feed = page.locator("#log-events");
+    await expect(feed).toContainText("Action history unavailable.");
+    await expect(feed).toContainText("Showing a summary preview");
+    await expect(feed.locator(".activity-row")).toHaveCount(3);
+    await expect(feed).not.toContainText("Showing paged results");
+    await expect(feed.getByLabel("Actions pagination")).toHaveCount(0);
+
+    historyAvailable = true;
+    await feed.getByRole("button", { name: "Retry history", exact: true }).click();
+    await expect(feed.locator(".activity-row")).toHaveCount(50);
+    await expect(feed.getByLabel("Actions pagination")).toContainText("Actions: 1-50 of 51");
+    await expect(feed).not.toContainText("Action history unavailable.");
+    expect(historyReads.some(url => url.searchParams.get("fresh") === "1" &&
+      url.searchParams.get("snapshot") === HASH)).toBe(true);
+    await feed.getByRole("button", { name: "Page 1 / 2", exact: true }).click();
+    await expect(feed.locator(".activity-row")).toHaveCount(1);
+    await expect(feed.getByLabel("Actions pagination")).toContainText("Actions: 51-51 of 51");
+
+    // A new head must not relabel a retained page with its different totals.
+    changedHead = true;
+    await page.locator(".activity-search").getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(feed).toContainText("Log history does not match the requested snapshot.");
+    await expect(feed).toContainText("Showing the last verified history page.");
+    await expect(page.getByLabel("Log stats").locator(":scope > div").first()).toContainText("51Total actions");
+    await expect(feed.getByLabel("Actions pagination")).toContainText("Actions: 51-51 of 51");
+    expect(duplicateKeyErrors).toEqual([]);
+  });
+}
+
 test("late UniSat injection updates wallet availability from a user interaction", async ({ page }) => {
   test.skip(
     process.env.POW_PLAYWRIGHT_PRODUCTION_BUILD !== "1",

@@ -23029,7 +23029,7 @@ async function strictEventHistoryLedgerSnapshot(
   }
   const precisionEligibility =
     workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
-      ? canonicalQ16SummarySnapshotSqlEligibility("snapshot")
+      ? canonicalQ16SummarySnapshotSqlEligibility("snapshot", "history_parts")
       : "true";
   const result = await pool.query(
     `
@@ -23038,8 +23038,20 @@ async function strictEventHistoryLedgerSnapshot(
         snapshot.generated_at,
         snapshot.indexed_through_block,
         snapshot.consistency,
-        snapshot.payload
+        jsonb_build_object(
+          'indexedThroughBlockHash', snapshot.payload->'indexedThroughBlockHash',
+          'summaryRefresh', jsonb_build_object(
+            'indexedThroughBlockHash',
+            snapshot.payload->'summaryRefresh'->'indexedThroughBlockHash'
+          )
+        ) AS payload
       FROM proof_indexer.ledger_snapshots snapshot
+      -- Keep full SQL eligibility, but extract its repeated witness once and
+      -- return only the checkpoint required by event-history consumers.
+      CROSS JOIN LATERAL (
+        SELECT snapshot.payload->'workSufficientState' AS "workSufficientState"
+        OFFSET 0
+      ) AS history_parts
       WHERE snapshot.network = $1
         AND snapshot.payload->>'workAmountStorageModel' = $2
         AND ($3::text IS NULL OR snapshot.snapshot_id = $3)
@@ -24679,6 +24691,130 @@ export async function proofIndexTokenListingCloseOutspendPayload(
   };
 }
 
+async function canonicalLogHistoryPageFromRelationalIds(
+  pool, network, pagination, snapshot, { conditions, params, includePending },
+) {
+  const snapshotId = snapshot.snapshot_id;
+  const snapshotHeight = rowNumber(snapshot, "indexed_through_block");
+  const snapshotTime = Number.isFinite(Date.parse(snapshot.log_summary_indexed_at))
+    ? snapshot.log_summary_indexed_at : snapshot.generated_at;
+  const values = [...params, snapshotTime, pagination.limit, pagination.offset];
+  const timeParam = `$${values.length - 2}`;
+  const limitParam = `$${values.length - 1}`;
+  const offsetParam = `$${values.length}`;
+  const from = `
+    FROM proof_indexer.events e
+    LEFT JOIN proof_indexer.transactions event_tx
+      ON event_tx.network = e.network AND event_tx.txid = e.txid
+      AND event_tx.updated_at <= ${timeParam}::timestamptz
+    WHERE ${conditions.join(" AND ")}
+  `;
+  // A public page needs bounded event payloads, not every replay witness in the
+  // ledger. Count and choose identities first, under the same snapshot fence.
+  // The canonical reader below still verifies each selected transaction and
+  // the complete parent/sibling family of every selected batch recipient.
+  const result = await pool.query(`
+    /* canonical_log_history_page_ids */
+    WITH matched AS MATERIALIZED (
+      SELECT e.event_id, e.txid, e.block_height,
+        COALESCE(e.event_time, e.block_time, event_tx.block_time, e.created_at) AS raw_time,
+        CASE
+          WHEN e.event_time >= '2009-01-03 18:15:05+00'::timestamptz THEN e.event_time
+          WHEN COALESCE(e.block_time, event_tx.block_time) >= '2009-01-03 18:15:05+00'::timestamptz
+            THEN COALESCE(e.block_time, event_tx.block_time)
+          ELSE NULL
+        END AS display_time
+      ${from}
+    )
+    SELECT count(*) AS total_count, max(block_height) AS latest_event_block,
+      count(*) FILTER (WHERE display_time IS NULL) AS fallback_time_count,
+      ARRAY(
+        SELECT event_id FROM matched
+        ORDER BY date_trunc('milliseconds', display_time) DESC, txid DESC,
+          raw_time DESC, event_id DESC
+        LIMIT ${limitParam} OFFSET ${offsetParam}
+      ) AS event_ids
+    FROM matched
+  `, values);
+  const metadata = result.rows[0];
+  const totalCount = Number(metadata?.total_count);
+  const fallbackTimeCount = Number(metadata?.fallback_time_count);
+  if (!Number.isSafeInteger(totalCount) || totalCount < 0 ||
+      !Number.isSafeInteger(fallbackTimeCount) || fallbackTimeCount < 0 ||
+      fallbackTimeCount > totalCount) {
+    throw new Error("Canonical Log page has no exact relational count.");
+  }
+  let eventIds = Array.isArray(metadata?.event_ids) ? metadata.event_ids.map(Number) : [];
+  if (fallbackTimeCount > 0) {
+    // Preserve the historical plausible-timestamp fallback exactly. Only these
+    // compact ordering fields cross the connection; raw content and replay
+    // witnesses are still loaded only for the selected page.
+    const ordering = await pool.query(`
+      /* canonical_log_history_ordering_metadata */
+      SELECT e.event_id, e.txid, e.event_time,
+        COALESCE(e.block_time, event_tx.block_time) AS block_time, e.created_at,
+        e.payload->'blockTime' AS payload_block_time,
+        e.payload->'timestamp' AS payload_timestamp,
+        e.payload->'createdAt' AS payload_created_at
+      ${from}
+      ORDER BY COALESCE(e.event_time, e.block_time, event_tx.block_time, e.created_at) DESC,
+        e.txid DESC, e.event_id DESC
+    `, values.slice(0, -2));
+    if (ordering.rows.length !== totalCount) {
+      throw new Error("Canonical Log ordering changed during the pinned read.");
+    }
+    const ordered = ordering.rows.map((row) => {
+      const time = plausibleBitcoinEventTime(row.event_time, row.block_time,
+        row.payload_block_time, row.payload_timestamp, row.payload_created_at, row.created_at);
+      if (time === undefined) throw new Error("Canonical Log event has no verified ordering time.");
+      return { eventId: Number(row.event_id), txid: row.txid, createdAt: dateIso(time) };
+    }).sort(compareHistoryItems);
+    eventIds = ordered.slice(pagination.offset, pagination.offset + pagination.limit)
+      .map((item) => item.eventId);
+  }
+  const start = Math.min(pagination.offset, totalCount);
+  const end = Math.min(totalCount, start + pagination.limit);
+  if (eventIds.length !== end - start || eventIds.length > 500 ||
+      new Set(eventIds).size !== eventIds.length ||
+      eventIds.some((id) => !Number.isSafeInteger(id) || id < 1)) {
+    throw new Error("Canonical Log page membership is incomplete or duplicated.");
+  }
+  let items = [];
+  if (eventIds.length > 0) {
+    const page = await proofIndexCanonicalActivityPayload(network, {
+      eventIds, includePending, snapshotId,
+    });
+    items = Array.isArray(page?.activity) ? page.activity : [];
+    const membership = Array.isArray(page?.membershipEventIds) ? page.membershipEventIds.map(Number) : [];
+    const confirmedCount = items.filter((item) => item.confirmed === true).length;
+    const coverage = page?.canonicalMinerFeeCoverage;
+    if (page?.snapshotId !== snapshotId || page?.indexedThroughBlock !== snapshotHeight ||
+        page?.membershipRestricted !== true || membership.length !== eventIds.length ||
+        membership.some((id, index) => id !== eventIds[index]) ||
+        items.length !== eventIds.length ||
+        items.some((item, index) => Number(item.eventId) !== eventIds[index]) ||
+        (!includePending && confirmedCount !== items.length) ||
+        (confirmedCount > 0 && (coverage?.complete !== true ||
+          coverage.source !== "proof-indexer-normalized-input-output-totals" ||
+          coverage.confirmedEvents !== confirmedCount ||
+          coverage.coveredConfirmedEvents !== confirmedCount ||
+          coverage.missingConfirmedEvents !== 0 || coverage.missingConfirmedTransactions !== 0 ||
+          !Array.isArray(coverage.missingConfirmedTxids) || coverage.missingConfirmedTxids.length !== 0))) {
+      throw new Error("Canonical Log page does not match its verified snapshot membership.");
+    }
+  }
+  return {
+    cursor: historyCursor(snapshotId, start), end, items, kind: "activity", network,
+    limit: pagination.limit, nextCursor: end < totalCount ? historyCursor(snapshotId, end) : "",
+    page: Math.floor(start / pagination.limit), pageCount: Math.max(1, Math.ceil(totalCount / pagination.limit)),
+    pageSize: pagination.limit, query: pagination.query, start, totalCount,
+    snapshotTotalCount: totalCount, snapshotId, indexedThroughBlock: snapshotHeight,
+    latestEventBlock: rowNumber(metadata, "latest_event_block"),
+    indexedAt: dateIso(snapshotTime), ledgerGeneratedAt: dateIso(snapshot.generated_at),
+    consistency: snapshot.consistency ?? undefined, source: "proof-indexer-events",
+  };
+}
+
 export async function proofIndexLogHistoryPayload(
   network,
   kind,
@@ -25053,40 +25189,9 @@ export async function proofIndexLogHistoryPayload(
       )
     `);
     if (!requestedKind && !pagination.query && pagination.snapshotId) {
-      const canonicalPage = await proofIndexCanonicalActivityPayload(network, {
-        includePending,
-        snapshotId: pagination.snapshotId,
+      return canonicalLogHistoryPageFromRelationalIds(pool, network, pagination, snapshot, {
+        conditions, params, includePending,
       });
-      const canonicalItems = Array.isArray(canonicalPage?.activity)
-        ? canonicalPage.activity
-        : [];
-      if (
-        canonicalItems.length > 0 &&
-        canonicalPage?.snapshotId === pagination.snapshotId &&
-        rowNumber(canonicalPage, "indexedThroughBlock") === snapshotHeight
-      ) {
-        const page = logHistoryPageFromItems({
-          indexedAt: canonicalPage.indexedAt ??
-            (snapshot.generated_at
-              ? dateIso(snapshot.generated_at)
-              : new Date().toISOString()),
-          indexedThroughBlock: snapshotHeight,
-          items: canonicalItems,
-          kind: "activity",
-          network,
-          pagination,
-          snapshot,
-          source: canonicalPage.source ?? "proof-indexer-events",
-          totalCount:
-            rowNumber(canonicalPage, "totalCount") || canonicalItems.length,
-        });
-        return {
-          ...page,
-          latestEventBlock: rowNumber(canonicalPage, "latestEventBlock"),
-          snapshotTotalCount: rowNumber(canonicalPage, "totalCount") ||
-            canonicalItems.length,
-        };
-      }
     }
   }
   const whereClause = conditions.join(" AND ");

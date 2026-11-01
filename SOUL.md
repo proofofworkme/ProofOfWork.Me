@@ -877,6 +877,14 @@ but value only its complete verified parent once. A read-only release rehearsal
 must run the actual worker's accounting predicate as well as build the eight
 summaries; producing a bundle alone does not prove it can be published.
 
+Summary readiness does not establish that public history works. Verify actual
+Log pages and continuation, every recipient of a batch, Boost loading and the
+WORK-floor preflight as part of a read-path release. A successful Log summary
+cannot hide an unavailable history page or label a short preview as complete.
+Carry canonical event identity through display merging, including recipients
+that share a transaction and protocol output. Bound page reads without dropping
+the complete batch-family, canonical-position or economic evidence checks.
+
 Ordinary Mail has its own WORK batch attachment form. One transaction makes one
 546-proof WORK registry signal, while each recipient still receives the reviewed
 Mail proof payment. Carry the whole recipient vector through preview, signatures,
