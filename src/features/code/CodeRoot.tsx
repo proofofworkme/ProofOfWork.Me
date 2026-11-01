@@ -10,8 +10,10 @@ import { SocialFooter } from "../../shared/components/SocialFooter";
 import { explorerTxUrl, type BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import { useUnisatPresence } from "../../shared/wallet/useUnisatPresence";
+import { useWalletConnection, type EmbeddedWalletSession } from "../../shared/wallet/useWalletConnection";
+import { WalletConnectAction } from "../../shared/components/WalletConnectAction";
 import { readActionReceipts, saveActionReceipt, type ActionReceipt } from "../../shared/wallet/actionRecovery";
-import { ensureWalletNetwork, getWalletNetwork, signAndBroadcastBoostPsbt } from "../boost/boostWallet";
+import { signAndBroadcastBoostPsbt } from "../boost/boostWallet";
 import { syncSocialIdentityIntent, subscribeSocialIdentityIntent } from "../identity/socialIdentity";
 import type { BoostIdentityIntent } from "../boost/boostProtocol";
 import { shortAddress } from "../../functions";
@@ -25,6 +27,7 @@ import "./code.css";
 
 export type CodeViewState = { filter: string; openRepo: string; editor: boolean; editorPreview: "source" | "diff" };
 export type CodeRootProps = { embedded?: boolean; initialAddress?: string; initialNetwork?: BitcoinNetwork;
+  walletSession?: EmbeddedWalletSession;
   onOpenPages?: (source: CodeSourceReference) => void;
   initialViewState?: CodeViewState; onViewStateChange?: (state: CodeViewState) => void };
 type Route = { repo: string; version: string; path: string; tab: "code" | "history" };
@@ -72,9 +75,11 @@ function CodeDiff({ before, after }: { before: string; after: string }) {
   </div>;
 }
 
-export default function CodeRoot({ embedded = false, initialAddress = "", initialNetwork: initialNetworkProp, onOpenPages, initialViewState, onViewStateChange }: CodeRootProps = {}) {
-  const [network, setNetworkState] = useState<BitcoinNetwork>(() => initialNetwork(initialNetworkProp));
-  const [address, setAddress] = useState(initialAddress);
+export default function CodeRoot({ embedded = false, initialAddress = "", initialNetwork: initialNetworkProp, walletSession, onOpenPages, initialViewState, onViewStateChange }: CodeRootProps = {}) {
+  const [localNetwork, setNetworkState] = useState<BitcoinNetwork>(() => initialNetwork(initialNetworkProp));
+  const [localAddress, setAddress] = useState(initialAddress);
+  const network = walletSession?.network ?? localNetwork;
+  const address = walletSession?.address ?? localAddress;
   const [hasUnisat] = useUnisatPresence();
   const [identity, setIdentity] = useState<BoostIdentityIntent>();
   const [route, setRoute] = useState(initialRoute);
@@ -96,8 +101,9 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   const [draftKeyLoaded, setDraftKeyLoaded] = useState("");
   const [draftError, setDraftError] = useState("");
   const [actionError, setActionError] = useState("");
-  const [actionBusy, setActionBusy] = useState(false);
+  const [transactionBusy, setActionBusy] = useState(false);
   const [prepared, setPrepared] = useState<PreparedCode>();
+  const preparedWalletRevision = useRef<number>();
   const [pendingEditor, setPendingEditor] = useState<{ draft: CodeDraft; file?: Source; scope: string }>();
   const [editorPreview, setEditorPreview] = useState<"source" | "diff">(initialViewState?.editorPreview === "diff" ? "diff" : "source");
   const [baseline, setBaseline] = useState("");
@@ -132,6 +138,13 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   editorRef.current = editor;
   const draftStorage = useRef({ key: draftKey, loaded: draftKeyLoaded, error: draftError });
   draftStorage.current = { key: draftKey, loaded: draftKeyLoaded, error: draftError };
+  const walletConnection = useWalletConnection({
+    address, network, embedded, session: walletSession, hasUnisat,
+    beforeChange: () => preserveDraft(),
+    onChange: account => { setAddress(account.address); setNetworkState(account.network); setPrepared(undefined); },
+    onInvalidate: () => setPrepared(undefined), onStatus: setStatus, onError: setActionError,
+  });
+  const actionBusy = transactionBusy || walletConnection.busy;
   const visibleReceipts = receipts.filter(item => item.network === network && sameCodeAddress(item.address, address, network));
   const repo = detail?.repository;
   const selectedVersion = detail ? codeVersion(detail, route.version) : "";
@@ -206,17 +219,6 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
     const unsubscribe = subscribeSocialIdentityIntent(address, network, value => { if (active) setIdentity(value); });
     return () => { active = false; unsubscribe(); };
   }, [address, network]);
-  useEffect(() => {
-    const wallet = window.unisat;
-    if (!wallet) return;
-    const accounts = (...args: unknown[]) => {
-      const value = Array.isArray(args[0]) ? String(args[0][0] ?? "") : "";
-      setAddress(value); setPrepared(undefined); setStatus("Wallet account changed. Review Code actions again.");
-    };
-    const changed = () => { void getWalletNetwork(wallet).then(value => { if (value) setNetworkState(value); else setAddress(""); setPrepared(undefined); }); };
-    wallet.on?.("accountsChanged", accounts); wallet.on?.("networkChanged", changed); wallet.on?.("chainChanged", changed);
-    return () => { wallet.removeListener?.("accountsChanged", accounts); wallet.removeListener?.("networkChanged", changed); wallet.removeListener?.("chainChanged", changed); };
-  }, [hasUnisat]);
   useEffect(() => {
     setDraftError("");
     try {
@@ -328,21 +330,10 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
     return () => controller.abort();
   }, [editor, baselineReady, draft.kind, draft.repo, draft.parent, draft.path, network]);
 
-  async function connect() {
-    if (flight.current || !preserveDraft()) return;
-    const wallet = window.unisat;
-    if (!wallet) { setActionError("Install UniSat to create a repository or commit source."); return; }
-    flight.current = true; setActionBusy(true); setActionError("");
-    try {
-      const accounts = wallet.requestAccounts ? await wallet.requestAccounts() : await wallet.getAccounts?.();
-      if (!accounts?.[0]) throw new Error("UniSat did not return an address.");
-      const verifiedAddress = await ensureWalletNetwork(wallet, network, accounts[0]);
-      setAddress(verifiedAddress); setStatus(`${shortAddress(verifiedAddress)} connected. Signing stays in UniSat.`);
-    } catch (error) { setActionError(errorText(error)); }
-    finally { flight.current = false; setActionBusy(false); }
-  }
+  const connect = walletConnection.connect;
   function changeNetwork(value: BitcoinNetwork) {
     if (flight.current || !preserveDraft()) return;
+    walletConnection.invalidate();
     setNetworkState(value); setPrepared(undefined); setEditor(false);
     const url = new URL(window.location.href); url.searchParams.set("network", value); window.history.replaceState(window.history.state, "", url);
   }
@@ -412,21 +403,21 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   async function prepare(event: FormEvent) {
     event.preventDefault();
     if (flight.current || pageSourceBusy || !referenceReady || !planResult.plan || draftError || draftKeyLoaded !== draftKey) return;
-    const expected = scope;
-    const assertCurrent = () => { if (!alive.current || currentScope.current !== expected) throw new Error("Source, wallet, network, or identity changed. Prepare a new Code review."); };
+    const expected = scope, expectedWalletRevision = walletConnection.getRevision();
+    const assertCurrent = () => { if (!alive.current || currentScope.current !== expected || walletConnection.getRevision() !== expectedWalletRevision) throw new Error("Source, wallet, network, or identity changed. Prepare a new Code review."); };
     flight.current = true; setActionBusy(true); setActionError("");
     try {
       await assertNoDuplicate(planResult.plan.key);
       const next = await prepareCodeTransaction(planResult.plan, address, network, assertCurrent);
-      await assertNoDuplicate(planResult.plan.key); assertCurrent(); setPrepared(next);
+      await assertNoDuplicate(planResult.plan.key); assertCurrent(); preparedWalletRevision.current = expectedWalletRevision; setPrepared(next);
     } catch (error) { if (alive.current) setActionError(errorText(error)); }
     finally { flight.current = false; if (alive.current) setActionBusy(false); }
   }
   async function sign() {
     if (flight.current || !prepared) return;
     const reviewed = prepared;
-    const expected = scope;
-    const assertCurrent = () => { if (!alive.current || currentScope.current !== expected) throw new Error("Source, wallet, network, or identity changed. Prepare a new Code review."); };
+    const expected = scope, expectedWalletRevision = preparedWalletRevision.current;
+    const assertCurrent = () => { if (!alive.current || currentScope.current !== expected || walletConnection.getRevision() !== expectedWalletRevision) throw new Error("Source, wallet, network, or identity changed. Prepare a new Code review."); };
     let receipt: ActionReceipt | undefined;
     flight.current = true; setActionBusy(true); setActionError("");
     try {
@@ -551,7 +542,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   const coverage = detail ?? list;
   return <div className={`code-app${embedded ? " code-embedded-app" : ""}`}>
     {!embedded && <AppHeader title="ProofOfWork Code" subtitle="Public source. Confirmed history." address={address} network={network} hasUnisat={hasUnisat}
-      busy={readBusy || actionBusy} connectWallet={() => void connect()} disconnectWallet={() => { if (preserveDraft()) setAddress(""); }}
+      busy={actionBusy} connectWallet={() => void connect()} disconnectWallet={() => void walletConnection.disconnect()}
       onNetworkChange={changeNetwork} onDomainNavigate={() => !preserveDraft()} onRefresh={() => setAttempt(value => value + 1)} onRefreshRecovery={() => void checkReceipts()} />}
     <main className="code-workspace" aria-label="ProofOfWork Code workspace">
       <div className="code-workspace-heading"><div><span className="code-eyebrow"><Code2 size={17} /> Code on ProofOfWork</span><h2>{editor ? draft.kind === "repo" ? "New repository" : draft.kind === "delete" ? "Delete a file" : draft.kind === "reference" ? "Add an existing page" : "Commit a source file" : repo ? repo.name : "Repositories"}</h2>
@@ -559,7 +550,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
         {!editor && <button className="primary" type="button" onClick={() => beginEditor("repo")} disabled={actionBusy || network !== "livenet"}><Plus size={17} /> New repository</button>}
         {editor && <button type="button" className="secondary" disabled={actionBusy} onClick={() => { if (preserveDraft()) { setEditor(false); setPrepared(undefined); returnFocus.current?.focus(); } }}><ArrowLeft size={16} /> Save draft and back</button>}
       </div>
-      {embedded && <div className="code-embedded-account"><span>{network === "livenet" ? "Mainnet" : network === "testnet" ? "Testnet3" : "Testnet4"} · {identity ? `${identity.id}@proofofwork.me` : address ? shortAddress(address) : "Read without a wallet"}</span>{!address && <button type="button" className="secondary" onClick={() => void connect()} disabled={actionBusy}>Connect UniSat</button>}</div>}
+      {embedded && <div className="code-embedded-account"><span>{network === "livenet" ? "Mainnet" : network === "testnet" ? "Testnet3" : "Testnet4"} · {identity ? `${identity.id}@proofofwork.me` : address ? shortAddress(address) : "Read without a wallet"}</span>{!address && <WalletConnectAction hasUnisat={hasUnisat} busy={actionBusy} onConnect={connect} />}</div>}
       {status && <div className="code-notice" role="status"><Check size={17} /><span>{status}</span><button type="button" aria-label="Dismiss status" onClick={() => setStatus("")}><X size={16} /></button></div>}
       {actionError && !editor && <div ref={actionErrorElement} className="code-notice is-error" role="alert" tabIndex={-1}>{actionError}</div>}
       <ActionRecoveryPanel receipts={visibleReceipts} error={recoveryError} checking={checking} restoringDisabled={actionBusy}
@@ -598,7 +589,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
         {!planResult.plan && Boolean(draft.name || draft.description || draft.path || draft.message || draft.content) && <p className="code-muted">{planResult.error}</p>}
         {actionError && <div ref={actionErrorElement} className="code-notice is-error" role="alert" tabIndex={-1}>{actionError}</div>}
         <div className="code-editor-actions"><span className="code-muted">{draftError ? "Draft autosave unavailable" : draftKeyLoaded !== draftKey ? "Loading local draft…" : "Draft saved in this browser"}{planResult.plan ? ` · ${planResult.plan.carrierBytes.toLocaleString()} record bytes` : ""}</span>
-          {!address ? <button type="button" className="primary" disabled={actionBusy} onClick={() => void connect()}>Connect to review</button> : <button type="submit" className="primary" disabled={actionBusy || pageSourceBusy || !referenceReady || !planResult.plan || Boolean(draftError) || draftKeyLoaded !== draftKey || network !== "livenet"}>{actionBusy ? <RefreshCw className="refresh-spin" size={17} /> : <GitCommitHorizontal size={17} />}{actionBusy ? "Preparing wallet action…" : draft.kind === "repo" ? "Review repository" : "Review commit"}</button>}
+          {!address ? <WalletConnectAction hasUnisat={hasUnisat} busy={actionBusy} onConnect={connect} className="primary" label="Connect to review" /> : <button type="submit" className="primary" disabled={actionBusy || pageSourceBusy || !referenceReady || !planResult.plan || Boolean(draftError) || draftKeyLoaded !== draftKey || network !== "livenet"}>{actionBusy ? <RefreshCw className="refresh-spin" size={17} /> : <GitCommitHorizontal size={17} />}{actionBusy ? "Preparing wallet action…" : draft.kind === "repo" ? "Review repository" : "Review commit"}</button>}
         </div>
       </form></section> : <>
         {route.repo && <a className="code-back" href={routeHref({ repo: "", version: "", path: "", tab: "code" })} onClick={event => followInternalLink(event, () => navigate({ repo: "", version: "", path: "", tab: "code" }))}><ArrowLeft size={16} /> All repositories</a>}

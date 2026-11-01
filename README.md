@@ -1646,6 +1646,16 @@ tabs do not share an authorization queue. No error message establishes access.
 Final account/network verification precedes connection; application data has
 its separate loading and unavailable state. Signing stays local.
 
+Pages, Code, Jobs and Permission use that same connection lifecycle, including
+in browsers with a bridged UniSat extension. Each standalone origin verifies its
+own authorized account; authorization on another product host is not inherited.
+Pages restores an already-authorized account without requiring a Mainnet-only
+workspace. Code, Jobs and Permission share the bounded controller for connection,
+account/network events and retries, and their embedded controls use Computer's
+single wallet session. Public-data reads do not hold the connection control.
+An extension's unresolved approval still needs to finish or close in UniSat;
+no browser bridge, error response or app launch can establish authorization.
+
 Wallet-derived spendability and protected amounts require successful current
 curated-wallet evidence. A failed read is not zero spendable or proof that the
 full node total is protected. Prior wallet evidence stays explicitly last

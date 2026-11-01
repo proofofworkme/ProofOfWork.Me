@@ -8,8 +8,10 @@ import { SocialFooter } from "../../shared/components/SocialFooter";
 import { explorerTxUrl, type BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import { useUnisatPresence } from "../../shared/wallet/useUnisatPresence";
+import { useWalletConnection, type EmbeddedWalletSession } from "../../shared/wallet/useWalletConnection";
+import { WalletConnectAction } from "../../shared/components/WalletConnectAction";
 import { readActionReceipts, saveActionReceipt, type ActionReceipt } from "../../shared/wallet/actionRecovery";
-import { assertMainnetP2pkhWallet, ensureWalletNetwork, getWalletNetwork, signAndBroadcastBoostPsbt } from "../boost/boostWallet";
+import { assertMainnetP2pkhWallet, signAndBroadcastBoostPsbt } from "../boost/boostWallet";
 import { shortAddress } from "../../functions";
 import { PERMISSION_ACTIONS, permissionPolicyEnv } from "../../shared/protocol/permissions.mjs";
 import { fetchPermission, fetchPermissionInspection, fetchPermissions, hasVerifiedPermissionHistory, permissionPublicationReady, permissionCheckpoint, PERMISSION_TXID, type PermissionDetail, type PermissionInspection, type PermissionList, type PermissionRecord } from "./permissionApi";
@@ -17,7 +19,7 @@ import { buildPermissionPlan, emptyPermissionDraft, isPermissionDraft, permissio
 import { preparePermissionTransaction, samePermissionAddress, verifyPermissionAuthority, verifyPermissionFunding, type PreparedPermission } from "./permissionWallet";
 import "./permission.css";
 
-export type PermissionRootProps = { embedded?: boolean; initialAddress?: string; initialNetwork?: BitcoinNetwork };
+export type PermissionRootProps = { embedded?: boolean; initialAddress?: string; initialNetwork?: BitcoinNetwork; walletSession?: EmbeddedWalletSession };
 function routePermission() { return new URLSearchParams(window.location.search).get("permission") ?? ""; }
 function routeNetwork(fallback?: BitcoinNetwork): BitcoinNetwork {
   const value = new URLSearchParams(window.location.search).get("network");
@@ -40,9 +42,11 @@ function RawPermissionRecord({ inspection, network }: { inspection: PermissionIn
   </section>;
 }
 
-export default function PermissionRoot({ embedded = false, initialAddress = "", initialNetwork }: PermissionRootProps = {}) {
-  const [network, setNetwork] = useState<BitcoinNetwork>(() => routeNetwork(initialNetwork));
-  const [address, setAddress] = useState(initialAddress);
+export default function PermissionRoot({ embedded = false, initialAddress = "", initialNetwork, walletSession }: PermissionRootProps = {}) {
+  const [localNetwork, setNetwork] = useState<BitcoinNetwork>(() => routeNetwork(initialNetwork));
+  const [localAddress, setAddress] = useState(initialAddress);
+  const network = walletSession?.network ?? localNetwork;
+  const address = walletSession?.address ?? localAddress;
   const [hasUnisat] = useUnisatPresence();
   const [selected, setSelected] = useState(routePermission);
   const [search, setSearch] = useState(routePermission);
@@ -58,8 +62,9 @@ export default function PermissionRoot({ embedded = false, initialAddress = "", 
   const [draftError, setDraftError] = useState("");
   const [status, setStatus] = useState("");
   const [actionError, setActionError] = useState("");
-  const [actionBusy, setActionBusy] = useState(false);
+  const [transactionBusy, setActionBusy] = useState(false);
   const [prepared, setPrepared] = useState<PreparedPermission>();
+  const preparedWalletRevision = useRef<number>();
   const [receipts, setReceipts] = useState<ActionReceipt[]>([]);
   const [recoveryError, setRecoveryError] = useState("");
   const [checking, setChecking] = useState(false);
@@ -73,6 +78,13 @@ export default function PermissionRoot({ embedded = false, initialAddress = "", 
   const accountRef = useRef({ address, network }); accountRef.current = { address, network };
   const storageRef = useRef({ key: draftKey, loaded: draftLoaded, error: draftError, draft, editor });
   storageRef.current = { key: draftKey, loaded: draftLoaded, error: draftError, draft, editor };
+  const walletConnection = useWalletConnection({
+    address, network, embedded, session: walletSession, hasUnisat,
+    beforeChange: () => preserveDraft(),
+    onChange: account => { setAddress(account.address); setNetwork(account.network); setPrepared(undefined); },
+    onInvalidate: () => setPrepared(undefined), onStatus: setStatus, onError: setActionError,
+  });
+  const actionBusy = transactionBusy || walletConnection.busy;
   const planResult = useMemo(() => { try { return { plan: buildPermissionPlan(draft), error: "" }; } catch (error) { return { plan: undefined, error: errorText(error) }; } }, [draft]);
   const current = detail?.currentPermission ?? detail?.permission;
   const verified = Boolean(detail && hasVerifiedPermissionHistory(detail));
@@ -104,16 +116,12 @@ export default function PermissionRoot({ embedded = false, initialAddress = "", 
     return () => { window.removeEventListener("proofofwork:permission-refresh", refresh); window.removeEventListener("proofofwork:before-permission-writer-leave", leave); window.removeEventListener("beforeunload", unload); window.removeEventListener("popstate", pop); };
   }, []);
   useEffect(() => {
-    const wallet = window.unisat;
-    if (!wallet) return;
-    const accounts = (...args: unknown[]) => { setAddress(Array.isArray(args[0]) ? String(args[0][0] ?? "") : ""); setPrepared(undefined); setStatus("Wallet account changed. Review Permission actions again."); };
-    const changed = () => { setPrepared(undefined); void getWalletNetwork(wallet).then(value => { if (value) setNetwork(value); else setAddress(""); }); };
-    wallet.on?.("accountsChanged", accounts); wallet.on?.("networkChanged", changed); wallet.on?.("chainChanged", changed);
-    return () => { wallet.removeListener?.("accountsChanged", accounts); wallet.removeListener?.("networkChanged", changed); wallet.removeListener?.("chainChanged", changed); };
-  }, [hasUnisat]);
-  useEffect(() => {
     setDraftError("");
-    try { const raw = localStorage.getItem(draftKey); const value: unknown = raw ? JSON.parse(raw) : { ...emptyPermissionDraft, allowedActions: [...emptyPermissionDraft.allowedActions] };
+    try { const raw = localStorage.getItem(draftKey);
+      const previous = storageRef.current;
+      const carryDraft = !raw && address && previous.editor && previous.loaded === `proofofwork.permission.draft.v1:${network}:disconnected`;
+      if (carryDraft) persistPermissionDraft(localStorage, draftKey, previous.draft);
+      const value: unknown = raw ? JSON.parse(raw) : carryDraft ? previous.draft : { ...emptyPermissionDraft, allowedActions: [...emptyPermissionDraft.allowedActions] };
       if (!isPermissionDraft(value)) throw new Error("Saved Permission draft is unreadable. Preserve local storage before repairing it.");
       setDraft(value); setDraftLoaded(draftKey);
     } catch (error) { setDraftError(errorText(error)); setDraftLoaded(draftKey); }
@@ -144,16 +152,10 @@ export default function PermissionRoot({ embedded = false, initialAddress = "", 
     const url = new URL(window.location.href); if (txid) url.searchParams.set("permission", txid); else url.searchParams.delete("permission");
     window.history.pushState({}, "", url); setSelected(txid); setSearch(txid); setEditor(false); setPrepared(undefined);
   }
-  async function connect() {
-    if (flight.current || !preserveDraft()) return;
-    if (!window.unisat) { setActionError("Install UniSat to publish permission records."); return; }
-    flight.current = true; setActionBusy(true); setActionError("");
-    try { const accounts = window.unisat.requestAccounts ? await window.unisat.requestAccounts() : await window.unisat.getAccounts?.();
-      if (!accounts?.[0]) throw new Error("UniSat did not return an address."); setAddress(await ensureWalletNetwork(window.unisat, network, accounts[0]));
-    } catch (error) { setActionError(errorText(error)); } finally { flight.current = false; setActionBusy(false); }
-  }
+  const connect = walletConnection.connect;
   function changeNetwork(value: BitcoinNetwork) {
     if (!preserveDraft()) return;
+    walletConnection.invalidate();
     setNetwork(value); setPrepared(undefined); setEditor(false);
     const url = new URL(window.location.href); url.searchParams.set("network", value); window.history.replaceState(window.history.state, "", url);
   }
@@ -187,15 +189,15 @@ export default function PermissionRoot({ embedded = false, initialAddress = "", 
   }
   async function prepare(event: FormEvent) {
     event.preventDefault(); if (flight.current || !planResult.plan || draftError || draftLoaded !== draftKey) return;
-    const expected = scope; const assertCurrent = () => { if (!alive.current || scopeRef.current !== expected) throw new Error("Permission terms, wallet, or network changed. Prepare a new review."); };
+    const expected = scope, expectedWalletRevision = walletConnection.getRevision(); const assertCurrent = () => { if (!alive.current || scopeRef.current !== expected || walletConnection.getRevision() !== expectedWalletRevision) throw new Error("Permission terms, wallet, or network changed. Prepare a new review."); };
     flight.current = true; setActionBusy(true); setActionError("");
-    try { await assertPlanNoDuplicate(planResult.plan); const next = await preparePermissionTransaction(planResult.plan, address, network, assertCurrent); await assertPlanNoDuplicate(planResult.plan); assertCurrent(); setPrepared(next); }
+    try { await assertPlanNoDuplicate(planResult.plan); const next = await preparePermissionTransaction(planResult.plan, address, network, assertCurrent); await assertPlanNoDuplicate(planResult.plan); assertCurrent(); preparedWalletRevision.current = expectedWalletRevision; setPrepared(next); }
     catch (error) { if (alive.current) setActionError(errorText(error)); } finally { flight.current = false; if (alive.current) setActionBusy(false); }
   }
   async function sign() {
     if (flight.current || !prepared) return;
-    const reviewed = prepared, expected = scope;
-    const assertCurrent = () => { if (!alive.current || scopeRef.current !== expected) throw new Error("Permission terms, wallet, or network changed. Prepare a new review."); };
+    const reviewed = prepared, expected = scope, expectedWalletRevision = preparedWalletRevision.current;
+    const assertCurrent = () => { if (!alive.current || scopeRef.current !== expected || walletConnection.getRevision() !== expectedWalletRevision) throw new Error("Permission terms, wallet, or network changed. Prepare a new review."); };
     let receipt: ActionReceipt | undefined, receiptPersisted = false;
     flight.current = true; setActionBusy(true); setActionError("");
     try {
@@ -242,8 +244,8 @@ export default function PermissionRoot({ embedded = false, initialAddress = "", 
   const checkpoint = evidence ? permissionCheckpoint(evidence) : undefined;
   const preview = planResult.plan?.policy ? permissionPolicyEnv(planResult.plan.policy) : draft.action === "revoke" ? `REVOKE_GRANT=${draft.grant}\nREVIEWED_HEAD=${draft.parent}` : "Complete the permission fields to preview its exact terms.";
   return <div className={`permission-app${embedded ? " permission-embedded-app" : ""}`}>
-    {!embedded && <AppHeader title="ProofOfWork Permission" subtitle="On-chain authority. Local wallet control." address={address} network={network} hasUnisat={hasUnisat} busy={readBusy || actionBusy}
-      connectWallet={() => void connect()} disconnectWallet={() => { if (preserveDraft()) setAddress(""); }} onNetworkChange={changeNetwork} onDomainNavigate={() => !preserveDraft()}
+    {!embedded && <AppHeader title="ProofOfWork Permission" subtitle="On-chain authority. Local wallet control." address={address} network={network} hasUnisat={hasUnisat} busy={actionBusy}
+      connectWallet={() => void connect()} disconnectWallet={() => void walletConnection.disconnect()} onNetworkChange={changeNetwork} onDomainNavigate={() => !preserveDraft()}
       onRefresh={() => setAttempt(value => value + 1)} onRefreshRecovery={() => void checkReceipts()} />}
     <main className="permission-workspace" aria-label="ProofOfWork Permission workspace">
       <div className="permission-heading"><div><span className="permission-eyebrow"><FileKey2 size={17} /> Permission on ProofOfWork</span><h2>{editor ? PERMISSION_ACTION_LABELS[draft.action] : "Wallet permissions"}</h2>
@@ -251,7 +253,7 @@ export default function PermissionRoot({ embedded = false, initialAddress = "", 
         {editor ? <button type="button" className="secondary" disabled={actionBusy} onClick={() => { if (preserveDraft()) { setEditor(false); setPrepared(undefined); } }}><ArrowLeft size={16} /> Save draft and back</button>
           : <button type="button" className="primary" disabled={actionBusy || network !== "livenet"} onClick={() => begin("grant")}><Plus size={17} /> New permission</button>}
       </div>
-      {embedded && <div className="permission-account"><span>{network === "livenet" ? "Mainnet" : network === "testnet" ? "Testnet3" : "Testnet4"} · {address ? shortAddress(address) : "Read without a wallet"}</span>{!address && <button type="button" className="secondary" onClick={() => void connect()} disabled={actionBusy}>Connect UniSat</button>}</div>}
+      {embedded && <div className="permission-account"><span>{network === "livenet" ? "Mainnet" : network === "testnet" ? "Testnet3" : "Testnet4"} · {address ? shortAddress(address) : "Read without a wallet"}</span>{!address && <WalletConnectAction hasUnisat={hasUnisat} busy={actionBusy} onConnect={connect} />}</div>}
       <section className="permission-controller" aria-label="Autonomous signing status"><LockKeyhole size={27} /><div><strong>Autonomous signing is closed</strong><p>Grants record authority. Unattended execution stays closed until an isolated controller, protected secret storage, shared budgets, and the UniSat signing bridge are verified. Human-reviewed grant signing is separate.</p></div><span className="permission-pill is-closed">Controller not enabled</span></section>
       {status && <div className="permission-notice" role="status"><Check size={17} /><span>{status}</span><button type="button" aria-label="Dismiss status" onClick={() => setStatus("")}><X size={16} /></button></div>}
       {actionError && <div className="permission-notice is-error" role="alert">{actionError}</div>}

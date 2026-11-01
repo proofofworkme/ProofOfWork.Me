@@ -52,6 +52,12 @@ transaction feedback, evidence links and last-verified qualification remain
 visible. Workspaces with their own refresh controls do not expose a shell
 Refresh action that does nothing or refreshes a different workspace.
 
+Pages, Code, Jobs and Permission restore verified authorized wallet accounts on
+entry. Embedded Code, Jobs and Permission Connect controls delegate to the
+Computer session, including approval without an account-change event; they do
+not create a second wallet session. Account and network changes invalidate
+prepared reviews and keep drafts and recovery scoped to their original wallet.
+
 Pages loads its editor module when the Pages workspace is first opened. The
 local loading boundary preserves the existing wallet scope, draft and task
 continuity rules; opening other workspaces does not eagerly load that editor.

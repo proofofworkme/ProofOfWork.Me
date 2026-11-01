@@ -22472,6 +22472,9 @@ export default function App() {
       "infinity",
       "inception",
     ].includes(activeFolder);
+  // Account restoration must not depend on a mainnet-only product. These
+  // workspaces share Computer's session, including when entered directly.
+  const independentWalletWorkspace = ["pages", "code", "jobs", "permission"].includes(activeFolder);
   const activeTokenStateScopeKey = tokenStateScopeKey({
     address,
     network,
@@ -27794,8 +27797,9 @@ export default function App() {
         wallet === window.unisat && workspaceKey === activeWorkspaceStatusKeyRef.current,
     }).then((connected) => {
       if (cancelled || generation !== walletSyncGenerationRef.current) return;
+      if (independentWalletWorkspace && !canLeavePublishWriter()) return;
       setNetwork(connected.network);
-      if (mainnetWorkspaceMode) setAddress(connected.address);
+      if (mainnetWorkspaceMode || independentWalletWorkspace) setAddress(connected.address);
     }).catch((error) => {
       if (cancelled || generation !== walletSyncGenerationRef.current) return;
       if (error?.code === "no-account") {
@@ -27813,8 +27817,10 @@ export default function App() {
     desktopRoute,
     growthMode,
     hasUnisat,
+    independentWalletWorkspace,
     landingMode,
     mainnetWorkspaceMode,
+    activeWorkspaceStatusKey,
   ]);
 
   useEffect(() => {
@@ -27857,6 +27863,11 @@ export default function App() {
 
       if (!nextAddress) {
         setStatus({ tone: "idle", text: "Wallet account disconnected." });
+        return;
+      }
+
+      if (independentWalletWorkspace && activeFolder !== "pages") {
+        setStatusForWorkspace(workspaceKey, { tone: "good", text: "UniSat connected. Signing stays in your wallet." });
         return;
       }
 
@@ -28051,6 +28062,7 @@ export default function App() {
     desktopRoute,
     growthMode,
     hasUnisat,
+    independentWalletWorkspace,
     inceptionMode,
     infinityMode,
     landingMode,
@@ -31060,6 +31072,7 @@ export default function App() {
   }
 
   async function connectWallet() {
+    if (independentWalletWorkspace && !canLeavePublishWriter()) return;
     if (!window.unisat) {
       setHasUnisat(false);
       setStatus({ tone: "bad", text: "UniSat is not installed." });
@@ -31081,6 +31094,7 @@ export default function App() {
         onStage: ({ message }) => setStatusForWorkspace(workspaceKey, { tone: "idle", text: message }),
       });
       if (!current()) return;
+      if (independentWalletWorkspace && !canLeavePublishWriter()) return;
       let firstAddress = connected.address;
       const walletNetwork = connected.network;
       setNetwork(walletNetwork);
@@ -31119,6 +31133,11 @@ export default function App() {
         );
       }
       setComposeOpen(false);
+
+      if (independentWalletWorkspace && activeFolder !== "pages") {
+        setStatusForWorkspace(workspaceKey, { tone: "good", text: "UniSat connected. Signing stays in your wallet." });
+        return;
+      }
 
       try {
         if (
@@ -31298,6 +31317,7 @@ export default function App() {
   }
 
   async function disconnectWallet() {
+    if (independentWalletWorkspace && !canLeavePublishWriter()) return;
     walletConnectionRef.current.invalidate();
     walletSyncGenerationRef.current += 1;
     setBusy(true);
@@ -39508,15 +39528,18 @@ export default function App() {
           </Suspense>
         ) : activeFolder === "jobs" ? (
           <Suspense fallback={<div role="status" aria-busy="true">Loading Jobs…</div>}>
-            <JobsRoot embedded initialAddress={address} initialNetwork={network} />
+            <JobsRoot embedded initialAddress={address} initialNetwork={network}
+              walletSession={{ address, network, busy: busy || mailSendBusy, connect: connectWallet, disconnect: disconnectWallet, getRevision: () => mailWalletRevisionRef.current }} />
           </Suspense>
         ) : activeFolder === "permission" ? (
           <Suspense fallback={<div role="status" aria-busy="true">Loading Permission…</div>}>
-            <PermissionRoot embedded initialAddress={address} initialNetwork={network} />
+            <PermissionRoot embedded initialAddress={address} initialNetwork={network}
+              walletSession={{ address, network, busy: busy || mailSendBusy, connect: connectWallet, disconnect: disconnectWallet, getRevision: () => mailWalletRevisionRef.current }} />
           </Suspense>
         ) : activeFolder === "code" ? (
           <Suspense fallback={<div role="status" aria-busy="true">Loading Code…</div>}>
             <CodeRoot key={computerTaskScope} embedded initialAddress={address} initialNetwork={network}
+              walletSession={{ address, network, busy: busy || mailSendBusy, connect: connectWallet, disconnect: disconnectWallet, getRevision: () => mailWalletRevisionRef.current }}
               initialViewState={computerTasks.code} onViewStateChange={codeViewStateChange} onOpenPages={openPagesFromCode} />
           </Suspense>
         ) : activeFolder === "log" ? (
