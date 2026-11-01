@@ -143,6 +143,33 @@ def archive_workspace(release, attempt):
     return workspace
 
 
+def input_paths(plan):
+    """Only exact native receiver paths; scratch mode cannot resume old work."""
+    release = plan['releaseId']
+    assert re.fullmatch('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', release)
+    storage = plan['inputStorage']
+    assert storage in ('release-evidence-v1', 'deploy-scratch-v1')
+    if storage == 'deploy-scratch-v1':
+        assert not any(k in plan for k in ('resumeSurfaces', 'preservedStageResume', 'preservedCapacityResume'))
+        parent = BASE
+    else:
+        parent = EVIDENCE / release
+    source = parent / ('proofofwork-ui-source-' + release)
+    surfaces = parent / ('proofofwork-ui-surfaces-' + release) / 'surfaces'
+    assert plan['preservedSourceCheckout'] == str(source)
+    assert plan['preservedSurfacesRoot'] == str(surfaces)
+    return parent, source, surfaces
+
+
+def admit_fresh_scratch_inputs(plan):
+    assert plan['inputStorage'] == 'deploy-scratch-v1'
+    parent, source, surfaces = input_paths(plan)
+    directory(parent)
+    # lexists also rejects dangling links and a previous failed namespace.
+    assert not os.path.lexists(source), 'Scratch source namespace already occupied'
+    assert not os.path.lexists(surfaces.parent), 'Scratch surface namespace already occupied'
+
+
 def payload_fingerprint(root):
     rows = []
     for path in [root, *sorted(root.rglob('*'))]:
@@ -508,10 +535,10 @@ elif release_format == 'proofofwork-ui-release-v4':
 assert re.fullmatch('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', release)
 assert release.startswith(p['commit'][:12] + '-')
 assert p['frontendOnly'] is True and p['retentionDeferred'] is True
-assert p['inputStorage'] == 'release-evidence-v1'
 evidence_root = EVIDENCE / release
-assert p['preservedSourceCheckout'] == str(evidence_root / ('proofofwork-ui-source-' + release))
-assert p['preservedSurfacesRoot'] == str(evidence_root / ('proofofwork-ui-surfaces-' + release) / 'surfaces')
+input_parent, source_checkout, surfaces_root = input_paths(p)
+scratch_inputs = p['inputStorage'] == 'deploy-scratch-v1'
+assert not scratch_inputs or phase in ('surfaces-stage', 'source')
 assert re.fullmatch('[a-z0-9][a-z0-9-]{0,30}', p['publicationAttempt'])
 assert plan_path == str(BASE / ('recovery-plan-' + release + '-' + p['publicationAttempt'] + '.json'))
 unit = 'proofofwork-recovery-ui-transport-' + release + '-' + phase + '-' + p['publicationAttempt'] + '.service'
@@ -531,6 +558,10 @@ assert identity(os.fstat(lock_fd)) == identity(before) and identity(lock.lstat()
 fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
 env = {**ENV, 'POW_UI_DEPLOY_LOCK_FD': str(lock_fd)}
 directory(BASE); directory(ARCHIVES)
+if scratch_inputs and phase == 'surfaces-stage':
+    # Refuse occupied namespaces (including dangling links) before receiving
+    # any payload. Existing releases and failed attempts are never overwritten.
+    admit_fresh_scratch_inputs(p)
 helpers = p['publicationHelpers']
 phase_capacity_source = p['phaseCapacity']['source']
 assert isinstance(phase_capacity_source, str) and len(phase_capacity_source.encode()) <= 32768
@@ -597,12 +628,17 @@ if phase == 'source':
     bound(archive, checksum[0], 2*1024**3)
     validate_evidence_ancestors(release, require_release=True)
     directory(EVIDENCE.parent); directory(EVIDENCE); directory(evidence_root)
-    # Source extraction is durable evidence, charged to disk but never scratch.
-    capacity('check-scratch', BASE, EVIDENCE_RESERVE, 'source-evidence', inodes=32)
-    capacity('check', evidence_root, allocation['bytes'] + EVIDENCE_RESERVE, 'source-receive', inodes=allocation['inodes'])
-    receiver_code = source_receiver_code(tools / 'stream-ui-bundle.py', p['helperSha256']['receiver'], evidence_root)
-    run(['/usr/bin/python3', '-I', '-B', '-c', receiver_code, kind, release,
-         str(part['compressedBytes']), part['sha256'], str(evidence_root)], 'receiver.log',
+    capacity('check-scratch', BASE, (allocation['bytes'] if scratch_inputs else 0) + EVIDENCE_RESERVE,
+             'source-evidence', inodes=allocation['inodes'] if scratch_inputs else 32)
+    capacity('check', input_parent, allocation['bytes'] + EVIDENCE_RESERVE, 'source-receive', inodes=allocation['inodes'])
+    if scratch_inputs:
+        receiver = ['/usr/bin/python3', '-I', '-B', str(tools / 'stream-ui-bundle.py'), kind, release,
+                    str(part['compressedBytes']), part['sha256']]
+    else:
+        receiver_code = source_receiver_code(tools / 'stream-ui-bundle.py', p['helperSha256']['receiver'], evidence_root)
+        receiver = ['/usr/bin/python3', '-I', '-B', '-c', receiver_code, kind, release,
+                    str(part['compressedBytes']), part['sha256'], str(evidence_root)]
+    run(receiver, 'receiver.log',
          source=sys.stdin.buffer, length=part['compressedBytes'], timeout=RECEIVE_TIMEOUT_SECONDS)
 elif phase == 'surfaces-stage':
     assert not any(key in p for key in ('resumeSurfaces', 'preservedStageResume', 'preservedCapacityResume'))
@@ -641,16 +677,18 @@ if phase != 'source':
         assert not os.path.lexists(evidence_root)
         evidence_root.mkdir(mode=0o700); sync(EVIDENCE)
         validate_evidence_ancestors(release, require_release=True)
-        preserved = evidence_root / payload.name
+        preserved = payload if scratch_inputs else evidence_root / payload.name
         durable_json(evidence_root / 'incoming-intent.json', {'releaseId': release, 'planSha256': plan_sha,
             'oldPath': str(payload), 'preservedPath': str(preserved), 'payloadFingerprint': input_before,
             'historicalDeletion': False})
-        rename_new(payload, preserved)
+        if not scratch_inputs:
+            rename_new(payload, preserved)
         assert payload_fingerprint(preserved) == input_before
         durable_json(evidence_root / 'incoming-receipt.json', {'format': 'proof-of-work-ui-incoming-evidence-v1',
             'releaseId': release, 'commit': p['commit'], 'tree': p['tree'], 'planSha256': plan_sha,
             'receiverReceipt': receipt, 'preservedPath': str(preserved), 'payloadFingerprint': input_before,
-            'movePreservedInodes': True, 'historicalDeletion': False, 'allPriorEvidencePreserved': True})
+            'inputStorage': p['inputStorage'], 'movePreservedInodes': not scratch_inputs,
+            'historicalDeletion': False, 'allPriorEvidencePreserved': True})
     assert receipt['status'] == 'verified' and receipt['archiveSha256'] == part['sha256']
     assert receipt['compressedBytes'] == part['compressedBytes'] and receipt['releaseId'] == release
     assert receipt['entries'] == input_before['entries'] and receipt['logicalBytes'] == input_before['regularBytes']
@@ -717,8 +755,9 @@ if phase != 'source':
     checksum_temporary.chmod(0o644); sync(temporary)
     rename_new(checksum_temporary, Path(str(archive)+'.sha256'))
     rename_new(temporary, archive)
-    capacity('check-scratch', BASE, EVIDENCE_RESERVE, 'next-source', inodes=32)
-    capacity('check', evidence_root, p['admissions']['source-receive']['bytes'] + EVIDENCE_RESERVE, 'next-source',
+    capacity('check-scratch', BASE, (p['admissions']['source-receive']['bytes'] if scratch_inputs else 0) + EVIDENCE_RESERVE,
+             'next-source', inodes=p['admissions']['source-receive']['inodes'] if scratch_inputs else 32)
+    capacity('check', input_parent, p['admissions']['source-receive']['bytes'] + EVIDENCE_RESERVE, 'next-source',
              inodes=p['admissions']['source-receive']['inodes'])
     durable_json(out / 'receipt.json', {'ok': True, 'releaseId': release, 'phase': phase,
         'managedArchive': str(archive), 'archiveSha256': archive_sha, 'preservedInput': str(preserved),
@@ -729,7 +768,7 @@ if phase != 'source':
         'historicalDeletion': False})
 else:
     source = Path(p['preservedSourceCheckout'])
-    source_receipt_path = evidence_root / ('audit5-stream-source-' + release + '.json')
+    source_receipt_path = input_parent / ('audit5-stream-source-' + release + '.json')
     source_receipt = json.loads(source_receipt_path.read_bytes())
     assert source_receipt['status'] == 'verified' and source_receipt['kind'] == 'source'
     assert source_receipt['releaseId'] == release and source_receipt['extractedRoot'] == str(source)

@@ -22461,6 +22461,66 @@ function safeEventTags(item, network, confirmationStatus, kind, valid) {
   return [...unique.values()];
 }
 
+function tokenTransferHistoryDisplayItem(item, confirmationStatus) {
+  const kind = normalizedLowerText(item?.kind);
+  const batch = kind === "token-transfer-batch";
+  const tokenId = normalizedLowerText(item?.tokenId);
+  if (item?.valid === false ||
+      (!batch && kind !== "token-transfer") ||
+      (batch && !isWorkTokenId(tokenId))) {
+    return item;
+  }
+  const sender = normalizedText(item?.senderAddress);
+  const recipient = normalizedText(item?.recipientAddress);
+  const count = item?.recipientCount;
+  if (!tokenId || !sender || (!batch && !recipient) ||
+      (batch && (!Number.isSafeInteger(count) || count < 1 || count > 256))) {
+    return item;
+  }
+  let amount;
+  if (isWorkTokenId(tokenId)) {
+    // Use the same exact Q8/Q16 projection as canonical token reads. Display
+    // must never round subatoms or reinterpret historical atoms as subatoms.
+    try {
+      amount = workAmountProjection(item).amount;
+    } catch {
+      // Incomplete historical display evidence remains generic; never invent
+      // a zero amount or bypass the canonical reader's independent guards.
+      return item;
+    }
+  } else {
+    amount = normalizedText(item?.amount ?? item?.tokenAmount);
+    if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/u.test(amount) || !/[1-9]/u.test(amount)) {
+      return item;
+    }
+  }
+  const ticker = isWorkTokenId(tokenId) ? "WORK" : normalizedText(item?.ticker);
+  const amountLabel = `${amount} ${ticker || "credit units"}`;
+  const label = batch ? "WORK batch transfer" : "Credit transfer";
+  const title = confirmationStatus === "confirmed" ? label
+    : `${label} ${confirmationStatus === "unknown" ? "status unavailable" : confirmationStatus}`;
+  const index = item?.batchRecipientIndex;
+  const recipientCount = item?.batchRecipientCount;
+  const recipientDetail = !batch && ["batch1", "mailbatch1"].includes(item?.transferVersion) &&
+      Number.isSafeInteger(index) && Number.isSafeInteger(recipientCount) &&
+      index >= 0 && index < recipientCount && recipientCount <= 256
+    ? ` · Recipient ${index + 1} of ${recipientCount}` : "";
+  const tags = [...(Array.isArray(item?.tags) ? item.tags : []),
+    "Credit", batch ? "Batch" : "Transfer", ticker, amountLabel].filter(Boolean);
+  return {
+    ...item,
+    actor: normalizedText(item?.actor) || sender,
+    counterparty: normalizedText(item?.counterparty) || (batch
+      ? normalizedText(item?.registryAddress) || undefined : recipient),
+    title: normalizedText(item?.title) || title,
+    description: normalizedText(item?.description) || (batch
+      ? `${amountLabel} transferred from ${shortHistoryAddress(sender)} to ${count} recipients in one atomic transfer.`
+      : `${amountLabel} transferred from ${shortHistoryAddress(sender)} to ${shortHistoryAddress(recipient)}.`),
+    detail: normalizedText(item?.detail) || `Credit ${shortHistoryAddress(tokenId)}${recipientDetail}`,
+    tags,
+  };
+}
+
 export function normalizeHistoryEventItem(
   item,
   network,
@@ -22480,6 +22540,7 @@ export function normalizeHistoryEventItem(
   }
 
   const confirmationStatus = historyConfirmationStatus(item);
+  item = tokenTransferHistoryDisplayItem(item, confirmationStatus);
   const confirmed = confirmationStatus === "confirmed";
   const valid =
     item?.valid === false || kind === "token-event-invalid"

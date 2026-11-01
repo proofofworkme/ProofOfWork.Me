@@ -278,6 +278,26 @@ class ReleaseRefusals(unittest.TestCase):
         self.assertTrue(plan['wholeSequenceAdmission']['ok'])
         self.assertEqual(plan['wholeSequenceAdmission']['requirements']['retirementCreditBytes'], 0)
 
+    def test_fresh_scratch_plan_binds_native_paths_and_all_concurrent_copies(self):
+        build, previous, args = self.build_inputs()
+        args.input_storage = 'deploy-scratch-v1'
+        with patch.object(subprocess, 'check_output', side_effect=self.git_output), contextlib.redirect_stdout(io.StringIO()):
+            self.release.make_plan(args)
+        plan = json.loads(Path(args.output).read_bytes())
+        self.assertEqual(plan['inputStorage'], 'deploy-scratch-v1')
+        self.assertEqual(plan['preservedSourceCheckout'], '/var/tmp/proofofwork-deploy/proofofwork-ui-source-' + RELEASE)
+        self.assertEqual(plan['preservedSurfacesRoot'], '/var/tmp/proofofwork-deploy/proofofwork-ui-surfaces-' + RELEASE + '/surfaces')
+        required = plan['wholeSequenceAdmission']['requirements']
+        charges = required['charges']
+        self.assertEqual(required['additionalBytes']['scratch'], sum(charges[k] for k in
+            ('receivedSurfaces', 'preservedSource', 'candidateCopy', 'provenanceExtraction', 'receiptDirectoryAndCompatibilityMargin')))
+        self.assertEqual(required['additionalBytes']['transport'], 64 * 1024**2)
+        Path(args.output).unlink()
+        args.resume_plan = args.resume_evidence = args.resume_inventory = '/unread-refusal'
+        with patch.object(subprocess, 'check_output', side_effect=self.git_output), self.assertRaisesRegex(AssertionError, 'fresh release'):
+            self.release.make_plan(args)
+        self.assertFalse(Path(args.output).exists())
+
     def test_v4_plan_binds_all21_and_refuses_incomplete_or_wrong_format_receipts(self):
         build, previous, args = self.build_inputs(pages=True)
         with patch.object(subprocess, 'check_output', side_effect=self.git_output), contextlib.redirect_stdout(io.StringIO()):
