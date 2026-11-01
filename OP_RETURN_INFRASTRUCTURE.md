@@ -8044,7 +8044,7 @@ to that pool from creation through final no-replace publication, rather than als
 charging a temporary copy to retained transport evidence. The same-filesystem,
 namespace, hash, root-reserve and backup-budget checks remain mandatory. Historical
 transport/source evidence stays in place, and no storage ceiling is raised.
-Scratch admission uses the maximum of the receive phase and the later candidate
+Default `release-evidence-v1` scratch admission uses the maximum of the receive phase and the later candidate
 plus verification phase, with the same receipt reserve. The incoming payload
 is moved into retained transport evidence before staging allocates a candidate;
 adding those nonconcurrent scratch phases caused a
@@ -8052,6 +8052,19 @@ adding those nonconcurrent scratch phases caused a
 The correction retains the full conservative verification-copy charge and all
 root, backup, transport and inode charges. No budget, reserve, historical hold
 or future cleanup/hardlink credit changes.
+
+A fresh plan may explicitly select `--input-storage deploy-scratch-v1` to keep
+only its new source and surface inputs at the native release-bound paths beneath
+`/var/tmp/proofofwork-deploy`. This mode charges incoming inputs, source,
+candidate and verification copies simultaneously against the unchanged 5 GiB
+scratch ceiling and physical-root reserves; the managed archive remains charged
+to the backup pool. Exact paths, exclusive creation, complete source attestation
+and every publication check remain mandatory. Occupied namespaces, unknown modes
+and every resume mode are refused before receive. Historical inputs are neither
+moved nor deleted, and no artifact-reuse shortcut is introduced. New inputs stay
+preserved and continue to count against scratch until separately authorized
+cleanup qualifies them; admission takes no future cleanup or hardlink credit.
+The default `release-evidence-v1` path remains unchanged.
 
 After exact HTTPS verification, `deploy/publish/collect_verify.py` automatically
 runs `deploy/ui-retention/lifecycle.py`. The operator host preserves each
@@ -8706,6 +8719,13 @@ each requested row with the qualified stored evidence. Request-local reuse
 across query chunks does not confer authority on a later request or permit a
 missing, altered or ambiguous off-page sibling. Standalone child validators
 always reconstruct and validate their parent evidence.
+Paginated transfer cards also project missing display fields from their verified
+event payloads. Preserve existing presentation text, raw payloads, canonical
+identities and all fee fields. WORK display amounts use the exact Q16/Q8 amount
+helpers; a child displays its own recipient and amount while its parent displays
+the aggregate once. Browser acceptance must inspect those details as well as
+batch row counts, because summary formatting does not establish that the
+separate history projection is readable.
 The response-latency controller's version-2 contract binds the API, canonical
 reader and both batch readers to the released `09fedcd08eee` source base. It
 preserves accepted runtime overlays with exact before/after hashes and retains

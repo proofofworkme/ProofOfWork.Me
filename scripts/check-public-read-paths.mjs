@@ -58,6 +58,18 @@ try {
   assert.equal(new Set(recipients.map(eventKey)).size, 12);
   assert.equal(new Set(recipients.map(item => `${item.protocolVout}:${item.recordOrdinal}`)).size, 12);
   assert.ok(recipients.every(item => item.confirmed === true));
+  assert.ok(recipients.every(item => item.actor === item.senderAddress &&
+    item.counterparty === item.recipientAddress && typeof item.counterparty === 'string' &&
+    item.counterparty.length > 0), 'Batch cards must expose their verified sender and recipient.');
+  assert.ok(recipients.every(item => item.amount === '0.01' &&
+    item.amountSubatoms === '100000000000000' &&
+    typeof item.description === 'string' && item.description.includes('0.01 WORK')),
+  'Batch cards must display their exact individual WORK amount.');
+  const parent = batch.items.find(item => item.txid === batchTxid && item.kind === 'token-transfer-batch');
+  assert.ok(parent && parent.actor === parent.senderAddress && parent.amount === '0.12' &&
+    parent.amountSubatoms === '1200000000000000' &&
+    typeof parent.description === 'string' && parent.description.includes('0.12 WORK'),
+  'The batch parent must display its aggregate amount without replacing child amounts.');
 
   const boost = await read('/api/v1/boost?network=livenet&limit=2');
   checkpoint(boost, floor);
