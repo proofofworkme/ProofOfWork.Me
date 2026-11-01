@@ -120,6 +120,8 @@ function visitLog(node) {
 visitLog(ast);
 assert.ok(logDeclaration);
 const logRequests = []; const logAccepted = []; const logLoading = [];
+const logErrors = []; const logHistoryLoading = [];
+let logFailure;
 const logEnv = {
   AbortController, AbortSignal,
   activityHistoryReadControllerRef: { current: undefined },
@@ -128,11 +130,13 @@ const logEnv = {
   activityHistoryGenerationRef: { current: 0 }, activitySearchGenerationRef: { current: 0 },
   activeWorkspaceStatusKeyRef: { current: "log" }, network: "livenet", ACTIVITY_FEED_PAGE_SIZE: 50,
   nextProofApiReadAttempt: () => 1, activityHistoryCacheKey: JSON.stringify,
-  fetchGlobalActivityHistoryPage: (_network, params) => { const d = deferred(); logRequests.push({ ...d, params }); return d.promise; },
+  fetchGlobalActivityHistoryPage: (_network, params) => { if (logFailure) throw logFailure; const d = deferred(); logRequests.push({ ...d, params }); return d.promise; },
   clearLastGoodReadWarning() {}, acceptActivityHistoryPage: (_key, page) => { logAccepted.push(page); return page; },
   activityHistoryPagesRef: { current: new Map() }, isTransientProofApiReadError: () => false,
   showLastGoodReadWarning: () => false, setActivityHistoryPage() {}, setStatusForWorkspace() {},
   setActivityLoading(value) { logLoading.push(value); }, errorMessage: String,
+  setActivityHistoryReading(value) { logHistoryLoading.push(value); },
+  setActivityHistoryReadError(value) { logErrors.push(value); },
 };
 const logLoad = new Function(...Object.keys(logEnv), `${transpile(logDeclaration.getText(ast))};return loadLogHistoryPage`)(...Object.values(logEnv));
 const oldPage = logLoad(0);
@@ -173,6 +177,17 @@ logEnv.activeWorkspaceStatusKeyRef.current = "wallet";
 logEnv.activityHistoryReadControllerRef.current.abort();
 logRequests.at(-1).resolve({ page: 0, obsolete: true }); await cancelledForeground;
 assert.equal(logLoading.at(-1), false, "context cancellation releases loading ownership");
+logEnv.activeWorkspaceStatusKeyRef.current = "log";
+logFailure = new Error("History read unavailable");
+await logLoad(0, true);
+assert.match(logErrors.at(-1), /History read unavailable/, "background failures remain visible without a cached page");
+assert.equal(logHistoryLoading.at(-1), false);
+logFailure = undefined;
+const recoveredLogPage = logLoad(0, false, "", { fresh: true, snapshotId: "pinned-head" });
+assert.equal(logRequests.at(-1).params.fresh, true);
+assert.equal(logRequests.at(-1).params.snapshotId, "pinned-head");
+logRequests.at(-1).resolve({ page: 0, snapshotId: "pinned-head" }); await recoveredLogPage;
+assert.equal(logErrors.at(-1), "", "successful history recovery clears its independent error");
 console.log(JSON.stringify({ ok: true, coverage: ["log-live-query", "log-latest-page-wins", "log-search-fence", "log-workspace-fence"] }));
 
 // AMO must not accept the compact preview; retry the whole snapshot after a
@@ -226,6 +241,42 @@ function appFunction(name, bindings = {}) {
   assert.ok(found, name);
   return new Function(...Object.keys(bindings), `${transpile(found.getText(ast))};return ${name}`)(...Object.values(bindings));
 }
+
+const logActivityKey = appFunction("activityKey");
+const mergeLogActivity = appFunction("mergeActivityItems", {
+  activityKey: logActivityKey, compareActivityItems: appFunction("compareActivityItems"),
+});
+const batchRecipients = [0, 1, 2].map(recordOrdinal => ({
+  kind: "token-transfer", network: "livenet", txid: "b".repeat(64),
+  protocolVout: 3, recordOrdinal, eventId: String(40 + recordOrdinal), createdAt: "2026-10-31T00:00:00.000Z",
+}));
+assert.equal(new Set(batchRecipients.map(logActivityKey)).size, 3);
+const mergedRecipients = mergeLogActivity(batchRecipients, [{ ...batchRecipients[1], confirmed: true }]);
+assert.equal(mergedRecipients.length, 3, "each batch recipient survives preview/history merging");
+assert.equal(mergedRecipients.find(item => item.recordOrdinal === 1).confirmed, true);
+const legacyActivity = { ...batchRecipients[0], protocolVout: undefined, recordOrdinal: undefined };
+assert.equal(logActivityKey(legacyActivity), logActivityKey({ ...legacyActivity, eventId: undefined }),
+  "adding an index event ID alone must not duplicate legacy activity");
+
+const logHandoffs = [];
+let availableLogHead = { snapshotId: "coherent-log-head" };
+const logRefreshQuery = { current: "" };
+const refreshActualLog = appFunction("refreshLogSurface", {
+  activityHistoryRefreshTarget: () => ({ pageIndex: 1, query: "" }),
+  activityQueryRef: logRefreshQuery, activitySearchGenerationRef: { current: 0 },
+  loadLogHead: async () => availableLogHead,
+  loadLogHistoryPage: async (...args) => { logHandoffs.push({ history: args }); },
+  loadActivityTarget: async (...args) => { logHandoffs.push({ search: args }); },
+});
+await refreshActualLog(false, true);
+assert.deepEqual(logHandoffs[0].history[3], { signal: undefined, fresh: true, snapshotId: "coherent-log-head" });
+logRefreshQuery.current = "a".repeat(64);
+await refreshActualLog(false, true);
+assert.equal(logHandoffs[1].search[0], logRefreshQuery.current);
+assert.deepEqual(logHandoffs[1].search[2], { fresh: true, snapshotId: "coherent-log-head" });
+availableLogHead = undefined;
+await refreshActualLog(false, true);
+assert.equal(logHandoffs.length, 2, "failed fresh head cannot launch an unbound history read");
 
 // H6-06, H6-12 and mailbox response integrity: execute the actual client
 // loaders, cancellation effects and envelope reader with reversed promises.

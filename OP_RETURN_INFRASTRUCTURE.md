@@ -8683,6 +8683,20 @@ classification failure, and normalized activity enrichment that copied the
 transaction miner fee onto derived recipients. Qualified recipient projections
 keep zero fees while coverage remains bound to the original relational evidence;
 the strict closing-state guard must remain unchanged.
+
+Public read verification also covers the actual Log history pages and their
+continuation, exact batch recipient identities, Boost feed loading and the
+WORK-floor read used during sealing. A current eight-summary bundle alone does
+not prove these consumer paths work. Log page reads must bound full event
+hydration to their requested membership while retaining complete batch-family
+validation and canonical position/fee evidence. Event-history checkpoint reads
+retain all SQL summary eligibility and transition-witness guards, but return
+only the checkpoint metadata needed by their consumers instead of the complete
+multi-megabyte summary bundle on every page.
+`npm run check:public-read-paths` exercises those public reads against one
+stable Core/index/summary checkpoint, including a known twelve-recipient batch.
+It records endpoint timing on stdout and fails if Core advances during the
+check; rerun against a stable checkpoint. It performs no wallet action.
 The [forward recovery controller](deploy/work-batch-reader-recovery/README.md)
 binds the failed reader installation and its retained custody, rehearses the
 composed reader/API/worker against the existing database in a read-only service, and
