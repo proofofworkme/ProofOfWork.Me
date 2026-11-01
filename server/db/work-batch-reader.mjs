@@ -294,34 +294,52 @@ export async function readWorkBatchDeclarationCandidates(pool, network, options 
   };
 }
 
-export function assertCanonicalWorkBatchChild(payload, evidence) {
-  const fail = () => { throw new Error("Canonical WORK batch recipient has no exact accepted parent descriptor."); };
+const invalidWorkBatchChild = () => {
+  throw new Error("Canonical WORK batch recipient has no exact accepted parent descriptor.");
+};
+
+// Only the synchronous qualification of this returned family can use this
+// context. It is never exported or retained between reads.
+function prepareCanonicalWorkBatchFamily(evidence, decoded, batch) {
   const parent = evidence?.parent_payload;
   const parentRecords = Array.isArray(evidence?.parent_records) ? evidence.parent_records : [];
   const parentRecord = parentRecords.length === 1 ? parentRecords[0] : null;
-  const witness = payload?.workAmoV5ReplayRawWitness;
-  const descriptor = witness?.descriptor;
-  const decoded = decodeCanonicalOpReturnOutput(evidence?.carrier_output);
-  const batch = decoded?.decodeValid === true ? parseWorkBatchPayload(decoded.text) : null;
-  const index = payload?.batchRecipientIndex;
-  const position = payload?.position;
   const parentPosition = parentRecord?.position;
   const commitment = parentRecord?.transitionChainCommitmentAfter;
-  const storedPosition = evidence?.child_position;
-  const positionFields = ["blockHeight", "blockTransactionIndex", "protocolVout", "recordOrdinal"];
-  if (!storedPosition || positionFields.some(key =>
-    !Number.isSafeInteger(storedPosition[key]) || storedPosition[key] < 0 ||
-    storedPosition[key] !== position?.[key]
-  )) fail();
-  const expectedDescriptor = Number.isSafeInteger(index) ? parentRecord?.derived?.[index] : null;
-  if (!batch || !Number.isSafeInteger(index) || index < 0 || index >= batch.recipientCount ||
+  if (!batch ||
       !parent || parent.kind !== "token-transfer-batch" || parent.protocol !== "pwt1" ||
       parent.valid !== true || parent.confirmed !== true || parent._workAmoV5ReplayBound !== true ||
       parent.workAmoV5RawCandidate !== true || parent.payload !== decoded.text ||
       parentRecord?.rawCandidate !== true || parentRecord?.outcome?.valid !== true ||
       parentRecord?.outcome?.kind !== "pwt1-valid" || parentRecord?.outcome?.semanticKind !== "token-transfer-batch" ||
       parentRecord?.output?.projection?.kind !== "token-transfer-batch" ||
-      parentRecord?.derived?.length !== batch.recipientCount ||
+      parentRecord?.derived?.length !== batch.recipientCount || parentRecord?.txid !== parent.txid ||
+      parentPosition?.recordOrdinal !== 0 ||
+      commitment?.model !== "canonical-work-amo-raw-transition-chain-sha256-v1" ||
+      !Number.isSafeInteger(commitment?.payloadBytes) || commitment.payloadBytes < 1 ||
+      !/^[0-9a-f]{64}$/u.test(commitment?.sha256 ?? "") ||
+      !isDeepStrictEqual(parent.workAmoV5ReplayOutput, parentRecord.output) ||
+      parentRecord.output.amountSubatoms !== batch.totalAmountSubatoms ||
+      parentRecord.output.totalAmountSubatoms !== batch.totalAmountSubatoms ||
+      parentRecord.output.recipientCount !== batch.recipientCount ||
+      !isDeepStrictEqual(parentRecord.output.recipients, batch.recipients)) invalidWorkBatchChild();
+  return Object.freeze({ parent, parentRecord, parentPosition, commitment, batch });
+}
+
+function assertCanonicalWorkBatchChildInFamily(payload, storedPosition, family) {
+  const fail = invalidWorkBatchChild;
+  const { parent, parentRecord, parentPosition, commitment, batch } = family;
+  const witness = payload?.workAmoV5ReplayRawWitness;
+  const descriptor = witness?.descriptor;
+  const index = payload?.batchRecipientIndex;
+  const position = payload?.position;
+  const positionFields = ["blockHeight", "blockTransactionIndex", "protocolVout", "recordOrdinal"];
+  if (!storedPosition || positionFields.some(key =>
+    !Number.isSafeInteger(storedPosition[key]) || storedPosition[key] < 0 ||
+    storedPosition[key] !== position?.[key]
+  )) fail();
+  const expectedDescriptor = Number.isSafeInteger(index) ? parentRecord?.derived?.[index] : null;
+  if (!Number.isSafeInteger(index) || index < 0 || index >= batch.recipientCount ||
       payload?.kind !== "token-transfer" || payload.protocol !== "pwt1" || payload.tokenId !== WORK_BATCH_TOKEN_ID ||
       payload.transferVersion !== "batch1" || payload.amountStorageModel !== "work-subatoms-v2" ||
       payload.valid !== true || payload.confirmed !== true || payload._workAmoV5ReplayBound !== true ||
@@ -330,31 +348,31 @@ export function assertCanonicalWorkBatchChild(payload, evidence) {
       payload.workAmoV5ReplayOutcome?.valid !== true || payload.workAmoV5ReplayOutcome?.kind !== "pwt1-valid" ||
       payload.batchRecipientCount !== batch.recipientCount || payload.batchTotalAmountSubatoms !== batch.totalAmountSubatoms ||
       payload.recipientAddress !== batch.recipients[index].recipientAddress || payload.amountSubatoms !== batch.recipients[index].amountSubatoms ||
-      payload.senderAddress !== parent.senderAddress || payload.txid !== parent.txid || parentRecord?.txid !== parent.txid ||
+      payload.senderAddress !== parent.senderAddress || payload.txid !== parent.txid ||
       witness?.model !== "canonical-work-amo-v5-derived-child-v1" ||
       !descriptor || !expectedDescriptor || !isDeepStrictEqual(descriptor, expectedDescriptor) ||
       !isDeepStrictEqual(position, descriptor.projectionPosition) ||
       !isDeepStrictEqual(payload.containerPosition, parentPosition) ||
       !isDeepStrictEqual(witness.parentPosition, parentPosition) || witness.parentProtocol !== "pwt1" ||
-      parentPosition?.recordOrdinal !== 0 || position?.recordOrdinal !== index + 1 ||
+      position?.recordOrdinal !== index + 1 ||
       !isDeepStrictEqual(payload.parentTransitionChainCommitmentAfter, commitment) ||
       !isDeepStrictEqual(descriptor.parentTransitionChainCommitmentAfter, commitment) ||
-      commitment?.model !== "canonical-work-amo-raw-transition-chain-sha256-v1" ||
-      !Number.isSafeInteger(commitment?.payloadBytes) || commitment.payloadBytes < 1 ||
-      !/^[0-9a-f]{64}$/u.test(commitment?.sha256 ?? "") ||
-      !isDeepStrictEqual(parent.workAmoV5ReplayOutput, parentRecord.output) ||
       !isDeepStrictEqual(payload.batchPayloadCommitment, parentRecord.output.batchPayloadCommitment) ||
-      !isDeepStrictEqual(payload.batchPayloadCommitment, descriptor.batchPayloadCommitment) ||
-      parentRecord.output.amountSubatoms !== batch.totalAmountSubatoms ||
-      parentRecord.output.totalAmountSubatoms !== batch.totalAmountSubatoms ||
-      parentRecord.output.recipientCount !== batch.recipientCount ||
-      !isDeepStrictEqual(parentRecord.output.recipients, batch.recipients)) fail();
+      !isDeepStrictEqual(payload.batchPayloadCommitment, descriptor.batchPayloadCommitment)) fail();
   for (const key of ["paidSats", "registryMutationFeeSats", "amountSats", "minerFeeSats", "creditAmountMoved", "creditValueAtConfirmSats"]) {
     if (payload[key] !== undefined && payload[key] !== 0 && payload[key] !== "0") fail();
   }
   const expectedFields = ["recipientAddress", "amountSubatoms", "senderAddress", "tokenId", "transferVersion", "batchRecipientIndex", "batchRecipientCount", "batchTotalAmountSubatoms", "derivedId"];
   if (expectedFields.some(key => payload[key] !== descriptor[key])) fail();
   return true;
+}
+
+export function assertCanonicalWorkBatchChild(payload, evidence) {
+  // Standalone callers must always qualify their own complete parent evidence.
+  const decoded = decodeCanonicalOpReturnOutput(evidence?.carrier_output);
+  const batch = decoded?.decodeValid === true ? parseWorkBatchPayload(decoded.text) : null;
+  return assertCanonicalWorkBatchChildInFamily(payload, evidence?.child_position,
+    prepareCanonicalWorkBatchFamily(evidence, decoded, batch));
 }
 
 // This read qualifies derived rows against their unique accepted parent from
@@ -368,13 +386,17 @@ export async function verifiedWorkBatchEventIds(pool, rows, network) {
   const verified = new Set();
   if (!candidates.length) return verified;
   if (network !== "livenet") throw new Error("Canonical WORK batch history is mainnet only.");
+  const candidateIds = candidates.map(row => Number(row.event_id));
+  if (candidateIds.some(id => !Number.isSafeInteger(id) || id < 1) || new Set(candidateIds).size !== candidateIds.length) {
+    throw new Error("Canonical WORK batch history has no unique event identity.");
+  }
+  // Complete families are qualified once per invocation, including siblings
+  // requested in later chunks. Every requested payload is still compared below.
+  const evidence = new Map();
   for (let offset = 0; offset < candidates.length; offset += 100) {
     const page = candidates.slice(offset, offset + 100);
-    const ids = page.map(row => Number(row.event_id));
-    if (ids.some(id => !Number.isSafeInteger(id) || id < 1) || new Set(ids).size !== ids.length) {
-      throw new Error("Canonical WORK batch history has no unique event identity.");
-    }
-    const result = await pool.query(`
+    const ids = candidateIds.slice(offset, offset + 100).filter(id => !evidence.has(id));
+    const result = ids.length ? await pool.query(`
       /* canonical_work_batch_parent_evidence */
       WITH requested_parents AS MATERIALIZED (
         SELECT DISTINCT child.network, child.txid, child.block_height, child.block_index, child.op_return_vout
@@ -421,14 +443,14 @@ export async function verifiedWorkBatchEventIds(pool, rows, network) {
         AND transition.previous_block_hash = block.previous_block_hash
         AND transition.complete = true AND transition.block_atomic = true
         AND transition.fee_once = true AND transition.invalid_zero = true
-    `, [network, ids]);
-    const evidence = new Map();
+    `, [network, ids]) : { rows: [] };
     for (const row of result.rows) {
       const decoded = decodeCanonicalOpReturnOutput(row.carrier_output);
       const batch = decoded?.decodeValid === true ? parseWorkBatchPayload(decoded.text) : null;
       if (!batch || !Array.isArray(row.siblings) || row.siblings.length !== batch.recipientCount) {
         throw new Error("Canonical WORK batch recipient set is incomplete.");
       }
+      const family = prepareCanonicalWorkBatchFamily(row, decoded, batch);
       const parentId = Number(row.parent_event_id);
       if (!Number.isSafeInteger(parentId) || parentId < 1 || evidence.has(parentId)) {
         throw new Error("Canonical WORK batch parent is ambiguous.");
@@ -442,7 +464,7 @@ export async function verifiedWorkBatchEventIds(pool, rows, network) {
           throw new Error("Canonical WORK batch parent or recipient is ambiguous.");
         }
         indexes.add(index);
-        assertCanonicalWorkBatchChild(sibling.payload, { ...row, child_position: sibling.position });
+        assertCanonicalWorkBatchChildInFamily(sibling.payload, sibling.position, family);
         evidence.set(id, sibling.payload);
       }
     }

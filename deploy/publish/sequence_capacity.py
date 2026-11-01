@@ -76,7 +76,10 @@ def requirements(plan, census):
     extra = {
         'root': incoming + source + candidate + archive + verification + EVIDENCE_BYTES,
         'backup': incoming + source + archive + old + EVIDENCE_BYTES,
-        'transport': incoming + source + archive + EVIDENCE_BYTES,
+        # New archive work is created directly in the releases pool, including
+        # its temporary file and sidecar. It never occupies transport evidence.
+        # Keep the complete archive charge in backup and physical root peaks.
+        'transport': incoming + source + EVIDENCE_BYTES,
         'scratch': scratch_peak + EVIDENCE_BYTES,
     }
     inodes = (integer(plan['admissions']['source-receive']['inodes']) +

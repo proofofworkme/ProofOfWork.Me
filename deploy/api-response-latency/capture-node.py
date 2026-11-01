@@ -52,7 +52,7 @@ def capture(controller):
     # Fence all source reads a second time before returning their byte custody.
     require(all(file_hash(root/name) == row['sha256'] for name, row in sources.items()), 'Runtime source changed')
     require(subprocess.check_output([*git, 'rev-parse', 'HEAD'], text=True).strip() == head, 'Runtime Git changed')
-    return {'format': 'proof-of-work-api-response-latency-runtime-capture-v1',
+    return {'format': 'proof-of-work-api-response-latency-runtime-capture-v2',
         'capturedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'root': str(root), 'baselineHead': head, 'controllerSha256': ns['sha'](controller),
         'status': subprocess.check_output([*git, 'status', '--short'], text=True),

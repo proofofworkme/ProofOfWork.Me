@@ -5,6 +5,7 @@ import copy
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import types
@@ -105,7 +106,7 @@ class CompleteSequence(unittest.TestCase):
         self.assertEqual(self.required['additionalBytes'], {
             'root': incoming + source + candidate + archive + verification + M.EVIDENCE_BYTES,
             'backup': incoming + source + archive + old + M.EVIDENCE_BYTES,
-            'transport': incoming + source + archive + M.EVIDENCE_BYTES,
+            'transport': incoming + source + M.EVIDENCE_BYTES,
             'scratch': max(incoming, candidate + verification) + M.EVIDENCE_BYTES,
         })
         self.assertEqual(self.required['additionalInodes'], 33512)
@@ -121,6 +122,37 @@ class CompleteSequence(unittest.TestCase):
         census['usage']['scratch'] += 1
         with self.assertRaisesRegex(ValueError, 'before upload'):
             M.admit(self.required, census)
+
+    def test_new_archive_growth_charges_backup_and_root_but_never_transport(self):
+        plan = copy.deepcopy(self.plan)
+        plan['stageArchiveUpperBoundBytes'] += 4096
+        required = M.requirements(plan, self.census)
+        for name in ('backup', 'root'):
+            self.assertEqual(required['additionalBytes'][name] - self.required['additionalBytes'][name], 4096)
+        for name in ('transport', 'scratch'):
+            self.assertEqual(required['additionalBytes'][name], self.required['additionalBytes'][name])
+        with self.assertRaisesRegex(ValueError, 'before upload'):
+            M.admit(required, self.exact_fit())
+
+    def test_archive_pool_allocation_admits_observed_refusal_without_retirement_credit(self):
+        plan = copy.deepcopy(self.plan)
+        plan['admissions']['surfaces-receive']['bytes'] = 393461760
+        plan['admissions']['source-receive']['bytes'] = 415391744
+        plan['sourceAllocatedBytes'] = 361689088
+        plan['stageArchiveUpperBoundBytes'] = 801087643 - 65536
+        census = copy.deepcopy(self.census)
+        census['usage'] = {'backup': 16332455936, 'transport': 8758210560, 'scratch': 1622282240}
+        census['availableBytes'] = 16224972800
+        census['liveTree']['additionalBytes'] = 646123520
+        required = M.requirements(plan, census)
+        result = M.admit(required, census)
+        self.assertEqual(result['headroom']['transport'], 96612352)
+        self.assertEqual(required['retirementCreditBytes'], 0)
+        self.assertEqual(required['futureHardlinkCreditBytes'], 0)
+        previous = copy.deepcopy(required)
+        previous['additionalBytes']['transport'] += required['charges']['managedArchiveAndSidecars']
+        with self.assertRaisesRegex(ValueError, '"transport": 704475291'):
+            M.admit(previous, census)
 
     def test_refused_release_is_admitted_without_touching_existing_scratch(self):
         plan = copy.deepcopy(self.plan)
@@ -183,6 +215,7 @@ class TransportPhaseOrder(unittest.TestCase):
         finish = next(i for i in range(start, len(nodes)) if isinstance(nodes[i], ast.If)
                       and ast.unparse(nodes[i].test) == "phase != 'source'")
         definitions = [node for node in nodes if isinstance(node, (ast.Import, ast.ImportFrom))
+                       or assignment(node, 'RECEIVE_TIMEOUT_SECONDS')
                        or isinstance(node, ast.FunctionDef) and node.name in
                        ('sync', 'durable_json', 'rename_new')]
         scope = {'__name__': '_transport_order_fixture'}
@@ -273,6 +306,98 @@ class TransportPhaseOrder(unittest.TestCase):
 
     def test_failed_move_cannot_reach_model_or_stager(self):
         self.run_transport(ineffective_rename=True)
+
+
+class ArchivePoolWork(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='pow-archive-pool-')
+        self.root = Path(self.temporary.name).resolve()
+        self.archives, self.evidence = self.root / 'archives', self.root / 'evidence'
+        self.archives.mkdir(mode=0o700); self.evidence.mkdir(mode=0o700)
+        self.release, self.attempt = 'aaaaaaaaaaaa-20261101T021451Z', 'initial'
+        self.workspace = self.archives / ('.proofofwork-ui-archive-' + self.release + '-' + self.attempt)
+        path = PATH.with_name('remote_transport.py')
+        nodes = ast.parse(path.read_bytes()).body
+        definitions = [node for node in nodes if isinstance(node, (ast.Import, ast.ImportFrom))
+            or isinstance(node, ast.FunctionDef) and node.name in ('directory', 'sync', 'rename_new', 'archive_workspace')]
+        self.scope = {'__name__': '_archive_pool_fixture', 'BASE': self.root, 'ARCHIVES': self.archives}
+        exec(compile(ast.Module(body=definitions, type_ignores=[]), str(path), 'exec'), self.scope)
+        # Only numeric root ownership is adapted for unprivileged test runners.
+        # Real path, device, mode, symlink and exclusive-mkdir checks remain.
+        lstat = Path.lstat
+        def owned(path, *args, **kwargs):
+            value = lstat(path, *args, **kwargs)
+            result = types.SimpleNamespace(**{key: getattr(value, key) for key in dir(value) if key.startswith('st_')})
+            result.st_uid = result.st_gid = 0
+            return result
+        self.owner = patch.object(Path, 'lstat', owned)
+        self.owner.start()
+
+    def tearDown(self):
+        self.owner.stop()
+        self.temporary.cleanup()
+
+    def test_archive_workspace_is_exclusive_canonical_and_in_archive_pool(self):
+        work = self.scope['archive_workspace'](self.release, self.attempt)
+        self.assertEqual(work, self.workspace)
+        self.assertEqual(work.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(work.stat().st_dev, self.archives.stat().st_dev)
+        with self.assertRaises(FileExistsError):
+            self.scope['archive_workspace'](self.release, self.attempt)
+
+    def test_occupied_file_and_dangling_symlink_refuse_without_replacing_evidence(self):
+        for kind in ('file', 'symlink'):
+            with self.subTest(kind=kind):
+                if kind == 'file': self.workspace.write_bytes(b'prior evidence')
+                else: self.workspace.symlink_to(self.root / 'absent')
+                before = self.workspace.lstat()
+                with self.assertRaises(FileExistsError):
+                    self.scope['archive_workspace'](self.release, self.attempt)
+                self.assertEqual(self.workspace.lstat().st_ino, before.st_ino)
+                if kind == 'file': self.assertEqual(self.workspace.read_bytes(), b'prior evidence')
+                else: self.assertFalse((self.root / 'absent').exists())
+                self.workspace.unlink()
+
+    def test_unsafe_archive_parent_and_unbound_attempt_refuse_before_creation(self):
+        alias = self.root / 'alias'; alias.symlink_to(self.archives, target_is_directory=True)
+        self.scope['ARCHIVES'] = alias
+        with self.assertRaises(AssertionError): self.scope['archive_workspace'](self.release, self.attempt)
+        self.assertFalse(self.workspace.exists())
+        self.scope['ARCHIVES'] = self.archives
+        for release, attempt in ((self.release, '../old'), ('../old', self.attempt), (self.release, '')):
+            with self.subTest(release=release, attempt=attempt), self.assertRaises(AssertionError):
+                self.scope['archive_workspace'](release, attempt)
+        self.assertEqual(list(self.archives.iterdir()), [])
+
+    def test_real_archive_branch_allocates_and_renames_only_within_archive_pool(self):
+        path = PATH.with_name('remote_transport.py')
+        nodes = ast.parse(path.read_bytes()).body
+        branch = next(node for node in nodes if isinstance(node, ast.If)
+            and ast.unparse(node.test) == "phase != 'source'")
+        start = next(i for i, node in enumerate(branch.body) if isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Call) and ast.unparse(node.value).startswith("capacity('check', ARCHIVES,"))
+        finish = next(i for i in range(start, len(branch.body)) if isinstance(branch.body[i], ast.Expr)
+            and ast.unparse(branch.body[i].value) == 'rename_new(temporary, archive)')
+        code = compile(ast.Module(body=branch.body[start:finish + 1], type_ignores=[]), str(path), 'exec')
+        archive = self.archives / ('proofofwork-ui-release-' + self.release + '.tgz')
+        admissions = []
+        def run(argv, name, **kwargs):
+            self.assertEqual(name, 'archive.log')
+            temporary = Path(argv[argv.index('--file') + 1])
+            self.assertEqual(temporary.parent, self.workspace)
+            self.assertFalse(os.path.lexists(temporary))
+            self.assertEqual(admissions, [('check', self.archives, 4096 + 65536, 'archive')])
+            with temporary.open('xb') as output: output.write(b'fixture managed archive')
+        self.scope.update(release=self.release, p={'publicationAttempt': self.attempt},
+            evidence_root=self.evidence, archive=archive, upper=4096, stage=self.root / 'stage',
+            SURFACES=['computer'], run=run,
+            capacity=lambda *args, **kwargs: admissions.append(args))
+        exec(code, self.scope)
+        self.assertEqual(archive.read_bytes(), b'fixture managed archive')
+        self.assertEqual(Path(str(archive) + '.sha256').read_text(),
+            self.scope['hashlib'].sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n')
+        self.assertEqual(list(self.workspace.iterdir()), [])
+        self.assertEqual([path.name for path in self.evidence.iterdir()], ['archive-base'])
 
 
 if __name__ == '__main__':

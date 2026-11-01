@@ -72,7 +72,7 @@ def reviewed_merges(path, ns):
     if path is None: return {}
     raw = ns.safe_read(path, 65536)
     value = json.loads(raw)
-    if set(value) != {'format', 'sources'} or value['format'] != 'proof-of-work-api-response-latency-reviewed-merges-v1':
+    if set(value) != {'format', 'sources'} or value['format'] != 'proof-of-work-api-response-latency-reviewed-merges-v2':
         raise ValueError('Wrong reviewed merge manifest')
     rows = value['sources']
     if not isinstance(rows, list) or len(rows) > len(ns.ALLOWED - ns.NEW):
@@ -123,7 +123,7 @@ def plan(args):
     if not re.fullmatch('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', release) or release.split('-')[0] != args.commit[:12]:
         raise ValueError('Release must bind the exact source commit')
     captured = args.capture.read_bytes(); snapshot = json.loads(captured)
-    if snapshot.get('format') != 'proof-of-work-api-response-latency-runtime-capture-v1' or snapshot['root'] != str(ns.ROOT):
+    if snapshot.get('format') != 'proof-of-work-api-response-latency-runtime-capture-v2' or snapshot['root'] != str(ns.ROOT):
         raise ValueError('Wrong runtime capture')
     controller_raw = (ROOT/'scoped-node.py').read_bytes(); holder = ROOT.parent/'search/hold-node-timer.py'
     if snapshot['controllerSha256'] != sha(controller_raw): raise ValueError('Capture uses another controller')
@@ -162,7 +162,7 @@ def plan(args):
     if set(reviewed) - candidates.keys(): raise ValueError('Unused reviewed merge input')
     for row in rows:
         if row['before'] is not None: deps[row['path']] = row['before']
-    template = {'format':'proof-of-work-api-response-latency-scoped-runtime-v1','sourceCommit':args.commit,
+    template = {'format':'proof-of-work-api-response-latency-scoped-runtime-v2','sourceCommit':args.commit,
         'baseSourceCommit':args.base_commit,
         'releaseId':release,'baselineHead':snapshot['baselineHead'],'services':list(ns.UNITS),
         'sources':rows,'dependencies':deps,'nodeSha256':snapshot['nodeSha256'],'gateway':snapshot['gateway'],
@@ -171,7 +171,7 @@ def plan(args):
         'protectedServices':snapshot['protectedServices'],
         'searchHold':{'markerSha256':'0'*64,'bindings':{'releaseId':release,'attempt':'initial','files':snapshot['searchFiles']}}}
     ns.validate_manifest(template); ns.fence(active_root, template, candidates)
-    preview = {'format':'proof-of-work-api-response-latency-rollout-plan-v1','releaseId':release,'sourceCommit':args.commit,
+    preview = {'format':'proof-of-work-api-response-latency-rollout-plan-v2','releaseId':release,'sourceCommit':args.commit,
         'baseCommit':args.base_commit,'captureSha256':sha(captured),'baselineHead':snapshot['baselineHead'],
         'controllerSha256':sha(controller_raw),'controllerBase64':base64.b64encode(controller_raw).decode(),
         'searchHoldControllerSha256':sha(holder.read_bytes()),'searchHoldControllerBase64':base64.b64encode(holder.read_bytes()).decode(),
@@ -189,20 +189,20 @@ def overlay(args):
     raw = args.plan.read_bytes(); preview = json.loads(raw)
     script = (ROOT/'rollout-node.py').read_bytes()
     key = 'rolloutSupervisorSha256'
-    if preview.get('format') != 'proof-of-work-api-response-latency-rollout-plan-v1' or sha(script) != preview[key]:
+    if preview.get('format') != 'proof-of-work-api-response-latency-rollout-plan-v2' or sha(script) != preview[key]:
         raise ValueError('Rollout supervisor differs from the reviewed plan')
     remote_command = shlex.join(['sudo','-n','/usr/bin/python3','-I','-B','-c',script.decode()])
     try:
         result = subprocess.run([*NODE_SSH,remote_command],input=raw,capture_output=True,timeout=1200)
     except subprocess.TimeoutExpired as error:
-        receipt = {'format':'proof-of-work-api-response-latency-local-dispatch-receipt-v1','planSha256':sha(raw),
+        receipt = {'format':'proof-of-work-api-response-latency-local-dispatch-receipt-v2','planSha256':sha(raw),
             'releaseId':preview['releaseId'],'phase':args.phase,'exitCode':None,
             'dispatchStatus':'uncertain-timeout','timeoutSeconds':1200,
             'stdout':(error.stdout or b'').decode(errors='replace')[-1024*1024:],
             'stderr':(error.stderr or b'').decode(errors='replace')[-65536:]}
         save(args.receipt, encoded(receipt))
         raise ValueError('Node rollout timed out; state is uncertain. Inspect preserved receipt and remote controller/hold evidence before recovery: '+str(args.receipt)) from None
-    receipt = {'format':'proof-of-work-api-response-latency-local-dispatch-receipt-v1','planSha256':sha(raw),
+    receipt = {'format':'proof-of-work-api-response-latency-local-dispatch-receipt-v2','planSha256':sha(raw),
         'releaseId':preview['releaseId'],'phase':args.phase,'exitCode':result.returncode,
         'dispatchStatus':'completed' if result.returncode == 0 else 'refused',
         'stdout':result.stdout.decode(errors='replace')[-1024*1024:],

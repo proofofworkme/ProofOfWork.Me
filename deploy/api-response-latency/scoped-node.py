@@ -17,9 +17,10 @@ PROTECTED = UNITS
 GATEWAY = ('proofofwork-api-wg.socket', 'proofofwork-api-wg.service')
 AUTHORITY = ('bitcoind.service', 'electrs.service', 'postgresql@16-main.service')
 SEARCH = ('proofofwork-search-index.service', 'proofofwork-search-index.timer')
-ALLOWED = frozenset({'server/proof-api.mjs', 'server/db/proof-index-reader.mjs'})
+ALLOWED = frozenset({'server/proof-api.mjs', 'server/db/proof-index-reader.mjs',
+    'server/db/work-batch-reader.mjs', 'server/db/work-mail-batch-reader.mjs'})
 NEW = frozenset()
-BASE_SOURCE_COMMIT = '4386187ecd5b83173dc4e6ebb8c780a83b9decb0'
+BASE_SOURCE_COMMIT = '09fedcd08eeeb78d13a64a37522b7df517ba1bf4'
 ENTRYPOINTS = ('server/proof-api.mjs', 'scripts/backfill-proof-indexer.mjs',
     'scripts/backfill-proof-search.mjs')
 IMPORT = re.compile(r'''(?:\b(?:import|export)\s+[^;]*?\bfrom\s*|\bimport\s*\(?\s*)['"](\.[^'"]+)['"]''')
@@ -86,7 +87,7 @@ def dependency_closure(root, candidates=None):
     return seen
 
 def validate_manifest(m):
-    require(m.get('format') == 'proof-of-work-api-response-latency-scoped-runtime-v1', 'Wrong manifest')
+    require(m.get('format') == 'proof-of-work-api-response-latency-scoped-runtime-v2', 'Wrong manifest')
     require(m.get('baseSourceCommit') == BASE_SOURCE_COMMIT, 'Wrong approved base source commit')
     require(m.get('services') == list(UNITS) and re.fullmatch(
         '[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', m.get('releaseId', '')), 'Wrong release/services')

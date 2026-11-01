@@ -8038,6 +8038,12 @@ archive/sidecars, receipts, and movement of the old live root into the backup
 pool. It measures existing allocations by inode, gives no credit for promised
 cleanup or future hardlinks, and repeats admission under the deployment lock
 before the first payload byte. Existing phase-specific checks remain mandatory.
+New managed archives and their sidecars are created in an exclusive, release-bound
+temporary directory inside the releases archive pool. Their allocation is charged
+to that pool from creation through final no-replace publication, rather than also
+charging a temporary copy to retained transport evidence. The same-filesystem,
+namespace, hash, root-reserve and backup-budget checks remain mandatory. Historical
+transport/source evidence stays in place, and no storage ceiling is raised.
 Scratch admission uses the maximum of the receive phase and the later candidate
 plus verification phase, with the same receipt reserve. The incoming payload
 is moved into retained transport evidence before staging allocates a candidate;
@@ -8693,6 +8699,20 @@ validation and canonical position/fee evidence. Event-history checkpoint reads
 retain all SQL summary eligibility and transition-witness guards, but return
 only the checkpoint metadata needed by their consumers instead of the complete
 multi-megabyte summary bundle on every page.
+WORK and Mail batch readers qualify shared carrier/parent evidence once per
+returned family within a read. They still validate every sibling's exact
+descriptor, relational position, amount and zero-fee/economic flags, and compare
+each requested row with the qualified stored evidence. Request-local reuse
+across query chunks does not confer authority on a later request or permit a
+missing, altered or ambiguous off-page sibling. Standalone child validators
+always reconstruct and validate their parent evidence.
+The response-latency controller's version-2 contract binds the API, canonical
+reader and both batch readers to the released `09fedcd08eee` source base. It
+preserves accepted runtime overlays with exact before/after hashes and retains
+the existing service, dependency, gateway, Search and rollback fences. Version-1
+two-file receipts remain supported by the runtime archive verifier; they cannot
+authorize the version-2 four-file scope. No protocol, database or configuration
+migration is part of this read-path repair.
 `npm run check:public-read-paths` exercises those public reads against one
 stable Core/index/summary checkpoint, including a known twelve-recipient batch.
 It records endpoint timing on stdout and fails if Core advances during the
