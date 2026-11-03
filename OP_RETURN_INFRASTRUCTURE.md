@@ -111,6 +111,50 @@ guarded tooling installer verifies both the current and fallback archive on the
 UI VPS before promoting the two helpers. None of these checks permits removal
 of active source, archived upload evidence or a previous release hold.
 
+The proposed V5 publisher counts every prior served path and every distinct
+referrer/target edge. On November 3 the 22-root production release
+`54088ca155bc` had 1,650 paths, 6,182 edges, 1,417,130 raw reference
+matches and 93,483,071 dependency bytes. Only that 22-root release format
+uses the new finite limits of 1,664 paths and 6,272 edges. Planning, copying
+and pre-exchange validation enforce the same bounds. Earlier release formats
+retain the 1,600-path and 5,632-edge limits; the raw-match, byte and storage
+limits apply independently. Run `python3 -B scripts/check-ui-compatibility-boundaries.py`
+in an owner-controlled checkout to check acceptance at the limits and refusal
+one path or edge above them.
+
+For a new V5 build, `release.py prepare-closed-input BUILD_RECEIPT REQUEST --private-staging`
+prepares the opt-in request. Preflight with `--closed-request REQUEST` and plan
+with `--input-storage deploy-scratch-v1`. The receiver verifies the complete
+surface archive before sharing identical bytes inside its new input directory.
+It records original timestamps and verifies the resulting hardlink groups.
+The stager admits the full copy before it starts. The source arrives only after
+the completed candidate's measured allocation, archive and input receipts pass.
+The publisher checks them again before exchanging roots. The native exchange helper rechecks the four
+original fallback objects under the same deployment lock immediately before
+the root exchange. Each phase pays its
+own byte and inode charges. Existing releases, rollback material and source
+directories supply no space credit.
+
+The read-only rehearsal for the `e6a53e4d` build against `54088ca1` left
+186,252,318 bytes above the root reserve and 352,776,192 bytes below the
+scratch ceiling at the tightest respective phases. The backup and transport
+pools retained 1,084,685,342 and 176,345,088 bytes of headroom. These are
+observations of that build and filesystem, not reservations. A future release
+needs a fresh build receipt, capacity measurement and completed retention proof.
+
+The November 3 fallback for `c3969c39c2b2-20261101T051206Z` remains in its
+original rollback root `proofofwork-www-pre-54088ca155bc-20261103T032112Z`.
+Its managed archive, checksum and provenance sidecar stay at their original
+paths. Two immutable admissions bind this four-object hold. The lifecycle
+verifies the full rollback tree, archive inventory, checksum and sidecar
+against those admissions, including file bytes, inode identities, ownership,
+permissions and extended attributes. Preflight and the locked pre-exchange
+check bind the same hold to the release. After publication the native lifecycle
+verifies it again in the admission and completion records. A missing or changed
+object, a different admission, any other eligible object, or a nonempty
+move or deletion plan blocks completion. The hold supplies no capacity credit
+and subsequent releases do not acquire additional holds automatically.
+
 ## AMO background browsing snapshots
 
 `/api/v1/marketplace-browse` is a display-only read model separate from strict
@@ -8198,6 +8242,21 @@ retain strict inode guards. Upgrade-only reconciliation may authenticate this
 same bounded inode drift for an abandoned prepared cycle while fully verifying
 its artifact/source/reference bytes; it neither rewrites nor executes the old
 plan. The fresh cycle receives a new approved plan under the explicit model.
+
+The proposed `pow-ui-held-census-rotating-logs-v2` verifier additionally checks
+the four held Ubuntu boot logs. It verifies the service definition, savelog
+binary and arguments, successful invocation and each log's change time against
+the service run. File type, device, mode, owner, group and single-link identity
+remain strict. A replacement after the service run refuses verification.
+When checking retained artifacts on ext4, the verifier waits for a newly
+observed change-time interval to close before hashing a file, then verifies
+the directory entries again. This detects same-size writes even when the old
+modification time is restored. Historical receipts keep their original format.
+For the November 3 transition, the installer's `plan-upgrade-complete
+--reconcile-boot-logs` path binds the exact prior state, completion receipts,
+boot ID and the two changed inodes. Original evidence remains in place. Using
+the public status path after a switch still requires a sealed verification
+receipt. Preparation and testing of this verifier do not install it.
 
 Deduplicated ordinary roots may share inodes with the protected pair. Their
 export requires a complete authenticated alias inventory across the verified

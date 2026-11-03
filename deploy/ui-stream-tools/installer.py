@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import types
 import sys
 
 PREFIX = "proofofwork-ui-release-"
@@ -115,7 +116,8 @@ def read_record(path):
 
 def guards():
     for path, expected in GUARDS.items():
-        require(sha(safe_read(path)[0]) == expected, "Preserved guard changed " + str(path))
+        limit = 64 * 1024**2 if path == Path("/var/lib/proofofwork-ui-retention/state.json") else 2 * 1024**2
+        require(sha(safe_read(path, limit)[0]) == expected, "Preserved guard changed " + str(path))
     manifests = {}
     for root, rid, expected in PAIR:
         directory(root)
@@ -127,9 +129,69 @@ def guards():
     return manifests
 
 
+PRIVATE_SCHEMA = "pow-ui-private-stage-tools-v1"
+PRIVATE_AFTER = {
+    PREFIX + "stage": "0874f8689fbcd062c44a54745a049cfc44f71a54f6404fdcc65f10e80f1994ee",
+    PREFIX + "publish": "da943404eaf57911e15f9c7595e1c9d0474d04edf6e6434371827557fb89a0bd",
+}
+PHASE_SHA = "69544e6ac32f658d342759928794e4857c2826a7b850dabdaf38b8d0ad986b85"
+
+def private_stage_profile(frame):
+    """Select the November 3 pair once, in the isolated process for this command."""
+    global NAMES, BEFORE, BASE_COMMIT, STORE, PAIR, GUARDS
+    require(set(frame["retentionPins"]) == {"config", "state"}
+            and all(SHA.fullmatch(value) for value in frame["retentionPins"].values()),
+            "Explicit lifecycle config and state pins are required")
+    NAMES = tuple(PRIVATE_AFTER)
+    BEFORE = {NAMES[0]: "433ebd3f166f5e0f4ecab3f5ce8bff29a66db376fd5ded721421b48ef948eabf",
+              NAMES[1]: "5170812052f7ac61869a56e4e03cad7a4049604ab343e61c72961f9b6dde3818"}
+    BASE_COMMIT = "6b5c5d62e640f06a289b387851bae9f0c44de6ae"
+    STORE = Path("/var/lib/proofofwork-ui-private-stage-tools")
+    current = "54088ca155bc-20261103T032112Z"
+    prior = "c3969c39c2b2-20261101T051206Z"
+    PAIR = ((Path("/var/www"), current, "68c547a8715b0bee00232549ec15a2461a60757a40b998b7d6a98465a14ffd93"),
+            (Path("/var/backups/proofofwork-ui/rollback-roots") / ("proofofwork-www-pre-" + current),
+             prior, "2f2cafae1ca7a8ffa5458e7c87901eab4ce73b6fc29ea0f8879dc3fb32a16867"))
+    GUARDS = {**GUARDS, BIN / (PREFIX + "provenance"):
+              "82a8aa6c05b2efe6191db6c46c3eef6956d2f923b5b7154c2e1f2c202044091d",
+              BIN / "proofofwork-ui-retained-root":
+              "6421d58ec8a2259cc21512679db05654b2a138a6e6f56d3656c0287b934ddd9e",
+              Path("/etc/proofofwork-retention/ui-lifecycle.json"): frame["retentionPins"]["config"],
+              Path("/var/lib/proofofwork-ui-retention/state.json"): frame["retentionPins"]["state"]}
+    GUARDS.pop(BIN / (PREFIX + "stage"), None)
+
+def graph_proof(stager_bytes, phase_bytes):
+    """Use the exact candidate's parser and planner against both served trees without altering access times."""
+    require(sha(stager_bytes) == PRIVATE_AFTER[PREFIX + "stage"] and sha(phase_bytes) == PHASE_SHA,
+            "Unapproved closure code")
+    stager = types.ModuleType("candidate_stager")
+    phase = types.ModuleType("candidate_phase")
+    for module, data in ((stager, stager_bytes), (phase, phase_bytes)):
+        exec(compile(data, module.__name__, "exec"), module.__dict__)
+    def open_readonly(path, flags, *args):
+        require(not flags & (os.O_ACCMODE | os.O_CREAT | os.O_TRUNC), "Closure must remain read-only")
+        return os.open(path, flags | os.O_NOATIME, *args)
+    readonly = types.SimpleNamespace(**{**vars(os), "open": open_readonly})
+    stager.os = phase.os = readonly
+    result = {}
+    for root, rid, _ in PAIR:
+        surfaces = stager.live_surface_names(root)
+        require(surfaces == stager.PERMISSION_SURFACES, "Wrong prior surface family")
+        _, _, counts, digest = phase.prior_compatibility(root, surfaces, stager, {s: [] for s in surfaces})
+        require(SHA.fullmatch(digest) and counts["dependencies"] > 0, "Empty prior graph")
+        result[rid] = {"counts": counts, "referencesSha256": digest}
+    require(result[PAIR[0][1]]["counts"] == {"dependencies": 1650, "reference_edges": 6182,
+            "reference_candidates": 1417130, "total_bytes": 93483071}, "Changed live prior-asset closure")
+    return result
+
 def checked_frame(frame):
-    require(set(frame) == {"schema", "commit", "tree", "files"} and frame["schema"] == "pow-ui-stream-tools-v1",
-            "Wrong source frame")
+    private = frame["schema"] == PRIVATE_SCHEMA
+    keys = {"schema", "commit", "tree", "files"}
+    require(set(frame) == (keys | {"retentionPins", "phaseSource"} if private else keys)
+            and (private or frame["schema"] == "pow-ui-stream-tools-v1"), "Wrong source frame")
+    if private:
+        private_stage_profile(frame)
+        require(sha(base64.b64decode(frame["phaseSource"], validate=True)) == PHASE_SHA, "Unapproved phase source")
     for key in ("commit", "tree"):
         require(isinstance(frame[key], str) and re.fullmatch(r"[0-9a-f]{40}", frame[key]), "Invalid Git pin")
     require(set(frame["files"]) == set(NAMES), "Expanded tool scope")
@@ -140,8 +202,13 @@ def checked_frame(frame):
         raw[name] = base64.b64decode(row["base64"], validate=True)
         require(0 < len(raw[name]) <= 512*1024 and sha(raw[name]) == row["sha256"] != BEFORE[name],
                 "Candidate helper mismatch")
-        require(b"pow-ui-stream-archive-verification-v1" in raw[name], "Missing streaming verifier capability")
-        subprocess.run(["/usr/bin/bash", "-n"], input=raw[name], env=ENV, check=True, timeout=10)
+        if private:
+            require(sha(raw[name]) == PRIVATE_AFTER[name], "Candidate differs from reviewed private-stage source")
+        if private and name == PREFIX + "stage":
+            compile(raw[name], name, "exec")
+        else:
+            require(b"pow-ui-stream-archive-verification-v1" in raw[name], "Missing streaming verifier capability")
+            subprocess.run(["/usr/bin/bash", "-n"], input=raw[name], env=ENV, check=True, timeout=10)
     return raw
 
 
@@ -202,6 +269,12 @@ def check_proof(proofs, command):
 def run_locked(phase, frame, lock_fd):
     raw = checked_frame(frame)
     manifest_fence = guards()
+    private = frame["schema"] == PRIVATE_SCHEMA
+    if private:
+        manifest_fence["lifecyclePins"] = frame["retentionPins"]
+        manifest_fence["graphProof"] = graph_proof(raw[PREFIX + "stage"], base64.b64decode(frame["phaseSource"], validate=True))
+    def unchanged():
+        return guards() == {k: v for k, v in manifest_fence.items() if k not in ("lifecyclePins", "graphProof")}
     directory(BIN); directory(ARCHIVES)
     if phase == "prepare":
         root_dir(STORE)
@@ -237,9 +310,9 @@ def run_locked(phase, frame, lock_fd):
     prepared, completed, rolled_back = [journal / f for f in ("qualified.json", "installed.json", "rolled-back.json")]
     if phase == "prepare" and not prepared.exists():
         require(all(v == "before" for v in state.values()), "Partial promotion before qualification")
-        proof = verify_pair(journal / NAMES[0], lock_fd, payload=True)
+        proof = verify_pair(BIN / (PREFIX + "provenance") if private else journal / NAMES[0], lock_fd, payload=True)
         check_proof(proof, ["verify", "--archive-payload"])
-        require(guards() == manifest_fence and positions(journal, intent) == state, "Qualification context changed")
+        require(unchanged() and positions(journal, intent) == state, "Qualification context changed")
         record(prepared, {"intentSha256": descriptor(intent_path)["sha256"], "archives": proof})
     elif phase in ("apply", "rollback"):
         qualification = read_record(prepared)
@@ -250,9 +323,9 @@ def run_locked(phase, frame, lock_fd):
             try:
                 transition(journal, intent, "after")
                 if not completed.exists():
-                    proof = verify_pair(BIN / NAMES[0], lock_fd)
+                    proof = verify_pair(BIN / (PREFIX + "provenance") if private else BIN / NAMES[0], lock_fd)
                     check_proof(proof, ["verify-rollback"])
-                    require(guards() == manifest_fence, "Preserved context changed during installation")
+                    require(unchanged(), "Preserved context changed during installation")
                     record(completed, {"intentSha256": descriptor(intent_path)["sha256"], "archives": proof,
                                        "qualificationSha256": descriptor(prepared)["sha256"]})
                 else:
@@ -296,19 +369,38 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("prepare", "apply", "rollback", "status"))
     parser.add_argument("commit")
+    parser.add_argument("--private-stage", action="store_true")
+    parser.add_argument("--state-sha256")
+    parser.add_argument("--config-sha256")
     args = parser.parse_args()
     require(re.fullmatch(r"[0-9a-f]{40}", args.commit), "Full Git commit required")
     repo = Path(__file__).resolve().parents[2]
     git = ["/usr/bin/git", "-C", str(repo)]
+    options = {}
+    if args.private_stage:
+        require(os.geteuid() == 0 and sys.flags.isolated, "Private staging runs only from the release checkout on the UI host")
+        require(subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip() == args.commit,
+                "Private-stage checkout must be at the exact approved release")
+        require(args.state_sha256 and args.config_sha256, "Both lifecycle hashes are required")
+        options["retentionPins"] = {"state": args.state_sha256, "config": args.config_sha256}
+        private_stage_profile(options)
+        phase = subprocess.check_output([*git, "show", args.commit + ":deploy/publish/phase_capacity.py"])
+        options["phaseSource"] = base64.b64encode(phase).decode()
+    else:
+        require(not args.state_sha256 and not args.config_sha256, "Unexpected lifecycle pins")
     subprocess.run([*git, "merge-base", "--is-ancestor", BASE_COMMIT, args.commit], check=True)
     self_raw = subprocess.check_output([*git, "show", args.commit + ":deploy/ui-stream-tools/installer.py"])
     require(self_raw == Path(__file__).read_bytes(), "Installer differs from reviewed commit")
-    frame = {"schema": "pow-ui-stream-tools-v1", "commit": args.commit,
+    frame = {**options, "schema": PRIVATE_SCHEMA if args.private_stage else "pow-ui-stream-tools-v1", "commit": args.commit,
              "tree": subprocess.check_output([*git, "rev-parse", args.commit + "^{tree}"], text=True).strip(), "files": {}}
     for n in NAMES:
-        data = subprocess.check_output([*git, "show", args.commit + ":deploy/" + n + ".sh"])
+        suffix = ".py" if n == PREFIX + "stage" else ".sh"
+        data = subprocess.check_output([*git, "show", args.commit + ":deploy/" + n + suffix])
         frame["files"][n] = {"base64": base64.b64encode(data).decode(), "sha256": sha(data)}
     checked_frame(frame)
+    if args.private_stage:
+        print(json.dumps(remote(args.action, frame)), flush=True)
+        return
     # The remote command is fixed. The exact committed installer and two source
     # helpers travel on stdin, avoiding argv size limits and shell evaluation.
     boot = "import sys,json,base64,hashlib;s=json.load(sys.stdin);b=base64.b64decode(s['code'],validate=True);assert hashlib.sha256(b).hexdigest()=='" + sha(self_raw) + "';n={'__name__':'_reviewed'};exec(compile(b,'installer.py','exec'),n);print(json.dumps(n['remote'](s['phase'],s['frame'])),flush=True)"

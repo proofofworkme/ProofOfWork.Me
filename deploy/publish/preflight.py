@@ -61,6 +61,7 @@ assert s.st_nlink == 1 and not s.st_mode & 0o7022
 fd = os.open(lock, os.O_RDONLY | os.O_NOFOLLOW)
 assert os.fstat(fd) == s and lock.lstat() == s
 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+preservation = installed_admission(*PREFLIGHT_GATE, fd)
 env = {'PATH':'/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL':'C',
        'GIT_OPTIONAL_LOCKS':'0', 'POW_UI_DEPLOY_LOCK_FD':str(fd)}
 helpers = {}; retained_source = None; capacity_source = None
@@ -103,7 +104,7 @@ for name in managed_surfaces:
             old_managed['logicalBytes'] += info.st_size; old_managed['regularFiles'] += 1
 storage = os.statvfs('/var/tmp/proofofwork-deploy')
 result = {'observedAt':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
-          'helpers':helpers, 'live':live, 'retained':retained, 'oldManaged':old_managed,
+          **preservation, 'helpers':helpers, 'live':live, 'retained':retained, 'oldManaged':old_managed,
           'activeManifest':active_manifest, 'retentionDeferred':True,
           'availableBytes':storage.f_bavail*storage.f_frsize, 'availableInodes':storage.f_favail,
           'checks':[]}
@@ -115,7 +116,7 @@ exec(compile(SEQUENCE_SOURCE, 'sequence_capacity.py', 'exec'), sequence_namespac
 result['wholeSequenceCensus'] = sequence_namespace['capture'](types.SimpleNamespace(**capacity_namespace))
 if globals().get('CLOSED_REQUEST') is not None:
     assert active_manifest['format'] == 'proofofwork-ui-release-v5'
-    assert isinstance(PHASE_SOURCE, bytes) and 0 < len(PHASE_SOURCE) <= 32768
+    assert isinstance(PHASE_SOURCE, bytes) and 0 < len(PHASE_SOURCE) <= 65536
     assert hashlib.sha256(PHASE_SOURCE).hexdigest() == CLOSED_REQUEST['phaseSourceSha256']
     phase = {'__name__': '_closed_release_preflight'}
     exec(compile(PHASE_SOURCE, 'phase_capacity.py', 'exec'), phase)

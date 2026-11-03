@@ -208,7 +208,7 @@ class PagesRelease(unittest.TestCase):
         rejected = self.run_command([self.provenance, 'record', '--release-id', self.baseline_id,
                                      '--commit', self.commit, '--source-checkout', str(self.source),
                                      '--archive', str(archive)], success=False)
-        self.assertIn('unexpected Pages payload without V4 evidence', rejected.stderr)
+        self.assertIn('Archive contains an unexpected surface for this release.', rejected.stderr)
         self.assertFalse((self.www / '.proofofwork-ui-release').exists())
         self.assertFalse(Path(str(archive) + '.provenance').exists())
 

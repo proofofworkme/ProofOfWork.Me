@@ -26,6 +26,18 @@ VPS_POLICY = {'model': 'vps-current-and-one-prior-v1', 'localBackups': False,
 MAX_FRAME = 64 * 1024**2
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 IDENTIFIER = re.compile(r'[a-z0-9][A-Za-z0-9-]{0,63}\Z')
+# The complete November 3 cycle predates the versioned boot-log model. Only
+# this immutable state and its independently sealed terminal records qualify.
+BOOT_ROTATION_COMPLETION = {
+    'cycle': 'release-54088ca155bc-20261103T032112Z',
+    'config': '71f99aa6f48ac6d0f14f4d1649b5985847fbe7255b3ae02845c6c6742e92d49c',
+    'state': '7cf680f91d17a0a7bbcfabf2f8fa0aa3f67f78823d1c551afcc7606752234891',
+    'context': '07d5220494dc3eda11870f021a1ac98d61d254a158f0662ab62eb64a16c908db',
+    'intent': '8ef58f0331d2d8ec22ecda5fe65a1da0143ad46bbd7196debd69081f9e170cb2',
+    'receipt': '1d03ef52fea3500a1a384ced66d65c3210e9987a74d127b25f5cd29d0ee2c905',
+    'boot': '59af04dd-cdb3-47ed-9a82-988bd86ffc48',
+    'rotations': {'dmesg.1.gz': [130487, 141743], 'dmesg.2.gz': [130158, 141740]},
+}
 PACKAGE_FILES = (
     'audits/2026-10-16-ui-retention-repair-approval.json',
     'audits/2026-10-16-ui-retention-repair-proposal.json',
@@ -43,6 +55,10 @@ def encoded(value):
 
 def sha(raw):
     return hashlib.sha256(raw).hexdigest()
+
+
+def system_boot_id():
+    return Path('/proc/sys/kernel/random/boot_id').read_text().strip()
 
 
 def unique(pairs):
@@ -374,32 +390,134 @@ class Runtime:
         require(pending['context'] == context, 'Protected pair or exact guards changed during cycle')
         return pending
 
+    def completed_boot_rotation(self, state, state_sha, current):
+        """Read-only bridge from one authenticated v1 completion to v2."""
+        pin = BOOT_ROTATION_COMPLETION
+        recorded = state.get('completedContext')
+        if (not recorded or sha(encoded(recorded)) != pin['context']
+                or state.get('lastCompleted', {}).get('cycleId') != pin['cycle']
+                or state['lastCompleted'].get('retentionPolicy') != VPS_POLICY
+                or self.config.get('retentionPolicy') != VPS_POLICY
+                or recorded['pair'] != current['pair'] or recorded['manifests'] != current['manifests']):
+            return None
+        prior = state_sha == pin['state'] and self.config_sha == pin['config']
+        if not prior:
+            history = self.completion_transitions(state)
+            if not history:
+                return None
+            first = history[0]['completed']
+            seal, _ = read_json(first['path'], first['sha256'])
+            origin = seal['completionVerification'].get('bootLogRotation', {})
+            require(seal['priorState']['sha256'] == pin['state'] and seal['priorConfig']['sha256'] == pin['config']
+                    and origin.get('priorStateSha256') == pin['state'] and origin.get('priorContextSha256') == pin['context']
+                    and origin.get('bootId') == pin['boot'] and origin.get('observedInodes') == pin['rotations'],
+                    'Unrecognized initial boot-log migration in completed upgrade chain')
+        # Use the verified original operation's actual namespace, including its
+        # operator-chosen identifier, and authenticate both historical records.
+        intent_path = Path(state['lastIntent']['path'])
+        require(intent_path.parent == self.layout.evidence and intent_path.name.endswith('-intent.json')
+                and state['lastIntent']['sha256'] == pin['intent'], 'Boot-log completion intent differs')
+        intent, _ = read_json(intent_path, pin['intent'])
+        receipt, _ = read_json(intent_path.with_name(intent_path.name.removesuffix('-intent.json')+'-completed.json'),
+                               pin['receipt'])
+        require(intent['operation'] == 'complete-vps-cycle' and intent['configSha256'] == pin['config']
+                and intent['context'] == recorded and receipt['intent'] == state['lastIntent']
+                and receipt['stateSha256'] == pin['state'] and receipt['cycleId'] == pin['cycle']
+                and receipt['retentionComplete'] is True and receipt['index'] == state['index'],
+                'Boot-log terminal proof differs')
+        # Compare with the historical model before independently verifying v2.
+        # No property besides the kernel-log inode is projected out.
+        legacy, _ = self.S.safeguards(self.layout, model=self.S.LEGACY_ROTATING_LOG_GUARD_MODEL)
+        old = recorded['guards']
+        allowed = self.S.boot_log_paths(self.layout)
+        replacements = {row['path']: row for row in legacy['heldCensus'] if row['path'] in allowed}
+        changes = {}
+        projected = []
+        for row in old['heldCensus']:
+            if row['path'] in replacements:
+                observed = replacements[row['path']]['inode']
+                if observed != row['inode']:
+                    changes[Path(row['path']).name] = [row['inode'], observed]
+                row = dict(row, inode=observed)
+            projected.append(row)
+        require(dict(old, heldCensus=projected) == legacy and set(replacements) == allowed
+                and dict(recorded, guards=current['guards']) == current
+                and self.S.guard_model(current['guards']) == self.S.ROTATING_LOG_GUARD_MODEL,
+                'Boot-log reconciliation exceeds the verified rotation')
+        self.S.compare_guards(self.layout, current['guards'], [])
+        boot = system_boot_id()
+        if prior:
+            require(boot == pin['boot'] and changes == pin['rotations'], 'Unreviewed boot-log inode transition')
+        return {'schema': 'pow-ui-completed-boot-log-rotation-v1', 'priorStateSha256': pin['state'],
+                'priorContextSha256': pin['context'], 'currentContextSha256': sha(encoded(current)),
+                'bootId': boot, 'observedInodes': changes, 'intentSha256': pin['intent'], 'receiptSha256': pin['receipt']}
+
     def status(self, frame):
         state, digest = self.state()
         _, context = self.current()
         unfinished = self.unfinished_intents()
         completion_verification = None
-        complete = bool(state and state.get('status') == 'complete' and not state.get('pending')
-                        and not state.get('activePhase') and not unfinished and state.get('completedContext') == context)
+        verified_fallback = None
+        no_fallback_index = None
+        settled = bool(state and state.get('status') == 'complete' and not state.get('pending')
+                       and not state.get('activePhase') and not unfinished)
+        rotation = (self.completed_boot_rotation(state, digest, context) if settled
+                    and state.get('completedContext') != context else None)
+        complete = settled and (state.get('completedContext') == context or rotation is not None)
         if state and state.get('index'):
             index = state['index']
-            self.P.load_index(index['path'], index['sha256'], self.layout, APPROVAL_SHA)
+            admitted = self.P.load_index(index['path'], index['sha256'], self.layout, APPROVAL_SHA)
             if complete:
-                require(not self.P.policy_scope(index, self.layout, APPROVAL_SHA)['eligible'],
+                scope = self.P.policy_scope(index, self.layout, APPROVAL_SHA)
+                require(not scope['eligible'],
                         'Completed state has eligible ordinary assets')
+                verified_fallback = scope.get('preservedFallback')
+                if verified_fallback is None:
+                    require(all(row['retainedPair']['current'] != self.S.PRESERVED_FALLBACK_INTRODUCER
+                                for row in admitted['admissions']), 'Verified index contains the fallback introducer')
+                    cutoff = self.S.PRESERVED_FALLBACK_INTRODUCER[13:]
+                    if all(release[13:] < cutoff for row in admitted['admissions']
+                           for release in row['retainedPair'].values()):
+                        no_fallback_index = index
                 if state['lastCompleted'].get('retentionPolicy') == VPS_POLICY:
                     completion_verification = self.verify_vps_completion(state, context)
                 else:
                     completion_verification = self.verify_custody_completion(state, index, digest)
+        projection = {}
+        if 'prospectiveRelease' in frame:
+            require(complete and self.config.get('retentionPolicy') == VPS_POLICY,
+                    'Private staging requires a verified completed VPS cycle')
+            release = frame['prospectiveRelease']
+            require(isinstance(release,str) and self.S.RELEASE_ID.fullmatch(release)
+                    and release not in context['pair'].values(), 'Invalid proposed release identity')
+            admitted = self.P.load_index(state['index']['path'], state['index']['sha256'], self.layout, APPROVAL_SHA)
+            current = context['pair']['current']
+            archive = self.layout.archives / ('proofofwork-ui-release-'+current+'.tgz')
+            # At exchange only the current root becomes the new rollback. No
+            # previously admitted older object gains protection from a new upload.
+            keep = {str(self.layout.live),str(self.layout.roots/('proofofwork-www-pre-'+release)),
+                    *(str(archive)+suffix for suffix in ('','.sha256','.provenance'))}
+            if verified_fallback:
+                keep.update(verified_fallback['snapshotSha256'])
+            leaving = sorted((set(admitted['roots']) | set(admitted['assets'])) - set(admitted['retired']) - keep)
+            projection = {'privateStageRetention': {'model':'private-stage-zero-retirement-v1','releaseId':release,
+                'previousPair':context['pair'],'stateSha256':digest,'index':state['index'],'wouldRetire':leaving}}
+            if verified_fallback:
+                projection['privateStageRetention']['preservedFallback'] = verified_fallback
         if frame.get('requireComplete'):
             require(complete, 'Published UI is healthy; retention-incomplete blocks another upload')
         return {'ok': True, 'initialized': state is not None, 'retentionComplete': complete,
+                **({'verifiedPreservedFallback': verified_fallback} if complete and state and state.get('index') else {}),
+                **({'verifiedPreFallbackIndex': no_fallback_index} if no_fallback_index else {}),
                 **({'verifiedAccessTimeReconciliation': completion_verification['verifiedAccessTimeReconciliation']}
                    if self.completion_access_time_reconciliation is not None and completion_verification else {}),
                 **({'verifiedHistoricalBulkPreservation': completion_verification['verifiedHistoricalBulkPreservation']}
                    if completion_verification and completion_verification.get('verifiedHistoricalBulkPreservation') else {}),
                 'publicationHealthy': True, 'configSha256': self.config_sha, 'stateSha256': digest,
-                'pair': context['pair'], 'context': context, 'index': state.get('index') if state else None,
+                'pair': context['pair'], 'context': state['completedContext'] if rotation else context,
+                **({'verifiedBootLogRotation': rotation} if rotation else {}),
+                **projection,
+                'index': state.get('index') if state else None,
                 'pending': state.get('pending') if state else None,
                 'unfinishedIntents': unfinished,
                 'retentionPolicy': self.config.get('retentionPolicy'),
@@ -452,8 +570,15 @@ class Runtime:
                 and self.P.pair_ids(plan['protected']) == context['pair']
                 and all(not os.path.lexists(row['path']) for row in plan['delete']),
                 'VPS ordinary retirement proof differs')
-        require(not self.P.policy_scope(state['index'], self.layout, APPROVAL_SHA)['eligible'],
-                'Completed VPS state has eligible ordinary assets')
+        scope = self.P.policy_scope(state['index'], self.layout, APPROVAL_SHA)
+        if scope.get('preservedFallback') and context['pair']['current'] != self.S.PRESERVED_FALLBACK_INTRODUCER:
+            require(plan.get('privateStageRetention',{}).get('forecast',{}).get('preservedFallback') ==
+                    plan.get('policyScope',{}).get('preservedFallback') == scope['preservedFallback'],
+                    'Completed private publication lost its in-place fallback evidence')
+        if 'privateStageRetention' in plan:
+            self.require_empty_retirement(plan)
+            require(receipt.get('completed') == [], 'Private staging receipt records retirement')
+        require(not scope['eligible'], 'Completed VPS state has eligible ordinary assets')
         return {'retainedVpsPairVerified': True, 'retainedPair': context['pair'],
                 'retentionPolicy': VPS_POLICY, 'historicalBulkPreserved': True,
                 'independentOffHostRecovery': False}
@@ -514,6 +639,41 @@ class Runtime:
                 'HTTPS proof predates publication completion')
         return {'path': str(path), 'sha256': terminal_sha}
 
+    def private_stage_rule(self, publication):
+        receipt_path=Path(publication['path'])
+        terminal,_=read_json(receipt_path,publication['sha256'])
+        # Historical receipt-only publications predate both attempts and private
+        # staging. Modern receipts must resolve their archived native plan even
+        # if an optional marker is absent from a caller's input.
+        intent_path=receipt_path.with_name('intent.json')
+        if 'attempt' not in terminal and 'privateStageRetention' not in terminal and not os.path.lexists(intent_path):
+            return None
+        intent,_=read_json(intent_path)
+        release=terminal['releaseId']; attempt=intent['attempt']
+        require(self.S.RELEASE_ID.fullmatch(release) and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,31}',attempt)
+                and receipt_path==self.layout.scratch/('recovery-publish-'+release+'-'+attempt)/'receipt.json'
+                and terminal.get('attempt',attempt)==attempt and all(intent[k]==terminal[k] for k in ('releaseId','commit','tree'))
+                and SHA.fullmatch(intent.get('planSha256','')),
+                'Private staging publication intent differs')
+        native,_=read_json(self.layout.scratch/('recovery-plan-'+release+'-'+attempt+'.json'),intent['planSha256'])
+        if 'privateStaging' not in native.get('closedArchive',{}):
+            require('inputCompactor' not in native and 'privateStageRetention' not in native
+                    and 'privateStageRetention' not in terminal, 'Private staging witness absent from native plan')
+            return None
+        rule=native.get('privateStageRetention')
+        require(native.get('publicationAttempt')==attempt and terminal.get('planSha256')==intent['planSha256']
+                and isinstance(rule,dict) and rule==terminal.get('privateStageRetention') and rule.get('model')=='private-stage-zero-retirement-v1'
+                and rule.get('wouldRetire')==[] and rule.get('releaseId')==release
+                and native.get('inputCompactor') and native.get('closedArchive',{}).get('privateStaging',{}).get('model')=='private-release-stage-v1'
+                and all(native[k]==terminal[k] for k in ('releaseId','commit','tree')),
+                'Private staging plan does not bind zero retirement')
+        return {'releasePlanSha256':terminal['planSha256'],'publicationReceiptSha256':publication['sha256'],'forecast':rule}
+
+    @staticmethod
+    def require_empty_retirement(plan):
+        require(plan.get('delete')==[] and plan.get('moves')==[] and plan.get('policyScope',{}).get('eligible')==[],
+                'Private staging forbids ordinary retirement or moves')
+
     def prepare_cycle(self, frame):
         state, state_sha = self.state()
         require(state is not None and state.get('index') and state.get('pending') is None
@@ -521,10 +681,20 @@ class Runtime:
         pair, context = self.current()
         https, _ = embedded(frame['httpsReceipt'])
         publication = self.verify_publication(https, frame['publicationReceipt'], pair, context)
-        operation_id, intent, active_sha = self.begin('prepare-cycle', frame, state, state_sha, context)
-        _, https_binding = self.store('ui-lifecycle-' + operation_id + '-https.json', frame['httpsReceipt'])
+        rule = self.private_stage_rule(publication) if self.config.get('retentionPolicy') == VPS_POLICY else None
+        if rule:
+            require(state.get('index')==rule['forecast']['index'] and state_sha==rule['forecast']['stateSha256']
+                    and context['pair']['previous']==rule['forecast']['previousPair']['current'],
+                    'Private staging pre-exchange lifecycle state or next pair changed')
         index = state['index']
         data = self.P.load_index(index['path'], index['sha256'], self.layout, APPROVAL_SHA)
+        existing_hold = self.P.fallback_hold(self.layout,data['index']['admissions'],data['admissions'])
+        if existing_hold or (rule and rule['forecast'].get('preservedFallback')):
+            require(rule and rule['forecast'].get('preservedFallback') == existing_hold,
+                    'Published plan lacks the admitted in-place fallback hold')
+            self.P.verify_fallback_hold(existing_hold,self.layout,pair,{})
+        operation_id, intent, active_sha = self.begin('prepare-cycle', frame, state, state_sha, context)
+        _, https_binding = self.store('ui-lifecycle-' + operation_id + '-https.json', frame['httpsReceipt'])
         if context['pair']['current'] not in data['releaseIds']:
             admission = self.P.admission(self.layout, APPROVAL_SHA, False, index)
             admission_binding = self.evidence('audit30-policy-admission-' + operation_id + '.json', admission)
@@ -533,7 +703,13 @@ class Runtime:
         else:
             require(data['admissions'][-1]['retainedPair'] == context['pair'], 'Latest admission does not bind live pair')
         scope = self.P.policy_scope(index, self.layout, APPROVAL_SHA)
+        if scope.get('preservedFallback'):
+            require(rule and rule['forecast'].get('preservedFallback') == scope['preservedFallback']
+                    and not scope['eligible'], 'Publication requires the same in-place fallback hold and zero retirement')
         plan = self.S.create_plan(self.layout, 'future-retention', APPROVAL_SHA, scope)
+        if rule:
+            self.require_empty_retirement(plan)
+            plan['privateStageRetention'] = rule
         plan_raw = self.S.encoded(plan)
         self.capacity(len(plan_raw) + 65536)
         plan_binding = write_new(self.layout.evidence / ('ui-lifecycle-' + operation_id + '-ordinary-plan.json'), plan_raw)
@@ -546,6 +722,8 @@ class Runtime:
         return self.finish(operation_id, intent, active_sha, new,
                            {'cycleId': operation_id, 'pendingToken': token, 'index': index,
                             'ordinaryPlan': plan_binding if self.config.get('retentionPolicy') == VPS_POLICY else dict(plan_binding, value=plan),
+                            **({'privateStageZeroRetirement': {'ordinaryPlanSha256':plan_binding['sha256'],
+                                'releasePlanSha256':rule['releasePlanSha256'],'delete':0,'moves':0,'eligible':0}} if rule else {}),
                             'lifecycleBinding': self.lifecycle(index), 'retentionComplete': False})
 
     def apply_ordinary(self, frame, *, vps_only=False):
@@ -559,6 +737,15 @@ class Runtime:
         _, context = self.current()
         pending = self.pending(state, frame, context, 'prepared')
         plan, _ = read_json(pending['ordinaryPlan']['path'], pending['ordinaryPlan']['sha256'])
+        rule = self.private_stage_rule(pending['publicationReceipt']) if vps_only else None
+        require(plan.get('privateStageRetention')==rule, 'Native retirement plan differs from published scope')
+        if rule:
+            scope = self.P.policy_scope(pending['index'],self.layout,APPROVAL_SHA)
+            require(vps_only and not scope['eligible'] and
+                    scope.get('preservedFallback') == rule['forecast'].get('preservedFallback') ==
+                    plan['policyScope'].get('preservedFallback'),
+                    'Private staging cannot retire newly eligible data or change an in-place hold')
+            self.require_empty_retirement(plan)
         operation_id, intent, active_sha = self.begin('apply-vps-retention' if vps_only else 'apply-ordinary', frame, state, state_sha, context)
         for row in ([] if vps_only else frame.get('custodyRecords', [])):
             _, raw = embedded(row)
@@ -663,19 +850,34 @@ class Runtime:
             os.close(lock)
 
 
-def main():
-    require(os.geteuid() == 0, 'Production lifecycle requires root')
-    require(len(sys.argv) == 4, 'Expected CONFIG CONFIG_SHA OP')
-    os.umask(0o077)
-    config, config_sha, package = validate_config(sys.argv[1], sys.argv[2])
+def installed_runtime(config_path, config_sha):
+    config, config_sha, package = validate_config(config_path, config_sha)
     storage = load_module('lifecycle_storage', package / 'deploy/audit30/ui-storage.py')
     policy = load_module('lifecycle_policy', package / 'deploy/audit30/ui-release-policy.py', _BOUND_STORAGE=storage)
     custody = load_module('lifecycle_custody', package / 'deploy/ui-retention/custody.py')
     custody.load_helpers()
+    return Runtime(config, config_sha, storage, policy, custody)
+
+
+def private_stage_pre_exchange(config_path, config_sha, release, lock_fd):
+    """Recompute the projection directly from native evidence under the publisher's lock."""
+    runtime=installed_runtime(config_path,config_sha)
+    held=runtime.S.require_execution_lock(lock_fd,runtime.layout)
+    observed=runtime.status({'requireComplete':True,'prospectiveRelease':release})
+    runtime.S.require_execution_lock(lock_fd,runtime.layout,held)
+    require(not observed['privateStageRetention']['wouldRetire'], 'Private staging would retire admitted data')
+    return observed['binding'],observed['privateStageRetention']
+
+
+def main():
+    require(os.geteuid() == 0, 'Production lifecycle requires root')
+    require(len(sys.argv) == 4, 'Expected CONFIG CONFIG_SHA OP')
+    os.umask(0o077)
+    runtime=installed_runtime(sys.argv[1],sys.argv[2])
     raw = sys.stdin.buffer.read(MAX_FRAME + 1)
     require(len(raw) <= MAX_FRAME, 'Request frame exceeds bound')
     frame = json.loads(raw, object_pairs_hook=unique)
-    out = Runtime(config, config_sha, storage, policy, custody).dispatch(sys.argv[3], frame)
+    out = runtime.dispatch(sys.argv[3], frame)
     sys.stdout.buffer.write(encoded(out))
 
 

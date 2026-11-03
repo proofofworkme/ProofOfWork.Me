@@ -880,7 +880,7 @@ successful broadcast in Outbox while the pending worker is still inspecting
 Core transactions. Once the worker verifies the Mail carrier and outputs, Log
 can publish the pending action at the current block. One ordinary multi-recipient
 Mail records its recipient payments together. Confirmation finalizes the same
-Mail action; an evicted pending observation carries no confirmed value.
+Mail action. An evicted pending observation carries no confirmed value.
 
 ## Mail Transaction Review
 

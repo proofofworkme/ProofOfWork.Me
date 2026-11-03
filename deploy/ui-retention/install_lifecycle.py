@@ -20,6 +20,7 @@ import sys
 import types
 
 ROOT = Path(__file__).resolve().parents[2]
+UI_HOST = False
 SSH = ['ssh', '-i', '/home/sixer/.ssh/proofofwork_me_ed25519', '-o', 'BatchMode=yes',
        '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10',
        'root@77.42.91.106']
@@ -490,10 +491,43 @@ def completed_review(runtime, request):
             'completionIntent': intent_binding,
             'completionReceipt': {'path': str(receipt_path), 'sha256': sha(receipt_raw)},
             'lastCompleted': state['lastCompleted'], 'fullCompletionVerified': True,
+            **({'bootLogRotation': status['verifiedBootLogRotation']} if 'verifiedBootLogRotation' in status else {}),
             **({'accessTimeReconciliation': status['verifiedAccessTimeReconciliation']}
                if getattr(runtime, 'completion_access_time_reconciliation', None) is not None else {}),
             **({'historicalBulkPreservation': status['verifiedHistoricalBulkPreservation']}
                if getattr(runtime, 'completion_historical_bulk_preservation', None) is not None else {})}
+
+
+def verifier_module(payload, name, relative, bindings=None):
+    value = types.ModuleType(name)
+    value.__file__ = '/bound/' + relative
+    if bindings:
+        value.__dict__.update(bindings)
+    sys.modules[name] = value
+    exec(compile(base64.b64decode(payload['files'][relative]['base64'], validate=True),
+                 value.__file__, 'exec'), value.__dict__)
+    return value
+
+
+def boot_rotation_verifier(payload, old_runtime):
+    validate_payload(payload)
+    require(payload['config'].get('retentionPolicy') == VPS_POLICY and old_runtime.config.get('retentionPolicy') == VPS_POLICY,
+            'Boot rotation requires VPS-only policy')
+    package = Path(old_runtime.config['package']['path'])
+    manifest = json.loads(read_bound(package / 'package.json', old_runtime.config['package']['sha256']))
+    changed = {'deploy/audit30/ui-storage.py', 'deploy/audit30/ui-release-policy.py',
+               'deploy/ui-retention/lifecycle_remote.py', 'deploy/ui-retention/install_lifecycle.py',
+               'deploy/ui-retention/lifecycle.py'}
+    for name, file in manifest['files'].items():
+        require(name in changed or payload['files'][name]['sha256'] == file['sha256'],
+                'Boot-log verifier cannot replace other retention dependencies')
+    storage = verifier_module(payload, 'boot_rotation_storage', 'deploy/audit30/ui-storage.py')
+    controller = verifier_module(payload, 'boot_rotation_controller', 'deploy/ui-retention/lifecycle_remote.py')
+    pin = controller.BOOT_ROTATION_COMPLETION
+    require(old_runtime.config_sha == pin['config'] and old_runtime.state()[1] == pin['state'],
+            'Boot-log verifier only admits the reviewed complete state')
+    return controller.Runtime(old_runtime.config, old_runtime.config_sha, storage, old_runtime.P,
+                              old_runtime.C, layout=old_runtime.layout)
 
 
 def repair_verifier_runtime(payload, old_runtime, access_time_reconciliation=None, historical_bulk_preservation=None):
@@ -508,15 +542,9 @@ def repair_verifier_runtime(payload, old_runtime, access_time_reconciliation=Non
     for relative in old_runtime.C.SOURCES.values():
         require(payload['files'][relative]['sha256'] == manifest['files'][relative]['sha256'],
                 'Config-transition repair cannot replace custody dependencies')
-    def module(name, relative, bindings=None):
-        value = types.ModuleType(name); value.__file__ = '/bound/' + relative
-        if bindings: value.__dict__.update(bindings)
-        sys.modules[name] = value
-        exec(compile(base64.b64decode(payload['files'][relative]['base64'], validate=True), value.__file__, 'exec'), value.__dict__)
-        return value
-    custody = module('repair_new_custody', 'deploy/ui-retention/custody.py',
+    custody = verifier_module(payload, 'repair_new_custody', 'deploy/ui-retention/custody.py',
                      {name: getattr(old_runtime.C, name) for name in old_runtime.C.SOURCES})
-    coordinator = module('repair_new_coordinator', 'deploy/ui-retention/lifecycle_remote.py')
+    coordinator = verifier_module(payload, 'repair_new_coordinator', 'deploy/ui-retention/lifecycle_remote.py')
     require(hasattr(coordinator.Runtime, 'completion_transitions'), 'Reviewed coordinator lacks explicit transition verification')
     return coordinator.Runtime(old_runtime.config, old_runtime.config_sha, old_runtime.S, old_runtime.P, custody,
                                layout=old_runtime.layout,
@@ -611,13 +639,19 @@ def completed_package_review(payload, package, old_runtime, review):
     runtime = module.Runtime(payload['config'], payload['configSha256'], storage, policy, custody,
                              layout=old_runtime.layout)
     _, context = runtime.current()
-    require(context == review['context'], 'New package changes completed protected context')
     state = review['state']; index = state['index']
+    if 'bootLogRotation' in review:
+        original = module.Runtime(old_runtime.config, old_runtime.config_sha, storage, policy, custody, layout=old_runtime.layout)
+        require(original.completed_boot_rotation(state, review['stateSha256'], context) == review['bootLogRotation'],
+                'Reviewed boot-log transition changed before package activation')
+    else:
+        require(context == review['context'], 'New package changes completed protected context')
     require(not policy.policy_scope(index, runtime.layout, APPROVAL)['eligible'], 'New package finds eligible ordinary assets')
     if state['lastCompleted'].get('retentionPolicy') == VPS_POLICY:
         verification = runtime.verify_vps_completion(state, context)
         storage.compare_guards(runtime.layout, context['guards'], [])
-        return {'context': context, 'index': index, 'lastCompleted': state['lastCompleted'],
+        return {'context': review['context'], 'index': index, 'lastCompleted': state['lastCompleted'],
+                **({'bootLogRotation': review['bootLogRotation']} if 'bootLogRotation' in review else {}),
                 'vpsVerification': verification, 'fullCompletionVerified': True}
     plan_binding = state['lastCompleted']['custodyPlan']; result_binding = state['lastCompleted']['custodyResult']
     plan = json.loads(read_bound(plan_binding['path'], plan_binding['sha256']))
@@ -650,9 +684,11 @@ def upgrade_inventory_locked(request, prefix):
         require(path.is_dir() and not path.is_symlink() and (path / 'completed.json').is_file(),
                 'Unsealed upgrade requires explicit reconciliation')
     runtime = existing_runtime(request['configSha256'], prefix)
-    if request.get('mode') in ('completed-cycle', 'completed-config-repair'):
+    if request.get('mode') in ('completed-cycle', 'completed-config-repair', 'completed-boot-log-rotation'):
         repair = request['mode'] == 'completed-config-repair'
-        require(set(request) == {'mode', 'configSha256', 'stateSha256'} | ({'verificationPayload', 'guardRefusal'} if repair else set()),
+        boot = request['mode'] == 'completed-boot-log-rotation'
+        require(set(request) == {'mode', 'configSha256', 'stateSha256'} | ({'verificationPayload', 'guardRefusal'} if repair
+                else {'verificationPayload'} if boot else set()),
                 'Expanded completed upgrade request')
         if repair:
             require(runtime.state()[0].get('lastUpgrade', {}).get('preservedCompletedCycleId'),
@@ -661,9 +697,16 @@ def upgrade_inventory_locked(request, prefix):
             refusal = json.loads(base64.b64decode(request['guardRefusal']['base64'], validate=True))
             runtime = repair_verifier_runtime(request['verificationPayload'], runtime, access_time,
                                               refusal.get('historicalBulkPreservation'))
+        if boot:
+            runtime = boot_rotation_verifier(request['verificationPayload'], runtime)
         config_raw = read_bound(prefix / CONFIG.lstrip('/'), request['configSha256'])
         state_raw = read_bound(prefix / STATE.lstrip('/'), request['stateSha256'])
-        return {'guards': guard_inventory(prefix), 'completedReview': completed_review(runtime, request),
+        review = completed_review(runtime, request)
+        if boot:
+            require('bootLogRotation' in review, 'No authenticated boot-log transition')
+        if 'bootLogRotation' in review:
+            review['preSwitchGuards'], _ = runtime.S.safeguards(runtime.layout, model=runtime.S.LEGACY_ROTATING_LOG_GUARD_MODEL)
+        return {'guards': guard_inventory(prefix), 'completedReview': review,
                 'configBase64': base64.b64encode(config_raw).decode(), 'stateBase64': base64.b64encode(state_raw).decode(),
                 'evidence': evidence_inventory(prefix / EVIDENCE.lstrip('/'))}
     require('mode' not in request, 'Unknown upgrade mode')
@@ -720,8 +763,8 @@ def upgrade_remote(plan, prefix=Path('/')):
     with deploy_lock(prefix):
         before = upgrade_inventory_locked(plan['request'], prefix)
         require(before == plan['before'], 'Upgrade config/state/guards/evidence changed after review')
-        completed_mode = plan['request'].get('mode') in ('completed-cycle', 'completed-config-repair')
-        if plan['request'].get('mode') == 'completed-config-repair':
+        completed_mode = plan['request'].get('mode') in ('completed-cycle', 'completed-config-repair', 'completed-boot-log-rotation')
+        if plan['request'].get('mode') in ('completed-config-repair', 'completed-boot-log-rotation'):
             require(plan['request']['verificationPayload'] == payload, 'Repair verifier differs from install payload')
         review = before['completedReview' if completed_mode else 'preparedReview']
         old_state = review['state']
@@ -790,7 +833,7 @@ def upgrade_remote(plan, prefix=Path('/')):
         # the immutable terminal upgrade receipt before any lifecycle operation.
         read_bound(at(CONFIG), plan['request']['configSha256']); read_bound(at(STATE), sha(encoded(active)))
         if completed_mode:
-            old_runtime.S.compare_guards(old_runtime.layout, review['context']['guards'], [])
+            old_runtime.S.compare_guards(old_runtime.layout, review.get('preSwitchGuards', review['context']['guards']), [])
         os.replace(state_next, at(STATE)); sync(at(STATE).parent)
         os.replace(config_next, at(CONFIG)); sync(at(CONFIG).parent)
         result = {'schema': 'pow-ui-retention-upgrade-completed-v1', 'ok': True,
@@ -895,9 +938,11 @@ def remote(operation, value=None):
     # __file__ is not meaningful in a streamed installer; ROOT is unused remotely.
     code = "__file__='/tmp/ui-lifecycle-installer/deploy/ui-retention/install_lifecycle.py'\n" + code
     timeout = 1800 if operation.startswith('upgrade') else 180
-    if operation == 'upgrade' and value.get('request', {}).get('mode') in ('completed-cycle', 'completed-config-repair'):
+    if operation == 'upgrade' and value.get('request', {}).get('mode') in ('completed-cycle', 'completed-config-repair', 'completed-boot-log-rotation'):
         timeout = 3600
-    result = subprocess.run([*SSH, 'nice -n 15 ionice -c 3 python3 -I -B -'], input=code.encode(),
+    argv = ['/usr/bin/nice', '-n', '15', '/usr/bin/ionice', '-c', '3', '/usr/bin/python3', '-I', '-B', '-']
+    command = argv if UI_HOST else [*SSH, 'nice -n 15 ionice -c 3 python3 -I -B -']
+    result = subprocess.run(command, input=code.encode(),
                             capture_output=True, timeout=timeout)
     if result.returncode:
         sys.stderr.buffer.write(result.stderr)
@@ -906,7 +951,9 @@ def remote(operation, value=None):
 
 
 def main():
+    global UI_HOST
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--ui-host', action='store_true', help='Dispatch directly on the production UI VPS')
     sub = parser.add_subparsers(dest='operation', required=True)
     prepare = sub.add_parser('plan')
     prepare.add_argument('--output', type=Path, required=True)
@@ -923,6 +970,7 @@ def main():
     completed_plan.add_argument('--config-sha256', required=True)
     completed_plan.add_argument('--state-sha256', required=True)
     completed_plan.add_argument('--output', type=Path, required=True)
+    completed_plan.add_argument('--reconcile-boot-logs', action='store_true')
     repair_plan = sub.add_parser('plan-upgrade-config-repair')
     repair_plan.add_argument('--guard-refusal', type=Path, required=True)
     repair_plan.add_argument('--guard-refusal-sha256', required=True)
@@ -933,10 +981,17 @@ def main():
     upgrade.add_argument('--plan', type=Path, required=True)
     upgrade.add_argument('--plan-sha256', required=True)
     args = parser.parse_args()
+    if args.ui_host:
+        payload = committed_payload()
+        client = verifier_module(payload, 'ui_installer_host', 'deploy/ui-retention/lifecycle.py')
+        client.require_ui_host(ROOT)
+        UI_HOST = True
     if args.operation in ('plan-upgrade-complete', 'plan-upgrade-config-repair'):
         payload = committed_payload()
         require(SHA.fullmatch(args.config_sha256) and SHA.fullmatch(args.state_sha256), 'Invalid upgrade binding')
         request = {'mode': 'completed-cycle', 'configSha256': args.config_sha256, 'stateSha256': args.state_sha256}
+        if getattr(args, 'reconcile_boot_logs', False):
+            request.update(mode='completed-boot-log-rotation', verificationPayload=payload)
         if args.operation == 'plan-upgrade-config-repair':
             refusal = local_guard_refusal({'path': str(args.guard_refusal.resolve()), 'sha256': args.guard_refusal_sha256}, payload)
             request.update(mode='completed-config-repair', verificationPayload=payload, guardRefusal=refusal)
@@ -972,7 +1027,7 @@ def main():
         if plan['request'].get('mode') == 'completed-config-repair':
             require(local_guard_refusal(plan['request']['guardRefusal']['binding'], plan['payload']) == plan['request']['guardRefusal'],
                     'Guard refusal evidence changed after review')
-        elif plan['request'].get('mode') != 'completed-cycle':
+        elif plan['request'].get('mode') not in ('completed-cycle', 'completed-boot-log-rotation'):
             require(local_interruption(plan['request']['interruption']['binding']) == plan['request']['interruption'],
                     'Interrupted local custody context changed after review')
         print(json.dumps(remote('upgrade', plan)))

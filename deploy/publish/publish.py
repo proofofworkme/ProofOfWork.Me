@@ -1,4 +1,4 @@
-import fcntl,hashlib,json,os,pathlib,re,resource,selectors,signal,stat,subprocess,sys,time
+import base64,fcntl,hashlib,json,os,pathlib,re,resource,selectors,signal,stat,subprocess,sys,time,zlib
 plan_path,plan_sha,commit,tree,attempt=sys.argv[1:]
 assert re.fullmatch('[a-z0-9][a-z0-9-]{0,30}',attempt)
 assert sys.flags.isolated and os.geteuid()==os.getegid()==0
@@ -9,11 +9,12 @@ def identity(s):
 def load_bound(path,sha,limit=65536):
  p=pathlib.Path(path); s=p.lstat()
  assert p.resolve()==p and stat.S_ISREG(s.st_mode) and s.st_uid==s.st_gid==0 and s.st_nlink==1 and not s.st_mode & 0o7022 and s.st_size<=limit
- fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW)
+ fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME)
  with os.fdopen(fd,'rb') as f:
   assert identity(os.fstat(f.fileno()))==identity(s)
   data=f.read(limit+1);assert identity(os.fstat(f.fileno()))==identity(s)
- assert identity(p.lstat())==identity(s) and len(data)==s.st_size and hashlib.sha256(data).hexdigest()==sha
+ assert identity(p.lstat())==identity(s) and len(data)==s.st_size
+ assert sha is None or hashlib.sha256(data).hexdigest()==sha
  return data
 def durable_json(path,value):
  with path.open('x') as f:
@@ -37,6 +38,7 @@ lock_path=pathlib.Path('/run/proofofwork-ui/deploy.lock'); ls=lock_path.lstat()
 assert lock_path.resolve()==lock_path and stat.S_ISREG(ls.st_mode) and ls.st_uid==ls.st_gid==0 and ls.st_nlink==1 and not ls.st_mode & 0o7022
 fd=os.open(lock_path,os.O_RDONLY|os.O_NOFOLLOW); assert identity(os.fstat(fd))==identity(ls) and identity(lock_path.lstat())==identity(ls); fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
 env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LC_ALL':'C','GIT_OPTIONAL_LOCKS':'0','POW_UI_DEPLOY_LOCK_FD':str(fd)}
+installed_admission(*plan_gate(plan), fd)
 ns={'__name__':'_recovery_publisher_fingerprint'}
 record=plan['publicationHelpers']['retained'];exec(compile(load_bound(record['path'],record['sha256'],2*1024**2),record['path'],'exec'),ns)
 live=ns['fingerprint'](pathlib.Path('/var/www'))
@@ -45,6 +47,35 @@ roots=sorted(pathlib.Path('/var/backups/proofofwork-ui/rollback-roots').glob('pr
 assert [str(p) for p in roots]==[r['root'] for r in plan['retainedRoots']]
 for p,r in zip(roots,plan['retainedRoots']):
  current=ns['fingerprint'](p);assert current['manifestSha256']==r['manifestSha256'] and current['treeSha256']==r['treeSha256']
+if 'inputCompactor' in plan:
+ rule=plan.get('privateStageRetention')
+ assert isinstance(rule,dict) and rule['model']=='private-stage-zero-retirement-v1' and rule['wouldRetire']==[]
+ assert rule['releaseId']==release and rule['previousPair']==plan['retentionLifecycle']['pair']
+ assert rule['stateSha256']==plan['retentionLifecycle']['state']['sha256']
+ def private_helper(record):
+  inflater=zlib.decompressobj()
+  raw=inflater.decompress(base64.b64decode(record['compressedSource'],validate=True),65537)
+  assert 0<len(raw)<=65536 and inflater.eof and not inflater.unused_data and not inflater.unconsumed_tail
+  assert hashlib.sha256(raw).hexdigest()==record['sha256']
+  namespace={'__name__':'_private_publication_check'}
+  exec(compile(raw,'private_publication_check','exec'),namespace)
+  return namespace
+ compact=private_helper(plan['inputCompactor']); verifier=private_helper(plan['phaseCapacity'])
+ request=plan['closedArchive']['request']
+ assert plan['inputCompactor']['sha256']==request['inputCompactorSha256']==plan['wrapperSourceSha256']['input_compaction.py']
+ assert plan['phaseCapacity']['sha256']==request['phaseSourceSha256']==plan['wrapperSourceSha256']['phase_capacity.py']
+ base=pathlib.Path('/var/tmp/proofofwork-deploy')
+ source_raw=load_bound(base/('recovery-transport-'+release+'-source-'+attempt)/'receipt.json',None)
+ sourceproof=json.loads(source_raw)
+ assert sourceproof['ok'] is True and sourceproof['candidateProvenanceVerified'] is True and sourceproof['planSha256']==plan_sha
+ assert sourceproof['phase']=='source' and all(sourceproof[k]==plan[k] for k in ('commit','tree','releaseId'))
+ prior=json.loads(load_bound(base/('recovery-transport-'+release+'-surfaces-stage-'+attempt)/'receipt.json',sourceproof['verifiedStageReceiptSha256']))
+ input_result=compact['compact'](base/('proofofwork-ui-surfaces-'+release),plan['surfacesPayloadFingerprint'],check_only=True,
+                                  journal_sha256=prior['compactInput']['originalTimes']['sha256'])
+ input_result.pop('aliasesCreated')
+ stager=verifier['locked_installed_stager'](plan['publicationHelpers']['stager']['sha256'],fd)
+ staged=verifier['private_stage_receipt'](base/('proofofwork-www-stage-'+release),stager,plan['closedArchive']['privateStaging']['finalCandidateUpperBytes'])
+ verifier['verify_private_predecessor'](plan,plan_sha,prior,input_result,staged)
 assert plan['inputStorage'] in ('release-evidence-v1','deploy-scratch-v1')
 if plan['inputStorage']=='deploy-scratch-v1':
  assert not any(k in plan for k in ('resumeSurfaces','preservedStageResume','preservedCapacityResume'))
@@ -62,10 +93,13 @@ for command in ['check-scratch','check']:
 out=pathlib.Path('/var/tmp/proofofwork-deploy/recovery-publish-'+release+'-'+attempt)
 out.mkdir(mode=0o700)
 parent_fd=os.open(out.parent,os.O_RDONLY|os.O_DIRECTORY);os.fsync(parent_fd);os.close(parent_fd)
-intent={'attempt':attempt,'releaseId':release,'commit':commit,'tree':tree,'planSha256':plan_sha,'oldLive':live,'retainedRoots':plan['retainedRoots'],'retentionDeferred':True,'startedAt':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())}
+intent={'attempt':attempt,'lockHolderPid':os.getpid(),'lockFd':fd,'releaseId':release,'commit':commit,'tree':tree,'planSha256':plan_sha,'oldLive':live,'retainedRoots':plan['retainedRoots'],'retentionDeferred':True,'startedAt':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())}
+if 'inputCompactor' in plan:
+ intent.update(verifiedSourceReceiptSha256=hashlib.sha256(source_raw).hexdigest(),
+               verifiedStageReceiptSha256=sourceproof['verifiedStageReceiptSha256'])
 durable_json(out/'intent.json',intent)
 archive='/var/backups/proofofwork-ui/releases/proofofwork-ui-release-'+release+'.tgz'
-args=[plan['publicationHelpers']['publisher']['path'],'--release-id',release,'--commit',commit,'--source-checkout',source,'--archive',archive,'--defer-verified-retention']
+args=[plan['publicationHelpers']['publisher']['path'],'--release-id',release,'--commit',commit,'--source-checkout',source,'--archive',archive,'--defer-verified-retention','--publication-attempt',attempt,'--publication-plan-sha256',plan_sha]
 for r in plan['retainedRoots']: args+=['--retain-rollback-root',pathlib.Path(r['root']).name+':'+r['manifestSha256']+':'+r['treeSha256']]
 with (out/'publisher.log').open('xb') as log:
  for record in plan['publicationHelpers'].values(): load_bound(record['path'],record['sha256'],2*1024**2)
@@ -92,6 +126,8 @@ with (out/'publisher.log').open('xb') as log:
    os.killpg(child.pid,signal.SIGKILL);child.wait(timeout=15)
   sel.close();child.stdout.close();log.flush();os.fsync(log.fileno())
 receipt={'attempt':attempt,'releaseId':release,'commit':commit,'tree':tree,'exitCode':code,'failure':failed,'capturedLogBytes':min(count,4*1024**2),'evidence':str(out),'finishedAt':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'publisherLogSha256':hashlib.sha256((out/'publisher.log').read_bytes()).hexdigest()}
+if 'inputCompactor' in plan:
+ receipt.update(privateStageRetention=plan['privateStageRetention'],planSha256=plan_sha)
 durable_json(out/'receipt.json',receipt)
 print(json.dumps(receipt));sys.stdout.flush()
 assert code==0 and failed is None,'Publisher refused; evidence and complete roots preserved'

@@ -14,6 +14,8 @@ capacity_script="${POW_UI_CAPACITY_SCRIPT:-/usr/local/sbin/proofofwork-ui-capaci
 deploy_lock="${POW_UI_DEPLOY_LOCK:-/run/proofofwork-ui/deploy.lock}"
 allow_test_roots="${POW_UI_ALLOW_TEST_ROOTS:-}"
 
+publication_attempt=""
+publication_plan_sha=""
 release_id=""
 commit=""
 source_checkout=""
@@ -27,6 +29,16 @@ fi
 
 while (($# > 0)); do
   case "$1" in
+    --publication-attempt)
+      [[ -z "${publication_attempt}" ]] || exit 64
+      publication_attempt="${2:?publication attempt required}"
+      shift 2
+      ;;
+    --publication-plan-sha256)
+      [[ -z "${publication_plan_sha}" ]] || exit 64
+      publication_plan_sha="${2:?publication plan hash required}"
+      shift 2
+      ;;
     --release-id)
       release_id="${2:-}"
       shift 2
@@ -70,6 +82,48 @@ if [[ ! "${release_id}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
 fi
 if [[ ! "${commit}" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]; then
   echo "Commit must be a full lowercase hexadecimal object id." >&2
+  exit 64
+fi
+
+# A fixture flag never switches off a gate on a live destination. Accept it
+# only when every destination (including the irregularly located deploy lock)
+# is in a single operator-owned temporary tree, with no bind-mount aliases.
+if [[ "${allow_test_roots}" == "1" ]]; then
+  /usr/bin/python3 -I -B - "${www_root}" "${staging_root}" "${archive_root}" \
+    "${rollback_root_parent}" "${deploy_lock}" "${source_checkout}" "${archive}" "${TMPDIR:-/tmp}" <<'PY'
+import os, re, stat, sys
+from pathlib import Path
+paths=[Path(p) for p in sys.argv[1:-1]]
+temporary=Path(sys.argv[-1])
+protected=[Path(p) for p in ('/var/www','/var/tmp/proofofwork-deploy','/var/backups/proofofwork-ui','/run/proofofwork-ui')]
+def overlaps(p,q):
+    return p==q or p in q.parents or q in p.parents
+if any(not p.is_absolute() or p.resolve()!=p or any(overlaps(p,q) for q in protected) for p in paths):
+    raise SystemExit('Test roots cannot include or alias a production destination.')
+if any(overlaps(temporary.resolve(),q) for q in protected):
+    raise SystemExit('Test temporary files cannot use a production destination.')
+common=Path(os.path.commonpath(paths))
+anchor=next((p for p in (Path('/tmp'),Path('/var/tmp')) if p in common.parents),None)
+if anchor is None or common.stat().st_uid!=os.geteuid() or common.stat().st_mode & 0o022:
+    raise SystemExit('All test roots must share an owner-controlled temporary directory.')
+def mountpath(field):
+    return Path(re.sub(r'\\([0-7]{3})',lambda m:chr(int(m[1],8)),field))
+for row in Path('/proc/self/mountinfo').read_text().splitlines():
+    fields=row.split(); mount=mountpath(fields[4])
+    if (mount==anchor and fields[3]!='/') or (anchor in mount.parents and overlaps(mount,common)):
+        raise SystemExit('Test roots cannot include a bind or nested mount.')
+PY
+fi
+if [[ -n "${publication_attempt}${publication_plan_sha}" ]]; then
+  if [[ ! "${publication_attempt}" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ||
+    ! "${publication_plan_sha}" =~ ^[0-9a-f]{64}$ ||
+    -z "${POW_UI_DEPLOY_LOCK_FD:-}" ]]; then
+    echo "Managed exchange requires an attempt, SHA-256 and an inherited deployment lock." >&2
+    exit 64
+  fi
+elif [[ "${allow_test_roots}" != "1" ||
+  ( "${www_root}" == */var/www && -e "${www_root%/var/www}/etc/proofofwork-retention/ui-lifecycle.json" ) ]]; then
+  echo "Managed native publication requires authenticated final-exchange context." >&2
   exit 64
 fi
 
@@ -453,8 +507,10 @@ fi
 
 verify_prior_asset_compatibility() {
   local -a prior_surfaces=("${surfaces[@]}")
+  local -a prior_format=()
   if [[ -e "${www_root}/proofofwork-permission" || -L "${www_root}/proofofwork-permission" ]]; then
     prior_surfaces=("${permission_surfaces[@]}")
+    prior_format=(--permission-v5)
   elif [[ -e "${www_root}/proofofwork-pages" || -L "${www_root}/proofofwork-pages" ]]; then
     prior_surfaces=("${pages_surfaces[@]}")
   elif [[ ! -e "${www_root}/proofofwork-boost" && ! -L "${www_root}/proofofwork-boost" ]]; then
@@ -477,7 +533,7 @@ verify_prior_asset_compatibility() {
   # remain authoritative; timeout is a safe failure that leaves production
   # untouched. Keep the five-second kill grace and independent asset limits.
   timeout --signal=TERM --kill-after=5s 120s \
-    /usr/bin/python3 -I - "${www_root}" "${stage_root}" "${prior_surfaces[@]}" <<'PY'
+    /usr/bin/python3 -I - "${www_root}" "${stage_root}" "${prior_format[@]}" "${prior_surfaces[@]}" <<'PY'
 import hashlib
 import os
 import re
@@ -510,6 +566,14 @@ maximum_dependencies = 1600
 # edges. Align the finite 5,632 ceiling with the stager; served-path, candidate
 # and byte limits remain independent.
 maximum_reference_edges = 5632
+if surfaces[:1] == ["--permission-v5"]:
+    # The caller supplies the exact canonical V5 vector, based on the live
+    # roots, independently of which release is being staged.
+    surfaces = surfaces[1:]
+    if len(surfaces) != 22 or len(set(surfaces)) != 22 or "permission" not in surfaces:
+        raise SystemExit("Invalid prior Permission V5 graph.")
+    maximum_dependencies = 1664
+    maximum_reference_edges = 6272
 # The prior 7afc0f95 graph has 1,311,044 raw candidates; the 75948039 article
 # candidate has 1,313,796. The October 15 calibration aligned 1,376,256
 # with the stager; every raw occurrence and all independent guards remained.
@@ -871,14 +935,19 @@ verify_current_rollback_capability() {
 verify_current_rollback_capability
 
 exchange_directories() {
-  /usr/bin/python3 -I - "$1" "$2" "${3:-0}" <<'PY'
+  /usr/bin/python3 -I -B - "$1" "$2" "${3:-0}" "${4:-0}" \
+    "${source_checkout}" "${BASH_SOURCE[0]}" "${www_root}" "${staging_root}" "${archive_root}" \
+    "${rollback_root_parent}" "${deploy_lock}" "${deploy_lock_fd}" "${release_id}" "${commit}" \
+    "${publication_attempt}" "${publication_plan_sha}" "${allow_test_roots}" <<'PY'
 import ctypes
 import errno
+import hashlib
 import os
+from pathlib import Path
 import stat
 import sys
 
-left, right, inject_after_syscall = sys.argv[1:]
+left,right,inject_after_syscall,forward,source,publisher,live,scratch,archives,rollback,lock,fd,release,commit,attempt,plan_sha,test=sys.argv[1:]
 for path in (left, right):
     details = os.lstat(path)
     if not stat.S_ISDIR(details.st_mode) or stat.S_ISLNK(details.st_mode):
@@ -893,6 +962,29 @@ if renameat2 is None:
     raise SystemExit("renameat2(RENAME_EXCHANGE) is unavailable in libc.")
 renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
 renameat2.restype = ctypes.c_int
+if forward == "1" and plan_sha:
+    # Load only the exact helper whose bytes were reviewed with this installed
+    # publisher. Its source, installed policy and native plan are independently
+    # reauthenticated. Probe and rollback must not require a forward forecast.
+    pin="9b2c7c22189c38ed35d308f514a70c2885f0497c1b9782e2906e5c7fdb2553b4"
+    helper=Path(source)/'deploy/publish/native_exchange_fence.py'
+    before=helper.lstat()
+    if (helper.resolve()!=helper or not stat.S_ISREG(before.st_mode) or before.st_uid!=os.geteuid()
+            or before.st_nlink!=1 or before.st_mode&0o7022 or before.st_size>65536):
+        raise SystemExit('Unsafe native exchange helper source')
+    handle=os.open(helper,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME)
+    with os.fdopen(handle,'rb') as stream:
+        raw=stream.read(65537)
+        if os.fstat(handle)!=before or helper.lstat()!=before or hashlib.sha256(raw).hexdigest()!=pin:
+            raise SystemExit('Native exchange helper SHA or identity differs')
+    scope={'__name__':'_final_native_exchange','__file__':str(helper)}
+    exec(compile(raw,str(helper),'exec'),scope)
+    scope['verify'](pin,source,publisher,live,scratch,archives,rollback,lock,int(fd),release,commit,attempt,plan_sha,test=="1")
+    def exchanged_identity(s):
+        return (s.st_dev,s.st_ino,s.st_mode,s.st_uid,s.st_gid,s.st_nlink,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+    if (exchanged_identity(os.lstat(left))!=exchanged_identity(left_before) or
+            exchanged_identity(os.lstat(right))!=exchanged_identity(right_before)):
+        raise SystemExit('Forward exchange roots changed during final verification')
 result = renameat2(-100, os.fsencode(left), -100, os.fsencode(right), 2)
 if result != 0:
     error = ctypes.get_errno()
@@ -1111,7 +1203,7 @@ if [[ -n "${POW_UI_PUBLISH_TEST_FAIL_EXCHANGE_HELPER_AFTER_SYSCALL:-}" ]]; then
 fi
 exchange_armed=1
 exchange_directories "${www_root}" "${stage_root}" \
-  "${exchange_helper_injection}"
+  "${exchange_helper_injection}" 1
 old_root_path="${stage_root}"
 verify_directory_identity "${www_root}" "${staged_www_identity}"
 verify_directory_identity "${stage_root}" "${prior_www_identity}"

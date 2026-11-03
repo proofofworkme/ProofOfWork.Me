@@ -24,6 +24,7 @@ from pathlib import PurePosixPath
 
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[1]
+UI_HOST = False
 SSH = ['ssh', '-i', '/home/sixer/.ssh/proofofwork_me_ed25519',
        '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes',
        '-o', 'ConnectTimeout=10', 'root@77.42.91.106']
@@ -341,7 +342,8 @@ def create(path, raw):
         output.write(raw); output.flush(); os.fsync(output.fileno())
 
 def remote(argv, *, data=None, stdin=None, stdout=None, timeout=1200):
-    return subprocess.run(SSH + [shlex.join(argv)], input=data, stdin=stdin,
+    command = argv if UI_HOST else SSH + [shlex.join(argv)]
+    return subprocess.run(command, input=data, stdin=stdin,
                           stdout=stdout, stderr=subprocess.STDOUT,
                           timeout=timeout, check=True)
 
@@ -361,7 +363,7 @@ def load_plan(path):
         assert set(p['managedSurfaces']) == set(surfaces) and len(p['managedSurfaces']) == len(surfaces)
     return p, hashlib.sha256(raw).hexdigest(), raw
 
-def closed_input(build):
+def closed_input(build, *, private_staging=False):
     """Build a bounded, metadata-only proof from the actual pinned surface archive."""
     if (build.get('releaseFormat') != 'proofofwork-ui-release-v5' or
             sorted(build['surfaces']) != sorted(PERMISSION_SURFACES) or
@@ -381,7 +383,11 @@ def closed_input(build):
         raise ValueError('Candidate surface archive differs from build receipt')
     packed = bytearray()
     value = bundle_payload_fingerprint(path, build['releaseId'], PERMISSION_SURFACES, packed)
-    return {'model': 'proof-ui-closed-input-v1', 'releaseId': build['releaseId'], 'commit': build['commit'],
+    compact = {}
+    if private_staging:
+        helper = subprocess.check_output(['git', '-C', str(REPO), 'show', build['commit'] + ':deploy/publish/input_compaction.py'])
+        compact['inputCompactorSha256'] = hashlib.sha256(helper).hexdigest()
+    return {'model': 'proof-ui-closed-input-v1', **compact, 'releaseId': build['releaseId'], 'commit': build['commit'],
             'tree': build['tree'], 'surfacesSha256': bundle['sha256'], 'payloadFingerprint': value,
             'inventorySha256': hashlib.sha256(packed).hexdigest(), 'helperHashes': proof,
             'phaseSourceSha256': hashlib.sha256(subprocess.check_output(
@@ -389,26 +395,59 @@ def closed_input(build):
 
 
 def prepare_closed_input(args):
-    request, packed = closed_input(json.loads(Path(args.build_receipt).read_bytes()))
+    request, packed = closed_input(json.loads(Path(args.build_receipt).read_bytes()),
+                                   private_staging=getattr(args, 'private_staging', False))
     create(args.output + '.zlib', packed)
     create(args.output, (json.dumps(request, indent=2) + '\n').encode())
     print(json.dumps({'request': args.output, 'inventorySha256': request['inventorySha256'], 'inventoryBytes': len(packed)}))
 
 
+def admission_source(expected=None):
+    path = ROOT / 'publication_admission.py'
+    if path.resolve(strict=True) != path or path.is_symlink() or path.stat().st_size > 16384:
+        raise ValueError('Invalid reviewed publication admission file')
+    source = path.read_bytes()
+    reviewed = subprocess.check_output(['git', '-C', str(REPO), 'show',
+                                        'HEAD:deploy/publish/publication_admission.py'],
+                                       env={**os.environ, 'GIT_NO_LAZY_FETCH':'1', 'GIT_OPTIONAL_LOCKS':'0'})
+    if source != reviewed or (expected is not None and hashlib.sha256(source).hexdigest() != expected):
+        raise ValueError('Publication admission source differs from its reviewed commit or plan')
+    return source
+
+
+def admission_tools(source):
+    namespace = {}
+    exec(compile(source, 'publication_admission.py', 'exec'), namespace)
+    return namespace
+
+
 def preflight(args):
-    lifecycle = lifecycle_module().status(require_complete=True)
+    closed = getattr(args, 'closed_request', None)
+    request = json.loads(Path(closed).read_bytes()) if closed else {}
+    if 'inputCompactorSha256' in request:
+        lifecycle = lifecycle_module().status(require_complete=True, prospective_release=request['releaseId'])
+        forecast = lifecycle['privateStageRetention']
+        if forecast['wouldRetire']:
+            raise ValueError('Private staging would retire previously admitted data before completing the publication: ' +
+                             json.dumps(forecast['wouldRetire']))
+    else:
+        lifecycle = lifecycle_module().status(require_complete=True)
+    private = 'inputCompactorSha256' in request
+    guard = admission_source()
+    # Refuse an ordinary request even before the small inventory upload.
+    hold = admission_tools(guard)['require_obligation'](lifecycle, private, request.get('releaseId'))
+    gate = [lifecycle['binding'], request.get('releaseId'), private, forecast if private else None]
     script = (ROOT / 'preflight.py').read_bytes(); ast.parse(script)
     sequence = (ROOT / 'sequence_capacity.py').read_bytes(); ast.parse(sequence)
     script = ('import base64\nSEQUENCE_SOURCE=base64.b64decode(' +
               repr(base64.b64encode(sequence).decode()) + ')\n').encode() + script
-    closed = getattr(args, 'closed_request', None)
+    script = guard + ('\nPREFLIGHT_GATE=' + repr(gate) + '\n').encode() + script
     if closed:
-        request = json.loads(Path(closed).read_bytes())
         if not RELEASE.fullmatch(request['releaseId']) or not HEX64.fullmatch(request['inventorySha256']):
             raise ValueError('Invalid closed input request identity')
         if not HEX40.fullmatch(request['commit']) or not request['releaseId'].startswith(request['commit'][:12]+'-'):
             raise ValueError('Invalid closed preflight commit')
-        for name in ('phase_capacity.py', 'sequence_capacity.py', 'preflight.py'):
+        for name in ('phase_capacity.py', 'sequence_capacity.py', 'preflight.py', 'publication_admission.py'):
             reviewed = subprocess.check_output(['git','-C',str(REPO),'show',request['commit']+':deploy/publish/'+name])
             if reviewed != (ROOT/name).read_bytes():
                 raise ValueError('Closed preflight source differs from the release commit: '+name)
@@ -416,7 +455,7 @@ def preflight(args):
         if not 0 < len(packed) <= 65536 or hashlib.sha256(packed).hexdigest() != request['inventorySha256']:
             raise ValueError('Closed input request does not match inventory')
         target = '/var/tmp/proofofwork-deploy/recovery-control-' + request['releaseId'] + '-inventory-' + request['inventorySha256'] + '.zlib'
-        remote(['/usr/bin/python3', '-I', '-B', '-c', UPLOAD, request['inventorySha256'], target], data=packed, timeout=180)
+        remote(['/usr/bin/python3', '-I', '-B', '-c', guard.decode() + UPLOAD, request['inventorySha256'], target, json.dumps(gate)], data=packed, timeout=180)
         phase = (ROOT / 'phase_capacity.py').read_bytes()
         script = ('import base64\nPHASE_SOURCE=base64.b64decode(' + repr(base64.b64encode(phase).decode()) +
                   ')\nCLOSED_REQUEST=' + repr(request) + '\n').encode() + script
@@ -426,7 +465,12 @@ def preflight(args):
     assert all(item['exitCode'] == 0 for item in p['checks'])
     assert p['retentionDeferred'] is True
     assert lifecycle['pair']['current'] == p['activeManifest']['release_id']
+    if (p['verifiedPreservedFallback'] != hold or p['retentionIndex'] != lifecycle['index']
+            or p.get('verifiedPreFallbackIndex') != lifecycle.get('verifiedPreFallbackIndex')):
+        raise ValueError('Verified fallback changed during preflight')
     p['retentionLifecycle'] = lifecycle['binding']
+    if 'inputCompactorSha256' in request:
+        p['privateStageRetention'] = forecast
     create(args.output, (json.dumps(p, indent=2)+'\n').encode())
     print(json.dumps({'status': 'preflight-recorded', 'output': args.output,
                       'sha256': digest(args.output), 'activeManifest': p['activeManifest'],
@@ -437,12 +481,14 @@ def lifecycle_module():
     path = ROOT.parent/'ui-retention/lifecycle.py'
     spec = importlib.util.spec_from_file_location('ui_lifecycle', path)
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    module.UI_HOST = UI_HOST
     return module
 
 def committed_wrapper_sources():
     """Bind local orchestration bytes to the exact release source tree."""
     names = ('build.py', 'release.py', 'preflight.py', 'remote_transport.py', 'transport_preserve.py',
-             'publish.py', 'collect_verify.py', 'https_smoke.py', 'phase_capacity.py', 'sequence_capacity.py')
+             'publish.py', 'collect_verify.py', 'https_smoke.py', 'phase_capacity.py', 'sequence_capacity.py',
+             'publication_admission.py')
     result = {}
     for name in names:
         path = ROOT / name
@@ -461,6 +507,15 @@ def make_plan(args):
     assert input_storage in ('release-evidence-v1', 'deploy-scratch-v1'), 'Unknown release input storage'
     b = json.loads(Path(args.build_receipt).read_bytes())
     p = json.loads(Path(args.preflight).read_bytes())
+    request = p.get('closedArchive', {}).get('request', {})
+    if 'verifiedPreservedFallback' not in p:
+        raise ValueError('A fresh preflight with verified preservation evidence is required')
+    admission_tools(admission_source())['require_obligation'](
+        {'verifiedPreservedFallback':p['verifiedPreservedFallback'], 'binding':p['retentionLifecycle'],
+         'verifiedPreFallbackIndex':p.get('verifiedPreFallbackIndex'), 'index':p.get('retentionIndex')},
+        'inputCompactorSha256' in request, b.get('releaseId'))
+    if 'privateStageRetention' in p and p['privateStageRetention'].get('preservedFallback') != p['verifiedPreservedFallback']:
+        raise ValueError('Private preflight witness differs from installed fallback')
     release_format = b.get('releaseFormat', 'proofofwork-ui-release-v3')
     assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5')
     surfaces = PERMISSION_SURFACES if release_format == 'proofofwork-ui-release-v5' else PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
@@ -549,11 +604,34 @@ def make_plan(args):
     if 'closedArchive' in p:
         if any((*resume_args, *preserved_args, *capacity_args)) or input_storage != 'deploy-scratch-v1':
             raise ValueError('Closed archive evidence requires a fresh scratch-input release')
-        request, _ = closed_input(b)
         evidence = p['closedArchive']
+        compact = 'inputCompactorSha256' in evidence['request']
+        request, _ = closed_input(b, private_staging=compact) if compact else closed_input(b)
         if evidence['request'] != request or c['surfacesPayloadFingerprint'] != request['payloadFingerprint']:
             raise ValueError('Closed archive evidence differs from this exact build')
+        if compact:
+            # Keep the 64 KiB plan limit. Both sources are independently bound
+            # to committed bytes, and decompression limits are enforced on the VPS.
+            for key, name in [('phaseCapacity', 'phase_capacity.py'), ('inputCompactor', 'input_compaction.py')]:
+                code = subprocess.check_output(['git', '-C', str(REPO), 'show', b['commit'] + ':deploy/publish/' + name])
+                if code != (ROOT/name).read_bytes() or not 0 < len(code) <= 65536:
+                    raise ValueError('Unbound private stage helper: ' + name)
+                c[key] = {'sha256': hashlib.sha256(code).hexdigest(),
+                          'compressedSource': base64.b64encode(zlib.compress(code, 9)).decode()}
+                c['wrapperSourceSha256'][name] = c[key]['sha256']
+            if (c['phaseCapacity']['sha256'] != request['phaseSourceSha256'] or
+                    c['inputCompactor']['sha256'] != request['inputCompactorSha256'] or
+                    evidence['privateStaging']['model'] != 'private-release-stage-v1'):
+                raise ValueError('Private stage evidence differs from the committed helpers')
         c['closedArchive'] = evidence
+        if compact:
+            rule=p.get('privateStageRetention')
+            if (not isinstance(rule,dict) or rule.get('model')!='private-stage-zero-retirement-v1'
+                    or rule.get('wouldRetire')!=[] or rule.get('releaseId')!=c['releaseId']
+                    or rule.get('previousPair')!=p['retentionLifecycle']['pair']
+                    or rule.get('stateSha256')!=p['retentionLifecycle']['state']['sha256']):
+                raise ValueError('Private staging requires a release-specific empty retirement forecast')
+            c['privateStageRetention']=rule
         census_bound = c['stageArchiveUpperBoundBytes']
         c['stageArchiveUpperBoundBytes'] = evidence['archive']['archiveUpperBoundBytes']
         if not 0 < c['stageArchiveUpperBoundBytes'] <= census_bound:
@@ -581,12 +659,14 @@ def make_plan(args):
 
 UPLOAD = r'''
 import fcntl,hashlib,os,pathlib,stat,subprocess,sys
-sha,target=sys.argv[1:]; raw=sys.stdin.buffer.read(65537)
-assert len(raw)<=65536 and hashlib.sha256(raw).hexdigest()==sha
+sha,target,gate=sys.argv[1:]
 lock='/run/proofofwork-ui/deploy.lock'; info=os.lstat(lock)
 assert stat.S_ISREG(info.st_mode) and info.st_uid==info.st_gid==0 and info.st_nlink==1 and not info.st_mode & 0o7022
 fd=os.open(lock,os.O_RDONLY|os.O_NOFOLLOW); assert os.fstat(fd).st_ino==info.st_ino
 fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+installed_admission(*json.loads(gate),fd)
+raw=sys.stdin.buffer.read(65537)
+assert len(raw)<=65536 and hashlib.sha256(raw).hexdigest()==sha
 env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LC_ALL':'C','POW_UI_DEPLOY_LOCK_FD':str(fd)}
 for kind in ['check-scratch','check']:
  subprocess.run(['/usr/bin/python3','-I','-B','/usr/local/sbin/proofofwork-ui-capacity',kind,'--path','/var/tmp/proofofwork-deploy','--additional-bytes','65536','--additional-inodes','4','--phase','recovery-plan-install'],env=env,pass_fds=(fd,),timeout=60,check=True,stdout=subprocess.DEVNULL)
@@ -602,27 +682,22 @@ def remote_plan(p):
 
 def upload_plan(args):
     p, sha, raw = load_plan(args.plan)
-    remote(['/usr/bin/python3', '-I', '-B', '-c', UPLOAD, sha, remote_plan(p)], data=raw, timeout=180)
+    guard = admission_source(p['wrapperSourceSha256']['publication_admission.py'])
+    gate = admission_tools(guard)['plan_gate'](p)
+    remote(['/usr/bin/python3', '-I', '-B', '-c', guard.decode()+UPLOAD, sha, remote_plan(p),
+            json.dumps(gate)], data=raw, timeout=180)
 
 def transport(args):
-    p, sha, _ = load_plan(args.plan)
-    kind = 'surfaces' if args.phase == 'surfaces-stage' else 'source'
-    bundle = Path(p['localBundles'][kind]); assert bundle.stat().st_size == p[kind]['compressedBytes'] and digest(bundle) == p[kind]['sha256']
-    h = p['transportHelper']; assert h['path'] == '/var/tmp/proofofwork-deploy/audit29-tools/ui-transport.py'
-    assert HEX64.fullmatch(h['sha256'])
-    argv = ['systemd-run', '--unit=proofofwork-audit29-ui-transport-'+p['releaseId']+'-'+args.phase,
-        '--service-type=exec', '--wait', '--pipe', '--property=User=root', '--property=Group=root',
-        '--property=KillMode=control-group', '--property=RuntimeMaxSec=20min', '--property=TimeoutStopSec=30s',
-        '--property=MemoryMax=4G', '--property=MemorySwapMax=0', '--property=TasksMax=128', '--property=UMask=0077',
-        '/usr/bin/python3', '-I', '-B', h['path'], remote_plan(p), '--config-sha256', sha, '--phase', args.phase]
-    guard = "import hashlib,os,pathlib,stat,sys; p=pathlib.Path(sys.argv[1]); s=p.lstat(); assert p.resolve()==p and stat.S_ISREG(s.st_mode) and s.st_uid==s.st_gid==0 and s.st_nlink==1 and not s.st_mode & 0o7022 and s.st_size<=2*1024**2; assert hashlib.sha256(p.read_bytes()).hexdigest()==sys.argv[2]; os.execv('/usr/bin/systemd-run',sys.argv[3:])"
-    with bundle.open('rb') as source, Path(args.log).open('xb') as log:
-        remote(['/usr/bin/python3','-I','-B','-c',guard,h['path'],h['sha256'],*argv], stdin=source, stdout=log, timeout=1260)
+    # This former Python entry point predates the preserving UI receiver and
+    # cannot authenticate its protected publication policy.
+    raise ValueError('Legacy audit29 transport is retired. Use deploy/publish/transport_preserve.py')
+
 
 def publish(args):
     p, sha, _ = load_plan(args.plan)
     script = (ROOT / 'publish.py').read_bytes(); ast.parse(script)
     assert hashlib.sha256(script).hexdigest() == p['publicationWrapperSha256']
+    script = admission_source(p['wrapperSourceSha256']['publication_admission.py']) + b'\n' + script
     argv = ['systemd-run', '--unit=proofofwork-recovery-release-'+p['releaseId']+'-ui-'+p['publicationAttempt'],
         '--service-type=exec', '--wait', '--pipe', '--property=User=root', '--property=Group=root',
         '--property=KillMode=control-group', '--property=RuntimeMaxSec=30min', '--property=TimeoutStopSec=30s',
@@ -632,12 +707,13 @@ def publish(args):
         remote(argv, data=script, stdout=log, timeout=1860)
 
 def main():
-    global REPO
+    global REPO, UI_HOST
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--ui-host', action='store_true', help='Run preflight/upload/publish directly on the UI VPS')
     parser.add_argument('--repo', type=Path, default=REPO, help='Exact clean committed release checkout')
     sub = parser.add_subparsers(dest='command', required=True)
-    p = sub.add_parser('prepare-closed-input'); p.add_argument('build_receipt'); p.add_argument('output'); p.set_defaults(fn=prepare_closed_input)
+    p = sub.add_parser('prepare-closed-input'); p.add_argument('build_receipt'); p.add_argument('output'); p.add_argument('--private-staging', action='store_true'); p.set_defaults(fn=prepare_closed_input)
     p = sub.add_parser('preflight'); p.add_argument('output'); p.add_argument('--closed-request'); p.set_defaults(fn=preflight)
     p = sub.add_parser('make-plan'); p.add_argument('build_receipt'); p.add_argument('preflight'); p.add_argument('output'); p.add_argument('--attempt', default='initial')
     p.add_argument('--input-storage', choices=('release-evidence-v1', 'deploy-scratch-v1'), default='release-evidence-v1')
@@ -647,6 +723,11 @@ def main():
     p = sub.add_parser('publish'); p.add_argument('plan'); p.add_argument('log'); p.set_defaults(fn=publish)
     args = parser.parse_args()
     REPO = args.repo.resolve(strict=True)
+    if args.ui_host:
+        if args.command not in ('preflight', 'upload-plan', 'publish') or REPO != ROOT.parents[1]:
+            raise ValueError('UI-native admission requires its committed UI checkout and control phase')
+        lifecycle_module().require_ui_host(REPO)
+        UI_HOST = True
     args.fn(args)
 
 if __name__ == '__main__': main()

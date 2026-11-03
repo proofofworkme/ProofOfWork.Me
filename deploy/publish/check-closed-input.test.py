@@ -26,6 +26,19 @@ class ClosedInputTests(unittest.TestCase):
         cls.sequence = module('sequence_capacity.py')
         cls.stager = module('../proofofwork-ui-release-stage.py')
 
+    def test_private_preflight_refuses_predicted_retirement_before_upload(self):
+        with tempfile.TemporaryDirectory() as d:
+            closed=Path(d)/'closed.json'
+            closed.write_text(json.dumps({'releaseId':self.release_id,'inputCompactorSha256':'f'*64}))
+            def status(**options):
+                self.assertEqual(options,{'require_complete':True,'prospective_release':self.release_id})
+                return {'privateStageRetention':{'wouldRetire':['existing admitted archive']}}
+            with patch.dict(self.release.preflight.__globals__, {
+                    'lifecycle_module':lambda:types.SimpleNamespace(status=status),
+                    'remote':lambda *args,**kwargs:self.fail('upload attempted')}):
+                with self.assertRaisesRegex(ValueError,'existing admitted archive'):
+                    self.release.preflight(types.SimpleNamespace(closed_request=str(closed)))
+
     def setUp(self):
         self.addCleanup(os.umask, os.umask(0o022))
         self.tmp = tempfile.TemporaryDirectory()
@@ -76,6 +89,7 @@ class ClosedInputTests(unittest.TestCase):
             (deploy/name).write_bytes((ROOT.parent/name).read_bytes())
         (deploy/'publish').mkdir()
         (deploy/'publish/phase_capacity.py').write_bytes((ROOT/'phase_capacity.py').read_bytes())
+        (deploy/'publish/input_compaction.py').write_bytes((ROOT/'input_compaction.py').read_bytes())
         def git(*args):
             return subprocess.check_output(['git','-C',str(repo),*args],text=True).strip()
         git('init', '-q'); git('add', 'deploy')
@@ -95,6 +109,12 @@ class ClosedInputTests(unittest.TestCase):
             self.assertEqual(self.release.digest(args.output+'.zlib'),request['inventorySha256'])
             self.assertEqual(request['helperHashes']['publisher'],self.release.digest(deploy/sources[1]))
             with self.assertRaises(FileExistsError): self.release.prepare_closed_input(args)
+            self.assertNotIn('inputCompactorSha256',request)
+            args.private_staging=True
+            args.output=str(root/'private.json')
+            self.release.prepare_closed_input(args)
+            private=json.loads(Path(args.output).read_bytes())
+            self.assertEqual(private['inputCompactorSha256'],self.release.digest(deploy/'publish/input_compaction.py'))
             self.bundle.write_bytes(b'changed file')
             with self.assertRaisesRegex(ValueError,'surface archive differs'): self.release.closed_input(build)
 
@@ -123,6 +143,42 @@ class ClosedInputTests(unittest.TestCase):
                 with self.assertRaises(ValueError): self.assess()
         (self.live/'proofofwork-permission').rename(self.live/'unmanaged')
         with self.assertRaises(ValueError): self.assess()
+
+    def test_private_whole_release_counts_each_coexisting_phase_and_refuses_any_short_phase(self):
+        self.request['inputCompactorSha256']='9'*64
+        old_file=self.live/'held-passthrough'
+        old_file.write_bytes(b'held bytes')
+        proof=self.assess()
+        bounds=proof['privateStaging']
+        block=os.statvfs(self.live).f_frsize
+        self.assertGreaterEqual(bounds['passthroughUpperBytes'],5*block)
+        census={'limits':dict(self.sequence.LIMITS),'liveTree':{'additionalBytes':646303744,'additionalInodes':3074}}
+        plan={'inputStorage':'deploy-scratch-v1','sourceAllocatedBytes':400000000,'admissions':{
+            'source-receive':{'bytes':414089216,'inodes':15000},'surfaces-receive':{'bytes':394182656,'inodes':4000}},
+            'releaseFormat':'proofofwork-ui-release-v5','managedSurfaces':self.names,
+            **{k:self.request[k] for k in ('releaseId','commit','tree')},'surfaces':{'sha256':self.request['surfacesSha256']},
+            'surfacesPayloadFingerprint':self.fp,'publicationHelpers':self.helpers,'closedArchive':proof,
+            'phaseCapacity':{'sha256':self.request['phaseSourceSha256']}, 'inputCompactor':{'sha256':'9'*64},
+            'oldLiveManifestSha256':'e'*64,'oldFullRootTreeSha256':'f'*64,
+            'stageArchiveUpperBoundBytes':proof['archive']['archiveUpperBoundBytes']}
+        result=self.sequence.requirements(plan,census)
+        phases=result['privatePhasePeaks']
+        self.assertEqual(phases['surfaces-receive']['root'],394182656+4*1024**2)
+        self.assertEqual(phases['stage']['root'],bounds['compactInputUpperBytes']+646303744+394182656)
+        for name in ('root','scratch'):
+            self.assertEqual(phases['source-and-publication'][name]-phases['archive'][name],414089216)
+            self.assertEqual(result['additionalBytes'][name],max(row[name] for row in phases.values())+64*1024**2)
+        # Planning must account for the stage copy even when generated inputs
+        # are duplicates and the final stage is much smaller.
+        self.assertLess(phases['archive']['scratch'],phases['stage']['scratch'])
+        required=result['additionalBytes'];limits=self.sequence.LIMITS
+        census.update({'availableBytes':limits['rootReserveBytes']+limits['growthReserveBytes']+required['root'],
+                      'availableInodes':1000000,'usage':{k:0 for k in ('scratch','backup','transport')}})
+        self.assertTrue(self.sequence.admit(result,census)['ok'])
+        census['availableBytes']-=1
+        with self.assertRaisesRegex(ValueError,'"root": 1'):self.sequence.admit(result,census)
+        with patch.dict(plan['inputCompactor'],{'sha256':'8'*64}):
+            with self.assertRaisesRegex(ValueError,'Unbound private'): self.sequence.requirements(plan,census)
 
     def test_only_bound_fresh_release_uses_bounded_work_and_full_candidate(self):
         proof=self.assess()

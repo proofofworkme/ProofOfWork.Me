@@ -21,7 +21,10 @@ the VPS with bounded resources and stream artifacts between the build and UI
 hosts. Update the existing primary checkout and preview for release alignment;
 install the VPS-built preview in place instead of building it locally. Keep the
 live UI and one verified prior release for rollback; do not accumulate local
-recovery copies. See [infrastructure storage policy](OP_RETURN_INFRASTRUCTURE.md#storage-policy--2026-10-24).
+recovery copies. For the November 3 UI release the operator also retained the
+verified c3969c39 fallback root, archive, checksum and provenance in place.
+Record and verify their original admissions throughout publication. An
+unexpected retirement stops the release for review. See [infrastructure storage policy](OP_RETURN_INFRASTRUCTURE.md#storage-policy--2026-10-24).
 
 ## Source Memory
 

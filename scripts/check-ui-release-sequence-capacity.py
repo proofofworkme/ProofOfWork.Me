@@ -304,7 +304,7 @@ class TransportPhaseOrder(unittest.TestCase):
                     self.fail('Unexpected process boundary: ' + name)
             scope.update(BASE=scratch, EVIDENCE=evidence, ARCHIVES=archives, out=out,
                 phase='surfaces-stage', release=release, evidence_root=evidence_root,
-                scratch_inputs=scratch_inputs, input_parent=scratch if scratch_inputs else evidence_root,
+                scratch_inputs=scratch_inputs, private_staging=False, input_parent=scratch if scratch_inputs else evidence_root,
                 plan_sha='p' * 64, lock_fd=123, tools=root / 'tools', EVIDENCE_RESERVE=32*1024**2,
                 phase_capacity_source='fixture phase model', SURFACES=['fixture'],
                 helpers={'capacity': {'sha256': 'c' * 64}, 'stager': {'path': '/fixture/stager', 'sha256': 's' * 64}},
@@ -366,7 +366,7 @@ class TransportPhaseOrder(unittest.TestCase):
                 received.append(True)
                 (scratch / ('audit5-stream-source-' + release + '.json')).write_text('{"status":"verified"}')
             scope = {'__name__': '_scratch_source_fixture', 'Path': Path, 'json': json,
-                'phase': 'source', 'release': release, 'scratch_inputs': True, 'input_parent': scratch,
+                'phase': 'source', 'release': release, 'scratch_inputs': True, 'private_staging': False, 'input_parent': scratch,
                 'BASE': scratch, 'ARCHIVES': archives, 'EVIDENCE': evidence, 'evidence_root': evidence,
                 'tools': tools, 'EVIDENCE_RESERVE': 32*1024**2, 'RECEIVE_TIMEOUT_SECONDS': 1800,
                 'p': {'admissions': {'source-receive': {'bytes': 4096, 'inodes': 15000}},

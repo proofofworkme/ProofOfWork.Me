@@ -5,15 +5,20 @@ import hashlib
 import json
 import pathlib
 import re
+import runpy
 import shlex
 import subprocess
 
 
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--ui-host", action="store_true", help="Run verification and lifecycle completion on the UI VPS")
 parser.add_argument("plan")
 parser.add_argument("publish_log")
 parser.add_argument("destination")
 args = parser.parse_args()
+lifecycle = pathlib.Path(__file__).resolve().parents[1] / 'ui-retention/lifecycle.py'
+if args.ui_host:
+    runpy.run_path(str(lifecycle))['require_ui_host'](lifecycle.parents[2])
 plan_path = pathlib.Path(args.plan)
 publish_path = pathlib.Path(args.publish_log)
 assert plan_path.stat().st_size <= 65536
@@ -87,10 +92,11 @@ print(json.dumps({'remoteReceipt':str(receipt),'sha256':hashlib.sha256(data).hex
 if result.returncode or value.get('ok') is not True:
  sys.stderr.buffer.write(result.stderr[-4096:]);sys.exit(1)
 '''
-command = ["ssh", "-i", "/home/sixer/.ssh/proofofwork_me_ed25519",
+local = ['/usr/bin/python3', '-I', '-B', '-c', bootstrap]
+command = local if args.ui_host else ["ssh", "-i", "/home/sixer/.ssh/proofofwork_me_ed25519",
            "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
            "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=10", "root@77.42.91.106",
-           shlex.join(['/usr/bin/python3', '-I', '-B', '-c', bootstrap])]
+           shlex.join(local)]
 result = subprocess.run(command, input=json.dumps(request).encode(), capture_output=True, timeout=1020)
 assert len(result.stdout) <= 65536 and len(result.stderr) <= 65536, 'Oversized remote verification report'
 if result.returncode:
@@ -106,7 +112,7 @@ with (destination/'vps-verification.json').open('x') as output:
 with (destination/'https-smoke-receipt.json').open('x') as output:
     json.dump(smoke, output, sort_keys=True); output.write('\n')
 assert plan.get('retentionLifecycle'), 'Release requires an installed retention lifecycle binding'
-lifecycle = pathlib.Path(__file__).parents[1] / 'ui-retention/lifecycle.py'
-subprocess.run(['/usr/bin/python3', '-I', '-B', str(lifecycle), 'complete',
+host_flags = ['--ui-host'] if args.ui_host else []
+subprocess.run(['/usr/bin/python3', '-I', '-B', str(lifecycle), *host_flags, 'complete',
                 str(plan_path), str(publish_path), str(destination/'https-smoke-receipt.json'),
                 str(destination/'retention')], check=True, timeout=14400)

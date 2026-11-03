@@ -244,6 +244,11 @@ def file_row(path, relative, details, stager, *, copy_xattrs=True):
 def prior_compatibility(live_root, live_surfaces, stager, incoming):
     """Match the installed stager's complete prior asset traversal and reject all collisions."""
     compatibility, per_surface, references = {}, {}, []
+    # A historical hash-pinned stager only knows its original global bounds.
+    if hasattr(stager, 'prior_asset_parser'):
+        dependency_limit, parse_references = stager.prior_asset_parser(live_surfaces)
+    else:
+        dependency_limit, parse_references = stager.MAXIMUM_DEPENDENCIES, stager.dependency_references
     counters = {'dependencies': 0, 'reference_edges': 0, 'reference_candidates': 0, 'total_bytes': 0}
     for surface in live_surfaces:
         before = dict(counters)
@@ -253,7 +258,7 @@ def prior_compatibility(live_root, live_surfaces, stager, incoming):
         if not stat.S_ISREG(details.st_mode) or index.resolve() != index or details.st_size > stager.MAXIMUM_INDEX_BYTES:
             raise ValueError('Unsafe prior capacity index')
         _, content = stager.digest_regular_file(index, details, capture=True)
-        pending = stager.dependency_references(live_surface, index, content, counters)
+        pending = parse_references(live_surface, index, content, counters)
         existing = {row['path']: row for row in incoming[surface]}
         missing, visited = [], set()
         while pending:
@@ -262,7 +267,7 @@ def prior_compatibility(live_root, live_surfaces, stager, incoming):
                 continue
             visited.add(relative)
             counters['dependencies'] += 1
-            if counters['dependencies'] > stager.MAXIMUM_DEPENDENCIES:
+            if counters['dependencies'] > dependency_limit:
                 raise ValueError('Prior compatibility dependency bound exceeded')
             path = live_surface / relative
             details = path.lstat()
@@ -298,7 +303,7 @@ def prior_compatibility(live_root, live_surfaces, stager, incoming):
                 missing.append(row)
                 existing[relative] = row
             if capture:
-                pending.extend(stager.dependency_references(live_surface, path, content, counters))
+                pending.extend(parse_references(live_surface, path, content, counters))
         compatibility[surface] = missing
         per_surface[surface] = {name: counters[name] - before[name] for name in counters}
     digest = hashlib.sha256(json.dumps(sorted(references), separators=(',', ':')).encode()).hexdigest()
@@ -310,6 +315,79 @@ def inventory_path(release, digest):
     if not re.fullmatch(r'[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', release) or not re.fullmatch(r'[0-9a-f]{64}', digest):
         raise ValueError('Invalid release inventory identity')
     return Path('/var/tmp/proofofwork-deploy') / ('recovery-control-' + release + '-inventory-' + digest + '.zlib')
+
+
+def private_staging_storage(incoming, compatibility, live_root, order):
+    """Bounds to recheck after the new input and candidate independently establish internal aliases."""
+    block = os.statvfs(live_root).f_frsize
+    if not 512 <= block <= 65536:
+        raise ValueError('Unsupported private stage allocation block')
+    # The receiver and the candidate own independent inodes. Each key can
+    # be used as one allocation only after comparing the complete file bytes.
+    def managed_bytes(groups):
+        keys = set()
+        entries = directories = 0
+        attributes = 0
+        for rows in groups:
+            for row in rows:
+                entries += 1
+                if row['kind'] == 'directory':
+                    directories += 1
+                else:
+                    keys.add(dedup_key(row))
+                    for name, value in row['xattrs']:
+                        attributes += len(os.fsencode(name)) + len(bytes.fromhex(value)) + block
+        payload = sum(rounded(key[0], block) for key in keys)
+        # Match the native four-block metadata charge on *every* path,
+        # including aliases, plus space for directory entries and attributes.
+        return payload + (entries * 4 + directories * 2 + 32) * block + rounded(attributes, block)
+
+    managed = {'proofofwork-' + name for name in order}
+    passthrough = 0
+    snapshot = {}
+    pending = [p for p in live_root.iterdir() if p.name not in managed and p.name != '.proofofwork-ui-release']
+    while pending:
+        path = pending.pop()
+        details = path.lstat()
+        if (details.st_dev != live_root.stat().st_dev or path.resolve() != path or
+                not (stat.S_ISDIR(details.st_mode) or stat.S_ISREG(details.st_mode))):
+            raise ValueError('Private stage passthrough contains an unsupported entry')
+        snapshot[path] = snapshot_identity(details)
+        if len(snapshot) > 100000:
+            raise ValueError('Private stage passthrough entry bound exceeded')
+        attrs = sum(block + len(os.fsencode(name)) + len(os.getxattr(path, name, follow_symlinks=False))
+                    for name in os.listxattr(path, follow_symlinks=False))
+        passthrough += max(rounded(details.st_size, block), details.st_blocks * 512) + 4 * block + rounded(attrs, block)
+        if stat.S_ISDIR(details.st_mode):
+            pending.extend(path.iterdir())
+    check_snapshot(snapshot)
+    # Include the payload root, surfaces/ and the fresh journal. Double-counting
+    # overlaps in incoming/compatibility is conservative.
+    return {'model': 'private-release-stage-v1', 'blockSize': block,
+            'compactInputUpperBytes': managed_bytes(incoming.values()) + 4 * 1024**2,
+            'finalCandidateUpperBytes': passthrough + managed_bytes([*incoming.values(), *compatibility.values()]),
+            'passthroughUpperBytes': passthrough}
+
+
+def private_stage_receipt(stage, stager, expected_upper):
+    measured, snapshot = stager.candidate_allocation(stage, os.geteuid())
+    if measured['additionalBytes'] > expected_upper:
+        raise ValueError('Completed stage exceeds private allocation admission')
+    content = list(stager.tree_fingerprint(stage, expected_owner=os.geteuid()))
+    stager.verify_candidate_allocation(snapshot)
+    rows = [[str(path.relative_to(stage)), ids, [(name, val.hex()) for name, val in attrs]]
+            for path, (ids, attrs) in sorted(snapshot.items())]
+    return {'storage': measured, 'content': content,
+            'allocationSha256': hashlib.sha256(json.dumps(rows, separators=(',', ':')).encode()).hexdigest()}
+
+
+def verify_private_predecessor(plan, plan_sha, prior, current_compact, current_stage):
+    if (prior.get('ok') is not True or prior.get('phase') != 'surfaces-stage' or
+            any(prior.get(k) != plan[k] for k in ('releaseId', 'commit', 'tree')) or
+            prior.get('planSha256') != plan_sha or prior.get('productionPublished') is not False or
+            prior.get('historicalDeletion') is not False or current_compact != prior.get('compactInput') or
+            current_stage != prior.get('privateStageAllocation')):
+        raise ValueError('Private stage/input no longer match the preceding verified receipt')
 
 
 def assess_closed_input(request, helpers, live, stager, packed, live_root):
@@ -363,8 +441,14 @@ def assess_closed_input(request, helpers, live, stager, packed, live_root):
         raise ValueError('Streaming admission requires the complete live V5 surface family')
     compatibility, _, counters, prior_sha = prior_compatibility(live_root, live_surfaces, stager, incoming)
     archive = closed_managed_archive_budget(incoming, compatibility, order)
-    return {'request': request, 'archive': archive, 'priorDependenciesSha256': prior_sha,
-            'dependencyCounters': counters, 'liveManifestSha256': live['manifestSha256'], 'liveTreeSha256': live['treeSha256']}
+    evidence = {'request': request, 'archive': archive, 'priorDependenciesSha256': prior_sha,
+                'dependencyCounters': counters, 'liveManifestSha256': live['manifestSha256'], 'liveTreeSha256': live['treeSha256']}
+    if 'inputCompactorSha256' in request:
+        digest = request['inputCompactorSha256']
+        if not isinstance(digest, str) or len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest):
+            raise ValueError('Invalid private input compactor identity')
+        evidence['privateStaging'] = private_staging_storage(incoming, compatibility, live_root, order)
+    return evidence
 
 
 def recheck_closed_input(request, helpers, live, lock_fd):
@@ -384,7 +468,7 @@ def recheck_closed_input(request, helpers, live, lock_fd):
     return assess_closed_input(request, helpers, live, stager, packed, Path('/var/www'))
 
 
-def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent=None):
+def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent=None, private_input=False):
     """Read-only collector; caller holds the deployment lock through staging."""
     incoming_root, live_root = Path(incoming_root), Path(live_root)
     stager.canonical_safe_directory(live_root, 'Live capacity root', owner)
@@ -433,6 +517,7 @@ def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent
             raise ValueError('Unsupported live capacity entry')
     if initial > 4 * 1024**3:
         raise ValueError('Live capacity copy bound exceeded')
+    input_aliases = {}
     for surface in order:
         root = incoming_root / surface
         rows, pending = [], [root]
@@ -447,12 +532,17 @@ def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent
             if stat.S_ISDIR(details.st_mode):
                 rows.append({'path': relative, 'kind': 'directory'})
                 pending.extend(path.iterdir())
-            elif stat.S_ISREG(details.st_mode) and details.st_nlink == 1:
+            elif stat.S_ISREG(details.st_mode) and (details.st_nlink == 1 or private_input):
+                inode = (details.st_dev, details.st_ino)
+                paths = input_aliases.setdefault(inode, [])
+                paths.append(path)
                 rows.append(file_row(path, relative, details, stager))
             else:
                 raise ValueError('Incoming capacity files must be independent regular copies')
         incoming[surface] = rows
     snapshot[incoming_root] = snapshot_identity(incoming_root.lstat())
+    if any(paths[0].lstat().st_nlink != len(paths) for paths in input_aliases.values()):
+        raise ValueError('Incoming surface aliases extend outside the fresh input')
     compatibility, per_surface, counters, prior_sha = prior_compatibility(live_root, live_surfaces, stager, incoming)
     check_snapshot(snapshot)
     stager.reject_nested_mounts(live_root, mountinfo)
@@ -525,8 +615,10 @@ if __name__ == '__main__':
         raise SystemExit('Usage: phase_capacity.py incoming|managed CANONICAL_ROOT | stage CANONICAL_ROOT EXPECTED_STAGER_SHA256')
     if sys.argv[1] == 'stage':
         EXPECTED_STAGER_SHA256 = sys.argv[3]
+        mode = sys.argv[4] if len(sys.argv) == 5 else None
         result = stage_budget(sys.argv[2], '/var/www', locked_installed_stager(),
-                              allocation_parent=sys.argv[4] if len(sys.argv) == 5 else None)
+                              allocation_parent=None if mode == '--private-input' else mode,
+                              private_input=mode == '--private-input')
         result['installedStagerSha256'] = EXPECTED_STAGER_SHA256
         print(json.dumps(result))
     else:

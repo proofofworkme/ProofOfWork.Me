@@ -1,89 +1,73 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "pending-mail-discovery-and-log-publication",
-  "liveCheck": "scripts/check-pending-discovery-live.mjs",
+  "upgrade": "publish-and-preserve-verified-ui-fallback",
+  "liveCheck": "scripts/check-publisher-repair-live.mjs",
   "ciTests": [
-    "scripts/check-pending-log-publication.test.mjs",
+    "scripts/check-publisher-repair.test.mjs",
+    "scripts/check-upgrade-impact.test.mjs",
+    "scripts/check-work-batch-summary-projection.test.mjs",
     "scripts/check-pending-discovery-worker.test.mjs",
     "server/pending-broadcast-hints.test.mjs",
-    "scripts/check-work-batch-summary-projection.test.mjs"
+    "scripts/check-pending-log-publication.test.mjs"
   ],
   "reviews": [
     {
       "targets": [
-        "wire",
-        "local-signing",
-        "compatibility"
-      ],
-      "disposition": "compatible",
-      "reason": "Signed transaction bytes and wallet approval are unchanged. Existing sender and relay paths can prioritize only bounded discovery work after an accepted result whose txid matches the signed bytes. Optional hint persistence cannot reverse a successful broadcast.",
-      "evidence": [
-        "server/pending-broadcast-hints.test.mjs",
-        "server/proof-api.mjs",
-        "scripts/check-pending-discovery-worker.test.mjs"
-      ]
-    },
-    {
-      "targets": [
-        "indexer",
-        "backfill-reorg",
-        "api",
-        "mail",
-        "files",
         "activity",
-        "computer",
-        "wallet"
-      ],
-      "disposition": "affected",
-      "reason": "Pending-only inspection of Core membership adds progressing arrivals and accepted-submission hints. Ordinary Mail and other protocol carriers go through the existing verifier. The worker can publish an observed pending change at the same block while keeping the old snapshot identity separate.",
-      "evidence": [
-        "scripts/check-pending-discovery-worker.test.mjs",
-        "scripts/check-pending-log-publication.test.mjs",
-        "scripts/check-pending-discovery-live.mjs",
-        "server/pending-broadcast-hints.test.mjs"
-      ]
-    },
-    {
-      "targets": [
-        "accounting",
-        "growth",
-        "token",
-        "work",
-        "marketplace",
-        "infinity",
-        "inception",
-        "notifications"
-      ],
-      "disposition": "compatible",
-      "reason": "Shared summary readers can observe a newer pending snapshot at the same height. A revision keeps the confirmed action count, network value, frozen value and fee accounting model fixed. Existing scope, admission, reservation and exactly-once batch predicates continue to apply.",
-      "evidence": [
-        "scripts/check-pending-log-publication.test.mjs",
-        "scripts/check-summary-preview-live.mjs",
-        "scripts/check-work-batch-summary-projection.test.mjs"
-      ]
-    },
-    {
-      "targets": [
         "boost",
         "browser",
         "code",
+        "computer",
         "desktop",
         "dns",
+        "growth",
         "id",
+        "inception",
+        "infinity",
         "jobs",
         "landing",
+        "marketplace",
         "nft",
         "pages",
         "permission",
         "publish",
-        "search"
+        "search",
+        "token",
+        "wallet",
+        "work",
+        "compatibility"
+      ],
+      "disposition": "affected",
+      "reason": "All 22 static roots share release staging, archive and rollback verification. The publisher checks the retained fallback at its original paths before and after exchange and stops on any unqualified retirement.",
+      "evidence": [
+        "deploy/publish/check-private-staging.test.py",
+        "scripts/check-ui-compatibility-boundaries.py",
+        "deploy/ui-retention/check-lifecycle-remote.test.py",
+        "scripts/check-release-sync.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "wire",
+        "indexer",
+        "api",
+        "backfill-reorg",
+        "accounting",
+        "local-signing",
+        "files",
+        "mail",
+        "notifications"
       ],
       "disposition": "compatible",
-      "reason": "Existing record formats and public readers remain responsible for their own coverage. An unconfirmed discovery hint adds no search document, content, economic value, registry mutation or confirmed balance.",
+      "reason": "The UI publishes from the same source as the pending-discovery and compact-summary node releases. The final check verifies both the eleven-recipient Mail record and the earlier 161-recipient WORK batch at a live checkpoint. Wire formats, confirmed replay and local signing retain their existing authority.",
       "evidence": [
-        "scripts/check-public-read-paths.mjs",
+        "deploy/publish/check-private-staging.test.py",
+        "scripts/check-service-boot-live.mjs",
+        "scripts/check-release-sync.mjs",
+        "scripts/check-summary-preview-live.mjs",
+        "scripts/check-work-batch-summary-projection.test.mjs",
         "scripts/check-pending-discovery-live.mjs",
-        "scripts/backfill-proof-indexer.mjs"
+        "scripts/check-pending-log-publication.test.mjs"
       ]
     }
   ]

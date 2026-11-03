@@ -80,11 +80,51 @@ class SnapshotGuardTests(unittest.TestCase):
     def test_unowned_link_change_refuses(self):
         full=S.snapshot(self.root);os.link(self.file,self.base/'alias')
         with self.assertRaisesRegex(ValueError,'hardlink'):S.guard_snapshot(self.root,full)
+    def test_first_and_post_unlink_byte_reads_follow_closed_ctime(self):
+        alias=self.base/'alias';os.link(self.file,alias)
+        original_hash=S.hash_read
+        def after_tick(path):
+            self.assertGreater(S.time.clock_gettime_ns(5)//10**9, path.lstat().st_ctime_ns//10**9)
+            return original_hash(path)
+        with patch.object(S,'hash_read',side_effect=after_tick) as reads:
+            full=S.snapshot(self.root)
+            inode=self.file.stat()
+            alias.unlink()
+            S.guard_snapshot(self.root,full,{(inode.st_dev,inode.st_ino):1})
+            self.assertEqual([c.args[0] for c in reads.call_args_list],[self.file,self.file])
+
+    def test_serialized_snapshot_requires_new_byte_proof(self):
+        archived=json.loads(json.dumps(S.snapshot(self.root)))
+        with patch.object(S,'hash_read',wraps=S.hash_read) as reads:
+            self.assertEqual(S.guard_snapshot(self.root,archived),archived)
+            self.assertEqual([c.args[0] for c in reads.call_args_list],[self.file])
+
+    def test_ambiguous_clock_outside_budget_and_discontinuous_clock_refuse(self):
+        now=S.time.time_ns()
+        with self.assertRaisesRegex(ValueError,'future'):
+            S.close_ctime_interval(now+10**9,S.time.monotonic()+1)
+        with patch.object(S.time,'clock_gettime_ns',return_value=now-10**9):
+            with self.assertRaisesRegex(ValueError,'deadline'):
+                S.close_ctime_interval(now,S.time.monotonic()+0.01)
+        clock=S.SnapshotClock()
+        try:
+            with patch.object(os,'read',side_effect=OSError(S.errno.ECANCELED,'clock changed')):
+                with self.assertRaisesRegex(ValueError,'clock changed'): clock.check()
+            with self.assertRaisesRegex(ValueError,'clock changed'): clock.check()
+        finally: clock.close()
 
 class StorageTests(unittest.TestCase):
     def setUp(self):
         self.old_umask=os.umask(0o077)
         self.tmp=tempfile.TemporaryDirectory();self.base=Path(self.tmp.name);self.l=S.Layout(self.base)
+        # Inspect a synthetic process tree. Tests of open mappings and
+        # inaccessible processes add their own entries.
+        proc=self.base/'proc';proc.mkdir()
+        inspect=S.references
+        def fixture_references(paths,roots,proc=proc,**kwargs):
+            return inspect(paths,roots,proc=proc,**kwargs)
+        process_scan=patch.object(S,'references',fixture_references)
+        process_scan.start();self.addCleanup(process_scan.stop)
         for p in [self.l.live,self.l.roots,self.l.archives,self.l.scratch,self.l.evidence,self.l.target.parent,self.l.lock.parent,self.l.units,self.l.held.parent,self.l.capacity.parent]:p.mkdir(parents=True,exist_ok=True)
         self.l.lock.write_text('');self.l.capacity.write_text('# safe capacity fixture\n');self.l.hold.write_text('generic hold remains\n')
         configs={}
@@ -579,6 +619,66 @@ finally:t.tearDown()
             for number in range(47,1,-1):(logs/(family+'.'+str(number)+'.gz')).rename(logs/(family+'.'+str(number+1)+'.gz'))
             (logs/(family+'.1')).unlink();(logs/(family+'.2.gz')).write_text('compressed log\n');(logs/(family+'.2.gz')).chmod(0o640)
             (logs/family).rename(logs/(family+'.1'));(logs/family).write_text('fresh active log\n');(logs/family).chmod(0o640)
+
+    def boot_logs(self):
+        owner = patch.object(S, 'BOOT_LOG_GID', os.getegid())
+        owner.start(); self.addCleanup(owner.stop)
+        files = {}
+        for name in S.BOOT_LOG_PINS:
+            path = self.base / name.lstrip('/')
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('pinned Ubuntu rotation fixture\n')
+            files[name] = S.hash_read(path)[0]
+        pins = patch.object(S, 'BOOT_LOG_PINS', files)
+        pins.start(); self.addCleanup(pins.stop)
+        manager = patch.object(S, 'verify_boot_log_unit', return_value=(1,2**63-1))
+        manager.start(); self.addCleanup(manager.stop)
+        return self.rotating_logs(extra=[Path(p).name for p in sorted(S.boot_log_paths(self.l))])
+
+    def test_boot_model_preserves_legacy_inodes_and_strictly_limits_new_scope(self):
+        self.boot_logs()
+        old, _ = S.safeguards(self.l, model=S.LEGACY_ROTATING_LOG_GUARD_MODEL)
+        current, _ = S.safeguards(self.l, model=S.ROTATING_LOG_GUARD_MODEL)
+        target = self.base/'var/log/dmesg.1.gz'
+        self.assertEqual(len(current['rotationConfigs']), 4)
+        self.assertIn(target.stat().st_ino, [r['inode'] for r in S.rotating_log_observations(self.l, current)])
+        replacement = target.with_name('next')
+        replacement.write_text('rotated fixture\n'); replacement.chmod(0o640); replacement.replace(target)
+        S.compare_guards(self.l, current, [])
+        ctime=target.stat().st_ctime_ns
+        with patch.object(S,'verify_boot_log_unit',return_value=(1,ctime-1)):
+            with self.assertRaisesRegex(ValueError,'outside verified rotation'):
+                S.compare_guards(self.l,current,[])
+        with self.assertRaisesRegex(ValueError, 'census changed'):
+            S.compare_guards(self.l, old, [])
+        os.link(target, replacement)
+        with self.assertRaisesRegex(ValueError, 'Unsafe held'):
+            S.compare_guards(self.l, current, [])
+        replacement.unlink()
+        target.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, 'Unsafe held'):
+            S.compare_guards(self.l, current, [])
+        target.chmod(0o640)
+        for name in S.BOOT_LOG_PINS:
+            path = self.base/name.lstrip('/')
+            content = path.read_bytes(); path.write_bytes(content+b'changed')
+            with self.assertRaisesRegex(ValueError, 'configuration changed'): S.compare_guards(self.l,current,[])
+            path.write_bytes(content)
+        target.unlink()
+        with self.assertRaisesRegex(ValueError, 'absent or not regular'): S.compare_guards(self.l,current,[])
+
+    def test_boot_unit_requires_effective_original_fragment_and_successful_savelog(self):
+        output = ('LoadState=loaded\nFragmentPath=/usr/lib/systemd/system/dmesg.service\n'
+                  'DropInPaths=\nNeedDaemonReload=no\nResult=success\nExecMainStatus=0\n'
+                  'ExecMainStartTimestampMonotonic=7\nExecStartPre={ path=/usr/bin/savelog ; '
+                  'argv[]=/usr/bin/savelog -m640 -q -p -n -c 5 /var/log/dmesg ; ignore_errors=yes ; '
+                  'start_time=[Tue] ; stop_time=[Tue] ; pid=8 ; code=exited ; status=0 }')
+        with patch.object(S.subprocess, 'check_output', side_effect=[output,'t 100\nt 150\n']):
+            self.assertEqual(S.verify_boot_log_unit(),(100000,150999))
+        for before, after in [('DropInPaths=', 'DropInPaths=/etc/override'), ('-c 5', '-c 4'),
+                              ('status=0 }', 'status=1 }'), ('Reload=no', 'Reload=yes'), ('Monotonic=7','Monotonic=0')]:
+            with patch.object(S.subprocess, 'check_output', return_value=output.replace(before,after)):
+                with self.assertRaisesRegex(ValueError, 'authority or execution'): S.verify_boot_log_unit()
 
     def test_approved_rotation_model_keeps_legacy_strict_and_observations_separate(self):
         self.rotating_logs();legacy,_=S.safeguards(self.l);current,_=S.safeguards(self.l,model=S.ROTATING_LOG_GUARD_MODEL)

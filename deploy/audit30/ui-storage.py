@@ -11,6 +11,7 @@ import collections
 import contextlib
 import ctypes
 import datetime
+import errno
 import fcntl
 import hashlib
 import json
@@ -25,6 +26,7 @@ import subprocess
 import sys
 import tarfile
 import time
+import weakref
 
 SURFACES = 'activity boost browser computer desktop dns growth id inception infinity landing marketplace nft token wallet work'.split()
 V3_SURFACES = frozenset('activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split())
@@ -50,7 +52,13 @@ MAX_JSON = 64 * 1024**2
 # dynamic-log exception or an automatic recovery from absent paths.
 RECONCILIATION_PINS = dict(reviewManifest='3d09b077148cf471c1b9581e091a676ad7d4b25e799ba50b11561247b7f1f04b',originalPlan='17fd46d15d836d485e96fe0e25abf9bae0505cfee4d64728a895fd50b0e7e8b7',originalIntent='e2a6afa6f7da36ce4e9c5c7797409e5911d99bdcd5f448a2843e513d3a892df2',failedReceipt='4575ad6fee8475822c4db7db31da7843b26abd1053f052027ec4dc4cfcdf12a9',originalController='038a2315c4ba5d10e27335a69c400f6c09ec3c2b50b0f64fefb1f5f09d6a06c2',rotationEvidence='0550a89409c6176febf514278ee0ae70710e0b4b5788d2962e077dfe799b3bb9')
 ROTATION_CONFIG_PINS={'/etc/logrotate.d/rsyslog':'b33b9a6126dfec23ec966cb43d18fbd90d053acc683f67d3c76aa49c0b1afc3b','/etc/logrotate.d/ufw':'03dedaa1de48c9b708363ef4ac2ebeb35b20e47ce1f8a5d650f1335a5f37a5d1'}
-ROTATING_LOG_GUARD_MODEL='pow-ui-held-census-rotating-logs-v1'
+LEGACY_ROTATING_LOG_GUARD_MODEL='pow-ui-held-census-rotating-logs-v1'
+ROTATING_LOG_GUARD_MODEL='pow-ui-held-census-rotating-logs-v2'
+BOOT_LOG_PINS = {
+    '/usr/lib/systemd/system/dmesg.service': '9a9364d95eef682c52aa385851924ef5695625d7e93c7ee97f377e62e8133673',
+    '/usr/bin/savelog': '6a0f55fea1a81f1930c86f534fb5570785b2f12f3da49709e76c3148a89e0197',
+}
+BOOT_LOG_GID = 4  # Ubuntu's adm group.
 
 def utc(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
 def encoded(value): return json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
@@ -106,8 +114,88 @@ def attributes(path):
         out.append([name, base64.b64encode(b).decode()])
     return out
 
+class SnapshotClock:
+    """One Linux clock-step detector for the process doing a locked verification."""
+    def __init__(self):
+        libc = ctypes.CDLL(None, use_errno=True)
+        self.fd = libc.timerfd_create(time.CLOCK_REALTIME, os.O_NONBLOCK | os.O_CLOEXEC)
+        if self.fd < 0:
+            raise OSError(ctypes.get_errno(), 'Cannot establish snapshot clock fence')
+        # Linux amd64 itimerspec: interval and absolute expiration, each a timespec.
+        # An armed realtime timer reports ECANCELED even for a backward step that
+        # is corrected again before the next observation.
+        expiry = (ctypes.c_long * 4)(0, 0, time.time_ns() // 10**9 + 86400, 0)
+        if libc.timerfd_settime(self.fd, 1 | 2, ctypes.byref(expiry), None) < 0:
+            error = ctypes.get_errno()
+            os.close(self.fd)
+            raise OSError(error, 'Cannot arm snapshot clock fence')
+        self.pid = os.getpid()
+        self.invalid = False
+        self.close = weakref.finalize(self, os.close, self.fd)
+
+    def check(self):
+        if not self.invalid:
+            try:
+                os.read(self.fd, 8)
+            except BlockingIOError:
+                return
+            except OSError as error:
+                if error.errno != errno.ECANCELED:
+                    raise
+            self.invalid = True
+        raise ValueError('Snapshot realtime clock changed or verification timer expired')
+
+
+_snapshot_clock = None
+
+
+def snapshot_clock():
+    global _snapshot_clock
+    if _snapshot_clock is None or _snapshot_clock.pid != os.getpid():
+        if _snapshot_clock is not None:
+            _snapshot_clock.close()
+        _snapshot_clock = SnapshotClock()
+    _snapshot_clock.check()
+    return _snapshot_clock
+
+
+def close_ctime_interval(latest, deadline):
+    # Linux's local ext4 inode clock can stay on one coarse tick through several
+    # writes. A later whole CLOCK_REALTIME_COARSE second is conservative for the
+    # supported local filesystem, even for one-second inode precision. No
+    # process-local byte proof is minted from an open ctime interval.
+    if latest > time.time_ns():
+        raise ValueError('Snapshot ctime is in the future')
+    boundary = (latest // 10**9 + 1) * 10**9
+    while True:
+        if time.monotonic() >= deadline:
+            raise ValueError('Snapshot clock fence exceeded the verification deadline')
+        remaining = (boundary - time.clock_gettime_ns(5)) / 10**9
+        if remaining <= 0:
+            return
+        budget = deadline - time.monotonic()
+        if remaining >= budget:
+            raise ValueError('Snapshot clock fence exceeds the verification deadline')
+        time.sleep(min(budget, remaining + 0.001))
+
+
+def directory_names(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME)
+    try:
+        with os.scandir(fd) as entries:
+            return sorted((entry.name for entry in entries), key=os.fsencode)
+    finally:
+        os.close(fd)
+
+
+class VerifiedSnapshot(dict):
+    """The clock proof is process-local. Only the original v1 fields serialize."""
+
+
 def _snapshot(path, links, deadline_seconds, verified=None, removed=None):
     path = Path(path); root = safe(path); entries = []; fence = []
+    clock = snapshot_clock()
+    directories, reads = [], []
     prior = {r['path']:r for r in verified['entries']} if verified is not None else None
     deadline = time.monotonic() + deadline_seconds; regular = 0
     def unchanged(r):
@@ -126,9 +214,8 @@ def _snapshot(path, links, deadline_seconds, verified=None, removed=None):
                  ctimeNs=s.st_ctime_ns, links=s.st_nlink, xattrs=attributes(p))
         if stat.S_ISDIR(s.st_mode):
             r['kind'] = 'directory'; unchanged(r); entries.append(r)
-            fd = os.open(p, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME)
-            try: names = sorted((e.name for e in os.scandir(fd)), key=os.fsencode)
-            finally: os.close(fd)
+            names = directory_names(p)
+            directories.append((p, names))
             for n in names:
                 if '\\' in n or any(ord(c)<32 or ord(c)==127 for c in n): raise ValueError('Unsafe entry name')
                 walk(p/n, n if rel=='.' else rel+'/'+n)
@@ -144,22 +231,41 @@ def _snapshot(path, links, deadline_seconds, verified=None, removed=None):
             # bytes must be read again; old removal credit never excuses a later
             # ctime change once this fresh snapshot becomes the next baseline.
             if before is None or (r['ctimeNs'],r['links'])!=(before['ctimeNs'],before['links']):
-                r['sha256']=hash_read(p)[0]
+                reads.append((p,r))
             unchanged(r);entries.append(r)
         elif links and stat.S_ISLNK(s.st_mode):
             target = os.readlink(p)
-            if not target or os.path.isabs(target) or not p.resolve(strict=True).is_relative_to(path):
+            try:
+                resolved = p.resolve(strict=True)
+            except (OSError, RuntimeError) as error:
+                raise ValueError('Absolute, dangling or escaping source link') from error
+            if not target or os.path.isabs(target) or not resolved.is_relative_to(path):
                 raise ValueError('Absolute, dangling or escaping source link')
             r.update(kind='symlink', target=target); unchanged(r); entries.append(r)
         else: raise ValueError('Unsupported entry or forbidden symlink')
         if identity(p.lstat()) != identity(s): raise ValueError('Entry changed during snapshot')
         fence.append((p, identity(s), r['xattrs']))
     walk(path, '.')
+    close_ctime_interval(max(row['ctimeNs'] for row in entries), deadline)
+    clock.check()
+    for p, row in reads:
+        if time.monotonic() >= deadline:
+            raise ValueError('Snapshot bound exceeded')
+        row['sha256'] = hash_read(p)[0]
+        unchanged(row)
+    for p, names in directories:
+        if directory_names(p) != names:
+            raise ValueError('Snapshot directory entry fence changed')
     for p, expected, attrs in fence:
         if identity(p.lstat()) != expected or attributes(p) != attrs: raise ValueError('Snapshot fence changed')
+    clock.check()
+    if time.monotonic() >= deadline:
+        raise ValueError('Snapshot bound exceeded')
     if prior is not None and len(entries)!=len(prior):raise ValueError('Snapshot guard entry set changed')
-    return dict(path=str(path), model='audit30-whole-bytes-inode-xattrs-v1', entries=entries,
-                sha256=digest(entries), regularBytes=regular)
+    result = VerifiedSnapshot(path=str(path), model='audit30-whole-bytes-inode-xattrs-v1',
+                              entries=entries, sha256=digest(entries), regularBytes=regular)
+    result.clock = clock
+    return result
 
 def snapshot(path, links=False, deadline_seconds=120):
     """Complete bytes, types, modes, owners, links/xattrs and inode identities."""
@@ -184,6 +290,10 @@ def guard_snapshot(path, verified_snapshot, removed=None, previous_removed=None,
         if not isinstance(current,int) or not isinstance(previous,int) or current<previous or previous<0:
             raise ValueError('Snapshot guard removal counter regressed')
         if current!=previous:delta[key]=current-previous
+    if getattr(verified_snapshot, 'clock', None) is not snapshot_clock():
+        observed = snapshot(path, links, deadline_seconds)
+        match_snapshot(observed, verified_snapshot, delta)
+        return observed
     return _snapshot(path,links,deadline_seconds,verified_snapshot,delta)
 
 def match_snapshot(actual, expected, removed=None, relocation=False):
@@ -345,7 +455,7 @@ def held_boundary(paths, review, layout):
 
 def guard_model(guards):
     if 'heldIdentityModel' not in guards:return None
-    if guards['heldIdentityModel']!=ROTATING_LOG_GUARD_MODEL or not guards['heldIdentityModel']:
+    if guards['heldIdentityModel'] not in (LEGACY_ROTATING_LOG_GUARD_MODEL, ROTATING_LOG_GUARD_MODEL):
         raise ValueError('Unsupported held identity model')
     return guards['heldIdentityModel']
 
@@ -354,21 +464,69 @@ def rotating_log_paths(layout):
             for family in ('auth.log','kern.log','syslog','ufw.log')
             for suffix in ('','.1',*('.'+str(n)+'.gz' for n in range(2,49)))}
 
+def boot_log_paths(layout):
+    # Only the four individually held paths rotated by the Ubuntu boot service.
+    return {str(layout.prefix/'var/log'/name) for name in ('dmesg', 'dmesg.0', 'dmesg.1.gz', 'dmesg.2.gz')}
+
+def verify_boot_log_unit():
+    fields = ('LoadState', 'FragmentPath', 'DropInPaths', 'NeedDaemonReload', 'Result', 'ExecMainStatus',
+              'ExecMainStartTimestampMonotonic', 'ExecStartPre')
+    output = subprocess.check_output(['/usr/bin/systemctl', 'show', 'dmesg.service',
+                                      *('--property='+key for key in fields)], text=True, timeout=10)
+    settings = dict(row.split('=', 1) for row in output.splitlines())
+    args = '/usr/bin/savelog -m640 -q -p -n -c 5 /var/log/dmesg'
+    if (settings.get('LoadState') != 'loaded' or settings.get('FragmentPath') != '/usr/lib/systemd/system/dmesg.service'
+            or settings.get('DropInPaths') != '' or settings.get('NeedDaemonReload') != 'no'
+            or settings.get('Result') != 'success' or settings.get('ExecMainStatus') != '0'
+            or not settings.get('ExecMainStartTimestampMonotonic', '').isdigit()
+            or int(settings['ExecMainStartTimestampMonotonic']) <= 0
+            or not re.fullmatch(r'\{ path=/usr/bin/savelog ; argv\[\]='+re.escape(args)+
+                                r' ; ignore_errors=yes ; [^{}]*code=exited ; status=0 \}', settings.get('ExecStartPre', ''))):
+        raise ValueError('Ubuntu boot log rotation authority or execution differs')
+    # systemctl's text format drops sub-second precision. D-Bus returns the
+    # unit's realtime interval in microseconds, including its final chmod.
+    times = subprocess.check_output(['/usr/bin/busctl', '--system', 'get-property', 'org.freedesktop.systemd1',
+        '/org/freedesktop/systemd1/unit/dmesg_2eservice', 'org.freedesktop.systemd1.Unit',
+        'InactiveExitTimestamp', 'InactiveEnterTimestamp'], text=True, timeout=10).splitlines()
+    if len(times)!=2 or any(not re.fullmatch(r't [1-9][0-9]*', row) for row in times):
+        raise ValueError('Missing Ubuntu boot log execution timestamps')
+    started, ended = (int(row.split()[1])*1000 for row in times)
+    if not 0 < ended-started <= 120*10**9:
+        raise ValueError('Unexpected Ubuntu boot log execution interval')
+    return started, ended+999
+
 def modeled_guards(layout,guards,model):
     """Normalize only the approved unrelated log identities, never artifact proof."""
     if model is None:return guards
     guard_model(dict(heldIdentityModel=model))
     configs=[]
-    for path,expected in ROTATION_CONFIG_PINS.items():
+    boot = boot_log_paths(layout) if model == ROTATING_LOG_GUARD_MODEL else set()
+    held_boot = boot.intersection(row['path'] for row in guards['heldCensus'])
+    pins = dict(ROTATION_CONFIG_PINS)
+    if held_boot:
+        if held_boot != boot:
+            raise ValueError('Boot log hold scope differs')
+        started, ended = verify_boot_log_unit()
+        pins.update(BOOT_LOG_PINS)
+    for path,expected in pins.items():
         p=layout.prefix/path.lstrip('/')
         if hash_read(p,65536)[0]!=expected:raise ValueError('Pinned hourly log rotation configuration changed')
         configs.append(dict(path=str(p),sha256=expected))
-    permitted=rotating_log_paths(layout);census=[]
+    permitted=rotating_log_paths(layout)|held_boot;census=[]
     for original in guards['heldCensus']:
         row=dict(original)
         if row['path'] in permitted:
             if row.get('exists') is not True or not stat.S_ISREG(row.get('mode',0)):
                 raise ValueError('Configured held rotating log is absent or not regular')
+            if row['path'] in held_boot:
+                p=Path(row['path'])
+                s=p.lstat()
+                if (p.resolve()!=p or s.st_nlink!=1 or s.st_mode!=(stat.S_IFREG|0o640)
+                        or s.st_uid!=os.geteuid() or s.st_gid!=BOOT_LOG_GID or s.st_dev!=p.parent.lstat().st_dev
+                        or [s.st_dev,s.st_ino,s.st_mode,s.st_uid,s.st_gid]!=[row[k] for k in ('device','inode','mode','uid','gid')]):
+                    raise ValueError('Unsafe held Ubuntu boot log')
+                if not started <= s.st_ctime_ns <= ended:
+                    raise ValueError('Held Ubuntu boot log changed outside verified rotation')
             row.pop('inode')
         census.append(row)
     return dict(guards,heldIdentityModel=model,rotationConfigs=configs,heldCensus=census)
@@ -398,7 +556,7 @@ def rotating_log_observations(layout,expected):
     if model is None:return []
     raw,_=safeguards(layout)
     if modeled_guards(layout,raw,model)!=expected:raise ValueError('Held log observation guard changed')
-    permitted=rotating_log_paths(layout)
+    permitted=rotating_log_paths(layout) | (boot_log_paths(layout) if model==ROTATING_LOG_GUARD_MODEL else set())
     return [row for row in raw['heldCensus'] if row['path'] in permitted]
 
 def path_occurrences(raw,paths):
@@ -753,6 +911,16 @@ def create_plan(layout, kind, approval_sha, policy_scope=None, prerequisite=None
     plan['limits']='Exact snapshots and bounded pointer scan; unresolved held absences remain reported, never exempted. Existing capacities/hold/masks must stay unchanged.'
     return plan
 
+# These four objects were the verified rollback release on November 3. The
+# paths stay reserved after the active current/prior pair advances.
+PRESERVED_FALLBACK_PREDECESSOR = 'c3969c39c2b2-20261101T051206Z'
+PRESERVED_FALLBACK_INTRODUCER = '54088ca155bc-20261103T032112Z'
+
+def preserved_fallback_paths(layout):
+    root = layout.roots / ('proofofwork-www-pre-' + PRESERVED_FALLBACK_INTRODUCER)
+    archive = layout.archives / ('proofofwork-ui-release-' + PRESERVED_FALLBACK_PREDECESSOR + '.tgz')
+    return [str(root), *(str(archive) + suffix for suffix in ('', '.sha256', '.provenance'))]
+
 def validate_plan(plan,layout,kind,approval_sha):
     if plan.get('schema')!='pow-audit30-exact-ui-storage-plan-v1' or plan.get('host')!='77.42.91.106' or plan.get('kind')!=kind or plan.get('scopeApprovalSha256')!=approval_sha:raise ValueError('Wrong or forged operation plan')
     if guard_model(plan['safeguards']) is not None and (kind!='future-retention' or approval_sha!=REPAIR_APPROVAL_SHA):
@@ -779,6 +947,14 @@ def validate_plan(plan,layout,kind,approval_sha):
         if plan['delete']!=[] and [{k:r[k] for k in ('path','kind')} for r in plan['delete']]!=plan['policyScope']['eligible']:raise ValueError('Future admission scope differs')
         if plan['moves']:raise ValueError('Future policy cannot relocate sources')
     else:raise ValueError('Unsupported plan kind')
+    held = [Path(p) for p in preserved_fallback_paths(layout)]
+    targets = [Path(r['path']) for r in plan['delete']]
+    targets.extend(Path(r[k]) for r in plan['moves'] for k in ('source','target'))
+    if any(p == h or p in h.parents or h in p.parents for p in targets for h in held):
+        raise ValueError('Storage action intersects the preserved fallback')
+    if (kind == 'future-retention' and (plan['policyScope'] or {}).get('preservedFallback') and
+            (targets or plan['policyScope']['eligible'])):
+        raise ValueError('Preserved fallback lifecycle permits no retirement or moves')
     if len({r['path'] for r in plan['delete']})!=len(plan['delete']):raise ValueError('Duplicate deletion path')
     citation=plan.get('citationReview')
     if citation is not None and (kind not in ('cleanup','future-retention') or not isinstance(citation,dict) or set(citation)!= {'path','sha256'} or not SHA.fullmatch(citation['sha256'])):raise ValueError('Invalid citation-review plan binding')

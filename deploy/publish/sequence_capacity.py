@@ -109,10 +109,34 @@ def requirements(plan, census):
         'transport': (incoming + source if storage == 'release-evidence-v1' else 0) + EVIDENCE_BYTES,
         'scratch': scratch_peak + EVIDENCE_BYTES,
     }
+    phase_peaks = None
+    if 'inputCompactor' in plan:
+        staging = plan['closedArchive']['privateStaging']
+        if (not streaming or storage != 'deploy-scratch-v1' or
+                staging['model'] != 'private-release-stage-v1' or
+                plan['inputCompactor']['sha256'] != plan['closedArchive']['request']['inputCompactorSha256']):
+            raise ValueError('Unbound private release staging scope')
+        compact = integer(staging['compactInputUpperBytes'])
+        final = integer(staging['finalCandidateUpperBytes'])
+        if min(compact, final, integer(staging['blockSize'])) <= 0:
+            raise ValueError('Empty private storage bound')
+        # Bounds correspond to actual, fenced checkpoints. Receive the entire
+        # original input first. The source may only enter after the stage has
+        # passed its complete candidate, archive, and input allocation checks.
+        phase_peaks = {
+            'surfaces-receive': {'root': incoming + 4 * 1024**2, 'scratch': incoming + 4 * 1024**2},
+            'stage': {'root': compact + candidate, 'scratch': compact + candidate},
+            'archive': {'root': compact + final + archive + verification, 'scratch': compact + final + verification},
+            'source-and-publication': {'root': compact + final + archive + source + verification,
+                                       'scratch': compact + final + source + verification},
+        }
+        for metric in ('root', 'scratch'):
+            extra[metric] = max(step[metric] for step in phase_peaks.values()) + EVIDENCE_BYTES
     inodes = (integer(plan['admissions']['source-receive']['inodes']) +
               3 * integer(plan['admissions']['surfaces-receive']['inodes']) +
               2 * integer(census['liveTree']['additionalInodes']) + 512)
     return {'schema': 'pow-ui-whole-release-capacity-v1', 'limits': dict(LIMITS),
+            **({'privatePhasePeaks': phase_peaks} if phase_peaks is not None else {}),
             'additionalBytes': extra, 'additionalInodes': inodes,
             'retirementCreditBytes': 0, 'futureHardlinkCreditBytes': 0,
             'charges': {'receivedSurfaces': incoming, 'preservedSource': source,

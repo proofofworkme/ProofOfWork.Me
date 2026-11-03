@@ -91,6 +91,7 @@ class RemoteTests(unittest.TestCase):
         result = self.initialize()
         status = self.runtime.dispatch('status', {})
         self.assertFalse(status['retentionComplete'])
+        self.assertNotIn('verifiedPreservedFallback',status)
         self.assertEqual(result['stateSha256'], status['stateSha256'])
         self.assertEqual(status['binding']['state']['sha256'], status['stateSha256'])
         intent, _ = R.read_json(result['intent']['path'], result['intent']['sha256'])
@@ -311,10 +312,7 @@ class RemoteTests(unittest.TestCase):
             self.assertNotIn('custodyResult', state['lastCompleted'])
             self.assertFalse(F.P.policy_scope(state['index'], self.layout, R.APPROVAL_SHA)['eligible'])
 
-    def test_vps_completion_can_be_authenticated_by_future_package_upgrade(self):
-        result = self.vps_complete()
-        request = {'mode': 'completed-cycle', 'stateSha256': result['stateSha256']}
-        review = I.completed_review(self.runtime, request)
+    def verify_candidate_package(self, review):
         original_spec = I.importlib.util.spec_from_file_location
         def fixture_spec(name, path):
             spec = original_spec(name, path)
@@ -322,6 +320,8 @@ class RemoteTests(unittest.TestCase):
                 execute = spec.loader.exec_module
                 def load_fixture_module(module):
                     execute(module)
+                    module.BOOT_ROTATION_COMPLETION = R.BOOT_ROTATION_COMPLETION
+                    module.system_boot_id = R.system_boot_id
                     # Reuse the real storage/policy modules carrying this test's
                     # filesystem and held-policy pins; custody must not run.
                     module.load_module = lambda name, *args, **kwargs: (
@@ -330,8 +330,14 @@ class RemoteTests(unittest.TestCase):
                 spec.loader.exec_module = load_fixture_module
             return spec
         with patch.object(I.importlib.util, 'spec_from_file_location', side_effect=fixture_spec):
-            verified = I.completed_package_review({'config': self.config, 'configSha256': self.runtime.config_sha},
-                                                  HERE.parents[1], self.runtime, review)
+            return I.completed_package_review({'config': self.config, 'configSha256': 'b' * 64},
+                                              HERE.parents[1], self.runtime, review)
+
+    def test_vps_completion_can_be_authenticated_by_future_package_upgrade(self):
+        result = self.vps_complete()
+        request = {'mode': 'completed-cycle', 'stateSha256': result['stateSha256']}
+        review = I.completed_review(self.runtime, request)
+        verified = self.verify_candidate_package(review)
         self.assertTrue(verified['fullCompletionVerified'])
         self.assertTrue(verified['vpsVerification']['retainedVpsPairVerified'])
         self.assertNotIn('custodyLifecycle', verified)
@@ -368,6 +374,221 @@ class RemoteTests(unittest.TestCase):
         target.write_bytes(b'changed retained UI')
         with self.assertRaises(ValueError):
             self.runtime.dispatch('status', {'requireComplete': True})
+
+    def test_private_staging_forecast_counts_admitted_objects_leaving_the_pair(self):
+        self.vps_complete()
+        before=self.runtime.state_path.read_bytes()
+        candidate='bbbbbb000004-20261017T040001Z'
+        projection=self.runtime.dispatch('status',{'requireComplete':True,'prospectiveRelease':candidate})['privateStageRetention']
+        pair=self.runtime.current()[1]['pair']
+        prior=self.layout.archives/('proofofwork-ui-release-'+pair['previous']+'.tgz')
+        self.assertEqual(set(projection['wouldRetire']),{str(self.layout.roots/('proofofwork-www-pre-'+pair['current'])),
+                        *(str(prior)+suffix for suffix in ('','.sha256','.provenance'))})
+        with patch.object(R,'installed_runtime',return_value=self.runtime):
+            with self.assertRaisesRegex(ValueError,'deployment lock'):
+                R.private_stage_pre_exchange('fixture','a'*64,candidate,-1)
+            fd=F.S.lock(self.layout)
+            try:
+                with self.assertRaisesRegex(ValueError,'would retire admitted data'):
+                    R.private_stage_pre_exchange('fixture','a'*64,candidate,fd)
+            finally:
+                os.close(fd)
+        self.assertEqual(self.runtime.state_path.read_bytes(),before)
+
+    def publish_vps_fixture(self, release, forecast=None):
+        self.fixture.publish_policy_fixture(release,F.S.V5_SURFACES,'proofofwork-ui-release-v5')
+        https, publication, context = self.https()
+        if forecast is not None:
+            terminal,_ = R.read_json(publication['path'],publication['sha256'])
+            def private_receipt(attempt,rule):
+                native = {'releaseId':release,'publicationAttempt':attempt,'commit':terminal['commit'],
+                          'tree':terminal['tree'],'inputCompactor':{'sha256':'1'*64},'closedArchive':{
+                          'privateStaging':{'model':'private-release-stage-v1'}},'privateStageRetention':rule}
+                plan = R.write_new(self.layout.scratch/('recovery-plan-'+release+'-'+attempt+'.json'),R.encoded(native))
+                folder = self.layout.scratch/('recovery-publish-'+release+'-'+attempt)
+                folder.mkdir()
+                identity = {**terminal,'attempt':attempt,'planSha256':plan['sha256']}
+                R.write_new(folder/'intent.json',R.encoded(identity))
+                return R.write_new(folder/'receipt.json',R.encoded(dict(identity,privateStageRetention=rule)))
+            bad_rule={name:value for name,value in forecast.items() if name!='preservedFallback'}
+            refused=private_receipt('missinghold',bad_rule)
+            before=self.runtime.state_path.read_bytes()
+            with self.assertRaisesRegex(ValueError,'lacks the admitted in-place'):
+                self.runtime.dispatch('prepare-cycle',{'operationId':'reject-'+release,
+                    'expectedStateSha256':R.sha(before),'expectedPair':context['pair'],
+                    'httpsReceipt':envelope(https),'publicationReceipt':refused})
+            self.assertEqual(self.runtime.state_path.read_bytes(),before)
+            publication=private_receipt('inplace',forecast)
+        prep = self.runtime.dispatch('prepare-cycle',{'operationId':'prepare-'+release,
+            'expectedStateSha256':self.runtime.state()[1],'expectedPair':context['pair'],
+            'httpsReceipt':envelope(https),'publicationReceipt':publication})
+        frame = {'cycleId':prep['cycleId'],'pendingToken':prep['pendingToken'],'expectedPair':context['pair'],
+                 'operationId':'apply-'+release,'expectedStateSha256':prep['stateSha256']}
+        applied = self.runtime.dispatch('apply-vps-retention',frame)
+        self.runtime.dispatch('complete-vps-cycle',dict(frame,operationId='complete-'+release,
+                                                    expectedStateSha256=applied['stateSha256']))
+        return prep
+
+    def test_pinned_fallback_remains_in_place_through_actual_next_lifecycle(self):
+        self.vps_complete()
+        previous = 'aaaaaaaa0003-20261101T010000Z'
+        introduced = 'aaaaaaaa0004-20261103T010000Z'
+        following = 'aaaaaaaa0005-20261104T010000Z'
+        self.publish_vps_fixture(previous)
+        self.publish_vps_fixture(introduced)
+        state,_ = self.runtime.state()
+        lineage,_ = R.read_json(state['index']['path'],state['index']['sha256'])
+        pins = dict(archive=lineage['admissions'][-2]['sha256'],root=lineage['admissions'][-1]['sha256'])
+        with patch.object(F.S,'PRESERVED_FALLBACK_PREDECESSOR',previous), \
+             patch.object(F.S,'PRESERVED_FALLBACK_INTRODUCER',introduced), \
+             patch.object(F.P,'FALLBACK_ADMISSION_SHA256',pins):
+            forecast = self.runtime.dispatch('status',{'requireComplete':True,'prospectiveRelease':following})['privateStageRetention']
+            hold = forecast['preservedFallback']
+            self.assertEqual(forecast['wouldRetire'],[])
+            self.assertEqual(hold['admissions'],pins)
+            paths = F.S.preserved_fallback_paths(self.layout)
+            inode_bytes = {p:F.S.snapshot(Path(p))['sha256'] for p in paths}
+            self.assertEqual(hold['snapshotSha256'],inode_bytes)
+            self.assertEqual(self.runtime.dispatch('status',{'requireComplete':True})['verifiedPreservedFallback'],hold)
+            # A stripped policy result cannot attest no hold after the introducer,
+            # even if a later caller offers an earlier prospective timestamp.
+            ordinary_scope = F.P.policy_scope
+            def stripped(*args):
+                value = dict(ordinary_scope(*args)); value.pop('preservedFallback')
+                return value
+            with patch.object(F.P,'policy_scope',side_effect=stripped):
+                with self.assertRaisesRegex(ValueError,'index contains the fallback introducer'):
+                    self.runtime.dispatch('status',{'requireComplete':True,
+                        'prospectiveRelease':'aaaaaaaa0006-20261031T010000Z'})
+            with patch.dict(F.P.FALLBACK_ADMISSION_SHA256,archive='0'*64), self.assertRaisesRegex(ValueError,'admission differs'):
+                self.runtime.dispatch('status',{'requireComplete':True,'prospectiveRelease':following})
+            with patch.object(R,'installed_runtime',return_value=self.runtime):
+                fd = F.S.lock(self.layout)
+                try:
+                    binding, actual = R.private_stage_pre_exchange('test','0'*64,following,fd)
+                    self.assertEqual(actual,forecast)
+                    self.assertEqual(binding['state']['sha256'],forecast['stateSha256'])
+                finally: os.close(fd)
+            prep = self.publish_vps_fixture(following,forecast)
+            plan,_ = R.read_json(prep['ordinaryPlan']['path'],prep['ordinaryPlan']['sha256'])
+            self.assertEqual(plan['policyScope']['preservedFallback'],hold)
+            self.assertEqual((plan['delete'],plan['moves'],plan['policyScope']['eligible']),([],[],[]))
+            self.assertEqual({p:F.S.snapshot(Path(p))['sha256'] for p in paths},inode_bytes)
+            new_state,_=self.runtime.state()
+            closure=F.P.custody_closure(new_state['index']['path'],new_state['index']['sha256'],self.layout,R.APPROVAL_SHA)
+            self.assertTrue(set(paths)<=set(closure['protectedPaths']))
+            later=self.runtime.dispatch('status',{'requireComplete':True,'prospectiveRelease':'aaaaaaaa0006-20261105T010000Z'})['privateStageRetention']
+            self.assertEqual(len(later['wouldRetire']),4)
+            self.assertTrue(set(paths).isdisjoint(later['wouldRetire']))
+            self.assertEqual(later['preservedFallback'],hold)
+            self.assertEqual(self.runtime.dispatch('status',{'requireComplete':True})['verifiedPreservedFallback'],hold)
+            for held in paths:
+                with self.subTest(path=held), self.assertRaisesRegex(ValueError,'(scope differs|preserved fallback)'):
+                    forged={**plan,'policyScope':{**plan['policyScope'],'eligible':[{'path':held,'kind':'archive-sidecar'}]},
+                            'delete':[{'path':held,'kind':'archive-sidecar'}]}
+                    F.S.validate_plan(forged,self.layout,'future-retention',R.APPROVAL_SHA)
+            target=Path(paths[2])
+            temp=target.with_name('fixture-sidecar')
+            temp.write_bytes(target.read_bytes()); os.replace(temp,target)
+            with self.assertRaisesRegex(ValueError,'preserved fallback|Preserved fallback'):
+                self.runtime.dispatch('status',{'requireComplete':True})
+
+    def test_private_staging_scope_is_bound_to_published_plan_and_refuses_nonempty_native_plan(self):
+        prep, frame=self.vps_prepared()
+        state, _=self.runtime.state()
+        old=state['pending']['ordinaryPlan']
+        original,_=R.read_json(old['path'],old['sha256'])
+        self.assertTrue(original['policyScope']['eligible'])
+        rule={'model':'private-stage-zero-retirement-v1','releaseId':frame['expectedPair']['current'],'wouldRetire':[],
+              'index':state['index'],'stateSha256':prep['stateSha256'],'previousPair':frame['expectedPair']}
+        release=rule['releaseId']; attempt='private'; commit='a'*40; tree='b'*40
+        native={'releaseId':release,'publicationAttempt':attempt,'commit':commit,'tree':tree,'inputCompactor':{'sha256':'f'*64},
+                'closedArchive':{'privateStaging':{'model':'private-release-stage-v1'}},'privateStageRetention':rule}
+        native_binding=R.write_new(self.layout.scratch/('recovery-plan-'+release+'-'+attempt+'.json'),R.encoded(native))
+        dest=self.layout.scratch/('recovery-publish-'+release+'-'+attempt); dest.mkdir()
+        identity={'releaseId':release,'attempt':attempt,'commit':commit,'tree':tree,'planSha256':native_binding['sha256']}
+        R.write_new(dest/'intent.json',R.encoded(identity))
+        pub=R.write_new(dest/'receipt.json',R.encoded(dict(identity,privateStageRetention=rule)))
+        fence=self.runtime.private_stage_rule(pub)
+        self.assertEqual(fence['forecast'],rule)
+        missing=R.encoded(identity)
+        (dest/'receipt.json').write_bytes(missing)
+        with self.assertRaisesRegex(ValueError,'does not bind zero'):
+            self.runtime.private_stage_rule({'path':pub['path'],'sha256':R.sha(missing)})
+        for key,data in [('delete',[{'path':'one'}]),('moves',[{'from':'a','to':'b'}]),('policyScope',{'eligible':['one']})]:
+            with self.subTest(key=key),self.assertRaisesRegex(ValueError,'forbids ordinary'):
+                self.runtime.require_empty_retirement(dict({'delete':[],'moves':[],'policyScope':{'eligible':[]}},**{key:data}))
+        with patch.object(self.runtime,'private_stage_rule',return_value=fence), patch.object(F.S,'execute') as execute:
+            with self.assertRaisesRegex(ValueError,'differs from published scope'):
+                self.runtime.dispatch('apply-vps-retention',frame)
+            execute.assert_not_called()
+        self.assertEqual(self.runtime.state()[0]['pending']['stage'],'prepared')
+
+    def test_completed_boot_log_migration_authenticates_original_receipt_without_rewriting_state(self):
+        boot='11111111-2222-4333-8444-555555555555'
+        system_boot=patch.object(R,'system_boot_id',return_value=boot)
+        system_boot.start();self.addCleanup(system_boot.stop)
+        self.fixture.boot_logs()
+        original = F.S.safeguards
+        def legacy(layout, model=None):
+            return original(layout, F.S.LEGACY_ROTATING_LOG_GUARD_MODEL if model==F.S.ROTATING_LOG_GUARD_MODEL else model)
+        with patch.object(F.S, 'safeguards', side_effect=legacy):
+            self.vps_complete()
+        state, state_sha = self.runtime.state()
+        original_state = self.runtime.state_path.read_bytes()
+        before = state['completedContext']
+        self.assertEqual(before['guards']['heldIdentityModel'], F.S.LEGACY_ROTATING_LOG_GUARD_MODEL)
+        terminal = Path(state['lastIntent']['path'].replace('-intent.json','-completed.json'))
+        terminal_bytes = terminal.read_bytes()
+        def rotate(name):
+            target=self.fixture.base/'var/log'/name
+            old_inode=target.stat().st_ino
+            tmp=target.with_suffix('.replacement'); tmp.write_bytes(b'new boot fixture'); tmp.chmod(0o640)
+            tmp.replace(target)
+            return [old_inode,target.stat().st_ino]
+        rotations={name:rotate(name) for name in ('dmesg.1.gz','dmesg.2.gz')}
+        proof={'state':state_sha,'config':self.runtime.config_sha,'context':R.sha(R.encoded(before)),
+               'cycle':state['lastCompleted']['cycleId'],'boot':boot,
+               'intent':state['lastIntent']['sha256'],'receipt':R.sha(terminal_bytes),'rotations':rotations}
+        with patch.object(R,'BOOT_ROTATION_COMPLETION',proof):
+            status=self.runtime.dispatch('status',{'requireComplete':True})
+            self.assertEqual(status['context'],before)
+            self.assertEqual(status['verifiedBootLogRotation']['observedInodes'],rotations)
+            self.assertEqual(self.runtime.state_path.read_bytes(),original_state)
+            self.assertEqual(terminal.read_bytes(),terminal_bytes)
+            review=I.completed_review(self.runtime,{'stateSha256':state_sha})
+            candidate=self.verify_candidate_package(review)
+            self.assertEqual(candidate['context'],before)
+            self.assertEqual(candidate['bootLogRotation'],status['verifiedBootLogRotation'])
+            self.assertTrue(candidate['vpsVerification']['retainedVpsPairVerified'])
+            terminal.write_bytes(terminal_bytes+b' ')
+            with self.assertRaisesRegex(ValueError,'SHA differs'): self.runtime.dispatch('status',{'requireComplete':True})
+            terminal.write_bytes(terminal_bytes)
+            rotate('dmesg.0')
+            with self.assertRaisesRegex(ValueError,'Unreviewed boot-log'): self.runtime.dispatch('status',{'requireComplete':True})
+            # The normally installed package checks its sealed migration chain
+            # in Runtime.state(). A subsequent legitimate boot may rotate .0.
+            transitioned=dict(state,lastUpgrade={'priorStateSha256':state_sha,'priorConfigSha256':proof['config'],
+                              'preservedCompletedCycleId':proof['cycle']})
+            current=self.runtime.current()[1]
+            seal=R.write_new(self.state/'first-package-upgrade.json',R.encoded({
+                'priorState':{'sha256':state_sha}, 'priorConfig':{'sha256':proof['config']},
+                'completionVerification':{'bootLogRotation':candidate['bootLogRotation']}}))
+            second=R.write_new(self.state/'second-package-upgrade.json',R.encoded({'priorState':{'sha256':'b'*64}}))
+            for verified_chain in [[{'completed':seal}], [{'completed':seal},{'completed':second}]]:
+                with patch.object(self.runtime,'completion_transitions',return_value=verified_chain):
+                    refreshed=self.runtime.completed_boot_rotation(transitioned,'b'*64,current)
+                    self.assertIn('dmesg.0',refreshed['observedInodes'])
+            with patch.object(self.runtime,'completion_transitions',return_value=[{'completed':dict(seal,sha256='0'*64)}]):
+                with self.assertRaisesRegex(ValueError,'SHA differs'):
+                    self.runtime.completed_boot_rotation(transitioned,'b'*64,current)
+            self.assertIsNone(self.runtime.completed_boot_rotation(transitioned,'b'*64,dict(current,pair={'current':'new'})))
+            fresh=R.Runtime(self.config,'b'*64,F.S,F.P,layout=self.layout)
+            self.assertIsNone(fresh.completed_boot_rotation(dict(transitioned,lastUpgrade={}), 'b'*64, current))
+            changed=dict(proof,state='0'*64)
+            with patch.object(R,'BOOT_ROTATION_COMPLETION',changed):
+                with self.assertRaisesRegex(ValueError,'retention-incomplete'):
+                    self.runtime.dispatch('status',{'requireComplete':True,'bootLogRotation':proof})
 
     def test_custody_mismatch_changes_no_artifact_and_blocks_retry(self):
         plan, proof, _, frame = self.custody_state()

@@ -32,9 +32,23 @@ TREE = 'b' * 40
 RELEASE = COMMIT[:12] + '-20261002T210000Z'
 
 
+ADMISSION_SHA = hashlib.sha256((ROOT / 'publication_admission.py').read_bytes()).hexdigest()
+
+
+def fixture_admission_source(expected):
+    if expected != ADMISSION_SHA:
+        raise ValueError('Unexpected fixture admission source')
+    return (ROOT / 'publication_admission.py').read_bytes()
+
+
 def safe_module(name):
     namespace = {'__name__': '_offline_refusal_test', '__file__': str(ROOT / name)}
     exec(compile((ROOT / name).read_bytes(), str(ROOT / name), 'exec'), namespace)
+    if name == 'transport_preserve.py':
+        # This suite mocks all subprocesses, including the Git committed-blob
+        # lookup. Preserve the exact bytes/digest passed to each systemd unit.
+        namespace['admission_source'] = fixture_admission_source
+        namespace['dispatch_admission'] = lambda plan, source, ui_host: None
     return types.SimpleNamespace(**namespace)
 
 
@@ -208,7 +222,11 @@ class ReleaseRefusals(unittest.TestCase):
                 output = self.base / 'preflight.json'
                 fake = subprocess.CompletedProcess([], 0, stdout=raw_json(value))
                 with patch.dict(self.release.preflight.__globals__, remote=lambda *a, **k: fake,
-                                lifecycle_module=lambda: types.SimpleNamespace(status=lambda **kw: {})):
+                                lifecycle_module=lambda: types.SimpleNamespace(status=lambda **kw: {
+                                    'binding':{'pair':{'current':RELEASE, 'previous':RELEASE}},
+                                    'verifiedPreservedFallback':None,'verifiedPreFallbackIndex':{'path':'/index','sha256':'b'*64},
+                                    'index':{'path':'/index','sha256':'b'*64}}),
+                                admission_source=lambda: (ROOT/'publication_admission.py').read_bytes()):
                     with self.assertRaises(AssertionError):
                         self.release.preflight(types.SimpleNamespace(output=str(output)))
                 self.assertFalse(output.exists())
@@ -233,8 +251,11 @@ class ReleaseRefusals(unittest.TestCase):
             build.update(releaseFormat='proofofwork-ui-release-v4', surfaces=list(self.release.PAGES_SURFACES))
         keys = ['controller', 'receiver', 'stage-shell', 'phase-capacity', 'capacity',
                 'retained', 'publisher', 'stager', 'provenance', 'transport']
-        preflight = {'retentionDeferred': True, 'checks': [{'exitCode': 0}],
-                     'retentionLifecycle': {'config': {'path': '/trusted/config', 'sha256': 'a'*64}},
+        preflight = {'retentionDeferred': True, 'verifiedPreservedFallback': None,
+                     'verifiedPreFallbackIndex':{'path':'/index','sha256':'b'*64},
+                     'retentionIndex':{'path':'/index','sha256':'b'*64}, 'checks': [{'exitCode': 0}],
+                     'retentionLifecycle': {'config': {'path': '/trusted/config', 'sha256': 'a'*64},
+                                            'pair':{'current':'1'*12+'-20261001T210000Z','previous':'2'*12+'-20260930T210000Z'}},
                      'retained': [{'root': '/var/backups/retained', 'treeSha256': 'e' * 64}],
                      'helpers': {k: {'path': '/trusted/' + k, 'sha256': 'd' * 64}
                                  for k in keys},
@@ -373,7 +394,8 @@ class ReleaseRefusals(unittest.TestCase):
 
     def test_transport_refuses_changed_helper_or_bundle_before_ssh(self):
         bundle = self.base / 'bundle.tgz'; bundle.write_bytes(b'approved')
-        plan = {**self.plan(), 'preservingTransportSha256': self.release.digest(ROOT / 'remote_transport.py'),
+        plan = {**self.plan(), 'wrapperSourceSha256':{'publication_admission.py':ADMISSION_SHA},
+                'preservingTransportSha256': self.release.digest(ROOT / 'remote_transport.py'),
                 'localBundles': {'source': str(bundle)},
                 'source': {'compressedBytes': bundle.stat().st_size, 'sha256': self.release.digest(bundle)}}
         for case in ('helper', 'bytes', 'digest', 'alias'):
@@ -394,7 +416,8 @@ class ReleaseRefusals(unittest.TestCase):
 
     def test_transport_parent_passes_exact_unit_and_ssh_deadlines(self):
         bundle = self.base/'bundle.tgz'; bundle.write_bytes(b'approved')
-        plan = {**self.plan(), 'preservingTransportSha256': self.release.digest(ROOT/'remote_transport.py'),
+        plan = {**self.plan(), 'wrapperSourceSha256':{'publication_admission.py':ADMISSION_SHA},
+                'preservingTransportSha256': self.release.digest(ROOT/'remote_transport.py'),
                 'localBundles': {'source': str(bundle)},
                 'source': {'compressedBytes': 8, 'sha256': self.release.digest(bundle)}}
         path = self.base/'plan.json'; path.write_bytes(raw_json(plan))
@@ -766,6 +789,11 @@ class PublishCompatibilityTimeout(unittest.TestCase):
 
 
 class PublishProvenance(unittest.TestCase):
+    def setUp(self):
+        # These fixtures model public Caddy-readable release roots. A private
+        # systemd test runner can legitimately have a stricter inherited umask.
+        self.addCleanup(os.umask, os.umask(0o022))
+
     def test_retention_recognizes_complete_historical_families_and_refuses_gaps(self):
         retention = safe_module('../proofofwork-ui-verified-retention.py')
         self.assertEqual(sorted(len(value) for value in retention.SURFACE_FAMILIES), list(range(14, 21)))
@@ -1311,7 +1339,8 @@ class PreservedTransport(unittest.TestCase):
         bundle = self.base / 'bundle.tgz'; bundle.write_bytes(b'exact approved archive')
         transport = safe_module('transport_preserve.py')
         plan = {'releaseId': RELEASE, 'publicationAttempt': 'preserved-v1', 'inputStorage': 'release-evidence-v1',
-                'resumeSurfaces': {'verified': True}, 'preservingTransportSha256': self.release.digest(ROOT/'remote_transport.py'),
+                'resumeSurfaces': {'verified': True}, 'wrapperSourceSha256':{'publication_admission.py':ADMISSION_SHA},
+                'preservingTransportSha256': self.release.digest(ROOT/'remote_transport.py'),
                 'localBundles': {'surfaces': str(bundle)}, 'surfaces': {'compressedBytes': bundle.stat().st_size, 'sha256': self.release.digest(bundle)}}
         path = self.base / 'plan.json'; path.write_bytes(raw_json(plan)); log = self.base / 'resume.log'
         previous_umask = os.umask(0o022)
@@ -1460,7 +1489,8 @@ class PreservedTransport(unittest.TestCase):
         bundle = self.base / 'bundle.tgz'; bundle.write_bytes(b'exact approved archive')
         transport = safe_module('transport_preserve.py')
         plan = {'releaseId': RELEASE, 'publicationAttempt': 'completed-v1', 'inputStorage': 'release-evidence-v1',
-                'preservedStageResume': {'verified': True}, 'preservingTransportSha256': self.release.digest(ROOT/'remote_transport.py'),
+                'preservedStageResume': {'verified': True}, 'wrapperSourceSha256':{'publication_admission.py':ADMISSION_SHA},
+                'preservingTransportSha256': self.release.digest(ROOT/'remote_transport.py'),
                 'localBundles': {'surfaces': str(bundle)}, 'surfaces': {'compressedBytes': bundle.stat().st_size, 'sha256': self.release.digest(bundle)}}
         path = self.base / 'preserved-plan.json'; path.write_bytes(raw_json(plan)); log = self.base / 'preserved-resume.log'
         previous_umask = os.umask(0o022)
@@ -2147,7 +2177,8 @@ class OuterCapacityResume(unittest.TestCase):
         transport = safe_module('transport_preserve.py')
         bundle = self.base / 'bundle.tgz'; bundle.write_bytes(b'pinned archive')
         plan = {'releaseId': RELEASE, 'publicationAttempt': 'capacity-v1', 'inputStorage': 'release-evidence-v1',
-            'preservedCapacityResume': {'verified': True}, 'preservingTransportSha256': self.release.digest(ROOT / 'remote_transport.py'),
+            'preservedCapacityResume': {'verified': True}, 'wrapperSourceSha256':{'publication_admission.py':ADMISSION_SHA},
+                'preservingTransportSha256': self.release.digest(ROOT / 'remote_transport.py'),
             'localBundles': {'surfaces': str(bundle)}, 'surfaces': {'compressedBytes': bundle.stat().st_size, 'sha256': self.release.digest(bundle)}}
         path = self.base / 'plan.json'; path.write_bytes(raw_json(plan)); log = self.base / 'transport.log'
         previous = os.umask(0o022)
@@ -2179,7 +2210,7 @@ class OuterCapacityResume(unittest.TestCase):
             node.test.comparators[0].value == 'preserved-stage-resume' and
             any(isinstance(child, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'stager_args' for t in child.targets) for child in node.body))
         guards = []
-        scope.update(BASE=self.base, EVIDENCE_RESERVE=32*1024**2, model={'peakAdditionalBytes': 1000},
+        scope.update(BASE=self.base, EVIDENCE_RESERVE=32*1024**2, model={'peakAdditionalBytes': 1000}, private_staging=False,
             stage_archive_upper=2000, capacity=lambda *args: guards.append(args))
         exec(compile(ast.Module(body=[guard], type_ignores=[]), 'actual-capacity-normal-guards', 'exec'), scope)
         self.assertEqual(scope['stager_args'], [])
@@ -2206,7 +2237,7 @@ class OuterCapacityResume(unittest.TestCase):
             def capacity(command, *args):
                 calls.append(command)
                 if command == stop: raise RuntimeError('native capacity refusal')
-            scope = {'phase': 'preserved-capacity-resume', 'BASE': self.base, 'EVIDENCE_RESERVE': 32*1024**2,
+            scope = {'phase': 'preserved-capacity-resume', 'BASE': self.base, 'private_staging': False, 'EVIDENCE_RESERVE': 32*1024**2,
                 'model': {'peakAdditionalBytes': 1000}, 'stage_archive_upper': 2000, 'capacity': capacity}
             with self.subTest(stop=stop), self.assertRaisesRegex(RuntimeError, 'native capacity refusal'):
                 exec(compile(ast.Module(body=[guard], type_ignores=[]), 'actual-refusal-block', 'exec'), scope)

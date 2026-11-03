@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import stat
 import subprocess
 import sys
 
@@ -55,8 +56,58 @@ def blob(path):
     return {'base64': base64.b64encode(raw).decode(), 'sha256': sha(raw)}
 
 
+UI_HOST = False
+
+
+def require_ui_host(repo):
+    """Permit direct argv only inside an isolated root process on the real UI host."""
+    if not (os.getuid() == os.geteuid() == os.getgid() == os.getegid() == 0 and
+            sys.flags.isolated and not sys.flags.optimize):
+        raise ValueError('UI-native dispatch requires root and python3 -I without optimization')
+    interfaces = json.loads(subprocess.check_output(['/usr/sbin/ip', '-j', '-4', 'address', 'show'],
+                                                    timeout=10))
+    if not any(address.get('local') == '77.42.91.106' for interface in interfaces
+               for address in interface.get('addr_info', [])):
+        raise ValueError('UI-native dispatch requires the production UI address')
+    manifest = Path('/var/www/.proofofwork-ui-release')
+    for path in (manifest, Path('/run/proofofwork-ui/deploy.lock')):
+        info = path.lstat()
+        if (path.resolve(strict=True) != path or not stat.S_ISREG(info.st_mode) or
+                info.st_uid != 0 or info.st_gid != 0 or info.st_nlink != 1 or info.st_mode & 0o7022):
+            raise ValueError('Unsafe UI host marker: ' + str(path))
+    info = manifest.lstat()
+    if not 0 < info.st_size <= 65536:
+        raise ValueError('Invalid UI release manifest size')
+    with os.fdopen(os.open(manifest, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME), 'rb') as stream:
+        if os.fstat(stream.fileno()) != info:
+            raise ValueError('UI release manifest changed on open')
+        fields = dict(line.split('=', 1) for line in stream.read(65537).decode().splitlines())
+        if os.fstat(stream.fileno()) != info or manifest.lstat() != info:
+            raise ValueError('UI release manifest changed during validation')
+    commit, release = fields.get('commit', ''), fields.get('release_id', '')
+    if (fields.get('format') != 'proofofwork-ui-release-v5' or
+            not re.fullmatch('[0-9a-f]{40}', commit) or
+            not re.fullmatch('[0-9a-f]{40}', fields.get('source_tree', '')) or
+            not re.fullmatch(commit[:12] + '-[0-9]{8}T[0-9]{6}Z', release)):
+        raise ValueError('UI host lacks an authenticated V5 release marker')
+    git = ['/usr/bin/git', '-C', str(repo)]
+    env = {'PATH': '/usr/bin:/bin', 'LC_ALL': 'C', 'GIT_OPTIONAL_LOCKS': '0'}
+    if (repo.resolve(strict=True) != repo or
+            subprocess.check_output(git + ['rev-parse', '--show-toplevel'], env=env, timeout=15).decode().strip() != str(repo) or
+            subprocess.check_output(git + ['status', '--porcelain', '--untracked-files=all'], env=env, timeout=30)):
+        raise ValueError('UI-native dispatch requires the clean committed tooling checkout')
+    for name in ('ui-retention/lifecycle.py', 'ui-retention/install_lifecycle.py', 'publish/release.py',
+                 'publish/collect_verify.py', 'publish/transport_preserve.py'):
+        relative = 'deploy/' + name
+        path = repo / relative
+        if (path.resolve(strict=True) != path or path.read_bytes() !=
+                subprocess.check_output(git + ['show', 'HEAD:' + relative], env=env, timeout=15)):
+            raise ValueError('Uncommitted native control source: ' + relative)
+
+
 def remote(argv, data=None, timeout=1800):
-    result = subprocess.run([*SSH, shlex.join(argv)], input=data, capture_output=True,
+    command = argv if UI_HOST else [*SSH, shlex.join(argv)]
+    result = subprocess.run(command, input=data, capture_output=True,
                             timeout=timeout)
     if result.returncode:
         sys.stderr.buffer.write(result.stderr)
@@ -117,11 +168,14 @@ def call(binding, operation, frame):
     return remote(command, encoded(frame), timeout=5520 if operation!='status' else 600)
 
 
-def status(require_complete=False):
+def status(require_complete=False, prospective_release=None):
     discovery = discover()
     for path in LOCAL_SOURCES:
         assert sha((ROOT/path).read_bytes()) == discovery['packageManifest']['files'][path]['sha256'], 'Local retention source differs from installed reviewed package: '+path
-    result = call(discovery, 'status', {'requireComplete': require_complete})
+    frame={'requireComplete': require_complete}
+    if prospective_release is not None:
+        frame['prospectiveRelease']=prospective_release
+    result = call(discovery, 'status', frame)
     assert result['binding']['config'] == discovery['config']
     assert result['binding']['controller'] == discovery['controller']
     if require_complete:
@@ -203,6 +257,11 @@ def complete(plan_path, publish_log, https_receipt, destination, attempt=None):
            'publicationReceipt':publication_binding(plan,publish_log)}
     prepared=call(binding,'prepare-cycle',frame);save(destination/'prepared.json',prepared)
     assert prepared['lifecycleBinding']['approval']['sha256']==APPROVAL_SHA
+    if 'privateStaging' in plan.get('closedArchive',{}):
+        assert plan['privateStageRetention']['wouldRetire']==[]
+        assert prepared['privateStageZeroRetirement']=={'ordinaryPlanSha256':prepared['ordinaryPlan']['sha256'],
+            'releasePlanSha256':sha(plan_path.read_bytes()),'delete':0,'moves':0,'eligible':0}, \
+            'Verified native preparation did not prove zero retirement'
     mutation={'expectedStateSha256':prepared['stateSha256'],'expectedPair':current['pair'],
               'operationId':'ordinary-'+rid+suffix,'cycleId':prepared['cycleId'],'pendingToken':prepared['pendingToken']}
     applied=call(binding,'apply-vps-retention',mutation);save(destination/'ordinary-applied.json',applied)
@@ -217,13 +276,19 @@ def complete(plan_path, publish_log, https_receipt, destination, attempt=None):
 
 
 def main():
+    global UI_HOST
     os.umask(0o077)
-    parser=argparse.ArgumentParser(description=__doc__);sub=parser.add_subparsers(dest='op',required=True)
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--ui-host', action='store_true', help='Run the reviewed commands directly on the UI VPS')
+    sub=parser.add_subparsers(dest='op',required=True)
     p=sub.add_parser('status');p.add_argument('--require-complete',action='store_true')
     p=sub.add_parser('complete')
     for name in ('plan','publish_log','https_receipt','destination'):p.add_argument(name,type=Path)
     p.add_argument('--attempt', help='Unique bounded name after authenticated phase reconciliation')
     args=parser.parse_args()
+    if args.ui_host:
+        require_ui_host(ROOT)
+        UI_HOST = True
     if args.op=='status':print(json.dumps(status(args.require_complete)))
     else:complete(args.plan,args.publish_log,args.https_receipt,args.destination,args.attempt)
 

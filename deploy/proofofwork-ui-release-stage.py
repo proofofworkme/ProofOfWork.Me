@@ -8,6 +8,7 @@ from contextlib import contextmanager
 import ctypes
 import errno
 import fcntl
+from functools import partial
 import hashlib
 import importlib.machinery
 import importlib.util
@@ -73,6 +74,10 @@ MAXIMUM_DEPENDENCIES = 1600
 # edges. The finite 5,632 ceiling leaves 286 edges of headroom; independent
 # served-path, raw-candidate and byte limits remain enforced.
 MAXIMUM_REFERENCE_EDGES = 5632
+# The November 3 Permission V5 graph has 1,650 served paths and 6,182
+# distinct edges. Older surface families keep their original ceilings.
+V5_MAXIMUM_DEPENDENCIES = 1664
+V5_MAXIMUM_REFERENCE_EDGES = 6272
 # The prior 7afc0f95 graph has 1,311,044 raw candidates; the 75948039 article
 # candidate has 1,313,796. The October 15 calibration used 1,376,256
 # (62,460 headroom above that graph); every raw occurrence still counted.
@@ -1008,7 +1013,11 @@ def dependency_references(
     current_path: Path,
     content: bytes,
     counters: dict[str, int],
+    *,
+    edge_limit: int | None = None,
 ) -> list[str]:
+    if edge_limit is None:
+        edge_limit = MAXIMUM_REFERENCE_EDGES
     references: list[str] = []
     # Repeated literals and overlapping CSS patterns describe the same directed
     # edge from this referrer. Every raw match still consumes the candidate cap.
@@ -1025,10 +1034,16 @@ def dependency_references(
             if relative is not None and relative not in seen_targets:
                 seen_targets.add(relative)
                 counters["reference_edges"] += 1
-                if counters["reference_edges"] > MAXIMUM_REFERENCE_EDGES:
+                if counters["reference_edges"] > edge_limit:
                     fail("Prior UI compatibility reference-edge bound exceeded.")
                 references.append(relative)
     return references
+
+
+def prior_asset_parser(surfaces):
+    if tuple(sorted(surfaces)) == PERMISSION_SURFACES:
+        return V5_MAXIMUM_DEPENDENCIES, partial(dependency_references, edge_limit=V5_MAXIMUM_REFERENCE_EDGES)
+    return MAXIMUM_DEPENDENCIES, dependency_references
 
 
 def ensure_stage_parent_directories(
@@ -1132,6 +1147,7 @@ def copy_prior_asset_compatibility(
     surfaces: tuple[str, ...] = SURFACES,
     deduplicator: CandidateManagedDeduplicator | None = None,
 ) -> tuple[int, int]:
+    dependency_limit, parse_references = prior_asset_parser(surfaces)
     counters = {
         "dependencies": 0,
         "reference_edges": 0,
@@ -1153,7 +1169,7 @@ def copy_prior_asset_compatibility(
         if index_details.st_size > MAXIMUM_INDEX_BYTES:
             fail(f"Prior UI index exceeds compatibility bound: {surface}")
         _, index_bytes = digest_regular_file(live_index, index_details, capture=True)
-        pending = dependency_references(live_surface, live_index, index_bytes, counters)
+        pending = parse_references(live_surface, live_index, index_bytes, counters)
         visited: set[str] = set()
         while pending:
             surface_dependency = pending.pop()
@@ -1161,7 +1177,7 @@ def copy_prior_asset_compatibility(
                 continue
             visited.add(surface_dependency)
             counters["dependencies"] += 1
-            if counters["dependencies"] > MAXIMUM_DEPENDENCIES:
+            if counters["dependencies"] > dependency_limit:
                 fail("Prior UI compatibility dependency bound exceeded.")
             live_asset = live_surface.joinpath(*surface_dependency.split("/"))
             if Path(os.path.realpath(live_asset)) != live_asset:
@@ -1195,7 +1211,7 @@ def copy_prior_asset_compatibility(
                 copy_prior_file(live_asset, live_details, stage_asset, live_digest)
             if capture_dependency:
                 pending.extend(
-                    dependency_references(live_surface, live_asset, dependency_bytes, counters)
+                    parse_references(live_surface, live_asset, dependency_bytes, counters)
                 )
         if deduplicator is not None:
             deduplicator.add_surface(surface)
@@ -1495,6 +1511,9 @@ def main() -> int:
                 [
                     "/usr/bin/cp",
                     "--archive",
+                    # A compact input can share inodes inside its own tree.
+                    # The candidate's deduplicator verifies its own aliases.
+                    "--no-preserve=links",
                     "--one-file-system",
                     "--",
                     str(surfaces_root / surface),

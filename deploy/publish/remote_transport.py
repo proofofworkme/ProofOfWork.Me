@@ -4,6 +4,7 @@ Runs only in its dedicated root systemd cgroup after the release operator dispat
 No publication, service/config changes, pruning, or historical path changes occur.
 """
 import ctypes
+import base64
 import fcntl
 import hashlib
 import json
@@ -17,6 +18,7 @@ import stat
 import subprocess
 import sys
 import time
+import zlib
 
 BASE = Path('/var/tmp/proofofwork-deploy')
 EVIDENCE = Path('/var/backups/proofofwork-ui/transport-evidence')
@@ -168,6 +170,19 @@ def admit_fresh_scratch_inputs(plan):
     # lexists also rejects dangling links and a previous failed namespace.
     assert not os.path.lexists(source), 'Scratch source namespace already occupied'
     assert not os.path.lexists(surfaces.parent), 'Scratch surface namespace already occupied'
+
+
+def planned_helper(record):
+    if set(record) == {'sha256', 'compressedSource'}:
+        packed = base64.b64decode(record['compressedSource'], validate=True)
+        inflater = zlib.decompressobj()
+        raw = inflater.decompress(packed, 65537)
+        assert inflater.eof and not inflater.unused_data and not inflater.unconsumed_tail
+    else:
+        assert set(record) == {'sha256', 'source'}
+        raw = record['source'].encode()
+    assert 0 < len(raw) <= 65536 and hashlib.sha256(raw).hexdigest() == record['sha256']
+    return raw.decode()
 
 
 def payload_fingerprint(root):
@@ -556,6 +571,7 @@ assert before.st_uid == before.st_gid == 0 and before.st_nlink == 1 and not befo
 lock_fd = os.open(lock, os.O_RDONLY | os.O_NOFOLLOW)
 assert identity(os.fstat(lock_fd)) == identity(before) and identity(lock.lstat()) == identity(before)
 fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+installed_admission(*plan_gate(p), lock_fd)
 env = {**ENV, 'POW_UI_DEPLOY_LOCK_FD': str(lock_fd)}
 directory(BASE); directory(ARCHIVES)
 if scratch_inputs and phase == 'surfaces-stage':
@@ -563,9 +579,28 @@ if scratch_inputs and phase == 'surfaces-stage':
     # any payload. Existing releases and failed attempts are never overwritten.
     admit_fresh_scratch_inputs(p)
 helpers = p['publicationHelpers']
-phase_capacity_source = p['phaseCapacity']['source']
-assert isinstance(phase_capacity_source, str) and len(phase_capacity_source.encode()) <= 32768
-assert hashlib.sha256(phase_capacity_source.encode()).hexdigest() == p['phaseCapacity']['sha256']
+phase_capacity_source = planned_helper(p['phaseCapacity'])
+private_staging = 'inputCompactor' in p
+if private_staging:
+    assert scratch_inputs
+    assert phase in ('surfaces-stage', 'source') and not any(k in p for k in ('resumeSurfaces','preservedStageResume','preservedCapacityResume'))
+    private_limits = p['closedArchive']['privateStaging']
+    assert p['inputCompactor']['sha256'] == p['closedArchive']['request']['inputCompactorSha256'] == p['wrapperSourceSha256']['input_compaction.py']
+    compactor = {'__name__': '_release_input_compaction'}
+    exec(compile(planned_helper(p['inputCompactor']), 'input_compaction.py', 'exec'), compactor)
+
+    def compact_receipt(private_root, *, check_only, journal_sha256=None):
+        value = compactor['compact'](private_root, p['surfacesPayloadFingerprint'], check_only=check_only, journal_sha256=journal_sha256)
+        value.pop('aliasesCreated')
+        assert value['chargedBytes'] + value['originalTimes']['bytes'] <= private_limits['compactInputUpperBytes']
+        return value
+
+    def completed_private_stage():
+        stager = verifier['locked_installed_stager'](helpers['stager']['sha256'], lock_fd)
+        return verifier['private_stage_receipt'](stage, stager, private_limits['finalCandidateUpperBytes'])
+
+    verifier = {'__name__': '_private_stage_verifier'}
+    exec(compile(phase_capacity_source, 'phase_capacity.py', 'exec'), verifier)
 for record in helpers.values(): bound(record['path'], record['sha256'])
 tools = BASE / 'audit29-tools'
 for key, filename in [('controller', 'release.py'), ('receiver', 'stream-ui-bundle.py'),
@@ -629,6 +664,12 @@ allocation = p['admissions'][kind + '-receive']
 archive = ARCHIVES / ('proofofwork-ui-release-' + release + '.tgz')
 part = p[kind]
 if phase == 'source':
+    if private_staging:
+        earlier = BASE / ('recovery-transport-' + release + '-surfaces-stage-' + p['publicationAttempt'])
+        earlier_raw, earlier_sha = bounded_record(earlier / 'receipt.json')
+        earlier_stage = json.loads(earlier_raw)
+        current_input = compact_receipt(surfaces_root.parent, check_only=True, journal_sha256=earlier_stage['compactInput']['originalTimes']['sha256'])
+        verifier['verify_private_predecessor'](p, plan_sha, earlier_stage, current_input, completed_private_stage())
     checksum = Path(str(archive) + '.sha256').read_text().split()
     assert len(checksum) == 2 and checksum[1] == archive.name
     bound(archive, checksum[0], 2*1024**3)
@@ -690,10 +731,15 @@ if phase != 'source':
         if not scratch_inputs:
             rename_new(payload, preserved)
         assert payload_fingerprint(preserved) == input_before
+        if private_staging:
+            assert receipt['status'] == 'verified' and receipt['releaseId'] == release
+            assert receipt['archiveSha256'] == part['sha256'] and receipt['compressedBytes'] == part['compressedBytes']
+        compact_input = compact_receipt(preserved, check_only=False) if private_staging else None
         durable_json(evidence_root / 'incoming-receipt.json', {'format': 'proof-of-work-ui-incoming-evidence-v1',
             'releaseId': release, 'commit': p['commit'], 'tree': p['tree'], 'planSha256': plan_sha,
             'receiverReceipt': receipt, 'preservedPath': str(preserved), 'payloadFingerprint': input_before,
             'inputStorage': p['inputStorage'], 'movePreservedInodes': not scratch_inputs,
+            **({'compactInput': compact_input} if private_staging else {}),
             'historicalDeletion': False, 'allPriorEvidencePreserved': True})
     assert receipt['status'] == 'verified' and receipt['archiveSha256'] == part['sha256']
     assert receipt['compressedBytes'] == part['compressedBytes'] and receipt['releaseId'] == release
@@ -701,7 +747,7 @@ if phase != 'source':
     assert not os.path.lexists(stage)
     for target in (archive, Path(str(archive)+'.sha256'), Path(str(archive)+'.provenance')):
         assert not os.path.lexists(target)
-    model_args = [str(evidence_root)] if phase == 'preserved-stage-resume' else []
+    model_args = [str(evidence_root)] if phase == 'preserved-stage-resume' else ['--private-input'] if private_staging else []
     run(['/usr/bin/python3', '-I', '-B', '-c', phase_capacity_source, 'stage', str(preserved / 'surfaces'), helpers['stager']['sha256'], *model_args], 'stage-model.json')
     model = json.loads((out / 'stage-model.json').read_bytes())
     assert model['inputStabilityVerified'] is True and model['installedStagerSha256'] == helpers['stager']['sha256']
@@ -724,23 +770,31 @@ if phase != 'source':
                        '--preserved-input-receipt-sha256', p['preservedStageResume']['incomingReceiptSha256']]
     else:
         capacity('check-scratch', BASE, model['peakAdditionalBytes'] + EVIDENCE_RESERVE, 'stage')
-        capacity('check', BASE, model['peakAdditionalBytes'] + stage_archive_upper + EVIDENCE_RESERVE, 'stage')
+        if private_staging:
+            admitted = p['wholeSequenceAdmission']['requirements']['charges']['candidateCopy']
+            assert model['peakAdditionalBytes'] <= admitted, 'Stage peak exceeds admitted full-copy bound'
+        capacity('check', BASE, model['peakAdditionalBytes'] + (0 if private_staging else stage_archive_upper) + EVIDENCE_RESERVE, 'stage')
         stager_args = []
     run([helpers['stager']['path'], '--release-id', release, '--surfaces-root', str(preserved / 'surfaces'),
          '--stage-root', str(stage), '--deduplicate-managed-files', *stager_args], 'stager.log', timeout=900)
     if phase == 'preserved-stage-resume':
-        private = Path(p['preservedStageResume']['privateCandidateParent'])
-        directory(private); assert not os.path.lexists(private / 'candidate')
-        allocation_path = private / 'completed-candidate-allocation.json'
+        recovery_parent = Path(p['preservedStageResume']['privateCandidateParent'])
+        directory(recovery_parent); assert not os.path.lexists(recovery_parent / 'candidate')
+        allocation_path = recovery_parent / 'completed-candidate-allocation.json'
         allocation_raw, allocation_sha = bounded_record(allocation_path)
         measured = json.loads(allocation_raw)
         assert measured['model'] == 'completed-candidate-unique-inodes-v1'
         assert measured['releaseId'] == release and measured['attempt'] == p['publicationAttempt']
         assert measured['incomingReceiptSha256'] == p['preservedStageResume']['incomingReceiptSha256']
-        assert measured['stageRoot'] == str(stage) and measured['candidate'] == str(private / 'candidate')
+        assert measured['stageRoot'] == str(stage) and measured['candidate'] == str(recovery_parent / 'candidate')
         assert measured['historicalDeletion'] is False
         durable_json(out / 'completed-candidate-allocation.json', {**measured, 'measurementSha256': allocation_sha})
-    assert payload_fingerprint(preserved) == input_before
+    if private_staging:
+        assert compact_receipt(preserved, check_only=True, journal_sha256=compact_input['originalTimes']['sha256']) == compact_input
+        measured = completed_private_stage()
+        durable_json(out / 'private-stage-allocation.json', measured)
+    else:
+        assert payload_fingerprint(preserved) == input_before
     run(['/usr/bin/python3', '-I', '-B', '-c', phase_capacity_source, 'managed', str(stage)], 'managed-model.json')
     managed = json.loads((out / 'managed-model.json').read_bytes())
     upper = managed['archiveUpperBoundBytes']
@@ -773,7 +827,8 @@ if phase != 'source':
     durable_json(out / 'receipt.json', {'ok': True, 'releaseId': release, 'phase': phase,
         'managedArchive': str(archive), 'archiveSha256': archive_sha, 'preservedInput': str(preserved),
         'archiveWorkspace': str(archive_work),
-        'inputFingerprint': input_before, 'stageModel': model,
+        'inputFingerprint': input_before, 'stageModel': model, 'planSha256': plan_sha,
+        **({'compactInput': compact_input, 'privateStageAllocation': measured} if private_staging else {}),
         'candidateStorage': 'release-evidence-v1' if phase == 'preserved-stage-resume' else 'deploy-scratch',
         'completedCandidateAllocation': measured if phase == 'preserved-stage-resume' else None, 'productionPublished': False,
         'historicalDeletion': False})
@@ -797,6 +852,7 @@ else:
         'candidate-provenance.log', extra={'POW_UI_WWW_ROOT': str(stage), 'POW_UI_STAGED_ROOT': '1'}, timeout=600)
     durable_json(out / 'receipt.json', {'ok': True, 'releaseId': release, 'phase': phase,
         'commit': p['commit'], 'tree': p['tree'], 'detachedSourceClean': True,
+        **({'planSha256': plan_sha, 'verifiedStageReceiptSha256': earlier_sha} if private_staging else {}),
         'sourceCheckout': str(source), 'receiverReceipt': source_receipt,
         'receiverReceiptSha256': hashlib.sha256(source_receipt_path.read_bytes()).hexdigest(),
         'candidateProvenanceVerified': True, 'productionPublished': False, 'historicalDeletion': False})
