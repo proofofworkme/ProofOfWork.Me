@@ -26,7 +26,15 @@ def merge_search_coverage(raw):
     # Keep the accepted generation-sharing query, including its base parameter
     # and effective-documents CTE. Insert the typed aggregates from v5.
     begin, end = b"<<<<<<< ACTIVE\n", b">>>>>>> CANDIDATE\n"
-    require(raw.count(begin) == raw.count(end) == 1, "Unreviewed Search merge conflict")
+    require(raw.count(begin) == raw.count(end) == 2, "Unreviewed Search merge conflict")
+    # Retain the live verified shared base when the source-only reader comparison
+    # is renamed. The shared builder retains its directional coverage comparison.
+    before, _, rest = raw.partition(begin)
+    guard, _, after = rest.partition(end)
+    require(sha(guard) == "98b92a75a9d851f00418abdd67d2143455aca9face346d4ef9c99e0cae0e1664",
+            "Search merge differs from reviewed coverage query")
+    active_guard = guard.split(b"||||||| BASE\n")[0]
+    raw = before + active_guard.replace(b"sameCanonicalSearchWitness", b"sameCanonicalSearchContent") + after
     before, _, rest = raw.partition(begin)
     conflict, _, after = rest.partition(end)
     require(sha(conflict) == "3228160671780e7f4142f1b3510f4efc5bae364b31c380a84899f20f63249234",
@@ -35,7 +43,7 @@ def merge_search_coverage(raw):
     _, candidate = rest.split(b"=======\n")
     aggregates = candidate[candidate.index(b" AS count,"):candidate.index(b"    FROM proof_indexer.search_documents")]
     merged = before + active.replace(b" AS count\n", aggregates) + after
-    require(sha(merged) == "e1b3a0dd621fed27e7c49327e5a5b667b3187a8017c255ae41fcca0bc32a503d",
+    require(sha(merged) == "6d372ed6da44a1b1d54431d40b494bc701105de0e310e82fad13acc3dd1a3e6f",
             "Unexpected composed Search reader")
     return merged
 

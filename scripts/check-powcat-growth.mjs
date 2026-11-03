@@ -8,6 +8,8 @@ import { join } from "node:path";
 import pg from "pg";
 import { readPowcatActivity } from "../server/db/powcat-activity.mjs";
 import { normalizeHistoryEventItem } from "../server/db/proof-index-reader.mjs";
+import { searchPayload } from "../server/db/search-reader.mjs";
+import { applySearchSchema, runSearchBackfill } from "./backfill-proof-search.mjs";
 import { buildPowcatMailAttachment } from "../src/shared/protocol/powcatMail.mjs";
 
 const scratch = process.env.POWCAT_REGTEST_SCRATCH;
@@ -35,6 +37,27 @@ try {
   await pool.query("INSERT INTO proof_indexer.blocks(network,height,block_hash) VALUES('livenet',$1,$2),('livenet',$3,$4)",
     [height-1,parent,height,blockHash]);
   assert.equal((await read()).publications, "0");
+  // A new scan can complete after Search has already published an otherwise
+  // complete run for this exact checkpoint. Exercise both the builder and
+  // public reader without a block, transaction, or mempool change.
+  await applySearchSchema(pool);
+  await pool.query("INSERT INTO proof_indexer.ledger_snapshots(network,snapshot_id,indexed_through_block,source_hashes) VALUES('livenet','search-test',$1,$2)",
+    [height,{blockScan:blockHash}]);
+  const setCoverage = complete => pool.query("UPDATE proof_indexer.meta SET value=$1 WHERE key='livenet:powcat1:discovery:v1'",
+    [{...marker,complete}]);
+  const build = () => runSearchBackfill({pool,network:"livenet",verifyCheckpoint:checkpoint.verify});
+  const coverage = async () => (await searchPayload("livenet",new URLSearchParams(),{pool,verifyCheckpoint:checkpoint.verify})).coverage;
+  await setCoverage(false);
+  const before = await build();
+  assert.equal(before.ready,true);
+  assert.equal((await coverage()).linkedFiles.ready,false);
+  await setCoverage(true);
+  assert.equal((await coverage()).linkedFiles.ready,false);
+  const qualified = await build();
+  assert.equal(qualified.ready,true);
+  assert.notEqual(qualified.runId,before.runId);
+  assert.equal((await coverage()).linkedFiles.ready,true);
+  assert.equal((await build()).unchanged,true);
   const txid = n => n.toString(16).padStart(64,"0");
   const attachment = buildPowcatMailAttachment({ name: "report.html", txid: txid(43), fileHash });
   const canon = (await Promise.all(Array.from({length:47}, (_,i) => {
@@ -75,6 +98,7 @@ try {
   await pool.query("UPDATE proof_indexer.transactions SET fee_sats=NULL WHERE txid=$1",[txid(1)]);
   assert.equal((await read()).minerFeeProofs,null);
   console.log("PASS PostgreSQL: 42 parts + one publication + one 546-proof file delivery; orphan, stale fence, invalid and pending excluded; missing fees unavailable.");
+  console.log("PASS PostgreSQL: Search rebuilt its immutable generation when discovery completed at an unchanged checkpoint.");
 } finally {
   if (pool) await pool.end();
   if (started) await run(join(bin,"pg_ctl"),["-D",db,"-m","immediate","-w","stop"]);

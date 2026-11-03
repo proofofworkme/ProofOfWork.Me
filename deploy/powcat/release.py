@@ -108,7 +108,7 @@ def build_plan(args):
                 merge = subprocess.run(["git", "merge-file", "--stdout", "--diff3",
                                         "-L", "ACTIVE", "-L", "BASE", "-L", "CANDIDATE",
                                         p / "active", p / "base", p / "candidate"], stdout=subprocess.PIPE)
-                if merge.returncode == 1 and DISCOVERY and name == "server/db/search-reader.mjs":
+                if merge.returncode == 2 and DISCOVERY and name == "server/db/search-reader.mjs":
                     candidate = ns["merge_search_coverage"](merge.stdout)
                 else:
                     merge.check_returncode()

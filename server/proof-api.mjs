@@ -55600,7 +55600,7 @@ async function stableProofIndexLogHistoryPayload(
   };
 }
 
-async function freshProofIndexLogHistoryPayload(network, kind, searchParams) {
+async function freshProofIndexLogHistoryPayload(network, kind, searchParams, { confirmedOnly = false, scopedExact = false } = {}) {
   const requestedKind = String(kind ?? "").trim().toLowerCase();
   const eligibility = proofIndexLogHistoryReadEligibility(
     requestedKind,
@@ -55637,7 +55637,7 @@ async function freshProofIndexLogHistoryPayload(network, kind, searchParams) {
     network,
     requestedKind,
     boundSearchParams,
-    { currentRelational: true, includePending: summaryPending !== 0 },
+    { currentRelational: true, includePending: !confirmedOnly && summaryPending !== 0 },
   );
   if (!page) {
     throw freshDataUnavailableError(
@@ -55662,7 +55662,9 @@ async function freshProofIndexLogHistoryPayload(network, kind, searchParams) {
   );
   if (
     pageHeight <= 0 ||
-    pageHeight !== summaryHeight ||
+    // Exact TXID pages report the latest matching event's block. The pinned
+    // snapshot ID still binds this page to the authenticated summary at tip.
+    (scopedExact ? pageHeight > summaryHeight : pageHeight !== summaryHeight) ||
     !pageSnapshotId ||
     pageSnapshotId !== summarySnapshotId ||
     (fullSummaryRead && pageSnapshotTotal !== publicSummaryTotal)
@@ -83661,8 +83663,9 @@ async function handleRequest(request, response) {
     }
 
     const powcatActivityRequest = url.pathname === "/api/v1/powcat-activity";
+    const powcatLogKind = (url.searchParams.get("kind") ?? "").trim().toLowerCase();
     const powcatLogRequest = ["/api/v1/log", "/api/v1/log-history", "/api/v1/activity-history"].includes(url.pathname) &&
-      ["powcat-part", "powcat-linker"].includes(url.searchParams.get("kind")) && !url.searchParams.has("snapshot") && !url.searchParams.has("cursor");
+      ["powcat-part", "powcat-linker"].includes(powcatLogKind);
     if (powcatActivityRequest || powcatLogRequest) {
       if (network !== "livenet") {
         errorResponse(response, 400, "Linked file activity requires mainnet.");
@@ -83683,6 +83686,22 @@ async function handleRequest(request, response) {
         jsonResponse(response, 200, payload, "no-store");
         return;
       }
+      const confirmedOnly = url.searchParams.get("confirmedOnly") === "1";
+      const { pagination } = proofIndexLogHistoryReadEligibility(powcatLogKind, url.searchParams);
+      const scopedExact = /^[a-f0-9]{64}$/u.test(pagination.query);
+      const page = await freshProofIndexLogHistoryPayload(network, powcatLogKind, url.searchParams, { confirmedOnly, scopedExact });
+      const confirmedCount = powcatLogKind === "powcat-part" ? payload.parts : payload.publications;
+      if (page.indexedThroughBlock !== payload.indexedThroughBlock || page.indexedThroughBlockHash !== payload.indexedThroughBlockHash ||
+          page.network !== network || page.kind !== powcatLogKind || !Array.isArray(page.items) ||
+          !Number.isSafeInteger(page.totalCount) || (!pagination.query &&
+            (confirmedOnly ? BigInt(page.totalCount) !== BigInt(confirmedCount) : BigInt(page.totalCount) < BigInt(confirmedCount))) ||
+          page.items.some(item => item.kind !== powcatLogKind || item.protocol !== "powcat1" || item.valid !== true ||
+            (confirmedOnly && (item.confirmed !== true || item.status !== "confirmed")))) {
+        throw freshDataUnavailableError("Linked file Log history does not match confirmed discovery.");
+      }
+      jsonResponse(response, 200, { ...page, linkedFiles: { source: payload.source, fromHeight: payload.fromHeight,
+        checkpointHeight: payload.indexedThroughBlock, checkpointHash: payload.indexedThroughBlockHash, confirmedCount, confirmedOnly } }, "no-store");
+      return;
     }
 
     if (url.pathname === "/api/v1/jobs" || url.pathname === "/api/v1/job") {

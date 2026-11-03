@@ -83,6 +83,12 @@ and miner fees. Part counts include unlinked confirmed parts. Published bytes
 are counted per valid linker; Mail delivery does not add another publication.
 Unavailable coverage is not zero, and unknown fees are null. Rollback invalidates
 a linker's publication until canonical earlier parts and the final hash verify.
+
+For the same inventory in Log, request `log-history` with
+`kind=powcat-part` or `kind=powcat-linker` and `confirmedOnly=1`.
+The response includes the discovery height, block hash and confirmed count for
+that kind, including when the count is zero. The ordinary Log view can also
+show pending observations.
 The financial ledger continues to count a paid Mail file once in Drive.
 
 The qualification test uses an isolated Bitcoin Core regtest, a 4,000,000-byte

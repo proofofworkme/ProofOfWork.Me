@@ -36,7 +36,7 @@ class ScopedPowcatRelease(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unreviewed Search merge conflict"):
             ns["merge_search_coverage"](b"unpaired conflict")
         with self.assertRaisesRegex(ValueError, "reviewed coverage query"):
-            ns["merge_search_coverage"](b"<<<<<<< ACTIVE\nunknown change\n>>>>>>> CANDIDATE\n")
+            ns["merge_search_coverage"](b"<<<<<<< ACTIVE\nunknown change\n>>>>>>> CANDIDATE\n" * 2)
 
     def test_scoped_application_rollback_and_foreign_helper_fence(self):
         with tempfile.TemporaryDirectory() as tmp:

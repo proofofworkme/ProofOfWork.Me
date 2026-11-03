@@ -2,7 +2,7 @@ import { createProofIndexPool } from './postgres.mjs';
 import { compactPowcatSearchSource, qualifiedPowcatSearchCoverage } from '../search-powcat.mjs';
 import {
   SEARCH_INDEX_VERSION, SEARCH_MAX_DETAIL_BYTES, SEARCH_SOURCES_SQL, SEARCH_PROTOCOLS,
-  searchError, searchSha256, searchSourceWitness, sameCanonicalSearchWitness, verifySearchCheckpoint,
+  searchError, searchSha256, searchSourceWitness, sameCanonicalSearchContent, verifySearchCheckpoint,
 } from '../search-projection.mjs';
 
 let sharedPool;
@@ -57,7 +57,7 @@ async function readyRun(client,network,options,requestedRunId='') {
   const block=await client.query(`SELECT 1 FROM proof_indexer.blocks WHERE network=$1 AND height=$2 AND block_hash=$3 AND canonical=true`,[network,run.checkpoint_height,run.checkpoint_hash]);
   if (block.rowCount!==1) throw searchError('Search indexed block is no longer canonical.');
   const witness=await searchSourceWitness(client,network,run.checkpoint_height);
-  if (witness.missingRawTransactions || witness.missingRawCarriers || !sameCanonicalSearchWitness(witness,run.source_witness)) throw searchError('Search coverage changed or raw transaction evidence is incomplete. Refresh after reindexing.',503,'SEARCH_COVERAGE_CHANGED');
+  if (witness.missingRawTransactions || witness.missingRawCarriers || !sameCanonicalSearchContent(witness,run.source_witness)) throw searchError('Search coverage changed or raw transaction evidence is incomplete. Refresh after reindexing.',503,'SEARCH_COVERAGE_CHANGED');
   return { run,witness };
 }
 async function coverageForRun(client,network,run,witness) {

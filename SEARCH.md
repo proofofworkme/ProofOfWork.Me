@@ -185,7 +185,9 @@ launch-anchored scan at that height and hash. Fresh source events and the
 effective materialized documents must match the stored counts and ordered
 hashes of event identities and source hashes, grouped by kind and validity.
 This includes a verified empty result. A completed scan observed after a
-generation was published cannot promote that generation's coverage.
+generation was published cannot promote that generation's coverage. When
+discovery catches up at the same block, the worker qualifies a new generation
+even if no transaction or mempool row changed in the meantime.
 
 In the inspector, a valid canonical confirmed pointer or linker at a covered
 checkpoint offers **Verify and download**. Opening it checks the current linker,

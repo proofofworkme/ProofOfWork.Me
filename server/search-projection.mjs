@@ -267,10 +267,18 @@ export async function searchSourceWitness(client, network, height) {
   return { linkedFiles, powcatGroups:row.powcat_groups, total:Number(row.total), confirmed:Number(row.confirmed), confirmedRecords:Number(row.confirmed_records), canonicalHash:row.canonical_hash,
     volatileHashes:row.volatile_hashes, missingRawTransactions:Number(row.missing_raw_transactions),missingRawCarriers:Number(rawCoverage.rows[0].missing) };
 }
-export function sameCanonicalSearchWitness(left, right) {
+export function sameCanonicalSearchContent(left, right) {
   return left?.canonicalHash === right?.canonicalHash && left?.confirmed === right?.confirmed &&
     left?.confirmedRecords === right?.confirmedRecords && left?.missingRawTransactions === right?.missingRawTransactions &&
     left?.missingRawCarriers === right?.missingRawCarriers;
+}
+// The builder passes the stored generation first. Newly complete discovery
+// requires a new generation even when every source byte is unchanged. Past
+// generations can still supply identical confirmed documents after the marker
+// advances beyond their checkpoint. Readers verify content and coverage separately.
+export function sameCanonicalSearchWitness(stored, current) {
+  return sameCanonicalSearchContent(stored, current) &&
+    (current?.linkedFiles?.ready !== true || stored?.linkedFiles?.ready === true);
 }
 export async function readSearchCheckpoint(client, network) {
   const result = await client.query(`SELECT indexed_through_block AS height,
