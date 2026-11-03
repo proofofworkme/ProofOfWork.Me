@@ -24845,6 +24845,8 @@ check("Core-present dropped protocol transactions revive through verifier and up
     BACKFILL_PATH,
     "backfillMempoolScanSource",
     {
+      NETWORK: "livenet",
+      reconcilePowcatPending: async () => {},
       MEMPOOL_REVERIFY_ID_TXIDS: [],
       pendingIdReverificationTargets: async () => new Map(),
       BITCOIN_RPC_URL: "http://127.0.0.1:8332",
@@ -25594,6 +25596,8 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
     BACKFILL_PATH,
     "backfillMempoolScanSource",
     {
+      NETWORK: "livenet",
+      reconcilePowcatPending: async () => {},
       MEMPOOL_REVERIFY_ID_TXIDS: [],
       pendingIdReverificationTargets: async () => new Map(),
       BITCOIN_RPC_URL: "http://127.0.0.1:8332",
@@ -25812,6 +25816,8 @@ check("supply-capped mempool mints replace stale valid rows with a pending inval
     BACKFILL_PATH,
     "backfillMempoolScanSource",
     {
+      NETWORK: "livenet",
+      reconcilePowcatPending: async () => {},
       MEMPOOL_REVERIFY_ID_TXIDS: [],
       pendingIdReverificationTargets: async () => new Map(),
       BITCOIN_RPC_URL: "http://127.0.0.1:8332",

@@ -330,6 +330,7 @@ const SearchRoot = lazy(() => import("./features/search/SearchRoot"));
 const CodeRoot = lazy(() => import("./features/code/CodeRoot"));
 const JobsRoot = lazy(() => import("./features/jobs/JobsRoot"));
 const PermissionRoot = lazy(() => import("./features/permission/PermissionRoot"));
+const LinkedFilesActivity = lazy(() => import("./features/growth/LinkedFilesActivity"));
 const JobsActivitySummary = lazy(() => import("./features/growth/JobsActivitySummary"));
 const CodeActivitySummary = lazy(() => import("./features/growth/CodeActivitySummary"));
 const BoostGrowthDetails = lazy(
@@ -1406,6 +1407,8 @@ type PowActivityKind =
   | "mail"
   | "reply"
   | "file"
+  | "powcat-part"
+  | "powcat-linker"
   | "token-create"
   | "token-mint"
   | "token-listing"
@@ -1445,6 +1448,9 @@ type PowActivityItem = {
   frozenNetworkValueSats?: number;
   id?: string;
   kind: PowActivityKind;
+  linkedFile?: { txid: string; fileHash: string };
+  attachment?: MailAttachment;
+  powcat?: { fileHash: string; index?: number; count: number; size: number; name?: string };
   listingId?: string;
   jobs?: { ready: boolean; action?: string; jobTxid?: string; applied?: boolean; valid?: boolean; validationErrors?: string[] };
   liveNetworkValueSats?: number;
@@ -4483,6 +4489,12 @@ function messageSubject(message: {
     : subject;
 }
 
+function fileAttachmentDescription(attachment: MailAttachment) {
+  return powcatPointerFromAttachment(attachment)
+    ? `${attachment.name} · Linked file reference`
+    : `${attachment.name} · ${formatBytes(attachment.size)}`;
+}
+
 function mailPreview(message: { attachment?: MailAttachment; memo: string }) {
   const preview = message.memo.replace(/\s+/g, " ").trim().slice(0, 180);
   if (preview) {
@@ -4490,7 +4502,7 @@ function mailPreview(message: { attachment?: MailAttachment; memo: string }) {
   }
 
   return message.attachment
-    ? `${message.attachment.name} (${formatBytes(message.attachment.size)})`
+    ? fileAttachmentDescription(message.attachment)
     : "";
 }
 
@@ -15181,12 +15193,13 @@ function activityItemsFromAddressMail(
       amountSats: message.amountSats,
       actor: message.from,
       attachedCredits: message.attachedCredits,
+      linkedFile: powcatPointerFromAttachment(message.attachment) ?? undefined,
       confirmed: message.confirmed,
       counterparty: message.to,
       createdAt: message.createdAt,
       description: `${message.confirmed ? "Received" : "Incoming"} ${isFile ? "file" : isReply ? "reply" : "mail"} from ${shortAddress(message.from)} for ${message.amountSats.toLocaleString()} proofs.`,
       detail: message.attachment
-        ? `${message.attachment.name} · ${formatBytes(message.attachment.size)}`
+        ? fileAttachmentDescription(message.attachment)
         : messageSubject(message),
       kind: isFile ? "file" : isReply ? "reply" : "mail",
       network: message.network,
@@ -15219,12 +15232,13 @@ function activityItemsFromAddressMail(
       amountSats: message.amountSats,
       actor: message.from,
       attachedCredits: message.attachedCredits,
+      linkedFile: powcatPointerFromAttachment(message.attachment) ?? undefined,
       confirmed,
       counterparty: message.to,
       createdAt: message.createdAt,
       description: `${confirmed ? "Sent" : deliveryStatus === "dropped" ? "Dropped" : "Pending"} ${isFile ? "file" : isReply ? "reply" : "mail"} to ${message.to} for ${message.amountSats.toLocaleString()} proofs.`,
       detail: message.attachment
-        ? `${message.attachment.name} · ${formatBytes(message.attachment.size)}`
+        ? fileAttachmentDescription(message.attachment)
         : messageSubject(message),
       kind: isFile ? "file" : isReply ? "reply" : "mail",
       network: message.network,
@@ -15329,6 +15343,9 @@ function activityMatchesSearch(item: PowActivityItem, query: string) {
     item.detail,
     item.id ? `${item.id}@proofofwork.me` : undefined,
     item.txid,
+    item.powcat?.fileHash,
+    item.linkedFile?.txid,
+    item.linkedFile?.fileHash,
     item.listingId,
     item.tokenId,
     item.actor,
@@ -20765,7 +20782,7 @@ async function powcatFunding(address: string, signedTxid?: string) {
     confirmed.get(powcatOutpoint(u)) === u.value && !excluded.has(powcatOutpoint(u)));
 }
 
-const powcatWallet: PublishWallet = {
+export const powcatWallet: PublishWallet = {
   async prepare(payload, address, feeRate) {
     const script = powcatScript(payload);
     const changeScript = scriptForAddress(address, "livenet", "Connected wallet");
@@ -25783,7 +25800,8 @@ export default function App() {
     const ownFileMessages = allFileMessages.filter(
       (message) => message.txid !== CANONICAL_WELCOME_TXID && message.attachment,
     );
-    const ownFileBytes = ownFileMessages.reduce(
+    const linkedFileReferences = ownFileMessages.filter(message => powcatPointerFromAttachment(message.attachment)).length;
+    const ownFileBytes = ownFileMessages.filter(message => !powcatPointerFromAttachment(message.attachment)).reduce(
       (total, message) => total + (message.attachment?.size ?? 0),
       0,
     );
@@ -26110,7 +26128,7 @@ export default function App() {
 
     if (ownFileMessages.length > 0) {
       stats.push({
-        detail: `${formatBytes(ownFileBytes)} of confirmed file payloads.`,
+        detail: `${formatBytes(ownFileBytes)} inline${linkedFileReferences ? ` · ${linkedFileReferences} linked file reference${linkedFileReferences === 1 ? "" : "s"}` : ""}.`,
         label: "files",
         value: `${ownFileMessages.length.toLocaleString()} file${ownFileMessages.length === 1 ? "" : "s"}`,
       });
@@ -26118,7 +26136,7 @@ export default function App() {
 
     if (ownFileBytes > 0) {
       stats.push({
-        detail: `${ownFileMessages.length.toLocaleString()} confirmed file${ownFileMessages.length === 1 ? "" : "s"} on this Computer account.`,
+        detail: "Inline attachment bytes on this account. Linked content is verified separately.",
         label: "computer data",
         value: formatBytes(ownFileBytes),
       });
@@ -38517,7 +38535,7 @@ export default function App() {
             {computerRecentFiles.map((message) => (
               <li className="computer-overview-file" key={desktopFileIdentityKey(message)}>
                 <FileText size={17} aria-hidden="true" />
-                <span><strong>{message.attachment.name}</strong><small>{formatBytes(message.attachment.size)} · Confirmed</small></span>
+                <span><strong>{message.attachment.name}</strong><small>{powcatPointerFromAttachment(message.attachment) ? "Linked file reference" : formatBytes(message.attachment.size)} · {message.folder === "sent" ? deliveryLabel(sentDeliveryStatus(message)) : message.confirmed ? "Confirmed" : "Pending"}</small></span>
               </li>
             ))}
           </ul>
@@ -39631,7 +39649,7 @@ export default function App() {
           </Suspense>
         ) : activeFolder === "code" ? (
           <Suspense fallback={<div role="status" aria-busy="true">Loading Code…</div>}>
-            <CodeRoot key={computerTaskScope} embedded initialAddress={address} initialNetwork={network}
+            <CodeRoot key={computerTaskScope} embedded initialAddress={address} initialNetwork={network} uploadWallet={powcatWallet}
               walletSession={{ address, network, busy: busy || mailSendBusy, connect: connectWallet, disconnect: disconnectWallet, getRevision: () => mailWalletRevisionRef.current }}
               initialViewState={computerTasks.code} onViewStateChange={codeViewStateChange} onOpenPages={openPagesFromCode} />
           </Suspense>
@@ -41428,6 +41446,10 @@ function ActivityFeed({
                 <h4>{title}</h4>
                 <strong>{summary}</strong>
                 {item.id ? <p>{item.description}</p> : null}
+                {item.kind === "file" && item.linkedFile ? <PowcatLink key={item.linkedFile.txid}
+                  network={item.network} pointer={item.linkedFile} /> : null}
+                {item.kind === "powcat-linker" && item.confirmed && !invalid && item.powcat && /^[0-9a-f]{64}$/u.test(item.powcat.fileHash) ?
+                  <PowcatLink key={item.txid} network={item.network} pointer={{ txid: item.txid, fileHash: item.powcat.fileHash }} /> : null}
                 {item.jobs ? <p className="field-note">{item.jobs.ready ? `Jobs ${activityKindDisplay(item.jobs.action ?? "record")} · ${item.jobs.applied ? "Applied confirmed record" : "Unapplied record"}` : "Jobs lifecycle evidence unavailable"}</p> : null}
                 {item.jobs?.ready && !item.jobs.applied && item.jobs.validationErrors?.length ? <p className="field-note">{item.jobs.validationErrors.join(" · ")}</p> : null}
                 {item.detail ? (
@@ -47214,6 +47236,7 @@ function growthPercent(value: number) {
 }
 
 function isBrowserActivityItem(item: PowActivityItem) {
+  if (item.kind === "file" && (item.linkedFile || powcatPointerFromAttachment(item.attachment))) return false;
   const searchText = [item.title, item.detail, item.description, ...item.tags]
     .join(" ")
     .toLowerCase();
@@ -49493,8 +49516,12 @@ function GrowthWorkspace({
             modelOneYear={growthSats(oneYear.driveSats)}
             modelOneYearLabel={growthUsdForSats(oneYear.driveSats)}
             name="Drive"
-            note="File writes priced through the same fee-collapse and blockspace constraint."
-          />
+            note="Mail carrying a linked attachment counts as one paid file delivery. Parts and linkers transfer no file payment."
+          >
+            <Suspense fallback={<p className="field-note" role="status">Loading file publication counts…</p>}>
+              <LinkedFilesActivity network={activeNetwork} refreshing={busy} />
+            </Suspense>
+          </GrowthProductCard>
           <GrowthProductCard
             actual={growthSats(actualValue.marketplaceSats)}
             actualLabel={`${growthUsdForSats(actualValue.marketplaceSats)} · ${marketplaceSaleVolumeSats.toLocaleString()} sale proofs · ${marketplaceFeeSats.toLocaleString()} fee proofs · ${marketplaceSaleCount.toLocaleString()} confirmed sales`}

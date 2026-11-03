@@ -358,6 +358,7 @@ function createFixture(t, { withObsoleteFile = false } = {}) {
     '{"preserve":true}\n',
   );
   for (const relativePath of [
+    'scripts/check-upgrade-impact.mjs',
     'scripts/repository-hygiene.mjs',
     'scripts/install-repository-hooks.mjs',
     'scripts/repository-hygiene.test.mjs',
@@ -963,8 +964,8 @@ test('tracked hooks preserve the original diff contract during amend', (t) => {
   git(root, 'commit', '-q', '-F', message);
   const beforeAmend = git(root, 'rev-parse', 'HEAD');
 
-  write(root, 'src/amended.js', 'export const amended = true;\n');
-  git(root, 'add', 'src/amended.js');
+  write(root, 'amended.txt', 'Additional release notes.\n');
+  git(root, 'add', 'amended.txt');
   git(root, 'commit', '--amend', '--no-edit', '-q');
   const afterAmend = git(root, 'rev-parse', 'HEAD');
   assert.notEqual(afterAmend, beforeAmend, 'amend should replace the commit');

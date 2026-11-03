@@ -1,6 +1,7 @@
 """Profile appended to the digest-pinned source overlay engine by release.py."""
 NEW = frozenset({"server/powcat-reader.mjs", "src/shared/protocol/powcat1.mjs"})
 ALLOWED = NEW | {"server/proof-api.mjs"}
+INSTALL_ORDER = sorted(NEW) + ["server/proof-api.mjs"]
 BASE_SOURCE_COMMIT = "c3969c39c2b2f0d8dc927c868dfd52b977ce0a34"
 BASELINE_HEAD = "92eb5fbdaacfd05955dae6d994586850f93944b9"
 ACCEPTED_SHA = "ca974e0a77414b4412c5b66333a429989a1bbd445b5b8333a3bd1fbc7c991ba4"
@@ -35,7 +36,7 @@ def install(root, backup, rows, metadata, candidate, stamp):
     if candidate:
         # Install dependencies before the API that imports them. The engine
         # indexes its prepared files by the rows' original positions.
-        require([r["path"] for r in rows] == sorted(NEW) + ["server/proof-api.mjs"],
+        require([r["path"] for r in rows] == INSTALL_ORDER,
                 "Unexpected scoped installation order")
     if not candidate:
         engine_install(root, backup, rows, metadata, False, stamp)

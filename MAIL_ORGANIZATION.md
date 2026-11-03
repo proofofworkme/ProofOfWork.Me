@@ -1139,3 +1139,9 @@ recipients, including all 78 wallets in one transaction. Recipient proof payment
 and miner fees remain separate. The entire WORK vector applies atomically while
 ordinary Mail remains independently valid. Confirmed history verifies the parent,
 complete sibling set and ordinary Mail envelope before displaying derived credits.
+
+Linked-file Mail uses a verified 139-byte pointer. Mail, Files, the Computer
+overview and wallet activity distinguish its bytes from the original file size.
+The linker's SHA and bytes are checked when the user opens it. One paid delivery
+remains one file in Mail history even when it references many storage transactions.
+See [Chain Content](CHAIN_CONTENT.md) for discovery, recovery and accounting.

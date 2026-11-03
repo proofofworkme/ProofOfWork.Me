@@ -1,4 +1,5 @@
 import { createProofIndexPool } from './postgres.mjs';
+import { compactPowcatSearchSource, qualifiedPowcatSearchCoverage } from '../search-powcat.mjs';
 import {
   SEARCH_INDEX_VERSION, SEARCH_MAX_DETAIL_BYTES, SEARCH_SOURCES_SQL, SEARCH_PROTOCOLS,
   searchError, searchSha256, searchSourceWitness, sameCanonicalSearchWitness, verifySearchCheckpoint,
@@ -60,7 +61,10 @@ async function readyRun(client,network,options,requestedRunId='') {
   return { run,witness };
 }
 async function coverageForRun(client,network,run,witness) {
-  const result=await client.query(`SELECT protocol,kind,status,valid,record->'source'->>'type' AS type,count(*)::integer AS count
+  const result=await client.query(`SELECT protocol,kind,status,valid,record->'source'->>'type' AS type,count(*)::integer AS count,
+      count(*) FILTER (WHERE protocol='powcat1' AND canonical AND status='confirmed' AND record->'source'->>'type'='event')::integer AS typed_count,
+      encode(sha256(convert_to(string_agg(id || ':' || source_hash,E'\\n' ORDER BY id COLLATE "C")
+        FILTER (WHERE protocol='powcat1' AND canonical AND status='confirmed' AND record->'source'->>'type'='event'),'UTF8')),'hex') AS typed_hash
     FROM proof_indexer.search_documents WHERE network=$1 AND run_id=$2
       AND (status='confirmed' OR source_hash=$3::jsonb->>id)
     GROUP BY protocol,kind,status,valid,record->'source'->>'type'`,[network,run.run_id,JSON.stringify(witness.volatileHashes)]);
@@ -76,7 +80,8 @@ async function coverageForRun(client,network,run,witness) {
     if (classKey) sourceCounts[classKey]+=count;
     kinds.add(row.kind);
   }
-  return { ready:true,checkpointHeight:Number(run.checkpoint_height),checkpointHash:run.checkpoint_hash,indexVersion:SEARCH_INDEX_VERSION,
+  const linkedFiles = qualifiedPowcatSearchCoverage(run.source_witness,witness,result.rows);
+  return { ready:true,linkedFiles,checkpointHeight:Number(run.checkpoint_height),checkpointHash:run.checkpoint_hash,indexVersion:SEARCH_INDEX_VERSION,
     lastIndexedAt:new Date(run.completed_at).toISOString(),sourceCounts,byProtocol,kinds:[...kinds].sort(),
     witnessSha256:witness.canonicalHash,missingRawTransactions:0,missingRawCarriers:0,
     pendingVisibility:'best-effort',volatileObservationAt:new Date(run.completed_at).toISOString(),
@@ -146,7 +151,7 @@ export async function searchDetailPayload(network,id,params,options={}) {
     const row=result.rows[0],coverage=await coverageForRun(client,network,run,witness);
     await verifySearchCheckpoint(options.verifyCheckpoint,network,run.checkpoint_height,run.checkpoint_hash);
     const output={ network,record:{...row.record,excerpt:searchExcerpt(row.search_text,'')},payload:row.payload,rawPayload:row.raw_payload,
-      evidence:{...row.evidence,checkpointHeight:coverage.checkpointHeight,checkpointHash:coverage.checkpointHash,source:row.source},coverage };
+      evidence:{...row.evidence,checkpointHeight:coverage.checkpointHeight,checkpointHash:coverage.checkpointHash,source:compactPowcatSearchSource(row.source)},coverage };
     if (Buffer.byteLength(JSON.stringify(output),'utf8')>SEARCH_MAX_DETAIL_BYTES) throw searchError('This evidence exceeds the bounded Search detail envelope. Inspect its source transaction.',413,'SEARCH_DETAIL_TOO_LARGE');
     return output;
   });

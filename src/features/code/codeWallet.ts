@@ -7,7 +7,7 @@ import type { ActionReview } from "../../shared/components/ActionTransactionRevi
 import { assertActiveWalletAddress, buildBoostPaymentPsbt, ensureWalletNetwork, fetchReservedAmoAnchorOutpoints,
   scriptForAddress, type BoostPaymentPsbt, type BoostSpentOutpoint } from "../boost/boostWallet";
 import { boostListingAnchorOutpoints, type BoostFeedPayload } from "../boost/boostProtocol";
-import { fetchCodeRepository, fetchCodePageSource } from "./codeApi";
+import { fetchCodeRepository, fetchCodePageSource, readCodeLink } from "./codeApi";
 import type { CodePlan } from "./codeProtocol";
 import { assertCodeRegistryReservations, assertCodeCreditReservations, type CodeReservationPayload } from "./codeReservations";
 
@@ -65,8 +65,14 @@ export async function verifyCodeAuthority(plan: CodePlan, address: string, netwo
     if (latest.repository.headTxid !== plan.draft.parent) throw new Error("The confirmed main head changed. Refresh, inspect the latest source, and prepare a new commit.");
     const existing = latest.files.find(file => file.path === plan.draft.path);
     if (plan.draft.kind === "delete" && !existing) throw new Error("This source file no longer exists at the confirmed main head.");
-    if (["put", "reference"].includes(plan.draft.kind) && latest.files.some(file => file.path !== plan.draft.path && (file.path.startsWith(`${plan.draft.path}/`) || plan.draft.path.startsWith(`${file.path}/`)))) {
+    if (["put", "reference", "linked"].includes(plan.draft.kind) && latest.files.some(file => file.path !== plan.draft.path && (file.path.startsWith(`${plan.draft.path}/`) || plan.draft.path.startsWith(`${file.path}/`)))) {
       throw new Error("This path conflicts with an existing file or directory. Choose a different path.");
+    }
+    if (plan.draft.kind === "linked") {
+      if (latest.linkedReferencesEnabled !== true) throw new Error("Linked Code commits are unavailable at this checkpoint.");
+      const { file } = await readCodeLink(network, plan.draft.sourceTxid!, plan.draft.contentKind!);
+      if (file.fileHash !== plan.sha256 || file.size !== plan.size || file.mime !== plan.draft.linkMime ||
+          file.blockHeight > latest.indexedThroughBlock) throw new Error("Linked source changed. Verify the file and review this commit again.");
     }
     if (plan.draft.kind === "reference") {
       const page = await fetchCodePageSource(network, plan.draft.sourceTxid!);

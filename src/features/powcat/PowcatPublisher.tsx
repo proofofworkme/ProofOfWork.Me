@@ -3,6 +3,7 @@ import { address as chainAddress } from "bitcoinjs-lib";
 import { ReviewDialog } from "../../shared/components/ReviewDialog";
 import { FeeRateControl } from "../../shared/components/FeeRateControl";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
+import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import { assertFeeRatePrecision } from "../../walletUtxos";
 import { openPowcatJournal, withPowcatPublisherLock, type PowcatDraft, type PowcatJournal } from "./powcatJournal.mjs";
 import { allPartsConfirmed, estimatePublication, linkerOrderInvalid, observe, observeDraft, outpoint, partIds, readSelectedFile,
@@ -11,9 +12,9 @@ import { allPartsConfirmed, estimatePublication, linkerOrderInvalid, observe, ob
 type Review = { stage: Stage; plan: Prepared; rate: number };
 const format = (value: number) => value.toLocaleString("en-US");
 
-export function PowcatPublisher({address, network, defaultFeeRate, wallet, initialFile, autoOpen = false, onClose, onAttachVerified}: {
+export function PowcatPublisher({address, network, defaultFeeRate, wallet, initialFile, autoOpen = false, onClose, onAttachVerified, attachLabel = "Attach in Mail"}: {
   address: string; network: BitcoinNetwork; defaultFeeRate: number; wallet: PublishWallet;
-  initialFile?: File; autoOpen?: boolean; onClose?: () => void;
+  attachLabel?: string; initialFile?: File; autoOpen?: boolean; onClose?: () => void;
   onAttachVerified?: (link: {txid: string; fileHash: string; name: string}) => void;
 }) {
   const [open, setOpen] = useState(autoOpen);
@@ -101,6 +102,15 @@ export function PowcatPublisher({address, network, defaultFeeRate, wallet, initi
   async function prepare(journal: PowcatJournal) {
     if (!identity || stage === undefined || estimate === null) throw new Error("Select a file and a valid miner fee rate.");
     assertFeeRatePrecision(rate);
+    if (stage === 0 || stage === "manifest") {
+      const gate = await fetchProofApiJson<{ source: string; network: string; complete: boolean; indexedThroughBlock: number; indexedThroughBlockHash: string }>(
+        "/api/v1/powcat-activity?fresh=1", network, { timeoutMs: 20_000 }).catch(() => null);
+      if (gate?.source !== "powcat1-discovery-v1" || gate.network !== network || gate.complete !== true ||
+          !Number.isSafeInteger(gate.indexedThroughBlock) || gate.indexedThroughBlock < 973975 || !/^[0-9a-f]{64}$/u.test(gate.indexedThroughBlockHash)) {
+        throw new Error("File indexing is catching up. Try again before signing.");
+      }
+      assertCurrent();
+    }
     const current = await checkStage(journal, stage);
     const payload = stagePayload(identity, stage, selected, current ? partIds(current) : []);
     const plan = await wallet.prepare(payload, address, rate);
@@ -208,7 +218,7 @@ export function PowcatPublisher({address, network, defaultFeeRate, wallet, initi
         {onAttachVerified && <button type="button" className="primary" disabled={working} onClick={() => void run(async () => {
           await verifyLinker(last); assertCurrent(); setReview(null); setOpen(false);
           onAttachVerified({txid: published.txid, fileHash: last.fileHash, name: last.name}); onClose?.();
-        })}>Attach in Mail</button>}
+        })}>{attachLabel}</button>}
         {!draft && <button className="secondary" type="button" disabled={working} onClick={() => void run(async j => { await j.begin(last); setSelected(null); await refresh(j); })}>Recheck publication</button>}</div></>}
       <p role="status" aria-live="polite">{working ? "Checking publication progress…" : notice}</p>
     </ReviewDialog>}

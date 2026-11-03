@@ -1,12 +1,13 @@
-import { encodeCodeRepository, encodeCodeCommit, encodeCodeReferenceCommit, validateCodePath, codeSourceBytes } from "../../shared/protocol/codeRepository.mjs";
+import { encodeCodeRepository, encodeCodeCommit, encodeCodeReferenceCommit, encodeCodeLinkedCommit, validateCodePath, codeSourceBytes } from "../../shared/protocol/codeRepository.mjs";
 import { base64UrlEncodeBytes, sha256Hex } from "../../shared/utils/encoding";
 import { buildAttachmentPayloads } from "../../shared/protocol/mailAttachment";
 import { dataCarrierBytesForPayload } from "../boost/boostWallet";
 
 export type CodeDraft = {
-  kind: "repo" | "put" | "delete" | "reference";
+  kind: "repo" | "put" | "delete" | "reference" | "linked";
   name: string; description: string; repo: string; parent: string;
   path: string; message: string; content: string; feeRate: number;
+  contentKind?: "text" | "binary"; linkSize?: number; linkHash?: string; linkMime?: string;
   sourceTxid?: string; sourceKind?: "body" | "attachment"; sourceVout?: number;
 };
 export const emptyCodeDraft: CodeDraft = {
@@ -50,7 +51,16 @@ export function buildCodePlan(draft: CodeDraft): CodePlan {
       // Empty sources have the standard empty hash and deliberately no Files attachment.
       if (bytes.length && draft.kind === "put") attachments = buildAttachmentPayloads({ name: "source.txt", mime: "text/plain", size, sha256, data: base64UrlEncodeBytes(bytes) });
     }
-    if (draft.kind === "reference") {
+    if (draft.kind === "linked") {
+      if (!draft.sourceTxid || !draft.linkHash || !draft.linkSize || !draft.linkMime || !draft.contentKind) {
+        throw new Error("Verify the linked file before reviewing this commit.");
+      }
+      size = draft.linkSize;
+      sha256 = draft.linkHash;
+      payload = encodeCodeLinkedCommit({ v: 3, repo: draft.repo, parent: draft.parent, op: "reference",
+        path: draft.path, message: draft.message, sourceTxid: draft.sourceTxid, sourceKind: "powcat1",
+        contentKind: draft.contentKind, mime: draft.linkMime, sha256, size });
+    } else if (draft.kind === "reference") {
       if (!/^[a-f0-9]{64}$/u.test(draft.sourceTxid ?? "") || !["body", "attachment"].includes(draft.sourceKind ?? "") || !Number.isSafeInteger(draft.sourceVout) || draft.sourceVout! < 0 || !size) {
         throw new Error("Verify an existing page and select its HTML source before reviewing the reference.");
       }
@@ -59,9 +69,10 @@ export function buildCodePlan(draft: CodeDraft): CodePlan {
     } else payload = draft.kind === "put"
       ? encodeCodeCommit({ v: 1, repo: draft.repo, parent: draft.parent, op: "put", path: draft.path, message: draft.message, size: size!, sha256: sha256! })
       : encodeCodeCommit({ v: 1, repo: draft.repo, parent: draft.parent, op: "delete", path: draft.path, message: draft.message });
-    fields.push(["Repository", draft.repo], ["Confirmed parent", draft.parent], ["Operation", draft.kind === "reference" ? "Reference an existing page" : draft.kind === "put" ? "Write one source file" : "Delete one source file"], ["Exact path", draft.path], ["Commit message", draft.message]);
+    fields.push(["Repository", draft.repo], ["Confirmed parent", draft.parent], ["Operation", draft.kind === "linked" ? (draft.contentKind === "binary" ? "Commit a linked binary asset" : "Commit linked UTF-8 source") : draft.kind === "reference" ? "Reference an existing page" : draft.kind === "put" ? "Write one source file" : "Delete one source file"], ["Exact path", draft.path], ["Commit message", draft.message]);
     if (draft.kind === "reference") fields.push(["Published page transaction", draft.sourceTxid!], ["Page source", `${draft.sourceKind === "body" ? "HTML message body" : "HTML attachment"} · output ${draft.sourceVout}`], ["Source storage", "Existing transaction; HTML bytes are not republished"]);
-    if (size !== undefined && sha256) fields.push(["Source size", `${size} UTF-8 bytes`], ["SHA-256", sha256]);
+    if (draft.kind === "linked") fields.push(["Confirmed file linker", draft.sourceTxid!], ["Media type", draft.linkMime!]);
+    if (size !== undefined && sha256) fields.push(["Source size", `${size} ${draft.contentKind === "binary" ? "bytes" : "UTF-8 bytes"}`], ["SHA-256", sha256]);
   }
   const memo = draft.kind === "repo" ? `Code repository: ${draft.name}` : `Code commit: ${draft.message}`;
   const payloads = [`pwm1:m:${memo}`, ...attachments, payload];
@@ -78,13 +89,19 @@ export function persistCodeDraft(storage: Storage, key: string, draft: CodeDraft
 }
 export function codeDraftFields(draft: CodeDraft): [string, string][] {
   return [["Kind", draft.kind], ["Name", draft.name], ["Description", draft.description], ["Repository", draft.repo], ["Parent", draft.parent], ["Path", draft.path], ["Message", draft.message], ["Source", draft.content], ["Fee rate", String(draft.feeRate)],
+    ...(draft.kind === "linked" ? [["File linker", draft.sourceTxid ?? ""], ["Content kind", draft.contentKind ?? ""], ["File size", String(draft.linkSize ?? "")],
+      ["SHA-256", draft.linkHash ?? ""], ["Media type", draft.linkMime ?? ""]] as [string, string][] : []),
     ...(draft.kind === "reference" ? [["Page transaction", draft.sourceTxid ?? ""], ["Page source kind", draft.sourceKind ?? ""], ["Page source output", String(draft.sourceVout ?? "")]] as [string, string][] : [])];
 }
 export function restoredCodeDraft(fields: [string, string][]): CodeDraft | undefined {
   const values = Object.fromEntries(fields);
-  if (!["repo", "put", "delete", "reference"].includes(values.Kind) || !Number.isFinite(Number(values["Fee rate"]))) return;
+  if (!["repo", "put", "delete", "reference", "linked"].includes(values.Kind) || !Number.isFinite(Number(values["Fee rate"]))) return;
   if (values.Kind === "reference" && (!/^[a-f0-9]{64}$/u.test(values["Page transaction"] ?? "") || !["body", "attachment"].includes(values["Page source kind"]) || !/^(0|[1-9]\d*)$/u.test(values["Page source output"] ?? "") || !Number.isSafeInteger(Number(values["Page source output"])))) return;
+  if (values.Kind === "linked" && (!/^[a-f0-9]{64}$/u.test(values["File linker"] ?? "") || !/^[a-f0-9]{64}$/u.test(values["SHA-256"] ?? "") ||
+      !["text", "binary"].includes(values["Content kind"]) || !/^[1-9]\d*$/u.test(values["File size"]) || Number(values["File size"]) > 4_000_000 || !values["Media type"])) return;
   return { kind: values.Kind as CodeDraft["kind"], name: values.Name ?? "", description: values.Description ?? "", repo: values.Repository ?? "", parent: values.Parent ?? "", path: values.Path ?? "", message: values.Message ?? "", content: values.Source ?? "", feeRate: Number(values["Fee rate"]),
+    ...(values.Kind === "linked" ? { sourceTxid: values["File linker"], contentKind: values["Content kind"] as "text" | "binary",
+      linkSize: Number(values["File size"]), linkHash: values["SHA-256"], linkMime: values["Media type"] } : {}),
     ...(values.Kind === "reference" ? { sourceTxid: values["Page transaction"], sourceKind: values["Page source kind"] as "body" | "attachment", sourceVout: Number(values["Page source output"]) } : {}) };
 }
 export function lineChange(before: string, after: string) {

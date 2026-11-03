@@ -154,6 +154,8 @@
     "check:pages:deploy": "python3 -I -B deploy/pages/check-scoped-node.test.py && python3 -I -B deploy/pages/check-release.test.py && python3 -I -B deploy/pages/check-ui-storage.test.py",
     "check:powcat": "node --test server/powcat1.test.mjs server/powcat-reader.test.mjs src/shared/protocol/powcatMail.test.mjs",
     "check:powcat:regtest": "node scripts/check-powcat-regtest.mjs",
+    "check:upgrade-impact": "node scripts/check-upgrade-impact.mjs --staged",
+    "check:powcat:growth": "node scripts/check-powcat-growth.mjs",
     "check:release-sync": "node scripts/check-release-sync.mjs",
     "check:boost-tips:deploy": "python3 -I -B deploy/work-tips/check-scoped-node.test.py && python3 -I -B deploy/work-tips/check-release.test.py",
     "check:work-batch": "node --test src/shared/protocol/workBatch.test.mjs server/work-batch-declaration.test.mjs server/work-batch-runtime.test.mjs server/work-batch-selection.test.mjs server/work-batch-admission.test.mjs server/db/work-batch-reader.test.mjs scripts/check-work-batch-raw.test.mjs scripts/check-work-batch-growth.test.mjs scripts/check-work-batch-summary-producer.test.mjs scripts/check-work-batch-summary-projection.test.mjs src/features/work-batch/workBatchClient.test.mjs src/features/work-batch/workBatchSigning.test.mjs scripts/check-summary-transition-freshness.test.mjs",

@@ -6,6 +6,11 @@ export const CODE_REFERENCE_NETWORK = "livenet";
 export const CODE_REFERENCE_ACTIVATION_HEIGHT = 971652;
 export const CODE_REFERENCE_ACTIVATION_PARENT_HEIGHT = 971651;
 export const CODE_REFERENCE_ACTIVATION_PARENT_HASH = "0000000000000000000057f291a6c81728bbdeb52c0db842115ab6d009db870f";
+export const CODE_LINKED_REFERENCE_VERSION = 3;
+export const CODE_LINKED_ACTIVATION_HEIGHT = 974336;
+export const CODE_LINKED_ACTIVATION_PARENT_HEIGHT = 974335;
+export const CODE_LINKED_ACTIVATION_PARENT_HASH = "000000000000000000000eb4fbe6aba7f82981cc141cd6af3b2cec989419af4c";
+export const CODE_MAX_LINKED_BYTES = 4_000_000;
 export const CODE_MAX_SOURCE_BYTES = 60_000;
 export const CODE_MAX_DATA_CARRIER_BYTES = 100_000;
 export const CODE_MAX_NAME_BYTES = 200;
@@ -80,6 +85,17 @@ function normalizeReferenceCommit(value) {
     sourceVout: value.sourceVout, sha256: value.sha256, size: value.size };
 }
 
+function normalizeLinkedCommit(value) {
+  const keys = ["v","repo","parent","op","path","message","sourceTxid","sourceKind","contentKind","mime","sha256","size"];
+  if (!exactKeys(value,keys) || value.v !== 3 || value.op !== "reference" ||
+      !["repo","parent","sourceTxid","sha256"].every(key => typeof value[key] === "string" && txidPattern.test(value[key])) ||
+      !validateCodePath(value.path) || !boundedText(value.message,CODE_MAX_MESSAGE_BYTES) || value.sourceKind !== "powcat1" ||
+      !["text","binary"].includes(value.contentKind) || typeof value.mime !== "string" || value.mime.length > 127 ||
+      !/^[a-z0-9][a-z0-9!#$&^_.+\-]*\/[a-z0-9][a-z0-9!#$&^_.+\-]*$/u.test(value.mime) ||
+      !txidPattern.test(value.sha256) || !Number.isSafeInteger(value.size) || value.size < 1 || value.size > CODE_MAX_LINKED_BYTES) return null;
+  return Object.fromEntries(keys.map(key => [key,value[key]]));
+}
+
 function encodeBase64Url(bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -107,17 +123,18 @@ function encodeMetadata(kind, value, normalize) {
 export function encodeCodeRepository(value) { return encodeMetadata("repo", value, normalizeRepository); }
 export function encodeCodeCommit(value) { return encodeMetadata("commit", value, normalizeCommit); }
 export function encodeCodeReferenceCommit(value) { return encodeMetadata("commit2", value, normalizeReferenceCommit); }
+export function encodeCodeLinkedCommit(value) { return encodeMetadata("commit3", value, normalizeLinkedCommit); }
 
 /** Only the exact encoder form is canonical: closed keys, key order, decimals and UTF-8. */
 export function parseCodePayload(payload) {
   if (typeof payload !== "string") return null;
-  const match = /^pwc1:(repo|commit|commit2):([A-Za-z0-9_-]+)$/u.exec(payload);
+  const match = /^pwc1:(repo|commit|commit2|commit3):([A-Za-z0-9_-]+)$/u.exec(payload);
   if (!match || match[2].length > Math.ceil(CODE_MAX_METADATA_BYTES * 4 / 3)) return null;
   const bytes = decodeBase64Url(match[2]);
   if (!bytes || bytes.length > CODE_MAX_METADATA_BYTES) return null;
   try {
     const json = decoder.decode(bytes);
-    const normalize = match[1] === "repo" ? normalizeRepository : match[1] === "commit2" ? normalizeReferenceCommit : normalizeCommit;
+    const normalize = {repo:normalizeRepository,commit:normalizeCommit,commit2:normalizeReferenceCommit,commit3:normalizeLinkedCommit}[match[1]];
     const metadata = normalize(JSON.parse(json));
     return metadata && JSON.stringify(metadata) === json ? { kind: match[1], metadata } : null;
   } catch { return null; }
@@ -299,8 +316,9 @@ export function enumerateCodePageSources(tx, { sha256 } = {}) {
   return candidates;
 }
 
-function referenceActivationError(tx, { network, referencePolicy } = {}) {
-  const policy = referencePolicy ?? { network: CODE_REFERENCE_NETWORK, activationHeight: CODE_REFERENCE_ACTIVATION_HEIGHT };
+function referenceActivationError(tx, { network, referencePolicy, linkedReferencePolicy } = {}, linked = false) {
+  const policy = (linked ? linkedReferencePolicy : referencePolicy) ?? { network: CODE_REFERENCE_NETWORK,
+    activationHeight: linked ? CODE_LINKED_ACTIVATION_HEIGHT : CODE_REFERENCE_ACTIVATION_HEIGHT };
   if (!record(policy) || typeof policy.network !== "string" || network !== policy.network ||
       !Number.isSafeInteger(policy.activationHeight) || policy.activationHeight < 1) return "code-reference-network-unsupported";
   if (canonicalStatus(tx) === "confirmed" && (!Number.isSafeInteger(position(tx).blockHeight) || position(tx).blockHeight < policy.activationHeight)) return "code-reference-before-activation";
@@ -308,6 +326,7 @@ function referenceActivationError(tx, { network, referencePolicy } = {}) {
 }
 
 function referenceSource(tx, metadata, options) {
+  if (metadata.v === CODE_LINKED_REFERENCE_VERSION) return linkedReferenceSource(tx,metadata,options);
   const source = options.referenceSources?.get(metadata.sourceTxid);
   const unavailable = () => Object.assign(new Error(`Referenced Page ${metadata.sourceTxid} has no canonical raw evidence.`),
     { code: "CODE_REFERENCE_SOURCE_UNAVAILABLE", sourceTxid: metadata.sourceTxid });
@@ -343,6 +362,47 @@ function referenceSource(tx, metadata, options) {
     sourceTxid: metadata.sourceTxid, sourceKind: metadata.sourceKind, sourceVout: metadata.sourceVout } };
 }
 
+const checkedLinkedEvidence = new WeakSet();
+
+/** A first-party caller supplies the checked root position and the complete
+ * result of the chain resolver, or a checkpoint-bound negative observation.
+ * Keep compact evidence for replay. Serialized caches cannot hydrate this map. */
+export function bindCodeLinkedEvidence(point, file, sha256) {
+  if (!point || !txidPattern.test(point.txid) || !txidPattern.test(point.checkpointHash) ||
+      !Number.isSafeInteger(point.checkpointHeight) || point.checkpointHeight < 1 || typeof point.network !== "string" ||
+      !["confirmed","unconfirmed","absent"].includes(point.state)) throw new Error("Code linked evidence has no exact checkpoint.");
+  if (point.state === "confirmed" && (!Number.isSafeInteger(point.blockHeight) || point.blockHeight < 1 || point.blockHeight > point.checkpointHeight || !txidPattern.test(point.blockHash))) throw new Error("Code linked evidence has no confirmed source block.");
+  const binding = {txid:point.txid,network:point.network,checkpointHeight:point.checkpointHeight,checkpointHash:point.checkpointHash,
+    ...(point.state === "confirmed" ? {blockHeight:point.blockHeight,blockHash:point.blockHash} : {})};
+  let data = { ...binding, state: point.state === "confirmed" ? "invalid" : point.state };
+  if (file) {
+    if (point.state !== "confirmed" || file.txid !== point.txid || !(file.bytes instanceof Uint8Array) ||
+        file.size !== file.bytes.length || file.size < 1 || file.size > CODE_MAX_LINKED_BYTES ||
+        sha256(file.bytes) !== file.fileHash || !txidPattern.test(file.fileHash)) throw new Error("Code linked bytes do not match their commitment.");
+    let textValid = false;
+    try { textValid = !decoder.decode(file.bytes).includes("\u0000"); } catch { /* Binary content is a valid file. */ }
+    data = { ...binding, state:"verified", sha256:file.fileHash, size:file.size, name:file.name, mime:file.mime, textValid };
+  }
+  const result = Object.freeze(data);
+  checkedLinkedEvidence.add(result);
+  return result;
+}
+
+function linkedReferenceSource(tx, metadata, options) {
+  const evidence = options.linkedSources?.get(metadata.sourceTxid);
+  if (!checkedLinkedEvidence.has(evidence) || evidence.txid !== metadata.sourceTxid || evidence.network !== options.network ||
+      evidence.checkpointHeight !== options.checkpointHeight || evidence.checkpointHash !== options.checkpointHash) {
+    throw Object.assign(new Error("Confirmed linked-file evidence is unavailable."), {
+      code:"CODE_LINKED_SOURCE_UNAVAILABLE",sourceTxid:metadata.sourceTxid });
+  }
+  if (evidence.state !== "verified") return { reason:"code-linked-source-" + evidence.state };
+  if (canonicalStatus(tx) === "confirmed" && evidence.blockHeight >= position(tx).blockHeight) return {reason:"code-reference-source-not-earlier"};
+  if (evidence.sha256 !== metadata.sha256 || evidence.size !== metadata.size || evidence.mime !== metadata.mime) return {reason:"code-reference-source-commitment-mismatch"};
+  if (metadata.contentKind === "text" && !evidence.textValid) return {reason:"code-linked-source-text-invalid"};
+  return {source:{txid:tx.txid,name:evidence.name,mime:evidence.mime,size:evidence.size,sha256:evidence.sha256,
+    sourceKind:"powcat1",sourceTxid:evidence.txid,contentKind:metadata.contentKind}};
+}
+
 /**
  * Inputs must be hydrated from first-party prevouts; output addresses must be
  * script-derived. UI metadata, parsed-carrier flags and supplied attachments
@@ -356,9 +416,10 @@ export function verifyCodeTransaction(tx, options = {}) {
   if (!candidates.length) return null;
   const first = candidates[0];
   let parsed = first.valid ? parseCodePayload(first.text) : null;
-  // Historical commit2 candidates were unsupported metadata. Preserve their
-  // exact old observation shape and rejection, including sealed outcome bytes.
-  if (parsed?.kind === "commit2" && referenceActivationError(tx, options) === "code-reference-before-activation") parsed = null;
+  // Each reference version was unsupported before its own activation. Keep
+  // the exact historical observation shape, including sealed outcome bytes.
+  if ((parsed?.kind === "commit2" || parsed?.kind === "commit3") &&
+      referenceActivationError(tx, options, parsed.kind === "commit3") === "code-reference-before-activation") parsed = null;
   const errors = [];
   const reject = reason => { if (!errors.includes(reason)) errors.push(reason); };
   if (!txidPattern.test(tx.txid)) reject("code-txid-invalid");
@@ -409,8 +470,8 @@ export function verifyCodeTransaction(tx, options = {}) {
   const canonicalPosition = position(tx);
   if (status === "confirmed" && (!Number.isSafeInteger(canonicalPosition.blockHeight) || canonicalPosition.blockHeight < 0 ||
       !txidPattern.test(canonicalPosition.blockHash) || !Number.isSafeInteger(canonicalPosition.blockTransactionIndex) || canonicalPosition.blockTransactionIndex < 0)) reject("code-canonical-position-unavailable");
-  if (parsed?.kind === "commit2") {
-    const activationError = referenceActivationError(tx, options);
+  if (parsed?.kind === "commit2" || parsed?.kind === "commit3") {
+    const activationError = referenceActivationError(tx, options, parsed.kind === "commit3");
     if (activationError) reject(activationError);
     sourceVerification = errors.length ? "invalid" : "deferred";
     if (!errors.length && options.structuralOnly !== true) {

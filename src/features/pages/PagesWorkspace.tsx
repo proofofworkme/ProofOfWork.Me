@@ -9,7 +9,7 @@ import {
 import "./pages.css";
 import { dnsPageLinkNameError, normalizeDnsPageLinkName } from "../../shared/protocol/dnsPages.mjs";
 import { parseDnsSubdomainName } from "../../shared/protocol/dnsSubdomains.mjs";
-import { fetchCodeRepository, codeVersion, verifiedCodeSource } from "../code/codeApi";
+import { fetchCodeRepository, codeVersion, loadCodeFile } from "../code/codeApi";
 import { assertCodeSourceReference, type CodeLocation, type CodeSourceReference } from "../code/codeNavigation";
 import { validateCodePath } from "../../shared/protocol/codeRepository.mjs";
 import { appHref } from "../../app/routeRegistry";
@@ -397,7 +397,9 @@ function PagesEditor({ embedded, address, network, onPublish, onLoadPage, onReso
       const loaded = await fetchCodeRepository(network, repo, { snapshot: detail.snapshot.id, version, path, signal: controller.signal });
       if (!mounted.current || request !== generation.current) return false;
       if (!loaded.file) throw new Error("Verified Code source bytes are unavailable.");
-      const html = decodePageFile(verifiedCodeSource(loaded.file, expected).bytes);
+      if (expected.contentKind === "binary") throw new Error("Pages imports UTF-8 HTML source. This repository file is a binary asset.");
+      if (expected.size > MAX_PAGE_BYTES) throw new Error(`This HTML file exceeds Pages’ ${MAX_PAGE_BYTES.toLocaleString()}-byte source limit.`);
+      const html = decodePageFile((await loadCodeFile(network, loaded.file, expected, controller.signal)).bytes);
       addDraft(createDraft(path.split("/").pop()!.replace(/\.(?:html?|xhtml)$/iu, "").slice(0, 160) || "Code HTML", html));
       setStatus({ tone: "good", text: `Verified Code HTML imported from ${path} at version ${version.slice(0, 12)}. This local draft must be published before DNS linking. Scripts have not run.` });
       return true;

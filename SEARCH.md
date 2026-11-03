@@ -166,3 +166,35 @@ references remain inspectable observations; a Search result never establishes
 that the reference advanced a repository head. Earlier Code versions and
 Search generations retain their original forms and evidence throughout the
 versioned rebuild.
+
+## Linked files
+
+`proof-search-v5-powcat-files` adds `powcat1` file parts and linkers. Search
+indexes their transaction IDs, whole-file and part SHA-256s, ordinal positions,
+ordered part references, byte sizes, and the linker's name and MIME type. A
+raw carrier, raw script or transaction observation retains compact metadata and
+its original source hash. Chunk bytes and their hex representation remain in
+the original transaction. A typed Mail attachment exposes its linker TXID and
+whole-file SHA-256 only after its pointer bytes and attachment carriers agree.
+Existing Mail bodies and independently verified inline file text keep their
+original Search semantics.
+
+The `coverage.linkedFiles` field qualifies this family independently at the
+reported Search block. The ready generation must have recorded the complete
+launch-anchored scan at that height and hash. Fresh source events and the
+effective materialized documents must match the stored counts and ordered
+hashes of event identities and source hashes, grouped by kind and validity.
+This includes a verified empty result. A completed scan observed after a
+generation was published cannot promote that generation's coverage.
+
+In the inspector, a valid canonical confirmed pointer or linker at a covered
+checkpoint offers **Verify and download**. Opening it checks the current linker,
+all of its parts and the file hash through the same reader used by Files.
+Search does not index or automatically fetch reconstructed file bodies.
+
+Prepare the v5 generation alongside the still-serving v4 reader and worker.
+Use the bounded Search job against the same source database with its existing
+single database connection, checkpoint checks and advisory lock. Keep the v4
+confirmed-sharing overlay and its generations. Activate the v5 reader after a
+candidate query proves the v5 generation ready, the linked-file coverage
+matches the canonical scan, and history/detail and pagination probes pass.

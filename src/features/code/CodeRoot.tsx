@@ -17,17 +17,22 @@ import { signAndBroadcastBoostPsbt } from "../boost/boostWallet";
 import { syncSocialIdentityIntent, subscribeSocialIdentityIntent } from "../identity/socialIdentity";
 import type { BoostIdentityIntent } from "../boost/boostProtocol";
 import { shortAddress } from "../../functions";
-import { fetchCodeRepositories, fetchCodeRepository, fetchCodePageSource, codeEvents, codeRepoId, codeVersion, verifiedCodeSource,
-  type CodeDetail, type CodeEvent, type CodeFile, type CodeList, type CodePageEvidence, type CodePageSource } from "./codeApi";
+import { fetchCodeRepositories, fetchCodeRepository, fetchCodePageSource, codeEvents, codeRepoId, codeVersion, loadCodeFile, readCodeLink,
+  type CodeDetail, type CodeEvent, type CodeFile, type CodeList, type CodePageEvidence, type CodePageSource, type CodeContentKind } from "./codeApi";
 import { buildCodePlan, codeDraftFields, emptyCodeDraft, exactSourceBytes, lineChange, persistCodeDraft, restoredCodeDraft, type CodeDraft } from "./codeProtocol";
 import { prepareCodeTransaction, sameCodeAddress, verifyCodeAuthority, verifyCodeFunding, type PreparedCode } from "./codeWallet";
-import { codeRepositoryZip, downloadCodeBlob } from "./codeArchive";
+import { assertCodeZipBudget, codeRepositoryZip, downloadCodeBlob } from "./codeArchive";
 import { assertCodeSourceReference, type CodeSourceReference } from "./codeNavigation";
+import { PowcatPublisher } from "../powcat/PowcatPublisher";
+import type { PublishWallet } from "../powcat/powcatPublish";
+import { MAX_PAGE_BYTES } from "../pages/pagesModel.mjs";
+import type { LinkedFile } from "../powcat/PowcatLink";
+import { powcatSha256, POWCAT_MAX_FILE_BYTES } from "../../shared/protocol/powcat1.mjs";
 import "./code.css";
 
 export type CodeViewState = { filter: string; openRepo: string; editor: boolean; editorPreview: "source" | "diff" };
 export type CodeRootProps = { embedded?: boolean; initialAddress?: string; initialNetwork?: BitcoinNetwork;
-  walletSession?: EmbeddedWalletSession;
+  walletSession?: EmbeddedWalletSession; uploadWallet?: PublishWallet;
   onOpenPages?: (source: CodeSourceReference) => void;
   initialViewState?: CodeViewState; onViewStateChange?: (state: CodeViewState) => void };
 type Route = { repo: string; version: string; path: string; tab: "code" | "history" };
@@ -64,10 +69,27 @@ function dateText(value: CodeEvent) {
   const date = new Date(typeof time === "number" ? time * 1000 : time);
   return Number.isNaN(date.getTime()) ? "Chain time unavailable" : date.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
+function sourceLineCount(text: string) {
+  let lines = text && !text.endsWith("\n") ? 1 : 0;
+  for (let i = text.indexOf("\n"); i !== -1; i = text.indexOf("\n", i + 1)) lines++;
+  return lines;
+}
 function SourceText({ content }: { content: string }) {
-  return <pre className="code-source" tabIndex={0} aria-label="Exact source text"><code>{content || <span className="code-empty-source">Empty source file · 0 bytes</span>}</code></pre>;
+  const [expanded, setExpanded] = useState(false);
+  const limited = !expanded && content.length > 120_000;
+  return <>{limited && <p className="code-muted">Showing a source excerpt. <button type="button" className="secondary" onClick={() => setExpanded(true)}>Show full verified source</button></p>}
+    <pre className="code-source" tabIndex={0} aria-label={limited ? "Source excerpt" : "Exact source text"}><code>{(limited ? content.slice(0, 120_000) : content) ||
+      <span className="code-empty-source">Empty source file · 0 bytes</span>}</code></pre></>;
 }
 function CodeDiff({ before, after }: { before: string; after: string }) {
+  if (Math.max(before.length, after.length) > 120_000) {
+    let first = 0;
+    while (first < before.length && first < after.length && before[first] === after[first]) first++;
+    if (first === before.length && first === after.length) return <p>The exact source is unchanged.</p>;
+    const start = Math.max(0, first - 120), end = first + 2_000;
+    return <div className="code-diff"><p>First changed text position {first.toLocaleString()} (UTF-16 offset). A bounded excerpt of each version is shown.</p>
+      <div>Previous version</div><pre>{before.slice(start, end)}</pre><div>Selected version</div><pre>{after.slice(start, end)}</pre></div>;
+  }
   const change = lineChange(before, after);
   return <div className="code-diff" aria-label="Source changes"><p className="code-muted">{change.unchanged ? "The source bytes are unchanged." : `Changed line span beginning at line ${change.start}. Exact removed and added text is shown below.`}</p>
     {!change.unchanged && <><div className="code-diff-heading">Removed · {change.removed.length.toLocaleString()} lines</div><pre className="code-diff-removed">{change.removed.map(line => `− ${line}`).join("\n")}</pre><div className="code-diff-heading">Added · {change.added.length.toLocaleString()} lines</div><pre className="code-diff-added">{change.added.map(line => `+ ${line}`).join("\n")}</pre></>}
@@ -75,7 +97,7 @@ function CodeDiff({ before, after }: { before: string; after: string }) {
   </div>;
 }
 
-export default function CodeRoot({ embedded = false, initialAddress = "", initialNetwork: initialNetworkProp, walletSession, onOpenPages, initialViewState, onViewStateChange }: CodeRootProps = {}) {
+export default function CodeRoot({ embedded = false, initialAddress = "", initialNetwork: initialNetworkProp, walletSession, uploadWallet, onOpenPages, initialViewState, onViewStateChange }: CodeRootProps = {}) {
   const [localNetwork, setNetworkState] = useState<BitcoinNetwork>(() => initialNetwork(initialNetworkProp));
   const [localAddress, setAddress] = useState(initialAddress);
   const network = walletSession?.network ?? localNetwork;
@@ -114,12 +136,15 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   const [recoveryError, setRecoveryError] = useState("");
   const [checking, setChecking] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [verifiedLink, setVerifiedLink] = useState<{ file: LinkedFile; kind: CodeContentKind }>();
+  const [upload, setUpload] = useState<{ file?: File; expectedHash?: string; wallet: PublishWallet; account: string; repo: string; parent: string }>();
   const [pageSource, setPageSource] = useState<CodePageEvidence>();
   const [pageSourceBusy, setPageSourceBusy] = useState(false);
   const pageSourceSequence = useRef(0);
   const [diffEvent, setDiffEvent] = useState<CodeEvent>();
   const [historyDiff, setHistoryDiff] = useState<{ before: string; after: string }>();
   const [diffError, setDiffError] = useState("");
+  const [binaryChange, setBinaryChange] = useState("");
   const flight = useRef(false);
   const alive = useRef(true);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -156,7 +181,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
       ? { title: `${repo.name} | ProofOfWork Code`, description: repo.description } : undefined });
   const canContinueInPages = Boolean(onOpenPages && source && repo && !readBusy && !readError && !sourceBusy && !sourceError &&
     source.network === network && source.repo === route.repo && source.version === selectedVersion && (!route.version || source.version === route.version) &&
-    source.snapshot === detail?.snapshot.id && source.file.path === route.path && /\.(?:html?|xhtml)$/iu.test(source.file.path));
+    source.snapshot === detail?.snapshot.id && source.file.path === route.path && source.file.contentKind !== "binary" && source.file.size <= MAX_PAGE_BYTES && /\.(?:html?|xhtml)$/iu.test(source.file.path));
   const owner = Boolean(repo && sameCodeAddress(repo.ownerAddress, address, network));
   const canWrite = owner && atHead && network === "livenet" && !readBusy && !actionBusy;
   const planResult = useMemo(() => {
@@ -170,7 +195,8 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
     if (!canContinueInPages || !onOpenPages || !source || !repo || !preserveDraft()) return;
     try {
       const reference: CodeSourceReference = { network, repo: codeRepoId(repo), version: selectedVersion,
-        path: source.file.path, sha256: source.file.sha256, size: source.file.size };
+        path: source.file.path, sha256: source.file.sha256, size: source.file.size,
+        ...(source.file.sourceKind === "powcat1" ? { linkerTxid: source.file.sourceTxid } : {}) };
       assertCodeSourceReference(reference, network);
       onOpenPages(reference);
     } catch (error) { setActionError(errorText(error)); }
@@ -190,7 +216,10 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
   const selectedPageSource = pageSource && pageSource.sourceTxid === draft.sourceTxid
     ? pageSource.sources.find(item => item.kind === draft.sourceKind && item.vout === draft.sourceVout && item.content === draft.content)
     : undefined;
-  const referenceReady = draft.kind !== "reference" || Boolean(selectedPageSource);
+  const linkReady = draft.kind === "linked" && detail?.linkedReferencesEnabled === true && verifiedLink?.file.txid === draft.sourceTxid &&
+    verifiedLink?.file.fileHash === draft.linkHash && verifiedLink?.file.size === draft.linkSize && verifiedLink?.kind === draft.contentKind;
+  const referenceReady = draft.kind === "linked" ? Boolean(linkReady) : draft.kind !== "reference" || Boolean(selectedPageSource);
+  useEffect(() => { setUpload(undefined); setVerifiedLink(undefined); }, [network, address, route.repo]);
 
   function preserveDraft() {
     if (flight.current) { setActionError("Wait for the current wallet operation before leaving the Code editor."); return false; }
@@ -225,8 +254,12 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
       const raw = localStorage.getItem(draftKey);
       const loaded: unknown = raw ? JSON.parse(raw) : { ...emptyCodeDraft };
       const candidate = loaded as CodeDraft;
-      if (!candidate || !["repo", "put", "delete", "reference"].includes(candidate.kind) ||
+      if (!candidate || !["repo", "put", "delete", "reference", "linked"].includes(candidate.kind) ||
         [candidate.name, candidate.description, candidate.repo, candidate.parent, candidate.path, candidate.message, candidate.content].some(value => typeof value !== "string") || !Number.isFinite(candidate.feeRate)) throw new Error("Saved Code draft is unreadable. Preserve local storage before repairing it.");
+      if (candidate.kind === "linked" && (candidate.content !== "" || !["text", "binary"].includes(candidate.contentKind ?? "") ||
+          (candidate.sourceTxid !== undefined && typeof candidate.sourceTxid !== "string"))) {
+        throw new Error("Saved linked commit draft is unreadable.");
+      }
       if (candidate.kind === "reference" &&
           ((candidate.sourceTxid !== undefined && typeof candidate.sourceTxid !== "string") ||
            (candidate.sourceKind !== undefined && !["body", "attachment"].includes(candidate.sourceKind)) ||
@@ -295,21 +328,29 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
     if (!expected) { setSourceError("This path does not exist in the selected confirmed version."); return; }
     setSourceBusy(true);
     void fetchCodeRepository(network, codeRepoId(detail.repository), { snapshot: detail.snapshot.id, version: selectedVersion, path: route.path, signal: controller.signal })
-      .then(value => { if (controller.signal.aborted) return; if (!value.file) throw new Error("Source is unavailable for this confirmed file."); const verified = verifiedCodeSource(value.file, expected); setSource({ file: expected, content: verified.source, bytes: verified.bytes, network, repo: codeRepoId(detail.repository), version: selectedVersion, snapshot: detail.snapshot.id }); })
+      .then(async value => { if (controller.signal.aborted) return; if (!value.file) throw new Error("Source is unavailable for this confirmed file."); const verified = await loadCodeFile(network, value.file, expected, controller.signal); if (controller.signal.aborted) return; setSource({ file: expected, content: verified.source, bytes: verified.bytes, network, repo: codeRepoId(detail.repository), version: selectedVersion, snapshot: detail.snapshot.id }); })
       .catch(error => { if (!controller.signal.aborted) setSourceError(errorText(error)); })
       .finally(() => { if (!controller.signal.aborted) setSourceBusy(false); });
     return () => controller.abort();
   }, [network, detail, route.path, route.tab, selectedVersion]);
   useEffect(() => {
     const controller = new AbortController();
-    setHistoryDiff(undefined); setDiffError("");
+    setHistoryDiff(undefined); setDiffError(""); setBinaryChange("");
     if (!diffEvent || !detail || !eventApplied(diffEvent) || !diffEvent.path || !diffEvent.op) return;
     const commit = diffEvent;
     const parent = commit.parent ?? commit.parentTxid;
     if (!parent) { setDiffError("The parent reference is unavailable."); return; }
     const params = { snapshot: detail.snapshot.id, path: commit.path, signal: controller.signal };
     void Promise.all([fetchCodeRepository(network, codeRepoId(detail.repository), { ...params, version: parent }), fetchCodeRepository(network, codeRepoId(detail.repository), { ...params, version: commit.txid })])
-      .then(([before, after]) => { if (!controller.signal.aborted) setHistoryDiff({ before: before.file ? verifiedCodeSource(before.file).source : "", after: after.file ? verifiedCodeSource(after.file).source : "" }); })
+      .then(async ([before, after]) => {
+        if (controller.signal.aborted) return;
+        if (before.file?.contentKind === "binary" || after.file?.contentKind === "binary") {
+          setBinaryChange(`Binary file change. Previous ${before.file ? before.file.size + " bytes · " + before.file.sha256 : "absent"}. Current ${after.file ? after.file.size + " bytes · " + after.file.sha256 : "deleted"}.`);
+          return;
+        }
+        const [left, right] = await Promise.all([before.file, after.file].map(file => file ? loadCodeFile(network, file, undefined, controller.signal).then(v => v.source) : ""));
+        if (!controller.signal.aborted) setHistoryDiff({ before: left, after: right });
+      })
       .catch(error => { if (!controller.signal.aborted) setDiffError(errorText(error)); });
     return () => controller.abort();
   }, [diffEvent, detail, network]);
@@ -322,9 +363,10 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
     if (!editor || baselineReady || draft.kind === "repo" || !draft.repo || !draft.parent || !draft.path) return;
     setBaselineError("");
     void fetchCodeRepository(network, draft.repo, { version: draft.parent, path: draft.path, fresh: true, signal: controller.signal })
-      .then(value => {
+      .then(async value => {
+        const prior = value.file && value.file.contentKind !== "binary" ? (await loadCodeFile(network, value.file, undefined, controller.signal)).source : "";
         if (controller.signal.aborted) return;
-        setBaseline(value.file ? verifiedCodeSource(value.file).source : "");
+        setBaseline(prior);
         setBaselineReady(true);
       }).catch(error => { if (!controller.signal.aborted) setBaselineError(errorText(error)); });
     return () => controller.abort();
@@ -348,7 +390,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
     return editorElement.current?.querySelector<HTMLElement>("input:not(:disabled), textarea:not(:disabled)") ?? null;
   }
   function openEditor(next: CodeDraft, file?: Source) {
-    setActionError(""); setPrepared(undefined); setPendingEditor(undefined); setPageSource(undefined);
+    setActionError(""); setPrepared(undefined); setPendingEditor(undefined); setPageSource(undefined); setVerifiedLink(undefined); setUpload(undefined);
     setEditorPreview("source"); setBaseline(""); setBaselineReady(next.kind === "repo"); setBaselineError("");
     setPathLocked(next.kind === "delete" || Boolean(file));
     setDraft(next); setEditor(true);
@@ -364,7 +406,8 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (kind !== "repo" && !repo) return;
     const next: CodeDraft = kind === "repo" ? { ...emptyCodeDraft, feeRate: draft.feeRate }
-      : { ...emptyCodeDraft, kind, repo: codeRepoId(repo!), parent: repo!.headTxid, path: file?.file.path ?? "", content: file?.content ?? "", feeRate: draft.feeRate };
+      : { ...emptyCodeDraft, kind, repo: codeRepoId(repo!), parent: repo!.headTxid, path: file?.file.path ?? "", content: kind === "put" ? file?.content ?? "" : "", feeRate: draft.feeRate,
+        ...(kind === "linked" ? { contentKind: file?.file.contentKind ?? "text" } : {}) };
     if (hasCodeDraft(draft)) {
       if (kind !== "repo" && draft.kind === kind && draft.repo === next.repo && (!file || draft.path === next.path)) {
         openEditor(draft);
@@ -483,14 +526,15 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
     const sequence = readSequence.current;
     setArchiveBusy(true); setActionError("");
     try {
-      const estimatedBytes = captured.files.reduce((total, file) => total + file.size + 76 + 2 * new TextEncoder().encode(file.path).length, 22);
-      if (captured.files.length > 65535 || estimatedBytes > 0xffffffff) throw new Error("This repository exceeds the supported ZIP archive limits. Download individual source files.");
+      assertCodeZipBudget(captured.files);
       const files: { path: string; bytes: Uint8Array }[] = [];
-      for (let start = 0; start < captured.files.length; start += 3) {
-        const group = await Promise.all(captured.files.slice(start, start + 3).map(async file => {
+      // Linked reads use the bounded Core verifier and can carry 4 MB per path.
+      const batchSize = captured.files.some(file => file.sourceKind === "powcat1") ? 1 : 3;
+      for (let start = 0; start < captured.files.length; start += batchSize) {
+        const group = await Promise.all(captured.files.slice(start, start + batchSize).map(async file => {
           const value = await fetchCodeRepository(network, codeRepoId(captured.repository), { snapshot: captured.snapshot.id, version, path: file.path });
           if (!value.file) throw new Error(`Source is unavailable for ${file.path}. No archive was downloaded.`);
-          return { path: file.path, bytes: verifiedCodeSource(value.file, file).bytes };
+          return { path: file.path, bytes: (await loadCodeFile(network, value.file, file)).bytes };
         }));
         if (!alive.current || sequence !== readSequence.current) throw new Error("Repository selection changed. Download the selected version again.");
         files.push(...group);
@@ -522,14 +566,55 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
       if (alive.current && sequence === pageSourceSequence.current) setPageSourceBusy(false);
     }
   }
+  async function verifyCodeLink(txid: string, kind: CodeContentKind) {
+    const guard = scope;
+    const sequence = ++pageSourceSequence.current;
+    setVerifiedLink(undefined); setPrepared(undefined); setActionError(""); setPageSourceBusy(true);
+    try {
+      const { file } = await readCodeLink(network, txid, kind);
+      if (!alive.current || currentScope.current !== guard || sequence !== pageSourceSequence.current) return;
+      updateDraft({ kind: "linked", content: "", sourceTxid: txid, contentKind: kind, linkHash: file.fileHash,
+        linkSize: file.size, linkMime: file.mime, path: draft.path || file.name });
+      setVerifiedLink({ file, kind });
+    } catch (error) {
+      if (alive.current && currentScope.current === guard && sequence === pageSourceSequence.current) setActionError(errorText(error));
+    } finally { if (sequence === pageSourceSequence.current) setPageSourceBusy(false); }
+  }
+  async function openUpload(file?: File, expectedHash?: string) {
+    const revision = walletConnection.getRevision(), account = address, editorScope = scope;
+    if (!canWrite || detail?.linkedReferencesEnabled !== true || !repo || !atHead) throw new Error("Linked commits require the repository owner at its current confirmed head.");
+    // Standalone Code loads the Computer's canonical signing adapter on demand.
+    const wallet = uploadWallet ?? (await import("../../App")).powcatWallet;
+    if (!alive.current || currentScope.current !== editorScope || currentAccount.current.address !== account || walletConnection.getRevision() !== revision) throw new Error("The wallet or repository changed. Reopen the file upload.");
+    setUpload({file, expectedHash, wallet, account, repo: codeRepoId(repo), parent: repo.headTxid});
+  }
   async function uploadSource(file: File | undefined) {
     if (!file || actionBusy) return;
+    const guard = scope;
     try {
-      if (file.size > 60000) throw new Error("One source file may contain at most 60,000 bytes.");
+      if (file.size > POWCAT_MAX_FILE_BYTES) throw new Error("Choose a file up to 4,000,000 bytes.");
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
-      if (bytes.length !== file.size || exactSourceBytes(content).length !== bytes.length) throw new Error("The file changed or is not valid UTF-8 text.");
-      updateDraft({ content, ...(draft.path ? {} : { path: file.name }) });
+      if (bytes.length !== file.size || !alive.current || currentScope.current !== guard) return;
+      const sourceName = /\.(?:[cm]?[jt]sx?|py|rb|go|rs|html?|xhtml|svg|xml|css|json|md|txt|toml|ya?ml)$/iu.test(file.name);
+      const knownBinary = draft.kind === "linked" ? draft.contentKind === "binary" :
+        !sourceName && /^(?:image|audio|video|font)\/|^application\/(?:pdf|zip|octet-stream)$/iu.test(file.type);
+      let content: string | undefined;
+      if (!knownBinary) {
+        try {
+          const decoded = new TextDecoder("utf-8", {fatal: true, ignoreBOM: true}).decode(bytes);
+          if (!decoded.includes("\u0000")) content = decoded;
+        } catch { /* Unknown file types use binary storage when strict UTF-8 decoding fails. */ }
+      }
+      const binary = knownBinary || content === undefined;
+      if (file.size > 60_000 || binary || draft.kind === "linked") {
+        if (!file.size) throw new Error("Empty files use the inline source editor.");
+        const kind = draft.kind === "linked" ? draft.contentKind ?? "text" : binary ? "binary" : "text";
+        if (kind === "text" && content === undefined) throw new Error("Select Binary asset for this file.");
+        await openUpload(file, powcatSha256(bytes));
+        if (!alive.current || currentScope.current !== guard) return;
+        updateDraft({kind: "linked", contentKind: kind, sourceTxid: "", linkHash: undefined, linkSize: undefined, linkMime: undefined, content: "", path: draft.path || file.name});
+        setVerifiedLink(undefined);
+      } else updateDraft({ content: content!, path: draft.path || file.name });
     } catch (error) { setActionError(errorText(error)); }
   }
   const treeFiles = detail?.files ?? [];
@@ -545,8 +630,8 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
       busy={actionBusy} connectWallet={() => void connect()} disconnectWallet={() => void walletConnection.disconnect()}
       onNetworkChange={changeNetwork} onDomainNavigate={() => !preserveDraft()} onRefresh={() => setAttempt(value => value + 1)} onRefreshRecovery={() => void checkReceipts()} />}
     <main className="code-workspace" aria-label="ProofOfWork Code workspace">
-      <div className="code-workspace-heading"><div><span className="code-eyebrow"><Code2 size={17} /> Code on ProofOfWork</span><h2>{editor ? draft.kind === "repo" ? "New repository" : draft.kind === "delete" ? "Delete a file" : draft.kind === "reference" ? "Add an existing page" : "Commit a source file" : repo ? repo.name : "Repositories"}</h2>
-        <p>{editor ? draft.kind === "repo" ? "Public source. A wallet-owned main history." : draft.kind === "reference" ? "Add confirmed HTML by transaction ID. Keep its source on chain." : "One file. One reviewed transaction. Exact source bytes." : repo ? repo.description || "A public repository with verifiable source history." : "Small repositories, source files, and a main history you can verify from the chain."}</p></div>
+      <div className="code-workspace-heading"><div><span className="code-eyebrow"><Code2 size={17} /> Code on ProofOfWork</span><h2>{editor ? draft.kind === "repo" ? "New repository" : draft.kind === "delete" ? "Delete a file" : draft.kind === "reference" ? "Add an existing page" : draft.kind === "linked" ? "Commit a linked file" : "Commit a source file" : repo ? repo.name : "Repositories"}</h2>
+        <p>{editor ? draft.kind === "repo" ? "Public source. A wallet-owned main history." : draft.kind === "reference" ? "Add confirmed HTML by transaction ID. Keep its source on chain." : draft.kind === "linked" ? "Add verified source or a binary asset to this repository." : "One file. One reviewed transaction. Exact source bytes." : repo ? repo.description || "A public repository with verifiable source history." : "Small repositories, source files, and a main history you can verify from the chain."}</p></div>
         {!editor && <button className="primary" type="button" onClick={() => beginEditor("repo")} disabled={actionBusy || network !== "livenet"}><Plus size={17} /> New repository</button>}
         {editor && <button type="button" className="secondary" disabled={actionBusy} onClick={() => { if (preserveDraft()) { setEditor(false); setPrepared(undefined); returnFocus.current?.focus(); } }}><ArrowLeft size={16} /> Save draft and back</button>}
       </div>
@@ -561,7 +646,7 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
         {draft.kind === "repo" ? <div className="code-form-grid"><label>Repository name<input required maxLength={200} value={draft.name} onChange={event => updateDraft({ name: event.target.value })} disabled={actionBusy} placeholder="my-first-repository" autoComplete="off" /></label><label>Description<textarea maxLength={1000} rows={3} value={draft.description} onChange={event => updateDraft({ description: event.target.value })} disabled={actionBusy} placeholder="What does this repository contain?" /></label><p className="code-muted">Public, with one main history. The creating wallet owns this repository permanently. Names are display labels; the creation transaction is its unique address.</p></div> : <>
           <div className="code-editor-reference"><span>Repository <code>{draft.repo}</code></span><span>Parent <code>{draft.parent}</code></span></div>
           <label>Exact file path<input required value={draft.path} onChange={event => updateDraft({ path: event.target.value })} disabled={actionBusy || draft.kind === "delete" || pathLocked} placeholder={draft.kind === "reference" ? "index.html" : "src/main.ts"} autoComplete="off" /></label>
-          {draft.kind === "put" && <><div className="code-editor-toolbar"><div className="code-tabs"><button type="button" aria-pressed={editorPreview === "source"} onClick={() => setEditorPreview("source")}>Source</button><button type="button" aria-pressed={editorPreview === "diff"} onClick={() => setEditorPreview("diff")}>Changes</button></div><label className="code-upload">Upload UTF-8 file<input type="file" disabled={actionBusy} onChange={event => { void uploadSource(event.target.files?.[0]); event.target.value = ""; }} /></label></div>
+          {draft.kind === "put" && <><div className="code-editor-toolbar"><div className="code-tabs"><button type="button" aria-pressed={editorPreview === "source"} onClick={() => setEditorPreview("source")}>Source</button><button type="button" aria-pressed={editorPreview === "diff"} onClick={() => setEditorPreview("diff")}>Changes</button></div><label className="code-upload">Choose a file<input type="file" disabled={actionBusy} onChange={event => { void uploadSource(event.target.files?.[0]); event.target.value = ""; }} /></label></div>
             {editorPreview === "source" ? <label className="code-source-label"><span className="sr-only">Source text</span><textarea className="code-source-editor" spellCheck={false} value={draft.content} onChange={event => {
               const value = event.target.value;
               const uniformCRLF = draft.content.includes("\r\n") && !/[\r\n]/u.test(draft.content.replace(/\r\n/gu, ""));
@@ -570,6 +655,19 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
             <div className={`code-byte-budget${new TextEncoder().encode(draft.content).length > 60000 ? " is-over" : ""}`}><span>{new TextEncoder().encode(draft.content).length.toLocaleString()} / 60,000 UTF-8 bytes</span><progress max={60000} value={Math.min(60000, new TextEncoder().encode(draft.content).length)} aria-label="Source byte budget" /></div>
             <p className="code-muted">Uploads retain exact bytes and newlines. An unchanged loaded file retains its exact source. Edits preserve uniform CRLF; editing mixed line endings writes the editor's LF line endings. Empty files are supported.</p>
           </>}
+          {draft.kind === "linked" && <div className="code-page-reference">
+            <label>File interpretation<select value={draft.contentKind ?? "text"} disabled={actionBusy || pageSourceBusy} onChange={event => {
+              setVerifiedLink(undefined); updateDraft({ contentKind: event.target.value as CodeContentKind, linkHash: undefined, linkSize: undefined, linkMime: undefined });
+            }}><option value="text">UTF-8 source</option><option value="binary">Binary asset</option></select></label>
+            <label>Confirmed file linker TXID<input value={draft.sourceTxid ?? ""} autoComplete="off" spellCheck={false} disabled={actionBusy || pageSourceBusy}
+              onChange={event => { setVerifiedLink(undefined); updateDraft({sourceTxid: event.target.value.trim().toLowerCase(), linkHash: undefined, linkSize: undefined, linkMime: undefined}); }} /></label>
+            <div className="code-actions"><button type="button" className="secondary" disabled={actionBusy || pageSourceBusy || !hexTx.test(draft.sourceTxid ?? "")}
+              onClick={() => void verifyCodeLink(draft.sourceTxid!, draft.contentKind ?? "text")}>{pageSourceBusy ? "Verifying file…" : "Verify linked file"}</button>
+              <label className="code-upload">Publish a local file<input type="file" disabled={actionBusy || pageSourceBusy} onChange={event => { void uploadSource(event.target.files?.[0]); event.target.value = ""; }} /></label>
+              <button type="button" className="secondary" disabled={actionBusy || pageSourceBusy} onClick={() => void openUpload().catch(error => setActionError(errorText(error)))}>Resume file publication</button></div>
+            {verifiedLink && linkReady && <p role="status" className="code-muted">{verifiedLink.file.name} · {verifiedLink.file.mime} · {verifiedLink.file.size.toLocaleString()} verified bytes · <code>{verifiedLink.file.fileHash}</code></p>}
+            <p className="code-muted">Publish up to 4,000,000 bytes, or enter an existing file linker. After the linker confirms, review the separate repository commit.</p>
+          </div>}
           {draft.kind === "reference" && <div className="code-page-reference">
             <label>Published page TXID<input value={draft.sourceTxid ?? ""} disabled={actionBusy} onChange={event => updateDraft({ sourceTxid: event.target.value.trim().toLowerCase(), sourceKind: undefined, sourceVout: undefined, content: "" })} placeholder="64 character confirmed page transaction ID" autoComplete="off" spellCheck={false} /></label>
             <button type="button" className="secondary" disabled={actionBusy || pageSourceBusy || !hexTx.test(draft.sourceTxid ?? "")} onClick={() => void verifyPageSource()}>{pageSourceBusy ? "Verifying page…" : "Verify page"}</button>
@@ -606,15 +704,19 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
         {draftKeyLoaded === draftKey && hasCodeDraft(draft) && (!route.repo || draft.repo === route.repo) && <div className="code-saved-draft"><span>Saved {draft.kind === "repo" ? "repository" : "source commit"} draft · {codeDraftLabel(draft)}</span><button type="button" className="secondary" onClick={resumeDraft}>Resume draft</button></div>}
         {detail && repo && <section className="code-repository" aria-label="Repository">
           <div className="code-repository-meta"><span><ShieldCheck size={16} /> Owner <code title={repo.ownerAddress}>{repo.ownerId ? `${repo.ownerId}@proofofwork.me` : shortAddress(repo.ownerAddress)}</code>{owner && <span className="code-pill">Your wallet</span>}</span><span className="code-pill">Public</span><span className="code-pill">main</span><span>{treeFiles.length.toLocaleString()} files</span><span>{repo.commitCount.toLocaleString()} commits</span></div>
-          <div className="code-repository-tools"><div className="code-tabs" aria-label="Repository views"><button type="button" aria-pressed={route.tab === "code"} onClick={() => navigate({ ...route, tab: "code" })}><Code2 size={16} /> Code</button><button type="button" aria-pressed={route.tab === "history"} onClick={() => navigate({ ...route, tab: "history" })}><History size={16} /> History</button></div><div className="code-actions"><button type="button" className="secondary" onClick={() => { void navigator.clipboard.writeText(window.location.href).then(() => setCopied(true)).catch(() => setActionError("Clipboard unavailable. Copy this page's URL from the browser.")); }}><Copy size={15} /> {copied ? "Copied" : "Copy link"}</button><button type="button" className="secondary" disabled={archiveBusy} onClick={() => void downloadRepository()}><Download size={16} /> {archiveBusy ? "Verifying files…" : "Download ZIP"}</button>{canWrite && <><button type="button" className="secondary" onClick={() => beginEditor("reference")}>Add existing page</button><button type="button" className="primary" onClick={() => beginEditor("put")}><FilePlus2 size={16} /> Add file</button></>}</div></div>
+          <div className="code-repository-tools"><div className="code-tabs" aria-label="Repository views"><button type="button" aria-pressed={route.tab === "code"} onClick={() => navigate({ ...route, tab: "code" })}><Code2 size={16} /> Code</button><button type="button" aria-pressed={route.tab === "history"} onClick={() => navigate({ ...route, tab: "history" })}><History size={16} /> History</button></div><div className="code-actions"><button type="button" className="secondary" onClick={() => { void navigator.clipboard.writeText(window.location.href).then(() => setCopied(true)).catch(() => setActionError("Clipboard unavailable. Copy this page's URL from the browser.")); }}><Copy size={15} /> {copied ? "Copied" : "Copy link"}</button><button type="button" className="secondary" disabled={archiveBusy} onClick={() => void downloadRepository()}><Download size={16} /> {archiveBusy ? "Verifying files…" : "Download ZIP"}</button>{canWrite && <><button type="button" className="secondary" onClick={() => beginEditor("reference")}>Add existing page</button>{detail.linkedReferencesEnabled === true && <button type="button" className="secondary" onClick={() => beginEditor("linked")}>Add linked file</button>}<button type="button" className="primary" onClick={() => beginEditor("put")}><FilePlus2 size={16} /> Add file</button></>}</div></div>
           <div className="code-head"><GitCommitHorizontal size={17} /><span>{atHead ? "Confirmed main head" : "Historical confirmed version"}</span><code>{compactTx(selectedVersion)}</code><a href={explorerTxUrl(selectedVersion, network)} target="_blank" rel="noreferrer" aria-label="Inspect version transaction"><ArrowUpRight size={17} /></a>{!atHead && <a className="code-return-head" href={routeHref({ ...route, version: "" })} onClick={event => followInternalLink(event, () => navigate({ ...route, version: "" }))}>Return to main head</a>}</div>
           {route.tab === "code" ? <div className="code-browser"><aside className="code-file-tree" aria-label="Source files"><div className="code-tree-title"><Folder size={16} /> Files</div>{treeFiles.map(file => <a key={file.path} href={routeHref({ ...route, path: file.path })} className={file.path === route.path ? "is-selected" : ""} aria-current={file.path === route.path ? "page" : undefined} onClick={event => followInternalLink(event, () => navigate({ ...route, path: file.path }))}><FileCode2 size={16} /><span title={file.path}>{file.path}</span><small>{file.size.toLocaleString()} B</small></a>)}{!treeFiles.length && <p className="code-muted">No files in this version.</p>}</aside>
             <div className="code-file-panel">{!treeFiles.length ? <div className="code-empty"><FilePlus2 size={30} /><h3>Your repository starts here</h3><p>Add a README or your first source file. Each commit changes one file.</p>{canWrite && <button type="button" className="primary" onClick={() => beginEditor("put")}>Add the first file</button>}</div> : <>
-              <div className="code-file-toolbar"><strong>{route.path || "Select a source file"}</strong><div>{source && <button type="button" className="secondary" onClick={() => downloadCodeBlob(new Blob([new Uint8Array(source.bytes).buffer], { type: "text/plain;charset=utf-8" }), source.file.path.split("/").pop() || "source.txt")} aria-label="Download exact source"><Download size={16} /> Download</button>}{canContinueInPages && <button type="button" className="secondary" onClick={continueInPages}>Continue in Pages <ArrowUpRight size={15} /></button>}{canWrite && source && <><button type="button" className="secondary" onClick={() => beginEditor("put", source)}>Edit</button><button type="button" className="secondary" onClick={() => beginEditor("delete", source)} aria-label="Delete source file"><Trash2 size={16} /></button></>}</div></div>
+              <div className="code-file-toolbar"><strong>{route.path || "Select a source file"}</strong><div>{source && <button type="button" className="secondary" onClick={() => downloadCodeBlob(new Blob([new Uint8Array(source.bytes).buffer], { type: source.file.contentKind === "binary" ? "application/octet-stream" : "text/plain;charset=utf-8" }), source.file.path.split("/").pop() || "source.txt")} aria-label="Download exact source"><Download size={16} /> Download</button>}{canContinueInPages && <button type="button" className="secondary" onClick={continueInPages}>Continue in Pages <ArrowUpRight size={15} /></button>}{canWrite && source && <><button type="button" className="secondary" onClick={() => beginEditor(source.file.sourceKind === "powcat1" ? "linked" : "put", source)}>{source.file.sourceKind === "powcat1" ? "Replace" : "Edit"}</button><button type="button" className="secondary" onClick={() => beginEditor("delete", source)} aria-label="Delete source file"><Trash2 size={16} /></button></>}</div></div>
               {sourceBusy && <div className="code-file-loading" role="status">Verifying exact source bytes…</div>}{sourceError && <p className="code-notice is-error" role="alert">{sourceError}</p>}
-              {source && <><div className="code-file-evidence"><span>{source.file.size.toLocaleString()} bytes · {(source.content ? source.content.split("\n").length - (source.content.endsWith("\n") ? 1 : 0) : 0).toLocaleString()} lines</span><code title={source.file.sha256}>SHA-256 {compactTx(source.file.sha256)}</code></div><SourceText content={source.content} />{source.file.sourceTxid && <div className="code-editor-reference"><span>Referenced page <code>{source.file.sourceTxid}</code><a href={explorerTxUrl(source.file.sourceTxid, network)} target="_blank" rel="noreferrer">Inspect page transaction <ArrowUpRight size={14} /></a></span><span>Repository commit <code>{source.file.txid}</code><span>{source.file.sourceKind === "body" ? "HTML message body" : "HTML attachment"} · output {source.file.sourceVout}</span></span></div>}<p className="code-source-footnote">{/(?:^|\/)readme(?:\.md|\.txt)?$/iu.test(source.file.path) ? "README shown as exact source text. " : ""}Source is inert text; HTML and scripts never execute in Code.</p></>}
+              {source && <><div className="code-file-evidence"><span>{source.file.size.toLocaleString()} bytes · {source.file.contentKind === "binary" ? "binary asset" : `${sourceLineCount(source.content).toLocaleString()} lines`}</span><code title={source.file.sha256}>SHA-256 {compactTx(source.file.sha256)}</code></div>{source.file.contentKind === "binary" ? <p className="code-source-footnote">Verified binary asset · {source.file.mime}. Download to inspect its exact bytes.</p> : <SourceText key={source.file.txid} content={source.content} />}
+              {source.file.sourceKind === "powcat1" && source.file.contentKind === "text" && /\.(?:html?|xhtml)$/iu.test(source.file.path) && source.file.size > MAX_PAGE_BYTES &&
+                <p className="code-muted">This HTML file exceeds Pages’ {MAX_PAGE_BYTES.toLocaleString()}-byte source limit. Download its exact bytes here.</p>}
+              {source.file.sourceKind === "powcat1" && <div className="code-editor-reference"><span>Confirmed file linker <code>{source.file.sourceTxid}</code></span><span>Repository commit <code>{source.file.txid}</code></span></div>}
+              {source.file.sourceTxid && source.file.sourceKind !== "powcat1" && <div className="code-editor-reference"><span>Referenced page <code>{source.file.sourceTxid}</code><a href={explorerTxUrl(source.file.sourceTxid, network)} target="_blank" rel="noreferrer">Inspect page transaction <ArrowUpRight size={14} /></a></span><span>Repository commit <code>{source.file.txid}</code><span>{source.file.sourceKind === "body" ? "HTML message body" : "HTML attachment"} · output {source.file.sourceVout}</span></span></div>}<p className="code-source-footnote">{/(?:^|\/)readme(?:\.md|\.txt)?$/iu.test(source.file.path) ? "README shown as exact source text. " : ""}{source.file.contentKind !== "binary" && "Source is shown as inert text."}</p></>}
             </>}</div></div> : <div className="code-history">{codeEvents(detail).map(event => <article className="code-history-entry" key={event.txid}><GitCommitHorizontal size={20} /><div><div className="code-history-title"><strong>{event.message || (event.op ? `${event.op === "reference" ? "Reference" : event.op === "put" ? "Write" : "Delete"} ${event.path}` : "Create repository")}</strong><span className={`code-pill${eventApplied(event) ? " is-confirmed" : " is-unapplied"}`}>{eventApplied(event) ? "Main history" : event.status === "pending" ? "Pending" : "Unapplied"}</span></div><p>{event.path || repo.name} · {dateText(event)}</p><p className="code-muted">{eventReason(event)}</p><div className="code-history-evidence"><code>{compactTx(event.txid)}</code>{event.parent || event.parentTxid ? <code>Parent {compactTx(event.parent ?? event.parentTxid!)}</code> : null}<a href={explorerTxUrl(event.txid, network)} target="_blank" rel="noreferrer">Inspect transaction <ArrowUpRight size={14} /></a></div><div className="code-history-actions">{eventApplied(event) && <a className="secondary" href={routeHref({ repo: codeRepoId(repo), version: event.txid, path: event.path ?? "", tab: "code" })} onClick={click => followInternalLink(click, () => navigate({ repo: codeRepoId(repo), version: event.txid, path: event.path ?? "", tab: "code" }))}>View version</a>}{event.op && <button type="button" className="secondary" onClick={() => setDiffEvent(event)}>Inspect change</button>}</div></div></article>)}{!codeEvents(detail).length && <p className="code-empty">No commit records in this history page.</p>}{detail.pagination.hasMore && <button type="button" className="secondary code-load-more" disabled={pageBusy} onClick={() => void loadMore()}>{pageBusy ? "Reading more history…" : "Load more history"}</button>}
-              {diffEvent && <section className="code-history-inspector" aria-label="Commit inspection"><div className="code-file-toolbar"><strong>{diffEvent.path}</strong><button type="button" className="secondary" onClick={() => setDiffEvent(undefined)} aria-label="Close commit inspection"><X size={17} /></button></div><p>{eventReason(diffEvent)}</p><dl><dt>Commit</dt><dd><code>{diffEvent.txid}</code></dd><dt>Parent</dt><dd><code>{diffEvent.parent ?? diffEvent.parentTxid ?? "Unavailable"}</code></dd>{diffEvent.sourceTxid && <><dt>Referenced page</dt><dd><code>{diffEvent.sourceTxid}</code> · {diffEvent.sourceKind} · output {diffEvent.sourceVout}</dd></>}{diffEvent.sha256 && <><dt>Source SHA-256</dt><dd><code>{diffEvent.sha256}</code></dd></>}</dl>{diffError && <p className="code-notice is-error" role="alert">{diffError}</p>}{eventApplied(diffEvent) && !historyDiff && !diffError && <p role="status">Verifying source changes against the same snapshot…</p>}{historyDiff && <CodeDiff before={historyDiff.before} after={historyDiff.after} />}</section>}
+              {diffEvent && <section className="code-history-inspector" aria-label="Commit inspection"><div className="code-file-toolbar"><strong>{diffEvent.path}</strong><button type="button" className="secondary" onClick={() => setDiffEvent(undefined)} aria-label="Close commit inspection"><X size={17} /></button></div><p>{eventReason(diffEvent)}</p><dl><dt>Commit</dt><dd><code>{diffEvent.txid}</code></dd><dt>Parent</dt><dd><code>{diffEvent.parent ?? diffEvent.parentTxid ?? "Unavailable"}</code></dd>{diffEvent.sourceTxid && <><dt>{diffEvent.sourceKind === "powcat1" ? "File linker" : "Referenced page"}</dt><dd><code>{diffEvent.sourceTxid}</code>{diffEvent.sourceKind === "powcat1" ? ` · ${diffEvent.contentKind === "binary" ? "binary asset" : "UTF-8 source"}` : ` · ${diffEvent.sourceKind} · output ${diffEvent.sourceVout}`}</dd></>}{diffEvent.sha256 && <><dt>Source SHA-256</dt><dd><code>{diffEvent.sha256}</code></dd></>}</dl>{diffError && <p className="code-notice is-error" role="alert">{diffError}</p>}{eventApplied(diffEvent) && !historyDiff && !binaryChange && !diffError && <p role="status">Verifying source changes against the same snapshot…</p>}{binaryChange && <p className="code-file-evidence">{binaryChange}</p>}{historyDiff && <CodeDiff before={historyDiff.before} after={historyDiff.after} />}</section>}
             </div>}
           {!owner && <p className="code-source-footnote">Only the creating wallet can commit source. Wallet ownership is independent of its displayed PowID.</p>}
         </section>}
@@ -623,6 +725,13 @@ export default function CodeRoot({ embedded = false, initialAddress = "", initia
         {coverage && <div className="code-coverage"><ShieldCheck size={16} /><span>Confirmed state through block {coverage.indexedThroughBlock.toLocaleString()} · complete checkpoint replay</span><code title={coverage.indexedThroughBlockHash}>{compactTx(coverage.indexedThroughBlockHash)}</code><span>Pending transactions do not change main.</span></div>}
       </>}
     </main>
+    {upload && editor && draft.kind === "linked" && address === upload.account && network === "livenet" && draft.repo === upload.repo && draft.parent === upload.parent &&
+      <PowcatPublisher key={`${network}:${address}:${draft.repo}`} address={address} network={network} defaultFeeRate={draft.feeRate} wallet={upload.wallet}
+        initialFile={upload.file} autoOpen onClose={() => setUpload(undefined)} attachLabel="Use in Code commit"
+        onAttachVerified={link => {
+          if (upload.expectedHash && upload.expectedHash !== link.fileHash) { setActionError("The selected publication differs from the chosen file."); return; }
+          void verifyCodeLink(link.txid, draft.contentKind ?? "text");
+        }} />}
     {!embedded && <SocialFooter />}
     {pendingEditor && <ReviewDialog title="Keep your saved draft?" closeLabel="Keep draft" onCancel={() => setPendingEditor(undefined)} returnFocus={returnFocus.current} fallbackFocus={editorFocus}>
       <p>Your saved draft, <strong>{codeDraftLabel(draft)}</strong>, is still in this browser. Resume it, or discard it to start the selected action.</p>

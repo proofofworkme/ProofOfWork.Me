@@ -18,6 +18,8 @@ import { readWorkBatchDeclarationCandidates, readWorkBatchDiscoveryCheckpoint, r
 import { readWorkMailBatchDeclarationCandidates, readWorkMailBatchDiscoveryCheckpoint, readWorkMailBatchActivationMarker } from "./work-mail-batch-discovery.mjs";
 import { verifiedWorkMailBatchEventIds } from "./work-mail-batch-reader.mjs";
 import { readCodeSnapshot, readCodePageSource } from "./code-reader.mjs";
+import { powcatPointerFromAttachment } from "../../src/shared/protocol/powcatMail.mjs";
+import { readPowcatActivity } from "./powcat-activity.mjs";
 import { readJobsSnapshot } from "./jobs-reader.mjs";
 import { createPermissionIndexDiscovery } from "./permission-reader.mjs";
 import { jobsReadError, jobsPayload, jobPayload } from "../jobs.mjs";
@@ -572,6 +574,8 @@ const TOKEN_LISTING_ANCHOR_VALUE_SATS = 546;
 const TOKEN_LISTING_ANCHOR_VOUT = 2;
 const TOKEN_LISTING_ANCHOR_SIGHASH_TYPE = 0x83;
 export const PUBLIC_LOG_EVENT_KINDS = new Set([
+  "powcat-part",
+  "powcat-linker",
   "attachment",
   "browser",
   "boost-buy",
@@ -22565,8 +22569,10 @@ export function normalizeHistoryEventItem(
     normalizedText(item?.detail) ||
     `${title} for ${txid.slice(0, 8)}...${txid.slice(-8)}.`;
 
+  const linkedFile = kind === "file" ? powcatPointerFromAttachment(item.attachment) : null;
   const normalized = {
     ...item,
+    ...(linkedFile ? { linkedFile } : {}),
     confirmed,
     confirmationStatus,
     createdAt,
@@ -45695,6 +45701,10 @@ export function compareProofIndexHistoryPayloads(canonical, indexed) {
   }
 
   return mismatches;
+}
+
+export function proofIndexPowcatActivity(network, checkpoint) {
+  return readPowcatActivity(proofIndexPool(), network, checkpoint);
 }
 
 export async function proofIndexJobsPayload(network, searchParams, options = {}) {

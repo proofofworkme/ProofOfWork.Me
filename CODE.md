@@ -146,6 +146,36 @@ each recheck the reference through `/api/v1/code-page-source`; signed recovery
 receipts retain the exact reference and existing duplicate protection. Source
 previews remain inert text and wallet signing stays local.
 
+## Linked source and binary assets
+
+After creating a repository, its owner can publish a local file from Code or
+select an already-confirmed Files linker. Both flows work within the repository
+in standalone Code and Computer. A new publication needs the Files parts and
+linker first. Importing an existing linker writes no storage transactions.
+Neither changes the repository tree until the owner signs and confirms a Code
+commit against its current head.
+
+Version three uses `pwc1:commit3:<base64url JSON>` with a closed object:
+
+```json
+{"v":3,"repo":"<repo-txid>","parent":"<head-txid>","op":"reference","path":"assets/logo.png","message":"Add logo","sourceTxid":"<linker-txid>","sourceKind":"powcat1","contentKind":"binary","mime":"image/png","sha256":"<whole-file-sha256>","size":240000}
+```
+
+Activation begins at mainnet height 974336, after the pinned parent at 974335
+(`000000000000000000000eb4fbe6aba7f82981cc141cd6af3b2cec989419af4c`). Each
+part must confirm before the linker and the linker before the Code commit.
+Bind exact size, MIME and SHA-256 to the verified bytes. The path belongs to
+the repository; the original filename belongs to the linker. For `contentKind: text`, source must decode as exact UTF-8 with no NUL; `binary` preserves any
+bytes. Both have the same Files limit of 4,000,000 bytes. Inline puts and
+empty files retain their v1 form; Page references retain v2.
+
+A reference commit uses the ordinary Mail envelope, owner self-payment and
+miner fee, without an attachment. Upload interruption resumes from the Files
+journal. A stale head requires a new commit review, never another storage
+payment. Tree and history return compact descriptors. Downloads and exports
+recheck the referenced bytes; content is never executed by Code. Old revisions
+continue to point to their original linker, independent of later edits.
+
 ## Transaction authority and Mail accounting
 
 Authority comes from every input's hydrated previous-output address. All

@@ -34,6 +34,7 @@ export type SearchRecord = {
   participants: { address: string; role: string; powid?: string }[];
   refs: { type: string; value: string }[];
   file?: { name: string; mimeType: string; size: number; sha256: string };
+  linkedFile?: { type: "linker" | "mail-pointer"; txid: string; fileHash: string; name: string; mime?: string; size?: number };
   source: { vout: number | null; ordinal: number | null };
 };
 
@@ -42,6 +43,7 @@ export type SearchCoverage = {
   checkpointHeight: number | null;
   checkpointHash: string | null;
   indexVersion: string;
+  linkedFiles?: {ready: boolean; checkpointHeight?: number; checkpointHash?: string};
   lastIndexedAt: string | null;
   sourceCounts: Record<string, unknown>;
   byProtocol: Record<string, { total: number; confirmed: number; valid: number; invalid: number }>;
@@ -104,6 +106,10 @@ function checkRecord(record: SearchRecord) {
     || typeof record.protocol !== "string" || typeof record.kind !== "string"
     || (record.valid !== null && typeof record.valid !== "boolean")
     || typeof record.amountSats !== "string" || !/^\d+$/u.test(record.amountSats)
+    || (record.linkedFile !== undefined && (!record.linkedFile || !["linker", "mail-pointer"].includes(record.linkedFile.type) ||
+      !/^[0-9a-f]{64}$/u.test(record.linkedFile.txid) || !/^[0-9a-f]{64}$/u.test(record.linkedFile.fileHash) ||
+      typeof record.linkedFile.name !== "string" || (record.linkedFile.size !== undefined &&
+        (!Number.isSafeInteger(record.linkedFile.size) || record.linkedFile.size < 1 || record.linkedFile.size > 4_000_000))))
     || !Array.isArray(record.participants) || !Array.isArray(record.refs) || !record.source) {
     throw new Error("The search service returned an incomplete record. Try again after the index refreshes.");
   }

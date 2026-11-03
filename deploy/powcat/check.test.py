@@ -21,6 +21,23 @@ class ScopedPowcatRelease(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "provenance"):
             self.ns["validate_manifest"]({"format": "other"})
 
+    def test_discovery_rotates_exact_scope_and_rejects_unreviewed_merge_hunks(self):
+        controller = release["controller"]
+        controller.__globals__["DISCOVERY"] = True
+        try:
+            ns = release["namespace"](controller())
+        finally:
+            controller.__globals__["DISCOVERY"] = False
+        self.assertEqual(len(ns["EXISTING"]), 10)
+        self.assertEqual(len(ns["NEW"]), 4)
+        self.assertFalse(ns["NEW"] & ns["EXISTING"].keys())
+        self.assertEqual(set(ns["INSTALL_ORDER"]), ns["ALLOWED"])
+        self.assertEqual(ns["INSTALL_ORDER"][-1], "server/proof-api.mjs")
+        with self.assertRaisesRegex(ValueError, "Unreviewed Search merge conflict"):
+            ns["merge_search_coverage"](b"unpaired conflict")
+        with self.assertRaisesRegex(ValueError, "reviewed coverage query"):
+            ns["merge_search_coverage"](b"<<<<<<< ACTIVE\nunknown change\n>>>>>>> CANDIDATE\n")
+
     def test_scoped_application_rollback_and_foreign_helper_fence(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "runtime"

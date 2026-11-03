@@ -142,6 +142,7 @@ const REQUIRED_HYGIENE_CONTROL_FILES = [
 ];
 const INDEX_PARITY_FILES = [
   CONFIG_PATH,
+  "scripts/check-upgrade-impact.mjs",
   "REPOSITORY_HYGIENE.md",
   ...REQUIRED_HYGIENE_CONTROL_FILES,
   ...REQUIRED_HOOK_CONTENT.keys(),
@@ -1445,6 +1446,8 @@ function main() {
         validateRepositoryState(root, "index", { ci: true }),
         "staged tree check",
       );
+      const impact = spawnSync(process.execPath, ["scripts/check-upgrade-impact.mjs", "--staged"], { cwd: root, stdio: "inherit" });
+      if (impact.status !== 0) throw new Error("Staged functional upgrade review failed.");
       break;
     }
     case "commit-msg": {

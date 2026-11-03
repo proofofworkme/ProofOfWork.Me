@@ -20,10 +20,14 @@ async function loadClient(path, imports = {}, globals = {}) {
     if (Object.hasOwn(imports, name)) return imports[name];
     if (name === "buffer") return { Buffer };
     throw new Error(`Unexpected test dependency: ${name}`);
-  }, Blob, TextEncoder, TextDecoder, URLSearchParams, Uint8Array, Uint32Array, DataView, Buffer, ...globals }, { filename: path });
+  }, AbortSignal, Blob, TextEncoder, TextDecoder, URLSearchParams, Uint8Array, Uint32Array, DataView, Buffer, ...globals }, { filename: path });
   return exports;
 }
+let linkedMetadata;
+let linkedBytes;
 const api = await loadClient("src/features/code/codeApi.ts", {
+  "../powcat/PowcatLink": { readLinkedFile: async () => linkedMetadata, readVerifiedPowcatBytes: async () => linkedBytes },
+  "../../shared/protocol/powcat1.mjs": { POWCAT_MAX_FILE_BYTES: 4_000_000 },
   "../../shared/api/proofApiClient": { fetchProofApiJson: async (...args) => { lastRequest = args; return structuredClone(typeof response === "function" ? await response(...args) : response); } },
   "../../shared/utils/encoding": { sha256Hex: hash },
   "../../shared/protocol/codeRepository.mjs": codeProtocol,
@@ -443,4 +447,39 @@ test("reference wallet review rechecks exact Page evidence before funding, signi
   const builds = fixture.builds.length;
   await assert.rejects(fixture.wallet.prepareCodeTransaction(value, creatingWallet, "livenet", () => {}), /confirmed/);
   assert.equal(fixture.builds.length, builds);
+});
+
+test("linked Code references bind source or binary interpretation without a storage attachment", () => {
+  for (const contentKind of ["text", "binary"]) {
+    const draft = { ...plan.emptyCodeDraft, kind: "linked", repo: id(1), parent: id(2), path: "objects/file.bin",
+      message: "Pin existing file", sourceTxid: id(3), contentKind, linkHash: id(4), linkMime: "application/octet-stream", linkSize: 4_000_000 };
+    const value = plan.buildCodePlan(draft);
+    assert.equal(value.payloads.length, 2);
+    assert.match(value.payloads[0], /^pwm1:m:/u);
+    assert.deepEqual(codeProtocol.parseCodePayload(value.payloads[1]).metadata, { v: 3, repo: draft.repo,
+      parent: draft.parent, op: "reference", path: draft.path, message: draft.message, sourceTxid: draft.sourceTxid,
+      sourceKind: "powcat1", contentKind, mime: draft.linkMime, sha256: draft.linkHash, size: draft.linkSize });
+    assert.equal(plan.buildCodePlan(plan.restoredCodeDraft(plan.codeDraftFields(draft))).payloads[1], value.payloads[1]);
+  }
+});
+
+test("linked bytes remain bound to the selected repository file and canonical linker block", async () => {
+  linkedBytes = new Uint8Array([0, 0xff, 0, 13, 10]);
+  const file = { path: "blob.bin", txid: id(6), sourceTxid: id(7), sourceKind: "powcat1", contentKind: "binary",
+    name: "original.bin", mime: "application/octet-stream", sha256: hash(linkedBytes), size: linkedBytes.length };
+  const position = { txid: file.sourceTxid, blockHeight: 100, blockHash: id(8) };
+  linkedMetadata = { ...position, name: file.name, fileHash: file.sha256, size: file.size, mime: file.mime };
+  const detail = { ...file, verified: true, sourceEvidence: position };
+  const value = await api.loadCodeFile("livenet", detail, file);
+  assert.deepEqual(value.bytes, linkedBytes);
+  assert.equal(value.source, "");
+  for (const change of [{ blockHash: id(9) }, { size: 1 }, { fileHash: id(8) }]) {
+    const before = linkedMetadata;
+    try { linkedMetadata = { ...before, ...change }; await assert.rejects(api.loadCodeFile("livenet", detail, file), /differs/u); }
+    finally { linkedMetadata = before; }
+  }
+  await assert.rejects(api.readCodeLink("livenet", file.sourceTxid, "text"), /UTF-8/u);
+  linkedBytes = new Uint8Array([65, 0, 66]);
+  await assert.rejects(api.readCodeLink("livenet", file.sourceTxid, "text"), /NUL/u);
+  assert.throws(() => archive.assertCodeZipBudget([{path: "blob.bin", size: 64 * 1024**2}]), /64 MiB/u);
 });

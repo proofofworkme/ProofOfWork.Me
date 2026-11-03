@@ -87,7 +87,7 @@ for (const width of [390, 1440]) {
     await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", repo.description);
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", new RegExp(`^https://code\\.proofofwork\\.me/\\?repo=${id(1)}`));
     await expect(page.locator('.code-file-tree a').first()).toHaveAttribute("href", /[?&]path=/);
-    await page.screenshot({ path: `/tmp/proofofwork-code-fixture-repository-${width}.png`, fullPage: true });
+    await page.screenshot({ path: test.info().outputPath(`proofofwork-code-fixture-repository-${width}.png`), fullPage: true });
     expect(await page.evaluate(() => window.codeInjected)).toBeUndefined();
     const exact = page.waitForEvent("download");
     await page.getByRole("button", { name: "Download exact source" }).click();
@@ -156,7 +156,7 @@ test("embedded editor preserves drafts and prevents leaving when storage cannot 
   await page.getByRole("button", { name: "New repository", exact: true }).click();
   await page.getByRole("textbox", { name: "Repository name", exact: true }).fill("Retained local draft");
   await page.getByRole("textbox", { name: "Description", exact: true }).fill("Exact unsent work");
-  await page.screenshot({ path: "/tmp/proofofwork-code-fixture-editor.png", fullPage: true });
+  await page.screenshot({ path: test.info().outputPath("proofofwork-code-fixture-editor.png"), fullPage: true });
   await expect.poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem("proofofwork.code.draft.v1:livenet:disconnected") ?? "{}").name)).toBe("Retained local draft");
   const permitted = await page.evaluate(() => window.dispatchEvent(new Event("proofofwork:before-code-writer-leave", { cancelable: true })));
   expect(permitted).toBe(true);
@@ -284,7 +284,7 @@ for (const surface of ["code=1", "folder=code"]) {
     await expect(decision).toBeVisible();
     await expect(decision.getByRole("button", { name: "Keep draft", exact: true })).toBeFocused();
     await expect(decision.getByRole("button", { name: "Discard draft and continue", exact: true })).toBeInViewport();
-    await page.screenshot({ path: `/tmp/proofofwork-code-draft-decision-${standalone ? "standalone-dark" : "computer-light"}.png` });
+    await page.screenshot({ path: test.info().outputPath(`proofofwork-code-draft-decision-${standalone ? "standalone-dark" : "computer-light"}.png`) });
     expect(await savedDraft(page)).toEqual(retained);
     await page.keyboard.press("Escape");
     await expect(decision).toHaveCount(0);
@@ -329,7 +329,7 @@ for (const surface of ["code=1", "folder=code"]) {
     expect(await page.evaluate(() => window.codeSignatureCalls)).toBe(0);
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
-    await page.screenshot({ path: `/tmp/proofofwork-code-review-failure-${standalone ? "standalone-light" : "computer-dark"}.png` });
+    await page.screenshot({ path: test.info().outputPath(`proofofwork-code-review-failure-${standalone ? "standalone-light" : "computer-dark"}.png`) });
   });
 }
 

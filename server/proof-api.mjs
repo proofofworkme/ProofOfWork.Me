@@ -7,6 +7,7 @@ import {
   withPrivatePhaseTimings as withMarketplaceReadPhases,
 } from "./wallet-read-observation.mjs";
 import { createPermissionVerificationStore } from "./permission-verification-store.mjs";
+import { powcatPointerFromAttachment } from "../src/shared/protocol/powcatMail.mjs";
 import { createPowcatReader, powcatDownloadHeaders } from "./powcat-reader.mjs";
 import { createDnsVerificationStore } from "./dns-verification-store.mjs";
 import { createAmoBrowseSnapshotStore } from "./amo-browse-snapshot.mjs";
@@ -365,12 +366,13 @@ import {
 } from "./incb-range-replay-witness.mjs";
 import { searchPayload, searchDetailPayload } from "./db/search-reader.mjs";
 import { CODE_SNAPSHOT_MODEL, qualifyCodeLogPayload } from "./code-repositories.mjs";
-import { codeReferenceSourceFromCore } from "./db/code-reader.mjs";
+import { codeLinkedSourceFromCore, codeReferenceSourceFromCore } from "./db/code-reader.mjs";
 import { JOBS_SNAPSHOT_MODEL, jobsLogPayloadHasCandidates, qualifyJobsLogPayload } from "./jobs.mjs";
 import {
   compareProofIndexHistoryPayloads,
   proofIndexActivityPayload,
   proofIndexCodePayload,
+  proofIndexPowcatActivity,
   proofIndexJobsPayload,
   proofIndexAddressMailPayload,
   verifiedMailArticleFields,
@@ -36898,6 +36900,7 @@ async function logPayloadWithDnsSubdomainAuthority(payload, network, options = {
     }
     try {
       const state = await proofIndexCodePayload(network, params, { events: true,
+        resolveLinkedSource: request => codeLinkedSourceFromCore(request, bitcoinRpc),
         resolveReferenceSource: request => codeReferenceSourceFromCore(request, bitcoinRpc), verifyCheckpoint: async height => {
         const result = await bitcoinRpc("getblockhash", [height]); return result?.ok ? result.result : null;
       } });
@@ -61735,6 +61738,7 @@ function btcUsdResponseMetadata(quote) {
 }
 
 function isBrowserActivityItem(item) {
+  if (item.kind === "file" && powcatPointerFromAttachment(item.attachment)) return false;
   const tags = Array.isArray(item.tags) ? item.tags : [];
   const searchText = [
     item.title,
@@ -83656,6 +83660,31 @@ async function handleRequest(request, response) {
       return;
     }
 
+    const powcatActivityRequest = url.pathname === "/api/v1/powcat-activity";
+    const powcatLogRequest = ["/api/v1/log", "/api/v1/log-history", "/api/v1/activity-history"].includes(url.pathname) &&
+      ["powcat-part", "powcat-linker"].includes(url.searchParams.get("kind")) && !url.searchParams.has("snapshot") && !url.searchParams.has("cursor");
+    if (powcatActivityRequest || powcatLogRequest) {
+      if (network !== "livenet") {
+        errorResponse(response, 400, "Linked file activity requires mainnet.");
+        return;
+      }
+      const gate = canonicalReadGate ?? await canonicalPublicReadGate(network, { force: true });
+      if (gate?.available !== true || gate.atTip !== true) {
+        throw freshDataUnavailableError("Linked file discovery is catching up.");
+      }
+      const payload = await proofIndexPowcatActivity(network, {
+        height: Number(gate.indexedThroughBlock), hash: gate.canonicalHash,
+        verify: async height => {
+          const result = await bitcoinRpc("getblockhash", [height]);
+          return result?.ok ? result.result : null;
+        },
+      });
+      if (powcatActivityRequest) {
+        jsonResponse(response, 200, payload, "no-store");
+        return;
+      }
+    }
+
     if (url.pathname === "/api/v1/jobs" || url.pathname === "/api/v1/job") {
       const payload = await proofIndexJobsPayload(network, url.searchParams, {
         detail: url.pathname === "/api/v1/job",
@@ -83680,6 +83709,7 @@ async function handleRequest(request, response) {
       const payload = await proofIndexCodePayload(network, url.searchParams, {
         detail: url.pathname === "/api/v1/code-repository",
         pageSource: url.pathname === "/api/v1/code-page-source",
+        resolveLinkedSource: request => codeLinkedSourceFromCore(request, bitcoinRpc),
         resolveReferenceSource: request => codeReferenceSourceFromCore(request, bitcoinRpc),
         verifyCheckpoint: async height => {
           const result = await bitcoinRpc("getblockhash", [height]);

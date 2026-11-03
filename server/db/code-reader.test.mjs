@@ -237,3 +237,73 @@ test('confirmed replay fences the checkpoint after dependency hydration', async 
     ? 'd'.repeat(64) : f.verifyCheckpoint(height);
   await assert.rejects(() => readCodeSnapshot(f.client, 'livenet', new URLSearchParams(), { ...f, verifyCheckpoint }), /checkpoint changed/);
 });
+
+test('Code linked dependency uses authenticated Core evidence, verifies every part and returns only checkpoint-bound metadata', async()=>{
+  const {codeLinkedSourceFromCore}=await import('./code-reader.mjs');
+  const {encodePowcatPart,encodePowcatManifest,powcatScript,powcatSha256}=await import('../../src/shared/protocol/powcat1.mjs');
+  const bytes=Buffer.alloc(95_000,0xff),fileHash=powcatSha256(bytes), heightHash=h=>sha256(Buffer.from('block'+h));
+  function transaction(payload, marker) {
+    const tx=new bitcoin.Transaction(); tx.addInput(Buffer.alloc(32,marker),0);
+    tx.addOutput(powcatScript(payload),0n);return tx;
+  }
+  const part=transaction(encodePowcatPart({fileHash,index:0,count:1,bytes}),1);
+  const root=transaction(encodePowcatManifest({fileHash,size:bytes.length,mime:'application/octet-stream',name:'binary.dat',partTxids:[part.getId()]}),2);
+  const request={network:'livenet',txid:root.getId(),checkpointHeight:974340,checkpointHash:heightHash(974340)};
+  let missing=false,outage=false,reorg=false,rootQueries=0;
+  const core=async(method,[arg])=>{
+    if(method==='getblockhash') {
+      if(arg===request.checkpointHeight) rootQueries++;
+      return {ok:true,result:reorg&&arg===request.checkpointHeight&&rootQueries>2?heightHash(0):heightHash(arg)};
+    }
+    if(method==='getindexinfo')return {ok:true,result:{txindex:{synced:true,best_block_height:974340}}};
+    if(method==='getblock') return {ok:true,result:{height:974338,hash:heightHash(974338),confirmations:3,tx:[root.getId()]}};
+    if(method==='getblockheader')return {ok:true,result:{height:974336,hash:heightHash(974336),confirmations:5}};
+    if(method==='getrawtransaction' && arg===part.getId()){
+      if(missing||outage)return {ok:false,error:{code:missing?-5:-28}};
+      return {ok:true,result:{txid:arg,hex:part.toHex(),confirmations:5,blockhash:heightHash(974336)}};
+    }
+    if(method==='getrawtransaction' && arg===root.getId())return {ok:true,result:{txid:arg,hex:root.toHex(),version:root.version,locktime:root.locktime,confirmations:3,blockhash:heightHash(974338),
+      vin:root.ins.map(input=>({txid:Buffer.from(input.hash).reverse().toString('hex'),vout:input.index,sequence:input.sequence,scriptSig:{hex:''}})),
+      vout:root.outs.map((out,n)=>({n,value:0,scriptPubKey:{hex:Buffer.from(out.script).toString('hex')}}))}};
+    throw new Error('unexpected Core method '+method);
+  };
+  const verified=await codeLinkedSourceFromCore(request,core);
+  assert.equal(verified.state,'verified');assert.equal(verified.textValid,false);assert.equal(verified.size,95000);assert.equal(verified.sha256,fileHash);
+  assert.equal(verified.blockHash,heightHash(974338));assert.equal(verified.checkpointHash,request.checkpointHash);assert.ok(JSON.stringify(verified).length<1024);
+  missing=true;assert.equal((await codeLinkedSourceFromCore(request,core)).state,'invalid');
+  missing=false;outage=true;await assert.rejects(()=>codeLinkedSourceFromCore(request,core),err=>err.details?.code==='CODE_LINKED_SOURCE_UNAVAILABLE');
+  outage=false;reorg=true;rootQueries=0;await assert.rejects(()=>codeLinkedSourceFromCore(request,core),err=>err.details?.code==='CODE_CHECKPOINT_REORG');
+});
+
+test('the DB Code path hydrates v3 only after both activation witnesses and fails closed on a changed checkpoint', async()=>{
+  const {bindCodeLinkedEvidence,encodeCodeLinkedCommit,CODE_LINKED_ACTIVATION_PARENT_HEIGHT:parent,CODE_LINKED_ACTIVATION_PARENT_HASH:pin}
+    = await import('../../src/shared/protocol/codeRepository.mjs');
+  const {codeRepositoryPayload}=await import('../code-repositories.mjs');
+  const h=parent+4, f=referenceFixture({checkpointHeight:h}), bytes=Buffer.from('let checked = 1;\r\n'), fileHash=sha256(bytes);
+  const sourceTxid='e'.repeat(64), path='src/verified.js';
+  const commit=referenceRow(['pwm1:m:Code', encodeCodeLinkedCommit({v:3,op:'reference',repo:f.root.txid,parent:f.root.txid,path,message:'source',
+    sourceTxid,sourceKind:'powcat1',contentKind:'text',size:bytes.length,mime:'text/javascript',sha256:fileHash})],parent+2,1);
+  const rows=[f.root,commit];
+  f.marker.candidateSha256=rows.map(row=>codeTransactionFromRow(row,'livenet')).reduce(advanceCodeCandidateDigest,CODE_DISCOVERY_EMPTY_SHA256);
+  let pinned=true,loads=0,moved=false;
+  const db={async query(sql,args) {
+    if(sql.includes('SELECT t.*'))return {rows};
+    if(sql.includes('SELECT height,block_hash') && args[1]===parent)return {rows:[{height:parent,block_hash:pinned?pin:pageHash}]};
+    return f.client.query(sql,args);
+  }};
+  const opts={verifyCheckpoint:async height=>height===parent?pin:moved&&height===h?pageHash:f.verifyCheckpoint(height),
+    resolveLinkedSource:async request=>{
+      assert.equal(request.txid,sourceTxid);loads++;
+      return bindCodeLinkedEvidence({...request,state:'confirmed',blockHeight:parent+1,blockHash:pageHash},
+        {txid:sourceTxid,bytes,fileHash,name:'verified.js',mime:'text/javascript',size:bytes.length},sha256);
+    }};
+  const state=await readCodeSnapshot(db,'livenet',new URLSearchParams(),opts);
+  assert.equal(loads,1);assert.equal(state.linkedReferencesEnabled,true);
+  assert.equal(codeRepositoryPayload(state,new URLSearchParams({repo:f.root.txid,path})).file.sourceEvidence.txid,sourceTxid);
+  pinned=false;await assert.rejects(()=>readCodeSnapshot(db,'livenet',new URLSearchParams(),opts),
+    e=>e.details?.code==='CODE_LINKED_SOURCE_UNAVAILABLE');
+  pinned=true;
+  await assert.rejects(()=>readCodeSnapshot(db,'livenet',new URLSearchParams(),{...opts,resolveLinkedSource:async request=>{
+    const proof=await opts.resolveLinkedSource(request);moved=true;return proof;
+  }}),e=>e.details?.code==='CODE_CHECKPOINT_REORG');
+});

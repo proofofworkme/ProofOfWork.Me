@@ -20,6 +20,8 @@ import {
 import { JOBS_ACTIVATION_HEIGHT, JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH } from "../src/shared/protocol/jobs.mjs";
 import { parseBoostTip, parseBoostWorkTip } from "../src/shared/protocol/boostTip.mjs";
 import { verifyCodeTransaction } from "../src/shared/protocol/codeRepository.mjs";
+import { POWCAT_SCAN_ANCHOR, powcatCarrierKind, powcatObservations,
+  persistPowcatObservations, reconcilePowcatPending, scanPowcatCoverage } from "../server/powcat-index.mjs";
 import { JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_META_KEY, JOBS_DISCOVERY_EMPTY_SHA256, advanceJobsCandidateDigest, jobsCandidateParts, isJobsCandidatePart, jobsCandidateEventClosure } from "../server/jobs.mjs";
 import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, CODE_DISCOVERY_EMPTY_SHA256, advanceCodeCandidateDigest, exactCodeOutputProofs, codeCandidateEventClosure, prefilterCodeRawBlock, assertCodeRawBlockCandidatesMatch } from "../server/code-repositories.mjs";
 import {
@@ -48,6 +50,7 @@ import {
   canonicalPostgresSafeJsonValue,
   canonicalRawProtocolRecordSetFromTransaction,
   canonicalProtocolCandidateFromOutput,
+  decodeCanonicalOpReturnOutput,
 } from "../server/canonical-op-return.mjs";
 import {
   canonicalSummarySnapshotMaxBytes,
@@ -440,6 +443,8 @@ const WORK_AMO_V8_DECLARATION_PINS_CONFIGURED =
     WORK_AMO_V8_EXPECTED_ACTIVATION_HEIGHT;
 const PUBLIC_LOG_EVENT_KINDS = new Set([
   "attachment",
+  "powcat-part",
+  "powcat-linker",
   "boost-buy",
   "boost-delist",
   "boost-follow",
@@ -979,6 +984,7 @@ const MEMPOOL_SCAN_SEEN_LIMIT = Number(
 // Only protocols with a canonical block-scan parser/verifier belong here.
 const PROTOCOL_PREFIXES = ["pwm1:", "pwa1:", "pwid1:", "pwdns1:", "pwb1:", "pwt1:", "pwc1:"];
 const BOOTSTRAP_CODE_CANDIDATES_ONLY = process.argv.includes("--bootstrap-code-candidates");
+const BOOTSTRAP_POWCAT_ONLY = process.argv.includes("--bootstrap-powcat");
 const BOOTSTRAP_JOBS_CANDIDATES_ONLY = process.argv.includes("--bootstrap-jobs-candidates");
 const MAIL_ATTACHMENT_MAX_BYTES = 60_000;
 const INCLUDE_SCOPED_HOLDERS = !/^(?:0|false|no)$/iu.test(
@@ -1160,6 +1166,7 @@ function assertCanonicalRebuildConfiguration() {
   const exclusiveMaintenanceModes = [
     BOOTSTRAP_CODE_CANDIDATES_ONLY,
     BOOTSTRAP_JOBS_CANDIDATES_ONLY,
+    typeof BOOTSTRAP_POWCAT_ONLY !== "undefined" && BOOTSTRAP_POWCAT_ONLY,
     HYDRATE_TRANSACTION_DETAILS_ONLY,
     PREPARE_CANONICAL_REBUILD_ONLY,
     PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY,
@@ -1186,6 +1193,12 @@ function assertCanonicalRebuildConfiguration() {
   }
   if ((BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY) && ((!DRY_RUN && !BITCOIN_RPC_URL) || CANONICAL_REBUILD || /^(?:1|true|yes)$/iu.test(String(process.env.POW_INDEX_DB_SUMMARY_REPAIR ?? "")))) {
     throw new Error("Code/Jobs discovery bootstrap requires Core RPC and is exclusive with canonical rebuild or summary repair.");
+  }
+  if (typeof BOOTSTRAP_POWCAT_ONLY !== "undefined" && BOOTSTRAP_POWCAT_ONLY &&
+      (NETWORK !== "livenet" || (!DRY_RUN && !BITCOIN_RPC_URL) || CANONICAL_REBUILD ||
+       /^(?:1|true|yes)$/iu.test(String(process.env.POW_INDEX_BACKFILL_PENDING_ONLY ?? "")) ||
+       /^(?:1|true|yes)$/iu.test(String(process.env.POW_INDEX_DB_SUMMARY_REPAIR ?? "")))) {
+    throw new Error("Powcat discovery requires mainnet Core and is exclusive with rebuild, summary repair and pending-only modes.");
   }
   if (
     repairCanonicalMailProjectionOnly !== repairCanonicalMailProjectionApply
@@ -1637,6 +1650,7 @@ function pendingOnlyBackfillMaintenanceMode() {
     REPAIR_MARKETPLACE_PROJECTIONS_ONLY;
   return (
     BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY ||
+    (typeof BOOTSTRAP_POWCAT_ONLY !== "undefined" && BOOTSTRAP_POWCAT_ONLY) ||
     HYDRATE_TRANSACTION_DETAILS_ONLY ||
     PREPARE_CANONICAL_REBUILD_ONLY ||
     PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY ||
@@ -4246,10 +4260,12 @@ function assertCanonicalBlockEnvelope(block, height, blockHash) {
   }
 }
 
-function protocolMessagesFromTx(tx) {
+function protocolMessagesFromTx(tx, binaryCandidates) {
   const messages = [];
   for (const [voutIndex, vout] of (tx?.vout ?? []).entries()) {
-    const candidate = canonicalProtocolCandidateFromOutput(vout);
+    const decoded = binaryCandidates ? decodeCanonicalOpReturnOutput(vout) : undefined;
+    if (decoded && powcatCarrierKind(decoded.payloadHex)) binaryCandidates.push(voutIndex);
+    const candidate = decoded ? (decoded.candidate && decoded) : canonicalProtocolCandidateFromOutput(vout);
     if (candidate) {
       messages.push({
         decodeDetail: candidate.detail,
@@ -12775,12 +12791,13 @@ function canonicalTransactionDetailRows(tx) {
       const prefix = PROTOCOL_PREFIXES.find((candidate) =>
         payload.payloadText?.startsWith(candidate),
       );
+      const binaryPart = payload.payloadHex?.startsWith("706f77636174313a") && powcatCarrierKind(payload.payloadHex);
       opReturns.push({
         data_bytes: payload.dataBytes,
         output_index: 0,
         payload_hex: payload.payloadHex,
-        payload_text: payload.payloadText,
-        protocol: prefix ? prefix.slice(0, -1) : null,
+        payload_text: binaryPart ? null : payload.payloadText,
+        protocol: binaryPart ? "powcat1" : (prefix ? prefix.slice(0, -1) : null),
         vout: index,
       });
     }
@@ -26010,6 +26027,18 @@ async function storedCodeCandidateEventClosure(client, tx, position) {
   return transition.rows.length === 1 && codeCandidateEventClosure(tx, events.rows, position, transition.rows[0]);
 }
 
+async function advancePowcatWorker(client, maxBlocks) {
+  if (NETWORK !== "livenet") throw new Error("Powcat discovery requires the configured mainnet anchor.");
+  const target = await latestBlockScanCheckpoint(client, { useStoredCheckpoint: true });
+  return scanPowcatCoverage({ client, network: NETWORK, rpc: bitcoinRpc, anchor: POWCAT_SCAN_ANCHOR, target, maxBlocks,
+    persistRaw: async (raw, position, blockTime) => {
+      const tx = await transactionWithInputPrevouts({ ...raw, _powBlockIndex: position.blockIndex,
+        _powBlockHash: position.blockHash, blocktime: blockTime, height: position.blockHeight });
+      assertHydratedProtocolTransaction(tx);
+      await persistCanonicalRawTransaction(client, tx, { height: position.blockHeight, blockHash: position.blockHash, blockTime });
+    } });
+}
+
 async function bootstrapCodeCandidates(client) {
   const locked = await client.query("SELECT pg_try_advisory_lock(hashtext($1),hashtext($2)) AS locked", [CODE_DISCOVERY_META_KEY, NETWORK]);
   if (locked.rows[0]?.locked !== true) throw new Error("Another Code discovery bootstrap is active.");
@@ -32457,6 +32486,10 @@ async function backfillMempoolScanSource(client, source) {
   const initialMempoolSnapshot =
     canonicalMempoolTxidSnapshot(mempool);
   const scopedIdReverification = MEMPOOL_REVERIFY_ID_TXIDS.length > 0;
+  if (NETWORK === "livenet" && !scopedIdReverification) {
+    try { await reconcilePowcatPending(client, NETWORK, mempool, bitcoinRpc); }
+    catch (error) { console.error(JSON.stringify({ phase: "powcat-pending", error: error?.message })); }
+  }
   const idReverificationTargets = await pendingIdReverificationTargets(client, mempool);
   const q16PendingActive =
     !scopedIdReverification && WORK_AMO_V8_DECLARATION_PINS_CONFIGURED &&
@@ -32553,8 +32586,9 @@ async function backfillMempoolScanSource(client, source) {
       canonicalDeferred += 1;
       continue;
     }
-    const messages = protocolMessagesFromTx(tx);
-    if (messages.length === 0) {
+    const powcatOutputs = [];
+    const messages = protocolMessagesFromTx(tx, NETWORK === "livenet" && !scopedIdReverification ? powcatOutputs : undefined);
+    if (messages.length === 0 && powcatOutputs.length === 0) {
       processed.add(txid);
       continue;
     }
@@ -32614,7 +32648,7 @@ async function backfillMempoolScanSource(client, source) {
         );
       }
       const hydrated = await transactionWithInputPrevouts(tx);
-      const rawVerifiedPrepared = await preparedProtocolItemsForTx(
+      const rawVerifiedPrepared = messages.length ? await preparedProtocolItemsForTx(
         hydrated,
         messages,
         {
@@ -32632,7 +32666,8 @@ async function backfillMempoolScanSource(client, source) {
               }
             : {}),
         },
-      );
+      ) : [];
+      const powcatItems = powcatOutputs.length ? await powcatObservations(tx, null, bitcoinRpc) : [];
       if (revalidationTarget) {
         assertPendingIdReverificationItems(revalidationTarget, messages, rawVerifiedPrepared);
       }
@@ -32764,7 +32799,12 @@ async function backfillMempoolScanSource(client, source) {
         ];
       });
       const result = await persistPreparedProtocolItems(client, prepared);
-      if (messages.some(message => message.prefix === "pwc1:")) {
+      if (powcatItems.length) {
+        await bitcoinRpc("getmempoolentry", [txid]);
+        await persistPowcatObservations(client, NETWORK, powcatItems);
+        result.indexed += powcatItems.length;
+      }
+      if (powcatItems.length || messages.some(message => message.prefix === "pwc1:")) {
         const evidence = await client.query(`UPDATE proof_indexer.transactions SET raw_tx=COALESCE(raw_tx,'{}'::jsonb)||$3::jsonb,
           updated_at=now() WHERE network=$1 AND txid=$2 AND status='pending'
           AND NOT (COALESCE(raw_tx,'{}'::jsonb)?'canonicalBlockScan') RETURNING txid`, [NETWORK, txid, JSON.stringify(hydrated)]);
@@ -32801,6 +32841,7 @@ async function backfillMempoolScanSource(client, source) {
         canonicalDeferred += 1;
         continue;
       }
+      if (powcatItems.length) await bitcoinRpc("getmempoolentry", [txid]);
       await client.query("COMMIT");
       transactionOpen = false;
       indexed += result.indexed;
@@ -32959,7 +33000,23 @@ async function backfillSource(client, source) {
     return backfillMempoolScanSource(client, source);
   }
   if (source.blockScan) {
-    return backfillBlockScanSource(client, source);
+    let result;
+    try {
+      result = await backfillBlockScanSource(client, source);
+      return result;
+    } finally {
+      if (NETWORK === "livenet" && !CANONICAL_REBUILD) {
+        // Rewind detached file rows even when the main scan just refused a
+        // reorg. Preserve its original exception and independent summary path.
+        try {
+          const discovery = await advancePowcatWorker(client, 4);
+          if (result) result.powcat = discovery;
+        } catch (error) {
+          if (result) result.powcat = { complete: false, error: String(error?.message ?? error) };
+          console.error(JSON.stringify({ phase: "powcat-confirmed", error: error?.message }));
+        }
+      }
+    }
   }
 
   if (source.addressMail) {
@@ -38823,6 +38880,7 @@ if (DRY_RUN) {
         dryRun: true,
         bootstrapCodeCandidatesOnly: BOOTSTRAP_CODE_CANDIDATES_ONLY,
         bootstrapJobsCandidatesOnly: BOOTSTRAP_JOBS_CANDIDATES_ONLY,
+        bootstrapPowcatOnly: BOOTSTRAP_POWCAT_ONLY,
         hydrateTransactionDetailsOnly: HYDRATE_TRANSACTION_DETAILS_ONLY,
         maxPages: MAX_PAGES,
         mempoolScanBudgetMs: MEMPOOL_SCAN_BUDGET_MS,
@@ -38834,7 +38892,7 @@ if (DRY_RUN) {
         pendingOnlyPersistenceHeadroomMs:
           PENDING_ONLY_PERSISTENCE_HEADROOM_MS,
         pendingOnlyVerifierMaxMs: PENDING_ONLY_VERIFIER_MAX_MS,
-        postSourceMaintenance: !PENDING_ONLY_BACKFILL && !(BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY),
+        postSourceMaintenance: !PENDING_ONLY_BACKFILL && !(BOOTSTRAP_POWCAT_ONLY || BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY),
         verifyWorkAtomsPostBootstrapOnly:
           VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY,
         network: NETWORK,
@@ -38868,9 +38926,9 @@ if (DRY_RUN) {
         prepareCanonicalRebuildOnly: PREPARE_CANONICAL_REBUILD_ONLY,
         prepareCanonicalPwtRangeReplayOnly:
           PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY,
-        sources: BOOTSTRAP_JOBS_CANDIDATES_ONLY ? ["jobs-core-candidate-discovery"] : BOOTSTRAP_CODE_CANDIDATES_ONLY ? ["code-core-candidate-discovery"] : SOURCES.map((source) => source.label),
-        storeCanonicalSummarySnapshot: !(BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY) && STORE_CANONICAL_SUMMARY_SNAPSHOT,
-        storeLedgerSnapshot: !(BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY) && STORE_LEDGER_SNAPSHOT,
+        sources: BOOTSTRAP_POWCAT_ONLY ? ["powcat1-discovery"] : BOOTSTRAP_JOBS_CANDIDATES_ONLY ? ["jobs-core-candidate-discovery"] : BOOTSTRAP_CODE_CANDIDATES_ONLY ? ["code-core-candidate-discovery"] : SOURCES.map((source) => source.label),
+        storeCanonicalSummarySnapshot: !(BOOTSTRAP_POWCAT_ONLY || BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY) && STORE_CANONICAL_SUMMARY_SNAPSHOT,
+        storeLedgerSnapshot: !(BOOTSTRAP_POWCAT_ONLY || BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY) && STORE_LEDGER_SNAPSHOT,
         transactionDetailHydration: {
           afterBlockIndex: TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX,
           afterHeight: TX_DETAIL_HYDRATION_AFTER_HEIGHT,
@@ -38897,9 +38955,12 @@ const pool = createProofIndexPool({
 try {
   const client = await pool.connect();
   try {
-    const pwtRangeReplayRuntime = (BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY) ? { active: false } :
+    const pwtRangeReplayRuntime = (BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY || BOOTSTRAP_POWCAT_ONLY) ? { active: false } :
       await canonicalPwtRangeReplayRuntime(client);
-    if (BOOTSTRAP_JOBS_CANDIDATES_ONLY) {
+    if (BOOTSTRAP_POWCAT_ONLY) {
+      console.log(JSON.stringify({ ok: true, network: NETWORK, powcat: await advancePowcatWorker(client,
+        Number(process.env.POW_INDEX_POWCAT_MAX_BLOCKS ?? 128)) }, null, 2));
+    } else if (BOOTSTRAP_JOBS_CANDIDATES_ONLY) {
       console.log(JSON.stringify({ ok: true, network: NETWORK, jobsDiscovery: await bootstrapJobsCandidates(client) }, null, 2));
     } else if (BOOTSTRAP_CODE_CANDIDATES_ONLY) {
       console.log(JSON.stringify({ ok: true, network: NETWORK, codeDiscovery: await bootstrapCodeCandidates(client) }, null, 2));

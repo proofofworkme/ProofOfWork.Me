@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Required completion gate: actual remote main, primary main and live bundles.
 import assert from 'node:assert/strict';
+import { surfaceHosts, validateImpact } from './check-upgrade-impact.mjs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
@@ -25,8 +26,12 @@ assert.equal(fields.format, "proofofwork-ui-release-v5", "Production requires th
 assert.equal(Object.keys(fields).filter(key => /^surface\.[^.]+\.sha256$/u.test(key)).length, 22, "Production must preserve all 22 managed products");
 assert.equal(fields.commit, commit, 'Production manifest differs from GitHub main');
 assert.equal(fields.source_tree, tree, 'Production source tree differs from primary main');
+const impact = JSON.parse(readFileSync(resolve(primary,'release-impact.json'),'utf8'));
+validateImpact(impact, name => git('cat-file','-t',commit+':'+name) === 'blob',
+  Object.keys(fields).flatMap(key => /^surface\.([^.]+)\.sha256$/u.exec(key)?.slice(1) ?? []));
+const affectedHosts = impact.reviews.filter(row => row.disposition === 'affected').flatMap(row => row.targets.map(name => surfaceHosts[name]).filter(Boolean));
 const results = [];
-for (const url of ['http://127.0.0.1:4175/source-provenance.json', 'https://permission.proofofwork.me/source-provenance.json', 'https://pages.proofofwork.me/source-provenance.json', 'https://computer.proofofwork.me/source-provenance.json']) {
+for (const url of new Set([...affectedHosts.map(host => `https://${host}.proofofwork.me/source-provenance.json`),'http://127.0.0.1:4175/source-provenance.json', 'https://permission.proofofwork.me/source-provenance.json', 'https://pages.proofofwork.me/source-provenance.json', 'https://computer.proofofwork.me/source-provenance.json'])) {
   const response = await fetch(url, { cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(30_000) });
   assert(response.ok, `Unavailable source provenance: ${url}`);
   const source = await response.json();
@@ -55,6 +60,8 @@ const rendererFiles = ['server/publish-render/reader.mjs', 'server/publish-rende
 assert.deepEqual(Object.keys(renderer.files ?? {}).sort(), [...rendererFiles].sort(), 'Unexpected renderer source inventory');
 for (const file of rendererFiles) assert.equal(renderer.files[file], createHash('sha256').update(readFileSync(resolve(primary, file))).digest('hex'), `Installed Publish renderer source differs: ${file}`);
 results.push(rendererUrl);
+execFileSync(process.execPath, [resolve(primary, impact.liveCheck)], {cwd:primary,stdio:'inherit',timeout:600_000});
+results.push(impact.liveCheck);
 // Fence concurrent GitHub advancement during verification.
 assert.equal(git('ls-remote', 'origin', 'refs/heads/main').split(/\s+/u)[0], commit, 'GitHub main advanced during verification; reintegrate and redeploy before completion');
 console.log(JSON.stringify({ ok: true, commit, tree, primary, verified: results, productionManifest: fields.release_id, publishRendererCommit: renderer.commit }));

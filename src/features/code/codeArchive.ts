@@ -18,7 +18,17 @@ function record(length: number, fields: [number, number, 2 | 4][]) {
   for (const [offset, value, width] of fields) width === 2 ? view.setUint16(offset, value, true) : view.setUint32(offset, value, true);
   return bytes;
 }
+export const CODE_ZIP_MAX_BYTES = 64 * 1024 * 1024;
+
+export function assertCodeZipBudget(files: {path: string; size: number}[]) {
+  const encoder = new TextEncoder();
+  const size = files.reduce((total, file) => total + file.size + 76 + 2 * encoder.encode(file.path).length, 22);
+  if (files.length > 65535 || !Number.isSafeInteger(size) || size > CODE_ZIP_MAX_BYTES) {
+    throw new Error("This repository version exceeds the 64 MiB ZIP limit. Download its files individually.");
+  }
+}
 export function codeRepositoryZip(files: { path: string; bytes: Uint8Array }[]) {
+  assertCodeZipBudget(files.map(file => ({ path: file.path, size: file.bytes.length })));
   const paths = files.map(file => file.path).sort();
   const pathSet = new Set(paths);
   if (pathSet.size !== paths.length || paths.some(path => !validateCodePath(path) || path.split("/").slice(0, -1).some((_, index, parts) => pathSet.has(parts.slice(0, index + 1).join("/"))))) {

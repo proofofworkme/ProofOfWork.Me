@@ -5,7 +5,7 @@ import type { MailAttachment } from "../../shared/protocol/mailAttachment";
 import { POWCAT_MAX_FILE_BYTES, POWCAT_MAX_PARTS, powcatSha256 } from "../../shared/protocol/powcat1.mjs";
 import { buildPowcatMailAttachment, type PowcatPointer } from "../../shared/protocol/powcatMail.mjs";
 
-type LinkedFile = PowcatPointer & {
+export type LinkedFile = PowcatPointer & {
   network: string;
   confirmed: boolean;
   name: string;
@@ -31,7 +31,7 @@ export async function readLinkedFile(txid: string, network: BitcoinNetwork, expe
   return metadata;
 }
 
-async function downloadVerifiedFile(file: LinkedFile, network: BitcoinNetwork, signal: AbortSignal) {
+export async function readVerifiedPowcatBytes(file: LinkedFile, network: BitcoinNetwork, signal: AbortSignal) {
   const response = await fetch(proofApiUrl(`/api/v1/powcat/${file.txid}?download=1`, network),
     { signal, cache: "no-store", redirect: "error" });
   if (!response.ok || !response.body) throw new Error("The confirmed file is unavailable. Check again before downloading.");
@@ -51,6 +51,11 @@ async function downloadVerifiedFile(file: LinkedFile, network: BitcoinNetwork, s
   }
   if (offset !== bytes.length || powcatSha256(bytes) !== file.fileHash) throw new Error("File size or SHA-256 verification failed.");
   signal.throwIfAborted();
+  return bytes;
+}
+
+async function downloadVerifiedFile(file: LinkedFile, network: BitcoinNetwork, signal: AbortSignal) {
+  const bytes = await readVerifiedPowcatBytes(file, network, signal);
   const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
   const link = document.createElement("a");
   link.href = url;

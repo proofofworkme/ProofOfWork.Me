@@ -5,6 +5,11 @@ export const CODE_REFERENCE_NETWORK: "livenet";
 export const CODE_REFERENCE_ACTIVATION_HEIGHT: 971652;
 export const CODE_REFERENCE_ACTIVATION_PARENT_HEIGHT: 971651;
 export const CODE_REFERENCE_ACTIVATION_PARENT_HASH: "0000000000000000000057f291a6c81728bbdeb52c0db842115ab6d009db870f";
+export const CODE_LINKED_REFERENCE_VERSION: 3;
+export const CODE_LINKED_ACTIVATION_HEIGHT: 974336;
+export const CODE_LINKED_ACTIVATION_PARENT_HEIGHT: 974335;
+export const CODE_LINKED_ACTIVATION_PARENT_HASH: "000000000000000000000eb4fbe6aba7f82981cc141cd6af3b2cec989419af4c";
+export const CODE_MAX_LINKED_BYTES: 4000000;
 export const CODE_MAX_SOURCE_BYTES: 60000;
 export const CODE_MAX_DATA_CARRIER_BYTES: 100000;
 export const CODE_MAX_NAME_BYTES: 200;
@@ -26,14 +31,20 @@ export type CodeReferenceMetadata = {
   v: 2; repo: string; parent: string; op: "reference"; path: string; message: string;
   sourceTxid: string; sourceKind: "body" | "attachment"; sourceVout: number; sha256: string; size: number;
 };
-export type CodeCommitMetadata = CodePutMetadata | CodeDeleteMetadata | CodeReferenceMetadata;
+export type CodeLinkedMetadata = {
+  v: 3; repo:string; parent:string; op:"reference"; path:string; message:string;
+  sourceTxid:string; sourceKind:"powcat1"; contentKind:"text"|"binary"; mime:string; sha256:string; size:number;
+};
+export type CodeCommitMetadata = CodePutMetadata | CodeDeleteMetadata | CodeReferenceMetadata | CodeLinkedMetadata;
 export type CodePayload = { kind: "repo"; metadata: CodeRepositoryMetadata } |
-  { kind: "commit"; metadata: CodePutMetadata | CodeDeleteMetadata } | { kind: "commit2"; metadata: CodeReferenceMetadata };
+  { kind: "commit"; metadata: CodePutMetadata | CodeDeleteMetadata } | { kind: "commit2"; metadata: CodeReferenceMetadata } |
+  { kind: "commit3"; metadata: CodeLinkedMetadata };
 export type CodeSource = {
   txid: string; name: "source.txt"; mime: "text/plain"; size: number;
   sha256: string; data: string; content: string;
   sourceTxid?: string; sourceKind?: "body" | "attachment"; sourceVout?: number;
-};
+} | {txid:string; name:string; mime:string; size:number; sha256:string; sourceTxid:string; sourceKind:"powcat1";
+  contentKind:"text"|"binary"; data?:never; content?:never; sourceVout?:never};
 export type CodePageSource = {
   kind: "body" | "attachment"; vout: number; name: string; sha256: string;
   size: number; data: string; content: string;
@@ -60,6 +71,8 @@ export type CodeVerificationOptions = {
   sha256?: (bytes: Uint8Array) => string;
   network?: string;
   referencePolicy?: { network: string; activationHeight: number };
+  linkedReferencePolicy?: { network: string; activationHeight: number };
+  linkedSources?: Map<string, unknown>;
   referenceSources?: Map<string, unknown>;
   checkpointHeight?: number;
   checkpointHash?: string;
@@ -72,6 +85,11 @@ export function validateCodePath(path: unknown): boolean;
 export function encodeCodeRepository(value: CodeRepositoryMetadata): string;
 export function encodeCodeCommit(value: CodePutMetadata | CodeDeleteMetadata): string;
 export function encodeCodeReferenceCommit(value: CodeReferenceMetadata): string;
+export function encodeCodeLinkedCommit(value: CodeLinkedMetadata): string;
+export function bindCodeLinkedEvidence(point: {txid:string;network:string;checkpointHeight:number;checkpointHash:string;
+  state:"confirmed"|"absent"|"unconfirmed";blockHeight?:number;blockHash?:string}, file: null | {
+    txid:string;bytes:Uint8Array;size:number;fileHash:string;name:string;mime:string
+  }, sha256:(bytes:Uint8Array)=>string): Readonly<Record<string,unknown>>;
 export function enumerateCodePageSources(transaction: unknown, options?: CodeVerificationOptions): CodePageSource[];
 export function parseCodePayload(payload: unknown): CodePayload | null;
 export function verifyCodeTransaction(transaction: unknown, options?: CodeVerificationOptions): CodeEvent | null;

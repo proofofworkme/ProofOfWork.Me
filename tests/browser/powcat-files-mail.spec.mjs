@@ -22,6 +22,7 @@ test("Files signs independent binary parts, recovers a dropped part after reload
     tx.addInput(Buffer.from(block(i + 1), "hex"), 0);
     tx.addOutput(payment.output, BigInt(250_000 + i * 1000)); funds.set(tx.getId(), tx);
   }
+  let discoveryReady = false;
   const remaining = () => [...funds].filter(([txid]) => !used.has(txid)).map(([txid, tx]) => ({txid, vout: 0, value: Number(tx.outs[0].value), status: {confirmed: true}}));
   await page.exposeFunction("powcatTestFunds", remaining);
   await page.exposeFunction("powcatTestSign", hex => {
@@ -55,6 +56,8 @@ test("Files signs independent binary parts, recovers a dropped part after reload
       published.set(txid, txHex); return json({source:"node", txid});
     }
     if (route.request().method() !== "GET") return route.abort("blockedbyclient");
+    if (path === "/api/v1/powcat-activity") return json({source:"powcat1-discovery-v1",network,complete:discoveryReady,
+      indexedThroughBlock:973999,indexedThroughBlockHash:block(973999)});
     if (path.endsWith("/utxo")) return json(remaining());
     if (path.endsWith("/hex")) return json({hex: funds.get(path.split("/").at(-2))?.toHex()});
     if (path.endsWith("/status") && path.includes("/tx/")) {
@@ -100,6 +103,9 @@ test("Files signs independent binary parts, recovers a dropped part after reload
     await expect(modal.getByText("Exact miner fee", {exact:true})).toBeVisible();
     await modal.getByRole("button", {name:`Sign and broadcast ${label}`, exact:true}).click();
   }
+  await modal.getByRole("button",{name:"Review part 1",exact:true}).click();
+  await expect(modal).toContainText("File indexing is catching up");
+  expect(signatures).toBe(0); discoveryReady=true;
   await sign("part 1");
   await expect(modal).toContainText("Disposable node rejected");
   await page.reload({waitUntil:"domcontentloaded"});

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import * as bitcoin from "bitcoinjs-lib";
 
+test.use({ launchOptions: process.env.POWCAT_CHROME_PATH ? {executablePath:process.env.POWCAT_CHROME_PATH} : {} });
 const id = value => value.toString(16).padStart(64, "0");
 const owner = "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e";
 const pageTxid = id(40);
@@ -34,7 +35,7 @@ funding.addOutput(bitcoin.address.toOutputScript(owner), 2_000_000n);
 const utxo = { txid: funding.getId(), vout: 0, value: 2_000_000, status: { confirmed: true } };
 
 async function fixture(page, options = {}) {
-  const state = { pageReads: 0, writes: [], ...options };
+  const state = { linkedReads: 0, pageReads: 0, writes: [], ...options };
   await page.addInitScript(({ owner, utxo, theme }) => {
     localStorage.setItem("proofofwork-me-appearance-v1", theme);
     const handlers = new Map();
@@ -59,6 +60,13 @@ async function fixture(page, options = {}) {
     const url = new URL(route.request().url());
     url.pathname = url.pathname.replace(/^\/test-api(?=\/api\/)/u, "");
     if (route.request().method() !== "GET") { state.writes.push(route.request().url()); return route.abort("blockedbyclient"); }
+    if (url.pathname === "/api/v1/powcat-activity") return route.fulfill({json:{network:"livenet",complete:true,source:"powcat1-discovery-v1",indexedThroughBlock:974337,indexedThroughBlockHash:"a".repeat(64)}});
+    if (url.pathname.startsWith("/api/v1/powcat/") && state.linked) {
+      state.linkedReads++;
+      const {bytes,...info}=state.linked;
+      return url.searchParams.has("download") ? route.fulfill({contentType:"application/octet-stream",body:bytes}) :
+        route.fulfill({json:{...info,network:"livenet",confirmed:true}});
+    }
     if (url.pathname === "/api/v1/code-page-source") {
       state.pageReads++;
       if (state.readPage) return state.readPage(route, url, state.pageReads);
@@ -67,12 +75,17 @@ async function fixture(page, options = {}) {
     if (url.pathname === "/api/v1/code-repositories") return route.fulfill({ json: { ...evidence, repositories: [repo], pagination: { ...pagination, total: 1 } } });
     if (url.pathname === "/api/v1/code-repository") {
       const version = url.searchParams.get("version") || repo.headTxid;
-      const selected = version === id(1) ? null : version === id(2) ? priorFile : file;
+      const selected = version === id(1) ? null : version === id(2) ? priorFile : (state.committedLink ?? file);
       const content = version === id(2) ? priorHtml : html;
       const path = url.searchParams.get("path");
-      return route.fulfill({ json: { ...evidence, repository: repo, version, files: selected ? [selected] : [], filesComplete: true,
-        commits: events, events, pagination, ...(path !== null ? { file: selected && path === selected.path
-          ? { ...selected, content, contentBase64: Buffer.from(content).toString("base64") } : null } : {}) } });
+      const commits = state.committedLink ? [...events.slice(0, -1), {
+        ...events.at(-1), ...state.committedLink, message: "Add binary asset",
+      }] : events;
+      const selectedContent = selected?.sourceKind === "powcat1"
+        ? { ...selected, verified: true, sourceEvidence: {txid: state.linked.txid, blockHeight: state.linked.blockHeight, blockHash: state.linked.blockHash} }
+        : { ...selected, content, contentBase64: Buffer.from(content).toString("base64") };
+      return route.fulfill({ json: { ...evidence, ...(state.linked ? {linkedReferencesEnabled:true,indexedThroughBlock:974339,snapshot:{...snapshot,checkpointHeight:974339}}:{}), repository: repo, version, files: selected ? [selected] : [], filesComplete: true,
+        commits, events:commits, pagination, ...(path !== null ? { file: selected && path === selected.path ? selectedContent : null } : {}) } });
     }
     if (url.pathname.endsWith("/utxo")) return route.fulfill({ json: [utxo] });
     if (url.pathname.endsWith("/hex")) return route.fulfill({ json: { hex: funding.toHex() } });
@@ -137,7 +150,7 @@ for (const { width, theme, embedded } of [
       return { ui: document.fonts.check('16px "Inter Variable"'), mono: document.fonts.check('14px "IBM Plex Mono"') };
     })).toEqual({ ui: true, mono: true });
     await page.getByRole("textbox", { name: "Published page TXID", exact: true }).scrollIntoViewIfNeeded();
-    await page.screenshot({ path: `/tmp/proofofwork-code-reference-editor-${width}-${theme}-${embedded ? "computer" : "standalone"}.png`, fullPage: true });
+    await page.screenshot({ path: test.info().outputPath(`proofofwork-code-reference-editor-${width}-${theme}-${embedded ? "computer" : "standalone"}.png`), fullPage: true });
     const before = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: innerWidth }));
     expect(before.width).toBeLessThanOrEqual(before.viewport + 1);
     const dialog = await inspectReview(page);
@@ -145,12 +158,12 @@ for (const { width, theme, embedded } of [
     await page.keyboard.press("Tab");
     await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
     await dialog.getByRole("heading", { name: "Add existing page to repository", exact: true }).scrollIntoViewIfNeeded();
-    await page.screenshot({ path: `/tmp/proofofwork-code-reference-review-top-${width}-${theme}-${embedded ? "computer" : "standalone"}.png` });
+    await page.screenshot({ path: test.info().outputPath(`proofofwork-code-reference-review-top-${width}-${theme}-${embedded ? "computer" : "standalone"}.png`) });
     await dialog.getByRole("button", { name: "Continue to wallet", exact: true }).scrollIntoViewIfNeeded();
     await expect(dialog.getByRole("button", { name: "Continue to wallet", exact: true })).toBeInViewport();
     const dimensions = await dialog.evaluate(element => ({ scroll: element.scrollWidth, client: element.clientWidth }));
     expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.client + 1);
-    await page.screenshot({ path: `/tmp/proofofwork-code-reference-review-${width}-${theme}-${embedded ? "computer" : "standalone"}.png` });
+    await page.screenshot({ path: test.info().outputPath(`proofofwork-code-reference-review-${width}-${theme}-${embedded ? "computer" : "standalone"}.png`) });
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
     await expect(page.getByRole("textbox", { name: "Published page TXID", exact: true })).toHaveValue(pageTxid);
@@ -268,4 +281,72 @@ test("referenced files preserve source bytes in reads, downloads, ZIP and histor
   expect(await page.evaluate(() => window.pageReferenceExecuted)).toBeUndefined();
   await page.locator(".code-history-entry").filter({ hasText: "Upload original HTML" }).getByRole("link", { name: "View version", exact: true }).click();
   await expect(page.locator(".code-source")).toHaveText(priorHtml);
+});
+
+for (const embedded of [false,true]) {
+  test(`linked binary is reusable at a repository path with one Code commit (${embedded ? "Computer" : "standalone"})`,async ({page}) => {
+    const bytes=Buffer.from([0,255,192,128,12,34,0]);
+    const linked={bytes,txid:id(185),fileHash:digest(bytes),size:bytes.length,name:"model.bin",mime:"application/octet-stream",
+      partTxids:[id(186)],blockHeight:973980,blockHash:"b".repeat(64)};
+    const state=await fixture(page,{linked});
+    await page.goto(`/?${embedded ? "folder=code" : "code=1"}&repo=${repo.txid}`);
+    await page.getByRole("button",{name:"Connect UniSat",exact:true}).first().click();
+    await page.getByRole("button",{name:"Add linked file",exact:true}).click();
+    await page.getByRole("combobox",{name:"File interpretation",exact:true}).selectOption({label:"Binary asset"});
+    await page.getByRole("textbox",{name:"Confirmed file linker TXID",exact:true}).fill(linked.txid);
+    await page.getByRole("button",{name:"Verify linked file",exact:true}).click();
+    await expect(page.getByRole("textbox",{name:"Exact file path",exact:true})).toHaveValue(linked.name);
+    await page.getByRole("textbox",{name:"Exact file path",exact:true}).fill("assets/model.bin");
+    await page.getByLabel("Commit message",{exact:true}).fill("Add existing binary");
+    await page.getByRole("button",{name:"Review commit",exact:true}).click();
+    const review=page.getByRole("dialog");
+    await review.getByText("Inspect exact transaction evidence",{exact:true}).click();
+    const records=await review.locator(".review-protocol").allTextContents();
+    expect(records).toHaveLength(2); expect(records[0]).toMatch(/^pwm1:m:/u);
+    expect(records[1]).toMatch(/^pwc1:commit3:/u);
+    expect(JSON.parse(Buffer.from(records[1].split(":")[2],"base64url").toString("utf8"))).toMatchObject({
+      v:3,op:"reference",repo:repo.txid,parent:repo.headTxid,path:"assets/model.bin",contentKind:"binary",
+      sourceKind:"powcat1",sourceTxid:linked.txid,sha256:linked.fileHash,size:bytes.length});
+    expect(state.linkedReads).toBeGreaterThan(0); expect(state.writes).toEqual([]);
+    expect(await page.evaluate(()=>window.codeSignatureCalls)).toBe(0);
+  });
+}
+test("a large local source opens the resumable file publisher inside its repository",async ({page}) => {
+  await fixture(page,{linked:{}});
+  await page.goto(`/?folder=code&repo=${repo.txid}`);
+  await page.getByRole("button",{name:"Connect UniSat",exact:true}).first().click();
+  await page.getByRole("button",{name:"Add file",exact:true}).click();
+  await page.getByLabel("Choose a file",{exact:true}).setInputFiles({name:"large.ts",mimeType:"text/plain",buffer:Buffer.alloc(240000,97)});
+  const modal=page.getByRole("dialog",{name:"Publish linked file"});
+  await expect(modal).toBeVisible(); await expect(modal).toContainText("240,000 bytes"); await expect(modal).toContainText("3 parts");
+  expect(new URL(page.url()).searchParams.get("repo")).toBe(repo.txid);
+  expect(await page.evaluate(()=>window.codeSignatureCalls)).toBe(0);
+});
+
+test("a committed binary downloads byte for byte and shows its linker and size in history", async ({ page }) => {
+  const bytes = Buffer.from([0, 0xff, 0x80, 1, 3, 127, 0]);
+  const linked = { bytes, txid:id(201), fileHash:digest(bytes), size:bytes.length, name:"image.bin", mime:"application/octet-stream",
+    partTxids:[id(202)], blockHeight:973980, blockHash:"b".repeat(64) };
+  const committedLink = { path:"assets/image.bin", txid:repo.headTxid, sha256:linked.fileHash, size:linked.size,
+    sourceTxid:linked.txid, sourceKind:"powcat1", contentKind:"binary", name:linked.name, mime:linked.mime };
+  await fixture(page, { linked, committedLink });
+  await page.goto(`/?code=1&repo=${repo.txid}&path=${encodeURIComponent(committedLink.path)}`);
+  await expect(page.getByText(/Verified binary asset/)).toBeVisible();
+  const fileDownload = page.waitForEvent("download");
+  await page.getByRole("button", {name:"Download exact source"}).click();
+  expect(await readFile(await (await fileDownload).path())).toEqual(bytes);
+  const zipDownload = page.waitForEvent("download");
+  await page.getByRole("button", {name:"Download ZIP"}).click();
+  const zip = await readFile(await (await zipDownload).path());
+  expect(zip.readUInt32LE(0)).toBe(0x04034b50);
+  const nameLength = zip.readUInt16LE(26), dataOffset = 30 + nameLength + zip.readUInt16LE(28);
+  expect(zip.subarray(30, 30 + nameLength).toString()).toBe(committedLink.path);
+  expect(zip.subarray(dataOffset, dataOffset + zip.readUInt32LE(18))).toEqual(bytes);
+  await page.getByRole("button", {name:"History", exact:true}).click();
+  await page.locator(".code-history-entry").filter({hasText:"Add binary asset"}).getByRole("button", {name:"Inspect change"}).click();
+  const inspector = page.getByRole("region", {name:"Commit inspection"});
+  await expect(inspector).toContainText("File linker");
+  await expect(inspector).toContainText(linked.txid);
+  await expect(inspector).toContainText("Binary file change. Previous absent. Current 7 bytes");
+  await expect(inspector.getByRole("status")).toHaveCount(0);
 });

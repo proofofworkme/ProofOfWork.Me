@@ -14,6 +14,7 @@ import { Transaction, address as bitcoinAddress, networks } from "bitcoinjs-lib"
 import { createPowcatJournal } from "../src/features/powcat/powcatJournal.mjs";
 import { encodePowcatManifest, encodePowcatPart, powcatScript, powcatSha256 } from "../src/shared/protocol/powcat1.mjs";
 import { buildPowcatMailAttachment, powcatPointerFromAttachment } from "../src/shared/protocol/powcatMail.mjs";
+import { checkLinkedCode } from "./powcat-regtest-code.mjs";
 import { createPowcatReader } from "../server/powcat-reader.mjs";
 import { canonicalRawProtocolRecordSetFromTransaction } from "../server/canonical-op-return.mjs";
 import { parseWorkAmoV5PwmMessages } from "../server/work-amo-v5.mjs";
@@ -83,6 +84,7 @@ function openJournal(address) {
 }
 
 let disk;
+let fileIndex;
 try {
   const deadline = Date.now() + 30_000;
   for (;;) {
@@ -102,6 +104,10 @@ try {
   const recipient = await rpc("getnewaddress", ["", "bech32"], true);
   const mine = (n = 1) => rpc("generatetoaddress", [n, address]);
   await mine(160);
+  if (process.env.POWCAT_REGTEST_INDEX === "1") {
+    const { openRegtestIndex } = await import("./powcat-regtest-index.mjs");
+    fileIndex = await openRegtestIndex(directory, rpc);
+  }
   const coins = await rpc("listunspent", [101], true);
   assert(coins.length >= 46, "Independent confirmed funding is required.");
   const usedInputs = new Set();
@@ -180,6 +186,10 @@ try {
     const signed = await sign([dataOutput(manifest)], 3_000);
     await disk.journal.saveSigned(fileHash, "manifest", signed);
     await broadcast(signed);
+    if (fileIndex) {
+      await fileIndex.pending(signed.txid);
+      assert.equal((await fileIndex.event(signed.txid)).valid, false);
+    }
     await assert.rejects(() => readFileFromCore(signed.txid), { statusCode: 409 });
     await mine();
     const file = await readFileFromCore(signed.txid);
@@ -190,6 +200,15 @@ try {
     return signed;
   }
   const original = await publishLinker();
+  if (fileIndex) {
+    assert.equal((await fileIndex.scan(1)).complete, false);
+    const marker = await fileIndex.scan();
+    assert.equal(marker.complete, true);
+    assert.equal(marker.confirmedParts, 42);
+    assert.equal(marker.confirmedLinkers, 1);
+    assert.equal((await fileIndex.event(original.txid)).valid, true);
+    await fileIndex.verifyCounts();
+  }
   await disk.journal.finish(fileHash);
   assert.equal(await disk.journal.read(), null);
 
@@ -200,6 +219,12 @@ try {
   const lastParts = (await rpc("getblock", [lastPartBlock, 1])).tx.slice(1);
   assert(lastParts.length > 0);
   await rpc("invalidateblock", [lastPartBlock]);
+  if (fileIndex) {
+    const marker = await fileIndex.scan();
+    assert.equal(marker.complete, true);
+    assert.equal(marker.confirmedLinkers, 0);
+    assert.equal((await fileIndex.event(original.txid)).status, "orphaned");
+  }
   await assert.rejects(() => readFileFromCore(original.txid), { statusCode: 409 });
   disk.close();
   disk = openJournal(address);
@@ -207,9 +232,26 @@ try {
   await disk.journal.begin(identity);
   assert.equal(await disk.journal.raw(fileHash, "manifest"), original.hex);
   await rpc("generateblock", [address, [...lastParts, original.txid]]);
+  if (fileIndex) {
+    const marker = await fileIndex.scan();
+    assert.equal(marker.complete, true);
+    assert.equal(marker.confirmedParts, 42);
+    assert.equal(marker.confirmedLinkers, 0);
+    assert.equal((await fileIndex.event(original.txid)).status, "confirmed");
+    assert.equal((await fileIndex.event(original.txid)).valid, false);
+  }
   await assert.rejects(() => readFileFromCore(original.txid), { statusCode: 422 });
   await disk.journal.supersedeLinker(fileHash, original.txid);
   const replacement = await publishLinker();
+  if (fileIndex) {
+    const marker = await fileIndex.scan();
+    assert.equal(marker.complete, true);
+    assert.equal(marker.confirmedLinkers, 1);
+    const row = await fileIndex.event(replacement.txid);
+    assert.equal(row.valid, true);
+    assert.equal(row.payload.powcat.size, bytes.length);
+    await fileIndex.verifyCounts();
+  }
   assert.notEqual(replacement.txid, original.txid);
   const restored = await disk.journal.read();
   assert.equal(restored.supersededLinkers[0].txid, original.txid);
@@ -243,10 +285,12 @@ try {
   assert.equal(fromInbox.fileHash, pointer.fileHash);
   assert(Buffer.from(fromInbox.bytes).equals(bytes));
   await disk.journal.finish(fileHash);
+  await checkLinkedCode({rpc,sign,mine,broadcast,readFileFromCore,dataOutput,address,existing:replacement.txid});
   console.log(JSON.stringify({ regtest: true, nodeVersion, bytes: bytes.length, fileHash, partCount: count, chunkBlocks: chunkBlocks.length,
     interruptedStage: 20, originalLinker: original.txid, recoveredLinker: replacement.txid, delivery: mail.txid,
-    recipientProofs: 546, confirmedReassembledBytes: fromInbox.bytes.length }));
+    recipientProofs: 546, confirmedReassembledBytes: fromInbox.bytes.length, postgresIndexerVerified: Boolean(fileIndex) }));
 } finally {
+  if (fileIndex) await fileIndex.close();
   disk?.close();
   killOwnedCore();
   const timeout = setTimeout(() => proc.kill("SIGKILL"), 10_000);

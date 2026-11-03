@@ -10,6 +10,7 @@ export type CodeSourceReference = {
   path: string;
   sha256: string;
   size: number;
+  linkerTxid?: string;
 };
 
 // A navigation reference carries a commitment, never source or signing authority.
@@ -18,10 +19,12 @@ export function assertCodeSourceReference(reference: CodeSourceReference, networ
   if (reference.network !== network) throw new Error("The Code source belongs to a different network. Open Pages on that network to continue.");
   if (![reference.repo, reference.version, reference.sha256].every(value => /^[a-f0-9]{64}$/u.test(value)) ||
       !validateCodePath(reference.path) || !/\.(?:html?|xhtml)$/iu.test(reference.path) ||
-      !Number.isSafeInteger(reference.size) || reference.size < 0 || reference.size > 60_000) {
+      (reference.linkerTxid !== undefined && !/^[a-f0-9]{64}$/u.test(reference.linkerTxid)) ||
+      !Number.isSafeInteger(reference.size) || reference.size < 0 || reference.size > (reference.linkerTxid ? 100_000 : 60_000)) {
     throw new Error("The Code source reference is incomplete. Open the verified HTML source in Code again.");
   }
-  if (file && (file.path !== reference.path || file.sha256 !== reference.sha256 || file.size !== reference.size)) {
+  if (file?.contentKind === "binary") throw new Error("This repository path is a binary asset. Open UTF-8 HTML source to continue in Pages.");
+  if (file && ((reference.linkerTxid !== undefined && (file.sourceKind !== "powcat1" || file.sourceTxid !== reference.linkerTxid)) || file.path !== reference.path || file.sha256 !== reference.sha256 || file.size !== reference.size)) {
     throw new Error("The confirmed Code source differs from the selected source. Return to Code and inspect it again.");
   }
 }

@@ -275,3 +275,45 @@ test('actual discovery bounded resumption connects every historical predecessor 
   assert.equal(completed.candidateSha256, CODE_DISCOVERY_EMPTY_SHA256); assert.equal(harness.state.stored.length, 2);
   assert.deepEqual(harness.state.calls.filter(row => row[0] === 'getblock'), [['getblock', first.blockHash, 0], ['getblock', second.blockHash, 0]]);
 });
+
+test('Code v3 links exact earlier verified UTF-8 or binary bytes, leaves file bytes out of repository trees, and preserves v1/v2 authority', async () => {
+  const {encodeCodeLinkedCommit,bindCodeLinkedEvidence,parseCodePayload}=await import('../src/shared/protocol/codeRepository.mjs');
+  const scope={network:'regtest',checkpointHeight:12,checkpointHash:id(12),linkedReferencePolicy:{network:'regtest',activationHeight:8}};
+  const repository=repo(), text=Buffer.from('\uFEFFfunction test() { return 1; }\r\n'), binary=Buffer.from([0xff,0,0x81,0xfe]);
+  function makeEvidence(bytes, txid, height, name, mime) {
+    return bindCodeLinkedEvidence({network:'regtest',checkpointHeight:12,checkpointHash:id(12),txid,state:'confirmed',blockHeight:height,blockHash:id(height)},
+      {txid,bytes,size:bytes.length,fileHash:digest(bytes),name,mime},digest);
+  }
+  const source=makeEvidence(text,id(100),8,'script.js','text/javascript'), asset=makeEvidence(binary,id(101),8,'image.bin','application/octet-stream');
+  const linkedSources=new Map([[source.txid,source],[asset.txid,asset]]);
+  function linked(index,parent,proof,contentKind,path,overrides={}) {
+    const meta={v:3,repo:repository.txid,parent,op:'reference',path,message:'Pin file',sourceTxid:proof.txid,
+      sourceKind:'powcat1',contentKind,mime:proof.mime,sha256:proof.sha256,size:proof.size,...overrides};
+    const wire=encodeCodeLinkedCommit(meta);assert.deepEqual(parseCodePayload(wire).metadata,meta);
+    const item=tx(index,wire);item.status.block_height=10;item.status.block_hash=id(10);return item;
+  }
+  const one=linked(2,repository.txid,source,'text','src/main.js'),two=linked(3,one.txid,asset,'binary','assets/image.bin');
+  const state=createCodeSnapshot({...scope,linkedSources,transactions:[two,repository,one]});
+  assert.equal(state.repositories[0].headTxid,two.txid);
+  const view=codeRepositoryPayload(state,new URLSearchParams({repo:repository.txid,path:'assets/image.bin'}));
+  assert.equal(view.file.contentKind,'binary');assert.equal(view.file.sourceTxid,asset.txid);
+  assert.deepEqual(view.file.sourceEvidence,{txid:asset.txid,blockHeight:8,blockHash:id(8)});
+  assert.equal(view.file.contentBase64,undefined);assert.equal(view.file.content,undefined);
+  for (const f of view.files) assert.ok(!('data' in f) && !('content' in f));
+  const historical=codeRepositoryPayload(state,new URLSearchParams({repo:repository.txid,version:one.txid,path:'src/main.js'}));
+  assert.equal(historical.file.sha256,source.sha256);assert.equal(historical.file.contentKind,'text');assert.equal(historical.files.length,1);
+  assert.equal(state.events[1].amountSats,'546');
+  const check=(item, sources=linkedSources) => createCodeSnapshot({...scope,linkedSources:sources,transactions:[repository,item]}).events[1];
+  assert.ok(check(linked(4,repository.txid,asset,'text','a')).validationErrors.includes('code-linked-source-text-invalid'));
+  assert.ok(check(linked(4,repository.txid,source,'text','a',{mime:'text/plain'})).validationErrors.includes('code-reference-source-commitment-mismatch'));
+  assert.ok(check(linked(4,repository.txid,source,'text','a',{sha256:id(182)})).validationErrors.includes('code-reference-source-commitment-mismatch'));
+  assert.ok(check(linked(4,repository.txid,source,'text','a',{size:1})).validationErrors.includes('code-reference-source-commitment-mismatch'));
+  for (const height of [10,11]) assert.ok(check(one,new Map([[source.txid,makeEvidence(text,source.txid,height,'script.js','text/javascript')]])).validationErrors.includes('code-reference-source-not-earlier'));
+  const early=linked(4,repository.txid,source,'text','a');early.status.block_height=7;early.status.block_hash=hash;
+  assert.ok(check(early).validationErrors.includes('code-metadata-invalid'));assert.equal(check(early).metadata,null);
+  const stale=linked(4,id(500),source,'text','a');assert.ok(check(stale,new Map()).validationErrors.includes('code-parent-stale'));
+  const foreign=structuredClone(one);foreign.vin[0].prevout.scriptpubkey_address='other-owner';foreign.vout[0].scriptpubkey_address='other-owner';
+  assert.ok(check(foreign,new Map()).validationErrors.includes('code-owner-mismatch'));
+  assert.throws(()=>check(one,new Map([[source.txid,{...source}]])),error=>error.code==='CODE_LINKED_SOURCE_UNAVAILABLE');
+  assert.throws(()=>createCodeSnapshot({...scope,checkpointHash:id(13),linkedSources,transactions:[repository,one]}),error=>error.code==='CODE_LINKED_SOURCE_UNAVAILABLE');
+});

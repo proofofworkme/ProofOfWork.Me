@@ -134,7 +134,7 @@ test("highlighted result titles keep words together at desktop and mobile widths
     expect(layout.markHeight).toBeLessThanOrEqual(layout.lineHeight * 1.2);
     expect(layout.pageWidth).toBeLessThanOrEqual(width + 1);
     expect(layout.width).toBeLessThanOrEqual(width);
-    await page.locator(".search-result").first().screenshot({ path: `/tmp/pow-search-title-wrap-${width}${embedded ? "-computer" : "-standalone"}.png` });
+    await page.locator(".search-result").first().screenshot({ path: test.info().outputPath(`pow-search-title-wrap-${width}${embedded ? "-computer" : "-standalone"}.png`) });
   }
 });
 
@@ -258,4 +258,29 @@ test("checkpoint coverage and unverified chain positions stay explicit", async (
   await page.getByRole("searchbox").fill("absent");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.getByRole("heading", { name: "No matching records through block 960,700", exact: true })).toBeVisible();
+});
+
+test("linked-file evidence keeps exact commitments visible and exposes downloads only under confirmed scoped coverage", async ({page})=>{
+  let confirmed = false;
+  const entry = {...record, protocol:"powcat1", kind:"powcat-linker", title:"Lab report.pdf", canonical:true,
+    linkedFile:{type:"linker",txid,fileHash:otherTxid,name:"Lab report.pdf",size:350000,mime:"application/pdf"}};
+  await fixture(page,async(route,url)=>{
+    const observed = {...entry,status:confirmed?"confirmed":"pending"};
+    const scoped = {...coverage,linkedFiles:{ready:confirmed},indexVersion:"proof-search-v5-powcat-files"};
+    if (url.pathname === "/api/v1/search") {
+      await route.fulfill({json:{...response({results:[observed]}),coverage:scoped}});return true;
+    }
+    if (url.pathname === "/api/v1/search/detail") {
+      await route.fulfill({json:{network:"livenet",record:observed,payload:{},rawPayload:"powcat1:m",evidence:{},coverage:scoped}});return true;
+    }
+    return false;
+  });
+  for (confirmed of [false,true]) {
+    await page.goto("/?search-app=1&protocol=powcat1&status=all",{waitUntil:"domcontentloaded"});
+    await page.getByRole("button",{name:entry.title,exact:true}).click();
+    const dialog=page.getByRole("dialog");
+    await expect(dialog).toContainText(otherTxid);
+    await expect(dialog.getByRole("button",{name:"Verify and download"})).toHaveCount(confirmed?1:0);
+    await dialog.getByRole("button",{name:"Close source inspector"}).click();
+  }
 });

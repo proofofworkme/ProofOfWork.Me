@@ -43,3 +43,24 @@ jobs:
           HYGIENE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           HYGIENE_REQUIRE_ANCESTOR: ${{ github.event_name == 'push' && '1' || '0' }}
         run: node scripts/repository-hygiene.mjs range "$HYGIENE_BASE" "$HYGIENE_HEAD" --ci
+
+      - name: Check functional upgrade coverage
+        env:
+          IMPACT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          IMPACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/check-upgrade-impact.mjs --range "$IMPACT_BASE" "$IMPACT_HEAD"
+
+  upgrade-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Run the upgrade's declared regression tests
+        run: node scripts/check-upgrade-impact.mjs --ci-tests

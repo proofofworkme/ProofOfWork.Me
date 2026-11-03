@@ -878,6 +878,12 @@ pwm1:m:<message-chunk>
 
 Replies are sent back to the sender inferred from the transaction inputs.
 
+Each functional upgrade follows the [cross-surface release policy](OP_RETURN_INFRASTRUCTURE.md#functional-upgrade-coherence).
+The checked [impact record](release-impact.json) covers the indexer, downstream reads,
+all managed surfaces and old records. The release is complete only after runtime verification.
+
+Code can commit a new linked file or reuse an existing linker at a repository path; [Code v3](CODE.md#linked-source-and-binary-assets) supports exact UTF-8 source and binary assets.
+
 Files can publish up to 4,000,000 raw bytes with a `powcat1` linker. Use
 **Files → Publish linked file** to publish or resume. Open a linker TXID in
 Files, or attach it in Mail. A verified linked attachment opens from its

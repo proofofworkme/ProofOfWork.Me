@@ -2,10 +2,11 @@ import { createHash } from 'node:crypto';
 import { TextDecoder } from 'node:util';
 import { decodeCanonicalOpReturnOutput, CANONICAL_PROTOCOL_PREFIXES } from './canonical-op-return.mjs';
 import { CODE_EMPTY_SHA256 } from '../src/shared/protocol/codeRepository.mjs';
+import { compactPowcatSearchSource, linkedFileEvidence, searchPowcatCoverage } from './search-powcat.mjs';
 
-export const SEARCH_INDEX_VERSION = 'proof-search-v4-code-page-references';
+export const SEARCH_INDEX_VERSION = 'proof-search-v5-powcat-files';
 export const SEARCH_MAX_DETAIL_BYTES = 2_000_000;
-export const SEARCH_PROTOCOLS = Object.freeze([...CANONICAL_PROTOCOL_PREFIXES.map(prefix=>prefix.slice(0,-1)),'unknown','transaction']);
+export const SEARCH_PROTOCOLS = Object.freeze([...new Set([...CANONICAL_PROTOCOL_PREFIXES.map(prefix=>prefix.slice(0,-1)),'powcat1','unknown','transaction'])]);
 const decoder = new TextDecoder('utf-8', { fatal: true });
 export function searchError(message, statusCode = 503, code = 'SEARCH_UNAVAILABLE') {
   const error = new Error(message);
@@ -81,9 +82,10 @@ function rawCarriers(source) {
 }
 export function buildSearchDocument(source, sourceHash) {
   if (!source || typeof source !== 'object' || !string(source.id) || !/^[0-9a-f]{64}$/u.test(string(source.txid))) throw searchError('Search source has no exact identity.');
+  source = compactPowcatSearchSource(source);
   const payload = source.payload && typeof source.payload === 'object' ? source.payload : {};
   const contentBytes = typeof source.contentBase64 === 'string' ? Buffer.from(source.contentBase64, 'base64') : null;
-  const codeReference = source.protocol === 'pwc1' && payload.metadata?.v === 2 && payload.metadata?.op === 'reference';
+  const codeReference = source.protocol === 'pwc1' && [2,3].includes(payload.metadata?.v) && payload.metadata?.op === 'reference';
   const declaredAttachment = codeReference ? null : payload.attachment ?? (source.protocol === 'pwc1' ? payload.source : null) ?? source.file;
   const carrierAttachment=searchAttachmentFromCarriers(rawCarriers(source));
   const declaredCarrierMatch=!declaredAttachment || (carrierAttachment &&
@@ -99,6 +101,7 @@ export function buildSearchDocument(source, sourceHash) {
   const file = verified?.file ?? (!codeReference && source.file ? { name: string(source.file.name), mimeType: string(source.file.mimeType ?? source.file.mime_type), size: numeric(source.file.size), sha256: string(source.file.sha256) } : undefined);
   const fileText = verifiedSearchFileText(verified);
   const attachmentInvalid = Boolean(declaredAttachment && !verified);
+  const linkedFile = linkedFileEvidence(source, declaredCarrierMatch ? carrierAttachment : null);
   const record = {
     id: source.id, txid: source.txid, protocol: string(source.protocol) || 'unknown', kind: string(source.kind) || 'raw-carrier',
     status: string(source.status), valid: attachmentInvalid ? false : typeof source.valid === 'boolean' ? source.valid : null,
@@ -113,8 +116,10 @@ export function buildSearchDocument(source, sourceHash) {
       requiresRepositoryReplay: true }, ...(codeReference ? { sourceReference: {
         txid: string(payload.metadata.sourceTxid), kind: string(payload.metadata.sourceKind),
         vout: numeric(payload.metadata.sourceVout), sha256: string(payload.metadata.sha256),
-        size: numeric(payload.metadata.size), verified: false } } : {}) } : {}),
+        size: numeric(payload.metadata.size), verified: false, ...(payload.metadata.v === 3 ? {
+          contentKind:string(payload.metadata.contentKind),mime:string(payload.metadata.mime) } : {}) } } : {}) } : {}),
     ...(file ? { file: { ...file, verified: Boolean(verified), textIndexed: Boolean(fileText) } } : {}),
+    ...(linkedFile ? {linkedFile} : {}),
   };
   const rawPayload = string(source.rawPayload);
   const searchablePayload = source.protocol === 'pwc1' && payload.source
@@ -224,12 +229,19 @@ export async function readSearchSources(client, network, height, after = '', lim
 }
 export async function searchSourceWitness(client, network, height) {
   const result = await client.query(`${SEARCH_SOURCES_SQL}, hashes AS MATERIALIZED (
-    SELECT id,source_class,source->>'status' AS status,(source->>'canonical')::boolean AS canonical,source_hash,
+    SELECT id,source_class,source->>'protocol' AS protocol,source->>'kind' AS kind,source->>'valid' AS validity,
+      source->>'status' AS status,(source->>'canonical')::boolean AS canonical,source_hash,
       (source_class='transaction' AND (jsonb_typeof(source->'payload'->'vin') IS DISTINCT FROM 'array'
         OR jsonb_typeof(source->'payload'->'vout') IS DISTINCT FROM 'array')) AS raw_missing
     FROM sources
+  ), typed AS (
+    SELECT kind || '/' || COALESCE(validity,'null') AS key, count(*)::integer AS n,
+      encode(sha256(convert_to(string_agg(id || ':' || source_hash, E'\\n' ORDER BY id COLLATE "C"),'UTF8')),'hex') AS hash
+    FROM hashes WHERE source_class='event' AND protocol='powcat1' AND status='confirmed' AND canonical
+    GROUP BY kind,validity
   )
-    SELECT count(*)::integer AS total,
+    SELECT COALESCE((SELECT jsonb_object_agg(key,jsonb_build_array(n,hash)) FROM typed),'{}'::jsonb) AS powcat_groups,
+      count(*)::integer AS total,
       count(*) FILTER (WHERE status='confirmed')::integer AS confirmed_records,
       count(*) FILTER (WHERE status='confirmed' AND canonical)::integer AS confirmed,
       encode(sha256(convert_to(COALESCE(string_agg(id || ':' || source_hash, E'\\n' ORDER BY id COLLATE "C")
@@ -251,7 +263,8 @@ export async function searchSourceWitness(client, network, height) {
   ) SELECT count(*)::integer AS missing FROM raw_outputs r WHERE left(r.script,2)='6a'
     AND NOT EXISTS(SELECT 1 FROM proof_indexer.tx_outputs p WHERE p.network=$1 AND p.txid=r.txid
       AND p.vout=r.vout AND lower(p.scriptpubkey)=r.script)`,[network,height]);
-  return { total:Number(row.total), confirmed:Number(row.confirmed), confirmedRecords:Number(row.confirmed_records), canonicalHash:row.canonical_hash,
+  const linkedFiles = await searchPowcatCoverage(client,network,height);
+  return { linkedFiles, powcatGroups:row.powcat_groups, total:Number(row.total), confirmed:Number(row.confirmed), confirmedRecords:Number(row.confirmed_records), canonicalHash:row.canonical_hash,
     volatileHashes:row.volatile_hashes, missingRawTransactions:Number(row.missing_raw_transactions),missingRawCarriers:Number(rawCoverage.rows[0].missing) };
 }
 export function sameCanonicalSearchWitness(left, right) {

@@ -144,10 +144,80 @@ test('Page references index source identity without treating supplied text as ve
   const doc = buildSearchDocument(source({ protocol: 'pwc1', kind: 'code-commit', amountSats: '0',
     payload: { metadata, path: 'index.html', source: { content: 'unverified injected words', data: 'untrusted' } } }), HASH);
   assert.equal(doc.record.valid, true); assert.equal(doc.record.file, undefined);
-  assert.equal(SEARCH_INDEX_VERSION, 'proof-search-v4-code-page-references');
+  assert.equal(SEARCH_INDEX_VERSION, 'proof-search-v5-powcat-files');
   assert.equal(doc.evidence.indexVersion, SEARCH_INDEX_VERSION);
   assert.deepEqual(doc.record.sourceReference, { txid: HASH, kind: 'body', vout: 2, sha256: HASH, size: 20, verified: false });
   assert.equal(doc.record.codeAuthority.requiresRepositoryReplay, true);
   assert.ok(!doc.searchText.includes('unverified injected words'));
   assert.ok(doc.searchText.includes(HASH));
+});
+
+test('powcat metadata remains searchable, while every raw carrier and transaction copy omits file bytes', async () => {
+  const { Transaction } = await import('bitcoinjs-lib');
+  const { encodePowcatPart, encodePowcatManifest, powcatScript, powcatSha256 } = await import('../src/shared/protocol/powcat1.mjs');
+  const { compactPowcatSearchSource } = await import('./search-powcat.mjs');
+  const bytes=Buffer.alloc(96_000,0xde), fileHash=powcatSha256(bytes);
+  const part=encodePowcatPart({fileHash,index:0,count:1,bytes});
+  function txFor(payload) {
+    const tx=new Transaction();tx.addInput(new Uint8Array(32).fill(5),0);tx.addOutput(powcatScript(payload),0n);return tx;
+  }
+  const tx=txFor(part), txid=tx.getId(), script=Buffer.from(tx.outs[0].script).toString('hex');
+  const base={id:'carrier:'+txid,txid,status:'confirmed',valid:null,canonical:true,vout:0};
+  const raw={id:'transaction:'+txid,...base,sourceClass:'transaction',protocol:'transaction',rawHex:tx.toHex(),payload:{hex:tx.toHex(),vout:[{scriptpubkey:script}]}};
+  for (const source of [raw, {...base,sourceClass:'script',protocol:'unknown',scriptHex:script,rawHex:script,payload:{scriptHex:script}},
+    {...base,sourceClass:'carrier',protocol:'unknown',scriptHex:script,rawPayload:'x'.repeat(120_000),rawHex:Buffer.from(part).toString('hex')},
+    {...base,sourceClass:'event',protocol:'powcat1',kind:'powcat-part',valid:true,payload:{powcat:{fileHash,partHash:fileHash,index:0,count:1,size:96000,hex:script}}}]) {
+    const doc=buildSearchDocument(source,'d'.repeat(64)), compact=compactPowcatSearchSource(source);
+    assert.ok(doc.searchText.includes(fileHash));
+    assert.ok(JSON.stringify(doc).length<6000 && JSON.stringify(compact).length<6000);
+    assert.ok(!doc.searchText.includes('de'.repeat(64)));
+    assert.ok(!doc.record.linkedFile);
+  }
+  const linker=txFor(encodePowcatManifest({fileHash,name:'test.bin',mime:'application/octet-stream',size:96000,partTxids:[txid]}));
+  const link=buildSearchDocument({...base,id:'event:123',txid:linker.getId(),sourceClass:'event',protocol:'powcat1',kind:'powcat-linker',valid:true,
+    payload:{powcat:{fileHash,name:'test.bin',mime:'application/octet-stream',size:96000,partTxids:[txid]}}},'c'.repeat(64));
+  assert.equal(link.record.linkedFile.txid,linker.getId());assert.equal(link.record.title,'test.bin');
+  assert.ok(link.searchText.includes(txid) && link.searchText.includes(fileHash));
+  const invalid=buildSearchDocument({...base,sourceClass:'carrier',scriptHex:script.slice(0,-2),rawHex:script},'d'.repeat(64));
+  assert.equal(invalid.payload.powcat.kind,'malformed');assert.equal(invalid.record.valid,null);assert.ok(invalid.searchText.length<3000);
+});
+
+test('ordinary verified Mail attachment exposes the exact linker and file hash without borrowing target validity', async () => {
+  const {buildPowcatMailAttachment}=await import('../src/shared/protocol/powcatMail.mjs');
+  const txid='a'.repeat(64),fileHash='b'.repeat(64),attachment=buildPowcatMailAttachment({txid,fileHash,name:'Mail files'});
+  const to64=text=>Buffer.from(text).toString('base64url');
+  const part=`pwm1:a:${to64(attachment.mime)}:${to64(attachment.name)}:${attachment.size}:${attachment.sha256}:0/1:${attachment.data}`;
+  const source={id:'event:pointer',sourceClass:'event',txid:'c'.repeat(64),canonical:true,status:'confirmed',valid:true,protocol:'pwm1',kind:'file',
+    payload:{attachment,subject:'Historical Mail subject'},attachmentCarriers:[part]};
+  const doc=buildSearchDocument(source,'d'.repeat(64));
+  assert.deepEqual(doc.record.linkedFile,{type:'mail-pointer',txid,fileHash,name:attachment.name});
+  assert.ok(doc.searchText.includes('Historical Mail subject'));assert.ok(doc.searchText.includes(txid));assert.ok(doc.searchText.includes(fileHash));
+  assert.equal(buildSearchDocument({...source,attachmentCarriers:[]},'c'.repeat(64)).record.linkedFile,undefined);
+});
+
+test('linked Files coverage requires the exact confirmed Search checkpoint', async () => {
+  const {searchPowcatCoverage}=await import('./search-powcat.mjs');
+  const state={model:'powcat1-discovery-v1',network:'livenet',fromHeight:973975,anchorHash:'0000000000000000000197a8d7eeab4e20eae8693e7bb933edd89a75031933e3',
+    indexedThroughBlock:973979,indexedThroughBlockHash:'a'.repeat(64),complete:true,confirmedParts:0,confirmedLinkers:0};
+  const db={query:async()=>({rows:[{value:state}]})};
+  assert.equal((await searchPowcatCoverage(db,'livenet',973979,'a'.repeat(64))).ready,true);
+  assert.equal((await searchPowcatCoverage(db,'livenet',973978,'a'.repeat(64))).ready,false);
+  assert.equal((await searchPowcatCoverage(db,'livenet',973979,'b'.repeat(64))).ready,false);
+  state.complete=false; assert.equal((await searchPowcatCoverage(db,'livenet',973979,'a'.repeat(64))).ready,false);
+});
+
+test('an observed zero does not certify a generation built before discovery, and stored typed rows must agree', async () => {
+  const {qualifiedPowcatSearchCoverage: coverage}=await import('./search-powcat.mjs');
+  const linkedFiles={ready:true,checkpointHeight:974000,checkpointHash:'a'.repeat(64),confirmedParts:0,confirmedLinkers:0};
+  const zero={linkedFiles,powcatGroups:{}};
+  assert.equal(coverage({powcatGroups:{}},zero,[]).ready,false);
+  assert.equal(coverage({linkedFiles:{...linkedFiles,checkpointHash:'b'.repeat(64)},powcatGroups:{}},zero,[]).ready,false);
+  assert.deepEqual(coverage(zero,zero,[]),{...linkedFiles,typedEvents:0});
+  assert.equal(coverage({...zero,linkedFiles:{...linkedFiles,confirmedParts:1}},{...zero,linkedFiles:{...linkedFiles,confirmedParts:1}},[]).ready,false);
+  const group='1'.repeat(64), typed={linkedFiles:{...linkedFiles,confirmedLinkers:1},powcatGroups:{'powcat-linker/true':[1,group]}};
+  const rows=[{protocol:'powcat1',kind:'powcat-linker',valid:true,status:'confirmed',type:'event',typed_count:1,typed_hash:group}];
+  assert.equal(coverage(zero,typed,rows).ready,false);
+  assert.equal(coverage(typed,typed,[]).ready,false);
+  assert.equal(coverage(typed,typed,[{...rows[0],typed_hash:'2'.repeat(64)}]).ready,false);
+  assert.deepEqual(coverage(typed,typed,rows),{...typed.linkedFiles,typedEvents:1});
 });

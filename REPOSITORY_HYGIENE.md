@@ -146,6 +146,11 @@ approved update.
 
 ## Hook Installation
 
+The pre-commit hook also checks functional changes against the staged
+`release-impact.json`. CI repeats the review on the committed tree and
+runs its declared regression tests. See the
+[functional upgrade policy](OP_RETURN_INFRASTRUCTURE.md#functional-upgrade-coherence).
+
 The current checkout uses the tracked `.githooks/` directory:
 
 ```bash

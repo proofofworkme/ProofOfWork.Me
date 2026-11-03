@@ -20,5 +20,6 @@ export function encodePowcatPart(value: PowcatPart): Uint8Array;
 export function encodePowcatManifest(value: PowcatManifest): Uint8Array;
 export function powcatScript(payload: Uint8Array): Uint8Array;
 export function parsePowcatTransaction(rawHex: string, expectedTxid: string): PowcatRecord;
+export function parsePowcatOutputScript(scriptBytes: Uint8Array): PowcatRecord;
 export function resolvePowcatFile(rootTxid: string, loadConfirmed: (txid: string) =>
   Promise<PowcatConfirmedTransaction>): Promise<PowcatFile>;

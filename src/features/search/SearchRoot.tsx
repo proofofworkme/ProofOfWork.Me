@@ -8,8 +8,10 @@ import { appHref } from "../../app/routeRegistry";
 import { DEFAULT_SEARCH_QUERY, exactProofs, fetchSearch, fetchSearchDetail, searchApiHref, searchQueryFromLocation,
   type SearchDetail, type SearchQuery, type SearchRecord, type SearchResponse } from "./searchApi";
 import "./search.css";
+import { PowcatLink } from "../powcat/PowcatLink";
 
 const PROTOCOLS: Record<string, string> = {
+  powcat1: "Linked files",
   pwid1: "IDs", pwdns1: "DNS", pwm1: "Mail, Files & Bonds", pwb1: "Boost & Publish", pwc1: "Code", pwt1: "Credits & AMO", pwa1: "Applications", unknown: "Other carriers",
 };
 const NETWORK_LABELS: Record<BitcoinNetwork, string> = { livenet: "Mainnet", testnet: "Testnet3", testnet4: "Testnet4" };
@@ -117,6 +119,16 @@ function SearchInspector({ network, id, close, searchValue }: {
             <div><dt>Recorded</dt><dd>{readableDate(record.timestamp)}</dd></div>
           </dl>
           {record.file && <><h3>File metadata</h3><dl className="search-evidence-fields">{Object.entries(record.file).map(([key, value]) => <div key={key}><dt>{key === "sha256" ? "SHA-256" : key}</dt><dd>{String(value)}</dd></div>)}</dl></>}
+          {record.linkedFile && <><h3>{record.linkedFile.type === "mail-pointer" ? "Linked attachment" : "Linked file"}</h3>
+            <dl className="search-evidence-fields">
+              <div><dt>Name</dt><dd>{record.linkedFile.name}</dd></div>
+              <div><dt>Linker TXID</dt><dd>{record.linkedFile.txid}</dd></div>
+              <div><dt>File SHA-256</dt><dd>{record.linkedFile.fileHash}</dd></div>
+              {record.linkedFile.size !== undefined && <div><dt>File size</dt><dd>{record.linkedFile.size.toLocaleString("en-US")} bytes</dd></div>}
+            </dl>
+            {network === "livenet" && record.valid === true && record.canonical === true && record.status === "confirmed" && loaded.coverage?.linkedFiles?.ready === true &&
+              <PowcatLink network={network} pointer={record.linkedFile} />}
+          </>}
           {record.participants.length > 0 && <><h3>Participants</h3><ul className="search-source-list">{record.participants.map((person, index) => <li key={`${person.address}:${index}`}><span>{person.role}</span><button type="button" onClick={() => searchValue(person.address)}>{person.powid || person.address}<ChevronRight size={14} /></button>{person.powid && <small>{person.address}</small>}</li>)}</ul></>}
           {record.refs.length > 0 && <><h3>References</h3><ul className="search-source-list">{record.refs.map((ref, index) => <li key={`${ref.type}:${index}`}><span>{ref.type}</span><button type="button" onClick={() => searchValue(ref.value)}>{ref.value}<ChevronRight size={14} /></button></li>)}</ul></>}
         </> : <pre className="search-source-code">{jsonText(tab === "payload" ? loaded.payload : tab === "raw" ? loaded.rawPayload : loaded.evidence)}</pre>}
@@ -145,6 +157,7 @@ export default function SearchRoot({ embedded = false, initialNetwork = "livenet
   const coverage = active?.value.coverage;
   const recordCount = active?.value.pagination.total;
   const checkpointScoped = coverage?.ready && coverage.scope === "complete-at-checkpoint";
+  const incompleteLinkedFiles = query.protocol === "powcat1" && coverage?.linkedFiles?.ready !== true;
   const formId = useId();
 
   const writeLocation = useCallback((next: SearchQuery, record = "", replace = false) => {
@@ -242,6 +255,7 @@ export default function SearchRoot({ embedded = false, initialNetwork = "livenet
       </section>
       <div className="search-result-toolbar"><div aria-live="polite" role="status">{loading ? "Searching public records…" : error ? "Search unavailable" : <>{recordCount?.toLocaleString("en-US")} {coverage?.ready ? "matching" : "currently indexed"} {recordCount === 1 ? "record" : "records"}{query.q && <> for <strong>“{query.q}”</strong></>}</>}</div><div className="search-toolbar-actions">{hasFilters && <button type="button" onClick={() => applyQuery({ ...DEFAULT_SEARCH_QUERY, network: query.network, q: query.q })}>Reset filters</button>}<button type="button" onClick={() => void copyCurrentLink(setCopied)}><Copy size={14} /> {copied ? "Copied" : "Share search"}</button></div></div>
       {coverage && !coverage.ready && <div className="search-notice" role="status"><CircleAlert size={19} /><div><strong>Index coverage is incomplete</strong><p>These results cover the records indexed so far. Missing results do not establish that a record does not exist.</p></div></div>}
+      {incompleteLinkedFiles && <p className="search-checkpoint-note" role="status">Linked file discovery has not been verified at this Search checkpoint.</p>}
       {checkpointScoped && <p className="search-checkpoint-note">Search covers verified history through block {coverage.checkpointHeight?.toLocaleString("en-US") ?? "unavailable"}. Newer records may not be indexed yet.</p>}
       {query.status !== "confirmed" && <div className="search-history-warning">Pending visibility is best effort. Dropped and orphaned records do not establish current confirmed state.</div>}
       {error && <div className="search-notice is-error" role="alert"><CircleAlert size={20} /><div><strong>Search is unavailable</strong><p>{error}</p><button type="button" onClick={() => setRefresh(value => value + 1)}>Retry search</button></div></div>}
@@ -255,7 +269,7 @@ export default function SearchRoot({ embedded = false, initialNetwork = "livenet
           <div className="search-result-meta"><span className="search-proofs">{exactProofs(record.amountSats)} <span>proofs</span></span><time>{readableDate(record.timestamp)}</time>{record.blockHeight != null && <span>Block {record.blockHeight.toLocaleString("en-US")}</span>}<a href={explorerTxUrl(record.txid, query.network)} target="_blank" rel="noreferrer" aria-label={`Transaction ${record.txid}`}>{compact(record.txid)} <ArrowUpRight size={12} /></a></div>
           {record.participants.length > 0 && <div className="search-result-people">{record.participants.slice(0, 3).map((person, index) => <button type="button" key={`${person.address}:${index}`} title={`${person.role}: ${person.address}`} onClick={() => applyQuery({ ...query, q: person.address })}>{person.role}: {person.powid || compact(person.address)}</button>)}</div>}
         </article>)}
-        {active && active.rows.length === 0 && <div className="search-empty"><Search size={34} aria-hidden="true" /><h2>{checkpointScoped ? `No matching records through block ${coverage.checkpointHeight?.toLocaleString("en-US")}` : coverage?.ready ? "No matching records" : "No matches in the indexed records yet"}</h2><p>{coverage?.ready ? "Try another word, an exact identifier, or broader filters." : "Coverage is still building. Try again as the index advances."}</p>{hasFilters && <button type="button" onClick={() => applyQuery({ ...DEFAULT_SEARCH_QUERY, network: query.network, q: query.q })}>Clear filters</button>}</div>}
+        {active && active.rows.length === 0 && <div className="search-empty"><Search size={34} aria-hidden="true" /><h2>{incompleteLinkedFiles ? "No matching records in available linked file evidence" : checkpointScoped ? `No matching records through block ${coverage.checkpointHeight?.toLocaleString("en-US")}` : coverage?.ready ? "No matching records" : "No matches in the indexed records yet"}</h2><p>{coverage?.ready ? "Try another word, an exact identifier, or broader filters." : "Coverage is still building. Try again as the index advances."}</p>{hasFilters && <button type="button" onClick={() => applyQuery({ ...DEFAULT_SEARCH_QUERY, network: query.network, q: query.q })}>Clear filters</button>}</div>}
       </section>
       {pageError && <p className="search-page-error" role="alert">{pageError}</p>}
       {active?.value.pagination.hasMore && <div className="search-pagination"><span>{active.rows.length.toLocaleString("en-US")} of {recordCount?.toLocaleString("en-US")} records</span><button type="button" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Loading records…" : pageError ? "Retry more results" : "More results"}<ArrowDown size={16} /></button></div>}

@@ -1,3 +1,5 @@
+import { readLinkedFile, readVerifiedPowcatBytes } from "../powcat/PowcatLink";
+import { POWCAT_MAX_FILE_BYTES } from "../../shared/protocol/powcat1.mjs";
 import { Buffer } from "buffer";
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
@@ -11,10 +13,13 @@ export type CodeRepository = {
   blockHeight?: number | null; blockTime?: number | null; timestamp?: string;
 };
 export type CodePageReference = { sourceTxid: string; sourceKind: "body" | "attachment"; sourceVout: number };
-export type CodeFile = { path: string; txid: string; sha256: string; size: number } & Partial<CodePageReference>;
+export type CodeContentKind = "text" | "binary";
+type FileReference = { sourceTxid?: string; sourceKind?: "body" | "attachment" | "powcat1"; sourceVout?: number;
+  contentKind?: CodeContentKind; mime?: string; name?: string };
+export type CodeFile = { path: string; txid: string; sha256: string; size: number } & FileReference;
 export type CodeEvent = {
   txid: string; parent?: string; parentTxid?: string; op?: "put" | "delete" | "reference"; path?: string;
-  sourceTxid?: string; sourceKind?: "body" | "attachment"; sourceVout?: number;
+  sourceTxid?: string; sourceKind?: "body" | "attachment" | "powcat1"; sourceVout?: number; contentKind?: CodeContentKind;
   message?: string; sha256?: string; size?: number; applied?: boolean; accepted?: boolean;
   status?: string; confirmed?: boolean; reason?: string; validationErrors?: string[];
   blockHeight?: number | null; blockTime?: number | null; timestamp?: string;
@@ -27,18 +32,23 @@ type ReadEvidence = {
 };
 export type CodeList = ReadEvidence & { repositories: CodeRepository[]; pagination: CodePage; pendingEvents?: CodeEvent[]; stats?: { repositories: number; acceptedCommits: number; unappliedCommits: number; files: number } };
 export type CodeDetail = ReadEvidence & {
-  repository: CodeRepository; files: CodeFile[]; filesComplete: true;
+  linkedReferencesEnabled?: boolean; repository: CodeRepository; files: CodeFile[]; filesComplete: true;
   commits?: CodeEvent[]; events?: CodeEvent[]; pendingEvents?: CodeEvent[]; pagination: CodePage;
   version?: string; selectedVersion?: string; selectedVersionTxid?: string;
-  file?: (CodeFile & { content: string; contentBase64: string }) | null;
+  file?: (CodeFile & { content?: string; contentBase64?: string; verified?: boolean;
+    sourceEvidence?: { txid: string; blockHeight: number; blockHash: string } }) | null;
 };
 function txid(value: unknown) { return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value); }
-function validReference(value: Partial<CodePageReference>) {
+function validReference(value: FileReference) {
+  if (value.sourceKind === "powcat1") return txid(value.sourceTxid) && value.sourceVout === undefined &&
+    (value.contentKind === "text" || value.contentKind === "binary") && typeof value.mime === "string" && !!value.mime &&
+    typeof value.name === "string" && !!value.name;
   const present = [value.sourceTxid, value.sourceKind, value.sourceVout].some(field => field !== undefined);
   return !present || (txid(value.sourceTxid) && ["body", "attachment"].includes(value.sourceKind ?? "") && Number.isSafeInteger(value.sourceVout) && value.sourceVout! >= 0);
 }
-function sameReference(left: Partial<CodePageReference>, right: Partial<CodePageReference>) {
-  return left.sourceTxid === right.sourceTxid && left.sourceKind === right.sourceKind && left.sourceVout === right.sourceVout;
+function sameReference(left: FileReference, right: FileReference) {
+  return left.sourceTxid === right.sourceTxid && left.sourceKind === right.sourceKind && left.sourceVout === right.sourceVout &&
+    (left.sourceKind !== "powcat1" || (left.contentKind === right.contentKind && left.mime === right.mime && left.name === right.name));
 }
 function assertEvidence(value: ReadEvidence, network: BitcoinNetwork) {
   if (!value || value.complete !== true || (value.network && value.network !== network) || typeof value.source !== "string" || !value.source.trim() || typeof value.snapshot?.id !== "string" || !value.snapshot.id.trim() ||
@@ -78,7 +88,7 @@ export async function fetchCodeRepository(network: BitcoinNetwork, repo: string,
   if (params.fresh) query.set("fresh", "1");
   const value = await fetchProofApiJson<CodeDetail>(`/api/v1/code-repository?${query}`, network, { signal: params.signal });
   assertEvidence(value, network); assertRepository(value.repository); assertPage(value.pagination);
-  if (value.filesComplete !== true || !Array.isArray(value.files) || value.files.some(file => !validateCodePath(file.path) || !txid(file.txid) || !txid(file.sha256) || !Number.isSafeInteger(file.size) || file.size < 0 || file.size > 60000 || !validReference(file))) {
+  if (value.filesComplete !== true || !Array.isArray(value.files) || value.files.some(file => !validateCodePath(file.path) || !txid(file.txid) || !txid(file.sha256) || !Number.isSafeInteger(file.size) || file.size < 0 || file.size > (file.sourceKind === "powcat1" ? POWCAT_MAX_FILE_BYTES : 60000) || (file.sourceKind === "powcat1" && file.size < 1) || !validReference(file))) {
     throw new Error("The complete repository tree is unavailable. Refresh again in a moment.");
   }
   const paths = [...value.files.map(file => file.path)].sort();
@@ -100,7 +110,7 @@ export async function fetchCodeRepository(network: BitcoinNetwork, repo: string,
   }
   return value;
 }
-function verifiedBytes(file: { sha256: string; size: number; contentBase64: string; content: string }) {
+function verifiedBytes(file: { sha256: string; size: number; contentBase64?: string; content?: string }) {
   if (!file || !txid(file.sha256) || !Number.isSafeInteger(file.size) || file.size < 0 || file.size > 60000 || typeof file.contentBase64 !== "string" || typeof file.content !== "string") throw new Error("Verified source bytes are unavailable.");
   const encoded = file.contentBase64;
   if (!/^[A-Za-z0-9+/]*={0,2}$/u.test(encoded)) throw new Error("Invalid source encoding.");
@@ -120,6 +130,36 @@ export function verifiedCodeSource(file: NonNullable<CodeDetail["file"]>, expect
   }
   return verifiedBytes(file);
 }
+export async function readCodeLink(network: BitcoinNetwork, tx: string, kind: CodeContentKind,
+  signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(120_000);
+  const readSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  const file = await readLinkedFile(tx, network, undefined, readSignal);
+  const bytes = await readVerifiedPowcatBytes(file, network, readSignal);
+  let source = "";
+  if (kind === "text") {
+    try { source = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes); }
+    catch { throw new Error("These bytes are not valid UTF-8 source. Select binary asset to commit this file."); }
+    if (source.includes("\u0000")) throw new Error("Text source contains NUL. Select binary asset to commit this file.");
+  }
+  return { file, bytes, source };
+}
+
+export async function loadCodeFile(network: BitcoinNetwork, file: NonNullable<CodeDetail["file"]>, expected?: CodeFile, signal?: AbortSignal) {
+  if (file.sourceKind !== "powcat1") return verifiedCodeSource(file, expected);
+  const e = file.sourceEvidence;
+  if (!validReference(file) || !file.verified || !e || e.txid !== file.sourceTxid || !txid(e.blockHash) ||
+      !Number.isSafeInteger(e.blockHeight) || e.blockHeight < 1 ||
+      (expected && (expected.path !== file.path || expected.txid !== file.txid || expected.size !== file.size ||
+        expected.sha256 !== file.sha256 || !sameReference(file, expected)))) throw new Error("Linked commit evidence is incomplete.");
+  const result = await readCodeLink(network, file.sourceTxid!, file.contentKind!, signal);
+  if (result.file.fileHash !== file.sha256 || result.file.size !== file.size || result.file.mime !== file.mime ||
+      result.file.name !== file.name || result.file.blockHash !== e.blockHash || result.file.blockHeight !== e.blockHeight) {
+    throw new Error("The verified linker differs from this repository version. Refresh the repository.");
+  }
+  return { source: result.source, bytes: result.bytes };
+}
+
 export type CodePageSource = {
   kind: "body" | "attachment"; vout: number; name: string;
   sha256: string; size: number; content: string; contentBase64: string;

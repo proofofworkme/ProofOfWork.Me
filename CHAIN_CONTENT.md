@@ -64,6 +64,27 @@ Requests are bounded and responses are uncached. Recheck active-chain
 membership on every read. Pending, missing, malformed or detached evidence
 does not yield file bytes. A reorg may make an earlier observation unavailable.
 
+A repository owner can also [commit an existing linker at a Code path](CODE.md#linked-source-and-binary-assets)
+or publish a file directly from the Code editor. A repository commit is separate
+from both storage and Mail delivery: it authorizes the path at one confirmed head.
+
+### Indexing and downstream reads
+
+Binary discovery follows the first-party node from mainnet block 973975 (the
+parent is `0000000000000000000197a8d7eeab4e20eae8693e7bb933edd89a75031933e3`).
+This is a launch-era coverage boundary, not a claim about genesis. Direct
+verification by linker TXID does not depend on the discovery window. Log shows
+separate part and linker events. Search indexes their names, hashes, transaction
+IDs and metadata; it does not put raw binary bodies into full-text search.
+
+`GET /api/v1/powcat-activity?network=livenet&fresh=1` returns the verified
+coverage window, part and publication counts, distinct file hashes, byte totals
+and miner fees. Part counts include unlinked confirmed parts. Published bytes
+are counted per valid linker; Mail delivery does not add another publication.
+Unavailable coverage is not zero, and unknown fees are null. Rollback invalidates
+a linker's publication until canonical earlier parts and the final hash verify.
+The financial ledger continues to count a paid Mail file once in Drive.
+
 The qualification test uses an isolated Bitcoin Core regtest, a 4,000,000-byte
 binary file, a real wallet and normal policy. It exercises interrupted resume,
 lost and restored confirmations, replacement of a linker with invalid block

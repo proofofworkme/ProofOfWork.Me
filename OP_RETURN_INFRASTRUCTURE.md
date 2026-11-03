@@ -67,6 +67,33 @@ database restore. Small policy, rollback and completion records are on the VPS u
 SHA-256 is `15070ba9ba11d78a8f3e17e7850a022ea2f99c5ca79d83bb0edef193f0d5b0b5`.
 No database or application runtime restart was required for backup rotation.
 
+## Functional upgrade coherence
+
+Every functional change needs an impact record in `release-impact.json`, from the first
+implementation through release. Inventory **all** managed surfaces, Computer workspaces
+and shared infrastructure. Each review names the affected or compatible behavior and
+points to executable evidence. A compatibility decision explains why historically valid
+data still reads correctly. The staged hook and CI reject functional changes without an
+updated, complete record. Adding a managed surface requires a corresponding inventory entry.
+
+Trace at least one representative action through the writer and local signer, relay,
+parser/indexer, historical backfill and mempool, checkpointed APIs, Search, Log, Growth,
+wallet, and standalone and embedded interfaces. Use exact record IDs to compare the
+views. Verify old encodings, missing/invalid data, interrupted operations, reorg and retry
+when applicable. Test units explicitly: a physical transaction, a logical action, miner
+fees, paid proofs and credit quantity can have different counts. Batch rows share one
+transfer fee; linked files can have many carriers and one Mail delivery. Preserve authority
+and exclude unsupported records from financial totals.
+
+Qualify paired readers first and complete the backfill at a hash-verified checkpoint.
+Hold new writers until both current and fallback reads work. If any required lane is
+unavailable, retain the compatible reader, report that lane unavailable, and hold promotion.
+Record actual rehearsal commands and results on the VPS. During release run
+`npm run check:release-sync`; it verifies the source of every affected public surface and
+executes the impact record's read-only post-deployment check. Green static metadata alone
+cannot establish runtime behavior. A partial rollout or untested surface is an incomplete
+release. The policy applies to every upgrade, regardless of protocol name.
+
 ### UI archive admission and verification
 
 For a new closed-input release, run `deploy/publish/release.py prepare-closed-input`

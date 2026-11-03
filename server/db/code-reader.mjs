@@ -1,8 +1,10 @@
 import * as bitcoin from 'bitcoinjs-lib';
 import { createHash } from 'node:crypto';
-import { enumerateCodePageSources, CODE_REFERENCE_ACTIVATION_HEIGHT,
+import { bindCodeLinkedEvidence, enumerateCodePageSources, CODE_REFERENCE_ACTIVATION_HEIGHT,
+  CODE_LINKED_ACTIVATION_HEIGHT, CODE_LINKED_ACTIVATION_PARENT_HEIGHT, CODE_LINKED_ACTIVATION_PARENT_HASH,
   CODE_REFERENCE_ACTIVATION_PARENT_HEIGHT, CODE_REFERENCE_ACTIVATION_PARENT_HASH, CODE_REFERENCE_NETWORK } from '../../src/shared/protocol/codeRepository.mjs';
 import { createCodeSnapshot, codeSnapshotRequest, codeReadError, CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, CODE_DISCOVERY_EMPTY_SHA256, CODE_SNAPSHOT_MODEL, advanceCodeCandidateDigest, exactCodeOutputProofs } from '../code-repositories.mjs';
+import { resolveIndexedPowcatFile } from '../powcat-index.mjs';
 
 function addressFromScript(hex, network) {
   try { return bitcoin.address.fromOutputScript(Buffer.from(hex, 'hex'), network === 'livenet' ? bitcoin.networks.bitcoin : bitcoin.networks.testnet); }
@@ -107,9 +109,14 @@ async function verifyReferenceActivation(client, network, checkpointHeight, veri
 /** Authenticated first-party Core proves positive membership or complete absence.
  * A database miss alone never rejects a reference. These reads never persist or
  * add a source transaction to the Code discovery corpus. */
-export async function codeReferenceSourceFromCore({ txid, network, checkpointHeight, checkpointHash }, rpc) {
+export async function codeReferenceSourceFromCore(request, rpc) {
+  return readReferenceTransaction(request, rpc);
+}
+
+async function readReferenceTransaction({ txid, network, checkpointHeight, checkpointHash }, rpc, linkedChain) {
   const unavailable = () => codeReadError('Referenced Page Core evidence is unavailable.', 503, 'CODE_REFERENCE_SOURCE_UNAVAILABLE');
-  if (network !== CODE_REFERENCE_NETWORK || !/^[a-f0-9]{64}$/u.test(txid ?? '') || typeof rpc !== 'function') throw unavailable();
+  const expectedNetwork = linkedChain === 'regtest' ? 'regtest' : CODE_REFERENCE_NETWORK;
+  if (network !== expectedNetwork || !/^[a-f0-9]{64}$/u.test(txid ?? '') || typeof rpc !== 'function') throw unavailable();
   const call = async (method, args) => { try { return await rpc(method, args); } catch { throw unavailable(); } };
   const fence = async () => {
     const result = await call('getblockhash', [checkpointHeight]);
@@ -122,7 +129,7 @@ export async function codeReferenceSourceFromCore({ txid, network, checkpointHei
     const [chainResponse, indexResponse] = await Promise.all([call('getblockchaininfo', []), call('getindexinfo', ['txindex'])]);
     const chain = chainResponse?.ok ? chainResponse.result : null;
     const index = indexResponse?.ok ? indexResponse.result?.txindex : null;
-    if (chain?.chain !== 'main' || chain.pruned !== false || chain.initialblockdownload !== false ||
+    if (chain?.chain !== (linkedChain ?? 'main') || chain.pruned !== false || chain.initialblockdownload !== false ||
         !Number.isSafeInteger(chain.blocks) || chain.blocks < checkpointHeight || !/^[a-f0-9]{64}$/u.test(chain.bestblockhash ?? '') ||
         index?.synced !== true || index.best_block_height !== chain.blocks) throw unavailable();
     // Repeat after establishing complete txindex authority; a lookup performed
@@ -157,7 +164,30 @@ export async function codeReferenceSourceFromCore({ txid, network, checkpointHei
     outputs: raw.vout.map((output, vout) => ({ vout, value_sats: exactCodeOutputProofs(output),
       scriptpubkey: output.scriptpubkey ?? output.scriptPubKey?.hex ?? output.scriptPubKeyHex ?? '' })) }, network);
   await fence();
-  return normalized;
+  return linkedChain ? {...normalized,hex:raw.hex} : normalized;
+}
+
+export async function codeLinkedSourceFromCore(request, rpc, {chain = 'main'} = {}) {
+  if (!['main','regtest'].includes(chain)) throw codeReadError('Unsupported linked-file network.');
+  const {txid,network,checkpointHeight,checkpointHash} = request;
+  const root = await readReferenceTransaction(request,rpc,chain);
+  const confirmed = root.status?.confirmed === true && root.status.block_height <= checkpointHeight;
+  const point = {txid,network,checkpointHeight,checkpointHash,
+    state:root.referenceAbsent ? 'absent' : confirmed ? 'confirmed' : 'unconfirmed',
+    ...(confirmed ? {blockHeight:root.status.block_height,blockHash:root.status.block_hash} : {})};
+  let file = null;
+  if (confirmed) {
+    try {
+      file = await resolveIndexedPowcatFile({txid,hex:root.hex},point,async (method, args) => {
+        const reply = await rpc(method,args);
+        if (!reply?.ok) throw Object.assign(new Error('Core linked file evidence unavailable.'),{rpcCode:reply?.error?.code});
+        return reply.result;
+      });
+    } catch { throw codeReadError('Linked-file dependency evidence is unavailable.',503,'CODE_LINKED_SOURCE_UNAVAILABLE'); }
+  }
+  const fence = await rpc('getblockhash',[checkpointHeight]);
+  if (!fence?.ok || fence.result !== checkpointHash) throw codeReadError('Code checkpoint changed while verifying linked files.',409,'CODE_CHECKPOINT_REORG');
+  return bindCodeLinkedEvidence(point,file,bytes => createHash('sha256').update(bytes).digest('hex'));
 }
 
 async function readReferenceSources(network, txids, checkpointHeight, checkpointHash, resolveReferenceSource) {
@@ -191,9 +221,16 @@ export async function readCodePageSource(client, network, params, { verifyCheckp
 }
 
 /** Complete Code discovery and separate immutable Page dependencies. */
-export async function readCodeSnapshot(client, network, params, { verifyCheckpoint, resolveReferenceSource } = {}) {
+export async function readCodeSnapshot(client, network, params, { verifyCheckpoint, resolveReferenceSource, resolveLinkedSource } = {}) {
   const { marker, checkpointHeight, checkpointHash } = await readCodeCheckpoint(client, network, params, { verifyCheckpoint });
   const referenceEnabled = await verifyReferenceActivation(client, network, checkpointHeight, verifyCheckpoint);
+  let linkedReferencesEnabled = false;
+  if (network === CODE_REFERENCE_NETWORK && checkpointHeight >= CODE_LINKED_ACTIVATION_HEIGHT) {
+    const row = await client.query('SELECT height,block_hash FROM proof_indexer.blocks WHERE network=$1 AND canonical=true AND height=$2',
+      [network,CODE_LINKED_ACTIVATION_PARENT_HEIGHT]);
+    linkedReferencesEnabled = row.rows.some(b => Number(b.height) === CODE_LINKED_ACTIVATION_PARENT_HEIGHT && b.block_hash === CODE_LINKED_ACTIVATION_PARENT_HASH) &&
+      await verifyCheckpoint(CODE_LINKED_ACTIVATION_PARENT_HEIGHT) === CODE_LINKED_ACTIVATION_PARENT_HASH;
+  }
   const closure = await client.query(`SELECT count(*)::text AS count FROM proof_indexer.transactions t
     JOIN proof_indexer.blocks b ON b.network=t.network AND b.block_hash=t.block_hash AND b.height=t.block_height AND b.canonical=true
     WHERE t.network=$1 AND t.status='confirmed' AND t.block_height<=$2 AND EXISTS
@@ -219,18 +256,25 @@ export async function readCodeSnapshot(client, network, params, { verifyCheckpoi
   if (digest !== marker.candidateSha256) throw codeReadError('Code raw candidate corpus differs from its complete discovery commitment.');
   const checkpointTransactions = transactions.filter(tx => !tx.status.confirmed || tx.status.block_height <= checkpointHeight);
   const referenceSources = new Map();
+  const linkedSources = new Map();
   // Hydrate only dependencies demanded by an otherwise applicable confirmed
   // commit. Stale/foreign/malformed records cannot make arbitrary lookups block
   // an unrelated canonical repository. Replay itself determines that boundary.
   for (;;) {
     try {
-      const state = createCodeSnapshot({ network, checkpointHeight, checkpointHash, referenceSources,
+      const state = createCodeSnapshot({ network, checkpointHeight, checkpointHash, referenceSources, linkedSources,
         transactions: checkpointTransactions, generatedAt: marker.generatedAt });
-      if (referenceSources.size && await verifyCheckpoint(checkpointHeight) !== checkpointHash) {
+      if ((referenceSources.size || linkedSources.size) && await verifyCheckpoint(checkpointHeight) !== checkpointHash) {
         throw codeReadError('Code checkpoint changed while verifying referenced Pages.', 409, 'CODE_CHECKPOINT_REORG');
       }
-      return { ...state, pendingWarnings, referenceEnabled };
+      return { ...state, pendingWarnings, referenceEnabled, linkedReferencesEnabled };
     } catch (error) {
+      if (error?.code === 'CODE_LINKED_SOURCE_UNAVAILABLE' && /^[a-f0-9]{64}$/u.test(error.sourceTxid ?? '') && !linkedSources.has(error.sourceTxid)) {
+        if (!linkedReferencesEnabled || typeof resolveLinkedSource !== 'function') throw codeReadError('Code linked-file activation or resolver is unavailable.',503,'CODE_LINKED_SOURCE_UNAVAILABLE');
+        const proof = await resolveLinkedSource({txid:error.sourceTxid, network, checkpointHeight, checkpointHash});
+        linkedSources.set(error.sourceTxid,proof);
+        continue;
+      }
       if (error?.code !== 'CODE_REFERENCE_SOURCE_UNAVAILABLE' || !/^[a-f0-9]{64}$/u.test(error.sourceTxid ?? '') ||
           referenceSources.has(error.sourceTxid)) throw error;
       const loaded = await readReferenceSources(network, [error.sourceTxid], checkpointHeight, checkpointHash, resolveReferenceSource);

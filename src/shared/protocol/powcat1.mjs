@@ -99,6 +99,14 @@ function decodePayload(payload) {
   return manifest;
 }
 
+export function parsePowcatOutputScript(scriptBytes) {
+  requireField(scriptBytes instanceof Uint8Array && scriptBytes.length <= 100_000, "invalid data carrier");
+  const chunks = script.decompile(scriptBytes);
+  requireField(chunks?.length === 2 && chunks[0] === opcodes.OP_RETURN && chunks[1] instanceof Uint8Array &&
+    Buffer.from(powcatScript(chunks[1])).equals(Buffer.from(scriptBytes)), "expected one canonical data push");
+  return decodePayload(Buffer.from(chunks[1]));
+}
+
 export function parsePowcatTransaction(rawHex, expectedTxid) {
   requireField(isHash(expectedTxid), "invalid expected TXID");
   requireField(typeof rawHex === "string" && rawHex.length <= MAX_WEIGHT * 2 &&
@@ -109,10 +117,7 @@ export function parsePowcatTransaction(rawHex, expectedTxid) {
   requireField(tx.getId() === expectedTxid, "raw transaction TXID mismatch");
   const carriers = tx.outs.filter(output => output.script[0] === opcodes.OP_RETURN);
   requireField(carriers.length === 1 && carriers[0].value === 0n && carriers[0].script.length <= 100_000, "expected one zero-value data carrier");
-  const chunks = script.decompile(carriers[0].script);
-  requireField(chunks?.length === 2 && chunks[1] instanceof Uint8Array &&
-    Buffer.from(powcatScript(chunks[1])).equals(Buffer.from(carriers[0].script)), "expected one canonical data push");
-  return decodePayload(Buffer.from(chunks[1]));
+  return parsePowcatOutputScript(carriers[0].script);
 }
 
 // loadConfirmed supplies exact raw bytes and active-chain inclusion evidence

@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -I
-"""Plan, apply, and accept a three-file powcat overlay on the node VPS."""
+"""Plan, apply, and accept a hash-pinned powcat overlay on the node VPS."""
 import argparse
 import base64
 import datetime
@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 
+DISCOVERY = False
 REPO = Path(__file__).resolve().parents[2]
 RUNTIME = Path("/opt/proofofwork-api")
 PINS = {
@@ -50,6 +51,8 @@ def controller():
     need(body.count(prefix) == 1, "Unexpected backup location")
     body = body.replace(prefix, b"backup = BACKUPS/('powcat-'")
     profile = (REPO / "deploy/powcat/overlay.py").read_bytes()
+    if DISCOVERY:
+        profile += b"\n" + (REPO / "deploy/powcat/discovery.py").read_bytes()
     return body + b"\n" + profile + b"\nif __name__ == '__main__': main()\n"
 
 
@@ -61,7 +64,7 @@ def source_fence(commit):
     need(re.fullmatch(r"[0-9a-f]{40}", commit) and git("rev-parse", "HEAD").decode().strip() == commit,
          "Require exact committed candidate checkout")
     need(not git("status", "--porcelain", "--untracked-files=all"), "Candidate checkout is dirty")
-    for name in ["powcat/release.py", "powcat/overlay.py", *PINS]:
+    for name in ["powcat/release.py", "powcat/overlay.py", *(["powcat/discovery.py"] if DISCOVERY else []), *PINS]:
         need((REPO / "deploy" / name).read_bytes() == git("show", f"{commit}:deploy/{name}"),
              "Tool differs from committed source")
 
@@ -85,24 +88,35 @@ def build_plan(args):
     sources = captured["sources"]
     api = "server/proof-api.mjs"
     need(sources[api]["sha256"] == ns["API_SHA"] and not ns["NEW"].intersection(sources), "Changed runtime files")
+    existing = ns.get("EXISTING", {api: ns["API_SHA"]})
+    need(all(name in sources and sources[name]["sha256"] == digest for name, digest in existing.items()),
+         "A scoped predecessor differs from accepted source")
     rows, metadata, candidates = [], {}, {}
     with tempfile.TemporaryDirectory(dir="/tmp", prefix="powcat-merge-") as scratch:
         p = Path(scratch)
-        for name in sorted(ns["NEW"]) + [api]:
+        for index, name in enumerate(ns["INSTALL_ORDER"]):
             candidate = git("show", f"{args.commit}:{name}")
             before = None
-            if name == api:
-                before = ns["API_SHA"]
-                for label, data in [("active", base64.b64decode(sources[api]["base64"], validate=True)),
-                                    ("base", git("show", ns["BASE_SOURCE_COMMIT"] + ":" + api)),
+            if name in existing:
+                before = existing[name]
+                p = Path(scratch) / str(index)
+                p.mkdir(mode=0o700)
+                for label, data in [("active", base64.b64decode(sources[name]["base64"], validate=True)),
+                                    ("base", git("show", ns["BASE_SOURCE_COMMIT"] + ":" + name)),
                                     ("candidate", candidate)]:
                     ns["durable"](p / label, data)
-                candidate = subprocess.check_output(["git", "merge-file", "--stdout", "--diff3",
-                                                      p / "active", p / "base", p / "candidate"])
+                merge = subprocess.run(["git", "merge-file", "--stdout", "--diff3",
+                                        "-L", "ACTIVE", "-L", "BASE", "-L", "CANDIDATE",
+                                        p / "active", p / "base", p / "candidate"], stdout=subprocess.PIPE)
+                if merge.returncode == 1 and DISCOVERY and name == "server/db/search-reader.mjs":
+                    candidate = ns["merge_search_coverage"](merge.stdout)
+                else:
+                    merge.check_returncode()
+                    candidate = merge.stdout
             subprocess.run([captured["nodePath"], "--input-type=module", "--check"], input=candidate, check=True)
             rows.append({"path": name, "before": before, "after": sha(candidate), "base64": encode64(candidate)})
             candidates[name] = candidate
-            metadata[name] = {key: sources[api][key] for key in ("uid", "gid", "mode")}
+            metadata[name] = {key: sources[name if name in existing else api][key] for key in ("uid", "gid", "mode")}
     release_id = args.commit[:12] + "-" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     manifest = {"format": ns["FAMILY"], "sourceCommit": args.commit, "releaseId": release_id,
                 "baseSourceCommit": ns["BASE_SOURCE_COMMIT"], "baselineHead": ns["BASELINE_HEAD"],
@@ -117,6 +131,7 @@ def build_plan(args):
     ns["metadata_fence"](RUNTIME, metadata)
     holder = pinned("search/hold-node-timer.py")
     plan = {"format": "powcat-rollout-v1", "releaseId": release_id, "sourceCommit": args.commit,
+            **({"nodePath": captured["nodePath"]} if DISCOVERY else {}),
             "runtimeManifestTemplate": manifest, "controllerSha256": sha(code), "controllerBase64": encode64(code),
             "searchHoldControllerSha256": sha(holder), "searchHoldControllerBase64": encode64(holder)}
     raw = json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()
@@ -159,7 +174,9 @@ def archive(args):
 
 
 def main():
+    global DISCOVERY
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--discovery", action="store_true", help="Apply the separately pinned discovery and Search scope")
     subs = parser.add_subparsers(required=True)
     p = subs.add_parser("plan")
     p.add_argument("commit"); p.add_argument("output", type=Path); p.set_defaults(run=build_plan)
@@ -169,6 +186,7 @@ def main():
     p.add_argument("commit"); p.add_argument("receipt_dir", type=Path); p.add_argument("manifest_sha256")
     p.add_argument("previous_completion", type=Path); p.add_argument("previous_completion_sha256"); p.set_defaults(run=archive)
     args = parser.parse_args()
+    DISCOVERY = args.discovery
     need(os.geteuid() == 0 and sys.flags.isolated and RUNTIME.resolve(strict=True) == RUNTIME
          and RUNTIME != REPO, "Require isolated root invocation on the node VPS from separate source")
     os.umask(0o077)

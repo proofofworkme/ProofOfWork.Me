@@ -291,6 +291,10 @@ export function proofIndexEventRefsForItem(item) {
       add("source-kind", source.metadata.sourceKind);
       add("source-vout", String(source.metadata.sourceVout));
     }
+    if (source.metadata?.v === 3 && source.metadata?.op === "reference" && source.metadata.sourceKind === "powcat1") {
+      add("source-txid", source.metadata.sourceTxid);
+      add("source-kind", "powcat1");
+    }
     add("source-sha256", source.metadata?.sha256 ?? source.source?.sha256);
   }
   add("closed-txid", source.closedTxid);
