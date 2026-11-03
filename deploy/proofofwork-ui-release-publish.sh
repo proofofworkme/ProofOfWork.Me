@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Authenticated release admission capability: pow-ui-stream-archive-verification-v1
 set -Eeuo pipefail
 
 umask 077
@@ -1093,10 +1094,7 @@ verify_current_rollback_capability
 # use the existing allocation-free rollback path, without a capacity guard.
 ui_capacity_check "${archive_root}" 131072 8 publisher-manifest-sidecar
 ui_capacity_check "${www_root}" 131072 8 publisher-manifest-live
-/usr/bin/python3 -I -B "${capacity_script}" check-archive \
-  --path "${TMPDIR:-/tmp}" --archive "${archive}" \
-  --additional-bytes 67108864 --additional-inodes 16 \
-  --phase publisher-before-exchange >&2
+ui_capacity_check "${TMPDIR:-/tmp}" 8388608 16 publisher-before-exchange
 
 if [[ -n "${POW_UI_PUBLISH_TEST_FAIL_BEFORE_EXCHANGE:-}" ]]; then
   echo "Injected failure after candidate verification and before atomic exchange." >&2

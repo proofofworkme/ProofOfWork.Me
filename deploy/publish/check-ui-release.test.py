@@ -2259,31 +2259,14 @@ class OuterCapacityResume(unittest.TestCase):
 PROVENANCE_HELPER = ROOT.parent / 'proofofwork-ui-release-provenance.sh'
 PROVENANCE_SOURCE = PROVENANCE_HELPER.read_text()
 PROVENANCE_LOCK_FOOTER = '\n# Only a successful command reaches the closing original descriptor/path fence.\nui_provenance_lock_guard close "${deploy_lock_fd}" "${provenance_lock_pin}"\n'
-PROVENANCE_PRIOR_ACQUISITION = r'''
-inherited_deploy_lock_fd="${POW_UI_DEPLOY_LOCK_FD:-}"
-if [[ -n "${inherited_deploy_lock_fd}" ]]; then
-  if [[ ! "${inherited_deploy_lock_fd}" =~ ^[1-9][0-9]*$ ]] ||
-    ((inherited_deploy_lock_fd < 3)) ||
-    [[ ! -f "/proc/self/fd/${inherited_deploy_lock_fd}" ]] ||
-    [[ "$(realpath -e -- "/proc/self/fd/${inherited_deploy_lock_fd}" 2>/dev/null || true)" != "${deploy_lock}" ]]; then
-    echo "Inherited UI deployment lock descriptor is invalid." >&2
-    exit 64
-  fi
-  deploy_lock_fd="${inherited_deploy_lock_fd}"
-else
-  exec {deploy_lock_fd}>"${deploy_lock}"
-  chmod 0600 "${deploy_lock}"
-fi
-if ! flock --exclusive --nonblock "${deploy_lock_fd}"; then
-  echo "Another UI deployment or cleanup operation holds ${deploy_lock}." >&2
-  exit 1
-fi
-'''.lstrip('\n')
-PROVENANCE_PRIOR_SOURCE = (
-    PROVENANCE_SOURCE[:PROVENANCE_SOURCE.index('# Existing lock contenders')]
-    + PROVENANCE_PRIOR_ACQUISITION
-    + PROVENANCE_SOURCE[PROVENANCE_SOURCE.index('\nmanifest="${ui_root}/.proofofwork-ui-release"'):-len(PROVENANCE_LOCK_FOOTER)]
-)
+# The lock upgrade is a historical claim about two immutable blobs. New
+# verifier work may change archive handling while still preserving its lock.
+def historical_provenance(commit):
+    return subprocess.check_output(['/usr/bin/git', '-C', str(ROOT.parent.parent), 'show',
+        commit + ':deploy/proofofwork-ui-release-provenance.sh'], text=True, timeout=10)
+
+PROVENANCE_PRIOR_SOURCE = historical_provenance('b044d80a59661d7b035d0b158f2ddd88697a0ee1')
+PROVENANCE_LOCK_REPAIR_SOURCE = historical_provenance('4e77b5f11c8003b19a4908b8ad0fdbd304ee721b')
 PROVENANCE_PRIOR_SHA = 'b9e27a7df46d10be40ffa7d3d36c77a704fbf9f57063c4f3d884d7d4356d40b8'
 PROVENANCE_SOURCE_SHA = '822fb461c8a1d6d3174f47e448d8bd2c0ce548134358da409c97e46fde163215'
 
@@ -2336,7 +2319,9 @@ class ProvenanceLock(unittest.TestCase):
 
     def test_exact_baseline_and_proposed_source_pins(self):
         self.assertEqual(hashlib.sha256(PROVENANCE_PRIOR_SOURCE.encode()).hexdigest(), PROVENANCE_PRIOR_SHA)
-        self.assertEqual(hashlib.sha256(PROVENANCE_HELPER.read_bytes()).hexdigest(), PROVENANCE_SOURCE_SHA)
+        self.assertEqual(hashlib.sha256(PROVENANCE_LOCK_REPAIR_SOURCE.encode()).hexdigest(), PROVENANCE_SOURCE_SHA)
+        self.assertEqual(provenance_lock_block(PROVENANCE_SOURCE), provenance_lock_block(PROVENANCE_LOCK_REPAIR_SOURCE))
+        self.assertTrue(PROVENANCE_SOURCE.endswith(PROVENANCE_LOCK_FOOTER))
 
     def test_bash_syntax_full_proposed_source(self):
         p = subprocess.run(['/usr/bin/bash', '-n', str(PROVENANCE_HELPER)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=8)
@@ -2345,9 +2330,9 @@ class ProvenanceLock(unittest.TestCase):
     def test_all_verifier_record_math_archive_capacity_body_bytes_unchanged(self):
         first = 'inherited_deploy_lock_fd="${POW_UI_DEPLOY_LOCK_FD:-}"'
         before = PROVENANCE_PRIOR_SOURCE[:PROVENANCE_PRIOR_SOURCE.index(first)]
-        self.assertTrue(PROVENANCE_SOURCE.startswith(before))
+        self.assertTrue(PROVENANCE_LOCK_REPAIR_SOURCE.startswith(before))
         after = '\nmanifest="${ui_root}/.proofofwork-ui-release"'
-        self.assertEqual(PROVENANCE_SOURCE[PROVENANCE_SOURCE.index(after):-len(PROVENANCE_LOCK_FOOTER)], PROVENANCE_PRIOR_SOURCE[PROVENANCE_PRIOR_SOURCE.index(after):])
+        self.assertEqual(PROVENANCE_LOCK_REPAIR_SOURCE[PROVENANCE_LOCK_REPAIR_SOURCE.index(after):-len(PROVENANCE_LOCK_FOOTER)], PROVENANCE_PRIOR_SOURCE[PROVENANCE_PRIOR_SOURCE.index(after):])
 
     def test_old_busy_path_reproduces_truncate_and_timestamp_fault(self):
         before = self.file()

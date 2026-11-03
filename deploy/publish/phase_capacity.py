@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import stat
 import types
+import zlib
 
 SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split()
 PAGES_SURFACES = [*SURFACES, 'pages']
@@ -240,6 +241,149 @@ def file_row(path, relative, details, stager, *, copy_xattrs=True):
             'gid': details.st_gid, 'xattrs': attrs, 'sha256': digest.hex()}
 
 
+def prior_compatibility(live_root, live_surfaces, stager, incoming):
+    """Match the installed stager's complete prior asset traversal and reject all collisions."""
+    compatibility, per_surface, references = {}, {}, []
+    counters = {'dependencies': 0, 'reference_edges': 0, 'reference_candidates': 0, 'total_bytes': 0}
+    for surface in live_surfaces:
+        before = dict(counters)
+        live_surface = live_root / ('proofofwork-' + surface)
+        index = live_surface / 'index.html'
+        details = index.lstat()
+        if not stat.S_ISREG(details.st_mode) or index.resolve() != index or details.st_size > stager.MAXIMUM_INDEX_BYTES:
+            raise ValueError('Unsafe prior capacity index')
+        _, content = stager.digest_regular_file(index, details, capture=True)
+        pending = stager.dependency_references(live_surface, index, content, counters)
+        existing = {row['path']: row for row in incoming[surface]}
+        missing, visited = [], set()
+        while pending:
+            relative = pending.pop()
+            if relative in visited:
+                continue
+            visited.add(relative)
+            counters['dependencies'] += 1
+            if counters['dependencies'] > stager.MAXIMUM_DEPENDENCIES:
+                raise ValueError('Prior compatibility dependency bound exceeded')
+            path = live_surface / relative
+            details = path.lstat()
+            if path.resolve() != path or not stat.S_ISREG(details.st_mode) or details.st_size > stager.MAXIMUM_ASSET_BYTES:
+                raise ValueError('Unsafe prior compatibility capacity file')
+            counters['total_bytes'] += details.st_size
+            if counters['total_bytes'] > stager.MAXIMUM_TOTAL_BYTES:
+                raise ValueError('Prior compatibility byte bound exceeded')
+            capture = path.suffix.lower() in ('.css', '.js', '.mjs')
+            digest, content = stager.digest_regular_file(path, details, capture=capture)
+            # copy_prior_file preserves mode/uid/gid/bytes but does not copy xattrs.
+            row = {'path': relative, 'kind': 'file', 'size': details.st_size,
+                   'mode': stat.S_IMODE(details.st_mode), 'uid': details.st_uid,
+                   'gid': details.st_gid, 'xattrs': [], 'sha256': digest.hex()}
+            references.append([surface, relative, row['size'], row['sha256']])
+            if relative in existing:
+                candidate = existing[relative]
+                if candidate['kind'] != 'file' or (candidate['size'], candidate['sha256']) != (row['size'], row['sha256']):
+                    raise ValueError('Prior compatibility capacity collision differs')
+            else:
+                for parent in reversed(Path(relative).parents):
+                    name = str(parent)
+                    if name in existing:
+                        if existing[name]['kind'] != 'directory':
+                            raise ValueError('Prior compatibility parent collides with a file')
+                    else:
+                        details_parent = (live_surface / parent).lstat()
+                        if not stat.S_ISDIR(details_parent.st_mode):
+                            raise ValueError('Unsafe prior compatibility parent')
+                        directory = {'path': name, 'kind': 'directory'}
+                        missing.append(directory)
+                        existing[name] = directory
+                missing.append(row)
+                existing[relative] = row
+            if capture:
+                pending.extend(stager.dependency_references(live_surface, path, content, counters))
+        compatibility[surface] = missing
+        per_surface[surface] = {name: counters[name] - before[name] for name in counters}
+    digest = hashlib.sha256(json.dumps(sorted(references), separators=(',', ':')).encode()).hexdigest()
+    return compatibility, per_surface, counters, digest
+
+
+def inventory_path(release, digest):
+    import re
+    if not re.fullmatch(r'[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', release) or not re.fullmatch(r'[0-9a-f]{64}', digest):
+        raise ValueError('Invalid release inventory identity')
+    return Path('/var/tmp/proofofwork-deploy') / ('recovery-control-' + release + '-inventory-' + digest + '.zlib')
+
+
+def assess_closed_input(request, helpers, live, stager, packed, live_root):
+    """Prove the declared tar size from the candidate metadata and the actual live byte closure."""
+    if (request['model'] != 'proof-ui-closed-input-v1' or request['releaseId'][:12] != request['commit'][:12]
+        or request['helperHashes'] != {key: helpers[key]['sha256'] for key in ('publisher', 'provenance', 'stager')}):
+        raise ValueError('Installed release helpers differ from the input attestation')
+    if not 0 < len(packed) <= 65536 or hashlib.sha256(packed).hexdigest() != request['inventorySha256']:
+        raise ValueError('Candidate inventory is unbound')
+    inflater = zlib.decompressobj()
+    raw = inflater.decompress(packed, 4 * 1024**2 + 1)
+    if len(raw) > 4 * 1024**2 or not inflater.eof or inflater.unused_data or inflater.unconsumed_tail:
+        raise ValueError('Invalid compressed candidate inventory')
+    rows = json.loads(raw)
+    if not isinstance(rows, list) or not 1 <= len(rows) <= 30000:
+        raise ValueError('Invalid candidate inventory length')
+    order = sorted(PERMISSION_SURFACES)
+    incoming = {name: [] for name in order}
+    seen = set()
+    total = 0
+    for rel, kind, mode, uid, gid, size, digest in rows:
+        if (not isinstance(rel, str) or Path(rel).as_posix() != rel or Path(rel).is_absolute() or
+                '..' in Path(rel).parts or rel in seen or len(rel.encode()) > 4096 or
+                any(ord(c) < 32 or ord(c) == 127 or c == chr(92) for c in rel) or
+                not isinstance(mode, int) or not 0 <= mode <= 0o777 or mode & 0o022 or uid != 0 or gid != 0 or
+                type(size) is not int or not 0 <= size <= 96 * 1024**2):
+            raise ValueError('Invalid candidate inventory entry')
+        seen.add(rel)
+        if rel in ('.', 'surfaces'):
+            if kind != 'directory' or size != 0 or digest is not None:
+                raise ValueError('Invalid candidate wrapper directory')
+            continue
+        names = rel.split('/')
+        if len(names) < 2 or names[0] != 'surfaces' or names[1] not in incoming:
+            raise ValueError('Unexpected candidate surface')
+        path = '/'.join(names[2:]) or '.'
+        if kind == 'directory' and size == 0 and digest is None:
+            row = {'path': path, 'kind': kind}
+        elif kind == 'file' and isinstance(digest, str) and len(digest) == 64 and all(c in '0123456789abcdef' for c in digest):
+            row = {'path': path, 'kind': kind, 'mode': mode, 'uid': uid, 'gid': gid,
+                   'size': size, 'sha256': digest, 'xattrs': []}
+        else:
+            raise ValueError('Invalid candidate inventory type')
+        total += size
+        incoming[names[1]].append(row)
+    fingerprint = {'sha256': hashlib.sha256(raw).hexdigest(), 'entries': len(rows), 'regularBytes': total}
+    if not {'.', 'surfaces'} <= seen or total > 512*1024**2 or request['payloadFingerprint'] != fingerprint:
+        raise ValueError('Candidate payload fingerprint differs')
+    live_surfaces = stager.live_surface_names(live_root)
+    if set(live_surfaces) != set(order):
+        raise ValueError('Streaming admission requires the complete live V5 surface family')
+    compatibility, _, counters, prior_sha = prior_compatibility(live_root, live_surfaces, stager, incoming)
+    archive = closed_managed_archive_budget(incoming, compatibility, order)
+    return {'request': request, 'archive': archive, 'priorDependenciesSha256': prior_sha,
+            'dependencyCounters': counters, 'liveManifestSha256': live['manifestSha256'], 'liveTreeSha256': live['treeSha256']}
+
+
+def recheck_closed_input(request, helpers, live, lock_fd):
+    """Read only the release-bound metadata; never create or extract a payload."""
+    path = inventory_path(request['releaseId'], request['inventorySha256'])
+    info = path.lstat()
+    if (path.resolve() != path or not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0
+            or info.st_nlink != 1 or info.st_mode & 0o7022 or not 0 < info.st_size <= 65536):
+        raise ValueError('Unsafe closed release input')
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME), 'rb') as handle:
+        if os.fstat(handle.fileno()) != info:
+            raise ValueError('Closed input changed before reading')
+        packed = handle.read(65537)
+        if os.fstat(handle.fileno()) != info or path.lstat() != info:
+            raise ValueError('Closed input changed while reading')
+    stager = locked_installed_stager(helpers['stager']['sha256'], lock_fd)
+    return assess_closed_input(request, helpers, live, stager, packed, Path('/var/www'))
+
+
 def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent=None):
     """Read-only collector; caller holds the deployment lock through staging."""
     incoming_root, live_root = Path(incoming_root), Path(live_root)
@@ -309,69 +453,14 @@ def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent
                 raise ValueError('Incoming capacity files must be independent regular copies')
         incoming[surface] = rows
     snapshot[incoming_root] = snapshot_identity(incoming_root.lstat())
-    compatibility, per_surface = {}, {}
-    counters = {'dependencies': 0, 'reference_edges': 0, 'reference_candidates': 0, 'total_bytes': 0}
-    for surface in live_surfaces:
-        before = dict(counters)
-        live_surface = live_root / ('proofofwork-' + surface)
-        index = live_surface / 'index.html'
-        details = index.lstat()
-        if not stat.S_ISREG(details.st_mode) or index.resolve() != index or details.st_size > stager.MAXIMUM_INDEX_BYTES:
-            raise ValueError('Unsafe prior capacity index')
-        _, content = stager.digest_regular_file(index, details, capture=True)
-        pending = stager.dependency_references(live_surface, index, content, counters)
-        existing = {row['path']: row for row in incoming[surface]}
-        missing, visited = [], set()
-        while pending:
-            relative = pending.pop()
-            if relative in visited:
-                continue
-            visited.add(relative)
-            counters['dependencies'] += 1
-            if counters['dependencies'] > stager.MAXIMUM_DEPENDENCIES:
-                raise ValueError('Prior compatibility dependency bound exceeded')
-            path = live_surface / relative
-            details = path.lstat()
-            if path.resolve() != path or not stat.S_ISREG(details.st_mode) or details.st_size > stager.MAXIMUM_ASSET_BYTES:
-                raise ValueError('Unsafe prior compatibility capacity file')
-            counters['total_bytes'] += details.st_size
-            if counters['total_bytes'] > stager.MAXIMUM_TOTAL_BYTES:
-                raise ValueError('Prior compatibility byte bound exceeded')
-            capture = path.suffix.lower() in ('.css', '.js', '.mjs')
-            digest, content = stager.digest_regular_file(path, details, capture=capture)
-            # copy_prior_file preserves mode/uid/gid/bytes but does not copy xattrs.
-            row = {'path': relative, 'kind': 'file', 'size': details.st_size,
-                   'mode': stat.S_IMODE(details.st_mode), 'uid': details.st_uid,
-                   'gid': details.st_gid, 'xattrs': [], 'sha256': digest.hex()}
-            if relative in existing:
-                candidate = existing[relative]
-                if candidate['kind'] != 'file' or (candidate['size'], candidate['sha256']) != (row['size'], row['sha256']):
-                    raise ValueError('Prior compatibility capacity collision differs')
-            else:
-                for parent in reversed(Path(relative).parents):
-                    name = str(parent)
-                    if name in existing:
-                        if existing[name]['kind'] != 'directory':
-                            raise ValueError('Prior compatibility parent collides with a file')
-                    else:
-                        details_parent = (live_surface / parent).lstat()
-                        if not stat.S_ISDIR(details_parent.st_mode):
-                            raise ValueError('Unsafe prior compatibility parent')
-                        directory = {'path': name, 'kind': 'directory'}
-                        missing.append(directory)
-                        existing[name] = directory
-                missing.append(row)
-                existing[relative] = row
-            if capture:
-                pending.extend(stager.dependency_references(live_surface, path, content, counters))
-        compatibility[surface] = missing
-        per_surface[surface] = {name: counters[name] - before[name] for name in counters}
+    compatibility, per_surface, counters, prior_sha = prior_compatibility(live_root, live_surfaces, stager, incoming)
     check_snapshot(snapshot)
     stager.reject_nested_mounts(live_root, mountinfo)
     stager.reject_nested_mounts(incoming_root, mountinfo)
     result = phase_bound(initial, incoming, old_exclusive, compatibility, order, block)
     archive_model = closed_managed_archive_budget(incoming, compatibility, order)
     result['modeledManagedArchive'] = archive_model
+    result['priorDependenciesSha256'] = prior_sha
     result['modeledManagedArchiveUpperBoundBytes'] = archive_model['archiveUpperBoundBytes']
     result.update({'initialCopyUpperBytes': initial, 'exclusiveOldContributionBytes': sum(old_exclusive.values()),
                    'compatibilityCounters': counters, 'perSurfaceCounters': per_surface,
@@ -391,12 +480,12 @@ def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent
     return result
 
 
-def locked_installed_stager():
+def locked_installed_stager(expected=None, lock_fd=None):
     if os.geteuid() != 0 or not sys.flags.isolated:
         raise ValueError('Live capacity verification requires root and isolated Python')
     lock = Path('/run/proofofwork-ui/deploy.lock')
     details = lock.lstat()
-    descriptor = int(os.environ['POW_UI_DEPLOY_LOCK_FD'])
+    descriptor = int(os.environ['POW_UI_DEPLOY_LOCK_FD']) if lock_fd is None else lock_fd
     opened = os.fstat(descriptor)
     if (not stat.S_ISREG(details.st_mode) or details.st_uid != 0 or details.st_mode & 0o7022 or
             (opened.st_dev, opened.st_ino) != (details.st_dev, details.st_ino)):
@@ -405,7 +494,7 @@ def locked_installed_stager():
     path = Path('/usr/local/sbin/proofofwork-ui-release-stage')
     if path.resolve() != path:
         raise ValueError('Installed stager path is not canonical')
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOATIME)
     try:
         before = os.fstat(descriptor)
         if (not stat.S_ISREG(before.st_mode) or before.st_uid != 0 or before.st_mode & 0o7022 or
@@ -417,10 +506,11 @@ def locked_installed_stager():
             raise ValueError('Installed stager changed during read')
     finally:
         os.close(descriptor)
-    if not isinstance(EXPECTED_STAGER_SHA256, str) or len(EXPECTED_STAGER_SHA256) != 64 or any(
-            char not in '0123456789abcdef' for char in EXPECTED_STAGER_SHA256):
+    expected = EXPECTED_STAGER_SHA256 if expected is None else expected
+    if not isinstance(expected, str) or len(expected) != 64 or any(
+            char not in '0123456789abcdef' for char in expected):
         raise ValueError('Exact planned installed-stager SHA256 is required')
-    if hashlib.sha256(code).hexdigest() != EXPECTED_STAGER_SHA256:
+    if hashlib.sha256(code).hexdigest() != expected:
         raise ValueError('Installed stager differs from the reviewed phase model')
     module = types.ModuleType('audit5_installed_stager')
     module.__file__ = str(path)

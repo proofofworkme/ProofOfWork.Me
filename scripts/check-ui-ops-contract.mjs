@@ -190,7 +190,8 @@ assert.match(provenance, /unsupported file type/u);
 assert.match(provenance, /verified_archive_sha256/u);
 assert.match(provenance, /verify_archive_payload/u);
 assert.match(provenance, /archive_payload_model=surfaces-v1/u);
-assert.match(provenance, /--same-permissions/u);
+assert.match(provenance, /provenance-archive-stream/u);
+assert.doesNotMatch(provenance, /tar --extract/u);
 assert.match(provenance, /archive_provenance/u);
 assert.match(provenance, /mktemp "\$\{ui_root\}\/\.proofofwork-ui-release/u);
 assert.match(
@@ -1460,7 +1461,7 @@ exec /usr/bin/sort "$@"
   );
   assert.match(
     unsafeArchiveDirectoryRecord.stderr,
-    /unsafe writable or special mode/u,
+    /Unsafe or unreadable managed archive mode/u,
   );
   assert.ok(!existsSync(`${unsafeArchiveDirectoryArchive}.provenance`));
 
@@ -1524,7 +1525,7 @@ exec /usr/bin/sort "$@"
   writeArchiveChecksum(traversalArchive);
   const traversal = recordArchive(traversalArchive);
   assert.equal(traversal.status, 1, traversal.stderr);
-  assert.match(traversal.stderr, /archive contains an unsafe path/u);
+  assert.match(traversal.stderr, /Archive contains a non-allowlisted path/u);
 
   const archiveSymlink = join(
     archivePayload,
@@ -1541,7 +1542,7 @@ exec /usr/bin/sort "$@"
   createSurfaceArchive(symlinkArchive);
   const linked = recordArchive(symlinkArchive);
   assert.equal(linked.status, 1, linked.stderr);
-  assert.match(linked.stderr, /link or unsupported entry type/u);
+  assert.match(linked.stderr, /Archive contains a link, sparse or unsupported entry/u);
   unlinkSync(archiveSymlink);
 
   const archive = join(fixture, "proofofwork-ui-release-test.tgz");

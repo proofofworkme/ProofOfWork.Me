@@ -105,13 +105,13 @@ except module['CapacityError'] as error:
     archive_for(www, old_archive)
     before = fingerprint(www)
     denied = run([PROVENANCE, 'record-rollback-evidence', '--archive', old_archive],
-                 {**environment, 'POW_TEST_CAPACITY_REFUSE_PHASE': 'provenance-archive-extract'}, False)
+                 {**environment, 'POW_TEST_CAPACITY_REFUSE_PHASE': 'provenance-archive-stream'}, False)
     assert denied.returncode != 0 and 'UI capacity refused' in denied.stderr, denied.stderr
     assert fingerprint(www) == before
     assert not Path(str(old_archive) + '.provenance').exists()
     assert list(scratch.iterdir()) == []
     assert not list(runtime.glob('.proofofwork-*'))
-    print('PASS archive extraction refusal preserves live/evidence and cleans only private scratch')
+    print('PASS archive stream capacity refusal preserves live/evidence and cleans only private scratch')
 
     run([PROVENANCE, 'record-rollback-evidence', '--archive', old_archive], environment)
     original_live = fingerprint(www)

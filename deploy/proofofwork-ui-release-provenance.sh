@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Authenticated release admission capability: pow-ui-stream-archive-verification-v1
 set -Eeuo pipefail
 
 command="${1:-verify}"
@@ -1032,7 +1033,6 @@ verify_archive_payload() {
   local archive="$1"
   local counts_name="$2"
   local digests_name="$3"
-  local extraction_root verification_status
   local -n expected_counts="${counts_name}"
   local -n expected_digests="${digests_name}"
   local -a archive_surfaces=("${surfaces[@]}")
@@ -1062,171 +1062,240 @@ verify_archive_payload() {
     archive_surfaces=("${pre_boost_surfaces[@]}")
   fi
 
-  ui_capacity_check "${TMPDIR:-/tmp}" 65536 4 provenance-verification-directory || return 1
-  if ! extraction_root="$(mktemp --directory "${TMPDIR:-/tmp}/proofofwork-ui-archive.XXXXXX")"; then
-    echo "Release archive extraction root could not be created." >&2
-    return 1
-  fi
-  if ! chmod 0700 "${extraction_root}"; then
-    /usr/bin/rm --recursive --force --one-file-system -- "${extraction_root}"
-    echo "Release archive extraction root could not be secured." >&2
-    return 1
-  fi
-  verification_status=0
-  (
-    if ! names_text="$(
-      LC_ALL=C tar --list --absolute-names --quoting-style=escape --file "${archive}"
-    )"; then
-      echo "Release archive path listing failed." >&2
-      exit 1
-    fi
-    if ! verbose_text="$(
-      LC_ALL=C tar --list --verbose --absolute-names --quoting-style=escape --file "${archive}"
-    )"; then
-      echo "Release archive metadata listing failed." >&2
-      exit 1
-    fi
-    if ! mapfile -t archive_names <<<"${names_text}" ||
-      ! mapfile -t verbose_entries <<<"${verbose_text}"; then
-      echo "Release archive listing could not be read." >&2
-      exit 1
-    fi
-    if ((${#archive_names[@]} == 0 || ${#archive_names[@]} != ${#verbose_entries[@]})); then
-      echo "Release archive listing is empty or inconsistent." >&2
-      exit 1
-    fi
-    declare -A seen_archive_entries=()
-    total_uncompressed_bytes=0
-    for index in "${!archive_names[@]}"; do
-      archive_name="${archive_names[${index}]}"
-      archive_type="${verbose_entries[${index}]:0:1}"
-      normalized_name="${archive_name%/}"
-      if [[ "${normalized_name}" == surfaces/permission || "${normalized_name}" == surfaces/permission/* ]] &&
-        [[ -z "${expected_counts[permission]:-}" || -z "${expected_digests[permission]:-}" ]]; then
-        echo "Release archive contains unexpected Permission payload without V5 evidence." >&2
-        exit 1
-      fi
-      if [[ "${normalized_name}" == surfaces/pages || "${normalized_name}" == surfaces/pages/* ]] &&
-        [[ -z "${expected_counts[pages]:-}" || -z "${expected_digests[pages]:-}" ]]; then
-        echo "Release archive contains unexpected Pages payload without V4 evidence." >&2
-        exit 1
-      fi
-      read -r _archive_mode _archive_owner archive_entry_bytes _archive_rest <<<"${verbose_entries[${index}]}"
-      if [[ ! "${archive_entry_bytes}" =~ ^[0-9]+$ ]]; then
-        echo "Release archive entry size is not parseable: ${archive_name}" >&2
-        exit 1
-      fi
-      total_uncompressed_bytes=$((total_uncompressed_bytes + archive_entry_bytes))
-      if ((total_uncompressed_bytes > 1073741824 || ${#archive_names[@]} > 10000)); then
-        echo "Release archive exceeds the entry-count or 1 GiB extraction safety limit." >&2
-        exit 1
-      fi
-      if [[ "${archive_type}" != "-" && "${archive_type}" != "d" ]]; then
-        echo "Release archive contains a link or unsupported entry type: ${archive_name}" >&2
-        exit 1
-      fi
-      if [[ -z "${normalized_name}" || "${normalized_name}" == /* ||
-        "${normalized_name}" == *"//"* || "/${normalized_name}/" == *"/../"* ||
-        "/${normalized_name}/" == *"/./"* || "${normalized_name}" == *"\\"* ]]; then
-        echo "Release archive contains an unsafe path: ${archive_name}" >&2
-        exit 1
-      fi
-      if [[ "${normalized_name}" == "surfaces" ]]; then
-        if [[ "${archive_type}" != "d" ]]; then
-          echo "Release archive surfaces root is not a directory." >&2
-          exit 1
-        fi
-      elif [[ ! "${normalized_name}" =~ ^surfaces/(${surface_pattern})(/[A-Za-z0-9._-]+)*$ ]]; then
-        echo "Release archive contains a non-allowlisted path: ${archive_name}" >&2
-        exit 1
-      fi
-      if [[ -n "${seen_archive_entries[${normalized_name}]:-}" ]]; then
-        echo "Release archive contains a duplicate path: ${archive_name}" >&2
-        exit 1
-      fi
-      seen_archive_entries["${normalized_name}"]=1
-    done
+  # Validate the stable compressed file and replay its exact served-path records
+  # in memory. No archive member is written to the verification filesystem.
+  ui_capacity_check "${TMPDIR:-/tmp}" 8388608 16 provenance-archive-stream || return 1
+  local -a surface_evidence=()
+  local surface
+  for surface in "${archive_surfaces[@]}"; do
+    surface_evidence+=("${surface}" "${expected_counts[${surface}]}" "${expected_digests[${surface}]}")
+  done
+  /usr/bin/python3 -I -B - "${archive}" "$4" "${surface_evidence[@]}" <<'PY_ARCHIVE'
+# This parser admits regular files and directories in the historical release
+# archives, including GNU long names and standard POSIX pax path/time headers.
+# TarInfo checks the physical header checksum. No extract or filesystem
+# destination API participates in parsing an untrusted archive.
+import gzip
+import hashlib
+import os
+import re
+import resource
+import signal
+import stat
+import subprocess
+import sys
+import tarfile
+from pathlib import Path
 
-    # Recheck the real extraction filesystem immediately before tar writes. The
-    # extra budget covers manifests and bounded inventories while it exists.
-    if ! /usr/bin/python3 -I -B "${capacity_script}" check-archive \
-      --path "${extraction_root}" --archive "${archive}" \
-      --additional-bytes 67108864 --additional-inodes 16 \
-      --phase provenance-archive-extract >&2; then
-      exit 1
-    fi
-    if ! LC_ALL=C tar \
-      --extract \
-      --file "${archive}" \
-      --directory "${extraction_root}" \
-      --no-same-owner \
-      --same-permissions \
-      --delay-directory-restore \
-      --no-overwrite-dir; then
-      echo "Release archive extraction failed." >&2
-      exit 1
-    fi
-    top_level_inventory="${extraction_root}/.proofofwork-top-level-inventory"
-    if ! : >"${top_level_inventory}"; then
-      echo "Release archive top-level inventory could not be created." >&2
-      exit 1
-    fi
-    if ! {
-      if [[ -n "${POW_UI_TEST_FAIL_ARCHIVE_TOP_LEVEL_DISCOVERY_AFTER_OUTPUT:-}" ]]; then
-        printf '%s\0' "${extraction_root}/surfaces"
-        false
-      else
-        find "${extraction_root}" -mindepth 1 -maxdepth 1 \
-          ! -path "${top_level_inventory}" -print0
-      fi
-    } >"${top_level_inventory}"; then
-      echo "Release archive top-level discovery failed." >&2
-      exit 1
-    fi
-    if ! mapfile -d '' -t top_level_entries <"${top_level_inventory}"; then
-      echo "Release archive top-level inventory could not be read." >&2
-      exit 1
-    fi
-    if ! rm -f -- "${top_level_inventory}"; then
-      echo "Release archive top-level inventory could not be removed." >&2
-      exit 1
-    fi
-    if ((${#top_level_entries[@]} != 1)) ||
-      [[ "${top_level_entries[0]}" != "${extraction_root}/surfaces" ]]; then
-      echo "Release archive must contain only the surfaces root." >&2
-      exit 1
-    fi
-    for surface in boost dns publish search code jobs; do
-      if [[ -z "${expected_counts[${surface}]:-}" &&
-        -e "${extraction_root}/surfaces/${surface}" ]]; then
-        echo "Legacy release archive contains unexpected ${surface} surface evidence." >&2
-        exit 1
-      fi
-    done
-    for surface in "${archive_surfaces[@]}"; do
-      archive_surface="${extraction_root}/surfaces/${surface}"
-      if ! validate_surface_directory "${surface}" "${archive_surface}"; then
-        exit 1
-      fi
-      if ! archive_count="$(surface_file_count_directory "${archive_surface}")"; then
-        echo "Release archive surface count failed: ${surface}" >&2
-        exit 1
-      fi
-      if ! archive_digest="$(surface_tree_sha256_directory "${archive_surface}")"; then
-        echo "Release archive surface digest failed: ${surface}" >&2
-        exit 1
-      fi
-      if [[ "${archive_count}" != "${expected_counts[${surface}]}" ||
-        "${archive_digest}" != "${expected_digests[${surface}]}" ]]; then
-        echo "Release archive surface does not match active UI bytes: ${surface}" >&2
-        exit 1
-      fi
-    done
-  ) || verification_status=$?
-  if [[ -d "${extraction_root}" && ! -L "${extraction_root}" ]]; then
-    /usr/bin/rm --recursive --force --one-file-system -- "${extraction_root}"
-  fi
-  return "${verification_status}"
+MIB = 1024 * 1024
+LIMIT = 1024 * MIB
+HEADER = 512
+ZERO = bytes(HEADER)
+archive = Path(sys.argv[1])
+expected_sha = sys.argv[2]
+args = iter(sys.argv[3:])
+expected = {name: (int(count), digest) for name, count, digest in zip(args, args, args, strict=True)}
+
+def require(condition, detail):
+    if not condition:
+        raise ValueError(detail)
+
+def identity(s):
+    return (s.st_dev, s.st_ino, s.st_mode, s.st_uid, s.st_gid, s.st_nlink,
+            s.st_size, s.st_blocks, s.st_mtime_ns, s.st_ctime_ns)
+
+class HashedSource:
+    def __init__(self, file):
+        self.file = file
+        self.digest = hashlib.sha256()
+    def read(self, size):
+        data = self.file.read(size)
+        self.digest.update(data)
+        return data
+
+def pax_fields(data):
+    # No sparse, link, xattr or vendor extraction instructions are supported.
+    allowed = {b'path', b'size', b'mtime', b'atime', b'ctime',
+               b'uid', b'gid', b'uname', b'gname', b'hdrcharset'}
+    fields = {}
+    start = 0
+    while start < len(data):
+        match = re.match(rb'([1-9][0-9]{0,4}) ', data[start:start + 7])
+        require(match, 'Malformed pax record length.')
+        end = start + int(match[1])
+        require(start + match.end() < end <= len(data) and data[end-1:end] == b'\n', 'Malformed pax record.')
+        key, sep, value = data[start + match.end():end-1].partition(b'=')
+        require(sep and key in allowed and key not in fields and b'\0' not in value, 'Unsupported or ambiguous pax metadata.')
+        fields[key] = value
+        start = end
+    return fields
+
+def verify(src):
+    explicit, kinds, files, indexes = set(), {}, {name: {} for name in expected}, {}
+    inventory = hashlib.sha256()
+    local_pax, global_pax, long_name = {}, {}, None
+    pending_extension = False
+    logical = physical_members = 0
+    # For ancestors without explicit directory records tar creates directories
+    # with its process umask. Check their public readability just as after extraction.
+    mask = os.umask(0o077)
+    def safe_mode(mode, directory):
+        bits = 0o005 if directory else 0o004
+        require(0 <= mode <= 0o7777 and not mode & 0o7022 and mode & bits == bits,
+                'Unsafe or unreadable managed archive mode.')
+    def exact(size):
+        require(0 <= size <= MIB and src.tell() + size <= LIMIT + 64 * MIB, 'Expanded tar stream exceeds its bound.')
+        data = src.read(size)
+        require(len(data) == size, 'Truncated tar stream.')
+        return data
+    while True:
+        header = exact(HEADER)
+        if header == ZERO:
+            require(not pending_extension and exact(HEADER) == ZERO, 'Incomplete tar terminal header.')
+            # Consume gzip trailers/CRC and reject hidden data or unbounded padding.
+            while True:
+                padding = src.read(64 * 1024)
+                if not padding:
+                    break
+                require(src.tell() <= LIMIT + 64 * MIB and not any(padding), 'Unexpected bytes after tar terminator.')
+            break
+        member = tarfile.TarInfo.frombuf(header, 'utf-8', 'strict')
+        physical_members += 1
+        require(physical_members <= 20001, 'Excessive tar headers.')
+        if member.type in (tarfile.GNUTYPE_LONGNAME, tarfile.XHDTYPE, tarfile.XGLTYPE):
+            require(0 < member.size <= 65536, 'Excessive tar extension length.')
+            data = exact(member.size)
+            require(not any(exact(-member.size % HEADER)), 'Nonzero tar metadata padding.')
+            if member.type == tarfile.GNUTYPE_LONGNAME:
+                require(long_name is None and data.endswith(b'\0') and b'\0' not in data[:-1], 'Ambiguous GNU long name.')
+                long_name = data[:-1].decode('ascii')
+            else:
+                fields = pax_fields(data)
+                if member.type == tarfile.XGLTYPE:
+                    require(not pending_extension and b'path' not in fields and b'size' not in fields, 'Invalid global pax path or size.')
+                    global_pax.update(fields)
+                else:
+                    require(not local_pax, 'Repeated local pax header.')
+                    local_pax = fields
+            pending_extension = True
+            continue
+        directory = member.type == tarfile.DIRTYPE
+        require(directory or member.type in (tarfile.REGTYPE, tarfile.AREGTYPE), 'Archive contains a link, sparse or unsupported entry.')
+        require(b'//' not in header[:100].split(b'\0', 1)[0], 'Archive member has a noncanonical path.')
+        fields = {**global_pax, **local_pax}
+        require(not (long_name is not None and b'path' in fields), 'Conflicting archive path overrides.')
+        name = fields[b'path'].decode('ascii') if b'path' in fields else long_name or member.name
+        if b'size' in fields:
+            require(re.fullmatch(rb'0|[1-9][0-9]{0,10}', fields[b'size']) and int(fields[b'size']) == member.size, 'Ambiguous pax size.')
+        local_pax, long_name, pending_extension = {}, None, False
+        if directory:
+            name = name.removesuffix('/')
+        parts = name.split('/')
+        require(len(name) <= 4096 and parts[0] == 'surfaces' and
+                all(re.fullmatch(r'[A-Za-z0-9._-]+', part) and part not in ('.','..') for part in parts),
+                'Archive contains a non-allowlisted path.')
+        require(len(parts) == 1 or parts[1] in expected, 'Archive contains an unexpected surface for this release.')
+        require(name not in explicit and (name not in kinds or directory and kinds[name] == 'directory'),
+                'Duplicate or conflicting archive member.')
+        explicit.add(name)
+        for pos in range(1, len(parts)):
+            parent = '/'.join(parts[:pos])
+            require(kinds.setdefault(parent, 'directory') == 'directory', 'Archive member lies below a file.')
+        kinds[name] = 'directory' if directory else 'file'
+        require(len(kinds) <= 10000, 'Archive exceeds the 10,000 entry bound.')
+        size = member.size
+        require(size >= 0 and logical + size <= LIMIT and (not directory or size == 0), 'Invalid archive member size.')
+        logical += size
+        if len(parts) < 3:
+            require(directory, 'Archive namespace root must be a directory.')
+        if len(parts) > 1:
+            safe_mode(member.mode, directory)
+        permissions = stat.filemode((stat.S_IFDIR if directory else stat.S_IFREG) | member.mode)
+        inventory.update(f'{permissions}\0{size}\0{name}\n'.encode('ascii'))
+        if directory:
+            continue
+        surface, relative = parts[1], '/'.join(parts[2:])
+        digest = hashlib.sha256()
+        index = bytearray() if relative == 'index.html' else None
+        if index is not None:
+            require(size <= 2 * MIB, 'Release index exceeds its 2 MiB bound.')
+        remaining = size
+        while remaining:
+            data = exact(min(MIB, remaining))
+            digest.update(data)
+            if index is not None:
+                index.extend(data)
+            remaining -= len(data)
+        require(not any(exact(-size % HEADER)), 'Nonzero tar file padding.')
+        files[surface][relative] = (format(member.mode, 'o'), digest.hexdigest())
+        if index is not None:
+            indexes[surface] = set(re.findall(rb'/assets/[A-Za-z0-9._/-]+', index))
+    require(kinds.get('surfaces') == 'directory' and set(indexes) == set(expected), 'Incomplete release archive namespace.')
+    if os.environ.get('POW_UI_TEST_FAIL_ARCHIVE_TOP_LEVEL_DISCOVERY_AFTER_OUTPUT'):
+        raise ValueError('Release archive top-level discovery failed.')
+    if any(name != 'surfaces' and name not in explicit for name in kinds):
+        safe_mode(0o777 & ~mask, True)
+    for surface, entries in files.items():
+        refs = indexes[surface]
+        require(refs and all(b'..' not in ref and ref[1:].decode('ascii') in entries for ref in refs),
+                'Release surface references a missing local asset.')
+        digest = hashlib.sha256()
+        record_bytes = 0
+        for path, (mode, file_sha) in sorted(entries.items()):
+            # Same LC_ALL=C path order and exact bytes as surface_tree_sha256_directory.
+            record_bytes += len(path) + len(mode) + len(file_sha) + 8
+            require(record_bytes <= 16 * MIB, 'Release surface fingerprint exceeds the 16 MiB limit.')
+            digest.update(path.encode('ascii') + b'\0' + mode.encode('ascii') + b'\0' + file_sha.encode('ascii') + b'\n')
+        require((len(entries), digest.hexdigest()) == expected[surface],
+                'Release archive surface does not match active UI bytes: ' + surface)
+    return inventory.digest()
+
+def verify_gnu_inventory(handle, expected_inventory):
+    # Production restores use GNU tar. Its interpretation must match the
+    # bounded parser's ordered member types, modes, sizes and effective names.
+    handle.seek(0)
+    inventory = hashlib.sha256()
+    with subprocess.Popen(['/usr/bin/tar', '--list', '--verbose', '--gzip', '--absolute-names',
+                           '--numeric-owner', '--quoting-style=escape', '--file=-'], stdin=handle,
+                          stdout=subprocess.PIPE, env={'PATH':'/usr/bin:/bin','LC_ALL':'C','TZ':'UTC'},
+                          start_new_session=True) as listing:
+        try:
+            for i in range(10001):
+                line = listing.stdout.readline(4608)
+                if not line:
+                    break
+                require(i < 10000 and line.endswith(b'\n'), 'GNU tar inventory exceeds its bounds.')
+                parts = line[:-1].split(None, 5)
+                require(len(parts) == 6 and re.fullmatch(rb'[-d][rwxstST-]{9}', parts[0])
+                        and parts[2].isdigit(), 'GNU tar rejected the member type, mode or length.')
+                name = parts[5].removesuffix(b'/') if parts[0].startswith(b'd') else parts[5]
+                inventory.update(parts[0] + b'\0' + parts[2] + b'\0' + name + b'\n')
+            require(listing.wait(timeout=90) == 0 and inventory.digest() == expected_inventory,
+                    'GNU tar inventory differs from the verified archive members.')
+        finally:
+            if listing.poll() is None:
+                os.killpg(listing.pid, signal.SIGKILL)
+
+try:
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))
+    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    memory_cap = min(value for value in (384*MIB, soft, hard) if value != resource.RLIM_INFINITY)
+    resource.setrlimit(resource.RLIMIT_AS, (memory_cap, hard))
+    before = archive.lstat()
+    require(archive.resolve() == archive and stat.S_ISREG(before.st_mode) and before.st_uid == os.geteuid()
+            and not before.st_mode & 0o7022 and before.st_size <= 512 * MIB, 'Unsafe release archive.')
+    with os.fdopen(os.open(archive, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME), 'rb') as handle:
+        require(identity(os.fstat(handle.fileno())) == identity(before), 'Archive changed before verification.')
+        hashed = HashedSource(handle)
+        with gzip.GzipFile(fileobj=hashed, mode='rb') as contents:
+            inventory = verify(contents)
+        require(hashed.digest.hexdigest() == expected_sha and handle.tell() == before.st_size, 'Stream differs from the committed archive checksum.')
+        verify_gnu_inventory(handle, inventory)
+        require(identity(os.fstat(handle.fileno())) == identity(before) == identity(archive.lstat()), 'Archive changed during verification.')
+except (ValueError, OSError, EOFError, tarfile.TarError) as exc:
+    raise SystemExit('Release archive verification failed: ' + str(exc))
+PY_ARCHIVE
 }
 
 record_rollback_evidence() {
@@ -1312,7 +1381,7 @@ record_rollback_evidence() {
     echo "NFT compatibility alias must exactly match Computer paths, bytes, and modes." >&2
     exit 1
   fi
-  verify_archive_payload "${archive}" counts digests
+  verify_archive_payload "${archive}" counts digests "${archive_sha256}"
 
   recorded_at="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
   ui_capacity_check "${ui_root}" 131072 8 provenance-rollback-manifests || return 1
@@ -1352,7 +1421,7 @@ record_rollback_evidence() {
       exit 1
     fi
   done
-  verify_archive_payload "${archive}" counts digests
+  verify_archive_payload "${archive}" counts digests "${archive_sha256}"
   sync --file-system "${temporary}"
   sync --file-system "${provenance_temporary}"
   if ! ln -- "${provenance_temporary}" "${archive_provenance}"; then
@@ -1480,7 +1549,7 @@ process_release_manifest() {
     echo "NFT compatibility alias must exactly match Computer paths, bytes, and modes." >&2
     exit 1
   fi
-  verify_archive_payload "${archive}" counts digests
+  verify_archive_payload "${archive}" counts digests "${archive_sha256}"
 
   if [[ "${operation}" == "verify-candidate" ]]; then
     second_archive_sha256="$(verified_archive_sha256 "${archive}" "${archive_sha256}")"
@@ -1598,12 +1667,16 @@ process_release_manifest() {
 
 verify_manifest() {
   local line key value surface expected_count expected_digest actual_count actual_digest mode
+  local verify_payload=0
+  local -A payload_counts=() payload_digests=()
   local archive archive_provenance actual_archive_sha256 manifest_owner provenance_mode provenance_owner
   local -a manifest_surfaces=("${surfaces[@]}")
   declare -A values=()
   declare -A seen=()
-  if (($# != 0)); then
-    echo "verify accepts no additional arguments." >&2
+  if (($# == 1)) && [[ "$1" == "--archive-payload" ]]; then
+    verify_payload=1
+  elif (($# != 0)); then
+    echo "verify accepts only the optional --archive-payload check." >&2
     exit 64
   fi
   if [[ ! -f "${manifest}" || -L "${manifest}" || "$(realpath -e "${manifest}")" != "${manifest}" ]]; then
@@ -1772,7 +1845,12 @@ verify_manifest() {
       echo "Active UI release provenance mismatch: ${surface}" >&2
       exit 1
     fi
+    payload_counts["${surface}"]="${actual_count}"
+    payload_digests["${surface}"]="${actual_digest}"
   done
+  if ((verify_payload)); then
+    verify_archive_payload "${archive}" payload_counts payload_digests "${actual_archive_sha256}"
+  fi
   printf 'ui_release_provenance status=verified release_id=%s commit=%s archive_sha256=%s\n' \
     "${values[release_id]}" "${values[commit]}" "${values[archive_sha256]}"
 }
@@ -1933,7 +2011,7 @@ verify_rollback_evidence() {
     counts["${surface}"]="${expected_count}"
     digests["${surface}"]="${expected_digest}"
   done
-  verify_archive_payload "${archive}" counts digests
+  verify_archive_payload "${archive}" counts digests "${actual_archive_sha256}"
   printf 'ui_rollback_evidence status=verified archive_sha256=%s\n' \
     "${values[archive_sha256]}"
 }

@@ -52,6 +52,27 @@ def capture(native):
             'liveTree': native.tree_bound(Path('/var/www'), Path(POOLS['scratch']))}
 
 
+def bound_stream_verification(plan):
+    """A smaller charge applies only to the proven pair of installed streaming helpers."""
+    evidence = plan['closedArchive']; request = evidence['request']; archive = evidence['archive']
+    if (plan['inputStorage'] != 'deploy-scratch-v1' or plan.get('releaseFormat') != 'proofofwork-ui-release-v5' or
+            request.get('model') != 'proof-ui-closed-input-v1' or
+            any(request.get(k) != plan[k] for k in ('releaseId', 'commit', 'tree')) or
+            request['surfacesSha256'] != plan['surfaces']['sha256'] or
+            request['phaseSourceSha256'] != plan['phaseCapacity']['sha256'] or
+            request['payloadFingerprint'] != plan['surfacesPayloadFingerprint'] or
+            request['helperHashes'] != {k: plan['publicationHelpers'][k]['sha256'] for k in ('publisher', 'provenance', 'stager')} or
+            evidence['liveManifestSha256'] != plan['oldLiveManifestSha256'] or
+            evidence['liveTreeSha256'] != plan['oldFullRootTreeSha256'] or
+            archive.get('model') != 'closed-managed-archive-tar-gzip-v1' or archive.get('hardDereference') is not True or
+            sorted(archive['managedSurfaces']) != sorted(plan['managedSurfaces']) or
+            not 0 < integer(archive['regularFiles']) < integer(archive['entries']) <= 10000 or
+            not 0 < integer(archive['logicalBytes']) <= integer(archive['archiveUpperBoundBytes']) or
+            archive['archiveUpperBoundBytes'] != plan['stageArchiveUpperBoundBytes']):
+        raise ValueError('Streaming verifier charge is not bound to this release and its closed inputs')
+    return 8 * 1024**2
+
+
 def requirements(plan, census):
     if census.get('limits') != LIMITS:
         raise ValueError('Whole-release census has different storage limits')
@@ -68,7 +89,8 @@ def requirements(plan, census):
     candidate = old + incoming
     # Provenance verification extracts the managed archive while the candidate,
     # source and archive still exist. Bound that transient copy too.
-    verification = candidate
+    streaming = 'closedArchive' in plan
+    verification = bound_stream_verification(plan) if streaming else candidate
     # Fresh release-evidence transport atomically moves the received surfaces
     # out of scratch, verifies their old path is absent, and only then stages.
     # These phases cannot overlap. Keep the full verification cushion charged
@@ -95,7 +117,7 @@ def requirements(plan, census):
             'retirementCreditBytes': 0, 'futureHardlinkCreditBytes': 0,
             'charges': {'receivedSurfaces': incoming, 'preservedSource': source,
                         'candidateCopy': candidate, 'managedArchiveAndSidecars': archive,
-                        'provenanceExtraction': verification, 'liveToRollbackPool': old,
+                        ('provenanceStreamDisk' if streaming else 'provenanceExtraction'): verification, 'liveToRollbackPool': old,
                         'receiptDirectoryAndCompatibilityMargin': EVIDENCE_BYTES}}
 
 

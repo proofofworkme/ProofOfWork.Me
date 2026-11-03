@@ -113,6 +113,13 @@ sequence_namespace = {'__name__': '_whole_sequence_census'}
 assert isinstance(SEQUENCE_SOURCE, bytes) and len(SEQUENCE_SOURCE) <= 16384
 exec(compile(SEQUENCE_SOURCE, 'sequence_capacity.py', 'exec'), sequence_namespace)
 result['wholeSequenceCensus'] = sequence_namespace['capture'](types.SimpleNamespace(**capacity_namespace))
+if globals().get('CLOSED_REQUEST') is not None:
+    assert active_manifest['format'] == 'proofofwork-ui-release-v5'
+    assert isinstance(PHASE_SOURCE, bytes) and 0 < len(PHASE_SOURCE) <= 32768
+    assert hashlib.sha256(PHASE_SOURCE).hexdigest() == CLOSED_REQUEST['phaseSourceSha256']
+    phase = {'__name__': '_closed_release_preflight'}
+    exec(compile(PHASE_SOURCE, 'phase_capacity.py', 'exec'), phase)
+    result['closedArchive'] = phase['recheck_closed_input'](CLOSED_REQUEST, helpers, live, fd)
 for argv in [
     ['/usr/local/sbin/proofofwork-ui-release-provenance','verify-rollback'],
     ['/usr/bin/python3','-I','-B',paths['capacity'],'check-scratch','--path','/var/tmp/proofofwork-deploy',

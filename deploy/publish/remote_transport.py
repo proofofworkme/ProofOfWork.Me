@@ -600,6 +600,12 @@ if phase == 'surfaces-stage':
                  helpers['capacity']['path'], 'exec'), native_ns)
     import types
     fresh_census = sequence_ns['capture'](types.SimpleNamespace(**native_ns))
+    if 'closedArchive' in p:
+        phase_ns = {'__name__': '_closed_release_readmission'}
+        exec(compile(phase_capacity_source, 'phase_capacity.py', 'exec'), phase_ns)
+        fresh = phase_ns['recheck_closed_input'](p['closedArchive']['request'], helpers, live, lock_fd)
+        assert fresh == p['closedArchive'], 'Closed archive inputs changed before transport'
+        assert namespace['fingerprint'](Path('/var/www')) == live, 'Live bytes changed during closure verification'
     required = sequence_ns['requirements'](p, fresh_census)
     assert required == p['wholeSequenceAdmission']['requirements'], 'Whole-release allocation model changed'
     whole_sequence_admission = sequence_ns['admit'](required, fresh_census)
@@ -700,6 +706,11 @@ if phase != 'source':
     model = json.loads((out / 'stage-model.json').read_bytes())
     assert model['inputStabilityVerified'] is True and model['installedStagerSha256'] == helpers['stager']['sha256']
     stage_archive_upper = modeled_managed_archive_upper(model, p['stageArchiveUpperBoundBytes'], SURFACES)
+    if 'closedArchive' in p:
+        evidence = p['closedArchive']
+        assert model['modeledManagedArchive'] == evidence['archive']
+        assert model['priorDependenciesSha256'] == evidence['priorDependenciesSha256']
+        assert model['compatibilityCounters'] == evidence['dependencyCounters']
     # The release archive lives outside scratch. Charge it only to actual disk.
     if phase == 'preserved-stage-resume':
         # No private candidate enters scratch until the installed stager has

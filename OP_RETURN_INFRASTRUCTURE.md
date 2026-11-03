@@ -67,6 +67,23 @@ database restore. Small policy, rollback and completion records are on the VPS u
 SHA-256 is `15070ba9ba11d78a8f3e17e7850a022ea2f99c5ca79d83bb0edef193f0d5b0b5`.
 No database or application runtime restart was required for backup rotation.
 
+### UI archive admission and verification
+
+For a new closed-input release, run `deploy/publish/release.py prepare-closed-input`
+on the build VPS. Preflight and transport re-evaluate the candidate against the
+installed stager, current surfaces and pinned helper hashes before sending any
+release bytes. The received stage must reproduce the same closure. Historical
+plans retain their original accounting. Keep the 10 GiB operating reserve,
+independent deploy-scratch cap, inode checks and source/rollback holds.
+
+The publisher checks a bounded 8 MiB verification workspace before exchange.
+The provenance helper authenticates the archive, streams its entries and checks
+paths, file modes, exact bytes, surface tree hashes and index asset references
+against the staged release. It does not unpack a second surface tree. The
+guarded tooling installer verifies both the current and fallback archive on the
+UI VPS before promoting the two helpers. None of these checks permits removal
+of active source, archived upload evidence or a previous release hold.
+
 ## AMO background browsing snapshots
 
 `/api/v1/marketplace-browse` is a display-only read model separate from strict

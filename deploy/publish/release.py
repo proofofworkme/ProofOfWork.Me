@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tarfile
 import types
+import zlib
 from pathlib import PurePosixPath
 
 ROOT = Path(__file__).resolve().parent
@@ -59,7 +60,7 @@ def artifact_tooling_binding(commit, tree):
     return {'toolingCommit': head, 'toolingTree': head_tree, 'deploymentOnlyChanges': changed}
 
 
-def bundle_payload_fingerprint(path, release, surfaces=SURFACES):
+def bundle_payload_fingerprint(path, release, surfaces=SURFACES, inventory=None):
     """Independently bind extracted bytes/modes to the already SHA-pinned local tar."""
     prefix = 'proofofwork-ui-surfaces-' + release
     rows, seen, total = [], set(), 0
@@ -93,7 +94,13 @@ def bundle_payload_fingerprint(path, release, surfaces=SURFACES):
         if row[0] != '.':
             assert by_path[PurePosixPath(row[0]).parent.as_posix()][1] == 'directory'
     rows.sort(key=lambda row: (row[0] != '.', PurePosixPath(row[0]).parts))
-    return {'sha256': hashlib.sha256(json.dumps(rows, separators=(',', ':')).encode()).hexdigest(),
+    raw = json.dumps(rows, separators=(',', ':')).encode()
+    if inventory is not None:
+        compressed = zlib.compress(raw, 9)
+        if len(compressed) > 65536 or len(raw) > 4*1024**2:
+            raise ValueError('Candidate inventory exceeds bounded release metadata transport')
+        inventory.extend(compressed)
+    return {'sha256': hashlib.sha256(raw).hexdigest(),
             'entries': len(rows), 'regularBytes': sum(row[5] for row in rows)}
 
 
@@ -354,12 +361,65 @@ def load_plan(path):
         assert set(p['managedSurfaces']) == set(surfaces) and len(p['managedSurfaces']) == len(surfaces)
     return p, hashlib.sha256(raw).hexdigest(), raw
 
+def closed_input(build):
+    """Build a bounded, metadata-only proof from the actual pinned surface archive."""
+    if (build.get('releaseFormat') != 'proofofwork-ui-release-v5' or
+            sorted(build['surfaces']) != sorted(PERMISSION_SURFACES) or
+            not RELEASE.fullmatch(build['releaseId']) or not HEX40.fullmatch(build['commit']) or
+            not HEX40.fullmatch(build['tree']) or not build['releaseId'].startswith(build['commit'][:12]+'-')):
+        raise ValueError('Closed archive input requires an exact full V5 build')
+    proof = {}
+    for key, path in {'publisher': 'deploy/proofofwork-ui-release-publish.sh',
+                      'provenance': 'deploy/proofofwork-ui-release-provenance.sh',
+                      'stager': 'deploy/proofofwork-ui-release-stage.py'}.items():
+        raw = subprocess.check_output(['git', '-C', str(REPO), 'show', build['commit'] + ':' + path])
+        if key != 'stager' and b'pow-ui-stream-archive-verification-v1' not in raw:
+            raise ValueError('Release commit lacks paired streaming archive verification')
+        proof[key] = hashlib.sha256(raw).hexdigest()
+    bundle = build['bundles']['surfaces']; path = Path(bundle['path'])
+    if path.is_symlink() or not path.is_file() or digest(path) != bundle['sha256'] or path.stat().st_size != bundle['bytes']:
+        raise ValueError('Candidate surface archive differs from build receipt')
+    packed = bytearray()
+    value = bundle_payload_fingerprint(path, build['releaseId'], PERMISSION_SURFACES, packed)
+    return {'model': 'proof-ui-closed-input-v1', 'releaseId': build['releaseId'], 'commit': build['commit'],
+            'tree': build['tree'], 'surfacesSha256': bundle['sha256'], 'payloadFingerprint': value,
+            'inventorySha256': hashlib.sha256(packed).hexdigest(), 'helperHashes': proof,
+            'phaseSourceSha256': hashlib.sha256(subprocess.check_output(
+                ['git', '-C', str(REPO), 'show', build['commit'] + ':deploy/publish/phase_capacity.py'])).hexdigest()}, bytes(packed)
+
+
+def prepare_closed_input(args):
+    request, packed = closed_input(json.loads(Path(args.build_receipt).read_bytes()))
+    create(args.output + '.zlib', packed)
+    create(args.output, (json.dumps(request, indent=2) + '\n').encode())
+    print(json.dumps({'request': args.output, 'inventorySha256': request['inventorySha256'], 'inventoryBytes': len(packed)}))
+
+
 def preflight(args):
     lifecycle = lifecycle_module().status(require_complete=True)
     script = (ROOT / 'preflight.py').read_bytes(); ast.parse(script)
     sequence = (ROOT / 'sequence_capacity.py').read_bytes(); ast.parse(sequence)
     script = ('import base64\nSEQUENCE_SOURCE=base64.b64decode(' +
               repr(base64.b64encode(sequence).decode()) + ')\n').encode() + script
+    closed = getattr(args, 'closed_request', None)
+    if closed:
+        request = json.loads(Path(closed).read_bytes())
+        if not RELEASE.fullmatch(request['releaseId']) or not HEX64.fullmatch(request['inventorySha256']):
+            raise ValueError('Invalid closed input request identity')
+        if not HEX40.fullmatch(request['commit']) or not request['releaseId'].startswith(request['commit'][:12]+'-'):
+            raise ValueError('Invalid closed preflight commit')
+        for name in ('phase_capacity.py', 'sequence_capacity.py', 'preflight.py'):
+            reviewed = subprocess.check_output(['git','-C',str(REPO),'show',request['commit']+':deploy/publish/'+name])
+            if reviewed != (ROOT/name).read_bytes():
+                raise ValueError('Closed preflight source differs from the release commit: '+name)
+        packed = Path(str(closed) + '.zlib').read_bytes()
+        if not 0 < len(packed) <= 65536 or hashlib.sha256(packed).hexdigest() != request['inventorySha256']:
+            raise ValueError('Closed input request does not match inventory')
+        target = '/var/tmp/proofofwork-deploy/recovery-control-' + request['releaseId'] + '-inventory-' + request['inventorySha256'] + '.zlib'
+        remote(['/usr/bin/python3', '-I', '-B', '-c', UPLOAD, request['inventorySha256'], target], data=packed, timeout=180)
+        phase = (ROOT / 'phase_capacity.py').read_bytes()
+        script = ('import base64\nPHASE_SOURCE=base64.b64decode(' + repr(base64.b64encode(phase).decode()) +
+                  ')\nCLOSED_REQUEST=' + repr(request) + '\n').encode() + script
     result = remote(['/usr/bin/python3', '-I', '-B', '-'], data=script,
                     stdout=subprocess.PIPE, timeout=600)
     p = json.loads(result.stdout)
@@ -486,6 +546,18 @@ def make_plan(args):
     c['allocationDerivation'] = {'oldManaged': old, 'newLogicalBytes': logical, 'newEntries': entries,
         'receiveMetadataBytesPerEntry': 4096, 'receiveFixedMarginBytes': 16*1024**2,
         'archiveFixedMarginBytes': 32*1024**2, 'archivePaddingBytesPerEntry': 2048}
+    if 'closedArchive' in p:
+        if any((*resume_args, *preserved_args, *capacity_args)) or input_storage != 'deploy-scratch-v1':
+            raise ValueError('Closed archive evidence requires a fresh scratch-input release')
+        request, _ = closed_input(b)
+        evidence = p['closedArchive']
+        if evidence['request'] != request or c['surfacesPayloadFingerprint'] != request['payloadFingerprint']:
+            raise ValueError('Closed archive evidence differs from this exact build')
+        c['closedArchive'] = evidence
+        census_bound = c['stageArchiveUpperBoundBytes']
+        c['stageArchiveUpperBoundBytes'] = evidence['archive']['archiveUpperBoundBytes']
+        if not 0 < c['stageArchiveUpperBoundBytes'] <= census_bound:
+            raise ValueError('Closed archive bound exceeds old and new full archive envelope')
     sequence_source = (ROOT / 'sequence_capacity.py').read_bytes()
     namespace = {'__name__': '_whole_release_capacity'}
     exec(compile(sequence_source, 'sequence_capacity.py', 'exec'), namespace)
@@ -565,7 +637,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repo', type=Path, default=REPO, help='Exact clean committed release checkout')
     sub = parser.add_subparsers(dest='command', required=True)
-    p = sub.add_parser('preflight'); p.add_argument('output'); p.set_defaults(fn=preflight)
+    p = sub.add_parser('prepare-closed-input'); p.add_argument('build_receipt'); p.add_argument('output'); p.set_defaults(fn=prepare_closed_input)
+    p = sub.add_parser('preflight'); p.add_argument('output'); p.add_argument('--closed-request'); p.set_defaults(fn=preflight)
     p = sub.add_parser('make-plan'); p.add_argument('build_receipt'); p.add_argument('preflight'); p.add_argument('output'); p.add_argument('--attempt', default='initial')
     p.add_argument('--input-storage', choices=('release-evidence-v1', 'deploy-scratch-v1'), default='release-evidence-v1')
     p.add_argument('--resume-plan'); p.add_argument('--resume-evidence'); p.add_argument('--resume-inventory'); p.add_argument('--preserved-plan'); p.add_argument('--preserved-evidence'); p.add_argument('--preserved-incoming-receipt'); p.add_argument('--preserved-inventory'); p.set_defaults(fn=make_plan)
