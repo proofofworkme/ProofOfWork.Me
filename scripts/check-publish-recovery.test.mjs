@@ -16,6 +16,7 @@ const networks = dataModule(await readFile(new URL("../src/shared/bitcoin/networ
 const source = (await readFile(new URL("../src/features/boost/boostWallet.ts", import.meta.url), "utf8"))
   .replace('"bitcoinjs-lib"', JSON.stringify(import.meta.resolve("bitcoinjs-lib")))
   .replace('"@bitcoinerlab/secp256k1"', JSON.stringify(import.meta.resolve("@bitcoinerlab/secp256k1")))
+  .replace('"../powcat/powcatJournal.mjs"', JSON.stringify(moduleStub("export const readPowcatReservedInputs = async () => [];")))
   .replace('"buffer"', '"node:buffer"')
   .replace('"../../walletUtxos"', JSON.stringify(moduleStub("export const enrichWalletCuratedUtxoConfirmations = () => {}; export const estimateTxVbytes = () => { throw new Error('Recovery fixture does not prepare transactions'); }; export const normalizeWalletUtxos = () => {}; export const selectUtxos = () => {};")))
   .replace('"../../functions"', JSON.stringify(moduleStub("export const errorMessage = (cause, fallback) => cause instanceof Error ? cause.message : fallback; export const shortAddress = value => value;")))

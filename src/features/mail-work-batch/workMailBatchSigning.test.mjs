@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import * as bitcoin from 'bitcoinjs-lib';
 import * as client from './workMailBatchClient.mjs';
+import { POWCAT_MAIL_MIME, powcatPointerFromAttachment } from '../../shared/protocol/powcatMail.mjs';
 import {validateWorkMailBatchV1RawTransaction} from '../../../server/work-mail-batch-transaction.mjs';
 import {verifyOwnerOutputCommitment} from '../../shared/protocol/ownerOutputCommitment.mjs';
 import {parseWorkMailBatchPayload,WORK_MAIL_BATCH_TOKEN_ID,WORK_MAIL_BATCH_REGISTRY_ADDRESS} from '../../shared/protocol/workMailBatch.mjs';
@@ -32,7 +33,7 @@ function fixture({count=78,contextChange=false,unknown=false,weak=false,storageF
  let signCalls=0,broadcastCalls=0,capacityChecks=0,statusCalls=0,anchorChecks=0;const statuses=[],reviews=[],capacityTxids=[],pendingTransfers=[];
  const wallet={signPsbt:async(hex,options)=>{signCalls++;assert.equal(options.toSignInputs[0].sighashTypes[0],1);const signed=signOwnerOutputCommitmentPsbt(hex,{spendPath:'p2wpkh',hashType:weak?2:1});if(contextChange)context.mailReviewContextRef.current='changed';return signed;}};
  const allSentRef={current:[]},mailReviewResolverRef={current:null};
- const context=vm.createContext({...client,...payment,...recovery,...hold,bitcoin,Buffer,verifyOwnerOutputCommitment,localStorage:storage,
+ const context=vm.createContext({POWCAT_MAIL_MIME,powcatPointerFromAttachment,...client,...payment,...recovery,...hold,bitcoin,Buffer,verifyOwnerOutputCommitment,localStorage:storage,
   window:{unisat:wallet},document:{activeElement:null},HTMLElement:class {},address:owner,network:'livenet',feeRate:1,
   mailSendInFlightRef:{current:false},mailSendBusy:false,uncertainMailBroadcast:false,mailReviewReturnFocusRef:{current:null},mailReviewContextRef:{current:'draft'},mailWalletRevisionRef:{current:1},mailReviewResolverRef,
   composeDataCarrierBytes:100,MAX_DATA_CARRIER_BYTES:100000,messageWorkAmountInvalid:false,boostComposeReason:'',socialMode:false,

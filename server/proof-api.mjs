@@ -7,6 +7,7 @@ import {
   withPrivatePhaseTimings as withMarketplaceReadPhases,
 } from "./wallet-read-observation.mjs";
 import { createPermissionVerificationStore } from "./permission-verification-store.mjs";
+import { createPowcatReader, powcatDownloadHeaders } from "./powcat-reader.mjs";
 import { createDnsVerificationStore } from "./dns-verification-store.mjs";
 import { createAmoBrowseSnapshotStore } from "./amo-browse-snapshot.mjs";
 import {
@@ -8843,6 +8844,28 @@ async function bitcoinRpc(method, params) {
     return null;
   }
   return bitcoinRpcDispatch(method, params);
+}
+
+const readPowcatFile = createPowcatReader({ chain: "main", rpc: async (method, params) => {
+  const reply = await bitcoinRpc(method, params);
+  if (!reply?.ok) throw Object.assign(new Error("Core RPC unavailable."), { code: reply?.error?.code });
+  return reply.result;
+} });
+
+let activePowcatRequests = 0;
+function admitPowcatRequest(response) {
+  if (activePowcatRequests >= 2) throw Object.assign(new Error("File verification is busy."), { statusCode: 429 });
+  activePowcatRequests++;
+  const cancellation = new AbortController();
+  const release = () => {
+    response.off("finish", release);
+    response.off("close", release);
+    cancellation.abort();
+    activePowcatRequests--;
+  };
+  response.once("finish", release);
+  response.once("close", release);
+  return cancellation.signal;
 }
 
 async function bitcoinRpcGetTxOutBatch(outpoints) {
@@ -83015,6 +83038,26 @@ async function handleRequest(request, response) {
       return;
     }
 
+    if (url.pathname.startsWith("/api/v1/powcat/")) {
+      if ((url.searchParams.get("network") ?? "livenet") !== "livenet" ||
+        !/^\/api\/v1\/powcat\/[0-9a-f]{64}$/u.test(url.pathname) ||
+        ![null, "0", "1"].includes(url.searchParams.get("download"))) {
+        errorResponse(response, 400, "Use a livenet linker TXID and a valid download flag.");
+        return;
+      }
+      const signal = admitPowcatRequest(response);
+      const { bytes, ...metadata } = await readPowcatFile(pathParts[3], { signal });
+      if (signal.aborted) return;
+      if (url.searchParams.get("download") === "1") {
+        response.setTimeout(30_000, () => response.destroy());
+        response.writeHead(200, powcatDownloadHeaders(metadata));
+        response.end(bytes);
+      } else {
+        jsonResponse(response, 200, { ...metadata, network: "livenet", confirmed: true }, "no-store");
+      }
+      return;
+    }
+
     if (url.pathname === "/api/v1/work-mail-batch-status") {
       jsonResponse(response, 200, await workMailBatchMetadata(networkFromSearch(url.searchParams)), "no-store");
       return;
@@ -84861,12 +84904,16 @@ async function handleRequest(request, response) {
         return;
       }
 
-      jsonResponse(
-        response,
-        200,
-        await txStatusPayload(txid, network),
-        "no-store",
-      );
+      if (url.searchParams.get("powcat") === "1") {
+        if (network !== "livenet") {
+          errorResponse(response, 400, "File publication status requires livenet.");
+          return;
+        }
+        admitPowcatRequest(response);
+        jsonResponse(response, 200, await bitcoinCoreTxStatusPayload(txid, network), "no-store");
+      } else {
+        jsonResponse(response, 200, await txStatusPayload(txid, network), "no-store");
+      }
       return;
     }
 

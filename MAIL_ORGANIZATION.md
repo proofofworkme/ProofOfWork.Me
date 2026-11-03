@@ -403,6 +403,12 @@ Instead, ProofOfWork.Me can provide local mailbox organization:
 
 This gives users normal mail hygiene without misrepresenting what happens on-chain.
 
+Mail can carry a 139-byte typed reference to a published file. A recipient can
+verify and download it in Mail or Files. Preserve both the Mail TXID and the
+linker TXID, and keep pending file evidence distinct from confirmed delivery.
+The Files publisher stores signed transactions before broadcast for resumable
+publication. [Chain Content](CHAIN_CONTENT.md) defines the limits and bytes.
+
 Subject metadata is not the message body. Mail composers may write a short `pwm1:s:<subject-base64url>` header and one or more `pwm1:m:<message-chunk>` body chunks, but readers should render the subject in the header and the decoded `pwm1:m` text as the body. Indexed or cached rows that only contain `Subject: ...` as body text are stale projections and should be repaired from the raw tx when the txid is known.
 
 ## Suggested Folders

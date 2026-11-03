@@ -6355,6 +6355,16 @@ The credit endpoint:
 - Historical WORK floor announcement mail tx: `cbb8a1b4af2ea8665129e799a85dfba31cea87ef38b9a99bcf198d827c12a58c`. Its subject is `$work now has a permanent ProofOfWork Computer floor.` The tx status should be read from the node/API at runtime; docs preserve the txid and decoded intent, not a stale confirmation claim.
 - Treats pending credit records as visibility only; confirmed records are canonical.
 
+The powcat endpoint verifies one bounded mainnet file from exact raw
+transactions, authenticated Core inclusion proofs and active-chain block hashes.
+A request covers at most 67 parts and 4,000,000 bytes. A reorganized or
+unavailable dependency prevents delivery. JSON and download responses are
+uncached. Parts and linkers introduce no independent registry or ledger
+payment. [Chain Content](CHAIN_CONTENT.md) specifies the codec and reader.
+The [scoped release controller](deploy/powcat/release.py) composes only the
+API and its two new reader modules with the accepted node overlays, then
+records the verified source inventory and latest VPS archive.
+
 The mail endpoint:
 
 - Scans address history.

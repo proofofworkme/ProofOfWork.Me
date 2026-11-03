@@ -878,7 +878,13 @@ pwm1:m:<message-chunk>
 
 Replies are sent back to the sender inferred from the transaction inputs.
 
-Attachments are written as base64url chunks:
+Files can publish up to 4,000,000 raw bytes with a `powcat1` linker. Use
+**Files → Publish linked file** to publish or resume. Open a linker TXID in
+Files, or attach it in Mail. A verified linked attachment opens from its
+recipient's Mail or Files. The separate linker and part transactions plus the
+ordinary Mail delivery are specified in [Chain Content](CHAIN_CONTENT.md).
+
+Inline attachments are written as base64url chunks:
 
 ```text
 pwm1:a:<mime-base64url>:<name-base64url>:<size>:<sha256>:<index>/<total>:<data-base64url-chunk>

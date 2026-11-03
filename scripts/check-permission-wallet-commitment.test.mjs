@@ -62,7 +62,7 @@ function sign(hex, flags = [], alterFinal) {
   alterFinal?.(psbt);
   return psbt.toHex();
 }
-async function boostFixture({ fundingTransactions = [funding(0)], extraUtxos = [], feeSelector } = {}) {
+async function boostFixture({ reservedInputs = [], fundingTransactions = [funding(0)], extraUtxos = [], feeSelector } = {}) {
   const steps = [], requests = [], broadcasts = [], signOptions = [];
   const byId = new Map(fundingTransactions.map(tx => [tx.getId(), tx]));
   const walletUtxos = fundingTransactions.map(tx => ({ txid: tx.getId(), vout: 0, value: Number(tx.outs[0].value), status: { confirmed: true } })).concat(extraUtxos);
@@ -75,6 +75,7 @@ async function boostFixture({ fundingTransactions = [funding(0)], extraUtxos = [
     throw new Error(`Unexpected read: ${path}`);
   }, proofApiUrl: (path, network) => `https://fixture.invalid${path}?network=${network}` };
   const boost = await loadClient("src/features/boost/boostWallet.ts", {
+    "../powcat/powcatJournal.mjs": { readPowcatReservedInputs: async () => reservedInputs },
     "bitcoinjs-lib": bitcoin, "@bitcoinerlab/secp256k1": ecc,
     "../../walletUtxos": { ...utxos, selectUtxos: (...args) => {
       steps.push("fees"); return feeSelector ? feeSelector(...args) : utxos.selectUtxos(...args);
@@ -131,6 +132,14 @@ test("funding evidence must bind both previous txid and exact advertised value",
     await assert.rejects(fixture.boost.buildBoostPaymentPsbt(buildOptions), /Permission funding/u);
     assert.equal(fixture.steps.includes("fees"), false);
   }
+});
+test("a staged linked file spend prevents a second wallet signature", async () => {
+  const reservedInputs = [];
+  const fixture = await boostFixture({ reservedInputs });
+  const input = bitcoin.Psbt.fromHex(fixture.parameters.psbtHex).txInputs[0];
+  reservedInputs.push(`${Buffer.from(input.hash).reverse().toString("hex")}:${input.index}`);
+  await assert.rejects(fixture.boost.signAndBroadcastBoostPsbt(fixture.parameters), /reserved by a signed linked file/u);
+  assert.deepEqual(fixture.steps, []);
 });
 test("verified ALL signatures on every P2PKH input precede receipt, recheck and broadcast", async () => {
   const fixture = await boostFixture();

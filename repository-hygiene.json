@@ -83,6 +83,7 @@
       ".github/copilot-instructions.md"
     ],
     "canonical": [
+      "CHAIN_CONTENT.md",
       "SOUL.md",
       "DESIGN.md",
       "README.md",
@@ -232,7 +233,6 @@
       "output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md"
     ],
     "staged-or-future-protocol-notes": [
-      "CHAIN_CONTENT.md",
       "ENCRYPTION.md",
       "ONCHAIN_APP.md",
       "UNWRITER_GITHUB_RESEARCH.md",

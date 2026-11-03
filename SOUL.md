@@ -108,7 +108,7 @@ inert source, local signing and exact-checkpoint dependency evidence.
 8. Every confirmed ID is a network-effect increment.
 9. OP_RETURN is an application substrate, not a toy memo field.
 10. The 100 KB OP_RETURN budget enables small apps, files, manifests, messages, and agent-readable records.
-11. Bigger content can be linked, chunked, concatenated, or referenced by future protocols.
+11. Linked Files bind a single linker TXID to every exact byte. Keep upload recovery local, wait for confirmed parts, and revalidate evidence on every open. Ordinary paid Mail can share the linker without paying to publish the content again.
 12. The computer is local, modular, and malleable. Users should be able to run their own stack.
 13. Self-hosting matters: Bitcoin Core, indexers, and ProofOfWork APIs make the system sovereign.
 14. Domains, SSL, hosted servers, and public APIs can be useful, but they should become optional where ProofOfWork can carry the durable record.

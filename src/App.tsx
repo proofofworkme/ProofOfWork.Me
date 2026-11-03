@@ -13,6 +13,11 @@ import type { PagesPublicationDraft, PagesDnsLinkRequest, PagesViewState, PagesB
 import type { CodeViewState } from "./features/code/CodeRoot";
 import type { CodeLocation, CodeSourceReference } from "./features/code/codeNavigation";
 import { BrowserWindow, type BrowserSession, type BrowserTemplateDraft } from "./features/browser/BrowserWindow";
+import { PowcatPublisher } from "./features/powcat/PowcatPublisher";
+import { outpoint as powcatOutpoint, signPowcatPayment, type PublishWallet } from "./features/powcat/powcatPublish";
+import { openPowcatJournal, readPowcatReservedInputs } from "./features/powcat/powcatJournal.mjs";
+import { powcatScript } from "./shared/protocol/powcat1.mjs";
+import { codeReservedAnchors } from "./features/code/codeWallet";
 import { ComputerControls, ComputerShell } from "./features/computer/ComputerShell";
 import { NotificationsButton } from "./features/notifications/NotificationsButton";
 import { notificationDestination } from "./features/notifications/notificationNavigation.mjs";
@@ -239,6 +244,9 @@ import {
   registryAddressForNetwork,
 } from "./shared/protocol/idRegistry";
 import { MAX_DATA_CARRIER_BYTES } from "./shared/bitcoin/protocolLimits";
+import { buildPowcatMailAttachment, POWCAT_MAIL_MIME, powcatPointerFromAttachment } from "./shared/protocol/powcatMail.mjs";
+import { POWCAT_MAX_FILE_BYTES } from "./shared/protocol/powcat1.mjs";
+import { PowcatLink, readLinkedFile } from "./features/powcat/PowcatLink";
 import {
   attachmentFromFile,
   buildAttachmentPayloads,
@@ -17292,7 +17300,11 @@ async function fetchFreshProofOfWorkListingAnchorOutpoints(
         { network },
       ),
     );
-    return mergeListingAnchorOutpoints(idAnchors, tokenAnchors);
+    const uploadInputs = network === "livenet" ? await readPowcatReservedInputs(network, walletAddress) : [];
+    return mergeListingAnchorOutpoints(idAnchors, tokenAnchors, uploadInputs.map(input => {
+      const [txid, vout] = input.split(":");
+      return { txid, vout: Number(vout) };
+    }));
   } catch (error) {
     options.signal?.throwIfAborted();
     throw new Error(
@@ -20735,6 +20747,67 @@ async function buildPaymentPsbt({
   };
 }
 
+async function powcatFunding(address: string, signedTxid?: string) {
+  const wallet = window.unisat;
+  if (!wallet?.getAccounts || !wallet.getBitcoinUtxos || await getWalletNetwork(wallet) !== "livenet") {
+    throw new Error("Connect a Mainnet UniSat wallet with curated funding outputs.");
+  }
+  await assertActiveWalletAddress(wallet, address);
+  const [walletUtxos, chainUtxos, reservations, dns, upload] = await Promise.all([
+    fetchUtxos(address, "livenet"), fetchAddressApiUtxos(address, "livenet"),
+    codeReservedAnchors(address, "livenet"), fetchDnsRegistryState("livenet", true),
+    openPowcatJournal("livenet", address).then(journal => journal.read()),
+  ]);
+  const uploadInputs = upload ? [...Object.values(upload.receipts), ...upload.supersededLinkers].filter(receipt => receipt.txid !== signedTxid).flatMap(receipt => receipt.outpoints) : [];
+  const excluded = new Set([...reservations, ...activeListingAnchorOutpointsForAddress(dns.listings, address, {network: "livenet"})].map(powcatOutpoint).concat(uploadInputs));
+  const confirmed = new Map(chainUtxos.filter(u => u.status?.confirmed === true).map(u => [powcatOutpoint(u), u.value]));
+  return walletUtxos.filter(u => u.source === "wallet-curated" && u.status?.confirmed === true &&
+    confirmed.get(powcatOutpoint(u)) === u.value && !excluded.has(powcatOutpoint(u)));
+}
+
+const powcatWallet: PublishWallet = {
+  async prepare(payload, address, feeRate) {
+    const script = powcatScript(payload);
+    const changeScript = scriptForAddress(address, "livenet", "Connected wallet");
+    const utxos = await powcatFunding(address);
+    const fixed = outputVbytesForScript(script), change = outputVbytesForScript(changeScript);
+    const selection = selectSmallestSingleConfirmedUtxo(utxos, 0, feeRate, fixed, change) ??
+      selectUtxos(utxos, 0, feeRate, fixed, change, 0, DUST_SATS, { preferChange: true });
+    const estimatedVbytes = estimateTxVbytes(selection.selected.length, fixed + (selection.changeSats ? change : 0));
+    if (estimatedVbytes > 100_000) throw new Error("This part needs fewer funding inputs to fit a standard transaction. Choose a larger confirmed wallet output.");
+    const psbt = new bitcoin.Psbt({network: bitcoin.networks.bitcoin});
+    for (const input of selection.selected) {
+      const utxo = await loadUtxoPreviousOutput(input, "livenet");
+      const previousTx = bitcoin.Transaction.fromHex(utxo.previousTxHex);
+      if (previousTx.getId() !== input.txid || utxo.previousOutput.value !== BigInt(input.value) ||
+        !Buffer.from(changeScript).equals(Buffer.from(utxo.previousOutput.script))) throw new Error("A funding output differs from the connected wallet's confirmed evidence.");
+      psbt.addInput({ hash: input.txid, index: input.vout, sighashType: bitcoin.Transaction.SIGHASH_ALL, ...utxoInputData(utxo) });
+    }
+    psbt.addOutput({ script, value: 0n });
+    if (selection.changeSats) psbt.addOutput({address, value: BigInt(selection.changeSats)});
+    return { psbtHex: psbt.toHex(), funding: selection.selected, fee: selection.feeSats, extraFee: selection.dustFeeSats, change: selection.changeSats, estimatedVbytes };
+  },
+  async validate(address, inputs, signedTxid) {
+    if (signedTxid) {
+      const saved = await (await openPowcatJournal("livenet", address)).read();
+      const own = Object.values(saved?.receipts ?? {}).find(receipt => receipt.txid === signedTxid);
+      if (!own || JSON.stringify(own.outpoints) !== JSON.stringify(inputs.map(powcatOutpoint))) throw new Error("The signed transaction differs from the reserved funding receipt.");
+    }
+    const eligible = new Map((await powcatFunding(address, signedTxid)).map(u => [powcatOutpoint(u), u.value]));
+    if (inputs.some(i => !eligible.has(powcatOutpoint(i)) || (i.value !== undefined && eligible.get(powcatOutpoint(i)) !== i.value))) {
+      throw new Error("Reviewed funding is spent, unavailable or reserved. Refresh the upload before signing or broadcasting.");
+    }
+  },
+  async sign(address, prepared) {
+    const signed = await signPowcatPayment(address, prepared);
+    const evidence = ownerOutputEvidenceFromPreparedPayment(bitcoin.Psbt.fromHex(prepared.psbtHex), bitcoin.Transaction.fromHex(signed.hex));
+    const commitment = verifyOwnerOutputCommitment(evidence, {ownerAddress: address, network: "livenet", requireAllInputsCommitted: true, allowAnyoneCanPay: false});
+    if (!commitment.valid) throw new Error("The wallet signature does not commit every reviewed input and output.");
+    return signed;
+  },
+  async broadcast(hex) { return (await broadcastRawTransactionViaProofApi(hex, "livenet")).txid; },
+};
+
 async function signSellerAnchorAuthorization({
   anchorUtxo,
   network,
@@ -22090,6 +22163,7 @@ export default function App() {
   const [subject, setSubject] = useState("");
   const [memo, setMemo] = useState(DEFAULT_MEMO);
   const [attachment, setAttachment] = useState<MailAttachment | undefined>();
+  const [mailUpload, setMailUpload] = useState<{ file: File; address: string; network: BitcoinNetwork }>();
   const [socialMode, setSocialMode] = useState(false);
   const [allSent, setAllSent] = useState<SentMessage[]>(() =>
     loadSentMessages(),
@@ -22522,6 +22596,8 @@ export default function App() {
   const pagesViewStateChange = useCallback((state: PagesViewState) => { computerTasks.pages = state; }, [computerTasks]);
   const codeViewStateChange = useCallback((state: CodeViewState) => { computerTasks.code = state; }, [computerTasks]);
   const [pagesPublicationOpen, setPagesPublicationOpen] = useState(false);
+  useEffect(() => { setMailUpload(undefined); }, [address, network, activeFolder]);
+
   const [pagesDnsLinkTask, setPagesDnsLinkTask] = useState<(PagesDnsLinkRequest & { scope: string }) | undefined>();
   const [pagesDnsLinkRestoreNonce, setPagesDnsLinkRestoreNonce] = useState(0);
   const pagesDnsLinkInFlightRef = useRef(false);
@@ -24251,7 +24327,7 @@ export default function App() {
   );
   const mailReviewContext = JSON.stringify([address, network, activeFolder, composeOpen,
     recipient, ccRecipient, amountSats, messageWorkAmount, feeRate, subject, memo,
-    attachment?.sha256, attachment?.name, attachment?.size, socialMode, replyParentTxid]);
+    attachment?.sha256, attachment?.name, attachment?.size, attachment?.mime, socialMode, replyParentTxid]);
   const mailReviewContextRef = useRef(mailReviewContext);
   mailReviewContextRef.current = mailReviewContext;
   function finishMailReview(approved: boolean) {
@@ -31053,6 +31129,14 @@ export default function App() {
   }
 
   async function attachFile(file: File) {
+    if (file.size > MAX_ATTACHMENT_BYTES && !pagesRoute && !pagesPublicationScopeRef.current && !socialMode && network === "livenet") {
+      if (file.size > POWCAT_MAX_FILE_BYTES) {
+        setStatus({ tone: "bad", text: "A linked file can contain up to 4,000,000 bytes." });
+      } else {
+        setMailUpload({ file, address, network });
+      }
+      return;
+    }
     setStatus({ tone: "idle", text: `Reading ${file.name}...` });
 
     try {
@@ -34377,6 +34461,12 @@ export default function App() {
     });
 
     try {
+      const filePointer = powcatPointerFromAttachment(attachment);
+      if (attachment?.mime === POWCAT_MAIL_MIME && (!filePointer || socialMode || pagesRoute || pagesPublicationScopeRef.current)) {
+        throw new Error("Choose a valid linked file in ordinary Mail.");
+      }
+      const linkedFile = filePointer ? await readLinkedFile(filePointer.txid, network, filePointer.fileHash) : undefined;
+      assertMailContext();
       if (shouldResolveId) {
         if (!registryAddress) {
           setStatus({
@@ -34639,7 +34729,8 @@ export default function App() {
         setMailReview({ evidence, sender: address, networkLabel: networkLabel(network), feeRate: String(feeRate),
           totalWork: workAttachmentAtoms > 0n ? workDecimalFromAtoms(workAttachmentAtoms * BigInt(mailRecipients.length)) : undefined,
           dustFeeProofs: String(paymentPsbt.dustFeeSats), subject: normalizeSubject(subject), message: memo,
-          attachment: attachment ? { name: attachment.name, size: attachment.size, sha256: attachment.sha256 } : undefined,
+          attachment: linkedFile ? { name: linkedFile.name, size: linkedFile.size, sha256: linkedFile.fileHash, linker: linkedFile.txid } :
+            attachment ? { name: attachment.name, size: attachment.size, sha256: attachment.sha256 } : undefined,
           recipients: mailRecipients.map((mailRecipient, index) => ({
             address: mailRecipient.address, label: mailRecipient.display,
             role: index < toRecipients.length ? "To" : "CC", proofs: recipientOutputs[index].proofs,
@@ -34665,6 +34756,7 @@ export default function App() {
         })) throw new Error("Prepared funding changed or is unavailable. Refresh wallet funds and review again before signing.");
       };
       const assertCurrentMailDestinations = async () => {
+        if (filePointer) await readLinkedFile(filePointer.txid, network, filePointer.fileHash);
         if (!shouldResolveId) return;
         const latest = await fetchIdRegistry(network);
         const latestTo = resolveRecipientInputs(recipientInput, network, latest, registryAddress);
@@ -38264,6 +38356,7 @@ export default function App() {
               <button className="secondary" disabled={mailSendBusy || Boolean(mailReview)} onClick={() => { setPagesPublicationOpen(false); setComposeOpen(false); }} type="button">Back to Pages</button>
             </div>
             <ComposePane
+              allowLinkedFiles={!pagesRoute && !pagesPublicationScopeRef.current}
               amountSats={amountSats} attachment={attachment} busy={mailSendBusy || pagesDnsLinkInFlightRef.current} contacts={contactsForNetwork}
               feeRate={feeRate} memo={memo} dataCarrierBytes={composeDataCarrierBytes} network={network} draftMode onDiscardDraft={discardDraft} onPublish={composePublish}
               ccRecipient={ccRecipient} ccRecipientError={Boolean(ccRecipientResolution.error)} ccRecipientNote={ccRecipientNote}
@@ -39574,6 +39667,20 @@ export default function App() {
           />
         ) : activeFolder === "files" ? (
           <FilesWorkspace
+            publisher={<>
+              <PowcatPublisher key={`${network}:${address}`} address={address} network={network} defaultFeeRate={feeRate} wallet={powcatWallet}
+                onAttachVerified={link => {
+                  const previous = loadDraft(address, network);
+                  if (previous?.attachment || previous?.socialMode) {
+                    setStatus({ tone: "idle", text: "Your Mail draft already has an attachment or Boost post. Open it to replace the attachment, or copy this linker TXID." });
+                    return;
+                  }
+                  if (previous) applyDraft(previous);
+                  else composeNew();
+                  setAttachment(buildPowcatMailAttachment(link));
+                }} />
+              {network === "livenet" && <details><summary>Open by linker TXID</summary><PowcatLink key={network} network={network} /></details>}
+            </>}
             activeKey={selectedMessage ? mailKey(selectedMessage) : ""}
             activeNetwork={network}
             busy={busy || refreshInProgress}
@@ -39711,6 +39818,7 @@ export default function App() {
                 />
               ) : activeFolder === "drafts" && composeOpen ? (
                 <ComposePane
+              allowLinkedFiles={!pagesRoute && !pagesPublicationScopeRef.current}
                   amountSats={amountSats}
                   attachment={attachment}
                   busy={mailSendBusy}
@@ -39773,6 +39881,7 @@ export default function App() {
                 </div>
               ) : composeOpen ? (
                 <ComposePane
+              allowLinkedFiles={!pagesRoute && !pagesPublicationScopeRef.current}
                   amountSats={amountSats}
                   attachment={attachment}
                   busy={mailSendBusy}
@@ -39942,6 +40051,10 @@ export default function App() {
         onClose={() => setPurchaseReceipt(undefined)}
       />
       <SocialFooter compact />
+      {mailUpload && composeOpen && mailUpload.address === address && mailUpload.network === network && <PowcatPublisher
+        key={`${network}:${address}:mail`} address={address} network={network} defaultFeeRate={feeRate} wallet={powcatWallet}
+        initialFile={mailUpload.file} autoOpen onClose={() => setMailUpload(undefined)}
+        onAttachVerified={link => setAttachment(buildPowcatMailAttachment(link))} />}
       {mailReview ? <TransactionReview review={mailReview} returnFocus={mailReviewReturnFocusRef.current} onCancel={() => finishMailReview(false)} onApprove={() => finishMailReview(true)} /> : null}
       {backupPreview ? <BackupPreview {...backupPreview} returnFocus={backupReturnFocusRef.current} onCancel={() => setBackupPreview(undefined)} onRestore={restorePreviewedBackup} /> : null}
     </main>
@@ -59705,6 +59818,7 @@ function DesktopWorkspace({
 }
 
 function FilesWorkspace({
+  publisher,
   activeKey,
   activeNetwork,
   busy,
@@ -59724,6 +59838,7 @@ function FilesWorkspace({
   onRefresh,
   onSelect,
 }: {
+  publisher: ReactNode;
   activeKey: string;
   activeNetwork: BitcoinNetwork;
   busy: boolean;
@@ -59750,6 +59865,7 @@ function FilesWorkspace({
     return (
       <section className="files-workspace">
         <FilesToolbar
+          publisher={publisher}
           busy={busy}
           connected={connected}
           fileFilter={fileFilter}
@@ -59794,6 +59910,7 @@ function FilesWorkspace({
   return (
     <section className="files-workspace">
       <FilesToolbar
+        publisher={publisher}
         busy={busy}
         connected={connected}
         fileFilter={fileFilter}
@@ -59833,6 +59950,7 @@ function FilesWorkspace({
 }
 
 function FilesToolbar({
+  publisher,
   busy,
   connected,
   fileFilter,
@@ -59845,6 +59963,7 @@ function FilesToolbar({
   sortMode,
   onRefresh,
 }: {
+  publisher: ReactNode;
   busy: boolean;
   connected: boolean;
   fileFilter: FileFilter;
@@ -59869,6 +59988,7 @@ function FilesToolbar({
               : `${fileCount.toLocaleString()} file${fileCount === 1 ? "" : "s"} across mail`}
         </span>
       </div>
+      {publisher}
       <label className="sort-control">
         Type
         <select
@@ -59945,8 +60065,8 @@ function FileTile({
       <strong title={attachment.name}>{attachment.name}</strong>
       {message.systemReference ? <span>System reference</span> : null}
       <span>
-        {formatBytes(attachment.size)} ·{" "}
-        {fileFilterLabel(fileKindForMessage(message)).replace(/s$/u, "")}
+        {powcatPointerFromAttachment(attachment) ? "Linked file" :
+          `${formatBytes(attachment.size)} · ${fileFilterLabel(fileKindForMessage(message)).replace(/s$/u, "")}`}
       </span>
       <div className="file-tile-meta">
         <span>{message.amountSats.toLocaleString()} proofs</span>
@@ -60124,14 +60244,16 @@ function FileInspector({
   const attachment = message.attachment;
   const peer = peerAddress(message);
   const explorerNetwork = explorerNetworkFor(message.network, activeNetwork);
+  const pointer = powcatPointerFromAttachment(attachment);
 
   return (
     <aside className="file-inspector">
       <div className="file-detail-title">
         <h3>{attachment.name}</h3>
-        <span>{attachment.mime}</span>
+        <span>{pointer ? "Linked file" : attachment.mime}</span>
       </div>
-      <AttachmentViewer attachment={attachment} />
+      {pointer ? <PowcatLink key={pointer.txid} network={message.network} pointer={pointer} /> :
+        <AttachmentViewer attachment={attachment} />}
       <div className="file-detail-actions">
         {isBrowserHtmlAttachment(attachment) ? (
           <a
@@ -60147,7 +60269,7 @@ function FileInspector({
           </a>
         ) : null}
         {isBrowserHtmlAttachment(attachment) ? <a className="secondary link-button" href={pagesTxUrl(message.txid, explorerNetwork)} rel="noreferrer" target="_blank">Edit in Pages</a> : null}
-        <a
+        {!pointer && <a
           className="primary link-button"
           download={attachment.name}
           href={attachmentHref(attachment)}
@@ -60156,7 +60278,7 @@ function FileInspector({
             <Download size={15} />
             <span>Download</span>
           </span>
-        </a>
+        </a>}
         {onOpenMessage ? (
           <button
             className="secondary"
@@ -60183,7 +60305,7 @@ function FileInspector({
       </div>
       <dl className="file-detail-list">
         <div>
-          <dt>Size</dt>
+          <dt>{pointer ? "Mail reference size" : "Size"}</dt>
           <dd>{formatBytes(attachment.size)}</dd>
         </div>
         <div>
@@ -60221,7 +60343,7 @@ function FileInspector({
         </div>
         <div>
           <dt>SHA-256</dt>
-          <dd>{attachment.sha256}</dd>
+          <dd>{pointer?.fileHash ?? attachment.sha256}</dd>
         </div>
       </dl>
     </aside>
@@ -60302,6 +60424,7 @@ function OnboardingPane({
 }
 
 function ComposePane({
+  allowLinkedFiles = true,
   amountSats,
   attachment,
   busy,
@@ -60343,6 +60466,7 @@ function ComposePane({
   workVisible,
   setWorkAmount,
 }: {
+  allowLinkedFiles?: boolean;
   amountSats: number;
   attachment?: MailAttachment;
   busy: boolean;
@@ -60680,13 +60804,20 @@ function ComposePane({
           </span>
         </label>
         <span>
-          One file, {formatBytes(MAX_ATTACHMENT_BYTES)} max before encoding.
+          {allowLinkedFiles && !socialMode && network === "livenet" ? "One file up to 4 MB. Files over 60,000 bytes use linked transactions." :
+            `One file, ${formatBytes(MAX_ATTACHMENT_BYTES)} max before encoding.`}
         </span>
       </div>
 
+      {allowLinkedFiles && !socialMode && network === "livenet" && <details>
+        <summary>Attach a linked file from Files</summary>
+        <p className="field-note">Publish files up to 4 MB in Files, then enter the linker TXID here.</p>
+        <PowcatLink key={`${network}:${sender}:${attachment?.sha256 ?? ""}`} network={network} disabled={busy} onAttach={setAttachment} />
+      </details>}
       {attachment ? (
         <AttachmentCard
           attachment={attachment}
+          network={network}
           onRemove={() => setAttachment(undefined)}
         />
       ) : null}
@@ -60705,11 +60836,14 @@ function ComposePane({
 
 function AttachmentCard({
   attachment,
+  network,
   onRemove,
 }: {
   attachment: MailAttachment;
+  network: BitcoinNetwork;
   onRemove?: () => void;
 }) {
+  const pointer = powcatPointerFromAttachment(attachment);
   return (
     <div className="attachment-card">
       <div className="attachment-icon" aria-hidden="true">
@@ -60718,9 +60852,9 @@ function AttachmentCard({
       <div className="attachment-info">
         <strong>{attachment.name}</strong>
         <span>
-          {attachment.mime} · {formatBytes(attachment.size)}
+          {pointer ? "Linked file" : `${attachment.mime} · ${formatBytes(attachment.size)}`}
         </span>
-        <code>{shortAddress(attachment.sha256)}</code>
+        <code>{shortAddress(pointer?.fileHash ?? attachment.sha256)}</code>
       </div>
       <div className="attachment-actions">
         {onRemove ? (
@@ -60730,7 +60864,7 @@ function AttachmentCard({
               <span>Remove</span>
             </span>
           </button>
-        ) : (
+        ) : pointer ? <PowcatLink key={pointer.txid} network={network} pointer={pointer} /> : (
           <a
             className="secondary small link-button"
             download={attachment.name}
@@ -61093,7 +61227,7 @@ function Reader({
       ) : <pre>{message.memo}</pre>}
 
       {message.attachment ? (
-        <AttachmentCard attachment={message.attachment} />
+        <AttachmentCard attachment={message.attachment} network={message.network} />
       ) : null}
 
       {threadMessages.length > 1 ? (

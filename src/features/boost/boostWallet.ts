@@ -1,6 +1,7 @@
 import * as bitcoin from "bitcoinjs-lib";
 import * as ecc from "@bitcoinerlab/secp256k1";
 import { Buffer } from "buffer";
+import { readPowcatReservedInputs } from "../powcat/powcatJournal.mjs";
 import {
   enrichWalletCuratedUtxoConfirmations,
   estimateTxVbytes,
@@ -563,7 +564,8 @@ export async function buildBoostPaymentPsbt({
   if (normalizedExcludedOutpoints.some((outpoint) => !outpoint)) {
     throw new Error("Boost payment exclusions contain an invalid outpoint.");
   }
-  const excluded = new Set(normalizedExcludedOutpoints);
+  const uploadInputs = network === "livenet" ? await readPowcatReservedInputs(network, fromAddress) : [];
+  const excluded = new Set([...normalizedExcludedOutpoints, ...uploadInputs]);
   const walletUtxos = await fetchUtxos(fromAddress, network);
   const utxos = walletUtxos.filter(
     (utxo) =>
@@ -940,6 +942,14 @@ export async function signAndBroadcastBoostPsbt({
     network: bitcoinNetwork(network),
   });
   const expectedIntent = psbtUnsignedTransactionIntent(unsignedPsbt);
+  const verifyUploadReservations = async () => {
+    if (network !== "livenet") return;
+    const reserved = new Set(await readPowcatReservedInputs(network, signingAddress));
+    if (unsignedPsbt.txInputs.some(input => reserved.has(`${Buffer.from(input.hash).reverse().toString("hex")}:${input.index}`))) {
+      throw new Error("A reviewed input is reserved by a signed linked file transaction. Prepare a fresh review.");
+    }
+  };
+  await verifyUploadReservations();
   const previousOutputs = requireP2pkhAllInputs
     ? p2pkhAllPreviousOutputs(unsignedPsbt, signingAddress, network) : undefined;
   const strictIndexes = requireP2pkhAllInputs ? Array.from({ length: unsignedPsbt.inputCount }, (_, index) => index) : undefined;
@@ -996,6 +1006,7 @@ export async function signAndBroadcastBoostPsbt({
   if (previousOutputs) assertP2pkhAllSignedInputs(signedTransaction, previousOutputs);
   await onSigned?.(signedTransaction.getId());
   await beforeBroadcast?.();
+  await verifyUploadReservations();
   return broadcastRawTransaction(signedTransaction.toHex(), network);
 }
 

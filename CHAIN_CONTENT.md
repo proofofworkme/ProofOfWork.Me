@@ -1,5 +1,82 @@
 # Chain Content
 
+## Files and Mail v1
+
+A mainnet file has one linker transaction ID. A reader starts with that ID and
+recovers the file from confirmed transaction bytes. A file contains 1 through
+4,000,000 raw bytes in 1 through 67 parts. Each part contains at most 96,000
+raw bytes. A full-size file at the writer's target size uses 42 part
+transactions and one linker. Sending a reference in Mail takes one further
+ordinary paid Mail transaction. Inline Files and Mail continue to use their
+existing 60,000-byte attachment format. The 100,000-byte aggregate script
+budget and 400,000 weight-unit transaction ceiling apply per carrier.
+
+### Wire format
+
+Each part or linker transaction has inputs, exactly one zero-proof OP_RETURN
+output with one minimally encoded data push, and may contain ordinary funding
+change. Coinbase transactions are ineligible. The two prefixes are nine
+literal ASCII bytes. Fields below follow the prefix immediately and hashes
+are 32 raw bytes. TXIDs use the byte order of their displayed hexadecimal
+string. No delimiters or unused trailing bytes are allowed.
+
+| Record | Fields following the prefix, in order |
+| --- | --- |
+| `powcat1:p` | File SHA-256, zero-based index (u8), part count (u8), SHA-256 of this part, raw bytes to the end of the push |
+| `powcat1:m` | File SHA-256, raw byte length (u32 big-endian), part count (u8), filename byte length (u8), MIME byte length (u8), filename (UTF-8), MIME (lowercase ASCII type/subtype), ordered list of part TXIDs |
+
+Require unique references, exact field lengths, valid filename UTF-8 and
+bounded metadata. Filenames contain 1–255 bytes, exclude path separators,
+control characters and the names `.` and `..`. MIME is at most 127 bytes.
+Each part must confirm in a block earlier than the linker on the same chain.
+Check TXID, index, count, both hashes and exact final length before serving.
+Version one uses raw bytes and a flat list. The MIME label describes bytes
+and grants no execution authority.
+
+### Publication, recovery and delivery
+
+The wallet reviews estimated total cost and exact transaction inputs, change
+and miner fee before each local signature. Parts use confirmed, available
+funding inputs. The journal reserves inputs for wallet actions in the same
+browser profile and origin. Other devices, sites and external wallet clients
+can still spend those inputs. Resume on the original site in the original
+browser profile and reselect the original bytes when needed. Verify the file hash before continuing and
+record a signed TXID, raw transaction and inputs before broadcast. An unknown
+broadcast retains its reservation. Check authoritative status before retrying
+the exact signed bytes. Wait for confirmed parts before signing the linker.
+If a reorg confirms the old linker before or alongside one of its parts,
+publish a fresh linker referencing the confirmed parts and use its new TXID.
+
+Mail sends one ordinary `pwm1:a` attachment with MIME
+`application/vnd.proofofwork.powcat1` and a display name ending in `.powcat`.
+Its 139 UTF-8 bytes are exactly
+`pwm1:cat1:<64-lowercase-hex-linker-txid>:<64-lowercase-hex-file-sha256>`.
+Normal Mail attachment verification checks the reference's length and hash.
+Opening it checks the separate whole-file commitment against the linker.
+The original name and media type come from the verified linker. A user may
+share the same linker again. Existing Mail/Files payment attribution applies
+once per delivery. Content parts and linkers only consume their own miner fees.
+
+`GET /api/v1/powcat/<txid>?network=livenet` verifies the file against the
+node and returns its name, MIME, size, SHA-256, ordered part TXIDs and linker
+block evidence. Add `download=1` to retrieve verified bytes as an attachment.
+Requests are bounded and responses are uncached. Recheck active-chain
+membership on every read. Pending, missing, malformed or detached evidence
+does not yield file bytes. A reorg may make an earlier observation unavailable.
+
+The qualification test uses an isolated Bitcoin Core regtest, a 4,000,000-byte
+binary file, a real wallet and normal policy. It exercises interrupted resume,
+lost and restored confirmations, replacement of a linker with invalid block
+ordering, and recovery from the delivered Mail reference.
+See [the codec](src/shared/protocol/powcat1.mjs) and
+[the regtest](scripts/check-powcat-regtest.mjs).
+
+## Historical proposal
+
+The following notes record the original proposed encodings, limits and
+product ideas. The version-one wire contract above supersedes them.
+
+
 Notes for expanding ProofOfWork.Me content beyond a single OP_RETURN payload by concatenating content from multiple blockchain transactions.
 
 ## Current Launch Status

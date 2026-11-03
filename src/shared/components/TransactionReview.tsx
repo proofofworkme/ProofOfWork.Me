@@ -14,7 +14,7 @@ export type MailTransactionReview = {
   workAttachmentFeeLabel?: string;
   subject: string;
   message: string;
-  attachment?: { name: string; size: number; sha256: string };
+  attachment?: { name: string; size: number; sha256: string; linker?: string };
 };
 
 export function TransactionReview({ review, onCancel, onApprove, returnFocus }: {
@@ -47,7 +47,7 @@ export function TransactionReview({ review, onCancel, onApprove, returnFocus }: 
     </dl>
     <details><summary>Inspect message and transaction evidence</summary>
       <p>{review.subject || "No subject"}</p><pre className="review-message">{review.message || "No message body"}</pre>
-      {review.attachment ? <p>File: {review.attachment.name} · {review.attachment.size} bytes<br /><code className="review-exact">SHA-256: {review.attachment.sha256}</code></p> : null}
+      {review.attachment ? <p>File: {review.attachment.name} · {review.attachment.size} bytes<br /><code className="review-exact">SHA-256: {review.attachment.sha256}</code>{review.attachment.linker && <><br />Linker TXID <code className="review-exact">{review.attachment.linker}</code></>}</p> : null}
       <h3>Funding inputs</h3><ul className="review-list">{review.evidence.inputs.map(input => <li key={input.outpoint}><code className="review-exact">{input.outpoint}</code><code>{input.proofs} proofs</code></li>)}</ul>
       <h3>Prepared outputs</h3><ul className="review-list">{review.evidence.outputs.map(output => <li key={output.index}><span>Output {output.index} · {output.kind}</span><code className="review-exact">{output.address}</code><code>{output.proofs} proofs</code></li>)}</ul>
       <button className="secondary" type="button" onClick={() => void copyEvidence()}>Copy review evidence</button>
