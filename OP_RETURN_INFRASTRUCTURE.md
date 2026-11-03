@@ -796,16 +796,23 @@ oracle. Operators can raise the two caps with
 `POW_INDEX_LEDGER_CANONICAL_SUMMARY_RETENTION` and
 `POW_INDEX_LEDGER_SCAN_SNAPSHOT_RETENTION`; do not lower them below the built-in
 safety floors or delete referenced H-1 valuation snapshots.
-The full ledger snapshot budget remains hard-capped separately at 8 MiB. The
-compact canonical-summary bundle uses
-`POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES`, defaulting to the historical
-8 MiB floor and bounded to 64 MiB, plus
-`POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES` for PostgreSQL
-`jsonb::text` reader eligibility. Production pins those at 16 MiB compact and
-18 MiB SQL text. Raising this envelope must keep the compact root-key and Q16
-sufficient-state witness checks intact; it must not admit full activity
-payloads, token-state payloads, or broad ledger history into the canonical
-summary row.
+Full ledger snapshots have a separate 8 MiB ceiling. The canonical-summary
+writer measures compact UTF-8 JSON against
+`POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES` (16 MiB default, 64 MiB
+maximum). SQL readers measure PostgreSQL `jsonb::text` against
+`POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES` (18 MiB with default
+settings, 72 MiB maximum). The production H7 API and worker drop-ins set the
+compact limit to 20 MiB and the SQL text limit to 22.5 MiB. Full ledger history
+lives outside the canonical summary. The writer enforces its root-key allowlist
+and verifies the Q16 sufficient-state witness.
+
+Compact token previews return an empty `transferBatches` array and report a
+known batch-parent total in `totalCounts.transferBatches`. An unknown total
+remains null. `collectionHasMore.transferBatches` preserves evidence of
+additional history, including when re-reading an older partial preview.
+Relational history serves the full records. The worker validates the separate
+`workSummary.workTransferValueProjection` with complete confirmed parents and
+recipients before publishing all eight summaries at one verified checkpoint.
 Retention, canonical rebuild, PWT range replay, WORK atomic invalidation, and
 repair deletion paths also preserve the immutable V5 H-1 seed-evidence row
 and every completed-migration seed or closing dependency. The schema's

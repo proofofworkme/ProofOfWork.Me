@@ -39131,6 +39131,9 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
   const mints = Array.isArray(payload.mints) ? payload.mints : [];
   const sales = Array.isArray(payload.sales) ? payload.sales : [];
   const transfers = Array.isArray(payload.transfers) ? payload.transfers : [];
+  const visibleTransferBatches = Array.isArray(payload.transferBatches)
+    ? payload.transferBatches.length
+    : 0;
   const invalidEvents = Array.isArray(payload.invalidEvents)
     ? payload.invalidEvents
     : [];
@@ -39661,6 +39664,13 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
     Number.isFinite(total)
       ? total > visible
       : payload.collectionHasMore?.[key] === true;
+  const batchHistoryPartial = payload.collectionHasMore?.transferBatches === true;
+  const transferBatchTotal =
+    totalCountFrom("transferBatches", batchHistoryPartial ? null : visibleTransferBatches, [
+      "totalTransferBatches",
+    ]) ??
+    combinedStats("confirmedTransferBatches", "pendingTransferBatches") ??
+    null;
   const collectionHasMore = {
     closedListings: collectionHasMoreValue(
       "closedListings",
@@ -39685,6 +39695,8 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
     ),
     tokens: collectionHasMoreValue("tokens", totalCounts.tokens, tokens.length),
     transfers: collectionHasMoreValue("transfers", totalCounts.transfers, 0),
+    transferBatches:
+      batchHistoryPartial || visibleTransferBatches > 0 || transferBatchTotal > 0,
   };
 
   return tokenPayloadWithScopedHolderCountFloor(
@@ -39714,8 +39726,10 @@ function compactTokenSummaryPayload(payload, tokenScope = "", options = {}) {
             totalCounts.listings +
             totalCounts.sales
           : null),
-      totalCounts,
+      totalCounts: { ...totalCounts, transferBatches: transferBatchTotal },
       tokens,
+      // Full families belong to relational history and the verified WORK value projection.
+      transferBatches: [],
       transfers: [],
       stats: {
         ...stats,

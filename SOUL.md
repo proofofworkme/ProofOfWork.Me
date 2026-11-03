@@ -878,6 +878,11 @@ but value only its complete verified parent once. A read-only release rehearsal
 must run the actual worker's accounting predicate as well as build the eight
 summaries; producing a bundle alone does not prove it can be published.
 
+Compact token previews carry the known batch count and whether more history is
+available. Keep the complete families in relational history and the confirmed
+WORK transfer value projection. The worker needs every recipient to prove the
+parent's single economic contribution.
+
 Summary readiness does not establish that public history works. Verify actual
 Log pages and continuation, every recipient of a batch, Boost loading and the
 WORK-floor preflight as part of a read-path release. A successful Log summary

@@ -846,7 +846,6 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /async function tokenStatePayloadAtCanonicalCheckpoint\([\s\S]*?canonical_blocks AS[\s\S]*?checkpoint_block\.canonical = true[\s\S]*?GREATEST\(latest_scan\.height, canonical_blocks\.height\) AS scan_height[\s\S]*?token_event\.protocol = 'pwt1'[\s\S]*?token_event\.kind LIKE 'token-%'[\s\S]*?token_event\.status = 'confirmed'[\s\S]*?indexedThroughBlock: checkpointHeight[\s\S]*?indexedThroughBlockHash: normalizedCheckpointHash/,
   /proofIndexCanonicalSummaryTokenTablePayload\([\s\S]*?checkpointRelationalPayload[\s\S]*?tokenStatePayloadAtCanonicalCheckpoint\([\s\S]*?payloadWithCurrentWorkPrecisionReadPolicy\([\s\S]*?checkpointRelationalPayload/,
   /proofIndexCanonicalSummaryTokenTablePayload\([\s\S]*?payloadWithCurrentWorkMarketListingReadPolicy\([\s\S]*?activatedPayload[\s\S]*?applyWorkMarketV2CutoverToTokenState\([\s\S]*?heightScopedListingPayload/,
-  /proofIndexLogHistoryPayload\([\s\S]*?currentRelational[\s\S]*?proofIndexCanonicalActivityPayload\(network, \{[\s\S]*?snapshotId: pagination\.snapshotId[\s\S]*?totalCount:\s*rowNumber\(canonicalPage, "totalCount"\)[\s\S]*?snapshotTotalCount/,
   /payloadWithCanonicalWorkLifecyclePositions\([\s\S]*?expectationKeys\.has\(key\)[\s\S]*?return true[\s\S]*?closedLifecycleListingKeys[\s\S]*?tokenListingsWithoutClosedEvents\([\s\S]*?payload\.listings[\s\S]*?closedListings[\s\S]*?closedLifecycleListingKeys\.has[\s\S]*?positionedListings/,
   /currentProofIndexTokenTablePayloadForLedger\([\s\S]*?options\.exactHeight[\s\S]*?proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
   /indexedActivityStateForCanonicalLedger\([\s\S]*?options\.exactHeight[\s\S]*?proofIndexPayloadIndexedThroughBlock\(payload\) !== exactHeight/,
@@ -870,6 +869,22 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /function summarySnapshotCoversCanonicalReadModels\([\s\S]*?summaryIndexedThroughBlock === indexedThroughBlock[\s\S]*?indexedThroughBlock === scanTipHeight[\s\S]*?summaryBlockHash === scanBlockHash/,
   /confirmed_events AS \([\s\S]*?confirmed_event_max_block/,
   /readModelsOk &&[\s\S]*?summarySnapshotOk/,
+]);
+expectAll("current unfiltered Log history uses the snapshot-bound relational page", sourceSliceBetween(
+  proofIndexReader, /export async function proofIndexLogHistoryPayload\(/,
+  /export async function proofIndexTokenMarketSummaryOverlayPayload\(/,
+), [
+  /if \(currentRelational\) \{[\s\S]*?snapshotHeightParam = addParam\(snapshotHeight\)[\s\S]*?snapshotTimeParam = addParam\(snapshotGeneratedAt\)/,
+  /if \(!requestedKind && !pagination\.query && pagination\.snapshotId\) \{\s*return canonicalLogHistoryPageFromRelationalIds\(pool, network, pagination, snapshot, \{\s*conditions, params, includePending,/,
+]);
+expectAll("relational Log pages authenticate selected identities and return the exact snapshot count", sourceSliceBetween(
+  proofIndexReader, /async function canonicalLogHistoryPageFromRelationalIds\(/,
+  /export async function proofIndexLogHistoryPayload\(/,
+), [
+  /SELECT count\(\*\) AS total_count[\s\S]*?LIMIT \$\{limitParam\} OFFSET \$\{offsetParam\}/,
+  /proofIndexCanonicalActivityPayload\(network, \{\s*eventIds, includePending, snapshotId,/,
+  /page\?\.snapshotId !== snapshotId[\s\S]*?page\?\.indexedThroughBlock !== snapshotHeight[\s\S]*?membership\.some\(\(id, index\) => id !== eventIds\[index\]\)/,
+  /snapshotTotalCount: totalCount, snapshotId, indexedThroughBlock: snapshotHeight/,
 ]);
 expectAll("authoritative current active token listings evict stale closed projections", server, [
   /function tokenStateWithAuthoritativeCurrentListings\([\s\S]*?const authoritativeActiveListingKeys = new Set\([\s\S]*?const closedListings = mergeTokenStateItemsByKey\([\s\S]*?\.filter\([\s\S]*?!authoritativeActiveListingKeys\.has\(tokenListingItemKey\(listing\)\)/,

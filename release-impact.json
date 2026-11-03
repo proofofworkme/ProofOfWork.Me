@@ -1,10 +1,77 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "wireguard-api-boot-order",
-  "liveCheck": "scripts/check-service-boot-live.mjs",
-  "ciTests": ["scripts/check-service-boot.test.mjs","scripts/check-upgrade-impact.test.mjs"],
+  "upgrade": "compact-work-batch-summary-previews",
+  "liveCheck": "scripts/check-summary-preview-live.mjs",
+  "ciTests": [
+    "scripts/check-work-batch-summary-projection.test.mjs",
+    "scripts/check-upgrade-impact.test.mjs"
+  ],
   "reviews": [
-    {"targets":["api","activity","boost","browser","code","computer","desktop","dns","growth","id","inception","infinity","jobs","landing","marketplace","nft","pages","permission","publish","search","token","wallet","work"],"disposition":"affected","reason":"These products retain their existing readers and static bundles. Node-backed requests reach the same loopback API through the WireGuard listener, which must start without an operator after a boot.","evidence":["scripts/check-service-boot.test.mjs","scripts/check-service-boot-live.mjs","scripts/check-release-sync.mjs"]},
-    {"targets":["wire","indexer","backfill-reorg","accounting","local-signing","files","mail","notifications","compatibility"],"disposition":"compatible","reason":"Only the private transport's systemd boot order changes. Once connected, the same API and worker serve existing records, pending and confirmed state, replay, and accounting. No writer, schema, ledger or signing path changes.","evidence":["scripts/check-service-boot-live.mjs","scripts/check-powcat-live.mjs","scripts/check-hardening-contract.mjs"]}
+    {
+      "targets": [
+        "api",
+        "indexer",
+        "activity",
+        "growth",
+        "work",
+        "token",
+        "marketplace",
+        "computer",
+        "inception",
+        "infinity",
+        "wallet"
+      ],
+      "disposition": "affected",
+      "reason": "The worker publishes one hash-bound bundle shared by public token, market and activity readers. Display copies omit full batch parents and disclose remaining history. Wallet and bond reads retain their own exact checkpoint and authority checks.",
+      "evidence": [
+        "scripts/check-work-batch-summary-projection.test.mjs",
+        "scripts/check-summary-preview-live.mjs",
+        "scripts/check-public-read-paths.mjs",
+        "server/proof-api.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "wire",
+        "backfill-reorg",
+        "accounting",
+        "local-signing",
+        "compatibility"
+      ],
+      "disposition": "compatible",
+      "reason": "Compaction follows canonical replay. The separate WORK transfer valuation projection still qualifies each complete parent and sibling set and attributes the registry and miner fees once. Historical compact counts retain their known or unknown coverage across repeated reads.",
+      "evidence": [
+        "scripts/check-work-batch-summary-projection.test.mjs",
+        "scripts/backfill-proof-indexer.mjs",
+        "scripts/check-summary-preview-live.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "search",
+        "boost",
+        "browser",
+        "code",
+        "desktop",
+        "dns",
+        "id",
+        "jobs",
+        "landing",
+        "nft",
+        "pages",
+        "permission",
+        "publish",
+        "files",
+        "mail",
+        "notifications"
+      ],
+      "disposition": "compatible",
+      "reason": "These surfaces keep their existing public discovery, mail, content and event records. The change affects token summary display volume and the availability of the shared bundle used by downstream public reads. No event writer, raw event, balance, or content reader changes.",
+      "evidence": [
+        "scripts/check-public-read-paths.mjs",
+        "scripts/check-work-batch-summary-projection.test.mjs",
+        "scripts/check-release-sync.mjs"
+      ]
+    }
   ]
 }

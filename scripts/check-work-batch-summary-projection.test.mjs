@@ -81,6 +81,16 @@ load(api, apiSource, [
   "mergeTokenTransferRecord", "transferMergeString", "transferMergeNumber", "mergeTokenStateItemsByKey",
   "tokenTransferHistoryItemKey", "newerIso",
 ]);
+// These fixtures contain no listings. Keep the actual Work and directory
+// summary producers, compaction, and worker accounting guard in the test.
+Object.assign(api, { SUMMARY_MARKET_LIMIT: 40, tokenPayloadWithCurrentWorkActiveListingPolicy: state => state });
+load(api, apiSource, [
+  "internalCanonicalWorkSummaryPayload", "attachLedgerMetadata", "ledgerTokenStateForScope",
+  "compactTokenDirectorySummaryPayload", "compactTokenSummaryPayload", "tokenSummaryWorkAmountStorageModel",
+  "tokenAggregateSummaries", "tokenListingHasConfirmedSaleTicketSeal", "recentClosedTokenListings",
+  "recentByCreatedAt", "tokenSummaryListings", "tokenPayloadWithScopedHolderIdentity",
+  "tokenPayloadWithScopedHolderCountFloor",
+]);
 const worker = vm.createContext({ ...common,
   objectPayload: value => value && typeof value === "object" && !Array.isArray(value) ? value : null,
   canonicalSummaryCoverage: () => 973_284,
@@ -191,6 +201,66 @@ test("actual producer to actual publication guard values one batch parent and ke
   assert.equal(projection.transferBatches[0].creditLiveValueQ8, "3");
   assert.ok(projection.items.every(row => row.creditValueAtConfirmQ8 === "0" && row.creditLiveValueQ8 === "0"));
   assert.equal(accepts(projection), true);
+});
+
+for (const [version, count] of [["batch1", 161], ["mailbatch1", 161], ["batch1", 256], ["mailbatch1", 256]]) {
+  test(`${version} with ${count} recipients stays out of previews and publishes complete WORK evidence`, () => {
+    const state = stateFixture({ version, count });
+    const expected = produce(state);
+    const bundle = summary(expected);
+    const work = api.internalCanonicalWorkSummaryPayload({
+      network: "livenet",
+      workTokenState: state,
+      workFloor: bundle.workFloor,
+      metrics: { indexedThroughBlock: state.transferBatches[0].blockHeight },
+      indexedThroughBlockHash: state.transferBatches[0].blockHash,
+      snapshotId: "compact-batch-test",
+    });
+    for (const preview of [work.token, api.compactTokenDirectorySummaryPayload(state)]) {
+      for (const compact of [preview, api.compactTokenDirectorySummaryPayload(preview)]) {
+        assert.deepEqual(plain(compact.transferBatches), []);
+        assert.deepEqual(plain(compact.transfers), []);
+        assert.equal(compact.totalCounts.transferBatches, 1);
+        assert.equal(compact.collectionHasMore.transferBatches, true);
+        assert.equal(compact.totalCounts.transfers, count);
+        assert.equal(compact.stats.confirmedTransfers, count);
+        assert.equal(compact.totalCount, count, "batch parents must not inflate the transaction total");
+      }
+    }
+    const projection = plain(work.workTransferValueProjection);
+    assert.deepEqual(projection, expected);
+    assert.equal(projection.transferBatches.length, 1);
+    const [parent] = projection.transferBatches;
+    assert.deepEqual(parent.recipients, state.transferBatches[0].recipients);
+    assert.equal(parent.registryMutationFeeSats, 546);
+    assert.equal(parent.minerFeeSats, 47);
+    assert.equal(parent.creditAmountMovedSubatoms, state.transferBatches[0].movementAmountSubatoms);
+    assert.equal(projection.items.length, count);
+    assert.ok(projection.items.every(item =>
+      item.minerFeeSats === 0 && item.paidSats === 0 && item.creditLiveValueQ8 === "0"));
+    assert.equal(worker.canonicalSummaryAccountingModelsCurrent({ ...bundle, workSummary: work }), true);
+  });
+}
+
+test("batch preview counts distinguish full, partial and older summaries through recompaction", () => {
+  const { transferBatches } = stateFixture();
+  for (const [input, count, more] of [
+    [{}, 0, false],
+    [{ summaryOnly: true, transferBatches }, null, true],
+    [{ walletScoped: true, transferBatches }, null, true],
+    [{ summaryOnly: true, collectionHasMore: { transferBatches: true } }, null, true],
+    [{ transferBatches, collectionHasMore: { transferBatches: true } }, null, true],
+    [{ summaryOnly: true, totalCounts: { transferBatches: 7 } }, 7, true],
+    [{ summaryOnly: true, totalCounts: { transferBatches: 0 } }, 0, false],
+  ]) {
+    const once = api.compactTokenDirectorySummaryPayload(input);
+    const twice = api.compactTokenDirectorySummaryPayload(once);
+    for (const compact of [once, twice]) {
+      assert.deepEqual(plain(compact.transferBatches), []);
+      assert.equal(compact.totalCounts.transferBatches, count);
+      assert.equal(compact.collectionHasMore.transferBatches, more);
+    }
+  }
 });
 
 test("sub-proof aggregate values may round to zero without waiving parent fees or exact equations", () => {

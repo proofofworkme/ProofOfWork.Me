@@ -14,13 +14,23 @@ function dnsReader({ changedTip = false, changedHistory = false, hydrationFailur
  let reads = 0, historyReads = 0;
  const hash = 'a'.repeat(64), txid = 'b'.repeat(64);
  const checkpoint = { height: 100, blockHash: hash };
+ const electrumRequest = async () => { throw new Error('unexpected direct Electrum request'); };
  const globals = {
+  electrumRequest,
   dnsRegistryAddressForNetwork: () => 'dns-address',
   bitcoinRpc: async () => (++reads === 2 && changedTip ? { ...checkpoint, height: 101 } : checkpoint),
   exactCoreTipFromBlockchainInfo: value => value,
-  registryAuditElectrumCheckpoint: async value => assert.equal(value.blockHash, hash),
+  registryAuditElectrumCheckpoint: async (value, { request }) => {
+   assert.equal(request, electrumRequest);
+   assert.equal(value.blockHash, hash);
+  },
   electrumAddressHistoryCoverage,
-  fetchExactAddressHistoryFromElectrum: async () => [{tx_hash: txid, height: ++historyReads === 2 && changedHistory ? 99 : 90}],
+  fetchExactAddressHistoryFromElectrum: async (address, network, { request }) => {
+   assert.equal(request, electrumRequest);
+   assert.equal(address, 'dns-address');
+   assert.equal(network, 'livenet');
+   return [{tx_hash: txid, height: ++historyReads === 2 && changedHistory ? 99 : 90}];
+  },
   hydrateExactConfirmedRegistryHistory: async (_, network, options) => {
    assert.equal(options.registryAddress, 'dns-address');
    if (hydrationFailure) throw new Error('missing canonical transaction');
@@ -48,9 +58,13 @@ test('DNS coverage uses a stable Core/Electrum checkpoint separately from latest
  assert.equal(payload.checkpointHash,'a'.repeat(64));
  assert.equal(payload.coverage.complete,true);
 });
-for (const option of ['changedTip','changedHistory','hydrationFailure']) {
+for (const [option, expected] of [
+ ['changedTip', /DNS chain\/history changed during the canonical read/],
+ ['changedHistory', /DNS chain\/history changed during the canonical read/],
+ ['hydrationFailure', /missing canonical transaction/],
+]) {
  test(`DNS coverage rejects ${option}`, async () => {
-  await assert.rejects(dnsReader({[option]:true})('livenet'));
+  await assert.rejects(dnsReader({[option]:true})('livenet'), expected);
  });
 }
 test('mail activity preserves exact canonical HTML bytes for Desktop', () => {
