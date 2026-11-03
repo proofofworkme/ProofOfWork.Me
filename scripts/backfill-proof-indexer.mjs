@@ -35,6 +35,7 @@ import {
 import { reviewedIncbReplayBaselineFromEvidence } from "../server/incb-replay-baseline.mjs";
 import { SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle } from "../server/incb-scoped-oracle.mjs";
 import { canonicalIncbReplayComponents } from "../server/incb-replay-components.mjs";
+import { acceptedHintTxids, pendingDiscoverySeen, planPendingDiscovery, finishPendingDiscovery } from "../server/pending-mempool-discovery.mjs";
 import { createHash, randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import net from "node:net";
@@ -18984,6 +18985,7 @@ async function publicLogRelationalFingerprint(client, options = {}) {
         AND e.valid = true
         AND e.status IN ('confirmed', 'pending')
         AND e.kind = ANY($2::text[])
+        ${options.pendingOnly ? "AND e.status = 'pending'" : ""}
         ${replayCheckpointRequested
           ? `AND e.status = 'confirmed'
              AND (e.kind NOT LIKE 'token-%' OR e.protocol = 'pwt1')
@@ -19013,6 +19015,7 @@ async function publicLogRelationalFingerprint(client, options = {}) {
       : [NETWORK, [...PUBLIC_LOG_EVENT_KINDS]],
   );
   const hash = createHash("sha256");
+  const pendingHash = createHash("sha256");
   if (replayCheckpointRequested) {
     hash.update(
       `replay-checkpoint:${replayCheckpointHeight}:${replayCheckpointHash}\n`,
@@ -19020,33 +19023,33 @@ async function publicLogRelationalFingerprint(client, options = {}) {
   }
   let pending = 0;
   for (const row of result.rows) {
+    const entry = JSON.stringify([
+      String(row.event_id),
+      row.txid,
+      row.protocol,
+      row.kind,
+      row.status,
+      row.valid,
+      row.block_height,
+      row.block_time,
+      row.event_time,
+      row.created_at,
+      row.payload_hash,
+    ]) + "\n";
+    hash.update(entry);
     if (row.status === "pending") {
       pending += 1;
+      pendingHash.update(entry);
     }
-    hash.update(
-      JSON.stringify([
-        String(row.event_id),
-        row.txid,
-        row.protocol,
-        row.kind,
-        row.status,
-        row.valid,
-        row.block_height,
-        row.block_time,
-        row.event_time,
-        row.created_at,
-        row.payload_hash,
-      ]),
-    );
-    hash.update("\n");
   }
   return {
     contract: replayCheckpointRequested
       ? "proof-index-public-log-fingerprint-replay-v1"
-      : "proof-index-public-log-fingerprint-v1",
+      : options.pendingOnly ? "proof-index-pending-log-fingerprint-v1" : "proof-index-public-log-fingerprint-v1",
     count: result.rows.length,
     hash: hash.digest("hex"),
     pending,
+    ...(!replayCheckpointRequested ? { pendingHash: pendingHash.digest("hex") } : {}),
     ...(replayCheckpointRequested
       ? {
           checkpointHeight: replayCheckpointHeight,
@@ -19054,6 +19057,35 @@ async function publicLogRelationalFingerprint(client, options = {}) {
         }
       : {}),
   };
+}
+
+async function storedSummaryCoversPendingLog(client, stored) {
+  if (stored?.contract !== "proof-index-public-log-fingerprint-v1") return false;
+  if (!/^[0-9a-f]{64}$/u.test(stored.pendingHash ?? "")) {
+    // Older publications have only the full digest. Verify that original commitment.
+    return publicLogFingerprintsMatch(await publicLogRelationalFingerprint(client), stored);
+  }
+  const current = await publicLogRelationalFingerprint(client, { pendingOnly: true });
+  return current.pending === stored.pending && current.pendingHash === stored.pendingHash;
+}
+
+function assertPendingLogSummaryRevision(prior, bundle, fingerprint) {
+  const revision = bundle?.ledger?.sourceHashes?.pendingLogRevision;
+  if (!bundle?.snapshotId || bundle.snapshotId === prior.snapshotId ||
+      revision?.previousSnapshotId !== prior.snapshotId || revision?.pendingHash !== fingerprint.pendingHash) {
+    throw new Error("Same-block pending Log publication lost its prior snapshot or membership binding.");
+  }
+  const floor = bundle.summaryPayloads?.workFloor;
+  const before = prior.workFloor;
+  if (!before || !floor ||
+      prior.workNetworkValueQ8 !== floor.networkValueQ8 ||
+      prior.growthSummary?.actualValue?.totalQ8 !== bundle.summaryPayloads.growthSummary?.actualValue?.totalQ8 ||
+      before.frozenNetworkValueQ8 !== floor.frozenNetworkValueQ8 ||
+      before.actualValue?.creditMinerFeeAccountingModel !== floor.actualValue?.creditMinerFeeAccountingModel ||
+      prior.workNetworkValueAccountingModel !== floor.workNetworkValueAccountingModel ||
+      prior.metrics?.confirmedComputerActions !== bundle.ledger.metrics?.confirmedComputerActions) {
+    throw new Error("Same-block pending Log publication changed confirmed economics.");
+  }
 }
 
 function publicLogFingerprintsMatch(left, right) {
@@ -19973,6 +20005,7 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
         height: requiredCheckpointHeight,
       })
     : null;
+  let priorPendingSnapshotId = "";
   if (storedExactCheckpoint) {
     const storedExactPayload = await storedLedgerSnapshotPayload(
       client,
@@ -19991,15 +20024,20 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
         client, storedExactPayload, requiredCheckpointHeight, requiredCheckpointHash,
       )
     ) {
-      return {
-        indexedThroughBlock: requiredCheckpointHeight,
-        indexedThroughBlockHash: requiredCheckpointHash,
-        previousCoverage: requiredCheckpointHeight,
-        reason: "already-current-exact-checkpoint",
-        skipped: true,
-        snapshotId: storedExactCheckpoint.snapshotId,
-        snapshotVersionCount: storedExactCheckpoint.count,
-      };
+      if (!options.refreshPendingLog || await storedSummaryCoversPendingLog(
+        client, storedExactPayload.summaryRefresh?.publicLogFingerprint,
+      )) {
+        return {
+          indexedThroughBlock: requiredCheckpointHeight,
+          indexedThroughBlockHash: requiredCheckpointHash,
+          previousCoverage: requiredCheckpointHeight,
+          reason: "already-current-exact-checkpoint",
+          skipped: true,
+          snapshotId: storedExactCheckpoint.snapshotId,
+          snapshotVersionCount: storedExactCheckpoint.count,
+        };
+      }
+      priorPendingSnapshotId = storedExactCheckpoint.snapshotId;
     }
   }
   const previousPayload = await storedEligibleCanonicalSummarySnapshotPayload(
@@ -20088,6 +20126,10 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
         requiredCheckpointHash,
       );
     }
+    if (priorPendingSnapshotId) {
+      canonicalSummaryUrl.searchParams.set("priorPendingSnapshot", priorPendingSnapshotId);
+      canonicalSummaryUrl.searchParams.set("pendingLogHash", currentPublicLogFingerprint.pendingHash);
+    }
     canonicalBundle = await readJson(
       canonicalSummaryUrl,
       {
@@ -20163,6 +20205,9 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     };
   }
   const ledger = objectPayload(canonicalBundle?.ledger);
+  if (priorPendingSnapshotId) {
+    assertPendingLogSummaryRevision(storedExactCheckpoint.payload, canonicalBundle, currentPublicLogFingerprint);
+  }
   const canonicalBundleHash = String(
     canonicalBundle?.indexedThroughBlockHash ?? "",
   )
@@ -27037,13 +27082,15 @@ async function backfillBlockScanSource(client, source) {
 async function mempoolScanState(client) {
   const key = `mempoolScan:${NETWORK}`;
   const result = await client.query(
-    `SELECT value FROM proof_indexer.meta WHERE key = $1`,
+    `SELECT value, xmin::text AS version FROM proof_indexer.meta WHERE key = $1`,
     [key],
   );
   const value = result.rows[0]?.value;
   return {
     cursor: normalizedMempoolScanCursor(value?.cursor),
+    discovery: value?.discovery ?? null,
     key,
+    version: result.rows[0]?.version ?? null,
     priorityCursor: normalizedMempoolScanCursor(value?.priorityCursor),
     processedTxids: new Set(
       Array.isArray(value?.processedTxids)
@@ -30932,24 +30979,30 @@ async function storeMempoolScanState(
   processedTxids,
   cursor,
   priorityCursor,
+  discovery,
+  previousVersion,
 ) {
-  await client.query(
-    `
-      INSERT INTO proof_indexer.meta (key, value, updated_at)
-      VALUES ($1, $2::jsonb, now())
-      ON CONFLICT (key)
-      DO UPDATE SET value = EXCLUDED.value, updated_at = now()
-    `,
-    [
-      key,
-      JSON.stringify({
-        cursor: normalizedMempoolScanCursor(cursor),
-        priorityCursor: normalizedMempoolScanCursor(priorityCursor),
-        processedTxids,
-        scannedAt: new Date().toISOString(),
-      }),
-    ],
-  );
+  const payload = JSON.stringify({
+    cursor: normalizedMempoolScanCursor(cursor),
+    priorityCursor: normalizedMempoolScanCursor(priorityCursor),
+    processedTxids,
+    ...(discovery ? { discovery } : {}),
+    scannedAt: new Date().toISOString(),
+  });
+  // A concurrent pass or a supervised reorg can advance or remove this
+  // marker. Its winner owns future discovery; committed events are idempotent.
+  const result = previousVersion == null
+    ? await client.query(
+      `INSERT INTO proof_indexer.meta (key, value, updated_at)
+       VALUES ($1, $2::jsonb, now()) ON CONFLICT (key) DO NOTHING`,
+      [key, payload],
+    )
+    : await client.query(
+      `UPDATE proof_indexer.meta SET value = $2::jsonb, updated_at = now()
+       WHERE key = $1 AND xmin::text = $3`,
+      [key, payload, previousVersion],
+    );
+  return result.rowCount === 1;
 }
 
 function pendingTransactionObservationItem(preparedItems, txid) {
@@ -32454,6 +32507,44 @@ async function dropWorkQ16PendingStageMember(client, observation) {
   await restoreWorkQ16PendingListingAfterRemoval(client, evidence.txid);
 }
 
+async function readPendingBroadcastHints() {
+  if (NETWORK !== "livenet" || INTERNAL_VERIFIER_TOKEN.length < 32) return [];
+  try {
+    const url = new URL("/api/v1/internal/pending-discovery-hints", API_BASE);
+    const port = Number(url.port || 80);
+    if (url.protocol !== "http:" || url.username || url.password || !Number.isInteger(port) ||
+        port < 1 || port > 65535 || !["127.0.0.1", "[::1]"].includes(url.hostname)) return [];
+    url.searchParams.set("network", NETWORK);
+    const response = await readCanonicalSummaryJsonViaLoopbackHttp(url, {
+      headers: { "X-PoW-Internal-Verifier": INTERNAL_VERIFIER_TOKEN },
+      maxBytes: 24 * 1024,
+      signal: AbortSignal.timeout(1500),
+    });
+    return acceptedHintTxids(response, NETWORK);
+  } catch {
+    // The canonical mempool sweep is independent of this scheduling aid.
+    return [];
+  }
+}
+
+async function verifyHintedMempoolTransaction(txid, expectedTime, tx) {
+  const raw = bitcoin.Transaction.fromHex(tx.hex);
+  if (raw.getId() !== txid || tx.txid !== txid || raw.ins.length !== tx.vin?.length ||
+      raw.outs.length !== tx.vout?.length ||
+      raw.ins.some((input, i) => Buffer.from(input.hash).reverse().toString("hex") !== tx.vin[i].txid ||
+        input.index !== tx.vin[i].vout || input.sequence !== tx.vin[i].sequence) ||
+      raw.outs.some((out, i) => tx.vout[i].n !== i || !Number.isFinite(tx.vout[i].value) || tx.vout[i].value < 0 ||
+        Buffer.from(out.script).toString("hex") !== tx.vout[i].scriptPubKey?.hex ||
+        !Number.isSafeInteger(Math.round(tx.vout[i].value * 1e8)) ||
+        BigInt(Math.round(tx.vout[i].value * 1e8)) !== BigInt(out.value))) {
+    throw new Error(`Hinted txid ${txid} does not match its complete Core inputs and outputs.`);
+  }
+  const entry = await bitcoinRpc("getmempoolentry", [txid]);
+  if (!Number.isSafeInteger(expectedTime) || entry?.time !== expectedTime) {
+    throw new Error(`Hinted txid ${txid} no longer has its sampled Core admission epoch.`);
+  }
+}
+
 async function backfillMempoolScanSource(client, source) {
   const startedAtMs = Date.now();
   if (!BITCOIN_RPC_URL) {
@@ -32513,17 +32604,17 @@ async function backfillMempoolScanSource(client, source) {
   const priorityTxids = scopedIdReverification
     ? [...idReverificationTargets.keys()]
     : await knownMempoolRecoveryTxids(client, mempool);
+  const processed = scopedIdReverification ? new Set(state.processedTxids) : pendingDiscoverySeen(state, mempool);
+  const discovery = scopedIdReverification ? null : planPendingDiscovery({
+    entries, state: { ...state, processedTxids: processed }, priorityTxids, hintTxids: await readPendingBroadcastHints(),
+    limit: candidateLimit, seenLimit, sampledAtMs: startedAtMs, legacyPlan: plannedMempoolScanCandidates,
+  });
   const candidates = scopedIdReverification
     ? priorityTxids.map((txid) => ({ entry: [txid, mempool[txid]], lane: "priority" }))
-    : plannedMempoolScanCandidates(
-    entries,
-    state,
-    priorityTxids,
-    { candidateLimit, seenLimit },
-  );
-  const processed = new Set(
-    [...state.processedTxids].filter((txid) => mempool?.[txid]),
-  );
+    : discovery.candidates;
+  const attempted = new Set();
+  const departed = new Set();
+  const extraScans = { arrival: 0, hint: 0, retry: 0 };
   let cursor = state.cursor;
   let priorityCursor = state.priorityCursor;
   let canonicalDeferred = 0;
@@ -32547,7 +32638,11 @@ async function backfillMempoolScanSource(client, source) {
       stopReason = "time-budget";
       break;
     }
-    const [txid] = candidate.entry;
+    const [txid, metadata] = candidate.entry;
+    const hinted = discovery?.selectedHints.has(txid);
+    attempted.add(txid);
+    if (hinted || candidate.lane === "retry") processed.delete(txid);
+    if (Object.hasOwn(extraScans, candidate.lane)) extraScans[candidate.lane]++;
     scanned += 1;
     if (candidate.lane === "cursor") {
       cursorScanned += 1;
@@ -32565,9 +32660,11 @@ async function backfillMempoolScanSource(client, source) {
           q16PendingActive,
         });
       if (hydrationMissDisposition === "absent") {
+        departed.add(txid);
         continue;
       }
       if (hydrationMissDisposition === "confirmed") {
+        departed.add(txid);
         canonicalDeferred += 1;
         continue;
       }
@@ -32583,8 +32680,18 @@ async function backfillMempoolScanSource(client, source) {
     if (transactionHasConfirmedBlockEvidence(tx)) {
       // The transaction confirmed after the mempool snapshot. Only the
       // canonical block scanner may persist confirmed state and block proof.
+      departed.add(txid);
       canonicalDeferred += 1;
       continue;
+    }
+    if (hinted) {
+      try {
+        await verifyHintedMempoolTransaction(txid, metadata.time, tx);
+      } catch (error) {
+        unresolved += 1;
+        console.error(JSON.stringify({ phase: "pending-discovery-hint", txid, error: error.message }));
+        continue;
+      }
     }
     const powcatOutputs = [];
     const messages = protocolMessagesFromTx(tx, NETWORK === "livenet" && !scopedIdReverification ? powcatOutputs : undefined);
@@ -32722,6 +32829,7 @@ async function backfillMempoolScanSource(client, source) {
         );
       }
       if (transactionHasConfirmedBlockEvidence(beforeWrite)) {
+        departed.add(txid);
         canonicalDeferred += 1;
         continue;
       }
@@ -32740,6 +32848,7 @@ async function backfillMempoolScanSource(client, source) {
       if (await lockedCanonicalTransactionForMempool(client, txid)) {
         await client.query("ROLLBACK");
         transactionOpen = false;
+        departed.add(txid);
         canonicalDeferred += 1;
         continue;
       }
@@ -32838,10 +32947,12 @@ async function backfillMempoolScanSource(client, source) {
       if (transactionHasConfirmedBlockEvidence(beforeCommit)) {
         await client.query("ROLLBACK");
         transactionOpen = false;
+        departed.add(txid);
         canonicalDeferred += 1;
         continue;
       }
       if (powcatItems.length) await bitcoinRpc("getmempoolentry", [txid]);
+      if (hinted) await verifyHintedMempoolTransaction(txid, metadata.time, beforeCommit);
       await client.query("COMMIT");
       transactionOpen = false;
       indexed += result.indexed;
@@ -32962,19 +33073,29 @@ async function backfillMempoolScanSource(client, source) {
       );
     }
   }
+  const discoveryProgress = finishPendingDiscovery(discovery, attempted, processed, departed);
   const finalProcessed = entries
     .map(([txid]) => txid)
     .filter((txid) => processed.has(txid))
     .slice(0, seenLimit);
-  await storeMempoolScanState(
+  const discoveryMarkerStored = await storeMempoolScanState(
     client,
     state.key,
     finalProcessed.length > 0 ? finalProcessed : nextProcessed,
     cursor,
     priorityCursor,
+    discoveryProgress,
+    state.version,
   );
   return {
+    discoveryMarkerStored,
     budgetMs: MEMPOOL_SCAN_BUDGET_MS,
+    arrivalCursor: discoveryProgress.arrivalCursor,
+    arrivalRetryCount: discoveryProgress.retry.length,
+    arrivalRetrySaturated: discoveryProgress.retrySaturated,
+    arrivalScanned: extraScans.arrival,
+    hintScanned: extraScans.hint,
+    retryScanned: extraScans.retry,
     canonicalDeferred,
     cursor,
     cursorScanned,
@@ -39340,6 +39461,7 @@ try {
             STORE_CANONICAL_SUMMARY_SNAPSHOT
               ? await storeCanonicalSummarySnapshot(client, {
                   requiredCheckpoint: canonicalSummaryRequiredCheckpoint,
+                  refreshPendingLog: CANONICAL_SUMMARY_ONLY_BACKFILL && Boolean(canonicalSummaryRequiredCheckpoint),
                 })
               : null;
           console.log(

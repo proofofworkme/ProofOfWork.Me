@@ -1,3 +1,4 @@
+import { finishPendingDiscovery, pendingDiscoverySeen, planPendingDiscovery } from "../server/pending-mempool-discovery.mjs";
 import { parseBoostWorkTip } from "../src/shared/protocol/boostTip.mjs";
 import { canonicalSealTime } from "../server/canonical-seal-time.mjs";
 import { WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT } from "../server/work-batch-declaration.mjs";
@@ -24845,6 +24846,7 @@ check("Core-present dropped protocol transactions revive through verifier and up
     BACKFILL_PATH,
     "backfillMempoolScanSource",
     {
+      pendingDiscoverySeen, planPendingDiscovery, finishPendingDiscovery, readPendingBroadcastHints: async () => [],
       NETWORK: "livenet",
       reconcilePowcatPending: async () => {},
       MEMPOOL_REVERIFY_ID_TXIDS: [],
@@ -25596,6 +25598,7 @@ check("supervised pending recovery stages 118 WORK candidates before one atomic 
     BACKFILL_PATH,
     "backfillMempoolScanSource",
     {
+      pendingDiscoverySeen, planPendingDiscovery, finishPendingDiscovery, readPendingBroadcastHints: async () => [],
       NETWORK: "livenet",
       reconcilePowcatPending: async () => {},
       MEMPOOL_REVERIFY_ID_TXIDS: [],
@@ -25816,6 +25819,7 @@ check("supply-capped mempool mints replace stale valid rows with a pending inval
     BACKFILL_PATH,
     "backfillMempoolScanSource",
     {
+      pendingDiscoverySeen, planPendingDiscovery, finishPendingDiscovery, readPendingBroadcastHints: async () => [],
       NETWORK: "livenet",
       reconcilePowcatPending: async () => {},
       MEMPOOL_REVERIFY_ID_TXIDS: [],

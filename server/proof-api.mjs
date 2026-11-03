@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createBroadcastHints } from "./pending-broadcast-hints.mjs";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { performance } from "node:perf_hooks";
 import { setImmediate as yieldToIo } from "node:timers/promises";
@@ -1021,6 +1022,7 @@ const PENDING_TOKEN_LIVENESS_CHECK_CONCURRENCY = Number(
 );
 const PERSISTED_CACHE_DIR =
   process.env.POW_API_CACHE_DIR ?? path.join(process.cwd(), ".pow-api-cache");
+const pendingBroadcastHints = createBroadcastHints({ directory: PERSISTED_CACHE_DIR });
 const PROOF_INDEX_HEALTH_MAX_AGE_MS = Number(
   process.env.POW_INDEX_HEALTH_MAX_AGE_MS ?? 10 * 60_000,
 );
@@ -14414,6 +14416,12 @@ async function assertWorkMarketplaceBroadcastAllowed(
   }
 }
 
+function noteAcceptedBroadcast(result, txHex, network) {
+  // The gateway outcome is final before optional local discovery work starts.
+  void Promise.resolve().then(() => pendingBroadcastHints.rememberAccepted(result, txHex, network))
+    .catch(error => console.error("Could not record accepted broadcast hint:", errorSummary(error)));
+}
+
 async function broadcastSlipstreamPayload(request, options = {}) {
   const payload = await readJsonRequestBody(request, 1_000_000, {
     label: "Broadcast request body",
@@ -14429,6 +14437,7 @@ async function broadcastSlipstreamPayload(request, options = {}) {
   });
   await assertNoUnexpectedListingAnchorSpend(txHex, "livenet");
   const result = await submitSlipstreamTransaction(txHex);
+  noteAcceptedBroadcast(result, txHex, "livenet");
   await cachePendingTokenTransactionByTxid(
     result.txid,
     "livenet",
@@ -14518,6 +14527,7 @@ async function broadcastNodePayload(request, network, options = {}) {
   });
   await assertNoUnexpectedListingAnchorSpend(txHex, network);
   const result = await submitNodeTransaction(txHex, network);
+  noteAcceptedBroadcast(result, txHex, network);
   await cachePendingTokenTransactionByTxid(
     result.txid,
     network,
@@ -54433,7 +54443,24 @@ async function exactCanonicalSummaryCheckpoint(network, options = {}) {
 }
 
 async function internalCanonicalSummaryPayload(network, options = {}) {
-  const before = await exactCanonicalSummaryCheckpoint(network, options);
+  const { priorPendingSnapshot, pendingLogHash } = options;
+  let pendingLogRevision;
+  if (priorPendingSnapshot || pendingLogHash) {
+    if (!/^[0-9a-f]{24}$/u.test(priorPendingSnapshot ?? "") ||
+        !/^[0-9a-f]{64}$/u.test(pendingLogHash ?? "") ||
+        !options.checkpointHeight || !options.checkpointHash || options.replayVerifierBinding) {
+      throw freshDataUnavailableError("Invalid pending Log revision for the live canonical summary.");
+    }
+    pendingLogRevision = { previousSnapshotId: priorPendingSnapshot, pendingHash: pendingLogHash };
+  }
+  // A pending observation can revise only the live tip. Historical H-1 barriers
+  // continue to use their own confirmed checkpoint and immutable oracle rules.
+  const checkpointOptions = pendingLogRevision ? {} : options;
+  const before = await exactCanonicalSummaryCheckpoint(network, checkpointOptions);
+  if (pendingLogRevision && (before.indexedThroughBlock !== Number(options.checkpointHeight) ||
+      before.tipHash !== options.checkpointHash)) {
+    throw freshDataUnavailableError("The requested pending Log checkpoint is no longer at the live tip.");
+  }
   const ledger = await buildIndexedCanonicalLedgerPayload(
     network,
     "internal canonical summary",
@@ -54471,11 +54498,13 @@ async function internalCanonicalSummaryPayload(network, options = {}) {
         indexedThroughBlock: before.indexedThroughBlock,
         indexedThroughBlockHash: before.tipHash,
         sourceSnapshotId: ledger.snapshotId,
+        ...(pendingLogRevision ? { pendingLogRevision } : {}),
       }),
     ),
   ).slice(0, 24));
   const hashBoundLedger = {
     ...ledger,
+    ...(pendingLogRevision ? { sourceHashes: { ...ledger.sourceHashes, pendingLogRevision } } : {}),
     indexedThroughBlockHash: before.tipHash,
     snapshotId: checkpointSnapshotId,
   };
@@ -54553,7 +54582,7 @@ async function internalCanonicalSummaryPayload(network, options = {}) {
     }
   }
 
-  const after = await exactCanonicalSummaryCheckpoint(network, options);
+  const after = await exactCanonicalSummaryCheckpoint(network, checkpointOptions);
   if (
     after.indexedThroughBlock !== before.indexedThroughBlock ||
     after.tipHash !== before.tipHash
@@ -82942,6 +82971,19 @@ async function handleRequest(request, response) {
       return;
     }
 
+    if (url.pathname === "/api/v1/internal/pending-discovery-hints") {
+      if (request.method !== "GET" || !internalVerifierRequestAllowed(request)) {
+        errorResponse(response, 404, "Not found.");
+        return;
+      }
+      if (url.searchParams.get("network") !== "livenet") {
+        errorResponse(response, 400, "Pending discovery hints require livenet.");
+        return;
+      }
+      jsonResponse(response, 200, await pendingBroadcastHints.list(), "no-store");
+      return;
+    }
+
     if (
       request.method === "POST" &&
       url.pathname ===
@@ -83281,6 +83323,8 @@ async function handleRequest(request, response) {
             checkpointHash,
             checkpointHeight,
             replayVerifierBinding,
+            priorPendingSnapshot: url.searchParams.get("priorPendingSnapshot"),
+            pendingLogHash: url.searchParams.get("pendingLogHash"),
           });
       jsonResponse(
         response,

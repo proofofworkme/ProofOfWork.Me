@@ -847,6 +847,10 @@ Important launch invariant:
 
 ```text
 Confirmed history is canonical. Pending mempool visibility is best-effort.
+The worker scans new arrivals in admission order and can prioritize a txid from
+a successful first-party submission. Log shows verified pending actions after
+publication, including between blocks. A pending action can disappear or be
+replaced before confirmation.
 Every app-created broadcast spends confirmed inputs only.
 ```
 

@@ -813,6 +813,28 @@ additional history, including when re-reading an older partial preview.
 Relational history serves the full records. The worker validates the separate
 `workSummary.workTransferValueProjection` with complete confirmed parents and
 recipients before publishing all eight summaries at one verified checkpoint.
+
+The pending worker inspects a bounded set of Core transactions per pass. Its
+arrival cursor progresses through transactions by Core admission time and txid,
+alongside the newest-arrival and historical scans. Successful first-party
+submissions can supply short-lived txid hints to the authenticated loopback
+worker. A hint supplies no protocol event or payment evidence. The worker
+checks Core membership, transaction identity and protocol bytes before applying
+the existing pending verification rules. Confirmed replay remains authoritative.
+
+At an unchanged Core tip, the summary publisher compares pending public Log
+membership with the stored observation. A change produces a distinct snapshot
+bound to the previous snapshot and the observed membership digest. The publisher
+rechecks the full event fingerprint, all eight read models and confirmed economics
+before storing it. Additions, replacements and removals can be reported between
+blocks. Historical H-1 barriers keep their original checkpoint rules.
+
+For pending-discovery release qualification, use an isolated Core regtest and
+PostgreSQL cluster. Check that an accepted Mail with multiple paid outputs
+appears once in a snapshot at the unchanged block, then mine it and replay
+twice. Verified replacement and unknown status must remain distinguishable.
+The production controller runs its offline fixtures without a network and
+rehearses the real bundle against read-only node and database evidence.
 Retention, canonical rebuild, PWT range replay, WORK atomic invalidation, and
 repair deletion paths also preserve the immutable V5 H-1 seed-evidence row
 and every completed-migration seed or closing dependency. The schema's

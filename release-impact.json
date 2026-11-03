@@ -1,54 +1,69 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "compact-work-batch-summary-previews",
-  "liveCheck": "scripts/check-summary-preview-live.mjs",
+  "upgrade": "pending-mail-discovery-and-log-publication",
+  "liveCheck": "scripts/check-pending-discovery-live.mjs",
   "ciTests": [
-    "scripts/check-work-batch-summary-projection.test.mjs",
-    "scripts/check-upgrade-impact.test.mjs"
+    "scripts/check-pending-log-publication.test.mjs",
+    "scripts/check-pending-discovery-worker.test.mjs",
+    "server/pending-broadcast-hints.test.mjs",
+    "scripts/check-work-batch-summary-projection.test.mjs"
   ],
   "reviews": [
     {
       "targets": [
-        "api",
-        "indexer",
-        "activity",
-        "growth",
-        "work",
-        "token",
-        "marketplace",
-        "computer",
-        "inception",
-        "infinity",
-        "wallet"
-      ],
-      "disposition": "affected",
-      "reason": "The worker publishes one hash-bound bundle shared by public token, market and activity readers. Display copies omit full batch parents and disclose remaining history. Wallet and bond reads retain their own exact checkpoint and authority checks.",
-      "evidence": [
-        "scripts/check-work-batch-summary-projection.test.mjs",
-        "scripts/check-summary-preview-live.mjs",
-        "scripts/check-public-read-paths.mjs",
-        "server/proof-api.mjs"
-      ]
-    },
-    {
-      "targets": [
         "wire",
-        "backfill-reorg",
-        "accounting",
         "local-signing",
         "compatibility"
       ],
       "disposition": "compatible",
-      "reason": "Compaction follows canonical replay. The separate WORK transfer valuation projection still qualifies each complete parent and sibling set and attributes the registry and miner fees once. Historical compact counts retain their known or unknown coverage across repeated reads.",
+      "reason": "Signed transaction bytes and wallet approval are unchanged. Existing sender and relay paths can prioritize only bounded discovery work after an accepted result whose txid matches the signed bytes. Optional hint persistence cannot reverse a successful broadcast.",
       "evidence": [
-        "scripts/check-work-batch-summary-projection.test.mjs",
-        "scripts/backfill-proof-indexer.mjs",
-        "scripts/check-summary-preview-live.mjs"
+        "server/pending-broadcast-hints.test.mjs",
+        "server/proof-api.mjs",
+        "scripts/check-pending-discovery-worker.test.mjs"
       ]
     },
     {
       "targets": [
-        "search",
+        "indexer",
+        "backfill-reorg",
+        "api",
+        "mail",
+        "files",
+        "activity",
+        "computer",
+        "wallet"
+      ],
+      "disposition": "affected",
+      "reason": "Pending-only inspection of Core membership adds progressing arrivals and accepted-submission hints. Ordinary Mail and other protocol carriers go through the existing verifier. The worker can publish an observed pending change at the same block while keeping the old snapshot identity separate.",
+      "evidence": [
+        "scripts/check-pending-discovery-worker.test.mjs",
+        "scripts/check-pending-log-publication.test.mjs",
+        "scripts/check-pending-discovery-live.mjs",
+        "server/pending-broadcast-hints.test.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "accounting",
+        "growth",
+        "token",
+        "work",
+        "marketplace",
+        "infinity",
+        "inception",
+        "notifications"
+      ],
+      "disposition": "compatible",
+      "reason": "Shared summary readers can observe a newer pending snapshot at the same height. A revision keeps the confirmed action count, network value, frozen value and fee accounting model fixed. Existing scope, admission, reservation and exactly-once batch predicates continue to apply.",
+      "evidence": [
+        "scripts/check-pending-log-publication.test.mjs",
+        "scripts/check-summary-preview-live.mjs",
+        "scripts/check-work-batch-summary-projection.test.mjs"
+      ]
+    },
+    {
+      "targets": [
         "boost",
         "browser",
         "code",
@@ -61,16 +76,14 @@
         "pages",
         "permission",
         "publish",
-        "files",
-        "mail",
-        "notifications"
+        "search"
       ],
       "disposition": "compatible",
-      "reason": "These surfaces keep their existing public discovery, mail, content and event records. The change affects token summary display volume and the availability of the shared bundle used by downstream public reads. No event writer, raw event, balance, or content reader changes.",
+      "reason": "Existing record formats and public readers remain responsible for their own coverage. An unconfirmed discovery hint adds no search document, content, economic value, registry mutation or confirmed balance.",
       "evidence": [
         "scripts/check-public-read-paths.mjs",
-        "scripts/check-work-batch-summary-projection.test.mjs",
-        "scripts/check-release-sync.mjs"
+        "scripts/check-pending-discovery-live.mjs",
+        "scripts/backfill-proof-indexer.mjs"
       ]
     }
   ]

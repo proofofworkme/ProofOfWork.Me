@@ -887,6 +887,10 @@ Summary readiness does not establish that public history works. Verify actual
 Log pages and continuation, every recipient of a batch, Boost loading and the
 WORK-floor preflight as part of a read-path release. A successful Log summary
 cannot hide an unavailable history page or label a short preview as complete.
+Pending Log visibility needs two observations. The worker verifies a protocol
+record in Core's mempool and the publisher records the changed membership at
+the same confirmed tip. A successful broadcast or known txid can prioritize
+inspection. It cannot establish confirmation, payment or signing authority.
 Carry canonical event identity through display merging, including recipients
 that share a transaction and protocol output. Bound page reads without dropping
 the complete batch-family, canonical-position or economic evidence checks.
