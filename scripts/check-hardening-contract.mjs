@@ -791,6 +791,18 @@ assert.match(privateApi, /Environment=HOST=127\.0\.0\.1/u);
 assert.match(privateApiSocket, /ListenStream=10\.77\.0\.2:8081/u);
 assert.match(privateApiSocket, /BindsTo=wg-quick@wg0\.service/u);
 assert.match(privateApiSocket, /PartOf=wg-quick@wg0\.service/u);
+// The late listener must retain normal initialization and shutdown ordering.
+const socketAfter = privateApiSocket.match(/^After=(.*)$/mu)?.[1].split(/\s+/u) || [];
+for (const target of ["sysinit.target", "network-online.target", "wg-quick@wg0.service"]) {
+  assert.ok(socketAfter.includes(target), `Listener must wait for ${target}.`);
+}
+assert.match(privateApiSocket, /^Requires=sysinit\.target$/mu);
+assert.match(privateApiSocket, /^Before=shutdown\.target$/mu);
+assert.match(privateApiSocket, /^Conflicts=shutdown\.target$/mu);
+const bootCheck = spawnSync(process.execPath, ["--test", "scripts/check-service-boot.test.mjs"], {
+  encoding: "utf8",
+});
+assert.equal(bootCheck.status, 0, bootCheck.error?.message || bootCheck.stdout + bootCheck.stderr);
 assert.match(privateApiProxy, /systemd-socket-proxyd 127\.0\.0\.1:8081/u);
 assert.match(privateApiProxy, /ProtectSystem=strict/u);
 assert.match(privateApiProxy, /BindsTo=wg-quick@wg0\.service/u);

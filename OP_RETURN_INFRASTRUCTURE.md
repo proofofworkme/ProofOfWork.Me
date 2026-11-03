@@ -1901,6 +1901,17 @@ socket proxy exposes `10.77.0.2:8081` only on the tunnel, and Caddy proxies
 and required public web/SSH ports only. The proxy service has an empty capability
 set and `LimitCORE=0`; the socket unit itself does not execute application code.
 
+`wg-quick@wg0.service` starts the API listener after the tunnel address exists.
+The socket explicitly orders initialization and shutdown. The default socket
+ordering would make `sockets.target` wait for the listener while WireGuard waits
+for `basic.target`, which itself waits for `sockets.target`.
+After installing the unit, run `systemctl reenable proofofwork-api-wg.socket`
+and verify that only `wg-quick@wg0.service.wants` links to it. This updates boot
+enablement while the current listener stays active. At the next node boot, check
+that the socket starts automatically on `10.77.0.2:8081`, the boot journal
+shows no dropped socket job, and both node-local and public `/health` return
+HTTP 200 with the index at the chain tip.
+
 The approved UI SSH policy is `deploy/ssh/00-proofofwork-key-only.conf`,
 installed as `/etc/ssh/sshd_config.d/00-proofofwork-key-only.conf`. It requires
 public-key authentication, explicitly disables password and keyboard-interactive
