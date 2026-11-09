@@ -28482,6 +28482,10 @@ function workQ16PendingPersistenceSemanticPayload(item) {
   };
   delete semanticPayload.indexedFrom;
   delete semanticPayload.pendingWorkMintAttemptCount;
+  // JSONB omits absent optional fields when the pending event is persisted.
+  for (const key of Object.keys(semanticPayload)) {
+    if (semanticPayload[key] === undefined) delete semanticPayload[key];
+  }
   return semanticPayload;
 }
 

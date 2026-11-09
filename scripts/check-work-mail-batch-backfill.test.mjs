@@ -134,3 +134,18 @@ test("new marker commits at exact D+1, remains immutable, and missing authority 
   assert.ok(blockFunction.indexOf("await persistWorkMailBatchActivationMarker(client, transition)") >
     blockFunction.indexOf("if (exact.rows.length !== 1)"));
 });
+
+test("pending Boost and file companions commit the JSON fields persisted by the worker", () => {
+  const semantic = extract("workQ16PendingPersistenceSemanticPayload", "function workQ16PendingExpectedEventParticipantRows", {
+    eventKind: item => item.kind, itemStatus: item => item.status,
+    normalizedEventItem: item => item, workProjectionItem: item => item,
+  });
+  for (const kind of ["boost-post", "file"]) {
+    const item = { kind, status: "pending", blockIndex: undefined, senderAddress: "sender",
+      ...(kind === "boost-post" ? { quoteTxid: undefined, parentTxid: undefined, targetTxid: undefined } : {}),
+      blockHeight: null, valid: true, recordOrdinal: 0 };
+    const stored = JSON.parse(JSON.stringify({ ...item, participants: ["sender"] }));
+    assert.deepEqual(workAmoV5CanonicalPayloadCommitment(semantic(item)), workAmoV5CanonicalPayloadCommitment(stored));
+    assert.throws(() => workAmoV5CanonicalPayloadCommitment(semantic({ ...item, recordOrdinal: 0.5 })), /non-integer/);
+  }
+});

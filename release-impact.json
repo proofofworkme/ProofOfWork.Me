@@ -1,41 +1,43 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "verified-ui-publication-and-work-reader-recovery",
-  "liveCheck": "scripts/check-publisher-repair-live.mjs",
+  "upgrade": "pending-work-companion-publication",
+  "liveCheck": "scripts/check-work-storage-readers-live.mjs",
   "ciTests": [
-    "scripts/check-publisher-repair.test.mjs",
-    "server/canonical-summary-stream.test.mjs",
-    "server/db/work-transfer-projection-store.test.mjs",
-    "server/candidate-discovery-reorg.test.mjs",
-    "server/code-repositories.test.mjs",
-    "server/jobs-discovery.test.mjs",
-    "server/permission-verification-store.test.mjs",
-    "server/permission-discovery.test.mjs",
-    "scripts/check-upgrade-impact.test.mjs",
-    "scripts/check-work-batch-summary-projection.test.mjs",
-    "scripts/check-pending-discovery-worker.test.mjs",
-    "server/pending-broadcast-hints.test.mjs",
+    "scripts/check-work-mail-batch-backfill.test.mjs",
     "scripts/check-pending-log-publication.test.mjs",
-    "server/db/summary-component-read.test.mjs",
-    "scripts/check-summary-transition-freshness.test.mjs",
-    "server/permission-api.test.mjs"
+    "scripts/check-work-batch-raw.test.mjs"
   ],
   "reviews": [
     {
       "targets": [
+        "indexer",
+        "api",
+        "backfill-reorg",
         "activity",
         "boost",
-        "browser",
-        "code",
         "computer",
         "desktop",
+        "files",
+        "mail",
+        "notifications"
+      ],
+      "disposition": "affected",
+      "reason": "The pending writer verifies Boost and Mail companion payloads against their persisted JSON form before atomically publishing the WORK witness. A failed comparison rolls back the entire attempt.",
+      "evidence": [
+        "scripts/check-work-mail-batch-backfill.test.mjs",
+        "scripts/check-pending-log-publication.test.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "browser",
+        "code",
         "dns",
         "growth",
         "id",
         "inception",
         "infinity",
         "jobs",
-        "landing",
         "marketplace",
         "nft",
         "pages",
@@ -45,64 +47,28 @@
         "token",
         "wallet",
         "work",
-        "compatibility"
+        "landing"
       ],
       "disposition": "affected",
-      "reason": "All 22 roots share the retained-release checks. Log, WORK, Growth and the Computer workspaces depend on exact summary publication. Permissions verifies the canonical replay suffix, and Code and Jobs resume discovery from a proven common ancestor. Site provenance and the published renderer are checked on the released tree. The publisher verifies the original e27 receipts and stager inode before its scoped replacement. It binds the recorded boot execution and both storage policy versions throughout the final exchange. The source receiver authenticates the actual staged commit, tree and path before consuming bytes. The UI publisher reserves 8 GiB plus 64 MiB of growth space and measures scratch, retained pools and inodes independently for every fresh release.",
+      "reason": "These clients share the released services. Consumers that require exact-tip authority can resume when worker publication succeeds. Page assets and routed application contracts are unchanged.",
       "evidence": [
-        "deploy/publish/check-private-staging.test.py",
-        "scripts/check-ui-compatibility-boundaries.py",
-        "deploy/ui-retention/check-lifecycle-remote.test.py",
-        "scripts/check-release-sync.mjs",
-        "deploy/ui-retention/install_lifecycle.py",
         "scripts/check-work-storage-readers-live.mjs",
-        "deploy/ui-stream-tools/check-private-stage-installer.test.py",
-        "deploy/publish/check-native-exchange-fence.test.py",
-        "deploy/proofofwork-ui-capacity.py",
-        "deploy/audit5/stream-ui-bundle.py",
-        "deploy/publish/sequence_capacity.py",
-        "scripts/check-publisher-repair-live.mjs",
-        "deploy/ui-capacity-floor/installer.py",
-        "deploy/ui-capacity-floor/check-installer.test.py"
-      ]
-    },
-    {
-      "targets": [
-        "indexer",
-        "api",
-        "backfill-reorg",
-        "accounting"
-      ],
-      "disposition": "affected",
-      "reason": "The writer persists all verified WORK projection pages atomically with the checkpoint, including each recipient and its single paying parent. Readers verify snapshot identity, per-page integrity, complete order and confirmed historical economics. Discovery rewinds preserve superseded evidence and reject unresolved or divergent authority. The release rehearsal binds the Permissions replay evidence to its observed Core checkpoint. The confirmed transfer stream declares the exact combined byte length of its header and pages to the existing HTTP observer.",
-      "evidence": [
-        "server/db/work-transfer-projection-store.test.mjs",
-        "server/candidate-discovery-reorg.test.mjs",
-        "server/permission-verification-store.test.mjs",
-        "scripts/check-work-batch-summary-projection.test.mjs",
-        "scripts/check-work-storage-readers-live.mjs",
-        "deploy/summary-storage-readers/release.py",
-        "server/canonical-summary-stream.test.mjs"
+        "scripts/check-summary-route-readiness.mjs",
+        "scripts/check-release-sync.mjs"
       ]
     },
     {
       "targets": [
         "wire",
+        "accounting",
         "local-signing",
-        "files",
-        "mail",
-        "notifications"
+        "compatibility"
       ],
       "disposition": "compatible",
-      "reason": "The UI publishes from the same source as the pending-discovery and compact-summary node releases. The final check verifies both the eleven-recipient Mail record and the earlier 161-recipient WORK batch at a live checkpoint. Wire formats, confirmed replay and local signing retain their existing authority.",
+      "reason": "The change only omits absent top-level optional fields from expected pending storage evidence. Signed bytes, confirmed replay, fee calculations and wallet signing use their existing paths.",
       "evidence": [
-        "deploy/publish/check-private-staging.test.py",
-        "scripts/check-service-boot-live.mjs",
-        "scripts/check-release-sync.mjs",
-        "scripts/check-summary-preview-live.mjs",
-        "scripts/check-work-batch-summary-projection.test.mjs",
-        "scripts/check-pending-discovery-live.mjs",
-        "scripts/check-pending-log-publication.test.mjs"
+        "scripts/check-work-mail-batch-backfill.test.mjs",
+        "scripts/check-work-batch-raw.test.mjs"
       ]
     }
   ]
