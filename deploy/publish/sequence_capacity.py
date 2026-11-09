@@ -12,7 +12,7 @@ from pathlib import Path
 
 # Paired with the native guard: finite transport-only calibration, no cleanup credit.
 LIMITS = {'backupBudgetBytes': 18 * 1024**3, 'transportBudgetBytes': 9 * 1024**3 + 64 * 1024**2,
-          'scratchBudgetBytes': 5 * 1024**3, 'rootReserveBytes': 10 * 1024**3,
+          'scratchBudgetBytes': 5 * 1024**3, 'rootReserveBytes': 8 * 1024**3,
           'growthReserveBytes': 64 * 1024**2, 'inodeReserve': 128}
 POOLS = {'backup': '/var/backups/proofofwork-ui',
          'transport': '/var/backups/proofofwork-ui/transport-evidence',

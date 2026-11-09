@@ -1,0 +1,39 @@
+{
+  "approvalDate": "2026-11-08",
+  "authority": "Explicit operator approval for the UI publisher and retention capacity floor",
+  "backupBudgetBytes": 19327352832,
+  "baseline": {
+    "completedUpgradeSha256": "23e7c8d48c82f9b4e86214cfa65a79b2f02531493a49d33a2ce1c6a8738a95a1",
+    "configSha256": "2a0224bdaecb4b7064b686fd7cd7b1ca116df806f70ec8ddba0ab75bf787cb5c",
+    "failedSourceIntentSha256": "159793bc41c8c757636914eb7aeeb594dff2330b83841a41f0a0c189a1e1fdd5",
+    "indexSha256": "ba61e8dc1d4a7d4dc7d87e50b70b8a93b131c6b2ebb421344be9789ae20ac093",
+    "preservedStageReceiptSha256": "8e3bb75976698ce3d399bf4f93290bd3f2bf3e2a7eed9d8ce97a681ec96d57e6",
+    "previousReleaseId": "c3969c39c2b2-20261101T051206Z",
+    "publisherInstallSha256": "d8d37aca98fab1e37d4456a2a5f013034a6da76f9c0f1ddc1dad765f8bef182d",
+    "releaseId": "54088ca155bc-20261103T032112Z",
+    "stateSha256": "b9028647c4e4b73f5b48da126511c141aad448e137b4166091cf9a2a1ae031e5"
+  },
+  "delete": [],
+  "filesystemChanges": [],
+  "growthReserveBytes": 67108864,
+  "host": "77.42.91.106",
+  "inodeReserve": 128,
+  "priorRootReserveBytes": 10737418240,
+  "retirementCreditBytes": 0,
+  "rootReserveBytes": 8589934592,
+  "schema": "pow-ui-publisher-capacity-floor-approval-v1",
+  "scratchBudgetBytes": 5368709120,
+  "targets": {
+    "/usr/local/sbin/proofofwork-ui-capacity": {
+      "after": "3a7d54044cd07665cd37425ea910ad3bcc606450f5537a70d37adce11c6fb687",
+      "before": "24fdd19ceb05f3c89ec45f871fe3daa93a061195132a15a3683ab3540fbe02d2",
+      "source": "deploy/proofofwork-ui-capacity.py"
+    },
+    "/var/tmp/proofofwork-deploy/audit29-tools/stream-ui-bundle.py": {
+      "after": "cbb6231799d0395cd76fdda8545fd6440f09e76d879c80aa7bd4f3030fa4abea",
+      "before": "28c5dc45f75184a0cb3138df52b3558b0ebcb0c3d8c59233ae261fdbd812817b",
+      "source": "deploy/audit5/stream-ui-bundle.py"
+    }
+  },
+  "transportBudgetBytes": 9730785280
+}

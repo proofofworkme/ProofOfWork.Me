@@ -12,6 +12,14 @@ const status = JSON.parse(execFileSync("python3", [
 ], { cwd: repo, encoding: "utf8", timeout: 1_800_000, maxBuffer: 8 * 1024 ** 2 }));
 assert.equal(status.retentionComplete, true);
 assert.equal(status.publicationHealthy, true);
+const capacityApproval = readFileSync(join(repo, "audits/2026-11-08-ui-publisher-capacity-floor-approval.json"));
+const capacityGrant = JSON.parse(capacityApproval);
+assert.deepEqual(status.binding.capacityFloor, status.verifiedCapacityFloor);
+assert.equal(status.verifiedCapacityFloor.model, "verified-ui-capacity-floor-v1");
+assert.equal(status.verifiedCapacityFloor.approvalSha256, createHash("sha256").update(capacityApproval).digest("hex"));
+assert.match(status.verifiedCapacityFloor.installedSha256, /^[0-9a-f]{64}$/u);
+assert.equal(status.verifiedCapacityFloor.rootReserveBytes, capacityGrant.rootReserveBytes);
+assert.equal(status.verifiedCapacityFloor.growthReserveBytes, capacityGrant.growthReserveBytes);
 assert.equal(status.context.guards.heldIdentityModel, "pow-ui-held-census-rotating-logs-v2");
 
 // Compare the verified in-place artifacts with their admissions before the release.
@@ -34,20 +42,53 @@ assert.deepEqual(status.verifiedPreservedFallback, {
 });
 
 const helpers = [
+  ["deploy/proofofwork-ui-capacity.py", "/usr/local/sbin/proofofwork-ui-capacity"],
+  ["deploy/audit5/stream-ui-bundle.py", "/var/tmp/proofofwork-deploy/audit29-tools/stream-ui-bundle.py"],
   ["deploy/proofofwork-ui-release-stage.py", "/usr/local/sbin/proofofwork-ui-release-stage"],
   ["deploy/proofofwork-ui-release-publish.sh", "/usr/local/sbin/proofofwork-ui-release-publish"],
 ];
-const installed = execFileSync("ssh", [
+const uiSsh = [
   "-i", join(homedir(), ".ssh/proofofwork_me_ed25519"), "-o", "BatchMode=yes",
   "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=15",
-  "root@77.42.91.106", "sha256sum", ...helpers.map(([, path]) => path),
-], { encoding: "utf8", timeout: 45_000 }).trimEnd().split("\n");
+  "root@77.42.91.106",
+];
+const installed = execFileSync("ssh", [...uiSsh, "sha256sum", ...helpers.map(([, path]) => path)],
+  { encoding: "utf8", timeout: 45_000 }).trimEnd().split("\n");
 assert.equal(installed.length, helpers.length);
 for (const [index, [source, path]] of helpers.entries()) {
   const expected = createHash("sha256").update(readFileSync(join(repo, source))).digest("hex");
   assert.equal(installed[index], expected + "  " + path);
 }
+function readCapacity(command) {
+  return JSON.parse(execFileSync("ssh", [...uiSsh,
+    "/usr/bin/python3", "-I", "-B", "/usr/local/sbin/proofofwork-ui-capacity", command,
+    "--path", "/var/tmp/proofofwork-deploy", "--phase", "release-sync",
+  ], { encoding: "utf8", timeout: 120_000 }));
+}
+const capacity = readCapacity("check");
+assert.equal(capacity.status, "sufficient");
+assert.equal(capacity.rootReserveBytes, 8 * 1024 ** 3);
+assert.equal(capacity.growthReserveBytes, 64 * 1024 ** 2);
+const root = capacity.checks.find(row => row.path === "/");
+assert.equal(root.requiredBytes, capacity.rootReserveBytes + capacity.growthReserveBytes);
+assert.ok(root.availableBytes >= root.requiredBytes && root.availableInodes >= root.requiredInodes);
+assert.equal(root.requiredInodes, 128);
+assert.deepEqual(Object.fromEntries(capacity.retention.map(row => [row.path, row.maximumBytes])), {
+  "/var/backups/proofofwork-ui": 18 * 1024 ** 3,
+  "/var/backups/proofofwork-ui/transport-evidence": 9 * 1024 ** 3 + 64 * 1024 ** 2,
+});
+assert.ok(capacity.retention.every(row => row.allocatedBytes <= row.maximumBytes && row.automaticEvidenceDeletion === false));
+const scratch = readCapacity("check-scratch");
+assert.equal(scratch.status, "sufficient");
+assert.equal(scratch.maximumBytes, 5 * 1024 ** 3);
+assert.ok(scratch.allocatedBytes <= scratch.maximumBytes);
+assert.equal(scratch.cleanupApproved, false);
 execFileSync(process.execPath, [join(repo, "scripts/check-summary-preview-live.mjs")], { cwd: repo, stdio: "inherit", timeout: 240_000 });
 execFileSync(process.execPath, [join(repo, "scripts/check-pending-discovery-live.mjs")], { cwd: repo, stdio: "inherit", timeout: 240_000 });
 execFileSync(process.execPath, [join(repo, "scripts/check-work-storage-readers-live.mjs")], { cwd: repo, stdio: "inherit", timeout: 480_000 });
-console.log(JSON.stringify({ verifiedRelease: status.pair.current, retainedFallback: status.pair.previous }));
+console.log(JSON.stringify({
+  verifiedRelease: status.pair.current, immediateRollback: status.pair.previous,
+  retainedFallback: status.verifiedPreservedFallback.releaseId,
+  publisherFloorBytes: capacity.rootReserveBytes, availableRootBytes: root.availableBytes,
+  scratchAllocatedBytes: scratch.allocatedBytes, scratchLimitBytes: scratch.maximumBytes,
+}));

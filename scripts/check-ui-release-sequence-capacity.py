@@ -43,7 +43,7 @@ class CompleteSequence(unittest.TestCase):
             'backupBudgetBytes': 18 * 1024**3,
             'transportBudgetBytes': 9 * 1024**3 + 64 * 1024**2,
             'scratchBudgetBytes': 5 * 1024**3,
-            'rootReserveBytes': 10 * 1024**3,
+            'rootReserveBytes': 8 * 1024**3,
             'growthReserveBytes': 64 * 1024**2, 'inodeReserve': 128})
         census = self.exact_fit()
         census['usage']['transport'] = 8008511488
@@ -58,6 +58,21 @@ class CompleteSequence(unittest.TestCase):
         census['usage']['transport'] += 55117238
         with self.assertRaisesRegex(ValueError, 'before upload'):
             M.admit(required, census)
+
+    def test_only_new_release_plans_use_the_eight_gib_floor(self):
+        original = json.loads((PATH.parents[2] / 'audits/2026-10-16-ui-retention-repair-approval.json').read_bytes())
+        self.assertEqual(original['limits']['rootReserveBytes'], 10 * 1024**3)
+        current = self.exact_fit()
+        self.assertEqual(M.admit(self.required, current)['headroom']['root'], 0)
+        self.assertLess(current['availableBytes'], 10 * 1024**3 + M.LIMITS['growthReserveBytes'] + self.required['additionalBytes']['root'])
+        old_plan = copy.deepcopy(self.required)
+        old_plan['limits']['rootReserveBytes'] = original['limits']['rootReserveBytes']
+        with self.assertRaisesRegex(ValueError, 'Unknown whole-release capacity contract'):
+            M.admit(old_plan, current)
+        old_census = copy.deepcopy(current)
+        old_census['limits']['rootReserveBytes'] = original['limits']['rootReserveBytes']
+        with self.assertRaisesRegex(ValueError, 'Capacity cannot credit'):
+            M.admit(self.required, old_census)
 
     def test_exact_fit_then_one_byte_or_inode_over_each_limit(self):
         census = self.exact_fit()

@@ -1,6 +1,6 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "measured-work-summary-stream-and-reader-recovery",
+  "upgrade": "verified-ui-publication-and-work-reader-recovery",
   "liveCheck": "scripts/check-publisher-repair-live.mjs",
   "ciTests": [
     "scripts/check-publisher-repair.test.mjs",
@@ -48,7 +48,7 @@
         "compatibility"
       ],
       "disposition": "affected",
-      "reason": "All 22 roots share the retained-release checks. Log, WORK, Growth and the Computer workspaces depend on exact summary publication. Permissions verifies the canonical replay suffix, and Code and Jobs resume discovery from a proven common ancestor. Site provenance and the published renderer are checked on the released tree. The publisher verifies the original e27 receipts and stager inode before its scoped replacement. It binds the recorded boot execution and both storage policy versions throughout the final exchange.",
+      "reason": "All 22 roots share the retained-release checks. Log, WORK, Growth and the Computer workspaces depend on exact summary publication. Permissions verifies the canonical replay suffix, and Code and Jobs resume discovery from a proven common ancestor. Site provenance and the published renderer are checked on the released tree. The publisher verifies the original e27 receipts and stager inode before its scoped replacement. It binds the recorded boot execution and both storage policy versions throughout the final exchange. The source receiver authenticates the actual staged commit, tree and path before consuming bytes. The UI publisher reserves 8 GiB plus 64 MiB of growth space and measures scratch, retained pools and inodes independently for every fresh release.",
       "evidence": [
         "deploy/publish/check-private-staging.test.py",
         "scripts/check-ui-compatibility-boundaries.py",
@@ -57,7 +57,13 @@
         "deploy/ui-retention/install_lifecycle.py",
         "scripts/check-work-storage-readers-live.mjs",
         "deploy/ui-stream-tools/check-private-stage-installer.test.py",
-        "deploy/publish/check-native-exchange-fence.test.py"
+        "deploy/publish/check-native-exchange-fence.test.py",
+        "deploy/proofofwork-ui-capacity.py",
+        "deploy/audit5/stream-ui-bundle.py",
+        "deploy/publish/sequence_capacity.py",
+        "scripts/check-publisher-repair-live.mjs",
+        "deploy/ui-capacity-floor/installer.py",
+        "deploy/ui-capacity-floor/check-installer.test.py"
       ]
     },
     {

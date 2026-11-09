@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Native private staging rehearsal using synthetic bundles and a detached fixture repository."""
+import ast
+import base64
 import hashlib
 import importlib.util
 import json
@@ -7,6 +9,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
+from types import SimpleNamespace
 import tarfile
 import tempfile
 import unittest
@@ -134,10 +138,171 @@ class NativePrivateStaging(unittest.TestCase):
             return compactor.compact(root, fingerprint, owner=os.geteuid(), check_only=True,
                                      journal_sha256=receipt["originalTimes"]["sha256"])
         self.assertEqual(check(), dict(receipt, aliasesCreated=0))
-        return root, check
+        return root, check, fingerprint
+
+    def source_and_publish(self, archive, incoming, fingerprint, compact, allocation):
+        """Exercise the normal source phase with its own globals, then the publication handoff."""
+        attempt = "initial"
+        identity = {"releaseId": self.rid, "commit": self.commit,
+                    "tree": run(["git", "rev-parse", "HEAD^{tree}"], cwd=self.source).stdout.strip()}
+        source_root = self.scratch / ("proofofwork-ui-source-" + self.rid)
+        source_bundle = self.base / "source.tgz"
+        pack(self.source, source_bundle, source_root.name)
+        stage_out = self.scratch / ("recovery-transport-" + self.rid + "-surfaces-stage-" + attempt)
+        source_out = self.scratch / ("recovery-transport-" + self.rid + "-source-" + attempt)
+        stage_out.mkdir()
+        source_out.mkdir()
+        evidence = self.archives.parent / "transport-evidence"
+        release_evidence = evidence / self.rid
+        release_evidence.mkdir()
+
+        def helper(text):
+            data = text.encode()
+            return {"sha256": hashlib.sha256(data).hexdigest(),
+                    "compressedSource": base64.b64encode(zlib.compress(data)).decode()}
+
+        # Run the shipped helpers with our fixture owner's UID and actual staged tree.
+        # Substitute only the installed stager lookup, whose host lock is tested separately.
+        stager_path = self.tools / "proofofwork-ui-release-stage.py"
+        verifier_text = (DEPLOY / "publish/phase_capacity.py").read_text() + (
+            "\ndef locked_installed_stager(expected, lock_fd):\n"
+            " import runpy, types\n"
+            f" path = Path({str(stager_path)!r})\n"
+            " assert hashlib.sha256(path.read_bytes()).hexdigest() == expected\n"
+            " return types.SimpleNamespace(**runpy.run_path(str(path)))\n")
+        compact_text = (DEPLOY / "publish/input_compaction.py").read_text().replace(
+            "expected_fingerprint, owner=0", "expected_fingerprint, owner=os.geteuid()")
+        compactor_record, phase_record = helper(compact_text), helper(verifier_text)
+        helpers = {"stager": {"sha256": digest(stager_path)},
+                   "provenance": {"path": str(DEPLOY / "proofofwork-ui-release-provenance.sh")},
+                   "capacity": {"path": str(self.tools / "proofofwork-ui-capacity.py")}}
+        plan = {**identity, "publicationAttempt": attempt, "preservedSourceCheckout": str(source_root),
+                "inputStorage": "deploy-scratch-v1", "surfacesPayloadFingerprint": fingerprint,
+                "inputCompactor": compactor_record, "phaseCapacity": phase_record, "publicationHelpers": helpers,
+                "wrapperSourceSha256": {"input_compaction.py": compactor_record["sha256"],
+                                        "phase_capacity.py": phase_record["sha256"]},
+                "closedArchive": {"request": {"inputCompactorSha256": compactor_record["sha256"],
+                                              "phaseSourceSha256": phase_record["sha256"]},
+                                  "privateStaging": {"compactInputUpperBytes": 32 * 1024**2,
+                                                     "finalCandidateUpperBytes": 32 * 1024**2}},
+                "privateStageRetention": {"model": "private-stage-zero-retirement-v1", "wouldRetire": [],
+                                          "releaseId": self.rid, "previousPair": {}, "stateSha256": "a"*64},
+                "retentionLifecycle": {"pair": {}, "state": {"sha256": "a"*64}}, "retainedRoots": [],
+                "source": {"compressedBytes": source_bundle.stat().st_size, "sha256": digest(source_bundle)},
+                "admissions": {"source-receive": {"bytes": source_bundle.stat().st_size, "inodes": 100}}}
+        plan_sha = hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
+
+        def fixture_bound(path, expected=None, maximum=2*1024**3):
+            data = Path(path).read_bytes()
+            self.assertLessEqual(len(data), maximum)
+            if expected is not None:
+                self.assertEqual(hashlib.sha256(data).hexdigest(), expected)
+            return data
+
+        def record(path):
+            data = fixture_bound(path)
+            return data, hashlib.sha256(data).hexdigest()
+
+        def program(nodes, path, context):
+            exec(compile(ast.Module(nodes, type_ignores=[]), str(path), "exec"), context)
+
+        def assigned(node, name):
+            return isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)
+
+        transport = DEPLOY / "publish/remote_transport.py"
+        nodes = ast.parse(transport.read_bytes()).body
+        # The exact terminal emitted after real receive, compaction, stage and archive.
+        emit = next(n for n in ast.walk(ast.Module(nodes, [])) if isinstance(n, ast.Expr)
+                    and isinstance(n.value, ast.Call) and isinstance(n.value.func, ast.Name)
+                    and n.value.func.id == "durable_json" and isinstance(n.value.args[-1], ast.Dict)
+                    and any(isinstance(k, ast.Constant) and k.value == "managedArchive" for k in n.value.args[-1].keys))
+        state = {"__name__": "_fixture_transport", "Path": Path, "json": json, "hashlib": hashlib, "os": os,
+                 "sys": sys, "subprocess": subprocess, "time": time, "zlib": zlib, "base64": base64,
+                 "BASE": self.scratch, "ARCHIVES": self.archives, "EVIDENCE": evidence,
+                 "EVIDENCE_RESERVE": 32*1024**2, "RECEIVE_TIMEOUT_SECONDS": 1800,
+                 "release": self.rid, "p": plan, "plan_sha": plan_sha, "phase": "surfaces-stage",
+                 "private_staging": True, "helpers": helpers, "scratch_inputs": True,
+                 "out": stage_out, "preserved": incoming, "archive": archive,
+                 "archive_sha": digest(archive), "archive_work": self.archives, "model": {},
+                 "input_before": fingerprint, "compact_input": compact, "measured": allocation,
+                 "surfaces_root": incoming/"surfaces", "input_parent": self.scratch, "evidence_root": release_evidence,
+                 "phase_capacity_source": verifier_text, "tools": self.tools, "retained": [],
+                 "live": {}, "namespace": {"fingerprint": lambda path: {}}, "env": self.env}
+        program([n for n in nodes if isinstance(n, ast.FunctionDef) and
+                 n.name in ("durable_json", "sync", "planned_helper")], transport, state)
+        program([emit], transport, state)
+        stage_receipt = stage_out/"receipt.json"
+        stage_bytes = stage_receipt.read_bytes()
+        prior = json.loads(stage_bytes)
+        self.assertEqual({key: prior.get(key) for key in identity}, identity)
+
+        def invocation(argv, name, *, source=None, length=0, timeout, extra=None):
+            if source is not None:
+                self.assertEqual(argv[-4:], ["source", self.rid, str(source_bundle.stat().st_size), digest(source_bundle)])
+                receiver.receive("source", self.rid, length, digest(source_bundle), source, self.scratch,
+                                 self.lock, owner=os.geteuid())
+                return
+            if name == "candidate-provenance.log":
+                argv = ["/usr/bin/bash", *argv]
+            result = run(argv, env={**self.env, **(extra or {})})
+            (source_out/name).write_text(result.stdout)
+
+        # All statements in the source dispatch execute in their native order,
+        # including stage binding, predecessor verification, receiver and terminal.
+        private_setup = next(n for n in nodes if isinstance(n, ast.If) and isinstance(n.test, ast.Name)
+                             and n.test.id == "private_staging")
+        start = next(i for i,n in enumerate(nodes) if assigned(n, "kind"))
+        state.update(out=source_out, phase="source", run=invocation, bounded_record=record, bound=fixture_bound,
+                     validate_evidence_ancestors=lambda *args, **kwargs: release_evidence,
+                     directory=lambda p: self.assertTrue(p.is_dir()), capacity=lambda *args, **kwargs: None)
+        with self.lock.open("rb") as lock, source_bundle.open("rb") as stream:
+            state.update(lock_fd=lock.fileno(), sys=SimpleNamespace(stdin=SimpleNamespace(buffer=stream)))
+            program([private_setup], transport, state)
+            # A retained terminal from before commit/tree were emitted must refuse before reading a byte.
+            for missing in ("commit", "tree"):
+                changed = dict(prior)
+                changed.pop(missing)
+                stage_receipt.write_text(json.dumps(changed))
+                with self.assertRaisesRegex(ValueError, "preceding verified receipt"):
+                    program(nodes[start:], transport, state)
+                self.assertEqual(stream.tell(), 0)
+                self.assertFalse(source_root.exists())
+            stage_receipt.write_bytes(stage_bytes)
+            program(nodes[start:], transport, state)
+            source_receipt = source_out/"receipt.json"
+            proof = json.loads(source_receipt.read_bytes())
+            self.assertEqual(proof["verifiedStageReceiptSha256"], digest(stage_receipt))
+            self.assertTrue(proof["candidateProvenanceVerified"] and proof["detachedSourceClean"])
+            self.assertEqual(proof["receiverReceiptSha256"], digest(self.scratch/("audit5-stream-source-"+self.rid+".json")))
+
+            # Run the publisher's private revalidation, clean Git checks and durable
+            # intent up to the publisher child. All path substitutions use this fixture.
+            publisher = DEPLOY / "publish/publish.py"
+            import pathlib
+            pub = ast.parse(publisher.read_text().replace("/var/tmp/proofofwork-deploy", str(self.scratch))).body
+            first = next(i for i,n in enumerate(pub) if isinstance(n, ast.If) and ast.unparse(n.test)=="'inputCompactor' in plan")
+            end = next(i for i,n in enumerate(pub) if assigned(n, "archive"))
+            context = {**state, "pathlib": pathlib, "plan": plan, "attempt": attempt, "fd": lock.fileno(),
+                       "commit": self.commit, "tree": plan["tree"], "load_bound": fixture_bound}
+            # Re-hashing only the source receipt cannot authenticate a changed stage receipt.
+            stage_receipt.write_bytes(stage_bytes + b" ")
+            with self.assertRaises(AssertionError):
+                program(pub[first:end], publisher, context)
+            stage_receipt.write_bytes(stage_bytes)
+            source_bytes = source_receipt.read_bytes()
+            source_receipt.write_text(json.dumps({**proof, "tree": "0"*40}))
+            with self.assertRaises(AssertionError):
+                program(pub[first:end], publisher, context)
+            source_receipt.write_bytes(source_bytes)
+            self.assertFalse((self.scratch / ("recovery-publish-" + self.rid + "-" + attempt)).exists())
+            program(pub[first:end], publisher, context)
+            intent = json.loads((context["out"]/"intent.json").read_bytes())
+            self.assertEqual(intent["verifiedStageReceiptSha256"], digest(stage_receipt))
+            self.assertEqual(intent["verifiedSourceReceiptSha256"], digest(source_receipt))
+        return source_root, plan, plan_sha, prior
 
     def test_receive_compact_stage_archive_and_source(self):
-        root, recheck = self.incoming()
+        root, recheck, fingerprint = self.incoming()
         incoming = root / "surfaces"
         staged = self.scratch / ("proofofwork-www-stage-" + self.rid)
         result = run([sys.executable, "-I", "-B", str(self.tools / "proofofwork-ui-release-stage.py"),
@@ -153,9 +318,6 @@ class NativePrivateStaging(unittest.TestCase):
         self.assertEqual((staged / "passthrough.txt").read_text(), "keep the live passthrough")
         self.assertEqual((staged / "proofofwork-permission/assets/old.js").read_bytes(), b"old dependency")
         self.assertEqual(recheck()["format"], "pow-ui-received-input-compaction-v1")
-        plan = {"releaseId": self.rid, "commit": self.commit,
-                "tree": run(["git", "rev-parse", "HEAD^{tree}"], cwd=self.source).stdout.strip()}
-        plan_sha = hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
         def compact_checkpoint():
             value = recheck()
             value.pop("aliasesCreated")
@@ -163,14 +325,6 @@ class NativePrivateStaging(unittest.TestCase):
         def stage_checkpoint():
             return phase.private_stage_receipt(staged, fixture_stager, 32 * 1024**2)
         fixture_stager = load(self.tools / "proofofwork-ui-release-stage.py")
-        prior = {**plan, "ok": True, "phase": "surfaces-stage", "planSha256": plan_sha,
-                 "productionPublished": False, "historicalDeletion": False,
-                 "compactInput": compact_checkpoint(), "privateStageAllocation": stage_checkpoint()}
-        def verify_predecessor():
-            phase.verify_private_predecessor(plan, plan_sha, prior, compact_checkpoint(), stage_checkpoint())
-        verify_predecessor()
-
-        _, source = self.receive("source", self.source)
         archive = self.archives / ("proofofwork-ui-release-" + self.rid + ".tgz")
         top = self.base / "archive-base"
         (top / "surfaces").mkdir(parents=True)
@@ -178,6 +332,10 @@ class NativePrivateStaging(unittest.TestCase):
              "--transform=s|^proofofwork-|surfaces/|", "--directory", str(top), "surfaces", "--directory", str(staged),
              *["proofofwork-" + n for n in stage.PERMISSION_SURFACES]])
         Path(str(archive) + ".sha256").write_text(digest(archive) + "  " + archive.name + "\n")
+        source, plan, plan_sha, prior = self.source_and_publish(
+            archive, root, fingerprint, compact_checkpoint(), stage_checkpoint())
+        def verify_predecessor():
+            phase.verify_private_predecessor(plan, plan_sha, prior, compact_checkpoint(), stage_checkpoint())
         command = ["/usr/bin/bash", str(DEPLOY / "proofofwork-ui-release-provenance.sh"), "verify-candidate",
                    "--release-id", self.rid, "--commit", self.commit, "--source-checkout", str(source), "--archive", str(archive)]
         env = {**self.env, "POW_UI_WWW_ROOT": str(staged)}
@@ -199,7 +357,7 @@ class NativePrivateStaging(unittest.TestCase):
             verify_predecessor()
 
     def test_modified_received_path_and_external_alias_fail_closed(self):
-        root, recheck = self.incoming()
+        root, recheck, _ = self.incoming()
         target = root / "surfaces/computer/assets/new.js"
         outside = self.base / "unexpected-alias"
         os.link(target, outside)

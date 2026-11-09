@@ -662,6 +662,7 @@ if phase == 'surfaces-stage':
 kind = 'source' if phase == 'source' else 'surfaces'
 allocation = p['admissions'][kind + '-receive']
 archive = ARCHIVES / ('proofofwork-ui-release-' + release + '.tgz')
+stage = BASE / ('proofofwork-www-stage-' + release)
 part = p[kind]
 if phase == 'source':
     if private_staging:
@@ -697,7 +698,6 @@ elif phase == 'surfaces-stage':
          str(part['compressedBytes']), part['sha256']], 'receiver.log',
          source=sys.stdin.buffer, length=part['compressedBytes'], timeout=RECEIVE_TIMEOUT_SECONDS)
 assert sys.stdin.buffer.read(1) == b'', 'Extra transport bytes'
-stage = BASE / ('proofofwork-www-stage-' + release)
 if phase != 'source':
     if phase in ('preserved-stage-resume', 'preserved-capacity-resume'):
         assert 'resumeSurfaces' not in p
@@ -828,7 +828,8 @@ if phase != 'source':
         'managedArchive': str(archive), 'archiveSha256': archive_sha, 'preservedInput': str(preserved),
         'archiveWorkspace': str(archive_work),
         'inputFingerprint': input_before, 'stageModel': model, 'planSha256': plan_sha,
-        **({'compactInput': compact_input, 'privateStageAllocation': measured} if private_staging else {}),
+        **({'commit': p['commit'], 'tree': p['tree'], 'compactInput': compact_input,
+            'privateStageAllocation': measured} if private_staging else {}),
         'candidateStorage': 'release-evidence-v1' if phase == 'preserved-stage-resume' else 'deploy-scratch',
         'completedCandidateAllocation': measured if phase == 'preserved-stage-resume' else None, 'productionPublished': False,
         'historicalDeletion': False})

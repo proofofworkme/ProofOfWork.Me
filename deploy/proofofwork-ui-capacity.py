@@ -2,7 +2,7 @@
 """Read-only, integer allocation guards shared by UI deployment helpers.
 
 There are deliberately no environment/CLI overrides for space or reserve values.
-The root filesystem retains 10 GiB plus 64 MiB of concurrent-growth headroom;
+UI publication retains 8 GiB on the root filesystem plus 64 MiB of concurrent-growth headroom;
 separate allocation filesystems retain 64 MiB as well. Measurements charge the
 full next copy, including sparse files and duplicate/hardlinked bytes.
 """
@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tarfile
 
-ROOT_RESERVE_BYTES = 10 * 1024**3
+ROOT_RESERVE_BYTES = 8 * 1024**3
 GROWTH_RESERVE_BYTES = 64 * 1024**2
 INODE_RESERVE = 128
 MAX_ARCHIVE_ENTRIES = 10000

@@ -1831,11 +1831,10 @@ class PreservedTransport(unittest.TestCase):
                 namespace['EXPECTED_STAGER_SHA256'] = '0'*64
                 with self.assertRaisesRegex(ValueError, 'differs from the reviewed'):
                     phase.locked_installed_stager()
-            # The unchanged capacity helper resolves beside the hash-verified
-            # module, with every original constant and full tree-bound behavior.
+            # The stager loads the capacity helper beside the hash-verified module.
             helper = installed.capacity_helper()
             self.assertEqual(helper.MAX_DEPLOY_SCRATCH_BYTES, 5*1024**3)
-            self.assertEqual(helper.ROOT_RESERVE_BYTES, 10*1024**3)
+            self.assertEqual(helper.ROOT_RESERVE_BYTES, 8*1024**3)
             bound = helper.tree_bound(self.base, self.base)
             self.assertGreater(bound['additionalBytes'], 0)
         finally:
@@ -1876,7 +1875,7 @@ class PreservedTransport(unittest.TestCase):
         vfs = types.SimpleNamespace(f_bavail=disk_after_peak, f_frsize=1, f_favail=100000)
         with patch.object(os, 'statvfs', return_value=vfs):
             namespace['check_capacity'](self.base, 0, 10000, 'release-trajectory')
-        vfs.f_bavail = 10*1024**3
+        vfs.f_bavail = 8*1024**3
         with patch.object(os, 'statvfs', return_value=vfs), self.assertRaisesRegex(namespace['CapacityError'], 'capacity refused'):
             namespace['check_capacity'](self.base, 0, 10000, 'root-reserve')
 

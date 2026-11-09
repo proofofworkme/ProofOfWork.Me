@@ -14,7 +14,7 @@ import re
 import stat
 import tarfile
 
-FLOOR = 10 * 1024**3 + 64 * 1024**2
+FLOOR = 8 * 1024**3 + 64 * 1024**2
 LIMIT = 512 * 1024**2
 RELEASE = re.compile(r'[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z\Z')
 

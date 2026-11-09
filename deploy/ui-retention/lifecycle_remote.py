@@ -100,6 +100,73 @@ def read_json(path, expected=None):
     return json.loads(raw, object_pairs_hook=unique), digest
 
 
+# The 10 GiB October grant remains part of historical admission evidence. Only
+# this subsequent operator grant and its independent physical receipt select 8 GiB.
+FLOOR_APPROVAL = '006e5293a28f0f925d09b74abf01ad0d87cca77cfb9d7ed3c95581ac514cbfae'
+FLOOR_DIRECTORY = Path('/var/lib/proofofwork-ui-capacity-floor') / FLOOR_APPROVAL
+FLOOR_FILES = {
+    'capacity': (Path('/usr/local/sbin/proofofwork-ui-capacity'),
+                 '24fdd19ceb05f3c89ec45f871fe3daa93a061195132a15a3683ab3540fbe02d2',
+                 '3a7d54044cd07665cd37425ea910ad3bcc606450f5537a70d37adce11c6fb687'),
+    'receiver': (Path('/var/tmp/proofofwork-deploy/audit29-tools/stream-ui-bundle.py'),
+                 '28c5dc45f75184a0cb3138df52b3558b0ebcb0c3d8c59233ae261fdbd812817b',
+                 'cbb6231799d0395cd76fdda8545fd6440f09e76d879c80aa7bd4f3030fa4abea'),
+}
+
+
+def floor_descriptor(path):
+    info = path.lstat()
+    _, digest = read(path)
+    attrs = {name: sha(os.getxattr(path, name, follow_symlinks=False)) for name in os.listxattr(path)}
+    require(path.lstat() == info, 'Capacity helper changed during verification')
+    return {'sha256': digest, 'identity': [info.st_dev, info.st_ino, info.st_uid, info.st_gid,
+            info.st_mode, info.st_nlink, info.st_size, info.st_mtime_ns], 'xattrs': attrs}
+
+
+def capacity_floor_authority(layout):
+    if getattr(layout, 'capacity', None) != FLOOR_FILES['capacity'][0]:
+        return None  # Isolated fixture layouts have no production authority.
+    actual = {name: floor_descriptor(path) for name, (path, _, _) in FLOOR_FILES.items()}
+    before = all(actual[name]['sha256'] == values[1] for name, values in FLOOR_FILES.items())
+    journal = FLOOR_DIRECTORY
+    if not os.path.lexists(journal):
+        require(before, 'Capacity helper pair changed without a migration receipt')
+        return None
+    info = journal.lstat()
+    require(journal.resolve() == journal and stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid()
+            and stat.S_IMODE(info.st_mode) == 0o700, 'Unsafe capacity floor journal')
+    approval, _ = read_json(journal / 'approval.json', FLOOR_APPROVAL)
+    intent, intent_sha = read_json(journal / 'intent.json')
+    require(intent['schema'] == 'pow-ui-capacity-floor-intent-v1' and intent['approvalSha256'] == FLOOR_APPROVAL
+            and set(intent['files']) == set(FLOOR_FILES), 'Capacity approval or target scope differs')
+    rolled_back = os.path.lexists(journal / 'rolled-back.json')
+    require(rolled_back or not os.path.lexists(journal / 'reversing.json'), 'Capacity rollback is incomplete')
+    side = 'before' if rolled_back else 'after'
+    for name, (path, old, new) in FLOOR_FILES.items():
+        sealed = intent['files'][name]
+        require(sealed['before']['sha256'] == old and sealed['after']['sha256'] == new
+                and actual[name] == sealed[side] and floor_descriptor(journal / name) == sealed['after' if rolled_back else 'before']
+                and approval['targets'][str(path)]['before'] == old and approval['targets'][str(path)]['after'] == new,
+                'Unsealed or mixed capacity helper positions')
+    qualified, qualified_sha = read_json(journal / 'qualified.json')
+    require(qualified['schema'] == 'pow-ui-capacity-floor-qualified-v1' and qualified['protected'] == intent['protected']
+            and qualified['intentSha256'] == intent_sha and qualified['authoritySha256'] == FLOOR_APPROVAL,
+            'Capacity migration qualification differs')
+    if rolled_back:
+        reversal, _ = read_json(journal / 'rolled-back.json')
+        planned_reversal, _ = read_json(journal / 'reversing.json')
+        require(reversal == planned_reversal and reversal['intentSha256'] == intent_sha and reversal['qualificationSha256'] == qualified_sha,
+                'Capacity rollback receipt differs')
+        return None
+    installed, installed_sha = read_json(journal / 'installed.json')
+    require(installed['schema'] == 'pow-ui-capacity-floor-installed-v1' and installed['intentSha256'] == intent_sha
+            and installed['qualificationSha256'] == qualified_sha
+            and installed['protected'] == qualified['protected'], 'Capacity floor installation proof differs')
+    return {'model': 'verified-ui-capacity-floor-v1', 'approvalSha256': FLOOR_APPROVAL,
+            'installedSha256': installed_sha, 'rootReserveBytes': approval['rootReserveBytes'],
+            'growthReserveBytes': approval['growthReserveBytes']}
+
+
 def sync(path):
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -366,11 +433,17 @@ class Runtime:
         return operation_id, binding, active_sha
 
     def capacity(self, additional=0):
+        authority = capacity_floor_authority(self.layout)
         result = subprocess.run(['/usr/bin/python3', '-I', '-B', str(self.layout.capacity), 'check',
                                  '--path', str(self.layout.evidence), '--additional-bytes', str(additional),
                                  '--additional-inodes', '128', '--phase', 'ui-retention-lifecycle'],
                                 capture_output=True, check=True, timeout=60)
-        return json.loads(result.stdout)
+        pools = json.loads(result.stdout)
+        if authority is not None:
+            require(pools.get('rootReserveBytes') == authority['rootReserveBytes'] and
+                    pools.get('growthReserveBytes') == authority['growthReserveBytes'], 'Unapproved lifecycle capacity floor')
+            pools['capacityFloor'] = authority
+        return pools
 
     def finish(self, operation_id, intent, before_sha, state, result):
         state = dict(state, activePhase=None)
@@ -453,6 +526,7 @@ class Runtime:
                 'bootId': boot, 'observedInodes': changes, 'intentSha256': pin['intent'], 'receiptSha256': pin['receipt']}
 
     def status(self, frame):
+        floor = capacity_floor_authority(self.layout)
         state, digest = self.state()
         _, context = self.current()
         unfinished = self.unfinished_intents()
@@ -513,6 +587,7 @@ class Runtime:
                    if self.completion_access_time_reconciliation is not None and completion_verification else {}),
                 **({'verifiedHistoricalBulkPreservation': completion_verification['verifiedHistoricalBulkPreservation']}
                    if completion_verification and completion_verification.get('verifiedHistoricalBulkPreservation') else {}),
+                **({'verifiedCapacityFloor': floor} if floor else {}),
                 'publicationHealthy': True, 'configSha256': self.config_sha, 'stateSha256': digest,
                 'pair': context['pair'], 'context': state['completedContext'] if rotation else context,
                 **({'verifiedBootLogRotation': rotation} if rotation else {}),
@@ -523,7 +598,8 @@ class Runtime:
                 'retentionPolicy': self.config.get('retentionPolicy'),
                 'historicalBulkPreserved': self.config.get('retentionPolicy') == VPS_POLICY,
                 'offHostCustodyRoot': self.config['offHostCustodyRoot'],
-                'binding': {'config': {'path': str(CONFIG_PATH), 'sha256': self.config_sha},
+                'binding': {**({'capacityFloor': floor} if floor else {}),
+                            'config': {'path': str(CONFIG_PATH), 'sha256': self.config_sha},
                             'controller': self.config['controller'],
                             'state': {'path': str(self.state_path), 'sha256': digest}, 'pair': context['pair']}}
 
@@ -844,6 +920,8 @@ class Runtime:
         lock = self.S.lock(self.layout)
         try:
             self.lock_fd = lock
+            if operation != 'status':
+                capacity_floor_authority(self.layout)
             return methods[operation](frame)
         finally:
             self.lock_fd = None

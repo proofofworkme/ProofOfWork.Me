@@ -15,7 +15,7 @@ import tarfile
 import tempfile
 import time
 import unittest
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,7 +30,18 @@ def load(name, relative):
 
 stream = load('audit5_stream', 'deploy/audit5/stream-ui-bundle.py')
 capacity = load('audit5_capacity', 'deploy/audit5/ui-capacity.py')
-stager = load('audit5_stager', 'deploy/proofofwork-ui-release-stage.py')
+# Exercise the original Audit 29 capacity model against its own reviewed
+# 16-root stager. The current receiver above and the 22-root private-staging
+# suite independently exercise today's installed contracts.
+STAGER_PATH = 'deploy/proofofwork-ui-release-stage.py'
+STAGER_COMMIT = 'b22376c787a8daf0354ff0059b30d31b74e879eb'
+STAGER_BYTES = subprocess.check_output(['git','-C',str(ROOT),'show',STAGER_COMMIT + ':' + STAGER_PATH],
+    env={**os.environ, 'GIT_NO_LAZY_FETCH':'1', 'GIT_OPTIONAL_LOCKS':'0'}, timeout=15)
+if hashlib.sha256(STAGER_BYTES).hexdigest() != capacity.EXPECTED_STAGER_SHA256:
+    raise RuntimeError('Historical Audit 29 phase stager differs from its pinned digest')
+stager = ModuleType('audit29_stager_fixture')
+stager.__file__ = str(ROOT / STAGER_PATH)
+exec(compile(STAGER_BYTES, stager.__file__, 'exec'), stager.__dict__)
 RELEASE = 'abcdef012345-20260905T000000Z'
 
 
@@ -74,6 +85,31 @@ class TransportTests(unittest.TestCase):
                               options.pop('digest', hashlib.sha256(data).hexdigest()),
                               io.BytesIO(data), self.parent, self.lock,
                               owner=os.getuid(), floor=0, **options)
+
+    def test_locked_current_receiver_charges_each_member_above_the_ui_floor(self):
+        floor = 8 * 1024**3 + 64 * 1024**2
+        self.assertEqual(stream.FLOOR, floor)
+        for kind in ('source', 'surfaces'):
+            data = archive_bytes(kind)
+            for short in (0, 1):
+                with self.subTest(kind=kind, short=short), tempfile.TemporaryDirectory() as tmp:
+                    parent = Path(tmp)
+                    lock = parent/'deploy.lock'
+                    lock.touch(mode=0o600)
+                    info = SimpleNamespace(f_frsize=1, f_bavail=floor + len(b'accepted') + 2 - short)
+                    with lock.open('rb') as inherited, mock.patch.dict(os.environ, {
+                        'POW_UI_DEPLOY_LOCK_FD':str(inherited.fileno()), 'POW_UI_ROOT_RESERVE_BYTES':'0',
+                    }), mock.patch.object(stream.os, 'statvfs', return_value=info):
+                        def receive():
+                            return stream.receive(kind, RELEASE, len(data), hashlib.sha256(data).hexdigest(),
+                                                  io.BytesIO(data), parent, lock, owner=os.getuid())
+                        if short:
+                            with self.assertRaisesRegex(RuntimeError, 'free-space reserve'):
+                                receive()
+                            self.assertFalse((parent/('proofofwork-ui-'+kind+'-'+RELEASE)).exists())
+                        else:
+                            receipt = receive()
+                            self.assertEqual((Path(receipt['extractedRoot'])/'index.html').read_bytes(), b'accepted')
 
     def test_success_pins_digest_bytes_and_new_root(self):
         data = archive_bytes()
@@ -178,11 +214,12 @@ class TransportTests(unittest.TestCase):
                               capture_output=True, timeout=5).returncode
 
     def test_parent_lock_excludes_competitor_through_stream_and_stager_handoff(self):
+        current_stager = load("current_stager_handoff", STAGER_PATH)
         descriptor = os.open(self.lock, os.O_RDONLY)
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         entries = [('surfaces', 'directory', b'', 0o755)]
         live = self.parent / 'www'; live.mkdir(mode=0o755)
-        for surface in stager.SURFACES:
+        for surface in current_stager.PERMISSION_SURFACES:
             old = live / ('proofofwork-' + surface); old.mkdir(mode=0o755)
             (old / 'assets').mkdir(mode=0o755)
             (old / 'index.html').write_bytes(b'<script src="/assets/old.js"></script>')
@@ -192,7 +229,7 @@ class TransportTests(unittest.TestCase):
                             ('surfaces/' + surface + '/assets', 'directory', b'', 0o755),
                             ('surfaces/' + surface + '/index.html', 'file', b'<script src="/assets/new.js"></script>', 0o644),
                             ('surfaces/' + surface + '/assets/new.js', 'file', b'accepted', 0o644)])
-        live_before = stager.tree_fingerprint(live)
+        live_before = current_stager.tree_fingerprint(live)
         data = archive_bytes(entries=entries); checks = []
         owner = self
         class CheckedSource(io.BytesIO):
@@ -208,7 +245,7 @@ class TransportTests(unittest.TestCase):
                 self.assertEqual((payload / 'activity/assets/new.js').read_bytes(), b'accepted')
                 self.assertTrue(checks)
                 self.assertEqual(self.competing_lock(), 42)
-                self.assertEqual(stager.acquire_deploy_lock(self.lock, True), descriptor)
+                self.assertEqual(current_stager.acquire_deploy_lock(self.lock, True), descriptor)
                 self.assertEqual(self.competing_lock(), 42)
                 destination = self.parent / ('proofofwork-www-stage-' + RELEASE)
                 child = subprocess.Popen([sys.executable, '-I', '-B', str(ROOT / 'deploy/proofofwork-ui-release-stage.py'),
@@ -229,7 +266,7 @@ class TransportTests(unittest.TestCase):
                     child.stdout.close(); child.stderr.close()
                 self.assertEqual(self.competing_lock(), 42)
                 self.assertEqual((destination / 'proofofwork-activity/assets/new.js').read_bytes(), b'accepted')
-                self.assertEqual(stager.tree_fingerprint(live), live_before)
+                self.assertEqual(current_stager.tree_fingerprint(live), live_before)
                 os.fstat(descriptor)  # Receiver/stager never close parent's FD.
         finally:
             os.close(descriptor)
@@ -335,7 +372,7 @@ class CapacityTests(unittest.TestCase):
         current_stage_sha = 'c6f7a20f0f53d0e0871c3e024a4ea5d1b7c95f9f9788064a723f2b115d27000a'
         publisher_sha = '8846f6c6d3a8793fe83387e4d6fc317b87ef293b7961e2cd593490fd1bbd5024'
         self.assertEqual(capacity.EXPECTED_STAGER_SHA256, current_stage_sha)
-        self.assertEqual(hashlib.sha256((ROOT / 'deploy/proofofwork-ui-release-stage.py').read_bytes()).hexdigest(), current_stage_sha)
+        self.assertEqual(hashlib.sha256(STAGER_BYTES).hexdigest(), current_stage_sha)
         self.assertIn('stage:' + historical_stage_sha, script)
         self.assertIn('publish:' + publisher_sha, script)
         self.assertIn('"$source/deploy/proofofwork-ui-release-provenance.sh"', script)
@@ -345,10 +382,10 @@ class CapacityTests(unittest.TestCase):
 
     def test_phase_model_accepts_reviewed_current_stager_and_refuses_drift(self):
         # Execute the live loader's actual digest guard with temporary files and
-        # mocked root metadata. The current stager is accepted; even byte drift
-        # is refused. No old Git objects are required.
+        # mocked root metadata. The pinned historical stager is accepted;
+        # even a one-byte change is refused.
         source = self.root / 'installed-stager'
-        source.write_bytes((ROOT / 'deploy/proofofwork-ui-release-stage.py').read_bytes())
+        source.write_bytes(STAGER_BYTES)
         lock = self.root / 'deploy.lock'
         lock.touch()
         actual_fstat = os.fstat

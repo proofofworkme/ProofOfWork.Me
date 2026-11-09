@@ -100,8 +100,25 @@ For a new closed-input release, run `deploy/publish/release.py prepare-closed-in
 on the build VPS. Preflight and transport re-evaluate the candidate against the
 installed stager, current surfaces and pinned helper hashes before sending any
 release bytes. The received stage must reproduce the same closure. Historical
-plans retain their original accounting. Keep the 10 GiB operating reserve,
-independent deploy-scratch cap, inode checks and source/rollback holds.
+plans retain their original accounting, including the 10 GiB floor in their sealed receipts.
+
+The approval granted on November 8, 2026 in Toronto (November 9 UTC) sets the
+root reserve for new UI publications to 8 GiB (8,589,934,592 bytes), plus
+64 MiB for concurrent growth. Both the capacity
+helper and source/surfaces stream receiver check available bytes after charging
+the next allocation. The whole-release planner checks the peak for the entire
+sequence under the deployment lock. The scratch ceiling is 5 GiB, the backup
+ceiling is 18 GiB, the transport ceiling is 9 GiB plus 64 MiB, and the free
+inode reserve is 128. The release receives zero credit for deleting or moving
+retained data. The source receiver rechecks the verified private stage at its
+release-specific path before accepting source bytes. The failed 4779 source phase
+left its intent, verified surfaces, stage and managed archive in place. A fresh
+release measures existing pool usage, including these retained assets, before upload.
+
+UI storage health independently warns below 12 GiB and reports critical below
+10 GiB. Operators can see that alert even when a new publication passes the
+8 GiB allocation check. Node storage policy and filesystem reserved blocks use
+their own thresholds.
 
 The publisher checks a bounded 8 MiB verification workspace before exchange.
 The provenance helper authenticates the archive, streams its entries and checks
@@ -594,8 +611,9 @@ or evidence input path; the publisher and provenance helper likewise admit
 only the exact release-bound source path. Stage output stays in the existing
 scratch root. Evidence remains charged to filesystem capacity, while its
 durable inputs do not count as another scratch copy. The 5 GiB scratch ceiling,
-10 GiB root reserve plus growth headroom, shared deploy lock, stream/expansion
-bounds, detached Git source attestation and archive checks are unchanged.
+root reserve plus growth headroom, shared deploy lock, stream/expansion bounds,
+detached Git source attestation and archive checks apply. This release used a
+10 GiB root reserve. New UI publications use the 8 GiB reserve described above.
 
 The October 28 streamed release exposed a child deadline that elapsed while
 blocking on its input feed, before the outer service deadline. Current transport
@@ -682,9 +700,9 @@ archive ceiling. Input identity snapshots and collision/path checks remain
 required. After staging, an independent managed-tree inventory must fit the
 predicted envelope before tar can run; the finished compressed archive must
 fit that measured bound. Missing, malformed or changed models fail closed.
-The full logical-copy guard, 5 GiB scratch ceiling, 10 GiB root reserve,
-64 MiB growth allowance, inode reserve and 32 MiB transport evidence allowance
-remain unchanged.
+These releases retained the full logical-copy guard, 5 GiB scratch ceiling,
+then-current 10 GiB root reserve, 64 MiB growth allowance, inode reserve and
+32 MiB transport evidence allowance.
 
 After all copies, internal deduplication and integrity checks complete, the
 opted-in stager measures the completed candidate's stable unique inodes,
@@ -4859,7 +4877,7 @@ systemctl daemon-reload
 ```
 
 The capacity helper uses integer allocation bounds and fresh filesystem
-measurements. Each guarded allocation must leave 10 GiB plus 64 MiB on `/`,
+measurements. Each new UI publication allocation must leave 8 GiB plus 64 MiB on `/`,
 and at least 128 free inodes after its estimated requirement. A separate
 allocation filesystem such as `/run` needs its own allocation budget plus
 64 MiB, while `/` still retains its reserve. Tree copies charge full logical

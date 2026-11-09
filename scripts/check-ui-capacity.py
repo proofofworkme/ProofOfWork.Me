@@ -41,7 +41,7 @@ class CapacityTests(unittest.TestCase):
             (Path("/var/backups/proofofwork-ui"), 18 * 1024**3),
             (Path("/var/backups/proofofwork-ui/transport-evidence"), 9 * 1024**3 + 64 * 1024**2),
         ))
-        self.assertEqual(capacity.ROOT_RESERVE_BYTES, 10 * 1024**3)
+        self.assertEqual(capacity.ROOT_RESERVE_BYTES, 8 * 1024**3)
         self.assertEqual(capacity.GROWTH_RESERVE_BYTES, 64 * 1024**2)
         self.assertEqual(capacity.MAX_DEPLOY_SCRATCH_BYTES, 5 * 1024**3)
         self.assertEqual(capacity.INODE_RESERVE, 128)
@@ -137,7 +137,7 @@ class CapacityTests(unittest.TestCase):
                     capacity.check_deploy_scratch(root, 0, "measurement-timeout")
             self.assertEqual(evidence.read_bytes(), b"retained")
 
-    def test_separate_tmpfs_keeps_root_reserve_without_requiring_ten_gib_on_tmpfs(self):
+    def test_separate_tmpfs_keeps_root_reserve_without_charging_it_on_tmpfs(self):
         def directory(path):
             return SimpleNamespace(st_dev=1 if path == Path("/") else 2)
         def available(path):
