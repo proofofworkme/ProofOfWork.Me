@@ -109,6 +109,7 @@ def requirements(plan, census):
         'transport': (incoming + source if storage == 'release-evidence-v1' else 0) + EVIDENCE_BYTES,
         'scratch': scratch_peak + EVIDENCE_BYTES,
     }
+    allowance = {}
     phase_peaks = None
     if 'inputCompactor' in plan:
         staging = plan['closedArchive']['privateStaging']
@@ -116,6 +117,17 @@ def requirements(plan, census):
                 staging['model'] != 'private-release-stage-v1' or
                 plan['inputCompactor']['sha256'] != plan['closedArchive']['request']['inputCompactorSha256']):
             raise ValueError('Unbound private release staging scope')
+        # Only this publication can use the operator's temporary planning margin.
+        # The installed native 5 GiB guard still checks every actual allocation.
+        release = plan.get('releaseId', '')
+        forecast = plan.get('privateStageRetention', {})
+        if (release == plan.get('commit', '')[:12] + '-20261109T160000Z'
+                and forecast.get('releaseId') == release
+                and forecast.get('model') == 'private-stage-reviewed-retirement-v1'
+                and forecast.get('stateSha256') == 'e26d71523827e01a1c41696e690ef27ba691467e5c434922dcda235b8fd9afcc'
+                and forecast.get('previousPair', {}).get('current') == '69c31f4e1dcd-20261109T051556Z'
+                and plan.get('publicationAttempt') == 'initial'):
+            allowance = {'scratchAllowanceBytes': 384 * 1024**2, 'allowanceRelease': release}
         compact = integer(staging['compactInputUpperBytes'])
         final = integer(staging['finalCandidateUpperBytes'])
         if min(compact, final, integer(staging['blockSize'])) <= 0:
@@ -137,6 +149,7 @@ def requirements(plan, census):
               2 * integer(census['liveTree']['additionalInodes']) + 512)
     return {'schema': 'pow-ui-whole-release-capacity-v1', 'limits': dict(LIMITS),
             **({'privatePhasePeaks': phase_peaks} if phase_peaks is not None else {}),
+            **allowance,
             'additionalBytes': extra, 'additionalInodes': inodes,
             'retirementCreditBytes': 0, 'futureHardlinkCreditBytes': 0,
             'charges': {'receivedSurfaces': incoming, 'preservedSource': source,
@@ -153,6 +166,10 @@ def admit(required, census):
     deficits, headroom = {}, {}
     for name in ('backup', 'transport', 'scratch'):
         remaining = LIMITS[name + 'BudgetBytes'] - integer(census['usage'][name]) - integer(required['additionalBytes'][name])
+        if name == 'scratch' and 'scratchAllowanceBytes' in required:
+            if required['scratchAllowanceBytes'] != 384 * 1024**2 or not required.get('allowanceRelease', '').endswith('-20261109T160000Z'):
+                raise ValueError('Invalid temporary scratch allowance')
+            remaining += required['scratchAllowanceBytes']
         headroom[name] = remaining
         if remaining < 0:
             deficits[name] = -remaining

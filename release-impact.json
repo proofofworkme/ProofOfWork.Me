@@ -1,6 +1,6 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "pending-work-publication-and-verified-ui-rollback",
+  "upgrade": "pending-work-ui-rollout-scratch-allowance",
   "liveCheck": "scripts/check-work-storage-readers-live.mjs",
   "ciTests": [
     "scripts/check-work-mail-batch-backfill.test.mjs",
@@ -50,13 +50,14 @@
         "landing"
       ],
       "disposition": "affected",
-      "reason": "All 22 managed products are published together. The outgoing UI and both retained release archives are verified before the reviewed four ordinary assets become eligible. Shared exact-tip readers depend on the pending WORK repair.",
+      "reason": "All 22 managed products are published together. The outgoing UI and both retained release archives are verified before the reviewed four ordinary assets become eligible. Shared exact-tip readers depend on the pending WORK repair. This one rollout receives 384 MiB of additional scratch planning capacity while native allocation checks remain in force.",
       "evidence": [
         "scripts/check-work-storage-readers-live.mjs",
         "scripts/check-summary-route-readiness.mjs",
         "scripts/check-release-sync.mjs",
         "deploy/publish/check-preservation-admission.test.py",
-        "deploy/ui-retention/check-lifecycle-remote.test.py"
+        "deploy/ui-retention/check-lifecycle-remote.test.py",
+        "deploy/publish/check-closed-input.test.py"
       ]
     },
     {
