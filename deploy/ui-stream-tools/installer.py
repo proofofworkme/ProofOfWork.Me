@@ -114,12 +114,12 @@ def read_record(path):
     return json.loads(safe_read(path)[0])
 
 
-def guards():
+def guards(*, live_only=False):
     for path, expected in GUARDS.items():
         limit = 64 * 1024**2 if path == Path("/var/lib/proofofwork-ui-retention/state.json") else 2 * 1024**2
         require(sha(safe_read(path, limit)[0]) == expected, "Preserved guard changed " + str(path))
     manifests = {}
-    for root, rid, expected in PAIR:
+    for root, rid, expected in (PAIR[:1] if live_only else PAIR):
         directory(root)
         manifest, ident = safe_read(root / ".proofofwork-ui-release")
         values = dict(line.split("=", 1) for line in manifest.decode().splitlines())
@@ -160,7 +160,180 @@ def private_stage_profile(frame):
               Path("/var/lib/proofofwork-ui-retention/state.json"): frame["retentionPins"]["state"]}
     GUARDS.pop(BIN / (PREFIX + "stage"), None)
 
-def graph_proof(stager_bytes, phase_bytes):
+
+# November 9 publisher-only continuation of the independently recorded e27 installation.
+SUCCESSOR_SCHEMA = "pow-ui-publisher-successor-v1"
+SUCCESSOR_BASE = "e27ae192edd87d933b91fac592376a2fb6d154ee"
+SUCCESSOR_TREE = "bd55a6b7e9a96e6e32a2890d886f9c32274b6255"
+SUCCESSOR_AFTER = "96a7445b9d58aea4daf80b5a46e24311604d0e8416cdce02e6ee614360d2c5f4"
+SUCCESSOR_STORAGE_SHA = "c59a81df819be42a5b2c5cafcbb9dc578f739f69de22599c56780cfe2fe5cede"
+SUCCESSOR_PRIOR_STORE = Path("/var/lib/proofofwork-ui-private-stage-tools")
+SUCCESSOR_EVIDENCE = Path("/tmp/pow-ui-e27ae192.WwX0Hp5r")
+SUCCESSOR_LIFECYCLE = {
+    "config": "71f99aa6f48ac6d0f14f4d1649b5985847fbe7255b3ae02845c6c6742e92d49c",
+    "state": "7cf680f91d17a0a7bbcfabf2f8fa0aa3f67f78823d1c551afcc7606752234891",
+}
+SUCCESSOR_RECEIPTS = {
+    "intent.json": ("5867406f4a0402a45f4d5681384a794b95bd996758fff569682a3cb4cb81ffde", 141845, 1984, 1793727920423037966),
+    "qualified.json": ("1e52128837cef1961abc10020f2326ccf60e84b41fcad1ad9915b482eff6c486", 141846, 595, 1793728116061751702),
+    "installed.json": ("edd06c4f422180b0ff5d2a70df5b5b9a9dceef44db8c00bdf91895f057b9af37", 141849, 662, 1793728579761604465),
+    "prepare.json": ("6b99c47efcf23d19b98e957d00f821bee45743f89c578663acbb3b498128018a", 141783, 572, 1793728116068752335),
+    "apply.json": ("9b0158e91b5797729c5003bf91003ba9190b657fa1e6d34f40e4af5e1bba9859", 141847, 567, 1793728579767604986),
+    "helper-status.json": ("9f676b5e9071aa0ecc74affa4413d025863b73d0c95f47088445bce2dc08a2e2", 141850, 568, 1793728871950176401),
+}
+SUCCESSOR_DEVICE = 2049
+SUCCESSOR_PRIOR_INODE = 132751
+SUCCESSOR_EVIDENCE_INODE = 133132
+SUCCESSOR_STAGER_CTIME = 1793728407950143263
+SUCCESSOR_ADMISSIONS = {
+    "archive": (Path("/var/backups/proofofwork-ui/cleanup-evidence/audit30-policy-admission-release-c3969c39c2b2-20261101T051206Z.json"),
+                "d28d8784520421497e228c38ab8a06bc5569ce3b45bb778d354ab60613a51c3b", 769213, 1298895, 1793516065022913103),
+    "root": (Path("/var/backups/proofofwork-ui/cleanup-evidence/audit30-policy-admission-release-54088ca155bc-20261103T032112Z.json"),
+             "910b4232f582eb0ac4c23411d38cbf3b90d3c095d4ad60cb06d4f1cddf08d8f3", 778499, 1444010, 1793685226068150926),
+}
+SUCCESSOR_FALLBACK = {
+    Path("/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-54088ca155bc-20261103T032112Z"):
+        "30753986c138b165e7b93bdef6e24ce84d79594f41c280ea5fabfc35859ce514",
+    ARCHIVES / ("proofofwork-ui-release-" + CURRENT + ".tgz"):
+        "6df3f6fbe4739b27d11b4dc3e96c706f0ece2af82c004e70e79753352e685ce7",
+    ARCHIVES / ("proofofwork-ui-release-" + CURRENT + ".tgz.sha256"):
+        "cfc09b7c39923e5a470d18b8af912c5c364a643b8cabc76d39105690a8a23b59",
+    ARCHIVES / ("proofofwork-ui-release-" + CURRENT + ".tgz.provenance"):
+        "249d2a9353aab877e5457e9a996e3e68f8f95cc1702fc82b55099aa8a767346f",
+}
+
+
+def successor_profile(frame):
+    global NAMES, BEFORE, BASE_COMMIT, STORE
+    require(frame["retentionPins"] == SUCCESSOR_LIFECYCLE, "Unreviewed successor lifecycle")
+    private_stage_profile(frame)
+    NAMES = (PREFIX + "publish",)
+    BEFORE = {NAMES[0]: PRIVATE_AFTER[NAMES[0]]}
+    BASE_COMMIT = SUCCESSOR_BASE
+    STORE = Path("/var/lib/proofofwork-ui-publisher-successor-tools")
+
+
+def successor_predecessor(journal, intent=None):
+    old = SUCCESSOR_PRIOR_STORE / SUCCESSOR_BASE
+    directory(SUCCESSOR_PRIOR_STORE, private=True)
+    for path, inode in ((old, SUCCESSOR_PRIOR_INODE), (SUCCESSOR_EVIDENCE, SUCCESSOR_EVIDENCE_INODE)):
+        directory(path, private=True)
+        details = path.stat()
+        require((details.st_dev, details.st_ino) == (SUCCESSOR_DEVICE, inode), "Replaced predecessor evidence directory")
+    require(not os.path.lexists(old / "rolled-back.json"), "Predecessor was rolled back")
+    receipts = {}
+    for name, (digest, ino, size, stamp) in SUCCESSOR_RECEIPTS.items():
+        location = old if name in ("intent.json", "qualified.json", "installed.json") else SUCCESSOR_EVIDENCE
+        path = location / name
+        raw, observed = safe_read(path)
+        require(sha(raw) == digest and observed == [SUCCESSOR_DEVICE, ino, 0, 0, stat.S_IFREG | 0o600, 1, size, stamp]
+                and path.lstat().st_ctime_ns == stamp, "Replaced original evidence " + name)
+        receipts[name] = json.loads(raw)
+    original = receipts["intent.json"]
+    require(original["schema"] == PRIVATE_SCHEMA and original["commit"] == SUCCESSOR_BASE
+            and original["tree"] == SUCCESSOR_TREE and set(original["files"]) == set(PRIVATE_AFTER),
+            "Wrong original private-stage intent")
+    prepare = receipts["qualified.json"]
+    installed = receipts["installed.json"]
+    require(prepare["intentSha256"] == installed["intentSha256"] == SUCCESSOR_RECEIPTS["intent.json"][0]
+            and installed["qualificationSha256"] == SUCCESSOR_RECEIPTS["qualified.json"][0],
+            "Original qualification or installation binding changed")
+    check_proof(prepare["archives"], ["verify", "--archive-payload"])
+    check_proof(installed["archives"], ["verify-rollback"])
+    for file, action, side in (("prepare.json", "prepare", "before"), ("apply.json", "apply", "after"),
+                               ("helper-status.json", "status", "after")):
+        receipt = receipts[file]
+        require(receipt["ok"] is True and receipt["phase"] == action and receipt["commit"] == SUCCESSOR_BASE
+                and receipt["journal"] == str(old) and receipt["qualified"] is True
+                and receipt["installedReceipt"] is (side == "after") and receipt["rollbackReceipt"] is False
+                and receipt["positions"] == {n: side for n in PRIVATE_AFTER}
+                and receipt["files"] == {n: original["files"][n][side]["sha256"] for n in PRIVATE_AFTER},
+                "Original operator receipt differs: " + file)
+    stage, pub = PREFIX + "stage", PREFIX + "publish"
+    for name in (stage, pub):
+        pair = original["files"][name]
+        require(pair["after"]["sha256"] == PRIVATE_AFTER[name] and descriptor(old / name) == pair["before"],
+                "Changed retained predecessor helper " + name)
+    require(descriptor(BIN / stage) == original["files"][stage]["after"]
+            and (BIN / stage).lstat().st_ctime_ns == SUCCESSOR_STAGER_CTIME, "Predecessor stager inode changed")
+    publisher = BIN / pub
+    if intent is not None and positions(journal, intent)[pub] == "after":
+        publisher = journal / pub
+    require(descriptor(publisher) == original["files"][pub]["after"], "Predecessor publisher inode changed")
+    return {"commit": SUCCESSOR_BASE, "tree": SUCCESSOR_TREE,
+            "receipts": {k: row[0] for k, row in SUCCESSOR_RECEIPTS.items()},
+            "files": {n: original["files"][n]["after"] for n in PRIVATE_AFTER}, "manifests": original["manifests"]}
+
+
+def successor_admission_inodes():
+    for path, _, ino, size, stamp in SUCCESSOR_ADMISSIONS.values():
+        s = path.lstat()
+        require((s.st_dev, s.st_ino, s.st_mode, s.st_nlink, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+                == (SUCCESSOR_DEVICE, ino, stat.S_IFREG | 0o600, 1, size, stamp, stamp),
+                "Original fallback admission inode changed: " + str(path))
+
+
+def successor_admissions():
+    admitted = {}
+    successor_admission_inodes()
+    for kind, (path, digest, _, size, _) in SUCCESSOR_ADMISSIONS.items():
+        require(size <= 64 * 1024**2, "Fallback admission exceeds the read bound")
+        raw = safe_read(path, size)[0]
+        require(sha(raw) == digest, "Original fallback admission hash changed: " + str(path))
+        doc = json.loads(raw)
+        if kind == "root":
+            root, = doc["roots"]
+            snapshots = [root["snapshot"]]
+        else:
+            archive, = doc["archives"]
+            snapshots = [archive["snapshot"], *archive["sidecars"]]
+        for snapshot in snapshots:
+            member = Path(snapshot["path"])
+            canonical = json.dumps(snapshot["entries"], sort_keys=True, separators=(",", ":")).encode()
+            require(member not in admitted and sha(canonical) == snapshot["sha256"], "Invalid original fallback snapshot")
+            admitted[member] = snapshot["sha256"]
+    require(admitted == SUCCESSOR_FALLBACK, "Four-object scope differs from original admissions")
+    successor_admission_inodes()
+
+
+class PhysicalFallback(dict):
+    def __init__(self, observed, snapshots):
+        super().__init__(observed)
+        self.entries = []
+        for path, snapshot in snapshots.items():
+            for row in snapshot["entries"]:
+                kind = stat.S_IFDIR if row["kind"] == "directory" else stat.S_IFREG
+                expected = (row["device"], row["inode"], kind | row["mode"], row["uid"], row["gid"],
+                            row["size"], row["mtimeNs"], row["ctimeNs"], row["links"])
+                self.entries.append((path / row["path"], expected))
+
+    def recheck(self):
+        successor_admission_inodes()
+        for path, expected in self.entries:
+            s = path.lstat()
+            actual = (s.st_dev, s.st_ino, s.st_mode, s.st_uid, s.st_gid, s.st_size,
+                      s.st_mtime_ns, s.st_ctime_ns, s.st_nlink)
+            require(actual == expected, "Physical fallback entry changed: " + str(path))
+
+
+def successor_fallback(storage_bytes):
+    require(sha(storage_bytes) == SUCCESSOR_STORAGE_SHA, "Unreviewed fallback snapshot verifier")
+    successor_admissions()
+    source = types.ModuleType("original_ui_storage")
+    source.__file__ = "/bound/deploy/audit30/ui-storage.py"
+    exec(compile(storage_bytes, source.__file__, "exec"), source.__dict__)
+    try:
+        snapshots = {path: source.snapshot(path) for path in SUCCESSOR_FALLBACK}
+        observed = {str(path): source.guard_snapshot(path, snapshot)["sha256"] for path, snapshot in snapshots.items()}
+    finally:
+        if source._snapshot_clock is not None:
+            source._snapshot_clock.close()
+    require(observed == {str(path): h for path, h in SUCCESSOR_FALLBACK.items()},
+            "One of the four retained fallback objects changed")
+    return PhysicalFallback(observed, snapshots)
+
+
+def graph_proof(stager_bytes, phase_bytes, *, live_only=False):
     """Use the exact candidate's parser and planner against both served trees without altering access times."""
     require(sha(stager_bytes) == PRIVATE_AFTER[PREFIX + "stage"] and sha(phase_bytes) == PHASE_SHA,
             "Unapproved closure code")
@@ -174,7 +347,7 @@ def graph_proof(stager_bytes, phase_bytes):
     readonly = types.SimpleNamespace(**{**vars(os), "open": open_readonly})
     stager.os = phase.os = readonly
     result = {}
-    for root, rid, _ in PAIR:
+    for root, rid, _ in (PAIR[:1] if live_only else PAIR):
         surfaces = stager.live_surface_names(root)
         require(surfaces == stager.PERMISSION_SURFACES, "Wrong prior surface family")
         _, _, counts, digest = phase.prior_compatibility(root, surfaces, stager, {s: [] for s in surfaces})
@@ -186,11 +359,21 @@ def graph_proof(stager_bytes, phase_bytes):
 
 def checked_frame(frame):
     private = frame["schema"] == PRIVATE_SCHEMA
+    successor = frame["schema"] == SUCCESSOR_SCHEMA
     keys = {"schema", "commit", "tree", "files"}
-    require(set(frame) == (keys | {"retentionPins", "phaseSource"} if private else keys)
-            and (private or frame["schema"] == "pow-ui-stream-tools-v1"), "Wrong source frame")
-    if private:
-        private_stage_profile(frame)
+    if private or successor:
+        keys.update(("retentionPins", "phaseSource"))
+    if successor:
+        keys.add("storageSource")
+    require(set(frame) == keys and (private or successor or frame["schema"] == "pow-ui-stream-tools-v1"), "Wrong source frame")
+    if private or successor:
+        if successor:
+            successor_profile(frame)
+            require(sha(base64.b64decode(frame["storageSource"], validate=True)) == SUCCESSOR_STORAGE_SHA,
+                    "Changed historical storage verifier")
+            require(frame["commit"] != SUCCESSOR_BASE, "Successor must follow the verified predecessor")
+        else:
+            private_stage_profile(frame)
         require(sha(base64.b64decode(frame["phaseSource"], validate=True)) == PHASE_SHA, "Unapproved phase source")
     for key in ("commit", "tree"):
         require(isinstance(frame[key], str) and re.fullmatch(r"[0-9a-f]{40}", frame[key]), "Invalid Git pin")
@@ -204,6 +387,8 @@ def checked_frame(frame):
                 "Candidate helper mismatch")
         if private:
             require(sha(raw[name]) == PRIVATE_AFTER[name], "Candidate differs from reviewed private-stage source")
+        if successor:
+            require(sha(raw[name]) == SUCCESSOR_AFTER, "Publisher differs from the reviewed successor")
         if private and name == PREFIX + "stage":
             compile(raw[name], name, "exec")
         else:
@@ -234,10 +419,12 @@ def positions(journal, intent):
     return result
 
 
-def transition(journal, intent, wanted):
+def transition(journal, intent, wanted, before_exchange=None):
     order = NAMES if wanted == "after" else reversed(NAMES)
     for name in order:
         if positions(journal, intent)[name] != wanted:
+            if before_exchange:
+                before_exchange()
             exchange(BIN / name, journal / name)
             require(positions(journal, intent)[name] == wanted, "Exchange did not retain exact inodes")
 
@@ -266,8 +453,206 @@ def check_proof(proofs, command):
                 "Incomplete or changed release proof")
 
 
+
+def successor_create(path, raw, mode):
+    # Link only a complete, durable inode. A crash while writing leaves no pathname.
+    directory(path.parent, private=True)
+    parent = os.open(path.parent, os.O_DIRECTORY | os.O_NOFOLLOW | os.O_RDONLY)
+    try:
+        fd = os.open(".", os.O_TMPFILE | os.O_RDWR, mode, dir_fd=parent)
+        with os.fdopen(fd, "wb") as out:
+            os.fchmod(fd, mode)
+            out.write(raw)
+            out.flush()
+            os.fsync(fd)
+            os.link("/proc/self/fd/" + str(fd), path.name, dst_dir_fd=parent, follow_symlinks=True)
+            os.fsync(parent)
+    finally:
+        os.close(parent)
+
+
+def successor_record(path, value):
+    successor_create(path, (json.dumps(value, sort_keys=True) + "\n").encode(), 0o600)
+
+
+def successor_locked(phase, frame, lock_fd, raw):
+    publisher, = NAMES
+    directory(BIN)
+    directory(ARCHIVES)
+    journal = STORE / frame["commit"]
+    intent_path = journal / "intent.json"
+    qualified = journal / "qualified.json"
+    completed = journal / "installed.json"
+    reversing = journal / "rollback-intent.json"
+    reversed_path = journal / "rolled-back.json"
+    storage = base64.b64decode(frame["storageSource"], validate=True)
+    phase_source = base64.b64decode(frame["phaseSource"], validate=True)
+    intent = None
+    retained = None
+
+    def final_check():
+        successor_predecessor(journal, intent)
+        retained.recheck()
+
+    def fence():
+        nonlocal retained
+        predecessor = successor_predecessor(journal, intent)
+        manifest = guards()
+        manifest["lifecyclePins"] = frame["retentionPins"]
+        manifest["graphProof"] = graph_proof(safe_read(BIN / (PREFIX + "stage"))[0], phase_source)
+        require(manifest == predecessor["manifests"], "Protected release context differs from original evidence")
+        retained = successor_fallback(storage)
+        require(successor_predecessor(journal, intent) == predecessor and guards() ==
+                {k: v for k, v in manifest.items() if k not in ("lifecyclePins", "graphProof")},
+                "Publisher or protected context changed during checks")
+        retained.recheck()
+        return {"predecessor": predecessor, "retained": dict(retained)}
+
+    if os.path.lexists(STORE):
+        directory(STORE, private=True)
+    if os.path.lexists(journal):
+        directory(journal, private=True)
+        allowed = {publisher, intent_path.name, qualified.name, completed.name, reversing.name, reversed_path.name}
+        require(set(os.listdir(journal)) <= allowed, "Unknown successor journal entry")
+        if os.path.lexists(intent_path):
+            intent = read_record(intent_path)
+    # An interrupted helper exchange can always restore its exact predecessor.
+    # Qualification and positions are verified below before this path can write.
+    restoring = (phase == "rollback" and intent is not None and os.path.lexists(qualified)
+                 and (os.path.lexists(reversing) or positions(journal, intent)[publisher] == "after"))
+    if restoring:
+        baseline = {"predecessor": successor_predecessor(journal, intent),
+                    "retained": {str(path): digest for path, digest in SUCCESSOR_FALLBACK.items()}}
+    else:
+        baseline = fence()
+    if intent is None and phase == "status":
+        require(not any(os.path.lexists(p) for p in (qualified, completed, reversing, reversed_path)),
+                "Receipts without an intent")
+        if os.path.lexists(journal / publisher):
+            candidate = descriptor(journal / publisher)
+            require(candidate["sha256"] == SUCCESSOR_AFTER and stat.S_IMODE(candidate["identity"][4]) == 0o755
+                    and candidate["xattrs"] == baseline["predecessor"]["files"][publisher]["xattrs"],
+                    "Unrecognized interrupted preparation")
+        final_check()
+        return {"ok": True, "phase": phase, "journal": str(journal), "commit": frame["commit"],
+                "prepared": False, "interruptedPreparation": os.path.lexists(journal)}
+    if intent is None:
+        require(phase == "prepare", "Prepare the reviewed publisher before changing it")
+        capacity = BIN / "proofofwork-ui-capacity"
+        subprocess.run(["/usr/bin/python3", "-I", "-B", str(capacity), "check", "--path", str(STORE.parent),
+                        "--additional-bytes", "1048576", "--additional-inodes", "16",
+                        "--phase", "ui-publisher-successor"], env=ENV, check=True, timeout=120, stdout=subprocess.DEVNULL)
+        root_dir(STORE)
+        require(BIN.stat().st_dev == STORE.stat().st_dev, "Journal must share the helper filesystem")
+        root_dir(journal)
+        require(set(os.listdir(journal)) <= {publisher}, "Unknown partial preparation")
+        before = baseline["predecessor"]["files"][publisher]
+        if not os.path.lexists(journal / publisher):
+            successor_create(journal / publisher, raw[publisher], 0o755)
+        after = descriptor(journal / publisher)
+        require(after["sha256"] == SUCCESSOR_AFTER and stat.S_IMODE(after["identity"][4]) == 0o755
+                and after["xattrs"] == before["xattrs"], "Partial candidate differs from reviewed helper")
+        intent = {"schema": frame["schema"], "commit": frame["commit"], "tree": frame["tree"], "baseline": baseline,
+                  "files": {publisher: {"before": before, "after": after}}}
+        successor_record(intent_path, intent)
+    require(intent["schema"] == frame["schema"] and intent["commit"] == frame["commit"]
+            and intent["tree"] == frame["tree"] and intent["baseline"] == baseline
+            and set(intent["files"]) == {publisher} and intent["files"][publisher]["before"] == baseline["predecessor"]["files"][publisher]
+            and intent["files"][publisher]["after"]["sha256"] == SUCCESSOR_AFTER, "Successor journal binding changed")
+    state = positions(journal, intent)[publisher]
+    provenance = BIN / (PREFIX + "provenance")
+    intent_id = descriptor(intent_path)
+    qualification = None
+    if os.path.lexists(qualified):
+        qualification = read_record(qualified)
+        require(qualification["intent"] == intent_id, "Unbound successor qualification")
+        check_proof(qualification["archives"], ["verify", "--archive-payload"])
+    elif phase == "prepare":
+        require(state == "before", "Unqualified publisher was exchanged")
+        archives = verify_pair(provenance, lock_fd, payload=True)
+        check_proof(archives, ["verify", "--archive-payload"])
+        require(fence() == baseline and positions(journal, intent)[publisher] == "before",
+                "Qualification context changed")
+        qualification = {"intent": intent_id, "archives": archives}
+        final_check()
+        successor_record(qualified, qualification)
+    require(qualification is not None or phase == "status", "Missing successor qualification")
+    if qualification is None:
+        require(state == "before" and not any(os.path.lexists(p) for p in (completed, reversing, reversed_path)),
+                "Activity before qualification")
+    qual_id = descriptor(qualified) if qualification is not None else None
+    if os.path.lexists(completed):
+        installed = read_record(completed)
+        require(installed["intent"] == intent_id and installed["qualification"] == qual_id, "Unbound installed receipt")
+        check_proof(installed["archives"], ["verify-rollback"])
+        require(state == "after" or os.path.lexists(reversing), "Installed publisher unexpectedly reverted")
+    reversal = {"intent": intent_id, "qualification": qual_id}
+    if os.path.lexists(reversing):
+        require(read_record(reversing) == reversal, "Changed rollback intent")
+    if phase == "status" and os.path.lexists(reversing) and not os.path.lexists(reversed_path):
+        raise ValueError("Rollback is pending; finish the retained fallback verification")
+    if os.path.lexists(reversed_path):
+        require(state == "before" and os.path.lexists(reversing)
+                and read_record(reversed_path) == {"rollbackIntent": descriptor(reversing)}, "Changed rollback receipt")
+
+    def restore_authority():
+        # Only the four original fallback objects can fail during restoration.
+        # A newer lifecycle or live release cannot authorize this older installer.
+        original = successor_predecessor(journal, intent)
+        successor_admissions()
+        rid = PAIR[0][1]
+        live = {rid: original["manifests"][rid]}
+        require(guards(live_only=True) == live, "Stale lifecycle or live release for publisher restoration")
+        graph = graph_proof(safe_read(BIN / (PREFIX + "stage"))[0], phase_source, live_only=True)
+        require(graph == {rid: original["manifests"]["graphProof"][rid]}
+                and guards(live_only=True) == live and successor_predecessor(journal, intent) == original,
+                "Live release authority changed during publisher restoration")
+        successor_admission_inodes()
+
+    def restore():
+        restore_authority()
+        if not os.path.lexists(reversing):
+            successor_record(reversing, reversal)
+        # Fallback drift blocks publication and every terminal receipt. Only a
+        # reverse exchange may restore the original admitted publisher through drift.
+        transition(journal, intent, "before", restore_authority)
+        require(fence() == baseline and positions(journal, intent)[publisher] == "before", "Restored context changed")
+        if not os.path.lexists(reversed_path):
+            rollback_id = descriptor(reversing)
+            final_check()
+            successor_record(reversed_path, {"rollbackIntent": rollback_id})
+
+    if phase == "apply":
+        require(not os.path.lexists(reversing), "A rolled-back publisher needs new review")
+        if not os.path.lexists(completed):
+            require(fence() == baseline, "Context changed immediately before publisher exchange")
+            try:
+                transition(journal, intent, "after", final_check)
+                archives = verify_pair(provenance, lock_fd)
+                check_proof(archives, ["verify-rollback"])
+                require(fence() == baseline and positions(journal, intent)[publisher] == "after", "Installed context changed")
+                final_check()
+                successor_record(completed, {"intent": intent_id, "qualification": qual_id, "archives": archives})
+            except BaseException:
+                if positions(journal, intent)[publisher] == "after":
+                    restore()
+                raise
+    elif phase == "rollback":
+        if not restoring:
+            require(fence() == baseline, "Context changed immediately before rollback")
+        restore()
+    state = positions(journal, intent)
+    files = {publisher: descriptor(BIN / publisher)["sha256"]}
+    final_check()
+    return {"ok": True, "phase": phase, "commit": frame["commit"], "journal": str(journal),
+            "qualified": qualification is not None, "installedReceipt": os.path.lexists(completed),
+            "rollbackReceipt": os.path.lexists(reversed_path), "positions": state, "files": files}
+
+
 def run_locked(phase, frame, lock_fd):
     raw = checked_frame(frame)
+    if frame["schema"] == SUCCESSOR_SCHEMA:
+        return successor_locked(phase, frame, lock_fd, raw)
     manifest_fence = guards()
     private = frame["schema"] == PRIVATE_SCHEMA
     if private:
@@ -369,7 +754,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("prepare", "apply", "rollback", "status"))
     parser.add_argument("commit")
-    parser.add_argument("--private-stage", action="store_true")
+    profiles = parser.add_mutually_exclusive_group()
+    profiles.add_argument("--private-stage", action="store_true")
+    profiles.add_argument("--publisher-successor", action="store_true")
     parser.add_argument("--state-sha256")
     parser.add_argument("--config-sha256")
     args = parser.parse_args()
@@ -377,13 +764,18 @@ def main():
     repo = Path(__file__).resolve().parents[2]
     git = ["/usr/bin/git", "-C", str(repo)]
     options = {}
-    if args.private_stage:
+    if args.private_stage or args.publisher_successor:
         require(os.geteuid() == 0 and sys.flags.isolated, "Private staging runs only from the release checkout on the UI host")
         require(subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip() == args.commit,
                 "Private-stage checkout must be at the exact approved release")
         require(args.state_sha256 and args.config_sha256, "Both lifecycle hashes are required")
         options["retentionPins"] = {"state": args.state_sha256, "config": args.config_sha256}
-        private_stage_profile(options)
+        if args.publisher_successor:
+            successor_profile(options)
+            storage = subprocess.check_output([*git, "show", SUCCESSOR_BASE + ":deploy/audit30/ui-storage.py"])
+            options["storageSource"] = base64.b64encode(storage).decode()
+        else:
+            private_stage_profile(options)
         phase = subprocess.check_output([*git, "show", args.commit + ":deploy/publish/phase_capacity.py"])
         options["phaseSource"] = base64.b64encode(phase).decode()
     else:
@@ -391,14 +783,15 @@ def main():
     subprocess.run([*git, "merge-base", "--is-ancestor", BASE_COMMIT, args.commit], check=True)
     self_raw = subprocess.check_output([*git, "show", args.commit + ":deploy/ui-stream-tools/installer.py"])
     require(self_raw == Path(__file__).read_bytes(), "Installer differs from reviewed commit")
-    frame = {**options, "schema": PRIVATE_SCHEMA if args.private_stage else "pow-ui-stream-tools-v1", "commit": args.commit,
+    schema = SUCCESSOR_SCHEMA if args.publisher_successor else PRIVATE_SCHEMA if args.private_stage else "pow-ui-stream-tools-v1"
+    frame = {**options, "schema": schema, "commit": args.commit,
              "tree": subprocess.check_output([*git, "rev-parse", args.commit + "^{tree}"], text=True).strip(), "files": {}}
     for n in NAMES:
         suffix = ".py" if n == PREFIX + "stage" else ".sh"
         data = subprocess.check_output([*git, "show", args.commit + ":deploy/" + n + suffix])
         frame["files"][n] = {"base64": base64.b64encode(data).decode(), "sha256": sha(data)}
     checked_frame(frame)
-    if args.private_stage:
+    if args.private_stage or args.publisher_successor:
         print(json.dumps(remote(args.action, frame)), flush=True)
         return
     # The remote command is fixed. The exact committed installer and two source

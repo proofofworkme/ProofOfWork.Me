@@ -1,6 +1,6 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "snapshot-bound-work-history-and-canonical-reader-recovery",
+  "upgrade": "publish-snapshot-storage-and-reader-recovery",
   "liveCheck": "scripts/check-publisher-repair-live.mjs",
   "ciTests": [
     "scripts/check-publisher-repair.test.mjs",
@@ -48,14 +48,16 @@
         "compatibility"
       ],
       "disposition": "affected",
-      "reason": "All 22 roots share the retained-release checks. Log, WORK, Growth and the Computer workspaces depend on exact summary publication. Permissions verifies the canonical replay suffix, and Code and Jobs resume discovery from a proven common ancestor. Site provenance and the published renderer are checked on the released tree.",
+      "reason": "All 22 roots share the retained-release checks. Log, WORK, Growth and the Computer workspaces depend on exact summary publication. Permissions verifies the canonical replay suffix, and Code and Jobs resume discovery from a proven common ancestor. Site provenance and the published renderer are checked on the released tree. The publisher verifies the original e27 receipts and stager inode before its scoped replacement. It binds the recorded boot execution and both storage policy versions throughout the final exchange.",
       "evidence": [
         "deploy/publish/check-private-staging.test.py",
         "scripts/check-ui-compatibility-boundaries.py",
         "deploy/ui-retention/check-lifecycle-remote.test.py",
         "scripts/check-release-sync.mjs",
         "deploy/ui-retention/install_lifecycle.py",
-        "scripts/check-work-storage-readers-live.mjs"
+        "scripts/check-work-storage-readers-live.mjs",
+        "deploy/ui-stream-tools/check-private-stage-installer.test.py",
+        "deploy/publish/check-native-exchange-fence.test.py"
       ]
     },
     {

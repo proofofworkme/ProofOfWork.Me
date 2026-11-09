@@ -707,11 +707,11 @@ def publish(args):
     script = admission_source(p['wrapperSourceSha256']['publication_admission.py']) + b'\n' + script
     argv = ['systemd-run', '--unit=proofofwork-recovery-release-'+p['releaseId']+'-ui-'+p['publicationAttempt'],
         '--service-type=exec', '--wait', '--pipe', '--property=User=root', '--property=Group=root',
-        '--property=KillMode=control-group', '--property=RuntimeMaxSec=30min', '--property=TimeoutStopSec=30s',
+        '--property=KillMode=control-group', '--property=RuntimeMaxSec=70min', '--property=TimeoutStopSec=30s',
         '--property=MemoryMax=4G', '--property=MemorySwapMax=0', '--property=TasksMax=128', '--property=UMask=0077',
         '/usr/bin/python3', '-I', '-B', '-', remote_plan(p), sha, p['commit'], p['tree'], p['publicationAttempt']]
     with Path(args.log).open('xb') as log:
-        remote(argv, data=script, stdout=log, timeout=1860)
+        remote(argv, data=script, stdout=log, timeout=4500)
 
 def main():
     global REPO, UI_HOST

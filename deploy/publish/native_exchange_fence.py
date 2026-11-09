@@ -191,7 +191,7 @@ def verify(received, source, publisher, live, scratch, archive_dir, rollback, lo
                                             '-p','RuntimeMaxUSec','-p','ControlGroup'],text=True,timeout=10)
         fields=dict(row.split('=',1) for row in properties.splitlines())
         require(fields.get('ActiveState')=='active' and fields.get('MainPID')==str(intent['lockHolderPid'])
-                and fields.get('KillMode')=='control-group' and fields.get('RuntimeMaxUSec')=='30min'
+                and fields.get('KillMode')=='control-group' and fields.get('RuntimeMaxUSec')=='1h 10min'
                 and fields.get('ControlGroup','').endswith('/'+unit)
                 and any(row.endswith(':'+fields['ControlGroup']) for row in Path('/proc/self/cgroup').read_text().splitlines()),
                 'lock holder is not the active release wrapper service')

@@ -59,6 +59,20 @@ BOOT_LOG_PINS = {
     '/usr/bin/savelog': '6a0f55fea1a81f1930c86f534fb5570785b2f12f3da49709e76c3148a89e0197',
 }
 BOOT_LOG_GID = 4  # Ubuntu's adm group.
+# Contemporaneous strict-host-key SSH observation of this one UI boot. The
+# capture hash is the original stdout, including the successful pre-command,
+# four inode/ctime/mtime records and boot ID. The separate digest is the two
+# complete PID 1 journal records in chronological order, encoded() plus LF.
+HISTORICAL_BOOT_LOG = {
+    'boot': '59af04dd-cdb3-47ed-9a82-988bd86ffc48',
+    'startedUs': 1793720369673372, 'endedUs': 1793720373071480,
+    'mainStartMonotonic': '15419109',
+    'captureSha256': '0209d13946b5cacefd87da232d0a70cb1ebe65d4b7eb23ec0767e7e4063108d4',
+    'journalSha256': '9002ac13618f3155bb21cf62e4726e8cece5bbe8743525473354072a753c1fcc',
+    'recordedPre': ('{ path=/usr/bin/savelog ; argv[]=/usr/bin/savelog -m640 -q -p -n -c 5 /var/log/dmesg ; '
+                    'ignore_errors=yes ; start_time=[Tue 2026-11-03 15:39:29 UTC] ; '
+                    'stop_time=[Tue 2026-11-03 15:39:32 UTC] ; pid=831 ; code=exited ; status=0 }'),
+}
 
 def utc(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
 def encoded(value): return json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
@@ -468,20 +482,60 @@ def boot_log_paths(layout):
     # Only the four individually held paths rotated by the Ubuntu boot service.
     return {str(layout.prefix/'var/log'/name) for name in ('dmesg', 'dmesg.0', 'dmesg.1.gz', 'dmesg.2.gz')}
 
-def verify_boot_log_unit():
+def verify_historical_boot_log(prefix, settings, cleared, started, ended):
+    pin = HISTORICAL_BOOT_LOG
+    boot = Path('/proc/sys/kernel/random/boot_id').read_text()
+    if (prefix != Path('/') or boot != pin['boot']+'\n' or started != pin['startedUs']*1000
+            or ended != pin['endedUs']*1000
+            or settings['ExecMainStartTimestampMonotonic'] != pin['mainStartMonotonic']):
+        raise ValueError('Unrecognized historical Ubuntu boot log interval')
+
+    # A successful main unit cannot attest the ignored pre-command. Compare
+    # today's observations to the original successful SSH capture, using only
+    # its recorded pre-command for the single field systemd has discarded.
+    env = dict(os.environ, LC_ALL='C', TZ='UTC')
+    fields = ('ExecMainStartTimestamp', 'ExecMainExitTimestamp', 'ExecStartPre',
+              'StateChangeTimestamp', 'InactiveExitTimestamp', 'ActiveEnterTimestamp')
+    now = subprocess.check_output(['/usr/bin/systemctl', 'show', 'dmesg.service',
+                                  *('--property='+key for key in fields)], text=True, timeout=10, env=env)
+    line = 'ExecStartPre='+cleared+'\n'
+    if now.splitlines(keepends=True).count(line) != 1:
+        raise ValueError('Historical Ubuntu boot log pre-command changed during verification')
+    identities = subprocess.check_output(['/usr/bin/stat', '-c', '%n %i %z %y', '--',
+            *('/var/log/'+name for name in ('dmesg','dmesg.0','dmesg.1.gz','dmesg.2.gz'))],
+            text=True, timeout=10, env=env)
+    original = now.replace(line, 'ExecStartPre='+pin['recordedPre']+'\n') + identities + boot
+    if hashlib.sha256(original.encode()).hexdigest() != pin['captureSha256']:
+        raise ValueError('Historical Ubuntu boot log observation differs')
+
+    journal = subprocess.check_output(['/usr/bin/journalctl', '--quiet', '--no-pager', '-b',
+            pin['boot'].replace('-', ''), '-u', 'dmesg.service', '-n', '3', '-o', 'json'],
+            text=True, timeout=10, env=env)
+    rows = [json.loads(row, object_pairs_hook=unique_pairs) for row in journal.splitlines()]
+    invocation = settings.get('InvocationID', '')
+    if (len(rows) != 2 or not re.fullmatch('[0-9a-f]{32}', invocation)
+            or any(row.get('INVOCATION_ID') != invocation or row.get('_PID') != '1'
+                   or row.get('_UID') != '0' or row.get('UNIT') != 'dmesg.service' for row in rows)
+            or hashlib.sha256(encoded(rows)+b'\n').hexdigest() != pin['journalSha256']):
+        raise ValueError('Historical Ubuntu boot log journal differs')
+
+def verify_boot_log_unit(prefix=Path('/')):
     fields = ('LoadState', 'FragmentPath', 'DropInPaths', 'NeedDaemonReload', 'Result', 'ExecMainStatus',
-              'ExecMainStartTimestampMonotonic', 'ExecStartPre')
+              'ExecMainStartTimestampMonotonic', 'ExecStartPre', 'InvocationID')
     output = subprocess.check_output(['/usr/bin/systemctl', 'show', 'dmesg.service',
                                       *('--property='+key for key in fields)], text=True, timeout=10)
     settings = dict(row.split('=', 1) for row in output.splitlines())
     args = '/usr/bin/savelog -m640 -q -p -n -c 5 /var/log/dmesg'
+    authority = '{ path=/usr/bin/savelog ; argv[]='+args+' ; ignore_errors=yes ; '
+    cleared = authority+'start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }'
+    pre = settings.get('ExecStartPre', '')
+    live_success = re.fullmatch(re.escape(authority)+r'[^{}]*code=exited ; status=0 \}', pre)
     if (settings.get('LoadState') != 'loaded' or settings.get('FragmentPath') != '/usr/lib/systemd/system/dmesg.service'
             or settings.get('DropInPaths') != '' or settings.get('NeedDaemonReload') != 'no'
             or settings.get('Result') != 'success' or settings.get('ExecMainStatus') != '0'
             or not settings.get('ExecMainStartTimestampMonotonic', '').isdigit()
             or int(settings['ExecMainStartTimestampMonotonic']) <= 0
-            or not re.fullmatch(r'\{ path=/usr/bin/savelog ; argv\[\]='+re.escape(args)+
-                                r' ; ignore_errors=yes ; [^{}]*code=exited ; status=0 \}', settings.get('ExecStartPre', ''))):
+            or (not live_success and pre != cleared)):
         raise ValueError('Ubuntu boot log rotation authority or execution differs')
     # systemctl's text format drops sub-second precision. D-Bus returns the
     # unit's realtime interval in microseconds, including its final chmod.
@@ -493,6 +547,8 @@ def verify_boot_log_unit():
     started, ended = (int(row.split()[1])*1000 for row in times)
     if not 0 < ended-started <= 120*10**9:
         raise ValueError('Unexpected Ubuntu boot log execution interval')
+    if pre == cleared:
+        verify_historical_boot_log(prefix, settings, cleared, started, ended)
     return started, ended+999
 
 def modeled_guards(layout,guards,model):
@@ -506,7 +562,7 @@ def modeled_guards(layout,guards,model):
     if held_boot:
         if held_boot != boot:
             raise ValueError('Boot log hold scope differs')
-        started, ended = verify_boot_log_unit()
+        started, ended = verify_boot_log_unit(layout.prefix)
         pins.update(BOOT_LOG_PINS)
     for path,expected in pins.items():
         p=layout.prefix/path.lstrip('/')

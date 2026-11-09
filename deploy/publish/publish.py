@@ -22,6 +22,54 @@ def durable_json(path,value):
  fd=os.open(path.parent,os.O_RDONLY|os.O_DIRECTORY)
  try: os.fsync(fd)
  finally: os.close(fd)
+def supervise_publisher(child, log, timeout, recovery_seconds, log_limit):
+    """Keep supervising the native process after it closes its output."""
+    def signal_group(sig):
+        try:
+            os.killpg(child.pid, sig)
+        except ProcessLookupError:
+            pass
+
+    count = 0
+    failure = None
+    deadline = time.monotonic() + timeout
+    with selectors.DefaultSelector() as selector:
+        selector.register(child.stdout, selectors.EVENT_READ)
+        try:
+            while selector.get_map() or child.poll() is None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    if failure is not None:
+                        signal_group(signal.SIGKILL)
+                        break
+                    failure = 'publisher timeout'
+                    signal_group(signal.SIGTERM)
+                    deadline = time.monotonic() + recovery_seconds
+                    continue
+                if not selector.get_map():
+                    try:
+                        child.wait(timeout=remaining)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    continue
+                for key, _ in selector.select(timeout=min(0.5, remaining)):
+                    block = os.read(key.fileobj.fileno(), 65536)
+                    if not block:
+                        selector.unregister(key.fileobj)
+                        continue
+                    log.write(block[:max(0, log_limit - count)])
+                    count += len(block)
+                    if count > log_limit and failure is None:
+                        failure = 'publisher log ceiling exceeded'
+                        signal_group(signal.SIGTERM)
+                        deadline = time.monotonic() + recovery_seconds
+            return child.wait(timeout=15), failure, count
+        finally:
+            if child.poll() is None:
+                signal_group(signal.SIGKILL)
+                child.wait(timeout=15)
+            child.stdout.close()
+
 plan=json.loads(load_bound(plan_path,plan_sha)); release=plan['releaseId']
 assert plan['commit']==commit and plan['tree']==tree and release.startswith(commit[:12]+'-')
 assert plan['publicationAttempt']==attempt and plan['frontendOnly'] is True and plan['retentionDeferred'] is True
@@ -32,7 +80,7 @@ for key,record in plan['publicationHelpers'].items():
  load_bound(record['path'],record['sha256'],2*1024**2)
 unit='proofofwork-recovery-release-'+release+'-ui-'+attempt+'.service'
 fields=dict(line.split('=',1) for line in subprocess.check_output(['/usr/bin/systemctl','show',unit,'-p','ActiveState','-p','MainPID','-p','KillMode','-p','RuntimeMaxUSec','-p','ControlGroup'],timeout=10,text=True).splitlines())
-assert fields['ActiveState']=='active' and fields['MainPID']==str(os.getpid()) and fields['KillMode']=='control-group' and fields['RuntimeMaxUSec']=='30min'
+assert fields['ActiveState']=='active' and fields['MainPID']==str(os.getpid()) and fields['KillMode']=='control-group' and fields['RuntimeMaxUSec']=='1h 10min'
 assert fields['ControlGroup'].endswith('/'+unit) and any(line.endswith(':'+fields['ControlGroup']) for line in pathlib.Path('/proc/self/cgroup').read_text().splitlines())
 lock_path=pathlib.Path('/run/proofofwork-ui/deploy.lock'); ls=lock_path.lstat()
 assert lock_path.resolve()==lock_path and stat.S_ISREG(ls.st_mode) and ls.st_uid==ls.st_gid==0 and ls.st_nlink==1 and not ls.st_mode & 0o7022
@@ -104,27 +152,12 @@ for r in plan['retainedRoots']: args+=['--retain-rollback-root',pathlib.Path(r['
 with (out/'publisher.log').open('xb') as log:
  for record in plan['publicationHelpers'].values(): load_bound(record['path'],record['sha256'],2*1024**2)
  child=subprocess.Popen(args,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,pass_fds=(fd,),start_new_session=True)
- sel=selectors.DefaultSelector();sel.register(child.stdout,selectors.EVENT_READ)
- deadline=time.monotonic()+1200;count=0;failed=None;recovering=False
+ # The final physical retention verification runs inside the child. Give it
+ # the prior 1200s allowance plus two 600s status intervals of headroom.
  try:
-  while sel.get_map():
-   if time.monotonic()>=deadline:
-    if recovering:
-     os.killpg(child.pid,signal.SIGKILL);break
-    failed='publisher timeout';os.killpg(child.pid,signal.SIGTERM);recovering=True;deadline=time.monotonic()+180
-   for key,_ in sel.select(timeout=0.5):
-    block=os.read(key.fileobj.fileno(),65536)
-    if not block: sel.unregister(key.fileobj);continue
-    allowed=max(0,4*1024**2-count);log.write(block[:allowed]);count+=len(block)
-    if count>4*1024**2 and not recovering:
-     failed='publisher log ceiling exceeded';os.killpg(child.pid,signal.SIGTERM);recovering=True;deadline=time.monotonic()+180
-  try: code=child.wait(timeout=max(0.001,deadline-time.monotonic()))
-  except subprocess.TimeoutExpired:
-   failed=failed or 'publisher exit timeout';os.killpg(child.pid,signal.SIGKILL);code=child.wait(timeout=15)
+  code,failed,count=supervise_publisher(child,log,timeout=2400,recovery_seconds=180,log_limit=4*1024**2)
  finally:
-  if child.poll() is None:
-   os.killpg(child.pid,signal.SIGKILL);child.wait(timeout=15)
-  sel.close();child.stdout.close();log.flush();os.fsync(log.fileno())
+  log.flush();os.fsync(log.fileno())
 receipt={'attempt':attempt,'releaseId':release,'commit':commit,'tree':tree,'exitCode':code,'failure':failed,'capturedLogBytes':min(count,4*1024**2),'evidence':str(out),'finishedAt':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'publisherLogSha256':hashlib.sha256((out/'publisher.log').read_bytes()).hexdigest()}
 if 'inputCompactor' in plan:
  receipt.update(privateStageRetention=plan['privateStageRetention'],planSha256=plan_sha)

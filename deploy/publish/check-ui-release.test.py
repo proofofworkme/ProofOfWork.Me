@@ -14,6 +14,7 @@ import io
 import json
 import os
 import shlex
+import signal
 import shutil
 import stat
 from pathlib import Path
@@ -495,16 +496,98 @@ class ReleaseRefusals(unittest.TestCase):
             strings = {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
             self.assertTrue({'BatchMode=yes', 'IdentitiesOnly=yes', 'StrictHostKeyChecking=yes'} <= strings)
 
+
+    def test_publish_deadlines_cover_final_native_status_and_wrapper_verification(self):
+        plan = dict(self.plan(), publicationWrapperSha256=self.release.digest(ROOT/'publish.py'),
+                    wrapperSourceSha256={'publication_admission.py':ADMISSION_SHA})
+        path = self.base/'plan.json'
+        path.write_bytes(raw_json(plan))
+        with patch.dict(self.release.publish.__globals__, remote=unittest.mock.Mock(),
+                        admission_source=fixture_admission_source) as bindings:
+            self.release.publish(types.SimpleNamespace(plan=str(path),log=str(self.base/'supervisor.log')))
+            transport = bindings['remote'].call_args
+        self.assertIn('--property=RuntimeMaxSec=70min', transport.args[0])
+        self.assertIn('--property=TimeoutStopSec=30s', transport.args[0])
+        self.assertIn('--property=KillMode=control-group', transport.args[0])
+        self.assertEqual(transport.kwargs['timeout'], 4500)
+        tree = ast.parse((ROOT/'publish.py').read_bytes())
+        [call] = [node for node in ast.walk(tree) if isinstance(node,ast.Call) and
+                  isinstance(node.func,ast.Name) and node.func.id=='supervise_publisher']
+        probe = unittest.mock.Mock()
+        instruction = ast.Module(body=[ast.copy_location(ast.Expr(call),call)],type_ignores=[])
+        exec(compile(instruction,'<production supervisor arguments>','exec'),
+             {'supervise_publisher':probe,'child':'process','log':'stream'})
+        probe.assert_called_once_with('process','stream',timeout=2400,recovery_seconds=180,log_limit=4*1024**2)
+        self.assertGreater(70*60, 2400 + 180 + 15 + 600 + 2*60)
+        self.assertGreater(transport.kwargs['timeout'], 70*60 + 30)
+        native = (ROOT/'native_exchange_fence.py').read_bytes()
+        self.assertIn("fields.get('RuntimeMaxUSec')=='1h 10min'", native.decode())
+        self.assertIn(f'pin="{hashlib.sha256(native).hexdigest()}"',
+                      (ROOT.parent/'proofofwork-ui-release-publish.sh').read_text())
+
+    def supervise(self, program, timeout, recovery, log_limit=4*1024**2):
+        supervise = functions_only('publish.py', {'supervise_publisher'})['supervise_publisher']
+        process = subprocess.Popen([sys.executable,'-I','-B','-c',program],
+                                   stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
+        self.addCleanup(self.reap_test_publisher,process)
+        self.assertEqual(process.stdout.readline(),b'ready\n')
+        output = io.BytesIO()
+        result = supervise(process,output,timeout,recovery,log_limit)
+        return result, output.getvalue()
+
+    @staticmethod
+    def reap_test_publisher(process):
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=2)
+        if not process.stdout.closed:
+            process.stdout.close()
+
+    def test_publisher_allows_slow_verification_after_output_closes(self):
+        # Model the added physical status time at 1/4000 scale. It completes
+        # beyond the previous 1200s window and within the new 2400s window.
+        program = ('import os,time\nprint("ready",flush=True)\nos.close(1);os.close(2)\n'
+                   'time.sleep(0.40)\n')
+        result,data = self.supervise(program, 2400/4000, 180/4000)
+        self.assertEqual((result,data), ((0,None,0),b''))
+
+    def test_publisher_eof_timeout_honors_term_rollback_grace(self):
+        marker = self.base/'rollback'
+        program = ('import os,signal,time\nfrom pathlib import Path\n'
+                   'def restore(*args):\n    time.sleep(0.04)\n'
+                   f'    Path({str(marker)!r}).write_text("restored")\n    raise SystemExit(23)\n'
+                   'signal.signal(signal.SIGTERM,restore)\nprint("ready",flush=True)\n'
+                   'os.close(1);os.close(2)\nwhile True: signal.pause()')
+        result,data = self.supervise(program,0.1,0.4)
+        self.assertEqual((result,data), ((23,'publisher timeout',0),b''))
+        self.assertEqual(marker.read_text(), 'restored')
+
+    def test_publisher_hard_deadline_kills_an_unresponsive_eof_child(self):
+        program = ('import os,signal\nsignal.signal(signal.SIGTERM,signal.SIG_IGN)\n'
+                   'print("ready",flush=True)\nos.close(1);os.close(2)\nwhile True: signal.pause()')
+        result,data = self.supervise(program,0.1,0.1)
+        self.assertEqual((result,data), ((-signal.SIGKILL,'publisher timeout',0),b''))
+
+    def test_publisher_preserves_exact_log_ceiling_and_grace(self):
+        limit = 4*1024**2
+        program = ('import signal,sys\n'
+                   'signal.signal(signal.SIGTERM,lambda *args: sys.exit(17))\n'
+                   'print("ready",flush=True)\nsys.stdout.buffer.write(b"x"*(4*1024**2+1))\n'
+                   'sys.stdout.buffer.flush()\nwhile True: signal.pause()')
+        result,data = self.supervise(program,3,0.4)
+        self.assertEqual(result,(17,'publisher log ceiling exceeded',limit+1))
+        self.assertEqual(data,b'x'*limit)
+
     def test_publisher_refuses_wrong_process_cgroup_or_deadline(self):
         code = statement_range('publish.py', 'unit', 'lock_path')
         unit = 'proofofwork-recovery-release-' + RELEASE + '-ui-initial.service'
         good = {'ActiveState': 'active', 'MainPID': str(os.getpid()),
-                'KillMode': 'control-group', 'RuntimeMaxUSec': '30min',
+                'KillMode': 'control-group', 'RuntimeMaxUSec': '1h 10min',
                 'ControlGroup': '/system.slice/' + unit}
         namespace = functions_only('publish.py', set())
         namespace.update(release=RELEASE, attempt='initial')
         for key, value in [(None, None), ('ActiveState', 'inactive'), ('MainPID', '0'),
-                           ('KillMode', 'process'), ('RuntimeMaxUSec', '60min'),
+                           ('KillMode', 'process'), ('RuntimeMaxUSec', '30min'), ('RuntimeMaxUSec', '70min'), ('RuntimeMaxUSec', '2h'),
                            ('ControlGroup', '/system.slice/unrelated.service')]:
             with self.subTest(key=key):
                 fields = good if key is None else {**good, key: value}

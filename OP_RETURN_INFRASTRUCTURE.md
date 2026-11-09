@@ -142,6 +142,16 @@ pools retained 1,084,685,342 and 176,345,088 bytes of headroom. These are
 observations of that build and filesystem, not reservations. A future release
 needs a fresh build receipt, capacity measurement and completed retention proof.
 
+For the publisher-only successor to the November 3 helper installation, the
+scoped installer checks the original prepare, qualification, installed and
+status receipts before exchanging the publisher under the deployment lock.
+It keeps the stager at its original inode and records the publisher transition
+in a separate journal. The candidate must match the reviewed fence and
+preserve the four original fallback objects. The native publisher has a
+40-minute execution deadline, followed by up to three minutes for rollback.
+Its systemd unit has a 70-minute limit covering the outer checks and its SSH
+caller waits up to 75 minutes.
+
 The November 3 fallback for `c3969c39c2b2-20261101T051206Z` remains in its
 original rollback root `proofofwork-www-pre-54088ca155bc-20261103T032112Z`.
 Its managed archive, checksum and provenance sidecar stay at their original
@@ -8272,8 +8282,13 @@ the directory entries again. This detects same-size writes even when the old
 modification time is restored. Historical receipts keep their original format.
 For the November 3 transition, the installer's `plan-upgrade-complete
 --reconcile-boot-logs` path binds the exact prior state, completion receipts,
-boot ID and the two changed inodes. Original evidence remains in place. Using
-the public status path after a switch still requires a sealed verification
+boot ID and the two changed inodes. Original evidence remains in place.
+For this boot alone, systemd subsequently cleared the pre-command exit details.
+The verifier recognizes the exact cleared tuple by checking the original SSH
+observation of successful savelog execution, all four inode and timestamp
+records, the unchanged D-Bus interval and the two original PID 1 journal
+records for the same invocation. A missing record, new invocation or changed
+file stops verification. Using the public status path after a switch still requires a sealed verification
 receipt. Preparation and testing of this verifier do not install it.
 
 Deduplicated ordinary roots may share inodes with the protected pair. Their

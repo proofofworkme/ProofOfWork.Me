@@ -18,6 +18,159 @@ def load(name,filename):
     loader=importlib.machinery.SourceFileLoader(name,str(Path(__file__).with_name(filename)));spec=importlib.util.spec_from_loader(name,loader);m=importlib.util.module_from_spec(spec);loader.exec_module(m);return m
 S=load('audit30_storage_test','ui-storage.py');P=load('audit30_policy_test','ui-release-policy.py')
 
+class HistoricalBootObservationTests(unittest.TestCase):
+    def setUp(self):
+        boot = '11111111-2222-4333-8444-555555555555'
+        invocation = '2'*32
+        command = '{ path=/usr/bin/savelog ; argv[]=/usr/bin/savelog -m640 -q -p -n -c 5 /var/log/dmesg ; ignore_errors=yes ; '
+        discarded = command + 'start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }'
+        start, end = 1800000000000000, 1800000003500000
+        start_time, main_time, end_time = ('Fri 2027-01-15 08:00:00 UTC', 'Fri 2027-01-15 08:00:02 UTC',
+                                           'Fri 2027-01-15 08:00:03 UTC')
+        recorded = command + f'start_time=[{start_time}] ; stop_time=[{main_time}] ; pid=800 ; code=exited ; status=0 }}'
+        settings = ('Result=success\nExecMainStartTimestampMonotonic=15419109\nExecMainStatus=0\n'
+                    f'ExecStartPre={discarded}\nLoadState=loaded\nFragmentPath=/usr/lib/systemd/system/dmesg.service\n'
+                    'DropInPaths=\nNeedDaemonReload=no\nInvocationID='+invocation+'\n')
+        observation = (f'ExecMainStartTimestamp={main_time}\nExecMainExitTimestamp={end_time}\nExecStartPre={discarded}\n'
+                       f'StateChangeTimestamp={end_time}\nInactiveExitTimestamp={start_time}\nActiveEnterTimestamp={start_time}\n')
+        held = ''.join(f'/var/log/{name} {700+i} 2027-01-15 08:00:02.010000000 +0000 2027-01-15 08:00:02.000000000 +0000\n'
+                       for i,name in enumerate(('dmesg','dmesg.0','dmesg.1.gz','dmesg.2.gz')))
+        journal = []
+        for i,(message, message_id) in enumerate((
+                ('Started dmesg.service - Save initial kernel messages after boot.', '39f53479d3a045ac8e11786248231fbf'),
+                ('dmesg.service: Deactivated successfully.', '7ad2d189f7e94e70a38c781354912448'))):
+            journal.append({'MESSAGE':message, 'MESSAGE_ID':message_id, '_PID':'1', '_UID':'0', '_COMM':'systemd',
+                            '_EXE':'/usr/lib/systemd/systemd','UNIT':'dmesg.service','INVOCATION_ID':invocation,
+                            '_SYSTEMD_UNIT':'init.scope', '_BOOT_ID':boot.replace('-',''), '__CURSOR':'cursor'+str(i),
+                            '_MONOTONIC_TIMESTAMP':str(12000000+3500000*i), '__MONOTONIC_TIMESTAMP':str(12000000+3500000*i),
+                            '_SOURCE_REALTIME_TIMESTAMP':str(start+3500000*i-1),'__REALTIME_TIMESTAMP':str(start+3500000*i+5)})
+        times = f't {start}\nt {end}\n'
+        self.evidence = dict(settings=settings, observation=observation, held=held, times=times,
+                             boot=boot+'\n', journal=''.join(json.dumps(row)+'\n' for row in journal))
+        captured = observation.replace(discarded,recorded) + held + boot+'\n'
+        canonical = json.dumps(journal,sort_keys=True,separators=(',',':')).encode()+b'\n'
+        pins = dict(boot=boot, startedUs=start, endedUs=end, mainStartMonotonic='15419109',
+                    captureSha256=hashlib.sha256(captured.encode()).hexdigest(),
+                    journalSha256=hashlib.sha256(canonical).hexdigest(),recordedPre=recorded)
+        patcher = patch.object(S,'HISTORICAL_BOOT_LOG',pins)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def observe(self, *, prefix=None, **changes):
+        evidence = dict(self.evidence, **changes)
+        observed = []
+
+        def query(args, **kwargs):
+            executable = Path(args[0]).name
+            if executable == 'systemctl':
+                key = 'settings' if '--property=LoadState' in args else 'observation'
+            else:
+                key = {'busctl': 'times', 'stat': 'held', 'journalctl': 'journal'}[executable]
+            observed.append(key)
+            data = evidence[key]
+            return data if kwargs.get('text') or kwargs.get('encoding') else data.encode()
+
+        def read_boot(path, *args, **kwargs):
+            self.assertEqual(path, Path('/proc/sys/kernel/random/boot_id'))
+            return evidence['boot']
+
+        with patch.object(Path, 'read_text', read_boot), patch.object(S.subprocess, 'check_output', side_effect=query):
+            result = S.verify_boot_log_unit() if prefix is None else S.verify_boot_log_unit(prefix)
+        return result, observed
+
+    def change(self, field, before, after):
+        data = self.evidence[field]
+        self.assertIn(before, data, f'Fixture does not exercise {field}')
+        return {field: data.replace(before, after, 1)}
+
+    def reject(self, **changes):
+        with self.assertRaises(ValueError):
+            self.observe(**changes)
+
+    def test_erased_success_requires_agreement_between_archived_and_live_observations(self):
+        interval = [int(line.split()[1])*1000 for line in self.evidence['times'].splitlines()]
+        interval[-1] += 999
+        result, calls = self.observe(prefix=Path('/'))
+        self.assertEqual(result, tuple(interval))
+        self.assertCountEqual(calls, ['settings','times','observation','held','journal'])
+
+    def test_discarded_status_requires_original_host_and_erased_tuple(self):
+        self.reject(prefix=Path('/tmp/foreign-root'))
+        self.reject(boot='ffffffff-ffff-4fff-8fff-ffffffffffff\n')
+        for original, altered in [('code=(null)', 'code=exited'), ('pid=0', 'pid=8'),
+                                  ('-c 5', '-c 4'), ('status=0/0', 'status=1/0'),
+                                  ('DropInPaths=', 'DropInPaths=/etc/systemd/system/override.conf'),
+                                  ('NeedDaemonReload=no', 'NeedDaemonReload=yes'),
+                                  ('Result=success', 'Result=exit-code'), ('ExecMainStartTimestampMonotonic=15419109','ExecMainStartTimestampMonotonic=15419110')]:
+            with self.subTest(altered=altered):
+                self.reject(**self.change('settings',original,altered))
+
+    def test_second_systemctl_observation_and_dbus_interval_reject_drift(self):
+        fields={}
+        for name,value in [line.split('=',1) for line in self.evidence['observation'].splitlines()]:
+            if name == 'ExecStartPre':
+                fields[name] = value.replace('pid=0', 'pid=8')
+            elif name.startswith('Exec'):
+                fields[name] = '1'
+        for name,new in fields.items():
+            with self.subTest(name=name):
+                old = next(line for line in self.evidence['observation'].splitlines() if line.startswith(name+'='))
+                self.reject(**self.change('observation',old,name+'='+new))
+        for ix in [0,1]:
+            times = self.evidence['times'].splitlines()
+            val = int(times[ix].split()[1])
+            times[ix] = 't '+str(val+1)
+            with self.subTest(timestamp=ix):
+                self.reject(times='\n'.join(times)+'\n')
+
+    def test_held_file_observation_missing_reordered_or_changed_refuses(self):
+        lines = self.evidence['held'].splitlines()
+        self.assertEqual(len(lines),4)
+        for i in range(4):
+            with self.subTest(held=i):
+                self.reject(held='\n'.join(lines[:i]+lines[i+1:])+'\n')
+                self.reject(held='\n'.join(lines[:i]+[lines[i]+' altered']+lines[i+1:])+'\n')
+        self.reject(held='\n'.join(reversed(lines))+'\n')
+
+    def test_capture_and_journal_hashes_are_independent(self):
+        for field in ('captureSha256','journalSha256'):
+            with self.subTest(pin=field), patch.dict(S.HISTORICAL_BOOT_LOG,{field:'0'*64}):
+                self.reject()
+
+    def test_held_inodes_ctimes_and_restored_mtimes_are_exact(self):
+        for i,row in enumerate(self.evidence['held'].splitlines()):
+            path,inode,rest = row.split(' ',2)
+            with self.subTest(held=path,drift='inode'):
+                self.reject(**self.change('held',row,path+' '+str(int(inode)+1)+' '+rest))
+            dates=rest.split(' +0000 ')
+            self.assertEqual(len(dates),2)
+            for label,pos in [('ctime',0),('mtime',1)]:
+                with self.subTest(held=path,drift=label):
+                    edited=list(dates)
+                    edited[pos]=edited[pos].replace('.', '.0', 1)
+                    self.reject(**self.change('held',row,path+' '+inode+' '+' +0000 '.join(edited)))
+
+    def test_second_command_cannot_bypass_current_invocation_identity(self):
+        inv = next(line for line in self.evidence['settings'].splitlines() if line.startswith('InvocationID='))
+        self.reject(**self.change('settings',inv,'InvocationID='+'f'*32))
+
+    def test_journal_requires_all_original_events_and_trusted_sender(self):
+        rows = [json.loads(line) for line in self.evidence['journal'].splitlines()]
+        self.assertEqual(len(rows),2)
+        def dump(items):
+            return ''.join(json.dumps(item,sort_keys=True,separators=(',',':'))+'\n' for item in items)
+        for label,changed in [('absent',[]),('missing',rows[1:]),('duplicate',rows+[rows[-1]]),
+                              ('reordered',list(reversed(rows)))]:
+            with self.subTest(log=label):
+                self.reject(journal=dump(changed))
+        for i,row in enumerate(rows):
+            for field in [field for field in ['_PID','_UID','_COMM','_EXE','_BOOT_ID','UNIT',
+                                              'INVOCATION_ID','__CURSOR','__REALTIME_TIMESTAMP',
+                                              '__MONOTONIC_TIMESTAMP','MESSAGE_ID','MESSAGE'] if field in row]:
+                with self.subTest(row=i,field=field):
+                    changed=list(rows);changed[i]=dict(row,**{field:row[field]+'X'})
+                    self.reject(journal=dump(changed))
+
 class SnapshotGuardTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.base=Path(self.tmp.name);self.root=self.base/'root';self.root.mkdir(mode=0o700)
@@ -538,6 +691,54 @@ finally:t.tearDown()
         value=dict(schema=P.INDEX_V2,scopeApprovalSha256=S.REPAIR_APPROVAL_SHA,migration=migration_binding,admissions=[anchor_binding],completedRetirements=[])
         index=self.policy_record('audit30-policy-admission-index-v2-',value)
         return prior,review,migration,value,index
+
+
+    previous_boot_log_storage_sha = 'c59a81df819be42a5b2c5cafcbb9dc578f739f69de22599c56780cfe2fe5cede'
+
+    def test_migration_index_replays_previous_and_current_storage_only(self):
+        _, review, migration, value, _ = self.migration_fixture(legacy=False)
+        current = hashlib.sha256(Path(S.__file__).read_bytes()).hexdigest()
+        self.assertEqual(review['controllerSha256'], current)
+
+        def replay(writer):
+            review_row = self.policy_record('audit30-policy-migration-review-', dict(review, controllerSha256=writer))
+            migration_row = self.policy_record('audit30-policy-migration-', dict(migration, review=review_row))
+            index = self.policy_record('audit30-policy-admission-index-v2-', dict(value, migration=migration_row))
+            return P.load_index(index['path'], index['sha256'], self.l, S.REPAIR_APPROVAL_SHA)
+
+        for writer in (self.previous_boot_log_storage_sha, current):
+            with self.subTest(writer=writer):
+                result = replay(writer)
+                self.assertEqual(result['migrationReview']['controllerSha256'], writer)
+                self.assertEqual(result['retired'], set())
+        with self.assertRaisesRegex(ValueError, 'Migration lost reviewed authority'):
+            replay('0' * 64)
+
+    def test_zero_removal_receipt_replays_previous_and_current_storage_only(self):
+        with patch.object(P, 'S', S):
+            admission = P.admission(self.l, self.auth, True)
+            index = self.policy_index([admission])
+            plan = S.create_plan(self.l, 'future-retention', self.auth, P.policy_scope(index, self.l, self.auth))
+            current = hashlib.sha256(Path(S.__file__).read_bytes()).hexdigest()
+            self.assertEqual(plan['controllerSha256'], current)
+            self.assertEqual((plan['delete'], plan['moves'], plan['policyScope']['eligible']), ([], [], []))
+            out = S.execute(plan, S.digest(plan), self.l, True)
+            done = json.loads(Path(out['receiptPath']).read_bytes())
+            intent = json.loads(Path(done['intentPath']).read_bytes())
+
+            def replay(writer):
+                historical = dict(plan, controllerSha256=writer)
+                digest = S.digest(historical)
+                bound_intent = dict(intent, plan=historical, planSha256=digest)
+                bound_done = dict(done, planSha256=digest, guardBaselinePlanSha256=digest)
+                index = self.forged_future_completion([admission], bound_done, bound_intent)
+                return P.load_index(index['path'], index['sha256'], self.l, self.auth)
+
+            for writer in (self.previous_boot_log_storage_sha, current):
+                with self.subTest(writer=writer):
+                    self.assertEqual(replay(writer)['retired'], set())
+            with self.assertRaisesRegex(ValueError, 'Future retirement embedded plan digest/version/baseline differs'):
+                replay('0' * 64)
 
     def test_complete_format_aware_roots_archives_and_undeclared_surfaces(self):
         families=[('proofofwork-ui-release-v3',v) for v in sorted(S.V3_SURFACE_FAMILIES,key=len)]+[('proofofwork-ui-release-v4',S.V4_SURFACES),('proofofwork-ui-release-v5',S.V5_SURFACES)]
