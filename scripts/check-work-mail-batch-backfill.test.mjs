@@ -140,6 +140,10 @@ test("pending Boost and file companions commit the JSON fields persisted by the 
     eventKind: item => item.kind, itemStatus: item => item.status,
     normalizedEventItem: item => item, workProjectionItem: item => item,
   });
+  const valid = extract("persistedEventValid", "async function upsertEvent");
+  assert.equal(valid({}, "file"), true);
+  assert.equal(valid({ valid: false }, "file"), false);
+  assert.equal(valid({}, "token-event-invalid"), false);
   for (const kind of ["boost-post", "file"]) {
     const item = { kind, status: "pending", blockIndex: undefined, senderAddress: "sender",
       ...(kind === "boost-post" ? { quoteTxid: undefined, parentTxid: undefined, targetTxid: undefined } : {}),

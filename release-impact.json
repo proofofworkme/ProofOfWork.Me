@@ -22,7 +22,7 @@
         "notifications"
       ],
       "disposition": "affected",
-      "reason": "The pending writer verifies Boost and Mail companion payloads against their persisted JSON form before atomically publishing the WORK witness. A failed comparison rolls back the entire attempt.",
+      "reason": "The pending writer verifies Boost and Mail companion payloads against their persisted JSON form before atomically publishing the WORK witness. The expected attachment validity uses the same predicate as the event insert. A failed comparison rolls back the entire attempt.",
       "evidence": [
         "scripts/check-work-mail-batch-backfill.test.mjs",
         "scripts/check-pending-log-publication.test.mjs"

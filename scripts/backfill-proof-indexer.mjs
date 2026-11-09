@@ -14569,6 +14569,10 @@ async function scopedIncbRepairTransaction(client, item, txid, sourceLabel) {
     blockTime: row.block_time, confirmed: true };
 }
 
+function persistedEventValid(item, kind) {
+  return item?.valid !== false && !String(kind).includes("invalid");
+}
+
 async function upsertEvent(client, sourceLabel, item, { preserveCanonicalTransaction = false } = {}) {
   item = canonicalProtocolItemForPostgres(item);
   const txid = itemTxid(item);
@@ -14930,7 +14934,7 @@ async function upsertEvent(client, sourceLabel, item, { preserveCanonicalTransac
       protocol,
       kind,
       status,
-      indexedInput?.valid !== false && !String(kind).includes("invalid"),
+      persistedEventValid(indexedInput, kind),
       indexedInput?.reason ? [String(indexedInput.reason)] : [],
       amountSats(indexedInput),
       dataBytes(indexedInput),
@@ -28560,7 +28564,7 @@ function workQ16PendingExpectedPersistedEventOutcomes(decisions) {
           workQ16PendingPersistenceSemanticPayload(item),
         ).sha256,
         txid: normalizedLowerText(decision?.txid),
-        valid: item?.valid === true,
+        valid: persistedEventValid(item, item.kind),
       })),
     )
     .sort(
