@@ -8,6 +8,7 @@ for (const suite of [
   "scripts/check-ui-compatibility-boundaries.py",
   "deploy/publish/check-input-compaction.test.py",
   "deploy/publish/check-closed-input.test.py",
+  "deploy/publish/check-ui-release.test.py",
   "deploy/publish/check-private-staging.test.py",
   "deploy/publish/check-preservation-admission.test.py",
   "deploy/publish/check-native-exchange-fence.test.py",

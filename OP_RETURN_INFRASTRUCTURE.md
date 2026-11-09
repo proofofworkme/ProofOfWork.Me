@@ -145,7 +145,11 @@ needs a fresh build receipt, capacity measurement and completed retention proof.
 The November 3 fallback for `c3969c39c2b2-20261101T051206Z` remains in its
 original rollback root `proofofwork-www-pre-54088ca155bc-20261103T032112Z`.
 Its managed archive, checksum and provenance sidecar stay at their original
-paths. Two immutable admissions bind this four-object hold. The lifecycle
+paths. Two immutable admissions bind this four-object hold. When checking a boot-log
+rotation on an older installed release, the verifier uses the candidate storage
+module and its matching admission policy against the original config, state
+and completion receipt. It must verify the four objects while the introducing
+release is still current. The lifecycle
 verifies the full rollback tree, archive inventory, checksum and sidecar
 against those admissions, including file bytes, inode identities, ownership,
 permissions and extended attributes. Preflight and the locked pre-exchange

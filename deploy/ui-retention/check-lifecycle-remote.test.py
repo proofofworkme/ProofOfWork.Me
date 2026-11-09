@@ -532,9 +532,20 @@ class RemoteTests(unittest.TestCase):
         original = F.S.safeguards
         def legacy(layout, model=None):
             return original(layout, F.S.LEGACY_ROTATING_LOG_GUARD_MODEL if model==F.S.ROTATING_LOG_GUARD_MODEL else model)
+        previous = 'aaaaaaaa0003-20261101T010000Z'
+        introduced = 'aaaaaaaa0004-20261103T010000Z'
         with patch.object(F.S, 'safeguards', side_effect=legacy):
             self.vps_complete()
+            self.publish_vps_fixture(previous)
+            self.publish_vps_fixture(introduced)
         state, state_sha = self.runtime.state()
+        lineage, _ = R.read_json(state['index']['path'], state['index']['sha256'])
+        pins = dict(archive=lineage['admissions'][-2]['sha256'], root=lineage['admissions'][-1]['sha256'])
+        fixture_pins = contextlib.ExitStack()
+        self.addCleanup(fixture_pins.close)
+        fixture_pins.enter_context(patch.object(F.S, 'PRESERVED_FALLBACK_PREDECESSOR', previous))
+        fixture_pins.enter_context(patch.object(F.S, 'PRESERVED_FALLBACK_INTRODUCER', introduced))
+        fixture_pins.enter_context(patch.object(F.P, 'FALLBACK_ADMISSION_SHA256', pins))
         original_state = self.runtime.state_path.read_bytes()
         before = state['completedContext']
         self.assertEqual(before['guards']['heldIdentityModel'], F.S.LEGACY_ROTATING_LOG_GUARD_MODEL)
@@ -560,6 +571,14 @@ class RemoteTests(unittest.TestCase):
             candidate=self.verify_candidate_package(review)
             self.assertEqual(candidate['context'],before)
             self.assertEqual(candidate['bootLogRotation'],status['verifiedBootLogRotation'])
+            hold = status['verifiedPreservedFallback']
+            paths = F.S.preserved_fallback_paths(self.layout)
+            self.assertEqual(hold['snapshotSha256'], {p: F.S.snapshot(Path(p))['sha256'] for p in paths})
+            self.assertEqual(review['preservedFallback'], hold)
+            self.assertEqual(candidate['preservedFallback'], hold)
+            incomplete = dict(hold, snapshotSha256={p: hold['snapshotSha256'][p] for p in paths[:-1]})
+            with self.assertRaisesRegex(ValueError, 'fallback witness changed'):
+                self.verify_candidate_package(dict(review, preservedFallback=incomplete))
             self.assertTrue(candidate['vpsVerification']['retainedVpsPairVerified'])
             terminal.write_bytes(terminal_bytes+b' ')
             with self.assertRaisesRegex(ValueError,'SHA differs'): self.runtime.dispatch('status',{'requireComplete':True})
@@ -996,6 +1015,25 @@ class PackagingTests(unittest.TestCase):
             return (I.ROOT / argv[-1].split(':', 1)[1]).read_bytes()
         with patch.object(I.subprocess, 'check_output', side_effect=git):
             return I.committed_payload()
+
+    def test_boot_rotation_binds_candidate_policy_and_storage_under_installed_authority(self):
+        payload = self.fixture_payload()
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory)
+            manifest = I.encoded(payload['manifest'])
+            (package / 'package.json').write_bytes(manifest)
+            pin = R.BOOT_ROTATION_COMPLETION
+            config = {'statePath': str(package / 'state.json'), 'retentionPolicy': R.VPS_POLICY,
+                      'package': {'path': str(package), 'sha256': I.sha(manifest)}}
+            installed = types.SimpleNamespace(config=config, config_sha=pin['config'], layout=object(),
+                                              state=lambda: (None, pin['state']), C=object(), P=object())
+            checked = I.boot_rotation_verifier(payload, installed)
+            self.assertIs(checked.config, installed.config)
+            self.assertEqual(checked.config_sha, installed.config_sha)
+            self.assertIs(checked.C, installed.C)
+            self.assertIs(checked.layout, installed.layout)
+            self.assertIsNot(checked.P, installed.P)
+            self.assertIs(checked.P.S, checked.S)
 
     def installer_fixture(self, base):
         for relative in ('usr/local/sbin', 'etc/proofofwork-retention', 'etc/systemd/system',

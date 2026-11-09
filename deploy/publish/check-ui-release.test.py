@@ -231,6 +231,35 @@ class ReleaseRefusals(unittest.TestCase):
                         self.release.preflight(types.SimpleNamespace(output=str(output)))
                 self.assertFalse(output.exists())
 
+    def test_control_deadlines_include_locked_admission_and_following_checks(self):
+        request = self.base / 'closed.json'
+        packed = b'closed-inventory'
+        request.write_bytes(raw_json({'releaseId': RELEASE, 'commit': COMMIT,
+            'inventorySha256': hashlib.sha256(packed).hexdigest(), 'inputCompactorSha256': 'c' * 64}))
+        Path(str(request) + '.zlib').write_bytes(packed)
+        binding = {'pair': {'current': '0' * 12 + '-20261001T010000Z',
+                            'previous': '1' * 12 + '-20260930T010000Z'}}
+        status = {'binding': binding, 'verifiedPreservedFallback': {'model': 'verified-fallback-in-place-v1'},
+                  'privateStageRetention': {'wouldRetire': []}}
+        plan = {**self.plan(), 'retentionLifecycle': binding,
+                'wrapperSourceSha256': {'publication_admission.py': ADMISSION_SHA}}
+        path = self.base / 'plan.json'
+        path.write_bytes(raw_json(plan))
+        remote = unittest.mock.Mock(side_effect=[
+            None, subprocess.TimeoutExpired('preflight', 1500), None])
+        def git_blob(command):
+            return (ROOT / Path(command[-1]).name).read_bytes()
+        with patch.dict(self.release.preflight.__globals__, remote=remote,
+                        admission_source=lambda *args: (ROOT / 'publication_admission.py').read_bytes(),
+                        lifecycle_module=lambda: types.SimpleNamespace(status=lambda **kwargs: status)), \
+             patch.object(subprocess, 'check_output', side_effect=git_blob):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.release.preflight(types.SimpleNamespace(closed_request=str(request), output=str(self.base / 'result')))
+            self.release.upload_plan(types.SimpleNamespace(plan=str(path)))
+        self.assertEqual([call.kwargs['timeout'] for call in remote.call_args_list], [900, 1500, 900])
+        self.assertEqual([remote.call_args_list[i].kwargs['data'] for i in (0, 2)], [packed, path.read_bytes()])
+        self.assertFalse((self.base / 'result').exists())
+
     def build_inputs(self, pages=False):
         source = self.base / 'source.tgz'
         surfaces = self.base / 'surfaces.tgz'

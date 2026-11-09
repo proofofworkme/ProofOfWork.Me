@@ -38,12 +38,13 @@
         "compatibility"
       ],
       "disposition": "affected",
-      "reason": "All 22 static roots share release staging, archive and rollback verification. The publisher checks the retained fallback at its original paths before and after exchange and stops on any unqualified retirement.",
+      "reason": "All 22 static roots share release staging, archive and rollback verification. The publisher checks the retained fallback at its original paths before and after exchange and stops on any unqualified retirement. Boot-log reconciliation verifies the four original fallback objects with the candidate policy and storage modules before the installed lifecycle configuration can change.",
       "evidence": [
         "deploy/publish/check-private-staging.test.py",
         "scripts/check-ui-compatibility-boundaries.py",
         "deploy/ui-retention/check-lifecycle-remote.test.py",
-        "scripts/check-release-sync.mjs"
+        "scripts/check-release-sync.mjs",
+        "deploy/ui-retention/install_lifecycle.py"
       ]
     },
     {

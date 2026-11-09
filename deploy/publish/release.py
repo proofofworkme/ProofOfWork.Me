@@ -25,6 +25,12 @@ from pathlib import PurePosixPath
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[1]
 UI_HOST = False
+# Both compact uploads run a full locked lifecycle status (600s) and two
+# capacity checks (60s each) before writing at most 64 KiB.
+CONTROL_UPLOAD_TIMEOUT_SECONDS = 900
+# The locked preflight also walks the prior graph, fingerprints retained roots,
+# and runs provenance and capacity checks (180s each).
+PREFLIGHT_TIMEOUT_SECONDS = 1500
 SSH = ['ssh', '-i', '/home/sixer/.ssh/proofofwork_me_ed25519',
        '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes',
        '-o', 'ConnectTimeout=10', 'root@77.42.91.106']
@@ -455,12 +461,13 @@ def preflight(args):
         if not 0 < len(packed) <= 65536 or hashlib.sha256(packed).hexdigest() != request['inventorySha256']:
             raise ValueError('Closed input request does not match inventory')
         target = '/var/tmp/proofofwork-deploy/recovery-control-' + request['releaseId'] + '-inventory-' + request['inventorySha256'] + '.zlib'
-        remote(['/usr/bin/python3', '-I', '-B', '-c', guard.decode() + UPLOAD, request['inventorySha256'], target, json.dumps(gate)], data=packed, timeout=180)
+        remote(['/usr/bin/python3', '-I', '-B', '-c', guard.decode() + UPLOAD, request['inventorySha256'], target, json.dumps(gate)], data=packed,
+               timeout=CONTROL_UPLOAD_TIMEOUT_SECONDS)
         phase = (ROOT / 'phase_capacity.py').read_bytes()
         script = ('import base64\nPHASE_SOURCE=base64.b64decode(' + repr(base64.b64encode(phase).decode()) +
                   ')\nCLOSED_REQUEST=' + repr(request) + '\n').encode() + script
     result = remote(['/usr/bin/python3', '-I', '-B', '-'], data=script,
-                    stdout=subprocess.PIPE, timeout=600)
+                    stdout=subprocess.PIPE, timeout=PREFLIGHT_TIMEOUT_SECONDS)
     p = json.loads(result.stdout)
     assert all(item['exitCode'] == 0 for item in p['checks'])
     assert p['retentionDeferred'] is True
@@ -685,7 +692,7 @@ def upload_plan(args):
     guard = admission_source(p['wrapperSourceSha256']['publication_admission.py'])
     gate = admission_tools(guard)['plan_gate'](p)
     remote(['/usr/bin/python3', '-I', '-B', '-c', guard.decode()+UPLOAD, sha, remote_plan(p),
-            json.dumps(gate)], data=raw, timeout=180)
+            json.dumps(gate)], data=raw, timeout=CONTROL_UPLOAD_TIMEOUT_SECONDS)
 
 def transport(args):
     # This former Python entry point predates the preserving UI receiver and

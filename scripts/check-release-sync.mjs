@@ -60,7 +60,10 @@ const rendererFiles = ['server/publish-render/reader.mjs', 'server/publish-rende
 assert.deepEqual(Object.keys(renderer.files ?? {}).sort(), [...rendererFiles].sort(), 'Unexpected renderer source inventory');
 for (const file of rendererFiles) assert.equal(renderer.files[file], createHash('sha256').update(readFileSync(resolve(primary, file))).digest('hex'), `Installed Publish renderer source differs: ${file}`);
 results.push(rendererUrl);
-execFileSync(process.execPath, [resolve(primary, impact.liveCheck)], {cwd:primary,stdio:'inherit',timeout:600_000});
+// The publisher check allows 1,800s for retention, 45s for helper hashes,
+// and 240s each for the exact-tip and pending-discovery probes.
+const liveCheckTimeout = impact.liveCheck === 'scripts/check-publisher-repair-live.mjs' ? 2_400_000 : 600_000;
+execFileSync(process.execPath, [resolve(primary, impact.liveCheck)], {cwd:primary,stdio:'inherit',timeout:liveCheckTimeout});
 results.push(impact.liveCheck);
 // Fence concurrent GitHub advancement during verification.
 assert.equal(git('ls-remote', 'origin', 'refs/heads/main').split(/\s+/u)[0], commit, 'GitHub main advanced during verification; reintegrate and redeploy before completion');

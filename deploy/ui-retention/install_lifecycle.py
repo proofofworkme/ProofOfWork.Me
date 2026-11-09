@@ -492,6 +492,8 @@ def completed_review(runtime, request):
             'completionReceipt': {'path': str(receipt_path), 'sha256': sha(receipt_raw)},
             'lastCompleted': state['lastCompleted'], 'fullCompletionVerified': True,
             **({'bootLogRotation': status['verifiedBootLogRotation']} if 'verifiedBootLogRotation' in status else {}),
+            **({'preservedFallback': status['verifiedPreservedFallback']} if 'verifiedBootLogRotation' in status
+               and status.get('verifiedPreservedFallback') is not None else {}),
             **({'accessTimeReconciliation': status['verifiedAccessTimeReconciliation']}
                if getattr(runtime, 'completion_access_time_reconciliation', None) is not None else {}),
             **({'historicalBulkPreservation': status['verifiedHistoricalBulkPreservation']}
@@ -522,11 +524,13 @@ def boot_rotation_verifier(payload, old_runtime):
         require(name in changed or payload['files'][name]['sha256'] == file['sha256'],
                 'Boot-log verifier cannot replace other retention dependencies')
     storage = verifier_module(payload, 'boot_rotation_storage', 'deploy/audit30/ui-storage.py')
+    policy = verifier_module(payload, 'boot_rotation_policy', 'deploy/audit30/ui-release-policy.py',
+                             {'_BOUND_STORAGE': storage})
     controller = verifier_module(payload, 'boot_rotation_controller', 'deploy/ui-retention/lifecycle_remote.py')
     pin = controller.BOOT_ROTATION_COMPLETION
     require(old_runtime.config_sha == pin['config'] and old_runtime.state()[1] == pin['state'],
             'Boot-log verifier only admits the reviewed complete state')
-    return controller.Runtime(old_runtime.config, old_runtime.config_sha, storage, old_runtime.P,
+    return controller.Runtime(old_runtime.config, old_runtime.config_sha, storage, policy,
                               old_runtime.C, layout=old_runtime.layout)
 
 
@@ -640,18 +644,25 @@ def completed_package_review(payload, package, old_runtime, review):
                              layout=old_runtime.layout)
     _, context = runtime.current()
     state = review['state']; index = state['index']
+    scope = policy.policy_scope(index, runtime.layout, APPROVAL)
+    require(not scope['eligible'], 'New package finds eligible ordinary assets')
+    boot_proofs = {}
     if 'bootLogRotation' in review:
         original = module.Runtime(old_runtime.config, old_runtime.config_sha, storage, policy, custody, layout=old_runtime.layout)
         require(original.completed_boot_rotation(state, review['stateSha256'], context) == review['bootLogRotation'],
                 'Reviewed boot-log transition changed before package activation')
+        require(scope.get('preservedFallback') == review.get('preservedFallback'),
+                'Reviewed fallback witness changed before package activation')
+        boot_proofs['bootLogRotation'] = review['bootLogRotation']
+        if scope.get('preservedFallback') is not None:
+            boot_proofs['preservedFallback'] = scope['preservedFallback']
     else:
         require(context == review['context'], 'New package changes completed protected context')
-    require(not policy.policy_scope(index, runtime.layout, APPROVAL)['eligible'], 'New package finds eligible ordinary assets')
     if state['lastCompleted'].get('retentionPolicy') == VPS_POLICY:
         verification = runtime.verify_vps_completion(state, context)
         storage.compare_guards(runtime.layout, context['guards'], [])
         return {'context': review['context'], 'index': index, 'lastCompleted': state['lastCompleted'],
-                **({'bootLogRotation': review['bootLogRotation']} if 'bootLogRotation' in review else {}),
+                **boot_proofs,
                 'vpsVerification': verification, 'fullCompletionVerified': True}
     plan_binding = state['lastCompleted']['custodyPlan']; result_binding = state['lastCompleted']['custodyResult']
     plan = json.loads(read_bound(plan_binding['path'], plan_binding['sha256']))
