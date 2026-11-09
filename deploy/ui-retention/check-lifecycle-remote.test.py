@@ -515,9 +515,9 @@ class RemoteTests(unittest.TestCase):
         (dest/'receipt.json').write_bytes(missing)
         with self.assertRaisesRegex(ValueError,'does not bind zero'):
             self.runtime.private_stage_rule({'path':pub['path'],'sha256':R.sha(missing)})
-        for key,data in [('delete',[{'path':'one'}]),('moves',[{'from':'a','to':'b'}]),('policyScope',{'eligible':['one']})]:
-            with self.subTest(key=key),self.assertRaisesRegex(ValueError,'forbids ordinary'):
-                self.runtime.require_empty_retirement(dict({'delete':[],'moves':[],'policyScope':{'eligible':[]}},**{key:data}))
+        for key,data in [('delete',[{'path':'one'}]),('moves',[{'from':'a','to':'b'}]),('policyScope',{'eligible':[{'path':'one'}]})]:
+            with self.subTest(key=key),self.assertRaisesRegex(ValueError,'differs from the reviewed'):
+                self.runtime.verify_private_retirement(dict({'privateStageRetention':fence,'delete':[],'moves':[],'policyScope':{'eligible':[]}},**{key:data}))
         with patch.object(self.runtime,'private_stage_rule',return_value=fence), patch.object(F.S,'execute') as execute:
             with self.assertRaisesRegex(ValueError,'differs from published scope'):
                 self.runtime.dispatch('apply-vps-retention',frame)

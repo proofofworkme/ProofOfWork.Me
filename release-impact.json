@@ -1,6 +1,6 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "pending-work-companion-publication",
+  "upgrade": "pending-work-publication-and-verified-ui-rollback",
   "liveCheck": "scripts/check-work-storage-readers-live.mjs",
   "ciTests": [
     "scripts/check-work-mail-batch-backfill.test.mjs",
@@ -50,11 +50,13 @@
         "landing"
       ],
       "disposition": "affected",
-      "reason": "These clients share the released services. Consumers that require exact-tip authority can resume when worker publication succeeds. Page assets and routed application contracts are unchanged.",
+      "reason": "All 22 managed products are published together. The outgoing UI and both retained release archives are verified before the reviewed four ordinary assets become eligible. Shared exact-tip readers depend on the pending WORK repair.",
       "evidence": [
         "scripts/check-work-storage-readers-live.mjs",
         "scripts/check-summary-route-readiness.mjs",
-        "scripts/check-release-sync.mjs"
+        "scripts/check-release-sync.mjs",
+        "deploy/publish/check-preservation-admission.test.py",
+        "deploy/ui-retention/check-lifecycle-remote.test.py"
       ]
     },
     {

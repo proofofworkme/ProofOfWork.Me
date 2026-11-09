@@ -578,6 +578,9 @@ class Runtime:
                 'previousPair':context['pair'],'stateSha256':digest,'index':state['index'],'wouldRetire':leaving}}
             if verified_fallback:
                 projection['privateStageRetention']['preservedFallback'] = verified_fallback
+            if leaving:
+                forecast = projection['privateStageRetention']
+                forecast['model'] = 'private-stage-reviewed-retirement-v1'
         if frame.get('requireComplete'):
             require(complete, 'Published UI is healthy; retention-incomplete blocks another upload')
         return {'ok': True, 'initialized': state is not None, 'retentionComplete': complete,
@@ -652,8 +655,8 @@ class Runtime:
                     plan.get('policyScope',{}).get('preservedFallback') == scope['preservedFallback'],
                     'Completed private publication lost its in-place fallback evidence')
         if 'privateStageRetention' in plan:
-            self.require_empty_retirement(plan)
-            require(receipt.get('completed') == [], 'Private staging receipt records retirement')
+            self.verify_private_retirement(plan)
+            require(sorted(row['path'] for row in receipt['completed']) == plan['privateStageRetention']['forecast']['wouldRetire'], 'Private staging receipt records retirement')
         require(not scope['eligible'], 'Completed VPS state has eligible ordinary assets')
         return {'retainedVpsPairVerified': True, 'retainedPair': context['pair'],
                 'retentionPolicy': VPS_POLICY, 'historicalBulkPreserved': True,
@@ -738,17 +741,19 @@ class Runtime:
             return None
         rule=native.get('privateStageRetention')
         require(native.get('publicationAttempt')==attempt and terminal.get('planSha256')==intent['planSha256']
-                and isinstance(rule,dict) and rule==terminal.get('privateStageRetention') and rule.get('model')=='private-stage-zero-retirement-v1'
-                and rule.get('wouldRetire')==[] and rule.get('releaseId')==release
+                and isinstance(rule,dict) and rule==terminal.get('privateStageRetention') and self.S.reviewed_forecast(rule) and rule.get('releaseId')==release
                 and native.get('inputCompactor') and native.get('closedArchive',{}).get('privateStaging',{}).get('model')=='private-release-stage-v1'
                 and all(native[k]==terminal[k] for k in ('releaseId','commit','tree')),
                 'Private staging plan does not bind zero retirement')
         return {'releasePlanSha256':terminal['planSha256'],'publicationReceiptSha256':publication['sha256'],'forecast':rule}
 
-    @staticmethod
-    def require_empty_retirement(plan):
-        require(plan.get('delete')==[] and plan.get('moves')==[] and plan.get('policyScope',{}).get('eligible')==[],
-                'Private staging forbids ordinary retirement or moves')
+    def verify_private_retirement(self, plan):
+        forecast = plan['privateStageRetention']['forecast']
+        require(self.S.reviewed_forecast(forecast) and not plan['moves']
+                and sorted(r['path'] for r in plan['delete']) == forecast['wouldRetire']
+                and sorted(r['path'] for r in plan['policyScope']['eligible']) == forecast['wouldRetire'],
+                'Ordinary retirement differs from the reviewed publication')
+
 
     def prepare_cycle(self, frame):
         state, state_sha = self.state()
@@ -781,11 +786,12 @@ class Runtime:
         scope = self.P.policy_scope(index, self.layout, APPROVAL_SHA)
         if scope.get('preservedFallback'):
             require(rule and rule['forecast'].get('preservedFallback') == scope['preservedFallback']
-                    and not scope['eligible'], 'Publication requires the same in-place fallback hold and zero retirement')
+                    and sorted(r['path'] for r in scope['eligible']) == rule['forecast']['wouldRetire'], 'Publication requires the same fallback hold and reviewed retirement paths')
         plan = self.S.create_plan(self.layout, 'future-retention', APPROVAL_SHA, scope)
         if rule:
-            self.require_empty_retirement(plan)
             plan['privateStageRetention'] = rule
+            self.verify_private_retirement(plan)
+            self.S.validate_plan(plan, self.layout, 'future-retention', APPROVAL_SHA)
         plan_raw = self.S.encoded(plan)
         self.capacity(len(plan_raw) + 65536)
         plan_binding = write_new(self.layout.evidence / ('ui-lifecycle-' + operation_id + '-ordinary-plan.json'), plan_raw)
@@ -798,8 +804,8 @@ class Runtime:
         return self.finish(operation_id, intent, active_sha, new,
                            {'cycleId': operation_id, 'pendingToken': token, 'index': index,
                             'ordinaryPlan': plan_binding if self.config.get('retentionPolicy') == VPS_POLICY else dict(plan_binding, value=plan),
-                            **({'privateStageZeroRetirement': {'ordinaryPlanSha256':plan_binding['sha256'],
-                                'releasePlanSha256':rule['releasePlanSha256'],'delete':0,'moves':0,'eligible':0}} if rule else {}),
+                            **({('privateStageReviewedRetirement' if rule['forecast']['wouldRetire'] else 'privateStageZeroRetirement'): {'ordinaryPlanSha256':plan_binding['sha256'],
+                                'releasePlanSha256':rule['releasePlanSha256'],'delete':len(plan['delete']),'moves':0,'eligible':len(scope['eligible'])}} if rule else {}),
                             'lifecycleBinding': self.lifecycle(index), 'retentionComplete': False})
 
     def apply_ordinary(self, frame, *, vps_only=False):
@@ -817,11 +823,11 @@ class Runtime:
         require(plan.get('privateStageRetention')==rule, 'Native retirement plan differs from published scope')
         if rule:
             scope = self.P.policy_scope(pending['index'],self.layout,APPROVAL_SHA)
-            require(vps_only and not scope['eligible'] and
+            require(vps_only and sorted(r['path'] for r in scope['eligible']) == rule['forecast']['wouldRetire'] and
                     scope.get('preservedFallback') == rule['forecast'].get('preservedFallback') ==
                     plan['policyScope'].get('preservedFallback'),
                     'Private staging cannot retire newly eligible data or change an in-place hold')
-            self.require_empty_retirement(plan)
+            self.verify_private_retirement(plan)
         operation_id, intent, active_sha = self.begin('apply-vps-retention' if vps_only else 'apply-ordinary', frame, state, state_sha, context)
         for row in ([] if vps_only else frame.get('custodyRecords', [])):
             _, raw = embedded(row)
@@ -943,7 +949,7 @@ def private_stage_pre_exchange(config_path, config_sha, release, lock_fd):
     held=runtime.S.require_execution_lock(lock_fd,runtime.layout)
     observed=runtime.status({'requireComplete':True,'prospectiveRelease':release})
     runtime.S.require_execution_lock(lock_fd,runtime.layout,held)
-    require(not observed['privateStageRetention']['wouldRetire'], 'Private staging would retire admitted data')
+    require(runtime.S.reviewed_forecast(observed['privateStageRetention']), 'Private staging would retire admitted data')
     return observed['binding'],observed['privateStageRetention']
 
 

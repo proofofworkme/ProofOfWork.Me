@@ -282,7 +282,7 @@ class NativePrivateStaging(unittest.TestCase):
             pub = ast.parse(publisher.read_text().replace("/var/tmp/proofofwork-deploy", str(self.scratch))).body
             first = next(i for i,n in enumerate(pub) if isinstance(n, ast.If) and ast.unparse(n.test)=="'inputCompactor' in plan")
             end = next(i for i,n in enumerate(pub) if assigned(n, "archive"))
-            context = {**state, "pathlib": pathlib, "plan": plan, "attempt": attempt, "fd": lock.fileno(),
+            context = {**state, "reviewed_forecast": __import__("runpy").run_path(str(DEPLOY / "publish/publication_admission.py"))["reviewed_forecast"], "pathlib": pathlib, "plan": plan, "attempt": attempt, "fd": lock.fileno(),
                        "commit": self.commit, "tree": plan["tree"], "load_bound": fixture_bound}
             # Re-hashing only the source receipt cannot authenticate a changed stage receipt.
             stage_receipt.write_bytes(stage_bytes + b" ")

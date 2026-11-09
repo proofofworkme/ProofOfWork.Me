@@ -977,6 +977,24 @@ def preserved_fallback_paths(layout):
     archive = layout.archives / ('proofofwork-ui-release-' + PRESERVED_FALLBACK_PREDECESSOR + '.tgz')
     return [str(root), *(str(archive) + suffix for suffix in ('', '.sha256', '.provenance'))]
 
+
+def reviewed_forecast(rule):
+    if not isinstance(rule, dict):
+        return False
+    if rule.get('model') == 'private-stage-zero-retirement-v1':
+        return rule.get('wouldRetire') == []
+    predecessor = '54088ca155bc-20261103T032112Z'
+    outgoing = '69c31f4e1dcd-20261109T051556Z'
+    archive = '/var/backups/proofofwork-ui/releases/proofofwork-ui-release-' + predecessor + '.tgz'
+    paths = sorted([archive, archive + '.sha256', archive + '.provenance',
+                    '/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-' + outgoing])
+    hold = rule.get('preservedFallback') or {}
+    return (rule.get('model') == 'private-stage-reviewed-retirement-v1'
+            and rule.get('previousPair') == {'current': outgoing, 'previous': predecessor}
+            and rule.get('wouldRetire') == paths and bool(hold.get('snapshotSha256'))
+            and set(paths).isdisjoint(hold['snapshotSha256']))
+
+
 def validate_plan(plan,layout,kind,approval_sha):
     if plan.get('schema')!='pow-audit30-exact-ui-storage-plan-v1' or plan.get('host')!='77.42.91.106' or plan.get('kind')!=kind or plan.get('scopeApprovalSha256')!=approval_sha:raise ValueError('Wrong or forged operation plan')
     if guard_model(plan['safeguards']) is not None and (kind!='future-retention' or approval_sha!=REPAIR_APPROVAL_SHA):
@@ -1010,7 +1028,13 @@ def validate_plan(plan,layout,kind,approval_sha):
         raise ValueError('Storage action intersects the preserved fallback')
     if (kind == 'future-retention' and (plan['policyScope'] or {}).get('preservedFallback') and
             (targets or plan['policyScope']['eligible'])):
-        raise ValueError('Preserved fallback lifecycle permits no retirement or moves')
+        rule = plan.get('privateStageRetention', {}).get('forecast', {})
+        if (not reviewed_forecast(rule) or plan['moves']
+                or sorted(str(p) for p in targets) != rule['wouldRetire']
+                or rule.get('releaseId') != current['fields']['release_id']
+                or rule['previousPair']['current'] != previous['fields']['release_id']
+                or rule['preservedFallback'] != plan['policyScope']['preservedFallback']):
+            raise ValueError('Preserved fallback lifecycle permits only reviewed retirement')
     if len({r['path'] for r in plan['delete']})!=len(plan['delete']):raise ValueError('Duplicate deletion path')
     citation=plan.get('citationReview')
     if citation is not None and (kind not in ('cleanup','future-retention') or not isinstance(citation,dict) or set(citation)!= {'path','sha256'} or not SHA.fullmatch(citation['sha256'])):raise ValueError('Invalid citation-review plan binding')

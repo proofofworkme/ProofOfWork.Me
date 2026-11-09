@@ -433,7 +433,7 @@ def preflight(args):
     if 'inputCompactorSha256' in request:
         lifecycle = lifecycle_module().status(require_complete=True, prospective_release=request['releaseId'])
         forecast = lifecycle['privateStageRetention']
-        if forecast['wouldRetire']:
+        if not admission_tools(admission_source())['reviewed_forecast'](forecast):
             raise ValueError('Private staging would retire previously admitted data before completing the publication: ' +
                              json.dumps(forecast['wouldRetire']))
     else:
@@ -633,8 +633,7 @@ def make_plan(args):
         c['closedArchive'] = evidence
         if compact:
             rule=p.get('privateStageRetention')
-            if (not isinstance(rule,dict) or rule.get('model')!='private-stage-zero-retirement-v1'
-                    or rule.get('wouldRetire')!=[] or rule.get('releaseId')!=c['releaseId']
+            if (not admission_tools(admission_source())['reviewed_forecast'](rule) or rule.get('releaseId')!=c['releaseId']
                     or rule.get('previousPair')!=p['retentionLifecycle']['pair']
                     or rule.get('stateSha256')!=p['retentionLifecycle']['state']['sha256']):
                 raise ValueError('Private staging requires a release-specific empty retirement forecast')

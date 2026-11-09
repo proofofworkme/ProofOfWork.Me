@@ -29,7 +29,8 @@ BOOTSTRAP_IDS={'26500e4d2ff7-20261002T054938Z','835e30258d23-20261002T052338Z'}
 # Approved historical writer versions remain admitted after later reviewed
 # upgrades; adding another version needs an explicit source review. No future
 # retirement existed before this canonical plan-serialization contract.
-KNOWN_RETIREMENT_CONTROLLERS={'f292da5dcda23393208d05e1cffaea0b50b9a9cc915b81a5b9d55fdd0aa81319',
+KNOWN_RETIREMENT_CONTROLLERS={'42aa3dc8349bc9743972b739bb56bdd11a211b3268d3c2f72bc55cafdddd8d58',
+                            'f292da5dcda23393208d05e1cffaea0b50b9a9cc915b81a5b9d55fdd0aa81319',
                             '35ba28d173941aadaa29c6c43dc792822d5589a11370c5ff43cc7947ee0353f4',
                             'ef7fdf48ee628c8e4cf5e13cbb193cb40892d80424d2a286b9c6d1b37d04cf1e',
                             '095ec62c1bc8fc3756e203560fdc3482c94e4f96ba854d48524cb09687079011',
@@ -360,7 +361,7 @@ def load_index(path,expected,layout,approval_sha):
             if held - keep and plan['policyScope'].get('preservedFallback') != hold:
                 raise ValueError('Retirement plan lost its preserved fallback evidence')
             if held - keep and (plan['delete'] or plan['moves'] or plan['policyScope']['eligible']):
-                raise ValueError('Preserved fallback lineage includes retirement or moves')
+                S.validate_plan(plan, layout, 'future-retention', approval_sha)
             keep.update(held)
         eligible=[dict(path=path,kind='rollback-root') for path in source_roots if path not in keep and path not in retired]+[dict(path=path,kind='managed-release-archive' if path.endswith('.tgz') else 'archive-sidecar') for path in source_assets if path not in keep and path not in retired]
         eligible.sort(key=lambda r:(r['kind']!='rollback-root',r['path']))

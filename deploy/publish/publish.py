@@ -97,7 +97,7 @@ for p,r in zip(roots,plan['retainedRoots']):
  current=ns['fingerprint'](p);assert current['manifestSha256']==r['manifestSha256'] and current['treeSha256']==r['treeSha256']
 if 'inputCompactor' in plan:
  rule=plan.get('privateStageRetention')
- assert isinstance(rule,dict) and rule['model']=='private-stage-zero-retirement-v1' and rule['wouldRetire']==[]
+ assert reviewed_forecast(rule)
  assert rule['releaseId']==release and rule['previousPair']==plan['retentionLifecycle']['pair']
  assert rule['stateSha256']==plan['retentionLifecycle']['state']['sha256']
  def private_helper(record):

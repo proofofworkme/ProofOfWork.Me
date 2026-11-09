@@ -12,6 +12,24 @@ PACKAGE = '/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-tools-'
 MODEL = 'private-stage-zero-retirement-v1'
 
 
+
+def reviewed_forecast(rule):
+    if not isinstance(rule, dict):
+        return False
+    if rule.get('model') == 'private-stage-zero-retirement-v1':
+        return rule.get('wouldRetire') == []
+    predecessor = '54088ca155bc-20261103T032112Z'
+    outgoing = '69c31f4e1dcd-20261109T051556Z'
+    archive = '/var/backups/proofofwork-ui/releases/proofofwork-ui-release-' + predecessor + '.tgz'
+    paths = sorted([archive, archive + '.sha256', archive + '.provenance',
+                    '/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-' + outgoing])
+    hold = rule.get('preservedFallback') or {}
+    return (rule.get('model') == 'private-stage-reviewed-retirement-v1'
+            and rule.get('previousPair') == {'current': outgoing, 'previous': predecessor}
+            and rule.get('wouldRetire') == paths and bool(hold.get('snapshotSha256'))
+            and set(paths).isdisjoint(hold['snapshotSha256']))
+
+
 def require_obligation(observed, private, release=None):
     if 'verifiedPreservedFallback' not in observed:
         raise ValueError('Installed lifecycle lacks a verified preservation result')
@@ -42,9 +60,9 @@ def check_observation(observed, private, rule=None, *, release=None, compare=Fal
             raise ValueError('Ordinary publication carries a private witness')
         return
     forecast = observed['privateStageRetention']
-    if forecast['wouldRetire']:
+    if not reviewed_forecast(forecast):
         raise ValueError('Private staging would retire previously admitted data: ' + str(forecast['wouldRetire']))
-    if (forecast.get('model') != MODEL or forecast.get('preservedFallback') != hold
+    if (forecast.get('preservedFallback') != hold
             or (compare and forecast != rule)):
         raise ValueError('Private publication forecast differs from installed retention evidence')
 

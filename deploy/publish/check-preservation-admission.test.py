@@ -26,6 +26,22 @@ RULE = {'model':A['MODEL'],'wouldRetire':[],'preservedFallback':HOLD,'releaseId'
 
 
 class PublicationAdmission(unittest.TestCase):
+    def test_reviewed_transition_requires_exact_pair_and_all_four_paths(self):
+        outgoing = '69c31f4e1dcd-20261109T051556Z'
+        archive = '/var/backups/proofofwork-ui/releases/proofofwork-ui-release-' + INTRO + '.tgz'
+        paths = sorted([archive + suffix for suffix in ('', '.sha256', '.provenance')] +
+                       ['/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-' + outgoing])
+        rule = dict(model='private-stage-reviewed-retirement-v1', wouldRetire=paths,
+                    previousPair=dict(current=outgoing, previous=INTRO),
+                    preservedFallback=dict(snapshotSha256={'preserved': 'a' * 64}))
+        storage = runpy.run_path(str(HERE.parent / 'audit30/ui-storage.py'))
+        for check in (A['reviewed_forecast'], storage['reviewed_forecast']):
+            self.assertTrue(check(rule))
+            for change in (dict(wouldRetire=paths[:-1]), dict(wouldRetire=paths+['extra']),
+                           dict(previousPair=BINDING['pair']), dict(preservedFallback=None),
+                           dict(preservedFallback=dict(snapshotSha256={archive:'a'*64}))):
+                self.assertFalse(check(dict(rule, **change)))
+
     def test_old_missing_stripped_and_backdated_no_hold_refuse(self):
         check=A['require_obligation']
         with self.assertRaisesRegex(ValueError,'verified preservation result'):

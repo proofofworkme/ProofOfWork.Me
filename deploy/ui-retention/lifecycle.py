@@ -258,9 +258,10 @@ def complete(plan_path, publish_log, https_receipt, destination, attempt=None):
     prepared=call(binding,'prepare-cycle',frame);save(destination/'prepared.json',prepared)
     assert prepared['lifecycleBinding']['approval']['sha256']==APPROVAL_SHA
     if 'privateStaging' in plan.get('closedArchive',{}):
-        assert plan['privateStageRetention']['wouldRetire']==[]
-        assert prepared['privateStageZeroRetirement']=={'ordinaryPlanSha256':prepared['ordinaryPlan']['sha256'],
-            'releasePlanSha256':sha(plan_path.read_bytes()),'delete':0,'moves':0,'eligible':0}, \
+        count = len(plan['privateStageRetention']['wouldRetire'])
+        key = 'privateStageReviewedRetirement' if count else 'privateStageZeroRetirement'
+        assert prepared[key]=={'ordinaryPlanSha256':prepared['ordinaryPlan']['sha256'],
+            'releasePlanSha256':sha(plan_path.read_bytes()),'delete':count,'moves':0,'eligible':count}, \
             'Verified native preparation did not prove zero retirement'
     mutation={'expectedStateSha256':prepared['stateSha256'],'expectedPair':current['pair'],
               'operationId':'ordinary-'+rid+suffix,'cycleId':prepared['cycleId'],'pendingToken':prepared['pendingToken']}

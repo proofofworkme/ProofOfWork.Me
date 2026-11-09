@@ -236,10 +236,10 @@ def verify(received, source, publisher, live, scratch, archive_dir, rollback, lo
     private='inputCompactor' in plan
     if private:
         rule=plan.get('privateStageRetention')
-        require(isinstance(rule,dict) and rule['model']=='private-stage-zero-retirement-v1' and rule['wouldRetire']==[]
+        require(runtime.S.reviewed_forecast(rule)
                 and rule['releaseId']==release and rule['stateSha256']==state_ref['sha256']
                 and rule['previousPair']==scope['pair'] and plan['closedArchive']['privateStaging']['model']=='private-release-stage-v1',
-                'private plan does not bind zero retirement')
+                'private plan does not bind reviewed retirement')
         src_path=scratch/('recovery-transport-'+release+'-source-'+attempt)/'receipt.json'
         stage_path=scratch/('recovery-transport-'+release+'-surfaces-stage-'+attempt)/'receipt.json'
         src=decode(read(src_path,intent['verifiedSourceReceiptSha256']))
