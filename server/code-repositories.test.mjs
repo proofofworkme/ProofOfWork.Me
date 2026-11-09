@@ -191,6 +191,7 @@ function discoveryHarness(fixtures, { budget = 1000, sealClosed = true, reorg = 
     return { rows: [] };
   } };
   const context = {
+    QUALIFY_DISCOVERY_REORG: false, RECOVER_DISCOVERY_REORG: false,
     process: { env: { POW_INDEX_CODE_BOOTSTRAP_MAX_BLOCKS: String(budget) } }, NETWORK: 'livenet',
     WORK_AMO_V5_ACTIVATION_HEIGHT: 1, CODE_DISCOVERY_META_KEY: 'code:candidate-discovery', CODE_DISCOVERY_MODEL,
     CODE_DISCOVERY_EMPTY_SHA256, advanceCodeCandidateDigest, prefilterCodeRawBlock, assertCodeRawBlockCandidatesMatch,

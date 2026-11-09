@@ -13,6 +13,8 @@ import { JOBS_ACTIVATION_HEIGHT } from "../src/shared/protocol/jobs.mjs";
 import { JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_META_KEY, advanceJobsCandidateDigest, jobsCandidateParts } from "../server/jobs.mjs";
 import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, advanceCodeCandidateDigest } from "../server/code-repositories.mjs";
 import { REVIEWED_INCB_REPLAY_BASELINE, reviewedIncbReplayBaselineEvidence, reviewedIncbReplayBaselineFromEvidence } from "../server/incb-replay-baseline.mjs";
+import { canonicalSummaryPayloadHash, readCanonicalSummaryStream, SUMMARY_STREAM_TYPE } from "../server/canonical-summary-stream.mjs";
+import { decodeWorkTransferProjection, isWorkTransferProjectionReference, prepareWorkTransferProjection, readWorkTransferProjection, storeWorkTransferProjection, workTransferProjectionSqlEligibility } from "../server/db/work-transfer-projection-store.mjs";
 import { SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle, canonicalSummarySnapshotIdOutsideScopedOracle } from "../server/incb-scoped-oracle.mjs";
 import { canonicalIncbReplayComponents } from "../server/incb-replay-components.mjs";
 import assert from "node:assert/strict";
@@ -1283,6 +1285,8 @@ function isolatedFunction(path, name, globals = {}) {
       : "";
   };
   const context = vm.createContext({
+    canonicalSummaryPayloadHash, readCanonicalSummaryStream, SUMMARY_STREAM_TYPE,
+    isWorkTransferProjectionReference, prepareWorkTransferProjection, readWorkTransferProjection, storeWorkTransferProjection, workTransferProjectionSqlEligibility,
     structuredClone,
     deduplicatedSummaryRead: async (_key, producer) => producer(),
     canonicalSealTime,
@@ -2035,8 +2039,9 @@ function isolatedFunction(path, name, globals = {}) {
           canonicalSummaryAccountingModelsCurrent: [
             "canonicalSummaryCoverage",
           ],
+          storedEligibleCanonicalSummarySnapshotPayload: ["storedAccountingSummaryPayloads"],
           storeCanonicalSummarySnapshot: [
-            "canonicalSummaryTransitionSourceCurrent",
+            "lockCanonicalSummaryPublicationCheckpoint", "storedAccountingSummaryPayloads", "canonicalSummaryTransitionSourceCurrent",
           ],
           canonicalSummaryCoverage: [
             "summaryPayloadConservativeCoverage",
@@ -27115,6 +27120,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     if (key === "workSummary") {
       payload.token = { stats: { confirmedTransfers: 0 } };
       payload.workTransferValueProjection = {
+        amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
         items: [],
         model: "canonical-work-transfer-value-projection-v1",
       };
@@ -27134,6 +27140,29 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     ),
   };
   const inserted = [];
+  const transactionSteps = [];
+  function snapshotClient(protectedSnapshot = false) {
+    let inTransaction = false;
+    return { async query(sql, params) {
+      if (sql === "BEGIN" || sql === "COMMIT" || sql === "ROLLBACK") {
+        assert.equal(inTransaction, sql !== "BEGIN");
+        inTransaction = sql === "BEGIN";
+        transactionSteps.push(sql);
+        return { rows: [] };
+      }
+      assert.equal(inTransaction, true);
+      if (sql === "SET LOCAL lock_timeout = '2s'") return { rows: [] };
+      if (sql.includes("AND canonical FOR SHARE")) {
+        assert.deepEqual(Array.from(params), ["livenet", 101, checkpointHash]);
+        transactionSteps.push("canonical-block");
+        return { rows: [{block_hash:checkpointHash}] };
+      }
+      assert.match(sql, /INSERT INTO proof_indexer\.ledger_snapshots/u);
+      inserted.push({ params: Array.from(params), sql: String(sql) });
+      transactionSteps.push("snapshot");
+      return { rows: protectedSnapshot ? [] : [{ snapshot_id: params[1] }] };
+    } };
+  }
   const canonicalSummarySnapshotPayload = isolatedFunction(
     BACKFILL_PATH,
     "canonicalSummarySnapshotPayload",
@@ -27154,6 +27183,13 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     BACKFILL_PATH,
     "storeCanonicalSummarySnapshot",
     {
+      async storeWorkTransferProjection(_client, prepared) {
+        const parent = JSON.parse(inserted.at(-1).params[7]);
+        const ref = parent.summaryPayloads.workSummary.workTransferValueProjection;
+        assert.deepEqual(ref, prepared.reference);
+        assert.deepEqual(decodeWorkTransferProjection(ref, prepared.pages, parent), currentSummaryFor("workSummary", 101).workTransferValueProjection);
+        transactionSteps.push("pages");
+      },
       NETWORK: "livenet",
       SUMMARY_SNAPSHOT_SOURCES: [
         { key: "unused", path: "/unused" },
@@ -27240,12 +27276,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
         new URL(`http://127.0.0.1:8081${pathname}`),
     },
   );
-  const result = await storeCanonicalSummarySnapshot({
-    async query(sql, params) {
-      inserted.push({ params: Array.from(params), sql: String(sql) });
-      return { rows: [{ snapshot_id: String(params[1]) }] };
-    },
-  });
+  const result = await storeCanonicalSummarySnapshot(snapshotClient());
   assert.equal(result.skipped, false);
   assert.equal(result.indexedThroughBlock, 101);
   assert.equal(inserted.length, 1);
@@ -27359,12 +27390,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     summaryPayloads: currentSummaryPayloads,
     summaryRefresh: { publicLogFingerprint },
   };
-  const repairedMissingStateResult = await storeCanonicalSummarySnapshot({
-    async query(sql, params) {
-      inserted.push({ params: Array.from(params), sql: String(sql) });
-      return { rows: [{ snapshot_id: String(params[1]) }] };
-    },
-  });
+  const repairedMissingStateResult = await storeCanonicalSummarySnapshot(snapshotClient());
   assert.equal(repairedMissingStateResult.skipped, false);
   assert.equal(inserted.length, 2);
   const repairedMissingState = JSON.parse(inserted[1].params[7]);
@@ -27377,12 +27403,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     false,
   );
   await rejection(
-    storeCanonicalSummarySnapshot({
-      async query(sql, params) {
-        inserted.push({ params: Array.from(params), sql: String(sql) });
-        return { rows: [] };
-      },
-    }),
+    storeCanonicalSummarySnapshot(snapshotClient(true)),
     (error) => /immutable and cannot be repaired in place/u.test(error.message),
     "A protected same-tip snapshot no-op was reported as a successful Q16 repair",
   );
@@ -27427,12 +27448,7 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     (error) => /not one exact snapshot/u.test(error.message),
     "a historical Log count must reject tip-wide pending and future membership",
   );
-  const replaySnapshot = await storeCanonicalSummarySnapshot({
-    async query(sql, params) {
-      inserted.push({ params: Array.from(params), sql: String(sql) });
-      return { rows: [{ snapshot_id: String(params[1]) }] };
-    },
-  }, {
+  const replaySnapshot = await storeCanonicalSummarySnapshot(snapshotClient(), {
     replayCheckpoint: true,
     requiredCheckpoint,
   });
@@ -27443,6 +27459,12 @@ check("the hot worker publishes a fresh canonical summary with conservative cove
     replayLogFingerprint,
   );
   assert.equal(inserted.length, 4);
+  assert.deepEqual(transactionSteps, [
+    "BEGIN", "canonical-block", "snapshot", "pages", "COMMIT",
+    "BEGIN", "canonical-block", "snapshot", "pages", "COMMIT",
+    "BEGIN", "canonical-block", "snapshot", "ROLLBACK",
+    "BEGIN", "canonical-block", "snapshot", "pages", "COMMIT",
+  ]);
 });
 
 check("ledger snapshot retention preserves pinned issuance oracles", async () => {
@@ -32840,7 +32862,7 @@ check("exact stored bond snapshots serve stable and fresh reads before recovery"
   assert.doesNotMatch(workRouteSource, /fastLivenetWorkSummaryPayload/u);
   assert.match(
     workRouteSource,
-    /workSummaryPayload\(network,\s*freshRead\)/u,
+    /workSummaryPayload\(network,\s*freshRead,\s*!compactRead\)/u,
   );
   assert.ok(
     workSource.indexOf("currentProofIndexSummarySnapshotFallbackPayload") <
@@ -35054,8 +35076,13 @@ check("block verification completes before the atomic block transaction", async 
     },
   );
   const client = {
-    async query(sql) {
-      events.push(String(sql).trim());
+    async query(sql, params) {
+      if (String(sql).trim() === "SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))") {
+        assert.equal(params[1], "livenet");
+        events.push("lock:" + params[0]);
+      } else {
+        events.push(String(sql).trim());
+      }
       return { rows: [] };
     },
   };
@@ -35063,7 +35090,8 @@ check("block verification completes before the atomic block transaction", async 
   assert.deepEqual(events, [
     "verify",
     "BEGIN",
-    "SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))",
+    "lock:" + CODE_DISCOVERY_META_KEY,
+    "lock:" + JOBS_DISCOVERY_META_KEY,
     "block",
     "raw",
     "volatile-cleanup",
@@ -35072,7 +35100,7 @@ check("block verification completes before the atomic block transaction", async 
     "persist",
     "balances",
     "checkpoint",
-    "SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))",
+    "lock:" + JOBS_DISCOVERY_META_KEY,
     "COMMIT",
   ]);
 
@@ -35085,7 +35113,8 @@ check("block verification completes before the atomic block transaction", async 
   assert.deepEqual(events, [
     "verify",
     "BEGIN",
-    "SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))",
+    "lock:" + CODE_DISCOVERY_META_KEY,
+    "lock:" + JOBS_DISCOVERY_META_KEY,
     "block",
     "raw",
     "volatile-cleanup",

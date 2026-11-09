@@ -886,6 +886,12 @@ available. Keep the complete families in relational history and the confirmed
 WORK transfer value projection. The worker needs every recipient to prove the
 parent's single economic contribution.
 
+Block 974,919 added four 256-recipient WORK batches. A block-sized change
+stopped summary publication because it contained another copy of the entire
+confirmed transfer history. Bind that history to the snapshot with a digest,
+counts, height and block hash. Verify the complete history before publishing
+and restore it from its pages when a reader requests historical values.
+
 Summary readiness does not establish that public history works. Verify actual
 Log pages and continuation, every recipient of a batch, Boost loading and the
 WORK-floor preflight as part of a read-path release. A successful Log summary

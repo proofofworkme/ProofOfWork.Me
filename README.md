@@ -1341,11 +1341,13 @@ bounded `WALLET_SCOPED_INDEX_WAIT_MS` window; they fail closed instead of
 falling back to a broad history replay.
 Full ledger snapshots have an 8 MiB limit. The repository defaults above allow
 16 MiB for compact canonical summaries and 18 MiB for their PostgreSQL
-`jsonb::text` representation. Production H7 overrides set the compact limit to
-20 MiB and the SQL text limit to 22.5 MiB for both the API and worker.
+`jsonb::text` representation. Production uses 32 MiB compact and 36 MiB SQL
+limits for snapshots published during the November 8 recovery.
 Compact token previews report the batch count when known and indicate whether
 batch history is available. Full WORK batch families remain in relational
 history and in the separate confirmed transfer projection used for accounting.
+New snapshots bind that projection by digest and checkpoint. WORK readers
+verify its pages and return the original records, including historical values.
 `BITCOIN_RPC_URL`, `BITCOIN_RPC_USER`, and `BITCOIN_RPC_PASSWORD` are optional server-only Bitcoin Core RPC settings. When configured, the API can attach the node's exact `testmempoolaccept` reject reason to failed broadcasts, hydrate transactions with `getrawtransaction`, and verify sale-ticket spend state with `gettxout` so confirmed delistings and buys clear active books without waiting on slower address-history scans. Listing sweeps bind every non-null `gettxout.bestblock` to one exact Core checkpoint. Public readers retry only when every differing bestblock equals the final proven tip, with a three-attempt bound and a full anchor sweep; the registry reader also reloads its indexed payload. Stable-tip script, value, confirmation, coinbase, or bestblock conflicts still fail closed immediately. Do not expose Bitcoin Core RPC publicly.
 Production keeps Core RPC and the API listener private. Caddy reaches the API through the host-to-host WireGuard address, while the Node API process itself remains bound to loopback behind a hardened socket proxy.
 

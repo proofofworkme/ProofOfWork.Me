@@ -7,6 +7,7 @@ import {
   scopedIncbOracleLedgerPayload, storedScopedIncbOracle,
 } from "../incb-scoped-oracle.mjs";
 import { createHash } from "node:crypto";
+import { isWorkTransferProjectionReference, readWorkTransferProjection, workTransferProjectionSqlEligibility } from "./work-transfer-projection-store.mjs";
 import { AsyncLocalStorage as WalletRequestAsyncLocalStorage } from "node:async_hooks";
 import {
   normalizePublishArticleMetadata, publishArticleBodyBytes,
@@ -3568,6 +3569,7 @@ export function canonicalQ16SummarySnapshotSqlEligibility(
   ).join(", ");
   const eligibility = `
     octet_length(${alias}.payload::text) <= ${CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES}
+    AND ${workTransferProjectionSqlEligibility(alias)}
     AND NOT EXISTS (
       SELECT 1
       FROM jsonb_object_keys(
@@ -23097,7 +23099,7 @@ async function strictEventHistoryLedgerSnapshot(
   const precisionEligibility =
     workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
       ? canonicalQ16SummarySnapshotSqlEligibility("snapshot", "history_parts")
-      : "true";
+      : workTransferProjectionSqlEligibility("snapshot");
   const result = await pool.query(
     `
       SELECT
@@ -26624,7 +26626,7 @@ async function latestProofIndexOperationalMetadata(pool, network) {
   const currentSummaryEligibility =
     workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
       ? canonicalQ16SummarySnapshotSqlEligibility("snapshot", "readiness_parts")
-      : "true";
+      : workTransferProjectionSqlEligibility("snapshot");
   const result = await pool.query(
     `
       WITH latest_scan AS (
@@ -42970,7 +42972,7 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
   const latestSummaryEligibility =
     requiredWorkAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
       ? canonicalQ16SummarySnapshotSqlEligibility("snapshot")
-      : "true";
+      : workTransferProjectionSqlEligibility("snapshot");
 
   const checkpointProjection = exactCheckpointRequested
     ? "count(*) OVER ()"
@@ -43314,7 +43316,7 @@ export async function proofIndexCanonicalSummaryLedgerPayload(
   return exactStatusResult("found", payload, matchingSnapshotCount);
 }
 
-export async function proofIndexSnapshotPayload(network, key) {
+export async function proofIndexSnapshotPayload(network, key, { includeWorkTransferProjection = true } = {}) {
   const pool = proofIndexPool();
   if (!pool) {
     return null;
@@ -43327,8 +43329,12 @@ export async function proofIndexSnapshotPayload(network, key) {
   const latestSummaryEligibility =
     workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
       ? canonicalQ16SummarySnapshotSqlEligibility("snapshot", "summary_parts")
-      : "true";
+      : workTransferProjectionSqlEligibility("snapshot");
 
+  // Compact WORK, wallet definition and floor-only reads need no transfer history.
+  // Exclude the field inside SQL for both legacy embedded rows and new references.
+  const componentSuffix = key === "workSummary" && !includeWorkTransferProjection
+    ? " - 'workTransferValueProjection'" : "";
   const summaryResult = await pool.query(
     `
       SELECT
@@ -43336,7 +43342,7 @@ export async function proofIndexSnapshotPayload(network, key) {
         generated_at,
         indexed_through_block,
         consistency,
-        summary_parts."summaryPayloads"->$2 AS summary_payload
+        (summary_parts."summaryPayloads"->$2)${componentSuffix} AS summary_payload
       FROM proof_indexer.ledger_snapshots snapshot
       -- OFFSET 0 keeps each large JSON field extracted once per candidate row.
       -- It preserves the indexed search and avoids a spilling function tuplestore.
@@ -43459,7 +43465,7 @@ export async function proofIndexSnapshotPayload(network, key) {
           generated_at,
           indexed_through_block,
           consistency,
-          summary_payloads->$2 AS summary_payload
+          (summary_payloads->$2)${componentSuffix} AS summary_payload
         FROM recent
         WHERE payload ? 'summaryPayloads'
           AND summary_payloads ? $2
@@ -43482,6 +43488,12 @@ export async function proofIndexSnapshotPayload(network, key) {
   const payload = snapshot?.summary_payload;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
+  }
+  if (key === "workSummary" && isWorkTransferProjectionReference(payload.workTransferValueProjection)) {
+    payload.workTransferValueProjection = await readWorkTransferProjection(pool, payload.workTransferValueProjection, {
+      network, snapshotId: snapshot.snapshot_id, indexedThroughBlock: Number(snapshot.indexed_through_block),
+      indexedThroughBlockHash: payload.indexedThroughBlockHash,
+    });
   }
   const consistency =
     snapshot?.consistency &&

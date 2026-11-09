@@ -171,6 +171,13 @@ native storage commitments in a read-only exact-checkpoint transaction. It
 resumes Core/raw comparisons after the verified prefix. The public rolling
 witness remains the same as a complete uninterrupted scan.
 
+When an authenticated WORK replay changes the native witness for a block
+already verified by Permissions, the reader preserves the original journal
+and reuses its verified prefix. It checks the affected suffix against the
+recorded supersession and Core's canonical blocks and raw carriers. Publishing
+the replacement journal requires the same original journal and canonical
+checkpoint that the verifier observed.
+
 Identical checkpoint reads share one attempt; different checkpoints in the same
 authority scope serialize, with queue waiting included in each request's
 existing read budget. Byte limits and final Core/index/fee-parent fences remain

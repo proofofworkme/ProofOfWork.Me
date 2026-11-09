@@ -849,10 +849,24 @@ writer measures compact UTF-8 JSON against
 `POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_MAX_BYTES` (16 MiB default, 64 MiB
 maximum). SQL readers measure PostgreSQL `jsonb::text` against
 `POW_INDEX_CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES` (18 MiB with default
-settings, 72 MiB maximum). The production H7 API and worker drop-ins set the
-compact limit to 20 MiB and the SQL text limit to 22.5 MiB. Full ledger history
-lives outside the canonical summary. The writer enforces its root-key allowlist
-and verifies the Q16 sufficient-state witness.
+settings, 72 MiB maximum). On November 8, the API and worker were restored
+with limits of 32 MiB compact and 36 MiB SQL text. The original H7 drop-ins
+record the preceding limits of 20 MiB and 22.5 MiB. The first rejected
+publication, at 974,919, measured 22,581,227 compact bytes after four
+256-recipient WORK batches. The higher read limits preserve access to
+historical embedded snapshots published during recovery.
+
+New canonical summaries store a reference to the complete WORK transfer value
+projection. Its network, snapshot ID, block height, block hash, precision,
+counts and digest bind the exact valuation records to the ledger row. The
+authenticated loopback producer streams the records in pages. The worker
+reconstructs them, validates every recipient and its single paying parent,
+and commits the summary and pages in one PostgreSQL transaction. A reader
+rejects missing, out-of-order, substituted or incorrectly bound pages.
+Historical embedded projections retain their original read path. Retention
+charges the page bytes to their parent snapshot and protects referenced H-1
+oracle snapshots together with their pages. The compact summary continues to
+enforce its root-key allowlist and Q16 sufficient-state witness.
 
 Compact token previews return an empty `transferBatches` array and report a
 known batch-parent total in `totalCounts.transferBatches`. An unknown total

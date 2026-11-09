@@ -15,8 +15,11 @@ async function fixture(t, storeOptions={}) {
   complete:true,block_atomic:true,fee_once:true,invalid_zero:true,model:WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,protocol_record_count:0,raw_protocol_candidate_count:0,
   storage_commitment:{version:1,sha256:hex(height)},payload:{replayRecords:[],rawProtocolCandidateCount:0,replayDescriptorCommitment:commit([]),blockDescriptorCommitment:commit({height})}}));
  let clock=0,advance=0,coreReads=0,prefixReads=0,alterIndex=false,tip=rows.at(-1),feeParent=hex(opening-1),pending=[];
+ const supersessions=new Map();
  const coreHash=async h=>h===opening-1?feeParent:rows.find(r=>r.height===h)?.block_hash;
  const client={async query(sql,params){
+  if(sql.includes('permission_transition_storage_accessor'))return{rows:[{present:supersessions.size>0}]};
+  if(sql.includes('permission_native_supersession'))return{rows:[supersessions.get(params[1])].filter(Boolean)};
   if(sql.includes('permission_verified_prefix_anchor'))return{rows:[{block_hash:await coreHash(params[1])}]};
   if(sql.includes('permission_verified_prefix_coverage')){prefixReads++;const values=structuredClone(rows.filter(r=>r.height>=params[1]&&r.height<=params[2]));if(alterIndex)values[0].storage_commitment.sha256=hex(99);return{rows:values};}
   if(sql.includes('permission_raw_block_coverage'))return{rows:structuredClone(rows.filter(r=>r.height>=params[1]&&r.height<=params[2]))};
@@ -27,7 +30,7 @@ async function fixture(t, storeOptions={}) {
   feeRateActivationHeight:opening,feeRateActivationPreviousBlockHash:hex(opening-1),now:()=>clock,readBudgetMs:10,
   async readCoreBlock(row){coreReads++;clock+=advance;return{descriptor:row.payload.blockDescriptorCommitment,rawProtocolCandidateCount:0,rawRecords:[],transactions:[]};},
   hydratePending:async txid=>[{txid,status:{confirmed:false}}],...extra});
- return{directory,rows,make,run:d=>d('livenet',{height:tip.height,blockHash:tip.block_hash},opening,hex(opening-1)),
+ return{directory,rows,supersessions,make,run:d=>d('livenet',{height:tip.height,blockHash:tip.block_hash},opening,hex(opening-1)),
   advance:v=>{advance=v;},setTip:i=>{tip=rows[i];},fork:()=>{rows[1].block_hash=hex(800);rows[2].previous_block_hash=hex(800);rows[2].block_hash=hex(801);},
   corruptIndex:()=>{alterIndex=true;},wrongParent:()=>{feeParent=hex(999);},pending:v=>{pending=v;},coreReads:()=>coreReads,prefixReads:()=>prefixReads,
   file:path.join(directory,`permission-livenet-${opening}.json`)};
@@ -94,4 +97,93 @@ test('an older target cannot downgrade a newer in-memory verified prefix',async 
  const f=await fixture(t);const discovery=f.make();await f.run(discovery);f.setTip(0);await f.run(discovery);
  assert.equal(discovery.progress('livenet',opening,hex(opening-1)).verifiedThroughBlock,opening+2);
  f.setTip(2);const before=f.coreReads();await f.run(discovery);assert.equal(f.coreReads(),before);
+});
+
+
+async function replayFixture(t) {
+  const f = await fixture(t);
+  await f.run(f.make());
+  const original = await fs.readFile(f.file);
+  for (const row of f.rows.slice(1)) {
+    const old = structuredClone(row);
+    row.storage_commitment.sha256 = hex(row.height + 100);
+    if (row === f.rows[2]) {
+      row.payload.replayRecords = [{ rawCandidate: false, protocol: 'work-batch-derived' }];
+      row.payload.replayDescriptorCommitment = commit(row.payload.replayRecords);
+    }
+    f.supersessions.set(row.height, { old_main: old, old_archive_sha256: old.storage_commitment.sha256,
+      replacement_sha256: row.storage_commitment.sha256, source_commit: 'a'.repeat(40), source_tree: 'b'.repeat(40),
+      manifest_sha256: hex(1), qualification_sha256: hex(2), through_hash: f.rows[2].block_hash,
+      through_height: opening + 2, verified: true });
+  }
+  const tip = { height: opening + 2, blockHash: hex(opening + 2) };
+  const make = (extra = {}) => f.make({ readCoreTip: async () => tip, ...extra });
+  const rehearse = discovery => discovery.rehearseJournal('livenet', tip, opening, hex(opening - 1));
+  return { ...f, make, rehearse, tip, original, next: f.file.replace('.json', '.replay-1.json') };
+}
+
+test('same-chain native replacement replays only the suffix and preserves the authentic original file', async t => {
+  const f = await replayFixture(t);
+  const d = f.make(), before = f.coreReads();
+  const report = await f.rehearse(d);
+  assert.equal(report.published, false);
+  assert.deepEqual([report.retainedThrough, report.through, report.replayed, report.sourceCount, report.descriptorChanges],
+    [opening, opening + 2, 2, 2, 1]);
+  assert.equal(f.coreReads() - before, 2);
+  await assert.rejects(fs.stat(f.next), { code: 'ENOENT' });
+  await assert.rejects(f.run(d), /verified prefix witness changed/);
+  for (let i = 0; i < 100; i++) {
+    try { await fs.stat(f.next); break; } catch { await new Promise(resolve => setTimeout(resolve, 5)); }
+  }
+  assert.deepEqual(await fs.readFile(f.file), f.original);
+  const read = await f.run(f.make());
+  assert.equal(read.coverage.complete, true);
+  assert.equal(read.coverage.indexedThroughBlock, f.tip.height);
+  const generation = JSON.parse(JSON.parse(await fs.readFile(f.next, 'utf8')).payload);
+  const old = JSON.parse(JSON.parse(f.original).payload);
+  assert.deepEqual(generation.blocks[0], old.blocks[0]);
+  assert.deepEqual(generation.blocks.map(b => b.transactions), old.blocks.map(b => b.transactions));
+  assert.equal(generation.replay.evidenceSha256, report.evidenceSha256);
+  assert.deepEqual(generation.replay.evidence.sources, report.sources);
+});
+
+test('missing, forged, or unrelated supersession evidence cannot publish a generation', async t => {
+  for (const mode of ['missing','foreign','invalid']) await t.test(mode, async t => {
+    const f = await replayFixture(t), proof = f.supersessions.get(opening + 1);
+    if (mode === 'missing') f.supersessions.delete(opening + 1);
+    if (mode === 'foreign') proof.old_main.storage_commitment.sha256 = hex(88);
+    if (mode === 'invalid') proof.verified = false;
+    await assert.rejects(f.rehearse(f.make()), /supersession provenance/);
+    assert.deepEqual(await fs.readFile(f.file), f.original);
+    await assert.rejects(fs.stat(f.next), { code: 'ENOENT' });
+  });
+});
+
+test('a changed Core tip, raw descriptor, or permission projection prevents journal repair', async t => {
+  const f = await replayFixture(t);
+  let checks = 0;
+  await assert.rejects(f.rehearse(f.make({ readCoreTip: async () => ++checks === 1 ? f.tip : { ...f.tip, height: f.tip.height + 1 } })), /checkpoint changed/);
+  await assert.rejects(f.rehearse(f.make({ readCoreBlock: async () => ({ descriptor: commit('unrelated') }) })), /raw descriptor/);
+  await assert.rejects(f.rehearse(f.make({ readCoreBlock: async row => ({ descriptor: row.payload.blockDescriptorCommitment,
+    rawProtocolCandidateCount: 0, rawRecords: [], transactions: [{ txid: hex(555) }] }) })), /carrier evidence/);
+  assert.deepEqual(await fs.readFile(f.file), f.original);
+  await assert.rejects(fs.stat(f.next), { code: 'ENOENT' });
+});
+
+test('separate writer cannot replace a newer generation with a stale replay or append', async t => {
+  const f = await replayFixture(t);
+  const scope = { network: 'livenet', activationHeight: opening, activationPreviousBlockHash: hex(opening - 1),
+    feeRateActivationHeight: opening, feeRateActivationPreviousBlockHash: hex(opening - 1) };
+  const stale = createPermissionVerificationStore({ directory: f.directory });
+  const head = await stale.inspect(scope);
+  const d = f.make();
+  await assert.rejects(f.run(d), /verified prefix witness changed/);
+  for (let i = 0; i < 100; i++) {
+    try { await fs.stat(f.next); break; } catch { await new Promise(resolve => setTimeout(resolve, 5)); }
+  }
+  const active = await fs.readFile(f.next);
+  await assert.rejects(stale.supersede(scope, head.fileSha256, opening + 1, head.blocks.slice(1),
+    { predecessorSha256: head.fileSha256, retainedThrough: opening, through: opening + 2 }, async () => {}), /changed before publication/);
+  assert.deepEqual(await fs.readFile(f.next), active);
+  assert.deepEqual(await fs.readFile(f.file), f.original);
 });

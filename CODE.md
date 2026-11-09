@@ -274,6 +274,11 @@ dropped, orphaned and unavailable evidence never mutate confirmed trees.
 Replaying from scratch at a new canonical checkpoint handles reorganizations;
 a later descendant whose parent disappeared is retained unapplied.
 
+When Core detaches the discovery checkpoint, the worker verifies both branches
+back to their common ancestor. The raw detached blocks must reproduce the old
+candidate count and digest. The worker records the old marker, compares it
+under lock, rewinds to the proven ancestor, and scans the replacement blocks.
+
 `verifyCodeTransaction` accepts hydrated raw transactions, not semantic UI
 claims. `replayCodeTransactions` returns repositories and all discovered Code
 candidate events. A hash callback verifies nonempty source bytes in both Node

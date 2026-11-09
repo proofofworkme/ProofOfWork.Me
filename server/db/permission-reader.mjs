@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { WORK_AMO_V5_ACTIVATION_HEIGHT, WORK_AMO_V5_BLOCK_SEQUENCER_MODEL } from '../work-amo-v5.mjs';
 import { WORK_AMO_V8_BLOCK_SEQUENCER_MODEL } from '../work-amo-v8.mjs';
 import { permissionReadError } from '../permissions.mjs';
+import { permissionSupersession } from './permission-supersession.mjs';
 
 // Keep resumed and complete discovery on the same canonical witness chain.
 export function permissionBlockWitnessSeed(network, activationHeight, activationPreviousBlockHash) {
@@ -30,7 +31,7 @@ export function createPermissionIndexDiscovery({ pool: getPool, readScan }) {
   return async function readIndex(network, options = {}) {
     const pool = typeof getPool === 'function' ? getPool() : getPool;
     const { activationHeight, activationPreviousBlockHash, expectedHeight, expectedHash, onBlock, verifiedPrefix,
-      checkBudget = () => {}, maxPrefixBytes = 64 * 1024 * 1024 } = options;
+      replay = null, checkBudget = () => {}, maxPrefixBytes = 64 * 1024 * 1024 } = options;
     const fromHeight = options.fromHeight ?? activationHeight;
     const hashPattern = /^[0-9a-f]{64}$/u;
     if (!pool || network !== 'livenet' || typeof readScan !== 'function' || !Number.isSafeInteger(activationHeight) || activationHeight < WORK_AMO_V5_ACTIVATION_HEIGHT ||
@@ -77,11 +78,14 @@ export function createPermissionIndexDiscovery({ pool: getPool, readScan }) {
             ![WORK_AMO_V5_BLOCK_SEQUENCER_MODEL, WORK_AMO_V8_BLOCK_SEQUENCER_MODEL].includes(row.model)) throw permissionReadError('Permission block witnesses are incomplete or noncontiguous.');
       }
       let indexWitnessSha256 = permissionIndexWitnessSeed(network, activationHeight, activationPreviousBlockHash);
+      let replayFrom, replayParent, replayWitness;
+      if (replay && (!verifiedPrefix || !Array.isArray(replay.blocks) || replay.blocks.at(-1)?.row.height !== verifiedPrefix.height ||
+          replay.blocks.length !== verifiedPrefix.height - activationHeight + 1)) throw permissionReadError('Invalid Permission journal replay boundary.');
       if (verifiedPrefix) {
         let prefixHeight = activationHeight, prefixHash = activationPreviousBlockHash;
         let prefixBytes = 0;
         let prefixWitness = permissionBlockWitnessSeed(network, activationHeight, activationPreviousBlockHash);
-        while (prefixHeight <= verifiedPrefix.height) {
+        prefixScan: while (prefixHeight <= verifiedPrefix.height) {
           checkBudget();
           // Reauthenticate compact descriptors and native storage commitments,
           // without hydrating prior raw records or reconstructing native bodies.
@@ -105,19 +109,37 @@ export function createPermissionIndexDiscovery({ pool: getPool, readScan }) {
           for (const row of result.rows) {
             checkBudget();
             assertRow(row, prefixHeight, prefixHash);
+            if (replay) {
+              const receipt = replay.blocks[prefixHeight - activationHeight];
+              if (receipt.row.block_hash !== row.block_hash) throw permissionReadError('Permission replay journal is not on the canonical chain.');
+              if (permissionIndexWitnessNext(indexWitnessSha256, row) !== receipt.indexWitnessSha256) {
+                replayFrom = prefixHeight; replayParent = prefixHash; replayWitness = prefixWitness;
+                break prefixScan;
+              }
+            }
             prefixWitness = permissionBlockWitnessNext(prefixWitness, row);
             indexWitnessSha256 = permissionIndexWitnessNext(indexWitnessSha256, row);
             prefixHash = row.block_hash; prefixHeight += 1;
           }
         }
-        if (prefixHeight !== verifiedPrefix.height + 1 || prefixHash !== verifiedPrefix.blockHash ||
-            prefixWitness !== verifiedPrefix.witnessSha256 || indexWitnessSha256 !== verifiedPrefix.indexWitnessSha256) {
-          throw permissionReadError('Permission verified prefix witness changed in the index.');
+        if (!replayFrom && (prefixHeight !== verifiedPrefix.height + 1 || prefixHash !== verifiedPrefix.blockHash ||
+            prefixWitness !== verifiedPrefix.witnessSha256 || indexWitnessSha256 !== verifiedPrefix.indexWitnessSha256)) {
+          throw permissionReadError('Permission verified prefix witness changed in the index.', 503, 'PERMISSION_PREFIX_CHANGED');
         }
       }
-      let height = fromHeight, previousHash = anchorHash;
-      let witnessSha256 = verifiedPrefix?.witnessSha256 ?? permissionBlockWitnessSeed(network, activationHeight, activationPreviousBlockHash);
-      while (height <= expectedHeight) {
+      if (options.verifyPrefixOnly === true) {
+        if (!verifiedPrefix || replay) throw permissionReadError('Permission replay requires a verified prefix fence.');
+        await client.query('COMMIT');
+        if (!scanReady(await readScan(pool, network))) throw permissionReadError('Permission replay checkpoint changed.');
+        return { complete: false, verifiedPrefix: verifiedPrefix.height };
+      }
+      if (replay && (!replayFrom || verifiedPrefix.height - replayFrom >= 512 || !usesNativeWitness)) {
+        throw permissionReadError('Permission replay requires a bounded changed native suffix.');
+      }
+      const through = replay ? verifiedPrefix.height : expectedHeight;
+      let height = replayFrom ?? fromHeight, previousHash = replayParent ?? anchorHash;
+      let witnessSha256 = replayWitness ?? verifiedPrefix?.witnessSha256 ?? permissionBlockWitnessSeed(network, activationHeight, activationPreviousBlockHash);
+      while (height <= through) {
         checkBudget();
         const result = await client.query(`/* permission_raw_block_coverage */
           SELECT block.height,block.block_hash,block.previous_block_hash,
@@ -134,20 +156,26 @@ export function createPermissionIndexDiscovery({ pool: getPool, readScan }) {
             AND transition.previous_block_hash=block.previous_block_hash
           ${nativeWitnessJoin}
           WHERE block.network=$1 AND block.canonical=true AND block.height >= $2 AND block.height <= $3
-          ORDER BY block.height,block.block_hash LIMIT 8`, [network, height, expectedHeight]);
+          ORDER BY block.height,block.block_hash LIMIT 8`, [network, height, through]);
         checkBudget();
         if (!result.rows.length) throw permissionReadError('Permission raw block coverage has a gap.');
         for (const row of result.rows) {
           assertRow(row, height, previousHash);
           const nextWitness = permissionBlockWitnessNext(witnessSha256, row);
           const nextIndexWitness = permissionIndexWitnessNext(indexWitnessSha256, row);
-          await onBlock(row, { height, blockHash: row.block_hash, witnessSha256: nextWitness, indexWitnessSha256: nextIndexWitness });
+          const provenance = replay ? await permissionSupersession(client, network, replay.blocks[height - activationHeight].row, row) : null;
+          await onBlock(row, { height, blockHash: row.block_hash, witnessSha256: nextWitness, indexWitnessSha256: nextIndexWitness }, provenance);
           witnessSha256 = nextWitness;
           indexWitnessSha256 = nextIndexWitness;
           previousHash = row.block_hash; height += 1;
         }
       }
-      if (height !== expectedHeight + 1 || previousHash !== expectedHash) throw permissionReadError('Permission coverage does not reach the exact checkpoint.');
+      if (height !== through + 1 || previousHash !== (replay ? verifiedPrefix.blockHash : expectedHash)) throw permissionReadError('Permission coverage does not reach the exact checkpoint.');
+      if (replay) {
+        await client.query('COMMIT');
+        if (!scanReady(await readScan(pool, network))) throw permissionReadError('Permission replay checkpoint changed.');
+        return { complete: false, replayFrom, through, witnessSha256, indexWitnessSha256 };
+      }
       const pending = await client.query(`/* permission_pending_candidates */ SELECT DISTINCT carrier.txid
         FROM proof_indexer.op_returns carrier JOIN proof_indexer.transactions tx ON tx.network=carrier.network AND tx.txid=carrier.txid
         WHERE carrier.network=$1 AND carrier.protocol='pwm1' AND tx.status='pending'

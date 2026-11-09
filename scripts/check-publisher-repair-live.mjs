@@ -49,4 +49,5 @@ for (const [index, [source, path]] of helpers.entries()) {
 }
 execFileSync(process.execPath, [join(repo, "scripts/check-summary-preview-live.mjs")], { cwd: repo, stdio: "inherit", timeout: 240_000 });
 execFileSync(process.execPath, [join(repo, "scripts/check-pending-discovery-live.mjs")], { cwd: repo, stdio: "inherit", timeout: 240_000 });
+execFileSync(process.execPath, [join(repo, "scripts/check-work-storage-readers-live.mjs")], { cwd: repo, stdio: "inherit", timeout: 480_000 });
 console.log(JSON.stringify({ verifiedRelease: status.pair.current, retainedFallback: status.pair.previous }));

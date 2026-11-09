@@ -134,6 +134,11 @@ Invalid, conflicting or stale
 records remain inspectable evidence and cannot change an accepted state. Reorg
 replay follows the surviving canonical chain.
 
+Jobs discovery verifies a detached checkpoint against Core and reconstructs
+the original candidate digest before rewinding. The worker preserves the old
+marker and detached block identities, then scans the replacement branch from
+the proven common ancestor. Historical job actions remain inspectable.
+
 Version 2 opens at height **970577**, after independently verified Core parent
 **970576** / `00000000000000000001bc401b09150a6f092579644cc5616a828949f48bbd1d`.
 Earlier version-2-shaped Mail is rejected historical evidence. The original

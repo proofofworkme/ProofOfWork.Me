@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { workAmoV5CanonicalPayloadCommitment } from './work-amo-v5.mjs';
 import { PERMISSION_ACTIVATION_HEIGHT, PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH,
   PERMISSION_FEE_RATE_ACTIVATION_HEIGHT, PERMISSION_FEE_RATE_ACTIVATION_PREVIOUS_BLOCK_HASH } from '../src/shared/protocol/permissions.mjs';
@@ -47,11 +48,12 @@ export function assertPermissionRawBlockCoverage(row, core) {
 }
 
 /** Independent complete first-party Core verification; no feed, search or local marker proves authority. */
-export function createPermissionDiscovery({ store = null, readIndex, readCoreBlock, readCoreHash, hydratePending,
+export function createPermissionDiscovery({ store = null, readIndex, readCoreBlock, readCoreHash, readCoreTip, hydratePending,
   maxCacheBytes = 128 * 1024 * 1024, maxProjectionBytes = 64 * 1024 * 1024, readBudgetMs = 25000, now = () => Date.now(),
   feeRateActivationHeight = PERMISSION_FEE_RATE_ACTIVATION_HEIGHT,
   feeRateActivationPreviousBlockHash = PERMISSION_FEE_RATE_ACTIVATION_PREVIOUS_BLOCK_HASH }) {
   const blocks = new Map(), inFlight = new Map(), reads = new Map(), prefixes = new Map(), queues = new Map();
+  const repairs = new Map();
   let cacheBytes = 0;
   async function block(row) {
     const id = `${row.height}:${row.block_hash}`;
@@ -167,13 +169,91 @@ export function createPermissionDiscovery({ store = null, readIndex, readCoreBlo
     budget();
     return result;
   }
+  // Only a fully verified replacement generation may become the next durable prefix.
+  async function reconcile(network, checkpoint, activationHeight, parentHash, apply = false) {
+    if (!store || typeof readCoreTip !== 'function') throw permissionReadError('Permission journal replay is unavailable.');
+    const scope = { network, activationHeight, activationPreviousBlockHash: parentHash,
+      feeRateActivationHeight, feeRateActivationPreviousBlockHash };
+    const base = await store.inspect(scope), end = base.blocks.at(-1), through = Number(end.row.height);
+    const deadline = now() + 10 * 60_000;
+    const checkBudget = () => { if (now() > deadline) throw permissionReadError('Permission journal replay exceeded its time budget.'); };
+    const tipFence = async () => {
+      checkBudget();
+      if (await readCoreHash(activationHeight - 1, network) !== parentHash ||
+          await readCoreHash(feeRateActivationHeight - 1, network) !== feeRateActivationPreviousBlockHash ||
+          await readCoreHash(through, network) !== end.row.block_hash) throw permissionReadError('Permission replay Core boundary changed.');
+      const tip = await readCoreTip();
+      if (through > checkpoint.height || tip.height !== checkpoint.height || tip.blockHash !== checkpoint.blockHash) {
+        throw permissionReadError('Permission replay Core checkpoint changed.', 409, 'PERMISSION_CHECKPOINT_REORG');
+      }
+    };
+    await tipFence();
+    const options = { activationHeight, activationPreviousBlockHash: parentHash,
+      expectedHeight: checkpoint.height, expectedHash: checkpoint.blockHash, fromHeight: through + 1,
+      verifiedPrefix: { height: through, blockHash: end.row.block_hash, witnessSha256: end.witnessSha256,
+        indexWitnessSha256: end.indexWitnessSha256 }, checkBudget, maxPrefixBytes: maxProjectionBytes };
+    const replacements = [], sources = [];
+    const result = await readIndex(network, { ...options, replay: base, onBlock: async (row, progress, provenance) => {
+      checkBudget();
+      const old = base.blocks[Number(row.height) - activationHeight];
+      const confirmed = assertPermissionRawBlockCoverage(row, await block(row));
+      if (old.row.block_hash !== row.block_hash || !isDeepStrictEqual(old.transactions, confirmed)) {
+        throw permissionReadError('Permission replay changes authenticated carrier evidence.');
+      }
+      const last = replacements.at(-1) ?? base.blocks[Number(row.height) - activationHeight - 1];
+      const witness = permissionBlockWitnessNext(last?.witnessSha256 ?? permissionBlockWitnessSeed(network, activationHeight, parentHash), row);
+      const indexWitness = permissionIndexWitnessNext(last?.indexWitnessSha256 ?? permissionIndexWitnessSeed(network, activationHeight, parentHash), row);
+      if (progress.height !== Number(row.height) || progress.blockHash !== row.block_hash ||
+          progress.witnessSha256 !== witness || progress.indexWitnessSha256 !== indexWitness) {
+        throw permissionReadError('Permission replay rolling witnesses differ.');
+      }
+      if (provenance) sources.push({ height: Number(row.height), ...provenance });
+      replacements.push(store.receipt(row, confirmed, witness, indexWitness));
+    }});
+    const last = replacements.at(-1);
+    if (!last || !sources.length || result.complete !== false || result.through !== through ||
+        through - result.replayFrom + 1 !== replacements.length || result.replayFrom !== replacements[0].row.height ||
+        result.witnessSha256 !== last.witnessSha256 || result.indexWitnessSha256 !== last.indexWitnessSha256) {
+      throw permissionReadError('Permission journal replay lacks a complete witnessed suffix.');
+    }
+    const fence = async () => {
+      const proof = await readIndex(network, { ...options, verifyPrefixOnly: true,
+        verifiedPrefix: { ...options.verifiedPrefix, witnessSha256: last.witnessSha256, indexWitnessSha256: last.indexWitnessSha256 },
+        onBlock: () => { throw permissionReadError('Unexpected block during Permission replay fence.'); } });
+      if (proof.complete !== false || proof.verifiedPrefix !== through) throw permissionReadError('Permission replay index fence differs.');
+      await tipFence();
+    };
+    const evidence = { model: 'permission-native-supersession-replay-v1', predecessorSha256: base.fileSha256,
+      retainedThrough: result.replayFrom - 1, through, checkpoint, sourceCount: sources.length,
+      replayed: replacements.length, descriptorChanges: replacements.filter(row => !isDeepStrictEqual(
+        row.row.payload, base.blocks[row.row.height - activationHeight].row.payload)).length,
+      suffixCarriers: replacements.reduce((count, row) => count + row.transactions.length, 0),
+      witnessSha256: last.witnessSha256, indexWitnessSha256: last.indexWitnessSha256, sources };
+    const evidenceSha256 = createHash('sha256').update(JSON.stringify(evidence)).digest('hex');
+    if (apply) await store.supersede(scope, base.fileSha256, result.replayFrom, replacements, evidence, fence);
+    else await fence();
+    return { ...evidence, evidenceSha256, published: apply };
+  }
   async function discover(network, checkpoint, activationHeight = PERMISSION_ACTIVATION_HEIGHT, parentHash = PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH) {
     const authorityScope = `${network}:${activationHeight}:${parentHash}:${feeRateActivationHeight}:${feeRateActivationPreviousBlockHash}`;
     const scope = `${authorityScope}:${checkpoint?.height}:${checkpoint?.blockHash}`;
     if (!reads.has(scope)) {
       const deadline = now() + readBudgetMs;
       const prior = queues.get(authorityScope) ?? Promise.resolve();
-      const task = prior.catch(() => {}).then(() => read(network, checkpoint, activationHeight, parentHash, authorityScope, deadline));
+      const task = prior.catch(() => {}).then(async () => {
+        if (repairs.has(authorityScope)) throw permissionReadError('Permission journal replay is in progress.');
+        try { return await read(network, checkpoint, activationHeight, parentHash, authorityScope, deadline); }
+        catch (error) {
+          if (error.details?.code === 'PERMISSION_PREFIX_CHANGED' && store?.inspect && typeof readCoreTip === 'function') {
+            const repair = reconcile(network, checkpoint, activationHeight, parentHash, true)
+              .then(() => prefixes.delete(authorityScope))
+              .catch(reason => console.warn('Permission journal replay refused:', reason.message))
+              .finally(() => repairs.delete(authorityScope));
+            repairs.set(authorityScope, repair);
+          }
+          throw error;
+        }
+      });
       reads.set(scope, task);
       queues.set(authorityScope, task);
       task.finally(() => {
@@ -189,5 +269,7 @@ export function createPermissionDiscovery({ store = null, readIndex, readCoreBlo
     return { activationHeight, verifiedThroughBlock: prefix?.height ?? activationHeight - 1,
       durableVerifiedThroughBlock: store && prefix ? prefix.height : null };
   };
+  discover.rehearseJournal = (network, checkpoint, activationHeight = PERMISSION_ACTIVATION_HEIGHT,
+    parentHash = PERMISSION_ACTIVATION_PREVIOUS_BLOCK_HASH) => reconcile(network, checkpoint, activationHeight, parentHash);
   return discover;
 }

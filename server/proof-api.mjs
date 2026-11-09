@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createBroadcastHints } from "./pending-broadcast-hints.mjs";
+import { writeCanonicalSummaryStream } from "./canonical-summary-stream.mjs";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { performance } from "node:perf_hooks";
 import { setImmediate as yieldToIo } from "node:timers/promises";
@@ -3831,7 +3832,7 @@ async function walletOverlayWithCanonicalWorkSupply(overlay, network) {
     return overlay;
   }
   const summary = await payloadWithFallbackAfterMs(
-    proofIndexSnapshotPayload(network, "workSummary").catch(() => null),
+    proofIndexSnapshotPayload(network, "workSummary", { includeWorkTransferProjection: false }).catch(() => null),
     null,
     Math.min(WALLET_SCOPED_INDEX_WAIT_MS, SUMMARY_PROOF_INDEX_READ_WAIT_MS),
   );
@@ -36531,11 +36532,19 @@ const discoverDnsSubdomainPageLinks = createDnsPageLinkDiscovery({
   },
 });
 
+const rehearsePermissionJournal = isMainThread && process.argv.slice(2).length === 1 &&
+  process.argv[2] === "--rehearse-permission-journal";
 const discoverPermissions = createPermissionDiscovery({
   store: createPermissionVerificationStore({
     directory: path.join(PERSISTED_CACHE_DIR, "permission-verification-v1"),
+    readOnly: rehearsePermissionJournal,
   }),
   readIndex: proofIndexPermissionDiscovery,
+  async readCoreTip() {
+    const chain = await bitcoinRpc("getblockchaininfo", []);
+    if (!chain.ok) throw permissionReadError("Permission Core tip is unavailable.");
+    return { height: chain.result.blocks, blockHash: chain.result.bestblockhash };
+  },
   async readCoreHash(height) {
     const result = await bitcoinRpc("getblockhash", [height]);
     const hash = String(result?.ok ? result.result : "").trim().toLowerCase();
@@ -44485,7 +44494,7 @@ async function storedCanonicalTokenSummaryPayload(network, tokenScope = "") {
             ? ""
             : "tokenSummary";
   if (parentKey) {
-    const stored = await proofIndexSnapshotPayload(network, parentKey).catch(
+    const stored = await proofIndexSnapshotPayload(network, parentKey, { includeWorkTransferProjection: false }).catch(
       (error) => {
         console.error(
           `Proof index canonical token summary read failed for ${scope || "all"}: ${errorSummary(error)}`,
@@ -46346,8 +46355,10 @@ function compactWorkSummaryPayload(payload) {
       )
     : payload.token;
 
+  const summary = { ...payload };
+  delete summary.workTransferValueProjection;
   return {
-    ...payload,
+    ...summary,
     token:
       tokenState && typeof tokenState === "object"
         ? compactTokenSummaryPayload(tokenState, WORK_TOKEN_ID, {
@@ -48587,7 +48598,7 @@ async function currentProofIndexSummarySnapshotPayload(
   options = {},
 ) {
   let indexedPayload = await payloadWithFallbackAfterMs(
-    proofIndexSnapshotPayload(network, key),
+    proofIndexSnapshotPayload(network, key, { includeWorkTransferProjection: options.includeWorkTransferProjection }),
     null,
     SUMMARY_PROOF_INDEX_READ_WAIT_MS,
   ).catch((error) => {
@@ -48661,12 +48672,14 @@ async function currentProofIndexSummarySnapshotFallbackPayload(
   network,
   key,
   label,
+  includeWorkTransferProjection = true,
 ) {
   const payload = await currentProofIndexSummarySnapshotPayload(
     network,
     key,
     label,
     {
+      includeWorkTransferProjection,
       allowWithoutCanonicalLedger: true,
       allowWithoutCurrentCoverage: true,
     },
@@ -48691,6 +48704,7 @@ async function currentProofIndexWorkFloorFallbackPayload(
     network,
     "workSummary",
     "work-summary",
+    false,
   );
   if (workSummary?.floor) {
     return workFloorWithSummaryMarketOverlay(
@@ -57990,7 +58004,7 @@ async function workFloorResponsePayload(network, fresh = false) {
   );
 }
 
-async function fastLivenetWorkSummaryPayload(network) {
+async function fastLivenetWorkSummaryPayload(network, includeWorkTransferProjection = true) {
   const ledger = await existingCurrentCanonicalLedgerPayloadWithinMs(
     network,
     "work-summary canonical ledger",
@@ -58000,6 +58014,7 @@ async function fastLivenetWorkSummaryPayload(network) {
       network,
       "workSummary",
       "work-summary",
+      includeWorkTransferProjection,
     );
     const indexedToken = canonicalWorkMarketV2TokenSummary(
       indexedPayload?.token,
@@ -58093,13 +58108,14 @@ async function fastLivenetWorkSummaryPayload(network) {
   );
 }
 
-async function workSummaryPayload(network, fresh = false) {
+async function workSummaryPayload(network, fresh = false, includeWorkTransferProjection = true) {
   if (network === "livenet") {
     const exactIndexedPayload =
       await currentProofIndexSummarySnapshotFallbackPayload(
         network,
         "workSummary",
         "work-summary",
+        includeWorkTransferProjection,
       );
     const exactIndexedToken = canonicalWorkMarketV2TokenSummary(
       exactIndexedPayload?.token,
@@ -58127,7 +58143,7 @@ async function workSummaryPayload(network, fresh = false) {
       );
     }
     if (!fresh) {
-      return fastLivenetWorkSummaryPayload(network);
+      return fastLivenetWorkSummaryPayload(network, includeWorkTransferProjection);
     }
 
     const ledger = await summaryCanonicalLedgerPayload(network, fresh);
@@ -58301,6 +58317,7 @@ async function workSummaryPayload(network, fresh = false) {
       network,
       "workSummary",
       "work-summary",
+      includeWorkTransferProjection,
     );
     const indexedToken = canonicalWorkMarketV2TokenSummary(
       indexedPayload?.token,
@@ -83326,17 +83343,12 @@ async function handleRequest(request, response) {
             priorPendingSnapshot: url.searchParams.get("priorPendingSnapshot"),
             pendingLogHash: url.searchParams.get("pendingLogHash"),
           });
-      jsonResponse(
-        response,
-        200,
-        await internalReplayBoundPayload(
-          network,
-          requestedReplayBindingId,
-          payload,
-          replayVerifierBinding,
-        ),
-        "no-store",
-      );
+      const bound = await internalReplayBoundPayload(network, requestedReplayBindingId, payload, replayVerifierBinding);
+      if (!storedExact && url.searchParams.get("workProjectionTransport") === "v1") {
+        await writeCanonicalSummaryStream(response, bound, 64 * 1024 * 1024);
+      } else {
+        jsonResponse(response, 200, bound, "no-store");
+      }
       return;
     }
 
@@ -84556,6 +84568,7 @@ async function handleRequest(request, response) {
           network,
           "workSummary",
           "work-summary",
+          { includeWorkTransferProjection: !compactRead },
         );
         if (indexedPayload) {
           const responsePayload = await workSummaryWithCurrentBtcUsd(
@@ -84584,8 +84597,8 @@ async function handleRequest(request, response) {
       }
       const workSummaryResponsePayload = async () => {
         const rawWorkSummary = await deduplicatedSummaryRead(
-          `work-summary:${network}:${freshRead ? "fresh" : "cached"}`,
-          () => workSummaryPayload(network, freshRead),
+          `work-summary:${network}:${freshRead ? "fresh" : "cached"}:${compactRead ? "compact" : "full"}`,
+          () => workSummaryPayload(network, freshRead, !compactRead),
         );
         const workSummary = compactRead
           ? compactWorkSummaryPayload(rawWorkSummary)
@@ -85286,6 +85299,16 @@ const amoBrowseStore = createAmoBrowseSnapshotStore({
   isSealed: tokenListingHasConfirmedSaleTicketSeal,
   onError: (error) => console.error(`AMO browse background verification unavailable: ${errorSummary(error)}`),
 });
+
+if (rehearsePermissionJournal) {
+  const chain = await bitcoinRpc("getblockchaininfo", []);
+  if (!chain.ok) throw permissionReadError("Permission rehearsal requires a live Core checkpoint.");
+  const report = await discoverPermissions.rehearseJournal("livenet",
+    { height: chain.result.blocks, blockHash: chain.result.bestblockhash });
+  await new Promise((resolve, reject) => process.stdout.write(JSON.stringify(report) + "\n",
+    error => error ? reject(error) : resolve()));
+  process.exit(0);
+}
 
 if (isMainThread) {
 server.listen(PORT, HOST, () => {

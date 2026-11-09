@@ -1,14 +1,24 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "publish-and-preserve-verified-ui-fallback",
+  "upgrade": "snapshot-bound-work-history-and-canonical-reader-recovery",
   "liveCheck": "scripts/check-publisher-repair-live.mjs",
   "ciTests": [
     "scripts/check-publisher-repair.test.mjs",
+    "server/canonical-summary-stream.test.mjs",
+    "server/db/work-transfer-projection-store.test.mjs",
+    "server/candidate-discovery-reorg.test.mjs",
+    "server/code-repositories.test.mjs",
+    "server/jobs-discovery.test.mjs",
+    "server/permission-verification-store.test.mjs",
+    "server/permission-discovery.test.mjs",
     "scripts/check-upgrade-impact.test.mjs",
     "scripts/check-work-batch-summary-projection.test.mjs",
     "scripts/check-pending-discovery-worker.test.mjs",
     "server/pending-broadcast-hints.test.mjs",
-    "scripts/check-pending-log-publication.test.mjs"
+    "scripts/check-pending-log-publication.test.mjs",
+    "server/db/summary-component-read.test.mjs",
+    "scripts/check-summary-transition-freshness.test.mjs",
+    "server/permission-api.test.mjs"
   ],
   "reviews": [
     {
@@ -38,22 +48,37 @@
         "compatibility"
       ],
       "disposition": "affected",
-      "reason": "All 22 static roots share release staging, archive and rollback verification. The publisher checks the retained fallback at its original paths before and after exchange and stops on any unqualified retirement. Boot-log reconciliation verifies the four original fallback objects with the candidate policy and storage modules before the installed lifecycle configuration can change.",
+      "reason": "All 22 roots share the retained-release checks. Log, WORK, Growth and the Computer workspaces depend on exact summary publication. Permissions verifies the canonical replay suffix, and Code and Jobs resume discovery from a proven common ancestor. Site provenance and the published renderer are checked on the released tree.",
       "evidence": [
         "deploy/publish/check-private-staging.test.py",
         "scripts/check-ui-compatibility-boundaries.py",
         "deploy/ui-retention/check-lifecycle-remote.test.py",
         "scripts/check-release-sync.mjs",
-        "deploy/ui-retention/install_lifecycle.py"
+        "deploy/ui-retention/install_lifecycle.py",
+        "scripts/check-work-storage-readers-live.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "indexer",
+        "api",
+        "backfill-reorg",
+        "accounting"
+      ],
+      "disposition": "affected",
+      "reason": "The writer persists all verified WORK projection pages atomically with the checkpoint, including each recipient and its single paying parent. Readers verify snapshot identity, per-page integrity, complete order and confirmed historical economics. Discovery rewinds preserve superseded evidence and reject unresolved or divergent authority. The release rehearsal binds the Permissions replay evidence to its observed Core checkpoint.",
+      "evidence": [
+        "server/db/work-transfer-projection-store.test.mjs",
+        "server/candidate-discovery-reorg.test.mjs",
+        "server/permission-verification-store.test.mjs",
+        "scripts/check-work-batch-summary-projection.test.mjs",
+        "scripts/check-work-storage-readers-live.mjs",
+        "deploy/summary-storage-readers/release.py"
       ]
     },
     {
       "targets": [
         "wire",
-        "indexer",
-        "api",
-        "backfill-reorg",
-        "accounting",
         "local-signing",
         "files",
         "mail",

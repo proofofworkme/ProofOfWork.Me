@@ -60,6 +60,7 @@ function discoveryHarness(fixtures, { budget = 1000, sealClosed = true, reorg = 
     return { rows: [] };
   } };
   const context = {
+    QUALIFY_DISCOVERY_REORG: false, RECOVER_DISCOVERY_REORG: false,
     process: { env: { POW_INDEX_JOBS_BOOTSTRAP_MAX_BLOCKS: String(budget) } }, NETWORK: 'livenet',
     WORK_AMO_V5_ACTIVATION_HEIGHT: 1, JOBS_DISCOVERY_META_KEY: 'jobs:candidate-discovery', JOBS_DISCOVERY_MODEL,
     JOBS_DISCOVERY_EMPTY_SHA256, advanceJobsCandidateDigest, prefilterCodeRawBlock, assertCodeRawBlockCandidatesMatch, isJobsCandidatePart,

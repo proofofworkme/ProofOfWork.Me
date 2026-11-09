@@ -1,4 +1,9 @@
 import { buildWorkBatchPayload, parseWorkBatchPayload } from "../src/shared/protocol/workBatch.mjs";
+import {
+  isWorkTransferProjectionReference, prepareWorkTransferProjection,
+  readWorkTransferProjection, storeWorkTransferProjection, workTransferProjectionSqlEligibility,
+} from "../server/db/work-transfer-projection-store.mjs";
+import { canonicalSummaryPayloadHash, readCanonicalSummaryStream, SUMMARY_STREAM_TYPE } from "../server/canonical-summary-stream.mjs";
 import { buildWorkMailBatchPayload, parseWorkMailBatchPayload, workMailBatchEnvelopeMatches } from "../src/shared/protocol/workMailBatch.mjs";
 import { verifiedWorkMailBatchEventIds } from "../server/db/work-mail-batch-reader.mjs";
 import { assertNoSealedWorkMailBatchAuthority } from "../server/db/work-mail-batch-discovery.mjs";
@@ -22,6 +27,7 @@ import { parseBoostTip, parseBoostWorkTip } from "../src/shared/protocol/boostTi
 import { verifyCodeTransaction } from "../src/shared/protocol/codeRepository.mjs";
 import { POWCAT_SCAN_ANCHOR, powcatCarrierKind, powcatObservations,
   persistPowcatObservations, reconcilePowcatPending, scanPowcatCoverage } from "../server/powcat-index.mjs";
+import { recoverCandidateDiscoveryReorg } from "../server/candidate-discovery-reorg.mjs";
 import { JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_META_KEY, JOBS_DISCOVERY_EMPTY_SHA256, advanceJobsCandidateDigest, jobsCandidateParts, isJobsCandidatePart, jobsCandidateEventClosure } from "../server/jobs.mjs";
 import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, CODE_DISCOVERY_EMPTY_SHA256, advanceCodeCandidateDigest, exactCodeOutputProofs, codeCandidateEventClosure, prefilterCodeRawBlock, assertCodeRawBlockCandidatesMatch } from "../server/code-repositories.mjs";
 import {
@@ -987,6 +993,12 @@ const PROTOCOL_PREFIXES = ["pwm1:", "pwa1:", "pwid1:", "pwdns1:", "pwb1:", "pwt1
 const BOOTSTRAP_CODE_CANDIDATES_ONLY = process.argv.includes("--bootstrap-code-candidates");
 const BOOTSTRAP_POWCAT_ONLY = process.argv.includes("--bootstrap-powcat");
 const BOOTSTRAP_JOBS_CANDIDATES_ONLY = process.argv.includes("--bootstrap-jobs-candidates");
+const QUALIFY_DISCOVERY_REORG = process.argv.includes("--qualify-discovery-reorg");
+const RECOVER_DISCOVERY_REORG = process.argv.includes("--recover-discovery-reorg");
+if ((QUALIFY_DISCOVERY_REORG || RECOVER_DISCOVERY_REORG) &&
+    (BOOTSTRAP_CODE_CANDIDATES_ONLY === BOOTSTRAP_JOBS_CANDIDATES_ONLY || (QUALIFY_DISCOVERY_REORG && RECOVER_DISCOVERY_REORG))) {
+  throw new Error("Choose one discovery bootstrap with one reorg qualification or recovery operation.");
+}
 const MAIL_ATTACHMENT_MAX_BYTES = 60_000;
 const INCLUDE_SCOPED_HOLDERS = !/^(?:0|false|no)$/iu.test(
   String(process.env.POW_INDEX_BACKFILL_HOLDERS ?? "1"),
@@ -3660,6 +3672,14 @@ function readCanonicalSummaryJsonViaLoopbackHttp(url, options = {}) {
         },
         (response) => {
           const statusCode = Number(response.statusCode ?? 0);
+          if (statusCode === 200 && response.headers["content-type"] === SUMMARY_STREAM_TYPE &&
+              url.searchParams.get("workProjectionTransport") === "v1") {
+            readCanonicalSummaryStream(response, maxBytes).then(
+              value => settle(resolve, value),
+              error => { settle(reject, error); response.destroy(); request?.destroy(); },
+            );
+            return;
+          }
           const declaredLength = Number(response.headers["content-length"]);
           if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
             const error = responseTooLargeError(declaredLength);
@@ -17025,6 +17045,7 @@ function canonicalQ16SummarySnapshotSqlEligibility(snapshotAlias) {
   ).join(", ");
   return `
     octet_length(${alias}.payload::text) <= ${CANONICAL_SUMMARY_SNAPSHOT_SQL_TEXT_MAX_BYTES}
+    AND ${workTransferProjectionSqlEligibility(alias)}
     AND NOT EXISTS (
       SELECT 1
       FROM jsonb_object_keys(
@@ -18908,7 +18929,7 @@ function canonicalSummaryAccountingModelsCurrent(summaryPayloads = {}, options =
   );
 }
 
-function eligibleCanonicalSummarySnapshotPayload(payload) {
+function eligibleCanonicalSummarySnapshotPayload(payload, accountingPayloads = payload?.summaryPayloads) {
   const item = objectPayload(payload);
   const tokenComponentCheck = (Array.isArray(item?.checks) ? item.checks : []).find(
     (check) => check?.name === "token-components-cover-confirmed-activity",
@@ -18941,7 +18962,7 @@ function eligibleCanonicalSummarySnapshotPayload(payload) {
         String(item.indexedThroughBlockHash ?? "").toLowerCase() &&
       /^[0-9a-f]{64}$/u.test(String(item.sourceHashes?.canonicalSummary ?? "")) &&
       canonicalSummaryCoverage(item.summaryPayloads) > 0 &&
-      canonicalSummaryAccountingModelsCurrent(item.summaryPayloads) &&
+      canonicalSummaryAccountingModelsCurrent(accountingPayloads) &&
       canonicalSummaryIncbHistoricalBaselineCurrent(item) &&
       exactSummarySnapshotTotalsCurrent(item),
   );
@@ -19107,6 +19128,14 @@ function publicLogFingerprintsMatch(left, right) {
   );
 }
 
+async function storedAccountingSummaryPayloads(client, payload) {
+  const summaries = payload?.summaryPayloads;
+  const work = summaries?.workSummary;
+  if (!isWorkTransferProjectionReference(work?.workTransferValueProjection)) return summaries;
+  const projection = await readWorkTransferProjection(client, work.workTransferValueProjection, payload);
+  return { ...summaries, workSummary: { ...work, workTransferValueProjection: projection } };
+}
+
 async function storedEligibleCanonicalSummarySnapshotPayload(client) {
   const workAmountStorageModel =
     await currentWorkProjectionModel(client, { refresh: true });
@@ -19116,7 +19145,7 @@ async function storedEligibleCanonicalSummarySnapshotPayload(client) {
   const currentSummaryEligibility =
     workAmountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
       ? canonicalQ16SummarySnapshotSqlEligibility("snapshot")
-      : "true";
+      : workTransferProjectionSqlEligibility("snapshot");
   const result = await client.query(
     `
       SELECT snapshot.payload
@@ -19161,7 +19190,8 @@ async function storedEligibleCanonicalSummarySnapshotPayload(client) {
     [NETWORK, workAmountStorageModel],
   );
   const payload = result.rows[0]?.payload;
-  return eligibleCanonicalSummarySnapshotPayload(payload) ? payload : null;
+  return eligibleCanonicalSummarySnapshotPayload(payload, await storedAccountingSummaryPayloads(client, payload))
+    ? payload : null;
 }
 
 async function storedExactEligibleCanonicalSummarySnapshotPayload(
@@ -19476,7 +19506,10 @@ async function pruneLedgerSnapshots(
             WHEN snapshot.source_hashes ? 'canonicalSummary'
             THEN octet_length(
               COALESCE(snapshot.payload, 'null'::jsonb)::text
-            )::bigint
+            )::bigint + CASE WHEN snapshot.payload #>> '{summaryPayloads,workSummary,workTransferValueProjection,model}' =
+              'canonical-work-transfer-projection-reference-v1'
+              THEN (SELECT COALESCE(SUM(octet_length(page.payload)), 0) FROM proof_indexer.work_transfer_projection_pages page
+                    WHERE page.network = snapshot.network AND page.snapshot_id = snapshot.snapshot_id) ELSE 0 END
             ELSE 0::bigint
           END AS logical_bytes
         FROM proof_indexer.ledger_snapshots snapshot
@@ -19961,6 +19994,30 @@ async function canonicalSummaryTransitionSourceCurrent(
     canonicalJsonText(row.stored_source) === canonicalJsonText(expected);
 }
 
+async function lockCanonicalSummaryPublicationCheckpoint(client, height, blockHash, historicalBarrier) {
+  await client.query("SET LOCAL lock_timeout = '2s'");
+  const exact = await client.query(
+    "SELECT block_hash FROM proof_indexer.blocks WHERE network=$1 AND height=$2 AND block_hash=$3 AND canonical FOR SHARE",
+    [NETWORK, height, blockHash],
+  );
+  if (exact.rows.length === 1) return;
+  if (!historicalBarrier) {
+    throw new Error("Canonical summary publication checkpoint is no longer a canonical block.");
+  }
+  // A supervised H-1 scan anchor can exist before its blocks row was materialized.
+  // Serialize this exceptional check with all scan/summary writers, without waiting.
+  await client.query("LOCK TABLE proof_indexer.ledger_snapshots IN SHARE ROW EXCLUSIVE MODE NOWAIT");
+  const known = await client.query(
+    "SELECT 1 FROM proof_indexer.blocks WHERE network=$1 AND (height=$2 OR block_hash=$3) LIMIT 1",
+    [NETWORK, height, blockHash],
+  );
+  const scan = await latestBlockScanCheckpoint(client, { useStoredCheckpoint: true });
+  if (known.rows.length || scan.height !== height || scan.blockHash !== blockHash ||
+      String(await bitcoinRpc("getblockhash", [height])).toLowerCase() !== blockHash) {
+    throw new Error("Historical canonical summary publication anchor no longer matches its scan and Core checkpoint.");
+  }
+}
+
 async function storeCanonicalSummarySnapshot(client, options = {}) {
   const latestCheckpoint = await latestBlockScanCheckpoint(client, {
     useStoredCheckpoint: true,
@@ -20024,6 +20081,10 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
         client, storedExactPayload, requiredCheckpointHeight, requiredCheckpointHash,
       )
     ) {
+      if (isWorkTransferProjectionReference(storedExactPayload.summaryPayloads?.workSummary?.workTransferValueProjection) &&
+          !eligibleCanonicalSummarySnapshotPayload(storedExactPayload, await storedAccountingSummaryPayloads(client, storedExactPayload))) {
+        throw new Error("Stored exact WORK projection does not match canonical summary accounting.");
+      }
       if (!options.refreshPendingLog || await storedSummaryCoversPendingLog(
         client, storedExactPayload.summaryRefresh?.publicLogFingerprint,
       )) {
@@ -20094,7 +20155,7 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     previousStorageEligible &&
     previousWorkState.ready &&
     previousTransitionSourceCurrent &&
-    canonicalSummaryAccountingModelsCurrent(previousPayload?.summaryPayloads, {
+    canonicalSummaryAccountingModelsCurrent(await storedAccountingSummaryPayloads(client, previousPayload), {
       workAmountStorageModel,
     }) &&
     publicLogFingerprintsMatch(
@@ -20115,6 +20176,7 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
   try {
     const canonicalSummaryUrl = unpagedEndpoint(
       "/api/v1/internal/canonical-summary",
+      { workProjectionTransport: "v1" },
     );
     if (checkpointRequired) {
       canonicalSummaryUrl.searchParams.set(
@@ -20327,9 +20389,7 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
     : null;
 
   const generatedAt = new Date().toISOString();
-  const summaryHash = createHash("sha256")
-    .update(JSON.stringify(summaryPayloads))
-    .digest("hex");
+  const summaryHash = canonicalSummaryPayloadHash(summaryPayloads);
   const sourceHashes = {
     ...(objectPayload(ledger.sourceHashes) ?? {}),
     blockScan: latestIndexedThroughBlockHash,
@@ -20352,9 +20412,14 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       workSufficientState,
     }),
   };
+  const work = summaryPayloads.workSummary;
+  const preparedProjection = prepareWorkTransferProjection(work.workTransferValueProjection, snapshotPayload);
+  snapshotPayload.summaryPayloads = {
+    ...summaryPayloads, workSummary: { ...work, workTransferValueProjection: preparedProjection.reference },
+  };
   const snapshotPayloadBytes =
     assertCanonicalSummarySnapshotStorageBudget(snapshotPayload);
-  const snapshotWriteResult = await client.query(
+  const writeSnapshot = () => client.query(
     `
       INSERT INTO proof_indexer.ledger_snapshots (
         network,
@@ -20493,13 +20558,18 @@ async function storeCanonicalSummarySnapshot(client, options = {}) {
       WORK_MARKET_V4_AUTH_VERSION,
     ],
   );
-  if (
-    snapshotWriteResult.rows.length !== 1 ||
-    String(snapshotWriteResult.rows[0]?.snapshot_id ?? "") !== snapshotId
-  ) {
-    throw new Error(
-      `Canonical summary ${snapshotId} is immutable and cannot be repaired in place.`,
-    );
+  await client.query("BEGIN");
+  try {
+    await lockCanonicalSummaryPublicationCheckpoint(client, latestIndexedHeight, latestIndexedThroughBlockHash, options.historicalBarrier === true);
+    const snapshotWriteResult = await writeSnapshot();
+    if (snapshotWriteResult.rows.length !== 1 || snapshotWriteResult.rows[0]?.snapshot_id !== snapshotId) {
+      throw new Error(`Canonical summary ${snapshotId} is immutable and cannot be repaired in place.`);
+    }
+    await storeWorkTransferProjection(client, preparedProjection);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   }
   const snapshotRetention = PRUNE_LEDGER_SNAPSHOTS_AFTER_CANONICAL_SUMMARY
     ? await pruneLedgerSnapshots(client)
@@ -26064,12 +26134,22 @@ async function advanceCodeDiscoveryCheckpoint(client, { height, blockHash, previ
 }
 
 /** Cold, resumable discovery over all Core blocks. It never resets sealed AMO. */
+async function hydrateDiscoveryTransition(client, position, row) {
+  if (!row?.payload?.__powNativeStorage) return row;
+  // Composed native workers may already hydrate the payload in the initial
+  // query. Only a native pointer needs this additional authenticated read.
+  const resolved = await client.query(
+    "SELECT block_height,block_hash,proof_indexer.read_work_transition_payload_v1(network,block_height,block_hash,payload) AS payload FROM proof_indexer.work_amo_block_transitions WHERE network=$1 AND block_height=$2 AND block_hash=$3",
+    [NETWORK, position.blockHeight, position.blockHash]);
+  return resolved.rows[0];
+}
 async function storedCodeCandidateEventClosure(client, tx, position) {
   const [events, transition] = await Promise.all([
     client.query("SELECT * FROM proof_indexer.events WHERE network=$1 AND txid=$2 AND protocol='pwc1'", [NETWORK, tx.txid]),
     client.query("SELECT block_height,block_hash,payload FROM proof_indexer.work_amo_block_transitions WHERE network=$1 AND block_height=$2 AND block_hash=$3", [NETWORK, position.blockHeight, position.blockHash]),
   ]);
-  return transition.rows.length === 1 && codeCandidateEventClosure(tx, events.rows, position, transition.rows[0]);
+  return transition.rows.length === 1 && codeCandidateEventClosure(tx, events.rows, position,
+    await hydrateDiscoveryTransition(client, position, transition.rows[0]));
 }
 
 async function advancePowcatWorker(client, maxBlocks) {
@@ -26084,7 +26164,7 @@ async function advancePowcatWorker(client, maxBlocks) {
     } });
 }
 
-async function bootstrapCodeCandidates(client) {
+async function bootstrapCodeCandidates(client, { automatic = false } = {}) {
   const locked = await client.query("SELECT pg_try_advisory_lock(hashtext($1),hashtext($2)) AS locked", [CODE_DISCOVERY_META_KEY, NETWORK]);
   if (locked.rows[0]?.locked !== true) throw new Error("Another Code discovery bootstrap is active.");
   try {
@@ -26094,10 +26174,19 @@ async function bootstrapCodeCandidates(client) {
     if (!marker) marker = { model: CODE_DISCOVERY_MODEL, network: NETWORK, fromHeight: 1,
       indexedThroughBlock: 0, indexedThroughBlockHash: String(await bitcoinRpc("getblockhash", [0])),
       candidateCount: 0, candidateSha256: CODE_DISCOVERY_EMPTY_SHA256, complete: false, blockedCandidates: [] };
-    if (String(await bitcoinRpc("getblockhash", [marker.indexedThroughBlock])) !== marker.indexedThroughBlockHash) throw new Error("Code discovery checkpoint was reorganized; preserve witnesses and perform supervised replay.");
+    const orphan = String(await bitcoinRpc("getblockhash", [marker.indexedThroughBlock])) !== marker.indexedThroughBlockHash;
+    if (orphan) {
+      if (!automatic && !RECOVER_DISCOVERY_REORG && !QUALIFY_DISCOVERY_REORG) throw new Error("Code discovery checkpoint was reorganized; qualify the orphaned discovery marker.");
+      const recovery = await recoverCandidateDiscoveryReorg({ client, rpc: bitcoinRpc, network: NETWORK, key: CODE_DISCOVERY_META_KEY, marker,
+        dryRun: !automatic && QUALIFY_DISCOVERY_REORG });
+      if (!automatic && QUALIFY_DISCOVERY_REORG) return recovery;
+      marker = recovery.next;
+    } else if (!automatic && QUALIFY_DISCOVERY_REORG) {
+      return { alreadyCanonical: true, indexedThroughBlock: marker.indexedThroughBlock, indexedThroughBlockHash: marker.indexedThroughBlockHash };
+    }
     if (marker.complete === true && marker.indexedThroughBlock === target.height && marker.indexedThroughBlockHash === target.blockHash) return marker;
     const lastGood = marker.complete === true ? marker : marker.lastGood;
-    const maxBlocks = Math.max(1, Math.min(10_000, Math.floor(Number(process.env.POW_INDEX_CODE_BOOTSTRAP_MAX_BLOCKS ?? 1000))));
+    const maxBlocks = automatic ? 2 : Math.max(1, Math.min(10_000, Math.floor(Number(process.env.POW_INDEX_CODE_BOOTSTRAP_MAX_BLOCKS ?? 1000))));
     if (!Number.isSafeInteger(maxBlocks)) throw new Error("Invalid Code bootstrap block budget.");
     let scanned = 0;
     while (marker.indexedThroughBlock < target.height && scanned < maxBlocks) {
@@ -26190,10 +26279,11 @@ async function storedJobsCandidateEventClosure(client, tx, position) {
     client.query("SELECT * FROM proof_indexer.events WHERE network=$1 AND txid=$2 AND protocol='pwm1'", [NETWORK, tx.txid]),
     client.query("SELECT block_height,block_hash,payload FROM proof_indexer.work_amo_block_transitions WHERE network=$1 AND block_height=$2 AND block_hash=$3", [NETWORK, position.blockHeight, position.blockHash]),
   ]);
-  return transition.rows.length === 1 && jobsCandidateEventClosure(tx, events.rows, position, transition.rows[0]);
+  return transition.rows.length === 1 && jobsCandidateEventClosure(tx, events.rows, position,
+    await hydrateDiscoveryTransition(client, position, transition.rows[0]));
 }
 
-async function bootstrapJobsCandidates(client) {
+async function bootstrapJobsCandidates(client, { automatic = false } = {}) {
   const locked = await client.query("SELECT pg_try_advisory_lock(hashtext($1),hashtext($2)) AS locked", [JOBS_DISCOVERY_META_KEY, NETWORK]);
   if (locked.rows[0]?.locked !== true) throw new Error("Another Jobs discovery bootstrap is active.");
   try {
@@ -26212,7 +26302,16 @@ async function bootstrapJobsCandidates(client) {
       indexedThroughBlock: JOBS_ACTIVATION_HEIGHT - 1, indexedThroughBlockHash: JOBS_ACTIVATION_PREVIOUS_BLOCK_HASH,
       candidateCount: 0, candidateSha256: JOBS_DISCOVERY_EMPTY_SHA256, complete: target.height === JOBS_ACTIVATION_HEIGHT - 1, blockedCandidates: [],
       generatedAt: new Date().toISOString() };
-    if (String(await bitcoinRpc("getblockhash", [marker.indexedThroughBlock])) !== marker.indexedThroughBlockHash) throw new Error("Jobs discovery checkpoint was reorganized; preserve witnesses and perform supervised replay.");
+    const orphan = String(await bitcoinRpc("getblockhash", [marker.indexedThroughBlock])) !== marker.indexedThroughBlockHash;
+    if (orphan) {
+      if (!automatic && !RECOVER_DISCOVERY_REORG && !QUALIFY_DISCOVERY_REORG) throw new Error("Jobs discovery checkpoint was reorganized; qualify the orphaned discovery marker.");
+      const recovery = await recoverCandidateDiscoveryReorg({ client, rpc: bitcoinRpc, network: NETWORK, key: JOBS_DISCOVERY_META_KEY, marker,
+        dryRun: !automatic && QUALIFY_DISCOVERY_REORG });
+      if (!automatic && QUALIFY_DISCOVERY_REORG) return recovery;
+      marker = recovery.next;
+    } else if (!automatic && QUALIFY_DISCOVERY_REORG) {
+      return { alreadyCanonical: true, indexedThroughBlock: marker.indexedThroughBlock, indexedThroughBlockHash: marker.indexedThroughBlockHash };
+    }
     if (!hadMarker && marker.complete) {
       // The exact pinned parent proves the complete empty admission interval.
       // Earlier Jobs-shaped Mail remains raw history and receives no authority.
@@ -26220,7 +26319,7 @@ async function bootstrapJobsCandidates(client) {
     }
     if (marker.complete === true && marker.indexedThroughBlock === target.height && marker.indexedThroughBlockHash === target.blockHash) return marker;
     const lastGood = marker.complete === true ? marker : marker.lastGood;
-    const maxBlocks = Math.max(1, Math.min(10_000, Math.floor(Number(process.env.POW_INDEX_JOBS_BOOTSTRAP_MAX_BLOCKS ?? 1000))));
+    const maxBlocks = automatic ? 2 : Math.max(1, Math.min(10_000, Math.floor(Number(process.env.POW_INDEX_JOBS_BOOTSTRAP_MAX_BLOCKS ?? 1000))));
     if (!Number.isSafeInteger(maxBlocks)) throw new Error("Invalid Jobs bootstrap block budget.");
     let scanned = 0;
     while (marker.indexedThroughBlock < target.height && scanned < maxBlocks) {
@@ -26489,6 +26588,27 @@ async function canonicalWorkQ16ActivationDefersRebuildCreditReplay(
     return false;
   }
   return true;
+}
+
+async function resumeOrphanedProductDiscovery(client) {
+  const checkpoint = await latestBlockScanCheckpoint(client, { useStoredCheckpoint: true });
+  if (!Number.isSafeInteger(checkpoint.height) || checkpoint.height < 1 ||
+      !/^[0-9a-f]{64}$/u.test(checkpoint.blockHash) || await bitcoinRpc("getblockhash", [checkpoint.height]) !== checkpoint.blockHash) return;
+  const pending = await client.query(`SELECT m.key, m.value, b.canonical FROM proof_indexer.meta m
+    LEFT JOIN proof_indexer.blocks b ON b.network=$1 AND b.block_hash=m.value->>'indexedThroughBlockHash'
+    WHERE m.key=ANY($2::text[]) AND m.value->>'network'=$1`, [NETWORK, [CODE_DISCOVERY_META_KEY, JOBS_DISCOVERY_META_KEY]]);
+  const rows = pending.rows.filter(({ value, canonical }) => canonical === false ||
+    (value?.recoveryEvidenceKey && Number.isSafeInteger(value.indexedThroughBlock) && value.indexedThroughBlock <= checkpoint.height &&
+     (value.indexedThroughBlock < checkpoint.height || value.complete === false)));
+  for (const { key } of rows) {
+    try {
+      const bootstrap = key === CODE_DISCOVERY_META_KEY ? bootstrapCodeCandidates : bootstrapJobsCandidates;
+      await bootstrap(client, { automatic: true });
+    } catch (error) {
+      // Preserve the refused product marker without stalling unrelated canonical indexing.
+      console.error(JSON.stringify({ phase: "candidate-discovery-reorg-refused", key, error: error.message }));
+    }
+  }
 }
 
 async function backfillBlockScanSource(client, source) {
@@ -26761,6 +26881,7 @@ async function backfillBlockScanSource(client, source) {
       }
       const barrier = await storeCanonicalSummarySnapshot(client, {
         requiredCheckpoint,
+        historicalBarrier: true,
         replayCheckpoint: activePwtRangeReplay(canonicalRebuild),
       });
       if (
@@ -26799,6 +26920,7 @@ async function backfillBlockScanSource(client, source) {
       }
       const barrier = await storeCanonicalSummarySnapshot(client, {
         requiredCheckpoint,
+        historicalBarrier: true,
         replayCheckpoint: activePwtRangeReplay(canonicalRebuild),
       });
       if (
@@ -26901,6 +27023,7 @@ async function backfillBlockScanSource(client, source) {
     try {
       // Acquire before canonical rows are touched. Bootstrap takes the same
       // session lock before hydration, avoiding inverted row/advisory locks.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))", [CODE_DISCOVERY_META_KEY, NETWORK]);
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))", [JOBS_DISCOVERY_META_KEY, NETWORK]);
       await persistCanonicalBlock(client, block, height, blockHash);
       for (const prepared of preparedTransactions) {
@@ -33124,6 +33247,10 @@ async function backfillSource(client, source) {
     let result;
     try {
       result = await backfillBlockScanSource(client, source);
+      if (NETWORK === "livenet" && !CANONICAL_REBUILD) {
+        try { await resumeOrphanedProductDiscovery(client); }
+        catch (error) { console.error(JSON.stringify({ phase: "candidate-discovery-reorg-refused", error: error.message })); }
+      }
       return result;
     } finally {
       if (NETWORK === "livenet" && !CANONICAL_REBUILD) {

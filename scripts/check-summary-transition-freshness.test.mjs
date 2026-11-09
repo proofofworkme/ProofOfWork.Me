@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
+import { isWorkTransferProjectionReference, readWorkTransferProjection } from "../server/db/work-transfer-projection-store.mjs";
 
 const source = readFileSync(new URL("./backfill-proof-indexer.mjs", import.meta.url), "utf8");
 function functionSource(name) {
@@ -67,7 +68,7 @@ function harness({ row, payload, rows, generatorError = new Error("canonical-gen
   } };
   const objectPayload = value => value && typeof value === "object" && !Array.isArray(value) ? value : null;
   const context = vm.createContext({
-    ...C, NETWORK: "livenet", URL, console: { error() {} }, objectPayload,
+    ...C, isWorkTransferProjectionReference, readWorkTransferProjection, NETWORK: "livenet", URL, console: { error() {} }, objectPayload,
     canonicalJsonText: value => JSON.stringify(stable(value)),
     latestBlockScanCheckpoint: async () => ({ height: H, blockHash: HASH }),
     workProjectionModelAtHeight: async () => "work-subatoms-v2",
@@ -87,7 +88,7 @@ function harness({ row, payload, rows, generatorError = new Error("canonical-gen
     canonicalSummaryRefreshCatchupDependency: () => false,
     canonicalSummaryRefreshCanDefer: () => canDefer,
   });
-  vm.runInContext(functionSource("canonicalSummaryTransitionSourceCurrent") + "\n" +
+  vm.runInContext(functionSource("storedAccountingSummaryPayloads") + "\n" + functionSource("canonicalSummaryTransitionSourceCurrent") + "\n" +
     functionSource("storeCanonicalSummarySnapshot"), context);
   return {
     calls,
@@ -193,4 +194,70 @@ test("valid older checkpoint retains its existing deferred-fallback behavior", a
   assert.equal(h.calls.generator.length, 1);
   assert.equal(h.calls.queries[0].params[1], H - 1);
   assert.equal(h.calls.queries[0].params[2], hash);
+});
+
+
+const fenceTestSocket = process.env.POW_WORK_PROJECTION_TEST_SOCKET;
+test("PostgreSQL orders reorg cleanup with publication and scopes missing-block fallback to a verified H-1 anchor", { skip: !fenceTestSocket }, async () => {
+  assert.match(fenceTestSocket, /^\/(?:var\/)?tmp\/pow-[a-z0-9/-]+\/socket$/);
+  const { default: pg } = await import("pg");
+  const { randomUUID } = await import("node:crypto");
+  const pool = new pg.Pool({ host:fenceTestSocket, port:Number(process.env.POW_WORK_PROJECTION_TEST_PORT || 55936),
+    database:"work_projection_fixture", user:process.env.USER, max:3, connectionTimeoutMillis:3000, statement_timeout:8000 });
+  const [writer,reorg,observer] = await Promise.all([pool.connect(),pool.connect(),pool.connect()]);
+  const network = "test-" + randomUUID();
+  let coreHash = HASH;
+  const ns = vm.createContext({ NETWORK:network, BLOCK_SCAN_FROM_HEIGHT:0,
+    bitcoinRpc: async (method,args) => { assert.equal(method,"getblockhash"); assert.equal(args[0],H); return coreHash; } });
+  vm.runInContext(functionSource("latestBlockScanCheckpoint") + "\n" + functionSource("lockCanonicalSummaryPublicationCheckpoint"), ns);
+  const lock = (historical = false) => ns.lockCanonicalSummaryPublicationCheckpoint(writer,H,HASH,historical);
+  async function blockers(waiter) {
+    const at = Date.now();
+    while (Date.now() - at < 1000) {
+      const { rows } = await observer.query("SELECT pg_blocking_pids($1) AS ids", [waiter.processID]);
+      if (rows[0].ids.length) return rows[0].ids;
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    assert.fail("Competing session did not wait on the exact block row");
+  }
+  try {
+    assert.equal((await observer.query("SELECT current_database() AS name")).rows[0].name,"work_projection_fixture");
+    await observer.query("CREATE SCHEMA IF NOT EXISTS proof_indexer");
+    await observer.query("CREATE TABLE IF NOT EXISTS proof_indexer.ledger_snapshots(network text,snapshot_id text,indexed_through_block int,payload jsonb,PRIMARY KEY(network,snapshot_id))");
+    await observer.query("ALTER TABLE proof_indexer.ledger_snapshots ADD COLUMN IF NOT EXISTS source_hashes jsonb NOT NULL DEFAULT '{}', ADD COLUMN IF NOT EXISTS generated_at timestamptz NOT NULL DEFAULT now()");
+    await observer.query("CREATE TABLE IF NOT EXISTS proof_indexer.blocks(network text,block_hash text,height int,canonical boolean,PRIMARY KEY(network,block_hash))");
+    await observer.query("INSERT INTO proof_indexer.blocks VALUES ($1,$2,$3,true)", [network,HASH,H]);
+    await writer.query("BEGIN"); await lock();
+    await writer.query("INSERT INTO proof_indexer.ledger_snapshots(network,snapshot_id,indexed_through_block,payload) VALUES($1,'summary',$2,$3)",
+      [network,H,{indexedThroughBlockHash:HASH}]);
+    await reorg.query("BEGIN");
+    const detached = reorg.query("UPDATE proof_indexer.blocks SET canonical=false WHERE network=$1 AND block_hash=$2",[network,HASH]);
+    assert.deepEqual(await blockers(reorg), [writer.processID]);
+    await writer.query("COMMIT"); await detached;
+    await reorg.query("DELETE FROM proof_indexer.ledger_snapshots WHERE network=$1 AND indexed_through_block=$2",[network,H]);
+    await reorg.query("COMMIT");
+    assert.equal((await observer.query("SELECT 1 FROM proof_indexer.ledger_snapshots WHERE network=$1 AND snapshot_id='summary'",[network])).rowCount,0);
+
+    await observer.query("UPDATE proof_indexer.blocks SET canonical=true WHERE network=$1",[network]);
+    await reorg.query("BEGIN"); await reorg.query("UPDATE proof_indexer.blocks SET canonical=false WHERE network=$1",[network]);
+    await writer.query("BEGIN");
+    const refused = assert.rejects(lock(),/no longer a canonical block/);
+    assert.deepEqual(await blockers(writer),[reorg.processID]);
+    await reorg.query("COMMIT"); await refused; await writer.query("ROLLBACK");
+
+    await observer.query("INSERT INTO proof_indexer.ledger_snapshots(network,snapshot_id,indexed_through_block,payload,source_hashes) VALUES($1,'scan',$2,$3,$4)",
+      [network,H,{indexedThroughBlockHash:HASH,source:"proof-indexer-block-scan"},{blockScan:HASH}]);
+    await writer.query("BEGIN"); await assert.rejects(lock(true),/anchor no longer matches/); await writer.query("ROLLBACK");
+    await observer.query("DELETE FROM proof_indexer.blocks WHERE network=$1",[network]);
+    await writer.query("BEGIN"); await assert.rejects(lock(),/no longer a canonical block/); await writer.query("ROLLBACK");
+    await writer.query("BEGIN"); await lock(true); await writer.query("COMMIT");
+    coreHash = "c".repeat(64);
+    await writer.query("BEGIN"); await assert.rejects(lock(true),/anchor no longer matches/); await writer.query("ROLLBACK");
+    await reorg.query("BEGIN"); await reorg.query("LOCK TABLE proof_indexer.ledger_snapshots IN ROW EXCLUSIVE MODE");
+    await writer.query("BEGIN"); await assert.rejects(lock(true),error => error.code==="55P03"); await writer.query("ROLLBACK");
+    await reorg.query("ROLLBACK");
+  } finally {
+    await writer.query("ROLLBACK").catch(() => {}); await reorg.query("ROLLBACK").catch(() => {});
+    writer.release(); reorg.release(); observer.release(); await pool.end();
+  }
 });
