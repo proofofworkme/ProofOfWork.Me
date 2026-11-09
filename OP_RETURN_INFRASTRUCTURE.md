@@ -869,7 +869,9 @@ historical embedded snapshots published during recovery.
 New canonical summaries store a reference to the complete WORK transfer value
 projection. Its network, snapshot ID, block height, block hash, precision,
 counts and digest bind the exact valuation records to the ledger row. The
-authenticated loopback producer streams the records in pages. The worker
+authenticated loopback producer streams the records in pages. Its HTTP
+content length covers the framing bytes, header and all declared projection
+pages, so the existing request monitor can measure each completed response. The worker
 reconstructs them, validates every recipient and its single paying parent,
 and commits the summary and pages in one PostgreSQL transaction. A reader
 rejects missing, out-of-order, substituted or incorrectly bound pages.

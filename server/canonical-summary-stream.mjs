@@ -63,6 +63,7 @@ export function writeCanonicalSummaryStream(response, bundle, maxHeaderBytes) {
   if (header.length > maxHeaderBytes) throw new Error("Canonical summary header exceeds its byte limit");
   const size = Buffer.alloc(4);
   size.writeUInt32BE(header.length);
+  response.setHeader("Content-Length", size.length + header.length + reference.payloadBytes);
   response.writeHead(200, { "Content-Type": SUMMARY_STREAM_TYPE, "Cache-Control": "no-store" });
   return pipeline(Readable.from([size, header, ...pages]), response);
 }

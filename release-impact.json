@@ -1,6 +1,6 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "publish-snapshot-storage-and-reader-recovery",
+  "upgrade": "measured-work-summary-stream-and-reader-recovery",
   "liveCheck": "scripts/check-publisher-repair-live.mjs",
   "ciTests": [
     "scripts/check-publisher-repair.test.mjs",
@@ -68,14 +68,15 @@
         "accounting"
       ],
       "disposition": "affected",
-      "reason": "The writer persists all verified WORK projection pages atomically with the checkpoint, including each recipient and its single paying parent. Readers verify snapshot identity, per-page integrity, complete order and confirmed historical economics. Discovery rewinds preserve superseded evidence and reject unresolved or divergent authority. The release rehearsal binds the Permissions replay evidence to its observed Core checkpoint.",
+      "reason": "The writer persists all verified WORK projection pages atomically with the checkpoint, including each recipient and its single paying parent. Readers verify snapshot identity, per-page integrity, complete order and confirmed historical economics. Discovery rewinds preserve superseded evidence and reject unresolved or divergent authority. The release rehearsal binds the Permissions replay evidence to its observed Core checkpoint. The confirmed transfer stream declares the exact combined byte length of its header and pages to the existing HTTP observer.",
       "evidence": [
         "server/db/work-transfer-projection-store.test.mjs",
         "server/candidate-discovery-reorg.test.mjs",
         "server/permission-verification-store.test.mjs",
         "scripts/check-work-batch-summary-projection.test.mjs",
         "scripts/check-work-storage-readers-live.mjs",
-        "deploy/summary-storage-readers/release.py"
+        "deploy/summary-storage-readers/release.py",
+        "server/canonical-summary-stream.test.mjs"
       ]
     },
     {
