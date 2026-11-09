@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
+import { isWorkTransferProjectionReference } from "../server/db/work-transfer-projection-store.mjs";
 
 const worker = readFileSync(new URL("./backfill-proof-indexer.mjs", import.meta.url), "utf8");
 const api = readFileSync(new URL("../server/proof-api.mjs", import.meta.url), "utf8");
@@ -51,6 +52,7 @@ test("the hot publisher checks pending membership at an existing checkpoint whil
   let matches = false, pendingChecks = 0, requested;
   const digest = "d".repeat(64);
   const store = load(worker, ["storeCanonicalSummarySnapshot"], {
+    isWorkTransferProjectionReference,
     NETWORK: "livenet", CANONICAL_SUMMARY_REFRESH_TIMEOUT_MS: 10,
     latestBlockScanCheckpoint: async () => checkpoint, objectPayload: value => value ?? null,
     workProjectionModelAtHeight: async () => "work-subatoms-v2",
