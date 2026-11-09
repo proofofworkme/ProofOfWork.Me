@@ -139,6 +139,7 @@ import {
   WORK_Q16_PENDING_CANONICAL_SEAL_BLOCK_JOIN_SQL,
   WORK_Q16_PENDING_CANONICAL_SEAL_PROOF_SQL,
   WORK_Q16_PENDING_PROJECTION_MODEL,
+  WORK_Q16_PENDING_EVENT_PROTOCOLS,
   workQ16PendingEventParticipantProjectionRows,
   workQ16PendingEventRefProjectionRows,
   workQ16PendingMailProjectionParity,
@@ -30463,7 +30464,7 @@ async function persistExactWorkQ16PendingWitness(
       [
         NETWORK,
         stage.replayTxids,
-        ["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1", "pwc1"],
+        WORK_Q16_PENDING_EVENT_PROTOCOLS,
       ],
     );
     const expectedStagedEventOutcomes =
@@ -30724,7 +30725,7 @@ async function persistExactWorkQ16PendingWitness(
         "WORK Q16 pending membership contains a malformed or unresolved persisted WORK row.",
       );
     }
-    const governedProtocols = ["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1", "pwc1"];
+    const governedProtocols = WORK_Q16_PENDING_EVENT_PROTOCOLS;
     const projectionEventResult = await client.query(
       `
         SELECT
@@ -32322,7 +32323,7 @@ async function clearWorkQ16PendingStageDecision(client, txid) {
         AND event.protocol = ANY($3::text[])
         AND event.status IN ('pending', 'dropped', 'orphaned')
     `,
-    [NETWORK, txid, ["pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1", "pwc1"]],
+    [NETWORK, txid, WORK_Q16_PENDING_EVENT_PROTOCOLS],
   );
   await client.query(
     `

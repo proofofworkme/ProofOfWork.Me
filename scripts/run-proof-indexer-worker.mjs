@@ -35,6 +35,7 @@ import {
   WORK_Q16_PENDING_CANONICAL_SEAL_BLOCK_JOIN_SQL,
   WORK_Q16_PENDING_CANONICAL_SEAL_PROOF_SQL,
   WORK_Q16_PENDING_PROJECTION_MODEL as WORK_AMO_V8_PENDING_PROJECTION_MODEL,
+  WORK_Q16_PENDING_EVENT_PROTOCOLS,
   workQ16PendingEventParticipantProjectionRows,
   workQ16PendingEventRefProjectionRows,
   workQ16PendingMailProjectionParity,
@@ -4629,7 +4630,7 @@ async function assertWorkPrecisionPendingReady(
       listingRows: listingResult.rows,
       recoveryRows: recoveryResult.rows,
     });
-    const governedProtocols = ["pwa1", "pwid1", "pwdns1", "pwm1", "pwt1"];
+    const governedProtocols = WORK_Q16_PENDING_EVENT_PROTOCOLS;
     const projectionEventResult = await client.query(
       `
         SELECT

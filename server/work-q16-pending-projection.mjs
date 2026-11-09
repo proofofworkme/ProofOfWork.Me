@@ -1,3 +1,7 @@
+export const WORK_Q16_PENDING_EVENT_PROTOCOLS = Object.freeze([
+  "pwa1", "pwid1", "pwdns1", "pwm1", "pwb1", "pwt1", "pwc1",
+]);
+
 export const WORK_Q16_PENDING_PROJECTION_MODEL =
   "canonical-work-q16-pending-projection-v5";
 

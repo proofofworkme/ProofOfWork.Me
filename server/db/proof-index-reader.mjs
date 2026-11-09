@@ -99,6 +99,7 @@ import {
   WORK_Q16_PENDING_CANONICAL_SEAL_BLOCK_JOIN_SQL,
   WORK_Q16_PENDING_CANONICAL_SEAL_PROOF_SQL,
   WORK_Q16_PENDING_PROJECTION_MODEL,
+  WORK_Q16_PENDING_EVENT_PROTOCOLS,
   workQ16PendingEventParticipantProjectionRows,
   workQ16PendingEventRefProjectionRows,
   workQ16PendingMailProjectionParity,
@@ -8653,13 +8654,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
       listingRows: pendingListingResult.rows,
       recoveryRows: pendingRecoveryResult.rows,
     });
-    const pendingGovernedProtocols = [
-      "pwa1",
-      "pwid1",
-      "pwdns1",
-      "pwm1",
-      "pwt1",
-    ];
+    const pendingGovernedProtocols = WORK_Q16_PENDING_EVENT_PROTOCOLS;
     const pendingProjectionEventResult = await client.query(
       `
         SELECT
