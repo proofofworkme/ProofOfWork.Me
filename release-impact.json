@@ -1,6 +1,6 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "boost-web-links-wallet-review-and-expired-journal-attestation",
+  "upgrade": "boost-links-wallet-handoff-and-approved-retention",
   "liveCheck": "scripts/check-boost-links-live.mjs",
   "ciTests": [
     "src/features/boost/boostWebLinks.test.mjs"
@@ -57,13 +57,14 @@
         "compatibility"
       ],
       "disposition": "compatible",
-      "reason": "Only link display and exact-review dismissal change. No writer payload, signing implementation, admission, indexer, replay, API, Search, Log, fee or accounting calculation changes. Historical source, pending and confirmed state, reorg handling and transaction identity remain canonical. Read-only surfaces do not render transaction approval controls. The separately approved deployment prerequisite uses an exact historical completion attestation after journal expiry; it changes only retention verification and its guarded installer, with original service, file and retention guards preserved.",
+      "reason": "Only link display and exact-review dismissal change. No writer payload, signing implementation, admission, indexer, replay, API, Search, Log, fee or accounting calculation changes. Historical source, pending and confirmed state, reorg handling and transaction identity remain canonical. Read-only surfaces do not render transaction approval controls. The separately approved deployment prerequisite uses an exact historical completion attestation after journal expiry; it changes only retention verification and its guarded installer, with original service, file and retention guards preserved. The user also approved only the exact d4eeffaf28f1/69c31f4e1dcd predecessor retirement: the previous archive, its two sidecars and rollback root, after replacement verification; both validators preserve all other refusals.",
       "evidence": [
         "scripts/check-boost-regressions.mjs",
         "scripts/check-local-review.mjs",
         "src/features/boost/boostWebLinks.test.mjs",
         "deploy/audit30/check-ui-storage.test.py",
-        "deploy/ui-retention/check-lifecycle-remote.test.py"
+        "deploy/ui-retention/check-lifecycle-remote.test.py",
+        "deploy/publish/check-preservation-admission.test.py"
       ]
     }
   ]

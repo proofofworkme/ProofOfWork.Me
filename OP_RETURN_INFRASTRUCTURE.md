@@ -152,6 +152,17 @@ the root exchange. Each phase pays its
 own byte and inode charges. Existing releases, rollback material and source
 directories supply no space credit.
 
+On November 10 the user approved one additional exact retirement transition:
+current `d4eeffaf28f1-20261109T160000Z`, previous
+`69c31f4e1dcd-20261109T051556Z`. After the replacement publication and its
+retained pair are verified, the lifecycle may retire only the previous
+release's `.tgz`, `.tgz.sha256`, `.tgz.provenance`, and the rollback root
+`proofofwork-www-pre-d4eeffaf28f1-20261109T160000Z`. Both publication and
+storage validators require this exact pair and four-path set. The historical
+approved transition remains replayable. Missing or additional paths, any
+overlap with the separately preserved fallback, and future predecessor pairs
+still refuse. No source checkout or other evidence is authorized for removal.
+
 The read-only rehearsal for the `e6a53e4d` build against `54088ca1` left
 186,252,318 bytes above the root reserve and 352,776,192 bytes below the
 scratch ceiling at the tightest respective phases. The backup and transport

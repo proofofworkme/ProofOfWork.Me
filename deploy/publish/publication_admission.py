@@ -18,8 +18,17 @@ def reviewed_forecast(rule):
         return False
     if rule.get('model') == 'private-stage-zero-retirement-v1':
         return rule.get('wouldRetire') == []
-    predecessor = '54088ca155bc-20261103T032112Z'
-    outgoing = '69c31f4e1dcd-20261109T051556Z'
+    # Exact user-reviewed transitions only; never infer authority for the next pair.
+    pair = rule.get('previousPair')
+    approved = (
+        ('69c31f4e1dcd-20261109T051556Z', '54088ca155bc-20261103T032112Z'),
+        ('d4eeffaf28f1-20261109T160000Z', '69c31f4e1dcd-20261109T051556Z'),
+    )
+    match = next(((current, previous) for current, previous in approved
+                  if pair == {'current': current, 'previous': previous}), None)
+    if match is None:
+        return False
+    outgoing, predecessor = match
     archive = '/var/backups/proofofwork-ui/releases/proofofwork-ui-release-' + predecessor + '.tgz'
     paths = sorted([archive, archive + '.sha256', archive + '.provenance',
                     '/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-' + outgoing])

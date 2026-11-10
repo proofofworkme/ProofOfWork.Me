@@ -26,6 +26,28 @@ RULE = {'model':A['MODEL'],'wouldRetire':[],'preservedFallback':HOLD,'releaseId'
 
 
 class PublicationAdmission(unittest.TestCase):
+    def test_november_10_retirement_is_exact_and_does_not_authorize_future_pairs(self):
+        current = 'd4eeffaf28f1-20261109T160000Z'
+        previous = '69c31f4e1dcd-20261109T051556Z'
+        archive = '/var/backups/proofofwork-ui/releases/proofofwork-ui-release-'+previous+'.tgz'
+        paths = sorted([archive+suffix for suffix in ('','.sha256','.provenance')]+
+                       ['/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-'+current])
+        rule = dict(model='private-stage-reviewed-retirement-v1',wouldRetire=paths,
+                    previousPair=dict(current=current,previous=previous),
+                    preservedFallback=dict(snapshotSha256={'preserved':'a'*64}))
+        storage = runpy.run_path(str(HERE.parent/'audit30/ui-storage.py'))
+        for check in (A['reviewed_forecast'],storage['reviewed_forecast']):
+            self.assertTrue(check(rule))
+            changes = [dict(wouldRetire=paths+['extra']),dict(wouldRetire=list(reversed(paths))),
+                       dict(previousPair=dict(current=NEXT,previous=current)),
+                       dict(previousPair=dict(current=previous,previous=current)),
+                       dict(preservedFallback=None),dict(preservedFallback=dict(snapshotSha256={}))]
+            changes += [dict(wouldRetire=[p for p in paths if p != path]) for path in paths]
+            changes += [dict(preservedFallback=dict(snapshotSha256={path:'a'*64})) for path in paths]
+            for change in changes:
+                with self.subTest(check=check.__module__,change=change):
+                    self.assertFalse(check(dict(rule,**change)))
+
     def test_reviewed_transition_requires_exact_pair_and_all_four_paths(self):
         outgoing = '69c31f4e1dcd-20261109T051556Z'
         archive = '/var/backups/proofofwork-ui/releases/proofofwork-ui-release-' + INTRO + '.tgz'
