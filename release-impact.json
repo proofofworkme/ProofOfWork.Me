@@ -1,77 +1,67 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "pending-work-ui-rollout-scratch-allowance",
-  "liveCheck": "scripts/check-work-storage-readers-live.mjs",
+  "upgrade": "boost-web-links-and-wallet-review-handoff",
+  "liveCheck": "scripts/check-boost-links-live.mjs",
   "ciTests": [
-    "scripts/check-work-mail-batch-backfill.test.mjs",
-    "scripts/check-pending-log-publication.test.mjs",
-    "scripts/check-work-batch-raw.test.mjs"
+    "src/features/boost/boostWebLinks.test.mjs"
   ],
   "reviews": [
+    {
+      "targets": [
+        "boost",
+        "computer",
+        "publish",
+        "code",
+        "jobs",
+        "permission",
+        "id",
+        "dns",
+        "marketplace",
+        "token",
+        "wallet",
+        "work",
+        "infinity",
+        "inception",
+        "nft",
+        "pages",
+        "browser",
+        "mail",
+        "local-signing"
+      ],
+      "disposition": "affected",
+      "reason": "Shared exact reviews now dismiss immediately and accept approval once, matching AMO while each owner retains wallet checks, signing, duplicate guards, failures and recovery. Publish restores its busy writer during signing. Boost web links open independently from cards without changing source text. Standalone and embedded consumers share these components.",
+      "evidence": [
+        "tests/browser/boost-text-links.spec.mjs",
+        "tests/browser/boost-tips.spec.mjs",
+        "tests/browser/code-ui.spec.mjs",
+        "tests/browser/jobs-ui.spec.mjs",
+        "tests/browser/permission-ui.spec.mjs",
+        "tests/browser/publish-ui.spec.mjs",
+        "scripts/check-local-review.mjs"
+      ]
+    },
     {
       "targets": [
         "indexer",
         "api",
         "backfill-reorg",
         "activity",
-        "boost",
-        "computer",
         "desktop",
         "files",
-        "mail",
-        "notifications"
-      ],
-      "disposition": "affected",
-      "reason": "The pending writer verifies Boost and Mail companion payloads against their persisted JSON form before atomically publishing the WORK witness. The worker and database reader recompute the witness over the same protocol families, including Boost and Code. The expected attachment validity uses the same predicate as the event insert. A failed comparison rolls back the entire attempt.",
-      "evidence": [
-        "scripts/check-work-mail-batch-backfill.test.mjs",
-        "scripts/check-pending-log-publication.test.mjs"
-      ]
-    },
-    {
-      "targets": [
-        "browser",
-        "code",
-        "dns",
+        "notifications",
         "growth",
-        "id",
-        "inception",
-        "infinity",
-        "jobs",
-        "marketplace",
-        "nft",
-        "pages",
-        "permission",
-        "publish",
         "search",
-        "token",
-        "wallet",
-        "work",
-        "landing"
-      ],
-      "disposition": "affected",
-      "reason": "All 22 managed products are published together. The outgoing UI and both retained release archives are verified before the reviewed four ordinary assets become eligible. Shared exact-tip readers depend on the pending WORK repair. This one rollout receives 384 MiB of additional scratch planning capacity while native allocation checks remain in force.",
-      "evidence": [
-        "scripts/check-work-storage-readers-live.mjs",
-        "scripts/check-summary-route-readiness.mjs",
-        "scripts/check-release-sync.mjs",
-        "deploy/publish/check-preservation-admission.test.py",
-        "deploy/ui-retention/check-lifecycle-remote.test.py",
-        "deploy/publish/check-closed-input.test.py"
-      ]
-    },
-    {
-      "targets": [
+        "landing",
         "wire",
         "accounting",
-        "local-signing",
         "compatibility"
       ],
       "disposition": "compatible",
-      "reason": "The change only omits absent top-level optional fields from expected pending storage evidence. Signed bytes, confirmed replay, fee calculations and wallet signing use their existing paths.",
+      "reason": "Only link display and exact-review dismissal change. No writer payload, signing implementation, admission, indexer, replay, API, Search, Log, fee or accounting calculation changes. Historical source, pending and confirmed state, reorg handling and transaction identity remain canonical. Read-only surfaces do not render transaction approval controls.",
       "evidence": [
-        "scripts/check-work-mail-batch-backfill.test.mjs",
-        "scripts/check-work-batch-raw.test.mjs"
+        "scripts/check-boost-regressions.mjs",
+        "scripts/check-local-review.mjs",
+        "src/features/boost/boostWebLinks.test.mjs"
       ]
     }
   ]

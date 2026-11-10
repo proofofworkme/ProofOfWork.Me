@@ -1,6 +1,6 @@
 import { ReviewDialog } from "./ReviewDialog";
 import type { PreparedPaymentReview } from "../wallet/paymentReview";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 export type MailTransactionReview = {
   evidence: PreparedPaymentReview;
@@ -22,12 +22,21 @@ export function TransactionReview({ review, onCancel, onApprove, returnFocus }: 
   returnFocus?: HTMLElement | null;
 }) {
   const [copyStatus, setCopyStatus] = useState("");
+  const approved = useRef(false);
+  const [submitted, setSubmitted] = useState(false);
+  function approve() {
+    if (approved.current) return;
+    approved.current = true;
+    setSubmitted(true);
+    onApprove();
+  }
   async function copyEvidence() {
     try {
       await navigator.clipboard.writeText(JSON.stringify(review, null, 2));
       setCopyStatus("Exact review evidence copied.");
     } catch { setCopyStatus("Clipboard unavailable. Select and copy the evidence you need."); }
   }
+  if (submitted) return null;
   return <ReviewDialog title="Review mail transaction" onCancel={onCancel} returnFocus={returnFocus}>
     <p className="field-note">{review.networkLabel} · Signing stays in your local wallet.</p>
     <h3>Recipients and payments</h3>
@@ -55,6 +64,6 @@ export function TransactionReview({ review, onCancel, onApprove, returnFocus }: 
     </details>
     <p>Recipients, message, and file contents are public on chain. Local archive or hide actions do not erase them.</p>
     <p className="field-note">Continue requests a transaction signature and broadcasts the signed transaction after existing safety checks. Pending visibility is not confirmed delivery.</p>
-    <div className="review-actions"><button className="secondary" type="button" onClick={onCancel}>Back to compose</button><button className="primary" type="button" onClick={onApprove}>Continue to wallet</button></div>
+    <div className="review-actions"><button className="secondary" type="button" onClick={onCancel}>Back to compose</button><button className="primary" type="button" onClick={approve}>Continue to wallet</button></div>
   </ReviewDialog>;
 }

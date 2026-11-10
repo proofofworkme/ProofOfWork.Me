@@ -331,3 +331,27 @@ test('a WORK proposal on an existing proof brief freezes the WORK terms in assig
   await expect(review).toContainText('1.0000000000000001 WORK'); await expect(review).toContainText(worker);
   expect(await page.evaluate(() => window.jobsSignatureCalls)).toBe(0);
 });
+
+for (const route of ["/?jobs=1", "/?folder=jobs"]) {
+  test(`review dismisses while the local wallet is still loading at ${route}`, async ({ page }) => {
+    await fixture(page, { wallet: true }); await page.goto(route);
+    await page.getByRole("button", { name: "Connect UniSat", exact: true }).first().click();
+    await prepareBrief(page);
+    const review = page.getByRole("dialog", { name: "Publish job", exact: true });
+    await expect(review).toBeVisible();
+    expect(await page.evaluate(() => window.jobsSignatureCalls)).toBe(0);
+    await page.evaluate(() => {
+      window.unisat.signPsbt = async () => {
+        window.jobsSignatureCalls++;
+        await new Promise(resolve => { window.releaseReviewWallet = resolve; });
+        throw new Error("Rejected by disposable test wallet");
+      };
+    });
+    await review.getByRole("button", { name: "Continue to wallet", exact: true }).click();
+    await expect(review).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.jobsSignatureCalls)).toBe(1);
+    await page.evaluate(() => window.releaseReviewWallet());
+    await expect(page.getByRole("alert").filter({ hasText: "Rejected by disposable test wallet" })).toBeVisible();
+    expect(await page.evaluate(() => window.jobsSignatureCalls)).toBe(1);
+  });
+}

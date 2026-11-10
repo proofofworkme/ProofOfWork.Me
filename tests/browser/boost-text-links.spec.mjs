@@ -490,7 +490,28 @@ test("text stays literal and tag or mention markers inside external URLs and oth
   const body = page.getByTestId("boost-post").locator(".boost-post-text");
   await expect(body).toHaveText(text);
   await expect(body.locator("img")).toHaveCount(0);
-  await expect(body.locator(".boost-text-link")).toHaveCount(2);
+  await expect(body.locator(".boost-text-link")).toHaveCount(3);
+  await expect(body.locator(".boost-web-link")).toHaveAttribute("href", "https://example.com/@armyofyouth/$WORK/#tag");
+  await expect(body.locator(".boost-web-link")).toHaveAttribute("target", "_blank");
   await expect(body.getByRole("link", { name: "$WORK", exact: true })).toHaveCount(1);
   await expect(body.getByRole("link", { name: "#tag", exact: true })).toHaveCount(1);
 });
+
+for (const embedded of [false, true]) {
+  test(`web URL opens independently from its Boost card (${embedded ? "Computer" : "standalone"})`, async ({ page }) => {
+    const url = "https://jobs.proofofwork.me/?job=7956e68fc3b98b62b2d7d733712b73e4e1e74b73da44bb470f0c51c2303adb5e";
+    await fixture(page, { items: [post(ORIGINAL_TXID, url)] });
+    await page.context().route(url, route => route.fulfill({ contentType: "text/html", body: "Jobs destination" }));
+    await page.goto(embedded ? "/?folder=boost" : "/?boost=1");
+    const source = page.url();
+    const link = page.getByTestId("boost-post").locator(".boost-web-link");
+    await expect(link).toHaveText(url);
+    const popupPromise = page.waitForEvent("popup");
+    await link.click();
+    const popup = await popupPromise;
+    await popup.waitForURL(url);
+    expect(page.url()).toBe(source);
+    await expect(page.getByRole("dialog", { name: "Boost detail" })).toHaveCount(0);
+    await popup.close();
+  });
+}

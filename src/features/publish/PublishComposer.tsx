@@ -159,6 +159,7 @@ export function PublishComposer({ address, network, identity, connecting = false
     };
     flight.current = true; setBusy(true); setError("");
     try {
+      setPrepared(undefined);
       await onSign(prepared, assertCurrent);
       assertCurrent();
       localStorage.removeItem(storageKey);

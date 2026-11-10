@@ -388,6 +388,17 @@ spaces or delimiters. Hover/focus previews are confirmed social reads with
 verified Files images, not Contacts or mailbox state, and retain the Computer
 host and network. Pending/unregistered IDs cannot establish preview identity.
 
+Boost's reading views render full HTTP/HTTPS URLs as ordinary new-tab links,
+preserving the exact displayed source. Activating a link does not also open the
+surrounding Boost card. This display projection leaves indexed tag matching,
+confirmed records, and local wallet authority unchanged.
+
+The shared transaction review follows AMO's wallet handoff: Continue to wallet
+closes the review immediately while the owning task performs wallet checks and
+signing. This applies to Boost engagement, Code, Jobs, Permission, Publish and
+Computer's transaction reviews. Loading never leaves an active-looking approval
+screen; drafts, errors and signed recovery evidence remain owned by each task.
+
 ## Core Idea
 
 Messages written to ProofOfWork are permanent. The app should not pretend users can delete them from the chain.

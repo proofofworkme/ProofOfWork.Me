@@ -417,7 +417,7 @@ test("publication review contains exact transaction evidence and wallet rejectio
   await expect(review.locator("pre").filter({ hasText: "pwm1:m:" })).toHaveText(`pwm1:m:${body}`);
   await review.getByRole("button", { name: "Continue to wallet", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue(body);
-  expect(await page.evaluate(() => window.publishSignatureCalls)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.publishSignatureCalls)).toBe(1);
 });
 
 test("unknown signed publication blocks another article signature", async ({ page }) => {

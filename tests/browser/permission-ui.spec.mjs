@@ -329,3 +329,29 @@ for (const editFirst of [false, true]) {
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem("proofofwork-action-receipts-v1")))).toEqual([receipt]);
   });
 }
+
+for (const route of ["/?permission-app=1", "/?folder=permission"]) {
+  test(`review dismisses while the local wallet is still loading at ${route}`, async ({ page }) => {
+    await fixture(page, { wallet: true }); await page.goto(route);
+    await page.getByRole("button", { name: "Connect UniSat", exact: true }).first().click();
+    await page.getByRole("button", { name: "New permission", exact: true }).click();
+    await page.getByRole("textbox", { name: "Permission label", exact: true }).fill("Wallet handoff review");
+    await page.getByRole("button", { name: "Review permission", exact: true }).click();
+    const review = page.getByRole("dialog", { name: "Create permission grant", exact: true });
+    await expect(review).toBeVisible();
+    expect(await page.evaluate(() => window.permissionSignatureCalls)).toBe(0);
+    await page.evaluate(() => {
+      window.unisat.signPsbt = async () => {
+        window.permissionSignatureCalls++;
+        await new Promise(resolve => { window.releaseReviewWallet = resolve; });
+        throw new Error("Rejected by disposable test wallet");
+      };
+    });
+    await review.getByRole("button", { name: "Continue to wallet", exact: true }).click();
+    await expect(review).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.permissionSignatureCalls)).toBe(1);
+    await page.evaluate(() => window.releaseReviewWallet());
+    await expect(page.getByRole("alert").filter({ hasText: "Rejected by disposable test wallet" })).toBeVisible();
+    expect(await page.evaluate(() => window.permissionSignatureCalls)).toBe(1);
+  });
+}

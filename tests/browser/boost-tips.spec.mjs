@@ -8,7 +8,7 @@ const txid = "a".repeat(64), body = "A confirmed article worth supporting.";
 const article = { v: 1, title: "Support the writer", source: "same-tx-pwm1-message", size: Buffer.byteLength(body), sha256: createHash("sha256").update(body).digest("hex") };
 const funding = new bitcoin.Transaction(); funding.addInput(Buffer.alloc(32, 1), 0); funding.addOutput(bitcoin.address.toOutputScript(wallet), 2_000_000n);
 const utxo = { txid: funding.getId(), vout: 0, value: 2_000_000, status: { confirmed: true } };
-async function fixture(page, { unknown = false, changeOwner = false, signed = false, workBalance = "100000000000000000", admission = true, pendingWork = "0", receiptCurrency, otherTarget = false, signedOwnerChange = false, signedWorkChange = false } = {}) {
+async function fixture(page, { unknown = false, changeOwner = false, signed = false, workBalance = "100000000000000000", admission = true, pendingWork = "0", receiptCurrency, otherTarget = false, signedOwnerChange = false, signedWorkChange = false, signingDelay = 0 } = {}) {
   if (signed) await page.exposeFunction("tipFixtureSign", hex => {
     if (signedOwnerChange) changeOwner = true;
     if (signedWorkChange) workBalance = "0";
@@ -16,13 +16,13 @@ async function fixture(page, { unknown = false, changeOwner = false, signed = fa
     for (let index = 0; index < psbt.inputCount; index++) psbt.updateInput(index, { finalScriptSig: bitcoin.script.compile([Buffer.from("disposable-fixture-signature")]) });
     return psbt.toHex();
   });
-  await page.addInitScript(({ wallet, utxo, unknown, target, signed, receiptCurrency, otherTarget }) => {
+  await page.addInitScript(({ wallet, utxo, unknown, target, signed, receiptCurrency, otherTarget, signingDelay }) => {
     window.tipPsbtCalls = [];
     window.unisat = { getAccounts: async () => [wallet], requestAccounts: async () => [wallet], getNetwork: async () => "livenet",
       getBitcoinUtxos: async () => [utxo], on() {}, removeListener() {},
-      signPsbt: async psbt => { window.tipPsbtCalls.push(psbt); if (signed) return window.tipFixtureSign(psbt); throw new Error("Fixture signing rejected"); } };
+      signPsbt: async psbt => { window.tipPsbtCalls.push(psbt); if (signingDelay) await new Promise(resolve => setTimeout(resolve, signingDelay)); if (signed) return window.tipFixtureSign(psbt); throw new Error("Fixture signing rejected"); } };
     if (unknown) localStorage.setItem("proofofwork-action-receipts-v1", JSON.stringify([{ address: wallet, txid: "d".repeat(64), network: "livenet", key: `boost-tip:${otherTarget ? "e".repeat(64) : target}`, title: "Content tip", status: "unknown", createdAt: new Date().toISOString(), fields: [["Target", target], ["Tip amount", "546"], ...(receiptCurrency ? [["Currency", receiptCurrency]] : [])] }]));
-  }, { wallet, utxo, unknown, target: txid, signed, receiptCurrency, otherTarget });
+  }, { wallet, utxo, unknown, target: txid, signed, receiptCurrency, otherTarget, signingDelay });
   // Client-reader fixtures use the application shell; SSR has separate tests.
   await page.route("**/*", async route => {
     const url = new URL(route.request().url());
@@ -70,7 +70,7 @@ async function fixture(page, { unknown = false, changeOwner = false, signed = fa
 }
 for (const route of ["/?boost=1", "/?publish=1", "/?folder=boost", "/?folder=publish"]) {
   test(`custom tip reviews exact payment and carriers at ${route}`, async ({ page }) => {
-    await fixture(page); await page.goto(route);
+    await fixture(page, { signingDelay: 1500 }); await page.goto(route);
     await page.getByRole("button", { name: "Connect UniSat", exact: true }).click();
     await page.getByRole("button", { name: "Tip, 2 tips" }).first().click();
     const dialog = page.getByRole("dialog", { name: "Tip", exact: true });
@@ -82,7 +82,8 @@ for (const route of ["/?boost=1", "/?publish=1", "/?folder=boost", "/?folder=pub
     const review = page.getByRole("dialog", { name: "Review content tip" });
     await expect(review).toContainText("12345 proofs");
     expect(await page.evaluate(() => window.tipPsbtCalls.length)).toBe(0);
-    await review.getByRole("button", { name: "Continue to wallet" }).dblclick();
+    await review.getByRole("button", { name: "Continue to wallet" }).click();
+    await expect(review).toHaveCount(0, { timeout: 700 });
     await expect.poll(() => page.evaluate(() => window.tipPsbtCalls.length)).toBe(1);
     const psbt = bitcoin.Psbt.fromHex(await page.evaluate(() => window.tipPsbtCalls[0]));
     expect(psbt.txOutputs[0].address).toBe(owner); expect(psbt.txOutputs[0].value).toBe(12345n);

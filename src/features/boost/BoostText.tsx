@@ -21,6 +21,7 @@ import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { ProfileImage } from "./BoostProfileImages";
 import { boostRouteHref, type BoostFeedPayload } from "./boostProtocol";
 import { isValidBitcoinAddress } from "./boostWallet";
+import { boostWebLinks } from "./boostWebLinks.mjs";
 
 type TextContext = {
   embedded: boolean;
@@ -267,6 +268,10 @@ export function BoostText({ text, dnsOnly = false, network }: { text: string; dn
   const selectedNetwork = network ?? context?.network;
   if ((!context && !dnsOnly) || !selectedNetwork) return <>{text}</>;
   return <>{segments.map((segment, index) => {
+    if (!dnsOnly && segment.kind === "text") return <Fragment key={index}>{boostWebLinks(segment.text).map((part, partIndex) =>
+      part.href ? <a key={partIndex} className="boost-text-link boost-web-link" href={part.href}
+        target="_blank" rel="noopener noreferrer" onClick={event => event.stopPropagation()}>{part.text}</a>
+        : <Fragment key={partIndex}>{part.text}</Fragment>)}</Fragment>;
     if (segment.kind === "dns") return <a key={index} className="boost-text-link boost-dns-link"
       href={boostRouteHref(appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL), { name: segment.value, network: selectedNetwork })}
       target="_blank" rel="noopener noreferrer" aria-label={`${segment.text} (open in Browser, new tab)`}

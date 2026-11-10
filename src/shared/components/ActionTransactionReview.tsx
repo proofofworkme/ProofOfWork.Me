@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ReviewDialog } from "./ReviewDialog";
 import type { PreparedPaymentReview } from "../wallet/paymentReview";
 export type ActionReview = {
@@ -11,6 +11,17 @@ export function ActionTransactionReview({ review, onCancel, onApprove, returnFoc
   review: ActionReview; onCancel: () => void; onApprove: () => void; returnFocus: HTMLElement | null;
 }) {
   const [copyStatus, setCopyStatus] = useState("");
+  const approved = useRef(false);
+  const [submitted, setSubmitted] = useState(false);
+  function approve() {
+    if (approved.current) return;
+    approved.current = true;
+    setSubmitted(true);
+    onApprove();
+  }
+  // End the review step uniformly before handing control to the local wallet.
+  // The owning task retains signing, failure and recovery state.
+  if (submitted) return null;
   return <ReviewDialog title={review.title} onCancel={onCancel} returnFocus={returnFocus}>
     <p>{review.networkLabel} · Signing stays in your local wallet.</p>
     <dl className="review-fields">{review.fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd><code className="review-exact">{value}</code></dd></div>)}</dl>
@@ -27,6 +38,6 @@ export function ActionTransactionReview({ review, onCancel, onApprove, returnFoc
       <button type="button" className="secondary" onClick={async () => { try { await navigator.clipboard.writeText(JSON.stringify(review, null, 2)); setCopyStatus("Exact review evidence copied."); } catch { setCopyStatus("Clipboard unavailable. Select the exact evidence to copy it."); } }}>Copy review evidence</button><p role="status">{copyStatus}</p></details>
     </> : null}
     <p>{review.evidence ? "Continue requests a transaction signature, then broadcasts after fresh safety checks. The record is public and permanent. Pending visibility does not establish confirmed ownership, routing, or balances." : "Continue requests a reusable seller signature only. It does not broadcast a transaction. A separate review follows for the registry payment and miner fee needed to publish the seal."}</p>
-    <div className="review-actions"><button className="secondary" type="button" onClick={onCancel}>Back to task</button><button className="primary" type="button" onClick={onApprove}>Continue to wallet</button></div>
+    <div className="review-actions"><button className="secondary" type="button" onClick={onCancel}>Back to task</button><button className="primary" type="button" onClick={approve}>Continue to wallet</button></div>
   </ReviewDialog>;
 }

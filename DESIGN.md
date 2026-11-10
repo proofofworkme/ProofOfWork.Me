@@ -174,6 +174,13 @@ recovery actions. Preserve wallet/network scope and draft recovery when changing
 layout or presentation. No visual cleanup may silently sign, send, retry, clear
 data, or broaden authority.
 
+Continue to wallet dismisses the exact transaction review immediately, once,
+across standalone products and Computer. The owning task continues wallet
+loading, fresh checks, signing and recovery with its existing busy controls and
+draft preservation. A dismissed review does not establish signing or broadcast
+success. Cancellation requests no signature; failed signing requires a fresh
+review before another attempt.
+
 Mobile wallet handoff is labeled Open in UniSat when no provider is present.
 Explain that connection continues inside the wallet browser and local drafts,
 contacts and recovery records do not follow. Keep an explicit install/update
