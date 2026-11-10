@@ -534,6 +534,29 @@ def boot_rotation_verifier(payload, old_runtime):
                               old_runtime.C, layout=old_runtime.layout)
 
 
+def expired_journal_verifier(payload, old_runtime):
+    """Admit only the approved completed state using committed new proof code."""
+    validate_payload(payload)
+    require(payload['config'].get('retentionPolicy') == VPS_POLICY
+            and old_runtime.config.get('retentionPolicy') == VPS_POLICY, 'Journal migration requires VPS-only policy')
+    package = Path(old_runtime.config['package']['path'])
+    manifest = json.loads(read_bound(package / 'package.json', old_runtime.config['package']['sha256']))
+    for name, file in manifest['files'].items():
+        require(name in {'deploy/audit30/ui-storage.py', 'deploy/audit30/ui-release-policy.py',
+                         'deploy/ui-retention/install_lifecycle.py'}
+                or payload['files'][name]['sha256'] == file['sha256'],
+                'Journal migration cannot replace other retention dependencies')
+    storage = verifier_module(payload, 'expired_journal_storage', 'deploy/audit30/ui-storage.py')
+    pin = storage.EXPIRED_BOOT_JOURNAL
+    require(old_runtime.config_sha == pin['config'] and old_runtime.state()[1] == pin['state'],
+            'Journal migration only admits the reviewed complete state')
+    policy = verifier_module(payload, 'expired_journal_policy', 'deploy/audit30/ui-release-policy.py',
+                             {'_BOUND_STORAGE': storage})
+    controller = verifier_module(payload, 'expired_journal_controller', 'deploy/ui-retention/lifecycle_remote.py')
+    return controller.Runtime(old_runtime.config, old_runtime.config_sha, storage, policy,
+                              old_runtime.C, layout=old_runtime.layout)
+
+
 def repair_verifier_runtime(payload, old_runtime, access_time_reconciliation=None, historical_bulk_preservation=None):
     """Use only reviewed new verifier bytes; never patch the installed module."""
     validate_payload(payload)
@@ -647,6 +670,10 @@ def completed_package_review(payload, package, old_runtime, review):
     scope = policy.policy_scope(index, runtime.layout, APPROVAL)
     require(not scope['eligible'], 'New package finds eligible ordinary assets')
     boot_proofs = {}
+    if 'journalEvidenceMigration' in review:
+        attestation = storage.verify_expired_boot_journal(storage.EXPIRED_BOOT_JOURNAL['invocation'])
+        require(attestation == review['journalEvidenceMigration'], 'Journal migration attestation changed')
+        boot_proofs['journalEvidenceMigration'] = attestation
     if 'bootLogRotation' in review:
         original = module.Runtime(old_runtime.config, old_runtime.config_sha, storage, policy, custody, layout=old_runtime.layout)
         require(original.completed_boot_rotation(state, review['stateSha256'], context) == review['bootLogRotation'],
@@ -695,11 +722,12 @@ def upgrade_inventory_locked(request, prefix):
         require(path.is_dir() and not path.is_symlink() and (path / 'completed.json').is_file(),
                 'Unsealed upgrade requires explicit reconciliation')
     runtime = existing_runtime(request['configSha256'], prefix)
-    if request.get('mode') in ('completed-cycle', 'completed-config-repair', 'completed-boot-log-rotation'):
+    if request.get('mode') in ('completed-cycle', 'completed-config-repair', 'completed-boot-log-rotation', 'completed-expired-boot-journal'):
         repair = request['mode'] == 'completed-config-repair'
         boot = request['mode'] == 'completed-boot-log-rotation'
+        journal = request['mode'] == 'completed-expired-boot-journal'
         require(set(request) == {'mode', 'configSha256', 'stateSha256'} | ({'verificationPayload', 'guardRefusal'} if repair
-                else {'verificationPayload'} if boot else set()),
+                else {'verificationPayload'} if boot or journal else set()),
                 'Expanded completed upgrade request')
         if repair:
             require(runtime.state()[0].get('lastUpgrade', {}).get('preservedCompletedCycleId'),
@@ -710,9 +738,13 @@ def upgrade_inventory_locked(request, prefix):
                                               refusal.get('historicalBulkPreservation'))
         if boot:
             runtime = boot_rotation_verifier(request['verificationPayload'], runtime)
+        if journal:
+            runtime = expired_journal_verifier(request['verificationPayload'], runtime)
         config_raw = read_bound(prefix / CONFIG.lstrip('/'), request['configSha256'])
         state_raw = read_bound(prefix / STATE.lstrip('/'), request['stateSha256'])
         review = completed_review(runtime, request)
+        if journal:
+            review['journalEvidenceMigration'] = runtime.S.verify_expired_boot_journal(runtime.S.EXPIRED_BOOT_JOURNAL['invocation'])
         if boot:
             require('bootLogRotation' in review, 'No authenticated boot-log transition')
         if 'bootLogRotation' in review:
@@ -774,8 +806,8 @@ def upgrade_remote(plan, prefix=Path('/')):
     with deploy_lock(prefix):
         before = upgrade_inventory_locked(plan['request'], prefix)
         require(before == plan['before'], 'Upgrade config/state/guards/evidence changed after review')
-        completed_mode = plan['request'].get('mode') in ('completed-cycle', 'completed-config-repair', 'completed-boot-log-rotation')
-        if plan['request'].get('mode') in ('completed-config-repair', 'completed-boot-log-rotation'):
+        completed_mode = plan['request'].get('mode') in ('completed-cycle', 'completed-config-repair', 'completed-boot-log-rotation', 'completed-expired-boot-journal')
+        if plan['request'].get('mode') in ('completed-config-repair', 'completed-boot-log-rotation', 'completed-expired-boot-journal'):
             require(plan['request']['verificationPayload'] == payload, 'Repair verifier differs from install payload')
         review = before['completedReview' if completed_mode else 'preparedReview']
         old_state = review['state']
@@ -844,7 +876,9 @@ def upgrade_remote(plan, prefix=Path('/')):
         # the immutable terminal upgrade receipt before any lifecycle operation.
         read_bound(at(CONFIG), plan['request']['configSha256']); read_bound(at(STATE), sha(encoded(active)))
         if completed_mode:
-            old_runtime.S.compare_guards(old_runtime.layout, review.get('preSwitchGuards', review['context']['guards']), [])
+            guard_storage = (verifier_module(payload, 'journal_preswitch_storage', 'deploy/audit30/ui-storage.py')
+                             if plan['request'].get('mode') == 'completed-expired-boot-journal' else old_runtime.S)
+            guard_storage.compare_guards(old_runtime.layout, review.get('preSwitchGuards', review['context']['guards']), [])
         os.replace(state_next, at(STATE)); sync(at(STATE).parent)
         os.replace(config_next, at(CONFIG)); sync(at(CONFIG).parent)
         result = {'schema': 'pow-ui-retention-upgrade-completed-v1', 'ok': True,
@@ -949,7 +983,7 @@ def remote(operation, value=None):
     # __file__ is not meaningful in a streamed installer; ROOT is unused remotely.
     code = "__file__='/tmp/ui-lifecycle-installer/deploy/ui-retention/install_lifecycle.py'\n" + code
     timeout = 1800 if operation.startswith('upgrade') else 180
-    if operation == 'upgrade' and value.get('request', {}).get('mode') in ('completed-cycle', 'completed-config-repair', 'completed-boot-log-rotation'):
+    if operation == 'upgrade' and value.get('request', {}).get('mode') in ('completed-cycle', 'completed-config-repair', 'completed-boot-log-rotation', 'completed-expired-boot-journal'):
         timeout = 3600
     argv = ['/usr/bin/nice', '-n', '15', '/usr/bin/ionice', '-c', '3', '/usr/bin/python3', '-I', '-B', '-']
     command = argv if UI_HOST else [*SSH, 'nice -n 15 ionice -c 3 python3 -I -B -']
@@ -982,6 +1016,7 @@ def main():
     completed_plan.add_argument('--state-sha256', required=True)
     completed_plan.add_argument('--output', type=Path, required=True)
     completed_plan.add_argument('--reconcile-boot-logs', action='store_true')
+    completed_plan.add_argument('--reconcile-expired-boot-journal', action='store_true')
     repair_plan = sub.add_parser('plan-upgrade-config-repair')
     repair_plan.add_argument('--guard-refusal', type=Path, required=True)
     repair_plan.add_argument('--guard-refusal-sha256', required=True)
@@ -1003,6 +1038,9 @@ def main():
         request = {'mode': 'completed-cycle', 'configSha256': args.config_sha256, 'stateSha256': args.state_sha256}
         if getattr(args, 'reconcile_boot_logs', False):
             request.update(mode='completed-boot-log-rotation', verificationPayload=payload)
+        if getattr(args, 'reconcile_expired_boot_journal', False):
+            require(not args.reconcile_boot_logs, 'Choose one evidence migration')
+            request.update(mode='completed-expired-boot-journal', verificationPayload=payload)
         if args.operation == 'plan-upgrade-config-repair':
             refusal = local_guard_refusal({'path': str(args.guard_refusal.resolve()), 'sha256': args.guard_refusal_sha256}, payload)
             request.update(mode='completed-config-repair', verificationPayload=payload, guardRefusal=refusal)
@@ -1038,7 +1076,7 @@ def main():
         if plan['request'].get('mode') == 'completed-config-repair':
             require(local_guard_refusal(plan['request']['guardRefusal']['binding'], plan['payload']) == plan['request']['guardRefusal'],
                     'Guard refusal evidence changed after review')
-        elif plan['request'].get('mode') not in ('completed-cycle', 'completed-boot-log-rotation'):
+        elif plan['request'].get('mode') not in ('completed-cycle', 'completed-boot-log-rotation', 'completed-expired-boot-journal'):
             require(local_interruption(plan['request']['interruption']['binding']) == plan['request']['interruption'],
                     'Interrupted local custody context changed after review')
         print(json.dumps(remote('upgrade', plan)))

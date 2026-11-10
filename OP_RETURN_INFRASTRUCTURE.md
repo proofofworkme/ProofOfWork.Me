@@ -8307,8 +8307,22 @@ For this boot alone, systemd subsequently cleared the pre-command exit details.
 The verifier recognizes the exact cleared tuple by checking the original SSH
 observation of successful savelog execution, all four inode and timestamp
 records, the unchanged D-Bus interval and the two original PID 1 journal
-records for the same invocation. A missing record, new invocation or changed
-file stops verification. Using the public status path after a switch still requires a sealed verification
+records for the same invocation. A partial journal, new invocation or changed
+file stops verification. On November 10 the user approved a bounded evidence
+migration after the original records expired under the unchanged seven-day
+journal retention policy. Only an entirely empty journal for this exact boot
+and invocation may use the pinned November 9 completion intent and sealed
+receipt instead. Their original bytes, hashes, successful completion, context,
+configuration and state bindings are verified; they attest the earlier successful
+verification and do not reconstruct the missing journal. All original live
+capture, service, interval and four-file checks still run. Missing, unsafe or
+changed attestation files refuse verification. Existing journal hashes and
+historical evidence remain preserved.
+The installer path `plan-upgrade-complete --reconcile-expired-boot-journal`
+admits only the reviewed completed state and configuration, permits changes
+only to the storage verifier, its exact policy hash allowlist and installer, and records the attestation in the
+completion-preserving upgrade. It does not change journald, boot services,
+retention limits, holds, or application state. Using the public status path after a switch still requires a sealed verification
 receipt. Preparation and testing of this verifier do not install it.
 
 Deduplicated ordinary roots may share inodes with the protected pair. Their

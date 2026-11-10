@@ -171,6 +171,40 @@ class HistoricalBootObservationTests(unittest.TestCase):
                     changed=list(rows);changed[i]=dict(row,**{field:row[field]+'X'})
                     self.reject(journal=dump(changed))
 
+    def test_expired_journal_requires_exact_sealed_completion_and_live_capture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = str(Path(directory)/'completion')
+            pin = dict(S.EXPIRED_BOOT_JOURNAL, base=base, invocation='2'*32,
+                       **{key:S.HISTORICAL_BOOT_LOG[key] for key in ('boot','captureSha256','journalSha256')})
+            context = {'fixture':'exact completed context'}
+            pin['context'] = S.digest(context)
+            intent = {'operation':'complete-vps-cycle','configSha256':pin['config'],'context':context}
+            intent_path = Path(base+'-intent.json')
+            intent_path.write_bytes(S.encoded(intent)); intent_path.chmod(0o600)
+            pin['intent'] = hashlib.sha256(intent_path.read_bytes()).hexdigest()
+            receipt = {'ok':True,'retentionComplete':True,'publicationHealthy':True,
+                       'cycleId':pin['cycle'],'stateSha256':pin['state'],
+                       'intent':{'path':str(intent_path),'sha256':pin['intent']}}
+            receipt_path = Path(base+'-completed.json')
+            raw = S.encoded(receipt)
+            receipt_path.write_bytes(raw); receipt_path.chmod(0o600)
+            pin['receipt'] = hashlib.sha256(raw).hexdigest()
+            with patch.object(S,'EXPIRED_BOOT_JOURNAL',pin):
+                self.observe(journal='')
+                self.reject(journal='', **self.change('held','700','701'))
+                self.reject(journal='', **self.change('settings','InvocationID='+'2'*32,'InvocationID='+'3'*32))
+                # A surviving contradictory or partial journal never uses the attestation.
+                self.reject(journal=self.evidence['journal'].splitlines()[0]+'\n')
+                receipt_path.write_bytes(raw+b' ')
+                self.reject(journal='')
+                receipt_path.write_bytes(raw); receipt_path.chmod(0o666)
+                self.reject(journal='')
+                receipt_path.unlink(); receipt_path.symlink_to(intent_path)
+                self.reject(journal='')
+                receipt_path.unlink()
+                with self.assertRaises(FileNotFoundError):
+                    self.observe(journal='')
+
 class SnapshotGuardTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.base=Path(self.tmp.name);self.root=self.base/'root';self.root.mkdir(mode=0o700)

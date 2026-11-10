@@ -73,6 +73,22 @@ HISTORICAL_BOOT_LOG = {
                     'ignore_errors=yes ; start_time=[Tue 2026-11-03 15:39:29 UTC] ; '
                     'stop_time=[Tue 2026-11-03 15:39:32 UTC] ; pid=831 ; code=exited ; status=0 }'),
 }
+# Approved 2026-11-10 evidence migration: this sealed completion was verified
+# while the original journal still existed. It is an attestation, not a copy
+# or reconstruction of the expired records. All live capture guards still run.
+EXPIRED_BOOT_JOURNAL = {
+    'boot': '59af04dd-cdb3-47ed-9a82-988bd86ffc48',
+    'invocation': 'a5e161a4c6ad4449856e7c083059e569',
+    'captureSha256': '0209d13946b5cacefd87da232d0a70cb1ebe65d4b7eb23ec0767e7e4063108d4',
+    'journalSha256': '9002ac13618f3155bb21cf62e4726e8cece5bbe8743525473354072a753c1fcc',
+    'config': '6db5fcb205939aaf026441fec4e42466bc6a979d676c6440fd2ed163493f4949',
+    'state': 'db5a3e1c063fdde3d46a57c8408fb8327c1b7459787347191db519f7304f8a6a',
+    'context': 'd913fdbff5322fe0b9815d50faec409d5ba073151008db74b35bd76838dbb288',
+    'cycle': 'release-d4eeffaf28f1-20261109T160000Z',
+    'base': '/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-complete-d4eeffaf28f1-20261109T160000Z',
+    'intent': 'a5afe34eb440316fb43e6402075c8b3d34a299b4a1744ea755bd339e4048d966',
+    'receipt': 'f5884d764525b82ba38d3d436e26332640bb1b2c37341684560a13c5ed9538c9',
+}
 
 def utc(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
 def encoded(value): return json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
@@ -482,6 +498,25 @@ def boot_log_paths(layout):
     # Only the four individually held paths rotated by the Ubuntu boot service.
     return {str(layout.prefix/'var/log'/name) for name in ('dmesg', 'dmesg.0', 'dmesg.1.gz', 'dmesg.2.gz')}
 
+def verify_expired_boot_journal(invocation):
+    pin = EXPIRED_BOOT_JOURNAL
+    if (invocation != pin['invocation'] or any(HISTORICAL_BOOT_LOG[key] != pin[key]
+            for key in ('boot', 'captureSha256', 'journalSha256'))):
+        raise ValueError('Unrecognized expired boot journal authority')
+    intent_path = pin['base']+'-intent.json'
+    intent, _ = read_json(intent_path, pin['intent'])
+    receipt, _ = read_json(pin['base']+'-completed.json', pin['receipt'])
+    if (intent.get('operation') != 'complete-vps-cycle' or intent.get('configSha256') != pin['config']
+            or digest(intent.get('context')) != pin['context'] or receipt.get('ok') is not True
+            or receipt.get('retentionComplete') is not True or receipt.get('publicationHealthy') is not True
+            or receipt.get('cycleId') != pin['cycle'] or receipt.get('stateSha256') != pin['state']
+            or receipt.get('intent') != {'path': intent_path, 'sha256': pin['intent']}):
+        raise ValueError('Expired boot journal completion attestation differs')
+    return {'schema': 'pow-ui-expired-boot-journal-attestation-v1',
+            'bootId': pin['boot'], 'invocationId': invocation,
+            'completionReceiptSha256': pin['receipt'], 'completionIntentSha256': pin['intent'],
+            'originalJournalSha256': pin['journalSha256']}
+
 def verify_historical_boot_log(prefix, settings, cleared, started, ended):
     pin = HISTORICAL_BOOT_LOG
     boot = Path('/proc/sys/kernel/random/boot_id').read_text()
@@ -513,6 +548,9 @@ def verify_historical_boot_log(prefix, settings, cleared, started, ended):
             text=True, timeout=10, env=env)
     rows = [json.loads(row, object_pairs_hook=unique_pairs) for row in journal.splitlines()]
     invocation = settings.get('InvocationID', '')
+    if not rows:
+        verify_expired_boot_journal(invocation)
+        return
     if (len(rows) != 2 or not re.fullmatch('[0-9a-f]{32}', invocation)
             or any(row.get('INVOCATION_ID') != invocation or row.get('_PID') != '1'
                    or row.get('_UID') != '0' or row.get('UNIT') != 'dmesg.service' for row in rows)

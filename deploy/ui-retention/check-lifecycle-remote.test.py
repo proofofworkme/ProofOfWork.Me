@@ -1037,6 +1037,34 @@ class PackagingTests(unittest.TestCase):
             self.assertIsNot(checked.P, installed.P)
             self.assertIs(checked.P.S, checked.S)
 
+    def test_expired_journal_migration_fences_state_config_and_dependencies(self):
+        payload = self.fixture_payload()
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory)
+            manifest = I.encoded(payload['manifest'])
+            (package / 'package.json').write_bytes(manifest)
+            (package / 'package.json').chmod(0o600)
+            pin = F.S.EXPIRED_BOOT_JOURNAL
+            config = {'statePath':str(package/'state.json'),'retentionPolicy':R.VPS_POLICY,
+                      'package':{'path':str(package),'sha256':I.sha(manifest)}}
+            installed = types.SimpleNamespace(config=config,config_sha=pin['config'],layout=object(),
+                                              state=lambda:(None,pin['state']),C=object(),P=object())
+            checked = I.expired_journal_verifier(payload,installed)
+            self.assertIs(checked.config,installed.config)
+            self.assertIs(checked.C,installed.C)
+            self.assertIs(checked.P.S,checked.S)
+            for field,value in [('config_sha','0'*64),('state',lambda:(None,'0'*64))]:
+                with self.subTest(field=field), patch.object(installed,field,value):
+                    with self.assertRaisesRegex(ValueError,'reviewed complete state'):
+                        I.expired_journal_verifier(payload,installed)
+            changed = json.loads(manifest)
+            changed['files']['deploy/ui-retention/lifecycle_remote.py']['sha256'] = '0'*64
+            raw = I.encoded(changed)
+            (package/'package.json').write_bytes(raw)
+            config['package']['sha256'] = I.sha(raw)
+            with self.assertRaisesRegex(ValueError,'other retention dependencies'):
+                I.expired_journal_verifier(payload,installed)
+
     def installer_fixture(self, base):
         for relative in ('usr/local/sbin', 'etc/proofofwork-retention', 'etc/systemd/system',
                          'var/www', 'var/backups/proofofwork-ui/cleanup-evidence',
@@ -1223,12 +1251,39 @@ class PackagingTests(unittest.TestCase):
                  ('upgrade-inventory', {'mode': 'completed-config-repair'}, 1800),
                  ('upgrade', {'request': {}}, 1800),
                  ('upgrade', {'request': {'mode': 'completed-cycle'}}, 3600),
-                 ('upgrade', {'request': {'mode': 'completed-config-repair'}}, 3600)]
+                 ('upgrade', {'request': {'mode': 'completed-config-repair'}}, 3600),
+                 ('upgrade', {'request': {'mode': 'completed-expired-boot-journal'}}, 3600)]
         for operation, value, seconds in cases:
             with self.subTest(operation=operation, value=value), patch.object(I.subprocess, 'run',
                     return_value=subprocess.CompletedProcess([], 0, b'{}')) as dispatch:
                 I.remote(operation, value)
                 self.assertEqual(dispatch.call_args.kwargs['timeout'], seconds)
+
+    def test_expired_journal_upgrade_preserves_completion_and_checks_new_guards_before_switch(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(I.subprocess,'run',
+                return_value=subprocess.CompletedProcess([],0,b'{}')):
+            base = Path(directory); previous = os.umask(0o077)
+            try:
+                plan, _, phase, verification = self.completed_upgrade_fixture(base)
+                original = phase.read_bytes()
+                runtime = I.existing_runtime(plan['request']['configSha256'],base)
+                attestation = {'schema':'fixture-exact-attestation'}
+                runtime.S.EXPIRED_BOOT_JOURNAL = {'invocation':'2'*32}
+                runtime.S.verify_expired_boot_journal = lambda invocation:attestation
+                plan['request'].update(mode='completed-expired-boot-journal',verificationPayload=plan['payload'])
+                verification['journalEvidenceMigration'] = attestation
+                with patch.object(I,'expired_journal_verifier',return_value=runtime), \
+                        patch.object(I,'verifier_module',return_value=runtime.S), \
+                        patch.object(runtime.S,'compare_guards') as guards:
+                    plan['before'] = I.upgrade_inventory(plan['request'],base)
+                    result = I.upgrade_remote(plan,base)
+                    guards.assert_called_once_with(runtime.layout,verification['context']['guards'],[])
+                self.assertTrue(result['retentionComplete'])
+                self.assertEqual(result['completionVerification']['journalEvidenceMigration'],attestation)
+                self.assertEqual(phase.read_bytes(),original)
+                self.assertEqual(self.activation_status_modes,[True,False])
+            finally:
+                os.umask(previous)
 
     def test_completed_upgrade_requires_verified_seal_and_rejects_stripped_marker(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(I.subprocess, 'run',
