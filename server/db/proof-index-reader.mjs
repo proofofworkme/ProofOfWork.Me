@@ -1,3 +1,5 @@
+import { measurePrivatePhase } from "../wallet-read-observation.mjs";
+import { withReadOnlySnapshot } from "./read-only-snapshot.mjs";
 import { canonicalSealTime } from "../canonical-seal-time.mjs";
 import { notificationDnsRelation } from "../notification-dns-relations.mjs";
 import { NOTIFICATION_QUERY_MODEL, notificationAddressKey, notificationAddressSql, notificationTransactionSql } from "../notification-query.mjs";
@@ -285,7 +287,8 @@ const workPrecisionV2MigrationReadinessReadyCache = new Map();
 const workPrecisionV2CanonicalBootstrapReadinessReadyCache = new Map();
 const workPrecisionV2MigrationFullAuditInFlight = new Map();
 // Full relational audits are serialized per process; compact reads stay free.
-let workPrecisionV2MigrationFullAuditTail = Promise.resolve();
+const workPrecisionV2MigrationFullAuditQueue = createAbortableReadinessAuditQueue();
+const walletReadinessPreflightScope = new WalletRequestAsyncLocalStorage();
 const workPrecisionV2ReadinessEpochContractInFlight = new Map();
 const workPrecisionV2ReadinessEpochContractReadyCache = new Map();
 const walletRequestReadiness = new WalletRequestAsyncLocalStorage();
@@ -328,6 +331,108 @@ function reportWalletTokenOverlayUnavailable(details, scope, options = {}) {
   throw error;
 }
 
+function walletPreflightReadinessMap(scope, name, shared) {
+  if (!scope.maps.has(name)) scope.maps.set(name,
+    /ReadyCache$/u.test(name) ? new Map(shared) : new Map());
+  return scope.maps.get(name);
+}
+
+// Shared work contains only public, account-independent readiness proof. The
+// per-wallet snapshot and every Core/mempool closing fence remain independent.
+const walletReadinessPreflights = new Map();
+export function proofIndexWalletReadinessUnavailableError() {
+  const error = new Error("Fresh wallet credit state is temporarily unavailable.");
+  error.statusCode = 503;
+  error.code = "WALLET_READINESS_PREFLIGHT_UNAVAILABLE";
+  error.details = { code: "CANONICAL_WALLET_INDEX_UNAVAILABLE", requiredSource: "proof-indexer-wallet-token-overlay" };
+  walletProofReadinessFailures.add(error);
+  return error;
+}
+
+export async function proofIndexPrepareWalletReadiness(network, { timeoutMs = 15_000, signal } = {}) {
+  if (network !== "livenet" || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 15_000) {
+    throw new Error("Invalid wallet readiness preflight.");
+  }
+  const unavailable = proofIndexWalletReadinessUnavailableError;
+  // Never borrow a wallet/preflight transaction: its lease COMMIT would not
+  // prove the actual owner committed before global readiness publication.
+  if (signal?.aborted || walletReadSnapshot.getStore() || walletReadinessPreflightScope.getStore()) throw unavailable();
+  let flight = walletReadinessPreflights.get(network);
+  if (flight?.controller.signal.aborted) throw unavailable();
+  if (!flight) {
+    const pool = proofIndexPool();
+    if (!pool) throw unavailable();
+    const controller = new AbortController();
+    const deadlineAt = Date.now() + timeoutMs;
+    flight = { controller, subscribers: 0, settled: false };
+    walletReadinessPreflights.set(network, flight);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let scope;
+    const operation = walletRequestReadiness.run(undefined, () =>
+      withReadOnlySnapshot(pool, snapshotPool => {
+        scope = { pool: snapshotPool, maps: new Map(), signal: controller.signal, required: true };
+        return walletReadinessPreflightScope.run(scope, async () => {
+          const configured = configuredWorkPrecisionV2ReaderPins();
+          const latch = await proofIndexWorkAmoV8ActivationLatch(network, configured);
+          const pins = configured ?? latch?.pins;
+          // Preflight is only an optimization. Historical/no-pin requests
+          // retain the original payload-specific readiness decision.
+          if (!pins || latch?.reached !== true) { scope.required = false; return null; }
+          return proofIndexWorkPrecisionV2MigrationReadiness(network, pins);
+        });
+      }, { timeoutMs, deadlineAt, signal: controller.signal }));
+    flight.promise = operation.then(result => {
+      // withReadOnlySnapshot resolves only after successful COMMIT. No promise,
+      // negative result or incomplete readiness can enter the shared cache.
+      if (controller.signal.aborted || Date.now() >= deadlineAt) throw unavailable();
+      if (scope?.required === false) return true;
+      if (!promoteWalletPreflightReadiness(scope, result)) throw unavailable();
+      return true;
+    }).finally(() => {
+      flight.settled = true;
+      clearTimeout(timer);
+      if (walletReadinessPreflights.get(network) === flight) walletReadinessPreflights.delete(network);
+    });
+    // Subscribers own rejection delivery; detached cancellation cannot produce
+    // an unhandled rejection while bounded SQL cleanup is finishing.
+    flight.promise.catch(() => {});
+  }
+  flight.subscribers++;
+  let timer, abort;
+  const cancelled = new Promise((_, reject) => {
+    abort = () => reject(unavailable());
+    signal?.addEventListener("abort", abort, { once: true });
+    timer = setTimeout(abort, timeoutMs);
+    if (signal?.aborted) abort();
+  });
+  try { return await Promise.race([flight.promise, cancelled]); }
+  catch (error) {
+    if (isProofIndexWalletReadinessUnavailable(error)) throw error;
+    throw unavailable();
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
+    flight.subscribers--;
+    if (!flight.settled && flight.subscribers === 0) flight.controller.abort();
+  }
+}
+
+function promoteWalletPreflightReadiness(scope, result, now = Date.now()) {
+  const name = "workPrecisionV2MigrationReadinessReadyCache";
+  const key = result?.auditedReadinessFingerprintKey;
+  const entry = scope?.maps?.get(name)?.get(key);
+  if (!/^[0-9a-f]{64}$/u.test(key ?? "") || !entry || entry.result !== result ||
+      !Object.isFrozen(result) || !Number.isFinite(now) || !(entry.expiresAt > now) ||
+      !workPrecisionV2MigrationReadinessResultIsReusablePositive(result, now)) return false;
+  const expiresAt = Math.min(entry.expiresAt, Date.parse(result.pendingValidThrough));
+  if (!(expiresAt > now)) return false;
+  workPrecisionV2MigrationReadinessReadyCache.set(key, Object.freeze({ expiresAt, result }));
+  while (workPrecisionV2MigrationReadinessReadyCache.size > WORK_PRECISION_V2_READINESS_CACHE_MAX_ENTRIES) {
+    workPrecisionV2MigrationReadinessReadyCache.delete(workPrecisionV2MigrationReadinessReadyCache.keys().next().value);
+  }
+  return true;
+}
+
 export async function proofIndexWithWalletRequestReadiness(read) {
   // A new caller always owns new maps, including when a wallet payload was
   // supplied by an existing single-flight. Nothing survives this response.
@@ -342,6 +447,9 @@ export async function proofIndexWithWalletRequestReadiness(read) {
 }
 
 function walletRequestReadinessMap(name, shared) {
+  const preflight = walletReadinessPreflightScope.getStore();
+  if (preflight) return walletPreflightReadinessMap(preflight, name, shared);
+  if (walletReadSnapshot.getStore()) return walletSnapshotReadinessMap(name, shared);
   const scope = walletRequestReadiness.getStore();
   if (!scope?.active) return shared;
   if (!scope.maps.has(name)) {
@@ -647,6 +755,10 @@ export const proofIndexPermissionDiscovery = createPermissionIndexDiscovery({
 });
 
 function proofIndexPool() {
+  const preflight = walletReadinessPreflightScope.getStore();
+  if (preflight) return preflight.pool;
+  const snapshot = walletReadSnapshot.getStore();
+  if (snapshot) return snapshot.pool;
   if (!proofIndexDatabaseConfigured()) {
     return null;
   }
@@ -3059,6 +3171,8 @@ async function payloadWithCurrentWorkPrecisionReadPolicy(
       return null;
     }
   }
+  const walletScope = walletReadSnapshot.getStore();
+  if (walletScope && fullReadiness) walletScope.pendingReadiness = readiness;
   return currentPayload;
 }
 
@@ -6109,6 +6223,14 @@ async function workPrecisionV2ReadinessEpochContractAttestationWithCache({
   load,
   readyCache,
 }) {
+  const preflight = walletReadinessPreflightScope.getStore();
+  if (preflight) {
+    inFlight = walletPreflightReadinessMap(preflight, "catalogInFlight", inFlight);
+    readyCache = walletPreflightReadinessMap(preflight, "catalogReadyCache", readyCache);
+  } else if (walletReadSnapshot.getStore()) {
+    inFlight = walletSnapshotReadinessMap("catalogInFlight", inFlight);
+    readyCache = walletSnapshotReadinessMap("catalogReadyCache", readyCache);
+  }
   if (!expectedPostmasterStartedAt) {
     return false;
   }
@@ -7291,6 +7413,7 @@ async function workPrecisionV2MigrationReadinessWithCompactCache({
 }
 
 async function workPrecisionV2MigrationReadinessWithCompactCheckpoint({
+  allowAuditedEpochRebinding = false,
   allowCanonicalSummaryBootstrap = false,
   bootstrapReadyCache,
   force = false,
@@ -7299,6 +7422,7 @@ async function workPrecisionV2MigrationReadinessWithCompactCheckpoint({
   loadCompact,
   loadFull,
   now = Date.now,
+  onUnavailable,
   readyCache,
   requestKey,
 }) {
@@ -7309,110 +7433,224 @@ async function workPrecisionV2MigrationReadinessWithCompactCheckpoint({
   const admissionKey = `${
     allowCanonicalSummaryBootstrap === true ? "bootstrap" : "full"
   }:${force === true ? "force" : "normal"}:${
+    allowAuditedEpochRebinding === true ? "epoch-fenced" : "strict"
+  }:${
     requestKey
   }`;
-  return exactCheckpointSingleFlight(
+  const outcome = await exactCheckpointSingleFlight(
     inFlight,
     admissionKey,
     async () => {
-      const initialFingerprint = await loadCompact();
-      if (
-        !initialFingerprint?.key ||
-        initialFingerprint.positiveEligible !== true ||
-        !initialFingerprint.postmasterStartedAt
-      ) {
-        return null;
-      }
-      if (force !== true) {
-        const readAt = Number(now());
-        const cached = Number.isFinite(readAt)
-          ? reusableWorkPrecisionV2MigrationReadiness(
-              readyCache,
-              initialFingerprint.key,
-              readAt,
-            )
-          : null;
+      let stage = "initial-compact";
+      let observedInitialFingerprint;
+      let observedSettledFingerprint;
+      let result;
+      const fingerprintSha256 = (value) =>
+        typeof value === "string" && /^[0-9a-f]{64}$/u.test(value)
+          ? value : null;
+      const refuse = (code, value = null) => ({
+        result: value,
+        diagnostic: Object.freeze({
+          model: "work-q16-readiness-checkpoint-diagnostic-v1",
+          stage,
+          code,
+          initialFingerprintSha256: fingerprintSha256(observedInitialFingerprint?.key),
+          settledFingerprintSha256: fingerprintSha256(observedSettledFingerprint?.key),
+          auditedFingerprintSha256: fingerprintSha256(
+            result?.auditedReadinessFingerprintKey,
+          ),
+        }),
+      });
+      try {
+        const initialFingerprint = await loadCompact();
+        observedInitialFingerprint = initialFingerprint;
+        if (initialFingerprint?.knownOldTipWitness === true) {
+          return refuse("pending-witness-old-tip");
+        }
         if (
-          cached &&
-          workPrecisionV2MigrationReadinessResultIsReusablePositive(
-            cached,
-            readAt,
-          )
+          !initialFingerprint?.key ||
+          initialFingerprint.positiveEligible !== true ||
+          !initialFingerprint.postmasterStartedAt
         ) {
-          return cached;
+          return refuse("compact-contract-unavailable");
         }
-        if (cached) {
-          readyCache.delete(initialFingerprint.key);
-        }
-        const bootstrapCached =
-          allowCanonicalSummaryBootstrap === true &&
-            Number.isFinite(readAt)
+        if (force !== true) {
+          const readAt = Number(now());
+          const cached = Number.isFinite(readAt)
             ? reusableWorkPrecisionV2MigrationReadiness(
-                bootstrapReadyCache,
+                readyCache,
                 initialFingerprint.key,
                 readAt,
               )
             : null;
-        if (
-          bootstrapCached?.canonicalSummaryBootstrapReady === true
-        ) {
-          return bootstrapCached;
+          if (
+            cached &&
+            workPrecisionV2MigrationReadinessResultIsReusablePositive(
+              cached,
+              readAt,
+            )
+          ) {
+            return { result: cached };
+          }
+          if (cached) {
+            readyCache.delete(initialFingerprint.key);
+          }
+          const bootstrapCached =
+            allowCanonicalSummaryBootstrap === true &&
+              Number.isFinite(readAt)
+              ? reusableWorkPrecisionV2MigrationReadiness(
+                  bootstrapReadyCache,
+                  initialFingerprint.key,
+                  readAt,
+                )
+              : null;
+          if (bootstrapCached?.canonicalSummaryBootstrapReady === true) {
+            return { result: bootstrapCached };
+          }
         }
-      }
-      if (
-        await loadCatalogAttestation(initialFingerprint) !== true
-      ) {
-        return null;
-      }
-      const result = await loadFull(initialFingerprint);
-      const settledFingerprint = await loadCompact();
-      if (
-        !settledFingerprint?.key ||
-        settledFingerprint.positiveEligible !== true ||
-        settledFingerprint.key !== initialFingerprint.key
-      ) {
-        return null;
-      }
-      const settledAt = Number(now());
-      if (
-        !Number.isFinite(settledAt) ||
-        !workPrecisionV2MigrationReadinessResultIsReusablePositive(
-          result,
-          settledAt,
-        )
-      ) {
+        stage = "catalog-attestation";
+        if (await loadCatalogAttestation(initialFingerprint) !== true) {
+          return refuse("catalog-contract-unavailable");
+        }
+        stage = "full-audit";
+        result = await loadFull(initialFingerprint);
+        stage = "settled-compact";
+        const settledFingerprint = await loadCompact();
+        observedSettledFingerprint = settledFingerprint;
         if (
-          allowCanonicalSummaryBootstrap === true &&
-          Number.isFinite(settledAt) &&
-          result?.canonicalSummaryBootstrapReady === true
+          !settledFingerprint?.key ||
+          settledFingerprint.positiveEligible !== true
         ) {
-          return rememberWorkPrecisionV2MigrationReadiness(
-            bootstrapReadyCache,
-            settledFingerprint.key,
+          return refuse("settled-compact-contract-unavailable");
+        }
+        stage = "epoch-binding";
+        if (
+          settledFingerprint.key !== initialFingerprint.key &&
+          allowAuditedEpochRebinding !== true
+        ) {
+          return refuse("initial-epoch-changed");
+        }
+        // The full audit may begin after a queued publication has committed.
+        // Bind its actual repeatable-read epoch to the final compact sample,
+        // rather than requiring the earlier scheduling sample to survive.
+        // Unbound results retain the original two-sample fence. Never carry
+        // the catalog attestation across a different database postmaster.
+        if (
+          settledFingerprint.postmasterStartedAt !==
+            initialFingerprint.postmasterStartedAt
+        ) {
+          return refuse("database-instance-changed");
+        }
+        if (Object.hasOwn(result ?? {}, "auditedReadinessFingerprintKey")) {
+          if (
+            !fingerprintSha256(result.auditedReadinessFingerprintKey) ||
+            result.auditedReadinessFingerprintKey !== settledFingerprint.key
+          ) {
+            return refuse("audited-epoch-mismatch");
+          }
+        } else if (settledFingerprint.key !== initialFingerprint.key) {
+          return refuse("unbound-epoch-changed");
+        }
+        stage = "result-proof";
+        const settledAt = Number(now());
+        if (
+          !Number.isFinite(settledAt) ||
+          !workPrecisionV2MigrationReadinessResultIsReusablePositive(
             result,
-            settledAt + WORK_PRECISION_V2_READINESS_CACHE_TTL_MS,
+            settledAt,
+          )
+        ) {
+          if (
+            allowCanonicalSummaryBootstrap === true &&
+            Number.isFinite(settledAt) &&
+            result?.canonicalSummaryBootstrapReady === true
+          ) {
+            return { result: rememberWorkPrecisionV2MigrationReadiness(
+              bootstrapReadyCache,
+              settledFingerprint.key,
+              result,
+              settledAt + WORK_PRECISION_V2_READINESS_CACHE_TTL_MS,
+            ) };
+          }
+          const expired = Number.isFinite(settledAt) &&
+            Date.parse(String(result?.pendingValidThrough ?? "")) <= settledAt;
+          return refuse(
+            expired ? "pending-witness-expired" : "full-proof-not-ready",
+            result?.ready === true ? null : result,
           );
         }
-        return result?.ready === true ? null : result;
+        const pendingValidThrough = Date.parse(
+          String(result.pendingValidThrough ?? ""),
+        );
+        const expiresAt = Math.min(
+          settledAt + WORK_PRECISION_V2_READINESS_CACHE_TTL_MS,
+          pendingValidThrough,
+        );
+        if (!Number.isFinite(expiresAt) || expiresAt <= settledAt) {
+          return refuse("pending-witness-expired");
+        }
+        return { result: rememberWorkPrecisionV2MigrationReadiness(
+          readyCache,
+          settledFingerprint.key,
+          result,
+          expiresAt,
+        ) };
+      } catch (error) {
+        // Keep the original rejection for callers, but never log its message,
+        // SQL, request data or credentials in checkpoint diagnostics.
+        return { ...refuse("read-exception"), error };
       }
-      const pendingValidThrough = Date.parse(
-        String(result.pendingValidThrough ?? ""),
-      );
-      const expiresAt = Math.min(
-        settledAt + WORK_PRECISION_V2_READINESS_CACHE_TTL_MS,
-        pendingValidThrough,
-      );
-      if (!Number.isFinite(expiresAt) || expiresAt <= settledAt) {
-        return null;
-      }
-      return rememberWorkPrecisionV2MigrationReadiness(
-        readyCache,
-        settledFingerprint.key,
-        result,
-        expiresAt,
-      );
     },
   );
+  // Shared work yields one bounded diagnostic to each caller, not just the
+  // callback owned by the first request that entered the single-flight.
+  if (outcome.diagnostic && typeof onUnavailable === "function") {
+    try { onUnavailable(outcome.diagnostic); } catch { /* observation only */ }
+  }
+  if (Object.hasOwn(outcome, "error")) {
+    throw outcome.error;
+  }
+  return outcome.result;
+}
+
+// Cancellation removes queued work. A running audit owns the sole slot until
+// its real cleanup settles; rejecting a caller never releases it prematurely.
+export function createAbortableReadinessAuditQueue({ maxQueued = 64 } = {}) {
+  if (!Number.isSafeInteger(maxQueued) || maxQueued < 1 || maxQueued > 256) {
+    throw new Error("Invalid readiness queue bound.");
+  }
+  const queue = [];
+  let running = false;
+  const unavailable = () => Object.assign(new Error("Readiness audit admission unavailable."), { code: "READINESS_AUDIT_UNAVAILABLE" });
+  const drain = () => {
+    if (running) return;
+    const task = queue.shift();
+    if (!task) return;
+    task.signal?.removeEventListener("abort", task.abort);
+    if (task.signal?.aborted) { task.reject(unavailable()); drain(); return; }
+    running = true;
+    Promise.resolve().then(task.load).then(task.resolve, task.reject).finally(() => {
+      running = false;
+      drain();
+    });
+  };
+  return (load, signal) => new Promise((resolve, reject) => {
+    if (typeof load !== "function" || signal?.aborted || queue.length >= maxQueued) {
+      reject(unavailable()); return;
+    }
+    const runInContext = WalletRequestAsyncLocalStorage.snapshot();
+    const task = { load: () => runInContext(load), signal, resolve, reject };
+    task.abort = () => {
+      const index = queue.indexOf(task);
+      if (index < 0) return;
+      queue.splice(index, 1);
+      signal.removeEventListener("abort", task.abort);
+      reject(unavailable());
+    };
+    queue.push(task);
+    signal?.addEventListener("abort", task.abort, { once: true });
+    drain();
+  });
 }
 
 async function workPrecisionV2MigrationFullAuditWithBound({
@@ -7420,16 +7658,21 @@ async function workPrecisionV2MigrationFullAuditWithBound({
   load,
   requestKey,
 }) {
+  const preflight = walletReadinessPreflightScope.getStore();
+  if (preflight) inFlight = walletPreflightReadinessMap(preflight, "auditInFlight", inFlight);
+  else if (walletReadSnapshot.getStore()) inFlight = walletSnapshotReadinessMap("workPrecisionV2MigrationFullAuditInFlight", inFlight);
   const existing = inFlight.get(requestKey);
   if (existing) {
     return existing;
   }
-  const predecessor = workPrecisionV2MigrationFullAuditTail.catch(
-    () => {},
+  let entered;
+  const admitted = new Promise(resolve => { entered = resolve; });
+  const pending = workPrecisionV2MigrationFullAuditQueue(
+    () => { entered(); return measurePrivatePhase("full-audit-execution", load); },
+    walletReadinessPreflightScope.getStore()?.signal,
   );
-  const pending = predecessor.then(load);
+  measurePrivatePhase("full-audit-queue-wait", () => Promise.race([admitted, pending])).catch(() => {});
   inFlight.set(requestKey, pending);
-  workPrecisionV2MigrationFullAuditTail = pending.catch(() => {});
   try {
     return await pending;
   } finally {
@@ -7451,37 +7694,56 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
     pins,
   );
   if (!pool || !requestKey) {
+    if (typeof options?.onUnavailable === "function") {
+      try {
+        options.onUnavailable(Object.freeze({
+          model: "work-q16-readiness-checkpoint-diagnostic-v1",
+          stage: "reader-configuration",
+          code: "reader-not-configured",
+          initialFingerprintSha256: null,
+          settledFingerprintSha256: null,
+          auditedFingerprintSha256: null,
+        }));
+      } catch { /* observation only */ }
+    }
     return null;
   }
   const requestOptions = Object.freeze({ ...options });
   return workPrecisionV2MigrationReadinessWithCompactCheckpoint({
+    allowAuditedEpochRebinding:
+      requestOptions.allowAuditedEpochRebinding === true,
     allowCanonicalSummaryBootstrap:
       requestOptions.allowCanonicalSummaryBootstrap === true,
-    bootstrapReadyCache: walletRequestReadinessMap("workPrecisionV2CanonicalBootstrapReadinessReadyCache", workPrecisionV2CanonicalBootstrapReadinessReadyCache),
+    bootstrapReadyCache: walletSnapshotReadinessMap("workPrecisionV2CanonicalBootstrapReadinessReadyCache", walletReadSnapshot.getStore() ? workPrecisionV2CanonicalBootstrapReadinessReadyCache : walletRequestReadinessMap("workPrecisionV2CanonicalBootstrapReadinessReadyCache", workPrecisionV2CanonicalBootstrapReadinessReadyCache)),
     force: requestOptions.force === true,
-    inFlight: walletRequestReadinessMap("workPrecisionV2MigrationReadinessRequestInFlight", workPrecisionV2MigrationReadinessRequestInFlight),
+    onUnavailable: requestOptions.onUnavailable,
+    inFlight: walletSnapshotReadinessMap("workPrecisionV2MigrationReadinessRequestInFlight", walletReadSnapshot.getStore() ? workPrecisionV2MigrationReadinessRequestInFlight : walletRequestReadinessMap("workPrecisionV2MigrationReadinessRequestInFlight", workPrecisionV2MigrationReadinessRequestInFlight)),
     loadCatalogAttestation: (fingerprint) =>
       workPrecisionV2ReadinessEpochContractAttestationWithCache({
         expectedPostmasterStartedAt:
           fingerprint.postmasterStartedAt,
-        inFlight: workPrecisionV2ReadinessEpochContractInFlight,
+        inFlight: walletSnapshotReadinessMap("workPrecisionV2ReadinessEpochContractInFlight", workPrecisionV2ReadinessEpochContractInFlight),
         load: () =>
           proofIndexWorkPrecisionV2ReadinessEpochContractAttestation(
             pool,
           ),
-        readyCache: workPrecisionV2ReadinessEpochContractReadyCache,
+        readyCache: walletSnapshotReadinessMap("workPrecisionV2ReadinessEpochContractReadyCache", workPrecisionV2ReadinessEpochContractReadyCache),
       }),
-    loadCompact: () =>
-      proofIndexWorkPrecisionV2ReadinessCompactFingerprint(
-        pool,
-        network,
-        pins,
-      ),
+    loadCompact: async () => {
+      const fingerprint = await proofIndexWorkPrecisionV2ReadinessCompactFingerprint(
+        pool, network, pins,
+      );
+      if (!fingerprint?.key || !walletReadSnapshot.getStore()) return fingerprint;
+      return {
+        ...fingerprint,
+        knownOldTipWitness: await proofIndexWalletPendingWitnessHasOldTip(pool, network),
+      };
+    },
     loadFull: (fingerprint) =>
       workPrecisionV2MigrationFullAuditWithBound({
         // Outside an owned wallet snapshot, callers may share the same full
         // audit. Each request still runs its own compact epoch/expiry fences.
-        inFlight: workPrecisionV2MigrationFullAuditInFlight,
+        inFlight: walletSnapshotReadinessMap("workPrecisionV2MigrationFullAuditInFlight", workPrecisionV2MigrationFullAuditInFlight),
         load: () =>
           proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
             pool,
@@ -7490,7 +7752,7 @@ export async function proofIndexWorkPrecisionV2MigrationReadiness(
           ),
         requestKey: `${requestKey}:${fingerprint.key}`,
       }),
-    readyCache: walletRequestReadinessMap("workPrecisionV2MigrationReadinessReadyCache", workPrecisionV2MigrationReadinessReadyCache),
+    readyCache: walletSnapshotReadinessMap("workPrecisionV2MigrationReadinessReadyCache", walletReadSnapshot.getStore() ? workPrecisionV2MigrationReadinessReadyCache : walletRequestReadinessMap("workPrecisionV2MigrationReadinessReadyCache", workPrecisionV2MigrationReadinessReadyCache)),
     requestKey,
   });
 }
@@ -7604,7 +7866,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
             'openingStatePayloadBytes',
               transition.opening_state_payload_bytes,
             'openingStateSha256', transition.opening_state_sha256,
-            'payload', transition.payload,
+            'payload', proof_indexer.read_work_transition_payload_v1(transition.network,transition.block_height,transition.block_hash,transition.payload),
             'previousBlockHash', transition.previous_block_hash,
             'stateCommitmentModel',
               transition.state_commitment_model,
@@ -7652,7 +7914,7 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
             'openingStatePayloadBytes',
               transition.opening_state_payload_bytes,
             'openingStateSha256', transition.opening_state_sha256,
-            'payload', transition.payload,
+            'payload', proof_indexer.read_work_transition_payload_v1(transition.network,transition.block_height,transition.block_hash,transition.payload),
             'previousBlockHash', transition.previous_block_hash,
             'stateCommitmentModel',
               transition.state_commitment_model,
@@ -9111,9 +9373,21 @@ async function proofIndexWorkPrecisionV2MigrationReadinessFullAudit(
   const canonicalSummaryBootstrapReady =
     confirmedStateReadyWithinSnapshot && exactTipReady;
   const ready = readyWithinSnapshot && exactTipReady;
+  // This checkpoint was read inside the same repeatable-read transaction
+  // as every full-audit predicate. Reconstruct the compact key without any
+  // extra query, history scan or new cache lifetime.
+  const auditedReadinessFingerprintKey =
+    workPrecisionV2ReadinessCompactFingerprintFromRows([{
+      max_prepared_transactions: readinessEpochCheckpoint?.maxPreparedTransactions,
+      postmaster_started_at: readinessEpochCheckpoint?.postmasterStartedAt,
+      readiness_epochs: readinessEpochCheckpoint?.readinessEpochs,
+      readiness_queue_count: readinessEpochCheckpoint?.queueCount,
+      search_path: readinessEpochCheckpoint?.searchPath,
+    }], network, pins)?.key ?? null;
   return {
     activationHeight: pins.activationHeight,
     active: ready,
+    auditedReadinessFingerprintKey,
     canonicalSummaryBootstrapReady,
     canonical: true,
     confirmed: true,
@@ -45774,4 +46048,60 @@ export async function proofIndexRecentTransactionIds(
     [network, status, limit],
   );
   return result.rows.map((row) => row.txid);
+}
+
+const walletReadSnapshot = new WalletRequestAsyncLocalStorage();
+function walletSnapshotReadinessMap(name, shared) {
+  const scope = walletReadSnapshot.getStore();
+  if (!scope) return shared;
+  // Copy settled positives; the existing fingerprint/expiry gates still decide
+  // reuse. In-flight promises are never imported from another session.
+  if (!scope.maps.has(name)) scope.maps.set(name,
+    /ReadyCache$/u.test(name) ? new Map(shared) : new Map());
+  return scope.maps.get(name);
+}
+
+export function proofIndexWalletReadSnapshotPendingProof() {
+  const readiness = walletReadSnapshot.getStore()?.pendingReadiness;
+  return readiness?.ready === true ? {
+    tipHeight: readiness.tipHeight, tipHash: readiness.tipHash,
+    pendingValidThrough: readiness.pendingValidThrough,
+    membershipSnapshot: readiness.pendingWitness?.membershipSnapshot,
+  } : null;
+}
+
+export async function proofIndexWithWalletReadSnapshot(read, options = {}) {
+  const existing = walletReadSnapshot.getStore();
+  if (existing) throw new Error("Nested wallet snapshot is unavailable.");
+  const pool = proofIndexPool();
+  if (!pool) return null;
+  return walletRequestReadinessCommittedSnapshot((register) =>
+    withReadOnlySnapshot(pool, (snapshotPool) => {
+      const scope = { pool: snapshotPool, maps: new Map() };
+      register(scope);
+      return walletReadSnapshot.run(scope, read);
+    }, options));
+}
+
+async function proofIndexWalletPendingWitnessHasOldTip(pool, network) {
+  const result = await pool.query(
+    `SELECT
+       (SELECT jsonb_build_object('height', height, 'hash', block_hash)
+        FROM proof_indexer.blocks
+        WHERE network = $1 AND canonical = true
+        ORDER BY height DESC LIMIT 1) AS canonical_tip,
+       (SELECT value->'canonicalTip' FROM proof_indexer.meta
+        WHERE key = $2) AS pending_tip`,
+    [network, WORK_Q16_PENDING_REBUILD_META_KEY],
+  );
+  if (result.rows.length !== 1) return false;
+  const current = objectRecord(result.rows[0]?.canonical_tip);
+  const pending = objectRecord(result.rows[0]?.pending_tip);
+  const currentHash = normalizedLowerText(current.hash);
+  const pendingHash = normalizedLowerText(pending.hash);
+  return Number.isSafeInteger(current.height) && current.height >= 0 &&
+    Number.isSafeInteger(pending.height) && pending.height >= 0 &&
+    /^[0-9a-f]{64}$/u.test(currentHash) && /^[0-9a-f]{64}$/u.test(pendingHash) &&
+    (pending.height < current.height ||
+      (pending.height === current.height && pendingHash !== currentHash));
 }

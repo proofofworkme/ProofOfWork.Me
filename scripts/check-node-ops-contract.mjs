@@ -351,7 +351,7 @@ assert.match(
 );
 assert.match(
   postgresQueryHealth,
-  /expected_parents\(relname\)[\s\S]*ledger_snapshots[\s\S]*work_amo_block_transitions/u,
+  /expected_parents\(relname, owner_name\)[\s\S]*ledger_snapshots[\s\S]*work_amo_block_transitions/u,
 );
 assert.match(
   postgresQueryHealth,
@@ -360,16 +360,19 @@ assert.match(
 assert.match(postgresQueryHealth, /indisvalid[\s\S]*indisready/u);
 assert.match(postgresQueryHealth, /owned_sequences/u);
 assert.match(postgresQueryHealth, /unrelated_count/u);
-assert.match(postgresQueryHealth, /closure_count != 18/u);
-assert.match(postgresQueryHealth, /placed_count != 18/u);
-assert.match(postgresQueryHealth, /index_count != 14/u);
+assert.match(postgresQueryHealth, /work_batch_transition_supersessions_v1/u);
+assert.match(postgresQueryHealth, /work_transfer_projection_pages/u);
+assert.match(postgresQueryHealth, /parent_count != 8/u);
+assert.match(postgresQueryHealth, /closure_count != 47/u);
+assert.match(postgresQueryHealth, /placed_count != 47/u);
+assert.match(postgresQueryHealth, /index_count != 31/u);
 assert.match(
   postgresQueryHealth,
   /CRITICAL PostgreSQL large-state tablespace placement differs/u,
 );
 assert.doesNotMatch(
   postgresQueryHealth,
-  /work_amo_block_transitions[^\n]*payload|ledger_snapshots[^\n]*payload/u,
+  /\b(?:FROM|JOIN)\s+(?:proof_indexer\.)?(?:work_amo_block_transitions|ledger_snapshots)\b/iu,
 );
 assert.match(
   postgresQueryHealth,
@@ -606,7 +609,10 @@ try {
     "HEAD^{tree}",
   ]);
   const fixturePath = join(testRoot, "proofofwork-release-prune");
+  // Isolate the fixture hold, never consult or alter the host production hold.
+  const fixtureHold = join(testRoot, "retention.hold");
   const fixture = releasePrune
+    .replaceAll("/etc/proofofwork-retention/audit28.hold", fixtureHold)
     .replace(
       "/var/backups/proofofwork-ui/releases:2",
       `${uiRoot}:2`,
@@ -864,6 +870,15 @@ try {
   assert.match(dryRunResult.stdout, /release_retention mode=dry-run/u);
   assertAllNodeEvidenceRetained();
   assert.equal(existsSync(dryRunTemporary), true);
+
+  writeFileSync(fixtureHold, "Exact manifest approval required.\n", { mode: 0o600 });
+  const heldResult = spawnSync("/usr/bin/bash", [fixturePath, nodeRoot, "3"], {
+    encoding: "utf8", env: nodePruneEnvironment,
+  });
+  assert.equal(heldResult.status, 78, heldResult.stderr);
+  assert.match(heldResult.stderr, /exact manifest approval required/u);
+  assertAllNodeEvidenceRetained();
+  rmSync(fixtureHold);
 
   chmodSync(nodeRoot, 0o775);
   const unsafeNodeRootResult = spawnSync(

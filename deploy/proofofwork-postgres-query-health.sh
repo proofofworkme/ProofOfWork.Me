@@ -180,10 +180,45 @@ placement_metrics="$(/usr/bin/psql \
       FROM pg_tablespace
       WHERE spcname = 'proof_indexer_large_state_v1'
     ),
-    expected_parents(relname) AS (
+    -- Exact accepted native-storage closure, including retained rollback,
+    -- WORK batch supersession evidence and bounded transfer projection pages.
+    -- Native secondary indexes intentionally remain in pg_default.
+    expected_parents(relname, owner_name) AS (
       VALUES
-        ('ledger_snapshots'::name),
-        ('work_amo_block_transitions'::name)
+        ('ledger_snapshots'::name, 'proof_indexer'::name),
+        ('work_amo_block_transitions'::name, 'proof_indexer'::name),
+        ('work_amo_block_transitions_audit31_native_rollback_v2'::name, 'proof_indexer'::name),
+        ('work_transition_archive_v1'::name, 'proof_indexer_transition_storage_owner'::name),
+        ('work_transition_chunks_v1'::name, 'proof_indexer_transition_storage_owner'::name),
+        ('work_transition_hot_slots_v1'::name, 'proof_indexer_transition_storage_owner'::name),
+        ('work_batch_transition_supersessions_v1'::name, 'proof_indexer_transition_storage_owner'::name),
+        ('work_transfer_projection_pages'::name, 'postgres'::name)
+    ),
+    expected_indexes(parent_name, index_name, tablespace_name) AS (
+      VALUES
+        ('ledger_snapshots', 'ledger_snapshots_canonical_payload_latest_idx', 'proof_indexer_large_state_v1'),
+        ('ledger_snapshots', 'ledger_snapshots_pkey', 'proof_indexer_large_state_v1'),
+        ('ledger_snapshots', 'ledger_snapshots_recent_idx', 'proof_indexer_large_state_v1'),
+        ('ledger_snapshots', 'ledger_snapshots_scan_health_idx', 'proof_indexer_large_state_v1'),
+        ('ledger_snapshots', 'ledger_snapshots_summary_latest_idx', 'proof_indexer_large_state_v1'),
+        ('ledger_snapshots', 'ledger_snapshots_token_state_latest_idx', 'proof_indexer_large_state_v1'),
+        ('ledger_snapshots', 'ledger_snapshots_work_amo_v5_h_minus_one_seed_evidence_network_', 'proof_indexer_large_state_v1'),
+        ('ledger_snapshots', 'ledger_snapshots_work_q16_summary_latest_idx', 'proof_indexer_large_state_v1'),
+        ('work_amo_block_transitions', 'work_amo_block_transitions_au_network_block_height_block_ha_idx', 'proof_indexer_large_state_v1'),
+        ('work_amo_block_transitions', 'work_amo_block_transitions_audit31_com_network_block_height_idx', 'proof_indexer_large_state_v1'),
+        ('work_amo_block_transitions', 'work_amo_block_transitions_audit31_compa_network_block_hash_key', 'proof_indexer_large_state_v1'),
+        ('work_amo_block_transitions', 'work_amo_block_transitions_audit31_compact_v2_pkey', 'proof_indexer_large_state_v1'),
+        ('work_amo_block_transitions_audit31_native_rollback_v2', 'work_amo_block_transitions_network_block_hash_key', 'proof_indexer_large_state_v1'),
+        ('work_amo_block_transitions_audit31_native_rollback_v2', 'work_amo_block_transitions_pkey', 'proof_indexer_large_state_v1'),
+        ('work_amo_block_transitions_audit31_native_rollback_v2', 'work_amo_block_transitions_tip_idx', 'proof_indexer_large_state_v1'),
+        ('work_amo_block_transitions_audit31_native_rollback_v2', 'work_amo_block_transitions_v2_readiness_idx', 'proof_indexer_large_state_v1'),
+        ('work_transition_archive_v1', 'work_transition_archive_height_v1', 'pg_default'),
+        ('work_transition_archive_v1', 'work_transition_archive_v1_pkey', 'pg_default'),
+        ('work_transition_chunks_v1', 'work_transition_chunks_v1_pkey', 'pg_default'),
+        ('work_transition_hot_slots_v1', 'work_transition_hot_slots_v1_pkey', 'pg_default'),
+        ('work_batch_transition_supersessions_v1', 'work_batch_transition_supersessions_v1_pkey', 'pg_default'),
+        ('work_batch_transition_supersessions_v1', 'work_batch_transition_supersessions_v1_network_block_height_key', 'pg_default'),
+        ('work_transfer_projection_pages', 'work_transfer_projection_pages_pkey', 'proof_indexer_large_state_v1')
     ),
     parents AS (
       SELECT
@@ -193,7 +228,8 @@ placement_metrics="$(/usr/bin/psql \
         relation.relkind,
         relation.relpersistence,
         relation.relowner,
-        relation.reltoastrelid
+        relation.reltoastrelid,
+        expected.owner_name
       FROM pg_class relation
       JOIN pg_namespace namespace
         ON namespace.oid = relation.relnamespace
@@ -202,29 +238,31 @@ placement_metrics="$(/usr/bin/psql \
       WHERE namespace.nspname = 'proof_indexer'
     ),
     toasts AS (
-      SELECT toast.oid
+      SELECT toast.oid, parent.relowner
       FROM parents parent
       JOIN pg_class toast
         ON toast.oid = parent.reltoastrelid
     ),
     base_relations AS (
-      SELECT oid FROM parents
+      SELECT oid, relowner FROM parents
       UNION ALL
-      SELECT oid FROM toasts
+      SELECT oid, relowner FROM toasts
     ),
     indexes AS (
       SELECT
         index_row.indexrelid AS oid,
         index_row.indisvalid,
-        index_row.indisready
+        index_row.indisready,
+        index_row.indrelid,
+        base.relowner
       FROM pg_index index_row
       JOIN base_relations base
         ON base.oid = index_row.indrelid
     ),
     closure AS (
-      SELECT oid FROM base_relations
+      SELECT oid, relowner FROM base_relations
       UNION ALL
-      SELECT oid FROM indexes
+      SELECT oid, relowner FROM indexes
     ),
     owned_sequences AS (
       SELECT DISTINCT sequence.oid
@@ -259,7 +297,7 @@ placement_metrics="$(/usr/bin/psql \
         WHERE relkind = 'r'
           AND relpersistence = 'p'
           AND reltoastrelid <> 0
-          AND pg_get_userbyid(relowner) = 'proof_indexer'
+          AND pg_get_userbyid(relowner) = owner_name
       ),
       (SELECT count(*)::bigint FROM toasts),
       (SELECT count(*)::bigint FROM closure),
@@ -268,8 +306,25 @@ placement_metrics="$(/usr/bin/psql \
         FROM closure expected
         JOIN pg_class relation
           ON relation.oid = expected.oid
-        JOIN target
-          ON target.oid = relation.reltablespace
+        JOIN pg_database database ON database.datname = current_database()
+        JOIN pg_tablespace actual_space
+          ON actual_space.oid = COALESCE(NULLIF(relation.reltablespace, 0), database.dattablespace)
+        LEFT JOIN indexes index_entry ON index_entry.oid = relation.oid
+        LEFT JOIN parents parent ON parent.oid = index_entry.indrelid
+        LEFT JOIN expected_indexes named
+          ON named.parent_name = parent.relname AND named.index_name = relation.relname
+        WHERE relation.relowner = expected.relowner
+          AND relation.relpersistence = 'p'
+          AND (
+            (index_entry.oid IS NULL AND relation.relkind IN ('r', 't')
+              AND actual_space.spcname = 'proof_indexer_large_state_v1')
+            OR (index_entry.oid IS NOT NULL AND relation.relkind = 'i' AND (
+              (parent.oid IS NOT NULL AND named.index_name IS NOT NULL
+                AND actual_space.spcname = named.tablespace_name)
+              OR (index_entry.indrelid IN (SELECT oid FROM toasts)
+                AND actual_space.spcname = 'proof_indexer_large_state_v1')
+            ))
+          )
       ),
       (SELECT count(*)::bigint FROM indexes),
       (
@@ -391,12 +446,12 @@ printf 'postgres_growth database=%s database_bytes=%s transition_total_bytes=%s 
 
 if ((tablespace_count != 1)) ||
   ((tablespace_identity_ready != 1)) ||
-  ((parent_count != 2)) ||
-  ((parent_shape_ready != 2)) ||
-  ((toast_count != 2)) ||
-  ((closure_count != 18)) ||
-  ((placed_count != 18)) ||
-  ((index_count != 14)) ||
+  ((parent_count != 8)) ||
+  ((parent_shape_ready != 8)) ||
+  ((toast_count != 8)) ||
+  ((closure_count != 47)) ||
+  ((placed_count != 47)) ||
+  ((index_count != 31)) ||
   ((invalid_index_count != 0)) ||
   ((unrelated_count != 0)) ||
   ((owned_sequence_count != 0)) ||

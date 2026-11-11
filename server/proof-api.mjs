@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { isReadOnlySnapshotBudgetError } from "./db/read-only-snapshot.mjs";
+import { createWalletReadCoalescer, walletReadIdentity, measurePrivatePhase, withPrivatePhaseTimings, privateReadContext } from "./wallet-read-observation.mjs";
+const coalesceWalletRead = createWalletReadCoalescer();
 import { createBroadcastHints } from "./pending-broadcast-hints.mjs";
 import { writeCanonicalSummaryStream } from "./canonical-summary-stream.mjs";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
@@ -429,6 +432,10 @@ import {
   proofIndexWalletTokenOverlayPayload,
   isProofIndexWalletReadinessUnavailable,
   proofIndexWithWalletRequestReadiness,
+  proofIndexPrepareWalletReadiness,
+  proofIndexWithWalletReadSnapshot,
+  proofIndexWalletReadSnapshotPendingProof,
+  proofIndexWalletReadinessUnavailableError,
   proofIndexWorkWalletCapacities,
   proofIndexWorkBatchDeclarationCandidates,
   proofIndexWorkBatchDiscoveryCheckpoint,
@@ -3901,58 +3908,117 @@ async function proofIndexWalletScopedTokenPayloadForRead(
   ) {
     return null;
   }
-  const overlay = await proofIndexWalletTokenOverlayPayload(
-    network,
-    tokenScope,
-    recoveryAddresses,
-    { rejectProofReadinessFailure: true },
-  ).catch((error) => {
-    if (isProofIndexWalletReadinessUnavailable(error)) throw error;
-    console.error(
-      `Proof index ${label} wallet projection failed: ${errorSummary(error)}`,
-    );
-    return null;
-  });
-  if (!overlay) {
-    return null;
-  }
-  if (!walletTokenOverlayHasExactCheckpoint(overlay)) {
-    console.error(
-      `Rejected ${label} wallet projection without an exact hashed checkpoint.`,
-    );
-    return null;
-  }
-  if (options.requireCurrent === true) {
-    const gate = await canonicalPublicReadGate(network, { force: true });
-    if (
-      !walletTokenOverlayMatchesCanonicalFreshGate(overlay, gate, {
-        allowLastGood: options.allowLastGood === true,
-      })
-    ) {
+  return withPrivatePhaseTimings(async () => {
+  const readAtEpoch = async (allowAuditedEpochRebinding) => {
+    const overlay = await proofIndexWalletTokenOverlayPayload(
+      network,
+      tokenScope,
+      recoveryAddresses,
+      { allowAuditedEpochRebinding, rejectProofReadinessFailure: true },
+    ).catch((error) => {
+      if (isProofIndexWalletReadinessUnavailable(error)) throw error;
       console.error(
-        `Rejected ${label} wallet projection outside the exact canonical tip.`,
+        `Proof index ${label} wallet projection failed: ${errorSummary(error)}`,
+      );
+      return null;
+    });
+    if (!overlay) {
+      return null;
+    }
+    if (!walletTokenOverlayHasExactCheckpoint(overlay)) {
+      console.error(
+        `Rejected ${label} wallet projection without an exact hashed checkpoint.`,
       );
       return null;
     }
-  }
-  let payload = walletScopedTokenPayloadFromOverlay(
-    await walletOverlayWithCanonicalWorkSupply(overlay, network),
-    network,
-    tokenScope,
-  );
-  const missingDefinitions = walletTokenPayloadMissingDefinitions(payload);
-  if (missingDefinitions.length > 0) {
-    console.error(
-      `Rejected ${label} wallet projection without definitions for ${missingDefinitions.join(", ")}.`,
+    if (options.requireCurrent === true) {
+      const gate = await canonicalPublicReadGate(network, { force: true });
+      if (
+        !walletTokenOverlayMatchesCanonicalFreshGate(overlay, gate, {
+          allowLastGood: options.allowLastGood === true,
+        })
+      ) {
+        console.error(
+          `Rejected ${label} wallet projection outside the exact canonical tip.`,
+        );
+        return null;
+      }
+    }
+    let payload = walletScopedTokenPayloadFromOverlay(
+      await measurePrivatePhase("wallet-supply", () => walletOverlayWithCanonicalWorkSupply(overlay, network)),
+      network,
+      tokenScope,
     );
+    const missingDefinitions = walletTokenPayloadMissingDefinitions(payload);
+    if (missingDefinitions.length > 0) {
+      console.error(
+        `Rejected ${label} wallet projection without definitions for ${missingDefinitions.join(", ")}.`,
+      );
+      return null;
+    }
+    payload = await measurePrivatePhase("wallet-capacity", () => walletPayloadWithCanonicalWorkCapacities(
+      payload,
+      network,
+      recoveryAddresses,
+    ));
+    return payload;
+  };
+  const scope = normalizeTokenScope(tokenScope);
+  const mayReadWork = !scope || scope.toLowerCase() === "all" ||
+    scope.toLowerCase() === "work" || isWorkTokenId(scope);
+  if (!mayReadWork) {
+    return readAtEpoch(false);
+  }
+  // The account, summary supply, readiness audit and replay capacities share
+  // one read-only snapshot. Concurrent writer commits cannot mix their rows.
+  const walletReadDeadline = Date.now() + WALLET_SCOPED_INDEX_WAIT_MS;
+  const ready = await proofIndexPrepareWalletReadiness(network, { timeoutMs: WALLET_SCOPED_INDEX_WAIT_MS });
+  const remainingWalletReadMs = walletReadDeadline - Date.now();
+  if (!ready || remainingWalletReadMs < 1) throw proofIndexWalletReadinessUnavailableError();
+  let receipt;
+  try {
+    receipt = await coalesceWalletRead(
+      walletReadIdentity(network, scope, recoveryAddresses, options),
+      () => withPrivatePhaseTimings(() => proofIndexWithWalletReadSnapshot(
+    async () => ({
+      payload: await readAtEpoch(false),
+      pendingProof: proofIndexWalletReadSnapshotPendingProof(),
+    }),
+    { timeoutMs: remainingWalletReadMs, deadlineAt: walletReadDeadline },
+    )),
+    );
+  } catch (error) {
+    if (!isReadOnlySnapshotBudgetError(error)) throw error;
+    console.warn(JSON.stringify({
+      event: "wallet-snapshot-budget-unavailable", ...error.diagnostic, observationCaller: privateReadContext(),
+    }));
     return null;
   }
-  payload = await walletPayloadWithCanonicalWorkCapacities(
-    payload,
-    network,
-    recoveryAddresses,
-  );
+  const payload = receipt?.payload ?? null;
+  const carriesQ16Work = (payload?.tokens ?? []).some((token) =>
+    isWorkTokenId(token?.tokenId) &&
+    token.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL);
+  if (carriesQ16Work) {
+    const proof = receipt?.pendingProof;
+    const mempool = await measurePrivatePhase("closing-mempool", () => bitcoinRpc("getrawmempool", []).catch(() => null));
+    if (!proof || proof.tipHeight !== payload.indexedThroughBlock ||
+        proof.tipHash !== payload.indexedThroughBlockHash ||
+        !(Date.parse(proof.pendingValidThrough) > Date.now()) ||
+        mempool?.ok !== true ||
+        !workQ16PendingMembershipSnapshotReady(proof.membershipSnapshot, mempool.result)) {
+      return null;
+    }
+  }
+  // Core is outside PostgreSQL: retain a fresh closing gate after the session
+  // has completed, rather than treating the snapshot as current chain authority.
+  if (payload && options.requireCurrent === true) {
+    const gate = await measurePrivatePhase("closing-core", () => canonicalPublicReadGate(network, { force: true }));
+    if (!walletTokenOverlayMatchesCanonicalFreshGate(payload, gate, {
+      allowLastGood: options.allowLastGood === true,
+    })) return null;
+  }
   return payload;
+  });
 }
 
 async function walletPayloadWithCanonicalWorkCapacities(payload, network, addresses) {

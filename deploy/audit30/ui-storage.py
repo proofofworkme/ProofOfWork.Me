@@ -1026,6 +1026,7 @@ def reviewed_forecast(rule):
     approved = (
         ('69c31f4e1dcd-20261109T051556Z', '54088ca155bc-20261103T032112Z'),
         ('d4eeffaf28f1-20261109T160000Z', '69c31f4e1dcd-20261109T051556Z'),
+        ('d9fa69d9e1e4-20261110T210615Z', 'd4eeffaf28f1-20261109T160000Z'),
     )
     match = next(((current, previous) for current, previous in approved
                   if pair == {'current': current, 'previous': previous}), None)

@@ -41,6 +41,9 @@ function proofFixture() {
   const payload = { tokens: [{ tokenId: "work", amountStorageModel: "q16" }],
     source: "proof-indexer-wallet-token-overlay", indexedThroughBlock: 100, indexedThroughBlockHash: HASH };
   const context = vm.createContext({
+    walletReadinessPreflightScope: { getStore: () => null },
+    proofIndexPrepareWalletReadiness: async () => true,
+    proofIndexWalletReadinessUnavailableError: () => Object.assign(new Error("Fresh wallet credit state is temporarily unavailable."), { statusCode: 503 }),
     walletProofReadinessFailures: new WeakSet(),
     walletReadSnapshot: { getStore: () => snapshotScope },
     console: { warn: (value) => warnings.push(JSON.parse(value)) },
@@ -116,6 +119,9 @@ function apiFixture({ ordinary = false, disabled = false, databaseError = false,
   const errors = [];
   const fallback = Error("ordinary legacy fallback reached");
   const context = vm.createContext({
+    walletReadinessPreflightScope: { getStore: () => null },
+    proofIndexPrepareWalletReadiness: async () => true,
+    proofIndexWalletReadinessUnavailableError: () => Object.assign(new Error("Fresh wallet credit state is temporarily unavailable."), { statusCode: 503 }),
     console: { error: (value) => errors.push(value), warn() {} },
     isProofIndexWalletReadinessUnavailable: proof.isProofIndexWalletReadinessUnavailable,
     proofIndexReadFeatureEnabled: () => !disabled,

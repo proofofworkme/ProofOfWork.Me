@@ -1,70 +1,66 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "boost-links-wallet-handoff-and-approved-retention",
-  "liveCheck": "scripts/check-boost-links-live.mjs",
+  "upgrade": "bounded-wallet-readiness-and-health-inventory",
+  "liveCheck": "scripts/check-health-readiness-live.mjs",
   "ciTests": [
-    "src/features/boost/boostWebLinks.test.mjs"
+    "scripts/check-wallet-readiness-preflight.test.mjs"
   ],
   "reviews": [
     {
       "targets": [
-        "boost",
         "computer",
-        "publish",
-        "code",
-        "jobs",
-        "permission",
-        "id",
-        "dns",
         "marketplace",
         "token",
         "wallet",
         "work",
         "infinity",
         "inception",
-        "nft",
-        "pages",
-        "browser",
-        "mail",
-        "local-signing"
+        "api",
+        "indexer"
       ],
       "disposition": "affected",
-      "reason": "Shared exact reviews now dismiss immediately and accept approval once, matching AMO while each owner retains wallet checks, signing, duplicate guards, failures and recovery. Publish restores its busy writer during signing. Boost web links open independently from cards without changing source text. Standalone and embedded consumers share these components.",
+      "reason": "WORK and all-credit wallet reads share bounded account-independent preliminary proof, then retain independent owned snapshots and closing Core checks. The single audit runner preserves context and cancellation. Worker callers share the same unchanged proof validators and bounded scheduler; no writer or replay data changes. PostgreSQL monitoring recognizes the exact already-deployed additive storage inventory.",
       "evidence": [
-        "tests/browser/boost-text-links.spec.mjs",
-        "tests/browser/boost-tips.spec.mjs",
-        "tests/browser/code-ui.spec.mjs",
-        "tests/browser/jobs-ui.spec.mjs",
-        "tests/browser/permission-ui.spec.mjs",
-        "tests/browser/publish-ui.spec.mjs",
-        "scripts/check-local-review.mjs"
+        "scripts/check-wallet-readiness-preflight.test.mjs",
+        "scripts/wallet-request-readiness.test.mjs",
+        "scripts/wallet-proof-readiness-failure.test.mjs",
+        "scripts/check-postgres-query-health.py",
+        "scripts/check-health-readiness-live.mjs"
       ]
     },
     {
       "targets": [
-        "indexer",
-        "api",
-        "backfill-reorg",
         "activity",
+        "boost",
+        "browser",
+        "code",
         "desktop",
-        "files",
-        "notifications",
+        "dns",
         "growth",
-        "search",
+        "id",
+        "jobs",
         "landing",
+        "nft",
+        "pages",
+        "permission",
+        "publish",
+        "search",
         "wire",
+        "backfill-reorg",
         "accounting",
+        "local-signing",
+        "files",
+        "mail",
+        "notifications",
         "compatibility"
       ],
       "disposition": "compatible",
-      "reason": "Only link display and exact-review dismissal change. No writer payload, signing implementation, admission, indexer, replay, API, Search, Log, fee or accounting calculation changes. Historical source, pending and confirmed state, reorg handling and transaction identity remain canonical. Read-only surfaces do not render transaction approval controls. The separately approved deployment prerequisite uses an exact historical completion attestation after journal expiry; it changes only retention verification and its guarded installer, with original service, file and retention guards preserved. The user also approved only the exact d4eeffaf28f1/69c31f4e1dcd predecessor retirement: the previous archive, its two sidecars and rollback root, after replacement verification; both validators preserve all other refusals.",
+      "reason": "No protocol bytes, transaction signing, admission proof rules, fee/accounting calculation, historical replay, reorg handling, or UI interaction changes. Registry fresh-read tip fences remain strict. These surfaces use the same existing readers and cannot acquire authority from display state. The separately approved exact predecessor retirement preserves the immediate rollback, held fallback, all other source/evidence and existing capacity limits.",
       "evidence": [
-        "scripts/check-boost-regressions.mjs",
-        "scripts/check-local-review.mjs",
-        "src/features/boost/boostWebLinks.test.mjs",
-        "deploy/audit30/check-ui-storage.test.py",
-        "deploy/ui-retention/check-lifecycle-remote.test.py",
-        "deploy/publish/check-preservation-admission.test.py"
+        "scripts/check-live-data-contract.mjs",
+        "scripts/check-node-ops-contract.mjs",
+        "deploy/publish/check-preservation-admission.test.py",
+        "deploy/health-readiness/check.test.py"
       ]
     }
   ]

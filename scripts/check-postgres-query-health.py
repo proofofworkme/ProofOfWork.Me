@@ -10,7 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "deploy/proofofwork-postgres-query-health.sh"
 ACTIVITY = "8|0|0|0|8|1|2|1|0|0|0|0"
-PLACEMENT = "1|1|2|2|2|18|18|14|0|0|0|37203542016|38493395991|37203542016|8192|9771|2"
+PLACEMENT = "1|1|8|8|8|47|47|31|0|0|0|37203542016|38493395991|37203542016|8192|9771|2"
 
 
 class QueryHealthTests(unittest.TestCase):
@@ -136,6 +136,29 @@ class QueryHealthTests(unittest.TestCase):
         values = ACTIVITY.split("|")
         values[0] = "9223372036854775808"
         self.assertEqual(self.run_monitor(activity="|".join(values)).returncode, 65)
+
+    def test_additive_inventory_preserves_exact_owner_and_index_placement(self):
+        result = self.run_monitor()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        storage = json.loads(self.calls.read_text().splitlines()[1])
+        for name, owner in (("work_batch_transition_supersessions_v1", "proof_indexer_transition_storage_owner"),
+                            ("work_transfer_projection_pages", "postgres")):
+            self.assertIn(f"('{name}'::name, '{owner}'::name)", storage)
+        self.assertIn("('work_batch_transition_supersessions_v1', 'work_batch_transition_supersessions_v1_pkey', 'pg_default')", storage)
+        self.assertIn("('work_batch_transition_supersessions_v1', 'work_batch_transition_supersessions_v1_network_block_height_key', 'pg_default')", storage)
+        self.assertIn("('work_transfer_projection_pages', 'work_transfer_projection_pages_pkey', 'proof_indexer_large_state_v1')", storage)
+        self.assertIn("pg_get_userbyid(relowner) = owner_name", storage)
+        self.assertIn("actual_space.spcname = named.tablespace_name", storage)
+        self.assertIn("WHERE expected.oid IS NULL", storage)
+
+    def test_missing_unrelated_misplaced_and_invalid_members_fail_closed(self):
+        for field in (2, 3, 4, 5, 6, 7, 8, 9, 10):
+            with self.subTest(field=field):
+                values = PLACEMENT.split("|")
+                values[field] = str(int(values[field]) + 1)
+                result = self.run_monitor(placement="|".join(values))
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("large-state tablespace placement differs", result.stderr)
 
     def test_existing_placement_and_contention_failures_remain_visible(self):
         placement = PLACEMENT.split("|")

@@ -15,7 +15,7 @@ function source(name, required = true) {
   return found[0].getText(reader).replace(/^export\s+/u, "");
 }
 const names = [
-  "proofIndexWithWalletRequestReadiness", "walletRequestReadinessMap",
+  "proofIndexWithWalletRequestReadiness", "walletRequestReadinessMap", "walletSnapshotReadinessMap",
   "walletRequestReadinessCommittedSnapshot", "promoteWalletReadSnapshotReadiness",
   "exactCheckpointSingleFlight", "deepFreezeReadinessSnapshot",
   "reusableWorkPrecisionV2MigrationReadiness", "rememberWorkPrecisionV2MigrationReadiness",
@@ -23,6 +23,7 @@ const names = [
   "workPrecisionV2MigrationReadinessWithCompactCheckpoint",
   "workPrecisionV2MigrationFullAuditWithBound",
 ];
+const queueFactory = new vm.Script(`${source("createAbortableReadinessAuditQueue")}\ncreateAbortableReadinessAuditQueue`).runInNewContext({ WalletRequestAsyncLocalStorage: AsyncLocalStorage });
 const A = "a".repeat(64), B = "b".repeat(64), H = "c".repeat(64);
 const cacheName = "workPrecisionV2MigrationReadinessReadyCache";
 const now = Date.now();
@@ -35,9 +36,13 @@ const ready = (key = A, overrides = {}) => ({
 });
 function harness(extra = {}) {
   const context = vm.createContext({
+    walletReadinessPreflightScope: { getStore: () => null },
+    walletReadSnapshot: { getStore: () => null },
+    proofIndexPrepareWalletReadiness: async () => true,
+    proofIndexWalletReadinessUnavailableError: () => Object.assign(new Error("Fresh wallet credit state is temporarily unavailable."), { statusCode: 503 }),
     walletRequestReadiness: new AsyncLocalStorage(),
     walletRequestReadinessSnapshots: new WeakMap(),
-    workPrecisionV2MigrationFullAuditTail: Promise.resolve(),
+    workPrecisionV2MigrationFullAuditQueue: queueFactory(),
     measurePrivatePhase: (_name, read) => read(),
     normalizedLowerText: (s) => String(s ?? "").trim().toLowerCase(),
     WORK_PRECISION_V2_READINESS_CACHE_MAX_ENTRIES: 4,
@@ -231,12 +236,14 @@ test("accepted runtime snapshot integration promotes only after the actual owner
   });
   const run = new vm.Script(`${snapshotSource}\nproofIndexWithWalletReadSnapshot`).runInContext(h.context);
   await h.proofIndexWithWalletRequestReadiness(async () => {
+    const outerRequestCache = h.walletRequestReadinessMap(cacheName, new Map());
     await run(async () => {
       const scope = h.context.walletReadSnapshot.getStore();
       const entries = new Map();
       h.rememberWorkPrecisionV2MigrationReadiness(entries, A, ready(), now + 10_000);
       scope.maps.set(cacheName, entries);
-      assert.equal(h.walletRequestReadinessMap(cacheName, new Map()).size, 0);
+      assert.equal(h.walletRequestReadinessMap(cacheName, new Map()), entries);
+      assert.equal(outerRequestCache.size, 0);
     });
     assert.deepEqual(calls, ["COMMIT"]);
     assert.equal(h.walletRequestReadinessMap(cacheName, new Map()).size, 1);
@@ -267,6 +274,10 @@ test("merged readiness wiring isolates owned snapshots and preserves outside ful
   await h.proofIndexWithWalletRequestReadiness(async () => {
     const requestCache = h.walletRequestReadinessMap(cacheName, globalMaps[cacheName]);
     requestCache.set("request-only", { result: "must not enter another MVCC snapshot" });
+    // A shared preflight settles after this request cache was initialized.
+    const newlySettled = Object.freeze({ result: Object.freeze(ready(A)), expiresAt: now + 1000 });
+    globalMaps[cacheName].set(A, newlySettled);
+    assert.equal(requestCache.has(A), false);
     const outside = await read("livenet", {});
     assert.equal(outside.readyCache, requestCache);
     assert.equal(outside.loadFull({ key: A }).inFlight, globalMaps.workPrecisionV2MigrationFullAuditInFlight);
@@ -276,6 +287,8 @@ test("merged readiness wiring isolates owned snapshots and preserves outside ful
       assert.equal(owned.readyCache, scope.maps.get(cacheName));
       assert.notEqual(owned.readyCache, requestCache);
       assert.equal(owned.readyCache.has("request-only"), false);
+      assert.equal(owned.readyCache.get(A), newlySettled);
+      assert.equal(owned.inFlight.size, 0);
       assert.notEqual(owned.inFlight, outside.inFlight);
       assert.equal(owned.loadFull({ key: A }).inFlight, scope.maps.get("workPrecisionV2MigrationFullAuditInFlight"));
       assert.notEqual(owned.loadFull({ key: A }).inFlight, globalMaps.workPrecisionV2MigrationFullAuditInFlight);

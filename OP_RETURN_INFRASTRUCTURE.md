@@ -163,6 +163,16 @@ approved transition remains replayable. Missing or additional paths, any
 overlap with the separately preserved fallback, and future predecessor pairs
 still refuse. No source checkout or other evidence is authorized for removal.
 
+On November 11 the user separately approved the next exact predecessor
+transition: current `d9fa69d9e1e4-20261110T210615Z`, previous
+`d4eeffaf28f1-20261109T160000Z`. Only after replacement publication and
+verification of the new current/prior pair may the lifecycle retire that
+previous release's `.tgz`, `.tgz.sha256`, `.tgz.provenance`, and rollback root
+`proofofwork-www-pre-d9fa69d9e1e4-20261110T210615Z`. The current d9fa69 release
+becomes the immediate rollback; the separately held c3969c39 fallback and all
+other source and evidence remain preserved. This approval does not release
+any failed-transport cleanup hold or authorize a capacity-limit change.
+
 The read-only rehearsal for the `e6a53e4d` build against `54088ca1` left
 186,252,318 bytes above the root reserve and 352,776,192 bytes below the
 scratch ceiling at the tightest respective phases. The backup and transport
@@ -277,6 +287,22 @@ Response completion deactivates the context and clears its maps,
 including for delayed asynchronous continuations. The accepted node snapshot
 overlay is integrated through the reviewed, hash-bound merge and tested after
 the actual transaction commit; it is not replaced by canonical source alone.
+
+Wallet readiness admission shares only an account-independent preliminary
+readiness audit before opening each owned wallet snapshot. The single audit
+runner has a bounded queue and removes canceled waiting work; each queued task
+retains its own asynchronous context. A running audit retains its slot through
+actual cleanup. The preliminary read owns a separate read-only connection and
+cannot borrow a wallet snapshot. Only settled, frozen, complete positive proof
+from a successfully committed preliminary snapshot may enter the existing
+shared readiness cache, with its original epoch and pending-expiry bounds.
+Each wallet snapshot independently rechecks the compact epoch, postmaster,
+pending expiry and closing Core/mempool evidence. Preliminary work consumes the
+original wallet deadline rather than adding another wait budget. Canceling one
+subscriber leaves other subscribers intact; the last subscriber cancels owned
+work. Aborted, expired and negative proof is never promoted. A failed proof
+retains the existing branded unavailable response instead of starting legacy
+recovery. No protocol, balance, transaction signing or freshness rule changes.
 
 Wallet response assembly propagates an explicit Q16 proof-readiness refusal
 instead of starting the legacy recovery chain and repeating the same failed
@@ -2358,11 +2384,15 @@ entire move back. Never use `ALTER ... ALL IN TABLESPACE`, filesystem moves,
 manual `pg_tblspc` links, or payload deletion/compaction for this operation.
 
 The five-minute PostgreSQL query-health check also verifies this permanent
-placement using catalogs only. Its exact dynamic closure is the two parents,
-their two TOAST relations, and all indexes attached to those four relations;
-the current deployed closure is 18 relations, including 14 indexes. Every
-closure member must use the exact tablespace, every index must be valid and
-ready, no unrelated object may use it, neither parent may own a sequence, and
+placement using catalogs only. Its exact named closure covers eight parents,
+eight TOAST relations and 31 indexes (47 objects), including the retained native rollback, native transition
+archive/chunks/hot slots, WORK batch supersession evidence and bounded WORK
+transfer projection pages. The supersession table retains its storage-owner
+role and two indexes in `pg_default`; projection pages retain `postgres`
+ownership and their primary index in the large-state tablespace. All other
+accepted Audit31 ownership and per-index placement rules remain unchanged. Every
+closure member must use its exact declared tablespace, every index must be valid and
+ready, no unrelated object may use it, no monitored parent may own a sequence, and
 the tablespace name, path, owner, and application-role privileges must remain
 exact. This check never detoasts or hashes historical JSON payloads. The node
 storage timer independently checks that `/data` remains a separate mount with
