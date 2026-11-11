@@ -219,7 +219,7 @@ class NativePrivateStaging(unittest.TestCase):
         state = {"__name__": "_fixture_transport", "Path": Path, "json": json, "hashlib": hashlib, "os": os,
                  "sys": sys, "subprocess": subprocess, "time": time, "zlib": zlib, "base64": base64,
                  "BASE": self.scratch, "ARCHIVES": self.archives, "EVIDENCE": evidence,
-                 "EVIDENCE_RESERVE": 32*1024**2, "RECEIVE_TIMEOUT_SECONDS": 1800,
+                 "EVIDENCE_RESERVE": 32*1024**2, "RECEIVE_TIMEOUT_SECONDS": 2700,
                  "release": self.rid, "p": plan, "plan_sha": plan_sha, "phase": "surfaces-stage",
                  "private_staging": True, "helpers": helpers, "scratch_inputs": True,
                  "out": stage_out, "preserved": incoming, "archive": archive,

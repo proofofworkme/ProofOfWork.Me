@@ -676,13 +676,32 @@ detached Git source attestation and archive checks apply. This release used a
 The October 28 streamed release exposed a child deadline that elapsed while
 blocking on its input feed, before the outer service deadline. Current transport
 drains child output while feeding input under one enforced deadline, including
-blocked input and backpressure. The receiver allows 1,800 seconds; the transport
-unit allows 6,000 seconds with its existing 30-second stop grace; the remote
-supervisor allows 6,300 seconds. Release-specific local relays must allow 6,600
+blocked input and backpressure. The receiver allows 2,700 seconds; the transport
+unit allows 6,900 seconds with its existing 30-second stop grace; the remote
+supervisor allows 7,200 seconds. Release-specific local relays must allow 7,500
 seconds so they cannot expire first. The larger finite bounds cover receiving,
 staging, archive construction and verification; they do not relax size, capacity,
 hash, provenance or receipt checks. A partial extraction without a verified
 receiver receipt remains a failed attempt and cannot use verified-input resume.
+
+On November 11 the operator approved these four coordinated bounds after the
+315,878,676-byte ad330f697f42 surfaces stream reached its former 1,800-second
+receive deadline on a congested operator-mediated route. The replacement
+continues to fail closed on incomplete input, extra bytes, hash mismatch,
+capacity failure or deadline expiry. Each release-specific relay must enforce
+the 7,500-second outer bound for the entire two-SSH pipeline, with bounded
+process-group termination. No private key transfer or agent forwarding is used.
+The failed release identity and its receipts are preserved; it is not resumed
+as a verified input.
+The separately approved one-shot ad330 duplicate controller removes only the
+2,048 complete files whose bytes match the retained NODE archive. It preserves
+the truncated wallet video, all 170 descendant directories and the outer root,
+and every failure receipt. Exact original inode/ctime identities cannot be
+recreated. The controller pins durable NODE custody, recovery metadata and a
+restoration proof, rechecks identities, references and capacity under the deploy
+lock, and journals bounded selective groups. It does not extend the earlier
+source69/672-file approval or make this failed stream eligible for resume. The 8 GiB root reserve plus 64 MiB growth, 5 GiB scratch
+cap, 4 GiB service memory, log bounds, and all proof checks remain unchanged.
 
 A verified surface receipt that stopped at scratch admission can continue only
 through the explicit `surfaces-stage-resume` phase with a fresh attempt/unit

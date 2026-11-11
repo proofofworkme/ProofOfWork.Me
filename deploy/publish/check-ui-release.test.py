@@ -241,7 +241,7 @@ class ReleaseRefusals(unittest.TestCase):
         binding = {'pair': {'current': '0' * 12 + '-20261001T010000Z',
                             'previous': '1' * 12 + '-20260930T010000Z'}}
         status = {'binding': binding, 'verifiedPreservedFallback': {'model': 'verified-fallback-in-place-v1'},
-                  'privateStageRetention': {'wouldRetire': []}}
+                  'privateStageRetention': {'model': 'private-stage-zero-retirement-v1', 'wouldRetire': []}}
         plan = {**self.plan(), 'retentionLifecycle': binding,
                 'wrapperSourceSha256': {'publication_admission.py': ADMISSION_SHA}}
         path = self.base / 'plan.json'
@@ -456,9 +456,9 @@ class ReleaseRefusals(unittest.TestCase):
                 patch.object(subprocess, 'run') as run:
             self.transport.main()
         self.assertEqual(run.call_count, 1)
-        self.assertEqual(run.call_args.kwargs['timeout'], 6300)
+        self.assertEqual(run.call_args.kwargs['timeout'], 7200)
         command = shlex.split(run.call_args.args[0][-1])
-        self.assertIn('--property=RuntimeMaxSec=6000', command)
+        self.assertIn('--property=RuntimeMaxSec=6900', command)
         self.assertIn('--property=TimeoutStopSec=30s', command)
         self.assertIn('--property=KillMode=control-group', command)
         self.assertIn('--property=MemoryMax=4G', command)
@@ -743,18 +743,18 @@ class TransportStreamDeadlines(unittest.TestCase):
                 self.run_child('import sys,time;print(len(sys.stdin.buffer.read()),flush=True);time.sleep(30)', source, 3, timeout=0.3)
         self.assertEqual((self.base/'child.log').read_bytes(), b'3\n')
 
-    def test_receive_budget_allows_observed_712_seconds_without_long_sleep(self):
+    def test_receive_budget_allows_slow_2100_seconds_without_long_sleep(self):
         calls = iter([0])
-        self.ns['time'] = types.SimpleNamespace(monotonic=lambda: next(calls, 712))
+        self.ns['time'] = types.SimpleNamespace(monotonic=lambda: next(calls, 2100))
         with tempfile.TemporaryFile() as source:
             source.write(b'abc'); source.seek(0)
-            self.run_child('import sys;print(len(sys.stdin.buffer.read()))', source, 3, timeout=1800)
+            self.run_child('import sys;print(len(sys.stdin.buffer.read()))', source, 3, timeout=2700)
         self.assertEqual((self.base/'child.log').read_bytes(), b'3\n')
         calls = iter([0])
         with tempfile.TemporaryFile() as source:
             source.write(b'abc'); source.seek(0)
             with self.assertRaisesRegex(AssertionError, 'Child deadline exceeded'):
-                self.run_child('import sys;sys.stdin.buffer.read()', source, 3, name='old-budget.log', timeout=600)
+                self.run_child('import sys;sys.stdin.buffer.read()', source, 3, name='old-budget.log', timeout=1800)
 
     def test_both_receivers_and_parent_wrapper_use_finite_nested_budgets(self):
         tree = ast.parse((ROOT/'remote_transport.py').read_bytes())
@@ -763,8 +763,8 @@ class TransportStreamDeadlines(unittest.TestCase):
         assignments = [node for node in tree.body if isinstance(node, ast.Assign) and
                        any(isinstance(target, ast.Name) and target.id in names for target in node.targets)]
         exec(compile(ast.Module(body=assignments, type_ignores=[]), '<budget-fixture>', 'exec'), values)
-        self.assertEqual(values['RECEIVE_TIMEOUT_SECONDS'], 1800)
-        self.assertEqual(values['TRANSPORT_RUNTIME_SECONDS'], 6000)
+        self.assertEqual(values['RECEIVE_TIMEOUT_SECONDS'], 2700)
+        self.assertEqual(values['TRANSPORT_RUNTIME_SECONDS'], 6900)
         receivers = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and
                      isinstance(node.func, ast.Name) and node.func.id == 'run' and len(node.args) > 1 and
                      isinstance(node.args[1], ast.Constant) and node.args[1].value == 'receiver.log']
@@ -775,10 +775,13 @@ class TransportStreamDeadlines(unittest.TestCase):
             self.assertEqual(timeout.id, 'RECEIVE_TIMEOUT_SECONDS')
         wrapper = safe_module('transport_preserve.py')
         self.assertEqual(wrapper.TRANSPORT_RUNTIME_SECONDS, values['TRANSPORT_RUNTIME_SECONDS'])
-        self.assertEqual(wrapper.TRANSPORT_REMOTE_TIMEOUT_SECONDS, 6300)
-        bounded_children = 1800+120+600+900+600+600+8*90
+        self.assertEqual(wrapper.TRANSPORT_REMOTE_TIMEOUT_SECONDS, 7200)
+        bounded_children = 2700+120+600+900+600+600+8*90
         self.assertEqual(values['TRANSPORT_RUNTIME_SECONDS']-bounded_children, 660)
-        self.assertGreater(wrapper.TRANSPORT_REMOTE_TIMEOUT_SECONDS, 6000+2*60+30)
+        self.assertGreater(wrapper.TRANSPORT_REMOTE_TIMEOUT_SECONDS, 6900+2*60+30)
+        documentation = (ROOT.parents[1]/"OP_RETURN_INFRASTRUCTURE.md").read_text()
+        self.assertIn("Release-specific local relays must allow 7,500", documentation)
+        self.assertEqual(7500-wrapper.TRANSPORT_REMOTE_TIMEOUT_SECONDS, 300)
 
 
 class PublishCompatibilityTimeout(unittest.TestCase):

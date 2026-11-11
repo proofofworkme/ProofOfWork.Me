@@ -4,7 +4,8 @@
   "liveCheck": "scripts/check-health-readiness-live.mjs",
   "ciTests": [
     "scripts/check-wallet-readiness-preflight.test.mjs",
-    "scripts/check-ui-health-retirement.test.mjs"
+    "scripts/check-ui-health-retirement.test.mjs",
+    "scripts/check-ui-ad330-duplicates.test.mjs"
   ],
   "reviews": [
     {
@@ -56,13 +57,16 @@
         "compatibility"
       ],
       "disposition": "compatible",
-      "reason": "No protocol bytes, transaction signing, admission proof rules, fee/accounting calculation, historical replay, reorg handling, or UI interaction changes. Registry fresh-read tip fences remain strict. These surfaces use the same existing readers and cannot acquire authority from display state. The separately approved exact predecessor retirement preserves the immediate rollback, held fallback, all other source/evidence and existing capacity limits. The separately approved obsolete source and exact duplicate-file retirement uses verified recovery copies and a one-shot hash-bound controller; no capacity threshold or general retention eligibility changes.",
+      "reason": "No protocol bytes, transaction signing, admission proof rules, fee/accounting calculation, historical replay, reorg handling, or UI interaction changes. Registry fresh-read tip fences remain strict. These surfaces use the same existing readers and cannot acquire authority from display state. The separately approved exact predecessor retirement preserves the immediate rollback, held fallback, all other source/evidence and existing capacity limits. The separately approved obsolete source and exact duplicate-file retirement uses verified recovery copies and a one-shot hash-bound controller; no capacity threshold or general retention eligibility changes. The separately approved 2048-file failed-transfer cleanup preserves the truncated video, all directories and receipts, with durable NODE restoration proof. Coordinated finite transport deadlines increase to 45/115/120/125 minutes; storage, integrity, proof, service resource and bounded termination checks are unchanged.",
       "evidence": [
         "scripts/check-live-data-contract.mjs",
         "scripts/check-node-ops-contract.mjs",
         "deploy/publish/check-preservation-admission.test.py",
         "deploy/health-readiness/check.test.py",
-        "deploy/health-cleanup/check.test.py"
+        "deploy/health-cleanup/check.test.py",
+        "deploy/health-cleanup/check-ad330.test.py",
+        "deploy/publish/check-ui-release.test.py",
+        "deploy/publish/check-private-staging.test.py"
       ]
     }
   ]
