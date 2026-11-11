@@ -70,7 +70,7 @@ for path,digest in r['runtime'].items():
  assert hashlib.sha256((pathlib.Path('/opt/proofofwork-api')/path).read_bytes()).hexdigest()==digest,path+' differs'
 monitor=pathlib.Path('/usr/local/sbin/proofofwork-postgres-query-health')
 assert hashlib.sha256(monitor.read_bytes()).hexdigest()==r['monitor'],'Monitor differs'
-result=subprocess.run([str(monitor)],capture_output=True,text=True,timeout=60)
+result=subprocess.run(['/usr/sbin/runuser','-u','postgres','--',str(monitor)],capture_output=True,text=True,timeout=60)
 assert result.returncode==0,result.stdout+result.stderr
 print(json.dumps({'runtimeFiles':len(r['runtime']),'monitorExit':result.returncode}))
 `;
