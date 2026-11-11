@@ -3,7 +3,8 @@
   "upgrade": "bounded-wallet-readiness-and-health-inventory",
   "liveCheck": "scripts/check-health-readiness-live.mjs",
   "ciTests": [
-    "scripts/check-wallet-readiness-preflight.test.mjs"
+    "scripts/check-wallet-readiness-preflight.test.mjs",
+    "scripts/check-ui-health-retirement.test.mjs"
   ],
   "reviews": [
     {
@@ -55,12 +56,13 @@
         "compatibility"
       ],
       "disposition": "compatible",
-      "reason": "No protocol bytes, transaction signing, admission proof rules, fee/accounting calculation, historical replay, reorg handling, or UI interaction changes. Registry fresh-read tip fences remain strict. These surfaces use the same existing readers and cannot acquire authority from display state. The separately approved exact predecessor retirement preserves the immediate rollback, held fallback, all other source/evidence and existing capacity limits.",
+      "reason": "No protocol bytes, transaction signing, admission proof rules, fee/accounting calculation, historical replay, reorg handling, or UI interaction changes. Registry fresh-read tip fences remain strict. These surfaces use the same existing readers and cannot acquire authority from display state. The separately approved exact predecessor retirement preserves the immediate rollback, held fallback, all other source/evidence and existing capacity limits. The separately approved obsolete source and exact duplicate-file retirement uses verified recovery copies and a one-shot hash-bound controller; no capacity threshold or general retention eligibility changes.",
       "evidence": [
         "scripts/check-live-data-contract.mjs",
         "scripts/check-node-ops-contract.mjs",
         "deploy/publish/check-preservation-admission.test.py",
-        "deploy/health-readiness/check.test.py"
+        "deploy/health-readiness/check.test.py",
+        "deploy/health-cleanup/check.test.py"
       ]
     }
   ]

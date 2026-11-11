@@ -173,6 +173,27 @@ becomes the immediate rollback; the separately held c3969c39 fallback and all
 other source and evidence remain preserved. This approval does not release
 any failed-transport cleanup hold or authorize a capacity-limit change.
 
+The user separately approved the November 11 exact health-cleanup scope:
+retire only the obsolete `69c31f4e1dcd-20261109T051556Z` UI source checkout
+and the 672 manifest-listed duplicate files in the failed November 10
+`175832Z` transport. The complete verified source archive and recovery metadata
+remain in the node’s private `/data` recovery workspace, with both retained archives
+and verified restored trees outside the `/tmp` age-cleanup rule. The custody receipt
+binds those durable paths without changing the original recovery proof. The partial
+DNS banner, all transport directories, immutable
+receipts, current/prior release pair and held fallback remain. Original retired
+inode identities cannot be recreated. The new superseding receipt records that
+qualification; it does not rewrite old plans or claim their original-inode replay
+still passes. `deploy/health-cleanup/retire.py` binds the exact manifests, reviewed
+recovery proof and supplemental durable-custody receipt, native helper hashes and
+fresh identities, runs reference and
+lifecycle checks under the deployment lock, and journals each descriptor-relative
+removal. An interrupted intent requires reconciliation, never blind retry. Cleanup
+evidence is bounded in the existing backup evidence pool, outside deployment
+scratch. The publisher floor stays 8 GiB plus 64 MiB growth, the scratch cap stays
+5 GiB, and the separate 10/12 GiB monitor thresholds do not change. Publication
+must obtain fresh admission after cleanup; a hypothetical margin is not a reservation.
+
 The read-only rehearsal for the `e6a53e4d` build against `54088ca1` left
 186,252,318 bytes above the root reserve and 352,776,192 bytes below the
 scratch ceiling at the tightest respective phases. The backup and transport

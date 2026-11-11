@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -18,6 +19,8 @@ class JournalTests(unittest.TestCase):
         self.umask=os.umask(0o077);self.tmp=tempfile.TemporaryDirectory();self.base=Path(self.tmp.name)
         self.root=self.base/'source-"é';self.root.mkdir();self.file=self.root/('quote-"é-'+('a'*220));self.file.write_bytes(b'exact retained bytes')
         (self.root/'nested').mkdir();os.link(self.file,self.root/'nested'/'shared');(self.root/'link').symlink_to(self.file.name)
+        # Let a fresh symlink atime advance beyond ctime before exact identity capture.
+        time.sleep(0.02)
         self.inventory=E.inventory(self.root,os.geteuid(),require_manifest=False,allow_symlinks=True)
         self.expected=dict(self.inventory['fingerprint'],inventory=self.inventory['records'])
         self.log=self.base/'actions.jsonl'
