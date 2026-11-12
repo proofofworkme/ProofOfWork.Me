@@ -22,6 +22,14 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 
 
+def isolated_flags():
+    # Preserve interpreter-version flags used by argparse (Python 3.14 color).
+    values = {name: getattr(sys.flags, name) for name in dir(sys.flags)
+              if not name.startswith("_")}
+    values.update(isolated=1, optimize=0)
+    return SimpleNamespace(**values)
+
+
 def load(path):
     spec = importlib.util.spec_from_file_location(path.stem, path)
     module = importlib.util.module_from_spec(spec)
@@ -63,7 +71,7 @@ class NativeDispatch(unittest.TestCase):
             self.assertFalse(allowed(good))
 
     def test_root_on_node_or_operator_host_refuses_before_files_or_transport(self):
-        flags = SimpleNamespace(isolated=1, optimize=0)
+        flags = isolated_flags()
         with contextlib.ExitStack() as stack:
             stack.enter_context(patch.object(sys, 'flags', flags))
             for name in ('getuid', 'geteuid', 'getgid', 'getegid'):
@@ -154,7 +162,7 @@ class NativeDispatch(unittest.TestCase):
                  'source':{'compressedBytes':100,'sha256':'b'*64},'surfaces':{'compressedBytes':100,'sha256':'b'*64}}
             path = root/'plan'; path.write_text(json.dumps(p)); digest = hashlib.sha256(path.read_bytes()).hexdigest()
             with patch.object(os,'geteuid',return_value=0), patch.object(os,'getegid',return_value=0), \
-                    patch.object(sys,'flags',SimpleNamespace(isolated=True,optimize=False)), \
+                    patch.object(sys,'flags',isolated_flags()), \
                     patch.object(subprocess,'check_output',return_value=b'[{"addr_info":[{"local":"65.108.122.87"}]}]'), \
                     patch.object(os,'execv') as execv:
                 for sha,kind in [('1'*64,'source'),(digest,'surfaces')]:
