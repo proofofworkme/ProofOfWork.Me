@@ -748,6 +748,38 @@ finally:t.tearDown()
         with self.assertRaisesRegex(ValueError, 'Migration lost reviewed authority'):
             replay('0' * 64)
 
+    def test_current_writer_actual_completed_receipt_replays(self):
+        admissions, _, plan, out, done, intent = self.future_completion_fixture()
+        writer = hashlib.sha256(Path(S.__file__).read_bytes()).hexdigest()
+        self.assertEqual(plan["controllerSha256"], writer)
+        self.assertIn(writer, P.KNOWN_RETIREMENT_CONTROLLERS)
+        self.assertEqual(done["status"], "completed")
+        self.assertEqual(done["planSha256"], S.digest(plan))
+        index = self.policy_index(admissions, [{"path": out["receiptPath"], "sha256": out["receiptSha256"]}])
+        replayed = P.load_index(index["path"], index["sha256"], self.l, self.auth)
+        self.assertEqual(replayed["retired"], {row["path"] for row in plan["delete"]})
+        self.assertEqual(P.policy_scope(index, self.l, self.auth)["eligible"], [])
+
+    def test_approved_037_d9fa_forecast_is_exact_in_both_gates(self):
+        publisher = __import__("runpy").run_path(str(Path(S.__file__).parents[1] / "publish/publication_admission.py"))
+        previous = "d9fa69d9e1e4-20261110T210615Z"
+        current = "037f8db7edcc-20261111T182211Z"
+        archive = "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-" + previous + ".tgz"
+        paths = sorted([archive, archive + ".sha256", archive + ".provenance",
+                        "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-" + current])
+        rule = {"model": "private-stage-reviewed-retirement-v1",
+                "previousPair": {"current": current, "previous": previous}, "wouldRetire": paths,
+                "preservedFallback": {"snapshotSha256": {"/verified/c3969-fallback": "a" * 64}}}
+        for check in (S.reviewed_forecast, publisher["reviewed_forecast"]):
+            self.assertTrue(check(rule))
+            for changed in (
+                {**rule, "wouldRetire": paths[:-1]},
+                {**rule, "wouldRetire": paths + ["/extra"]},
+                {**rule, "previousPair": {"current": "future", "previous": current}},
+                {**rule, "preservedFallback": {"snapshotSha256": {paths[0]: "a" * 64}}},
+            ):
+                self.assertFalse(check(changed))
+
     def test_zero_removal_receipt_replays_previous_and_current_storage_only(self):
         with patch.object(P, 'S', S):
             admission = P.admission(self.l, self.auth, True)

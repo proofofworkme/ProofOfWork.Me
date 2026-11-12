@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { isReadOnlySnapshotBudgetError } from "./db/read-only-snapshot.mjs";
-import { createWalletReadCoalescer, walletReadIdentity, measurePrivatePhase, withPrivatePhaseTimings, privateReadContext } from "./wallet-read-observation.mjs";
+import { privateRegistryObservationId, withPrivateRegistryObservation, measurePrivateRegistryPhase, measurePrivateRegistryPhaseSync, createWalletReadCoalescer, walletReadIdentity, measurePrivatePhase, withPrivatePhaseTimings, privateReadContext } from "./wallet-read-observation.mjs";
 const coalesceWalletRead = createWalletReadCoalescer();
 import { createBroadcastHints } from "./pending-broadcast-hints.mjs";
 import { writeCanonicalSummaryStream } from "./canonical-summary-stream.mjs";
@@ -79030,7 +79030,7 @@ async function hydrateExactConfirmedRegistryHistory(
     groups,
     2,
     async ([height, group]) => {
-      const block = await fetchCanonicalAddressHistoryBlock(height, network);
+      const block = await measurePrivateRegistryPhase("registry-block-rpc", () => fetchCanonicalAddressHistoryBlock(height, network));
       const indexByTxid = new Map(
         block.txids.map((txid, blockIndex) => [txid, blockIndex]),
       );
@@ -79039,7 +79039,7 @@ async function hydrateExactConfirmedRegistryHistory(
         Math.min(4, Math.max(1, TX_FETCH_CONCURRENCY)),
         async (entry) => {
           const blockIndex = indexByTxid.get(entry.txid);
-          const transaction = await hydrateCanonicalAddressHistoryTransaction(
+          const transaction = await measurePrivateRegistryPhase("registry-transaction-rpc", () => hydrateCanonicalAddressHistoryTransaction(
             {
               blockHash: block.blockHash,
               blockHeight: height,
@@ -79051,7 +79051,7 @@ async function hydrateExactConfirmedRegistryHistory(
               bypassCache: options.bypassCache === true,
               cacheResult: options.cacheResult !== false,
             },
-          );
+          ));
           if (
             !Number.isSafeInteger(blockIndex) ||
             transaction?._powCanonicalRpcHydration !== true ||
@@ -81502,18 +81502,18 @@ async function buildInternalRegistryParityPayload(network) {
   }
 
   const initialTip = exactCoreTipFromBlockchainInfo(
-    await bitcoinRpc("getblockchaininfo", []),
+    await measurePrivateRegistryPhase("registry-initial-core", () => bitcoinRpc("getblockchaininfo", [])),
   );
   if (!initialTip) {
     throw registryAuthorityUnavailable(
       "Bitcoin Core exact tip is unavailable for registry parity.",
     );
   }
-  const initialElectrumCheckpoint = await registryAuditElectrumCheckpoint(
+  const initialElectrumCheckpoint = await measurePrivateRegistryPhase("registry-initial-electrum", () => registryAuditElectrumCheckpoint(
     initialTip,
-  );
+  ));
   const before = electrumAddressHistoryCoverage(
-    await fetchExactAddressHistoryFromElectrum(registryAddress, network),
+    await measurePrivateRegistryPhase("registry-initial-history", () => fetchExactAddressHistoryFromElectrum(registryAddress, network)),
   );
   if (before.confirmedTxids.length === 0) {
     throw registryAuthorityUnavailable(
@@ -81529,20 +81529,20 @@ async function buildInternalRegistryParityPayload(network) {
       },
     );
   }
-  const initialPendingTimes = await registryAuditCorePendingTimeProjection(
+  const initialPendingTimes = await measurePrivateRegistryPhase("registry-initial-pending", () => registryAuditCorePendingTimeProjection(
     before.pendingTxids,
     "Initial registry parity fence",
-  );
+  ));
   const [confirmedTransactions, pendingTransactions] = await Promise.all([
-    hydrateExactConfirmedRegistryHistory(before.entries, network, {
+    measurePrivateRegistryPhase("registry-confirmed-hydration", () => hydrateExactConfirmedRegistryHistory(before.entries, network, {
       allHeights: true,
       bypassCache: true,
       cacheResult: false,
-    }),
+    })),
     mapWithConcurrency(
       before.pendingTxids,
       Math.min(2, Math.max(1, TX_FETCH_CONCURRENCY)),
-      (txid) => hydrateExactPendingRegistryTransaction(txid, network),
+      (txid) => measurePrivateRegistryPhase("registry-pending-hydration", () => hydrateExactPendingRegistryTransaction(txid, network)),
     ),
   ]);
   const confirmedHydration = assertExactRegistryHydration(
@@ -81570,13 +81570,13 @@ async function buildInternalRegistryParityPayload(network) {
   }
 
   const generatedAt = new Date().toISOString();
-  const state = idRegistryStateFromTransactions(
+  const state = measurePrivateRegistryPhaseSync("registry-replay", () => idRegistryStateFromTransactions(
     transactions,
     registryAddress,
     network,
     { includeAuditEvents: true },
-  );
-  const unresolvedPayload = await registryPayloadWithIndexedPendingTimes(registryPayloadFromState(state, {
+  ));
+  const unresolvedPayload = await measurePrivateRegistryPhase("registry-pending-sql", () => registryPayloadWithIndexedPendingTimes(registryPayloadFromState(state, {
     indexedAt: generatedAt,
     indexedThroughBlock: initialTip.height,
     indexedThroughBlockHash: initialTip.blockHash,
@@ -81589,22 +81589,22 @@ async function buildInternalRegistryParityPayload(network) {
     expectedHash: initialTip.blockHash,
     expectedHeight: initialTip.height,
     requireIndexed: true,
-  });
-  const listingReconciliation = await strictCoreRegistryListingReconciliation(
+  }));
+  const listingReconciliation = await measurePrivateRegistryPhase("registry-listing-fence", () => strictCoreRegistryListingReconciliation(
     unresolvedPayload,
     network,
     { checkpoint: initialTip, verifyFinalTip: false },
-  );
+  ));
 
-  const finalPendingTimes = await registryAuditCorePendingTimeProjection(
+  const finalPendingTimes = await measurePrivateRegistryPhase("registry-final-pending", () => registryAuditCorePendingTimeProjection(
     before.pendingTxids,
     "Final registry parity fence",
-  );
+  ));
   const after = electrumAddressHistoryCoverage(
-    await fetchExactAddressHistoryFromElectrum(registryAddress, network),
+    await measurePrivateRegistryPhase("registry-final-history", () => fetchExactAddressHistoryFromElectrum(registryAddress, network)),
   );
   const finalTip = exactCoreTipFromBlockchainInfo(
-    await bitcoinRpc("getblockchaininfo", []),
+    await measurePrivateRegistryPhase("registry-final-core", () => bitcoinRpc("getblockchaininfo", [])),
   );
   if (
     !finalTip ||
@@ -81615,9 +81615,9 @@ async function buildInternalRegistryParityPayload(network) {
       "Bitcoin Core changed while strict registry parity was built.",
     );
   }
-  const finalElectrumCheckpoint = await registryAuditElectrumCheckpoint(
+  const finalElectrumCheckpoint = await measurePrivateRegistryPhase("registry-final-electrum", () => registryAuditElectrumCheckpoint(
     finalTip,
-  );
+  ));
   const initialPendingSha256 = registryAuditProjectionSha256(
     initialPendingTimes,
   );
@@ -81792,18 +81792,17 @@ const REGISTRY_PARITY_INFLIGHT = new Map();
 
 async function internalRegistryParityPayload(network) {
   if (REGISTRY_PARITY_INFLIGHT.has(network)) {
-    return REGISTRY_PARITY_INFLIGHT.get(network);
+    const existing = REGISTRY_PARITY_INFLIGHT.get(network);
+    return withPrivateRegistryObservation(() => measurePrivateRegistryPhase("registry-join-wait", () => existing), { flightId: existing.registryObservationId, role: "joiner" });
   }
-  const promise = buildInternalRegistryParityPayload(network)
+  const flightId = privateRegistryObservationId();
+  const promise = withPrivateRegistryObservation(() => measurePrivateRegistryPhase("registry-build", () => buildInternalRegistryParityPayload(network)), { flightId, role: "owner" })
     .catch((error) => {
-      if (!Number.isSafeInteger(error?.statusCode)) {
-        error.statusCode = 503;
-      }
+      if (!Number.isSafeInteger(error?.statusCode)) error.statusCode = 503;
       throw error;
     })
-    .finally(() => {
-      REGISTRY_PARITY_INFLIGHT.delete(network);
-    });
+    .finally(() => { REGISTRY_PARITY_INFLIGHT.delete(network); });
+  promise.registryObservationId = flightId;
   REGISTRY_PARITY_INFLIGHT.set(network, promise);
   return promise;
 }

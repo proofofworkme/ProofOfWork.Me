@@ -62,7 +62,8 @@ for (const file of rendererFiles) assert.equal(renderer.files[file], createHash(
 results.push(rendererUrl);
 // The publisher check allows 1,800s for retention, 45s for helper hashes,
 // 240s each for the exact-tip and pending-discovery probes, and 480s for the readers.
-const liveCheckTimeout = impact.liveCheck === 'scripts/check-publisher-repair-live.mjs' ? 2_880_000 : 600_000;
+const liveCheckTimeout = impact.liveCheck === 'scripts/check-publisher-repair-live.mjs' ? 2_880_000
+  : impact.liveCheck === 'scripts/check-health-followup-live.mjs' ? 900_000 : 600_000;
 execFileSync(process.execPath, [resolve(primary, impact.liveCheck)], {cwd:primary,stdio:'inherit',timeout:liveCheckTimeout});
 results.push(impact.liveCheck);
 // Fence concurrent GitHub advancement during verification.

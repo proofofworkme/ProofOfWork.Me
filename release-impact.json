@@ -1,11 +1,28 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "receipt-bound-completed-storage-adoption",
-  "liveCheck": "scripts/check-ui-storage-adoption-live.mjs",
+  "upgrade": "registry-timing-and-repaired-lifecycle-source-integration",
+  "liveCheck": "scripts/check-health-followup-live.mjs",
   "ciTests": [
-    "scripts/check-ui-storage-adoption.test.mjs"
+    "scripts/check-registry-phase-measurement.test.mjs",
+    "scripts/check-registry-timing-controller.test.mjs",
+    "scripts/check-ui-storage-adoption.test.mjs",
+    "scripts/check-wallet-readiness-preflight.test.mjs",
+    "scripts/check-ui-followup-retirement.test.mjs",
+    "scripts/check-ui-d4ee-trees.test.mjs"
   ],
   "reviews": [
+    {
+      "targets": [
+        "api"
+      ],
+      "disposition": "affected",
+      "reason": "Bounded private registry phase timing changes observation only. Exact response/error identity, readiness, single-flight ownership, fresh proof, snapshot lifetime and writes remain unchanged. The exact two-file runtime overlay preserves all accepted API foundations; source and runtime candidate hashes are separately pinned. Preparation does not authorize production activation.",
+      "evidence": [
+        "scripts/check-registry-phase-measurement.test.mjs",
+        "deploy/registry-timing/check.test.py",
+        "scripts/check-health-followup-live.mjs"
+      ]
+    },
     {
       "targets": [
         "computer",
@@ -15,7 +32,6 @@
         "work",
         "infinity",
         "inception",
-        "api",
         "indexer",
         "activity",
         "boost",
@@ -42,13 +58,16 @@
         "compatibility"
       ],
       "disposition": "compatible",
-      "reason": "One exact approved operational adoption records an already completed four-path retirement without deleting or publishing again. It admits only the reviewed storage writer hash and verifies the unchanged live037 UI, d9fa rollback, c3969 fallback, guards and capacities. Protocol bytes, writers, signing, node admission, index/replay, APIs, accounting and every standalone/embedded surface stay unchanged. The repair is an isolated tool package: its successful verification does not claim that this branch commit is the published website or that merging it would satisfy source synchronization.",
+      "reason": "All standalone and embedded UI sources, protocol bytes, local signing, index/replay, pending/confirmed transitions and accounting remain unchanged. The dependent worker restart is only the existing controlled runtime cutover, not a writer change. The reviewed one-time adoption source preserves immutable completed-retirement lineage and current/prior/fallback proofs. New builds carry coherent source provenance only after separate publication/storage/retirement approval; the separately approved exact037/d9fa predecessor transition is admitted with a matching writer hash and actual receipt replay regression. Publication still waits for recovery, cleanup and fresh admission.",
       "evidence": [
         "scripts/check-ui-storage-adoption.test.mjs",
-        "scripts/check-ui-storage-adoption-live.mjs",
-        "deploy/ui-retention/check-storage-adoption.test.py",
         "deploy/ui-retention/check-lifecycle-remote.test.py",
-        "deploy/audit30/check-ui-storage.test.py"
+        "deploy/audit30/check-ui-storage.test.py",
+        "scripts/check-wallet-readiness-preflight.test.mjs",
+        "scripts/check-health-followup-live.mjs",
+        "scripts/check-ui-followup-retirement.test.mjs",
+        "scripts/check-ui-d4ee-trees.test.mjs",
+        "deploy/health-cleanup/check-d4ee.test.py"
       ]
     }
   ]

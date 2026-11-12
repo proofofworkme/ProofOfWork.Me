@@ -64,7 +64,7 @@ export function observePrivateHttpRequest(request, response, handle, { observer 
     try {
       const path = new URL(request.url ?? '/', 'http://localhost').pathname;
       if (['/health', '/api/v1/token', '/api/v1/token-summary', '/api/v1/token-history', '/api/v1/marketplace-summary', '/api/v1/health',
-        '/api/v1/registry', '/api/v1/ids', '/api/v1/dns', '/api/v1/dns-summary', '/api/v1/log', '/api/v1/log-summary',
+        '/api/v1/registry', '/api/v1/ids', '/api/v1/registry-summary', '/api/v1/ids-summary', '/api/v1/dns', '/api/v1/dns-summary', '/api/v1/log', '/api/v1/log-summary',
         '/api/v1/activity', '/api/v1/activity-summary', '/api/v1/work-summary', '/api/v1/work-floor', '/api/v1/growth-summary',
         '/api/v1/internal/canonical-summary', '/api/v1/internal/pending-work-verifier-stage'].includes(path)) route = path;
     } catch { /* An invalid request remains the handler's responsibility. */ }
@@ -122,6 +122,7 @@ export function createWalletReadCoalescer({ makeId = opaqueId, observer = defaul
 }
 
 const phases = new Set([
+  "registry-final-electrum", "registry-final-core", "registry-final-history", "registry-final-pending", "registry-listing-fence", "registry-pending-sql", "registry-replay", "registry-pending-hydration", "registry-confirmed-hydration", "registry-initial-pending", "registry-initial-history", "registry-initial-electrum", "registry-initial-core", "registry-transaction-rpc", "registry-block-rpc", "registry-build", "registry-join-wait",
   'snapshot-client-wait', 'snapshot-open', 'snapshot-assembly', 'snapshot-sql-wait',
   'full-audit-queue-wait', 'full-audit-execution', 'wallet-supply', 'wallet-capacity',
   'closing-core', 'closing-mempool', 'confirmed-scan', 'confirmed-barrier',
@@ -156,6 +157,30 @@ export async function measurePrivatePhase(name, run) {
   finally {
     const previous = totals.get(name) ?? { count: 0, elapsedMs: 0 };
     totals.set(name, { count: Math.min(1_000_000, previous.count + 1),
+      elapsedMs: Math.min(86_400_000, previous.elapsedMs + Math.max(0, performance.now() - started)) });
+  }
+}
+
+// Registry observations are diagnostic-only. No authority, cancellation or caches change.
+export const privateRegistryObservationId = () => safeId();
+export function withPrivateRegistryObservation(run, { flightId, role, observer = defaultObserver } = {}) {
+  const validId = typeof flightId === 'string' && /^[0-9a-f]{32}$/u.test(flightId);
+  const context = { ...privateReadContext(), work: 'registry-' + (role === 'joiner' ? 'joiner' : 'owner'),
+    ...(validId ? { registryFlightId: flightId } : {}), registryRole: role === 'joiner' ? 'joiner' : 'owner' };
+  return requestScope.run(context, () => withPrivatePhaseTimings(run, observer));
+}
+export function measurePrivateRegistryPhase(name, run) {
+  if (!privateReadContext().registryRole) return run();
+  return measurePrivatePhase(name, run);
+}
+export function measurePrivateRegistryPhaseSync(name, run) {
+  const scope = timingScope.getStore();
+  if (!privateReadContext().registryRole || !scope || !phases.has(name)) return run();
+  const started = performance.now();
+  try { return run(); }
+  finally {
+    const previous = scope.totals.get(name) ?? { count: 0, elapsedMs: 0 };
+    scope.totals.set(name, { count: Math.min(1_000_000, previous.count + 1),
       elapsedMs: Math.min(86_400_000, previous.elapsedMs + Math.max(0, performance.now() - started)) });
   }
 }

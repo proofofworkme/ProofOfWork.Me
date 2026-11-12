@@ -9204,3 +9204,99 @@ source. Keep this repair isolated until source integration is explicitly settled
 merging it to main would require a separately authorized synchronization release
 under the existing release-sync contract. Do not alter published provenance or
 claim full source coherence merely because operational recovery passed.
+
+
+## Registry timing and repair-source integration preparation — November 12, 2026
+
+The operator first approved preparation of a source-synchronized follow-up to
+the 037f8db release, including the completed-storage adoption source and limited
+registry timing diagnostics. A subsequent explicit approval covered recovery
+verification and removal of the two identified older d4ee deployment trees,
+then publication and exact d9fa predecessor retirement after the replacement
+and 037 immediate rollback are verified. The separately held c3969 fallback
+remains. Recovery and cleanup need their own exact receipts and fresh guards.
+
+Both publication and storage validators now admit only this additional pair:
+current 037f8db7edcc-20261111T182211Z, previous d9fa69d9e1e4-20261110T210615Z.
+The four post-publication retirement paths are the d9fa .tgz, .tgz.sha256 and
+.tgz.provenance plus rollback root proofofwork-www-pre-037f8db7edcc-20261111T182211Z.
+The policy reader admits the exact resulting storage-writer hash, and regression
+tests replay its actual completed retirement receipt without rewriting it.
+Missing/additional paths, held-fallback overlap and later pairs still refuse.
+Fresh full admission and the final committed build remain mandatory.
+
+The runtime approval wording names an API restart. The reused controller also
+drains/restores its gateway and dependent worker and holds/restores Search;
+do not infer authority for those auxiliary actions. Resolve that scope with
+the operator before executing the controller. Preparation and unit tests
+perform no production activation.
+
+Registry diagnostics observe the existing shared strict registry-parity work,
+which may serve registry and ID callers, including summary routes. They measure
+owner build and join wait, initial/final Core, Electrum, address-history and
+pending checks, confirmed/pending hydration, block/transaction RPC work,
+synchronous registry replay, indexed pending SQL and the listing fence.
+They do not add readiness, snapshot, payload-serialization or response-completion
+phases. They preserve response bytes, fresh-proof requirements, pending/confirmed
+semantics, snapshot ownership, timeouts, admission and all write behavior.
+The bounded private observation contains only fixed phase names and coarse
+timings, uses the existing private request lifecycle, and carries no address,
+query, payload, balance or transaction identifier. Missing or failed diagnostics
+cannot establish readiness or grant transaction authority.
+
+The dedicated registry-timing controller uses the unchanged digest-pinned
+scoped node engine. It admits exactly the API and its existing observation
+module, installs the observation dependency first, and pins the current
+accepted inventory, both predecessor hashes, both resulting hashes, and the
+unchanged readiness reader/snapshot foundations. One API import-location
+conflict is resolved only when active, base, candidate and full conflict bytes
+match the reviewed hashes, and the complete result matches the independently
+reproduced runtime candidate. Other conflicts fail. Replacing live API source
+with the canonical repository file would erase accepted overlays and is not
+permitted. Historical health-readiness profile pins remain unchanged.
+
+A later authorized runtime installation would use the existing Search hold,
+dependency/metadata fencing, source recovery receipt, controlled API and
+dependent-worker restart, rollback and accepted-overlay verification. It would
+not alter database schema, Core, PostgreSQL, wallet authority or service
+configuration. Runtime activation and its source acceptance are separate from
+the UI publication and its current/prior/fallback verification.
+
+The follow-up live gate combines the existing stable-checkpoint registry and
+positive-wallet proof checks with exact four-file runtime hashes, the unchanged
+PostgreSQL monitor, and native completed UI retention. It requires the new
+released commit, 037f8db as immediate rollback, the preserved c3969 fallback,
+no unfinished lifecycle intent and the unchanged 8 GiB plus 64 MiB allocation
+floor. Monitoring remains independently 10/12 GiB and scratch remains 5 GiB.
+The old exact 037/d9fa adoption check stays historical. Preparation and a
+successful preliminary build do not claim production improvement or complete
+source synchronization; the ordinary release-sync gate still applies.
+
+The follow-up verification command has a 900-second outer deadline, enclosing
+at most four 30-second public reads, a 90-second installed-source/monitor probe,
+a 480-second native lifecycle check and short local identity checks. This is
+only the new combined verification budget; no production RPC, freshness,
+transport, publication, service or retention deadline changes. Existing release
+verification budgets retain their prior values.
+
+
+The exact approved d4ee cleanup is implemented separately in
+deploy/health-cleanup/d4ee_trees.py. It may remove only the d4ee source and
+surface roots under /var/tmp/proofofwork-deploy after fresh identity, reference,
+lifecycle, guard and capacity checks. It binds the original installed 007f5f
+storage writer, repaired lifecycle state 222/config5ce7 and package f432;
+therefore cleanup must precede the next completed lifecycle package upgrade.
+The final source's newly approved writer does not expand that cleanup scope.
+
+Complete source/surface archive copies and original metadata remain in the
+node's durable d4ee recovery directory. Restoration proof binds content,
+ownership, modes, timestamps and surface hardlink relationships. Original
+inode and ctime identities cannot be recreated. The source and surface
+retirements reclaim 365,985,792 and 49,483,776 allocated bytes respectively.
+The unique evidence and all other sources, inputs, receipts, rollback material,
+held children and the c3969 fallback remain unchanged. The per-file journal
+bounds are 13,285,088 and 3,319,606 bytes; estimated total new evidence is
+28,775,681 bytes under a strict 32 MiB cap. Evidence is charged to backup/root
+capacity, never treated as scratch credit. These are planning bounds; the
+native plan and final whole-release admission must still pass with actual
+post-cleanup allocations, new build sizes and package/evidence overhead.
