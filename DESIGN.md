@@ -168,7 +168,7 @@ loaded rows; incomplete counts remain qualified. Notification navigation must
 preserve the departing draft and existing signing/navigation guards.
 
 Disconnected, loading, empty, pending, unavailable, stale, and confirmed states
-are distinct product states. An unverified read is not a confirmed zero. Listing
+are distinct product states. An unverified read is not a confirmed zero. Public Log counts use authenticated public scope; supplemental ledger-only items must not silently inflate its overview or badge. Listing
 Spendable uses the same readiness/error state as transfer: loading or unavailable
 capacity must not render a numeric zero, while verified zero remains visible. A calm
 interface must still explain errors, uncertainty, incomplete coverage, and

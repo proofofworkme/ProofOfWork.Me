@@ -1848,6 +1848,10 @@ type PowTokenWalletPreflightState = PowTokenSpendabilityState & {
 };
 
 type PowActivityApiResponse = {
+  consistency?: {
+    ok?: boolean;
+    checks?: { name?: string; ok?: boolean; details?: Record<string, unknown> }[];
+  };
   activity?: PowActivityItem[];
   indexedAt?: string;
   snapshotId?: string;
@@ -15296,6 +15300,37 @@ function numericActivityStat(value: unknown) {
   return Number.isFinite(numberValue) && numberValue >= 0
     ? numberValue
     : undefined;
+}
+
+// The ledger can include supplemental actions that are not public Log rows.
+// Use only the matching authenticated public-count proof, never a filtered page.
+function publicLogActivityStats(payload: PowActivityApiResponse): PowActivityStats | undefined {
+  const stats = payload.stats;
+  if (!stats || !payload.snapshotId || payload.consistency?.ok !== true) return stats;
+  const checks = Array.isArray(payload.consistency.checks)
+    ? payload.consistency.checks.filter(
+        (check) => check?.name === "canonical-activity-count-matches-public-log",
+      )
+    : [];
+  if (checks.length !== 1 || checks[0]?.ok !== true) return stats;
+  const details = checks[0].details ?? {};
+  const publicTotal = details.publicLogActivityCount;
+  const ledgerTotal = details.ledgerActivityCount;
+  const publicConfirmed = details.publicLogConfirmedActivityCount;
+  const ledgerConfirmed = details.ledgerConfirmedActivityCount;
+  const isCount = (value: unknown): value is number =>
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+  if (!isCount(publicTotal) || !isCount(ledgerTotal) ||
+      !isCount(publicConfirmed) || !isCount(ledgerConfirmed) || !isCount(stats.pending) ||
+      details.canonicalActivityCount !== publicTotal ||
+      details.canonicalConfirmedActivityCount !== publicConfirmed ||
+      ledgerConfirmed < publicConfirmed ||
+      stats.total !== ledgerTotal || stats.confirmed !== ledgerConfirmed ||
+      ledgerTotal < publicTotal ||
+      details.supplementalActivityCount !== ledgerTotal - publicTotal ||
+      details.supplementalConfirmedActivityCount !== ledgerConfirmed - publicConfirmed ||
+      publicConfirmed + stats.pending !== publicTotal) return stats;
+  return { ...stats, total: publicTotal, confirmed: publicConfirmed };
 }
 
 function normalizeActivityStats(
@@ -29321,7 +29356,7 @@ export default function App() {
 
   function applyActivityPayload(payload: PowActivityApiResponse) {
     const activity = Array.isArray(payload.activity) ? payload.activity : [];
-    const stats = { ...normalizeActivityStats(payload.stats, activity), snapshotId: payload.snapshotId };
+    const stats = { ...normalizeActivityStats(publicLogActivityStats(payload), activity), snapshotId: payload.snapshotId };
     const currentStats = acceptedActivityStatsRef.current;
     if (activity.length === 0 && activityStatsRegress(stats, currentStats)) {
       return { activity: idActivity, stats: currentStats ?? stats };

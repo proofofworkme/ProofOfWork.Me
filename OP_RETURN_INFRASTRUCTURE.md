@@ -9348,3 +9348,12 @@ non-root filesystem and unchanged archive hash/metadata fences. Existing legacy
 `/tmp` transport restrictions remain. Both actual completed build archives were
 verified through this sender before publication; build success alone did not
 prove transport admission.
+
+Live-browser recheck found a distinct display-scope mismatch: a public Log
+overview included a proven supplemental ledger-only item while pagination used
+the canonical public count. The UI now normalizes only authenticated matching
+public totals and confirmed counts; raw ledger/API records and pending semantics
+are unchanged. Pending counts are event counts, not necessarily transaction
+counts: batch transactions can contribute many valid public events. Regression
+fixtures preserve filtered/profile and unavailable scope and reject inconsistent
+count proofs. This change affects standalone Log and embedded Computer/badge.

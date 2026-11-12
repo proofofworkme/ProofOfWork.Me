@@ -1,6 +1,6 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "audit-remediation-data-volume-transport-coherence",
+  "upgrade": "audit-remediation-public-log-count-scope",
   "liveCheck": "scripts/check-audit-remediation-live.mjs",
   "ciTests": [
     "server/pwid-rejection-projection.test.mjs",
@@ -10,7 +10,8 @@
     "scripts/check-pending-readiness-diagnostics.test.mjs",
     "server/registry-pending-times.test.mjs",
     "scripts/check-wallet-read-coalescing.test.mjs",
-    "scripts/check-ui-remediation-retirement.test.mjs"
+    "scripts/check-ui-remediation-retirement.test.mjs",
+    "scripts/check-log-count-scope.test.mjs"
   ],
   "reviews": [
     {
@@ -37,10 +38,11 @@
         "nft"
       ],
       "disposition": "affected",
-      "reason": "Listing spendable capacity distinguishes loading and unavailable from verified zero. Exact quantities, fee arithmetic, reservation exclusions and transaction authority remain unchanged; unsigned fixtures verify the actual source.",
+      "reason": "Listing spendable capacity distinguishes loading and unavailable from verified zero. Exact quantities, fee arithmetic, reservation exclusions and transaction authority remain unchanged; unsigned fixtures verify the actual source. Embedded Log and its sidebar badge use authenticated public action counts, excluding proven supplemental ledger-only counts.",
       "evidence": [
         "scripts/check-fee-capacity-regression.test.mjs",
-        "scripts/check-audit-remediation-live.mjs"
+        "scripts/check-audit-remediation-live.mjs",
+        "scripts/check-log-count-scope.test.mjs"
       ]
     },
     {
@@ -48,7 +50,6 @@
         "work",
         "infinity",
         "inception",
-        "activity",
         "boost",
         "browser",
         "code",
@@ -77,6 +78,16 @@
         "scripts/check-audit-remediation-release.test.mjs",
         "scripts/check-ui-remediation-retirement.test.mjs",
         "deploy/publish/check-ui-native-dispatch.test.py"
+      ]
+    },
+    {
+      "targets": [
+        "activity"
+      ],
+      "disposition": "affected",
+      "reason": "Public Log overview total and confirmed counts use the same authenticated canonical public scope as pagination. Proven supplemental ledger entries remain unchanged in API data, filtered/profile scope and unavailable states remain guarded.",
+      "evidence": [
+        "scripts/check-log-count-scope.test.mjs"
       ]
     }
   ]
