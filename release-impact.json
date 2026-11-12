@@ -1,6 +1,6 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "growth-coverage-work-samples-safe-domain-links",
+  "upgrade": "growth-work-links-reviewed-retention-transition",
   "liveCheck": "scripts/check-audit-remediation-live.mjs",
   "ciTests": [
     "server/pwid-rejection-projection.test.mjs",
@@ -56,10 +56,12 @@
         "computer"
       ],
       "disposition": "affected",
-      "reason": "Embedded WORK chart and Boost rendering consume the same changed components; shell and all other embedded writers unchanged.",
+      "reason": "Embedded WORK chart and Boost rendering consume the same changed components; shell and all other embedded writers unchanged. Exact reviewed private-stage transition (1042,7ea) preserves held c3969 and immediate1042, with recovery-backed outgoing7ea retirement only after verified publication; capacity floors and future-pair refusal remain unchanged.",
       "evidence": [
         "tests/browser/bare-domain-links.spec.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "deploy/audit30/check-ui-storage.test.py",
+        "scripts/check-ui-remediation-retirement.test.mjs"
       ]
     },
     {

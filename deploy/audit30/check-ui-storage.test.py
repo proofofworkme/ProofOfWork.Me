@@ -800,6 +800,30 @@ finally:t.tearDown()
             ):
                 self.assertFalse(check(changed))
 
+    def test_approved_1042_7ea_forecast_is_exact_in_both_gates(self):
+        publisher = __import__("runpy").run_path(str(Path(S.__file__).parents[1] / "publish/publication_admission.py"))
+        previous = "7eaad7ffc096-20261112T014141Z"
+        current = "1042efea2aa1-20261112T074918Z"
+        archive = "/var/backups/proofofwork-ui/releases/proofofwork-ui-release-" + previous + ".tgz"
+        paths = sorted([archive, archive + ".sha256", archive + ".provenance",
+                        "/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-" + current])
+        rule = {"model": "private-stage-reviewed-retirement-v1",
+                "previousPair": {"current": current, "previous": previous}, "wouldRetire": paths,
+                "preservedFallback": {"snapshotSha256": {"/verified/c3969-fallback": "a" * 64}}}
+        for check in (S.reviewed_forecast, publisher["reviewed_forecast"]):
+            self.assertTrue(check(rule))
+            for changed in (
+                {**rule, "wouldRetire": paths[:-1]},
+                {**rule, "wouldRetire": paths + ["/extra"]},
+                {**rule, "previousPair": {"current": "future", "previous": current}},
+                {**rule, "previousPair": {"current": previous, "previous": current}},
+                {**rule, "previousPair": {"current": current[:-1] + "X", "previous": previous}},
+                {**rule, "wouldRetire": list(reversed(paths))},
+                {**rule, "preservedFallback": {"snapshotSha256": {}}},
+                {**rule, "preservedFallback": {"snapshotSha256": {paths[0]: "a" * 64}}},
+            ):
+                self.assertFalse(check(changed))
+
     def test_zero_removal_receipt_replays_previous_and_current_storage_only(self):
         with patch.object(P, 'S', S):
             admission = P.admission(self.l, self.auth, True)
