@@ -1,6 +1,6 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "audit-remediation-id-storage-capacity-and-verification",
+  "upgrade": "audit-remediation-data-volume-transport-coherence",
   "liveCheck": "scripts/check-audit-remediation-live.mjs",
   "ciTests": [
     "server/pwid-rejection-projection.test.mjs",
@@ -70,12 +70,13 @@
         "compatibility"
       ],
       "disposition": "compatible",
-      "reason": "Protocol wire bytes, economic arithmetic, ownership, signing and other product behavior are unchanged. All managed bundles retain coherent source provenance. Guarded data-volume build admission and repeatable isolated transitions improve operational verification without replacing live acceptance or human wallet signing.",
+      "reason": "Protocol wire bytes, economic arithmetic, ownership, signing and other product behavior are unchanged. All managed bundles retain coherent source provenance. Guarded data-volume build admission and repeatable isolated transitions improve operational verification without replacing live acceptance or human wallet signing. Archive transport admits only exact canonical data-volume build outputs with pinned owner, metadata and digest checks; legacy temporary transport constraints remain unchanged.",
       "evidence": [
         "deploy/publish/check-build-capacity.test.py",
         "scripts/check-summary-transition-freshness.test.mjs",
         "scripts/check-audit-remediation-release.test.mjs",
-        "scripts/check-ui-remediation-retirement.test.mjs"
+        "scripts/check-ui-remediation-retirement.test.mjs",
+        "deploy/publish/check-ui-native-dispatch.test.py"
       ]
     }
   ]

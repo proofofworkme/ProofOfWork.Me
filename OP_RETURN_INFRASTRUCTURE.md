@@ -9341,3 +9341,10 @@ hashes. The 7ea immediate rollback and separately held c3969 fallback are
 preserved. Retiring outgoing UI paths additionally requires independently
 verified equivalent recovery copies; a source-build archive is not equivalent
 to the normalized UI archive solely because its commit matches.
+
+The artifact sender also admits the exact canonical data-volume build root,
+with one run directory, trusted root/build-user ownership, no group/world write,
+non-root filesystem and unchanged archive hash/metadata fences. Existing legacy
+`/tmp` transport restrictions remain. Both actual completed build archives were
+verified through this sender before publication; build success alone did not
+prove transport admission.

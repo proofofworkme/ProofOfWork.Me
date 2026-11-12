@@ -13,3 +13,9 @@ test("UI build admission refuses unsafe roots and exhausted budgets", () => {
     cwd: fileURLToPath(new URL("../", import.meta.url)), stdio: "pipe", timeout: 60_000,
   });
 });
+
+test("data-volume archive transport preserves exact path and custody checks", () => {
+  execFileSync("python3", ["-I", "-B", "deploy/publish/check-ui-native-dispatch.test.py"], {
+    cwd: fileURLToPath(new URL("../", import.meta.url)), stdio: "pipe", timeout: 60_000,
+  });
+});

@@ -1,6 +1,10 @@
 #!/usr/bin/python3 -I
 """Exercise transport selection without contacting either production host."""
 import contextlib
+import ast
+import re
+import pathlib
+import pwd
 import hashlib
 import importlib.util
 import json
@@ -33,6 +37,31 @@ RUN_PATH = runpy.run_path
 
 
 class NativeDispatch(unittest.TestCase):
+    def test_node_sender_admits_only_guarded_data_build_location(self):
+        tree = ast.parse(transport.NODE_BUNDLE_SENDER)
+        function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'permitted_bundle_location')
+        ns = dict(pathlib=pathlib, re=re, stat=stat, pwd=pwd)
+        exec(compile(ast.Module(body=[function], type_ignores=[]), '<sender-location>', 'exec'), ns)
+        allowed = ns['permitted_bundle_location']
+        good = Path('/data/proofofwork-ui-builds/release-123/proofofwork-ui-source-x.tgz')
+        def info(path, **kwargs):
+            return SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=0, st_gid=0, st_dev=1 if str(path)=='/' else 2)
+        with patch.object(Path, 'stat', info), patch.object(Path, 'resolve', lambda p: p):
+            self.assertTrue(allowed(good))
+            self.assertTrue(allowed(Path('/tmp/old-build/old.tgz')))
+            for bad in ('/data/other/run/a.tgz', '/data/proofofwork-ui-builds/a.tgz', '/data/proofofwork-ui-builds/nested/run/a.tgz', '/data/proofofwork-ui-builds/.hidden/a.tgz', '/data/proofofwork-ui-builds/good/a.zip'):
+                self.assertFalse(allowed(Path(bad)), bad)
+            for key, value in (('st_uid',12345),('st_gid',12345),('st_mode',stat.S_IFDIR|0o777),('st_dev',1)):
+                def unsafe(path, **kwargs):
+                    value_info=info(path);setattr(value_info,key,value);return value_info
+                with patch.object(Path, 'stat', unsafe):self.assertFalse(allowed(good), key)
+        def build_user_info(path, **kwargs):
+            row=info(path);row.st_uid=row.st_gid=1000;return row
+        with patch.object(Path, 'stat', build_user_info), patch.object(Path, 'resolve', lambda p:p), patch.object(pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=1000,pw_gid=1000)):
+            self.assertTrue(allowed(good))
+        with patch.object(Path, 'resolve', lambda p: Path('/tmp/different.tgz')):
+            self.assertFalse(allowed(good))
+
     def test_root_on_node_or_operator_host_refuses_before_files_or_transport(self):
         flags = SimpleNamespace(isolated=1, optimize=0)
         with contextlib.ExitStack() as stack:

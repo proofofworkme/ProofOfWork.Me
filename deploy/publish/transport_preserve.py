@@ -25,11 +25,27 @@ TRANSPORT_REMOTE_TIMEOUT_SECONDS = 7200
 
 
 NODE_BUNDLE_SENDER = r'''
-import hashlib,os,pathlib,stat,sys
+import hashlib,os,pathlib,pwd,re,stat,sys
+def permitted_bundle_location(p):
+ if not p.is_absolute() or p.resolve()!=p or p.suffix!='.tgz':return False
+ if p.is_relative_to('/tmp'):return True
+ parent=pathlib.Path('/data/proofofwork-ui-builds')
+ if p.parent.parent!=parent or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}',p.parent.name):return False
+ trusted={(0,0)}
+ try:
+  account=pwd.getpwnam('powadmin');trusted.add((account.pw_uid,account.pw_gid))
+ except KeyError:pass
+ owner=(parent.stat().st_uid,parent.stat().st_gid)
+ if owner not in trusted:return False
+ for directory in (parent,p.parent):
+  info=directory.stat()
+  if not stat.S_ISDIR(info.st_mode) or (info.st_uid,info.st_gid)!=owner or info.st_mode&0o7022:return False
+ return parent.stat().st_dev!=pathlib.Path('/').stat().st_dev
 p=pathlib.Path(sys.argv[1]);size=int(sys.argv[2]);digest=sys.argv[3]
-assert p.is_absolute() and p.resolve()==p and p.is_relative_to('/tmp') and p.suffix=='.tgz'
+assert permitted_bundle_location(p)
 assert p.name.startswith(('proofofwork-ui-source-','proofofwork-ui-surfaces-'))
-s=p.lstat();assert stat.S_ISREG(s.st_mode) and s.st_uid==s.st_gid==0 and not s.st_mode&0o7022 and s.st_nlink==1
+owner=(0,0) if p.is_relative_to('/tmp') else (p.parent.stat().st_uid,p.parent.stat().st_gid)
+s=p.lstat();assert stat.S_ISREG(s.st_mode) and (s.st_uid,s.st_gid)==owner and not s.st_mode&0o7022 and s.st_nlink==1
 assert 0<size<=2*1024**3 and s.st_size==size
 def identity(v):return (v.st_dev,v.st_ino,v.st_mode,v.st_nlink,v.st_uid,v.st_gid,v.st_size,v.st_mtime_ns,v.st_ctime_ns)
 with os.fdopen(os.open(p,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME),'rb') as f:
