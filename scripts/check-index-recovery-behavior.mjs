@@ -1,3 +1,6 @@
+import { WORK_Q16_PENDING_EVENT_PROTOCOLS } from "../server/work-q16-pending-projection.mjs";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { canonicalPwidRejectionProjection } from "../server/pwid-rejection-projection.mjs";
 import { finishPendingDiscovery, pendingDiscoverySeen, planPendingDiscovery } from "../server/pending-mempool-discovery.mjs";
 import { parseBoostWorkTip } from "../src/shared/protocol/boostTip.mjs";
 import { canonicalSealTime } from "../server/canonical-seal-time.mjs";
@@ -8,7 +11,7 @@ import { buildWorkMailBatchPayload, parseWorkMailBatchPayload, workMailBatchEnve
 import { verifiedWorkMailBatchEventIds } from "../server/db/work-mail-batch-reader.mjs";
 import { verifiedWorkBatchEventIds } from "../server/db/work-batch-reader.mjs";
 import { notificationAddressKey } from "../server/notification-query.mjs";
-import { measurePrivatePhase as measureMarketplaceReadPhase } from "../server/wallet-read-observation.mjs";
+import { measurePrivatePhase as measureMarketplaceReadPhase, measurePrivatePhase, measurePrivateRegistryPhase, withPrivatePhaseTimings } from "../server/wallet-read-observation.mjs";
 import { JOBS_ACTIVATION_HEIGHT } from "../src/shared/protocol/jobs.mjs";
 import { JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_META_KEY, advanceJobsCandidateDigest, jobsCandidateParts } from "../server/jobs.mjs";
 import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, advanceCodeCandidateDigest } from "../server/code-repositories.mjs";
@@ -1290,6 +1293,8 @@ function isolatedFunction(path, name, globals = {}) {
     structuredClone,
     deduplicatedSummaryRead: async (_key, producer) => producer(),
     canonicalSealTime,
+    WORK_Q16_PENDING_EVENT_PROTOCOLS,
+    canonicalPwidRejectionProjection,
     buildWorkBatchPayload,
     parseWorkBatchPayload,
     buildWorkMailBatchPayload,
@@ -1304,6 +1309,12 @@ function isolatedFunction(path, name, globals = {}) {
     verifiedWorkBatchEventIds,
     notificationAddressKey,
     measureMarketplaceReadPhase,
+    measurePrivatePhase,
+    measurePrivateRegistryPhase,
+    withPrivatePhaseTimings,
+    // Extracted readers have no active production request or wallet snapshot.
+    walletReadinessPreflightScope: new AsyncLocalStorage(),
+    walletReadSnapshot: new AsyncLocalStorage(),
     performance,
     yieldToIo,
     Buffer,
@@ -1617,6 +1628,7 @@ function isolatedFunction(path, name, globals = {}) {
   });
   const dependencyGraph = path.href === API_PATH.href
     ? {
+        internalCanonicalSummaryPayload: ["internalCanonicalSummaryPayloadObserved"],
         canonicalSaleAuthorizationJsonFromBase64Url: [],
         canonicalTokenReplayPosition: ["canonicalTokenReplayOrdinal"],
         canonicalVerifierItemPosition: ["exactVerifierPositionInteger"],
@@ -2065,7 +2077,7 @@ function isolatedFunction(path, name, globals = {}) {
           ],
           workAmoV5CanonicalBlockEventSet: ["canonicalProtocolPosition"],
           canonicalIncbRangeReplayCompletionWitnesses: ["canonicalIncbReplayPostV5WitnessIsExact"],
-          upsertEvent: ["canonicalProtocolItemForPostgres"],
+          upsertEvent: ["canonicalProtocolItemForPostgres", "persistedEventValid"],
         }
       : {};
   const dependencyNames = [];
@@ -2415,6 +2427,31 @@ check("authoritative wallet definitions bind global WORK supply before normaliza
     walletScopedWorkPayloadWithQ16Supply: normalize,
   });
   const read = isolatedFunction(API_PATH, "proofIndexWalletScopedTokenPayloadForRead", {
+    // This fixture verifies supply binding inside an isolated ready snapshot.
+    // Real database readiness/queue behavior is covered by the dedicated fixtures.
+    WALLET_SCOPED_INDEX_WAIT_MS: 1000,
+    proofIndexPrepareWalletReadiness: async () => true,
+    proofIndexWithWalletReadSnapshot: async (run) => run(),
+    walletReadIdentity: () => "fixture",
+    coalesceWalletRead: async (_identity, run) => run(),
+    isReadOnlySnapshotBudgetError: () => false,
+    proofIndexWalletReadSnapshotPendingProof: () => ({
+      tipHeight: checkpoint.indexedThroughBlock,
+      tipHash: checkpoint.indexedThroughBlockHash,
+      pendingValidThrough: new Date(Date.now() + 60_000).toISOString(),
+      membershipSnapshot: { model: "canonical-work-q16-pending-membership-v2",
+        count: 0, txids: [], sha256: createHash("sha256").update(
+          "ProofOfWork.Me/WORK-Q16-PENDING-MEMBERSHIP/v1\n[]").digest("hex") },
+    }),
+    bitcoinRpc: async (method) => {
+      assert.equal(method, "getrawmempool"); return { ok: true, result: [] };
+    },
+    workQ16PendingMembershipSnapshotReady: isolatedFunction(API_PATH,
+      "workQ16PendingMembershipSnapshotReady", {
+        compareCanonicalUtf8: (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)),
+        sha256Hex: (value) => createHash("sha256").update(value).digest("hex"),
+      }),
+    normalizeTokenScope: (value) => String(value ?? "").toLowerCase(),
     proofIndexReadFeatureEnabled: () => true,
     proofIndexWalletTokenOverlayPayload: async () => overlay,
     walletTokenOverlayHasExactCheckpoint,
@@ -22180,7 +22217,7 @@ check("empty bond summaries cannot cross bond-family identity", () => {
     "a partially matched declared WORK attachment must fail closed",
   );
   assert.match(
-    topLevelFunctionSource(API_PATH, "internalCanonicalSummaryPayload"),
+    topLevelFunctionSource(API_PATH, "internalCanonicalSummaryPayloadObserved"),
     /summaryPayloadHasFiniteNetworkValue\(\s*network,\s*key,\s*payload,?\s*\)/u,
     "canonical summary publication must validate every financial payload",
   );
@@ -31764,7 +31801,7 @@ check("exact canonical summaries require current conserved token balances", asyn
     "the reader historical transition audit must not detoast every payload",
   );
   assert.ok(
-    (migrationReadinessSource.match(/'payload', transition\.payload/gu) ?? [])
+    (migrationReadinessSource.match(/'payload', proof_indexer\.read_work_transition_payload_v1\(transition\.network,transition\.block_height,transition\.block_hash,transition\.payload\)/gu) ?? [])
       .length >= 2,
     "the reader must retain full activation and latest transition payload checks",
   );
@@ -80447,7 +80484,10 @@ check("WORK precision V2 compact checkpoints bound concurrency and cache only se
   const boundedFullAudit = isolatedFunction(
     READER_PATH,
     "workPrecisionV2MigrationFullAuditWithBound",
-    { workPrecisionV2MigrationFullAuditTail: Promise.resolve() },
+    { workPrecisionV2MigrationFullAuditQueue: isolatedFunction(
+      READER_PATH, "createAbortableReadinessAuditQueue",
+      { WalletRequestAsyncLocalStorage: AsyncLocalStorage },
+    )() },
   );
   const baseNow = Date.parse("2026-08-02T20:00:30.000Z");
   const tipHash = "d".repeat(64);
@@ -87495,7 +87535,7 @@ check("canonical summary persistence is compact and storage-budgeted", async () 
   );
   const canonicalSummarySource = topLevelFunctionSource(
     API_PATH,
-    "internalCanonicalSummaryPayload",
+    "internalCanonicalSummaryPayloadObserved",
   );
   assert.match(
     canonicalSummarySource,
@@ -88917,6 +88957,38 @@ check("exact Q16 INCB projection round trips with only a lossless Q8 compatibili
   }
 });
 
+
+check("audited invalid PWID projections normalize at the real replay writer boundary", () => {
+  const fixtures = JSON.parse(readFileSync(new URL("../server/fixtures/pwid-invalid-projections-20261112.json", import.meta.url)));
+  const bind = isolatedFunction(BACKFILL_PATH, "bindPreparedTransactionsToWorkAmoV5Replay", {
+    workAmoV5ReplayPositionKey: (value) => {
+      const p = value.position ?? value;
+      const position = { ...p, blockTransactionIndex: p.blockTransactionIndex ?? p.blockIndex };
+      return { position, key: [p.blockHeight, position.blockTransactionIndex, p.protocolVout, p.recordOrdinal].join(":") };
+    },
+    isHexTxid: (value) => /^[0-9a-f]{64}$/u.test(value),
+    normalizedLowerText: (value) => String(value ?? "").trim().toLowerCase(),
+    workAmoV5ConsensusEventKind,
+    workAmoV5ReplayProjectionFromOutput: (output) => output.projection,
+    invalidProtocolItem: isolatedFunction(BACKFILL_PATH, "invalidProtocolItem"),
+    workAmoV5ReplayFrozenTerms: () => null,
+    // These fixtures contain persisted canonical attribution, not full raw txs.
+    workAmoV5PwidRegistryAttribution: ({item}) => item.workAmoV5PwidRegistryAttribution,
+  });
+  for (const fixture of fixtures) {
+    const item = structuredClone(fixture.payload);
+    const record = { txid: item.txid, protocol: "pwid1", position: item.position,
+      rawCandidate: true, rawWitness: item.workAmoV5ReplayRawWitness,
+      outcome: item.workAmoV5ReplayOutcome, output: item.workAmoV5ReplayOutput };
+    const result = bind([{ txid: item.txid, items: [item] }], { replayRecords: [record] })[0].items[0];
+    assert.equal(result.kind, "id-event-invalid");
+    assert.equal(result.attemptedKind, item.workAmoV5ReplayOutput.projection.kind);
+    for (const field of ["payload", "reason", "reasonCode", "amountSats", "workAmoV5ReplayOutput",
+      "workAmoV5ReplayOutcome", "workAmoV5ReplayRawWitness", "workAmoV5RawScriptWitness"]) {
+      assert.deepEqual(JSON.parse(JSON.stringify(result[field])), JSON.parse(JSON.stringify(item[field])));
+    }
+  }
+});
 
 let failures = 0;
 for (const test of tests) {

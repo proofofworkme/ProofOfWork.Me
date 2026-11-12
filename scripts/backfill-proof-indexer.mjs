@@ -1,3 +1,4 @@
+import { canonicalPwidRejectionProjection } from "../server/pwid-rejection-projection.mjs";
 import { buildWorkBatchPayload, parseWorkBatchPayload } from "../src/shared/protocol/workBatch.mjs";
 import {
   isWorkTransferProjectionReference, prepareWorkTransferProjection,
@@ -25559,6 +25560,12 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
         nextItem.workAmoV5RawCandidate =
           replay.rawCandidate === true;
         nextItem._workAmoV5ReplayBound = true;
+        if (protocol === "pwid1" && replay.rawCandidate === true) {
+          nextItem = canonicalPwidRejectionProjection(
+            nextItem,
+            semanticProjection.kind,
+          );
+        }
       }
       // Storage-invalid raw text must be neutralized before adding any
       // deterministic enrichment. This keeps the byte witness intact while

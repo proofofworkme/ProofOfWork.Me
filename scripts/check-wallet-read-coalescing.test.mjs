@@ -184,8 +184,8 @@ test('private fixed-name clocks bound aggregates, reject sensitive names and tol
 
 test('actual wallet responses and proof counts survive a failing private observer', async () => {
   const observations = [];
-  const normal = entry({ observer: receipt => observations.push(receipt) });
-  const failed = entry({ observer: () => { throw Error('observer'); } });
+  const normal = entry({ clock: () => 1000, observer: receipt => observations.push(receipt) });
+  const failed = entry({ clock: () => 1000, observer: () => { throw Error('observer'); } });
   assert.deepEqual(await failed.call(), await normal.call());
   assert.deepEqual(failed.counts, normal.counts);
   assert.equal(observations.length, 2);
@@ -214,7 +214,7 @@ test('actual full-audit wrapper retains global serialization across distinct own
   assert.ok(output[1].phases['full-audit-queue-wait'].elapsedMs >= 8);
 });
 
-test('worker/backfill timing wrappers preserve confirmed-before-pending and publication ordering', async () => {
+test('canonical and instrumented worker/backfill preserve confirmed-before-pending and publication ordering', async () => {
   const worker = source('scripts/run-proof-indexer-worker.mjs','runCycle');
   const start = worker.indexOf('await runCanonicalBeforePending(');
   const end = worker.indexOf('\n  } else {',start);
@@ -231,10 +231,15 @@ test('worker/backfill timing wrappers preserve confirmed-before-pending and publ
   });
   await withPrivatePhaseTimings(() => new vm.Script(`(async()=>{${worker.slice(start,end)}})()`).runInContext(context), r => output.push(r));
   assert.deepEqual(order,['confirmed','summary','barrier','status','pending']);
-  assert.deepEqual(Object.keys(output[0].phases),['confirmed-scan','confirmed-summary','confirmed-barrier','pending-status','pending-scan']);
+  // Canonical source has no node-only timing overlay. When those wrappers are
+  // present, retain the exact phase contract; ordering is executed in both cases.
+  assert.deepEqual(Object.keys(output[0].phases), worker.slice(start,end).includes('measurePrivatePhase(')
+    ? ['confirmed-scan','confirmed-summary','confirmed-barrier','pending-status','pending-scan'] : []);
   const backfill = readFileSync('scripts/backfill-proof-indexer.mjs','utf8');
-  const verifierStart = backfill.indexOf('const stageResponse = await measurePrivatePhase("pending-verifier"');
+  const verifierStart = backfill.indexOf('const stageResponse = await ');
+  assert.ok(verifierStart >= 0, 'actual pending stage response must exist');
   const persistenceEnd = backfill.indexOf('\n      if (!pendingWitness)',verifierStart);
+  assert.ok(persistenceEnd > verifierStart, 'publication fragment must not be empty');
   const publishOrder = [];
   await withPrivatePhaseTimings(() => new vm.Script(`(async()=>{let pendingWitness;${backfill.slice(verifierStart,persistenceEnd)}return pendingWitness;})()`).runInNewContext({
     measurePrivatePhase, stagePlan:{request:{},publishEligible:true},scanComplete:true,client:{},

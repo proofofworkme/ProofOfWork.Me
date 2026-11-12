@@ -149,6 +149,12 @@ let fixture;
 const dependencies = {
   bitcoin, Buffer, DUST_SATS: 546, MAX_DATA_CARRIER_BYTES: 100000,
   ...wallet, ...boostNumeric,
+  readPowcatReservedInputs: async (network, address) => {
+    assert.equal(network, "livenet");
+    assert.equal(address, fromAddress);
+    if (fixture.reservationError) throw fixture.reservationError;
+    return fixture.reservations ?? [];
+  },
   fetchUtxos: async () => fixture.entries.map(entry => entry.utxo),
   fetchFreshProofOfWorkListingAnchorOutpoints: async () => [],
   mergeListingAnchorOutpoints: (left, right) => [...left, ...right],
@@ -218,10 +224,11 @@ for (const [values, preferChange, fee, outputValues, size] of [
   assert.equal(prepared.estimatedEffectiveFeeRate, fee / size);
   unsignedFixtures++;
 }
-for (const exclusion of ["reserved", "pending"]) {
+for (const exclusion of ["reserved", "pending", "upload-reserved"]) {
   setFixtures([546, 546, 546]);
   const extra = fixture.entries[2].utxo;
   if (exclusion === "pending") extra.status.confirmed = false;
+  if (exclusion === "upload-reserved") fixture.reservations = [`${extra.txid}:${extra.vout}`];
   const prepared = await boost.buildBoostPaymentPsbt({ feeRate: 0.15, preferChange: true,
     excludeOutpoints: exclusion === "reserved" ? [{ txid: extra.txid, vout: extra.vout }] : [],
     fromAddress, network: "livenet", payments: [{ address: toAddress, amountSats: 546 }], protocolPayloads: [payload] });
@@ -229,6 +236,12 @@ for (const exclusion of ["reserved", "pending"]) {
   assert.equal(prepared.inputCount, 2, "change preference cannot spend reserved or unconfirmed funds");
   unsignedFixtures++;
 }
+// An unavailable reservation journal must fail closed, not create a PSBT.
+setFixture(100000);
+fixture.reservationError = new Error("Reservation journal unavailable");
+await assert.rejects(() => boost.buildBoostPaymentPsbt({ feeRate: 0.15,
+  fromAddress, network: "livenet", payments: [{ address: toAddress, amountSats: 546 }],
+  protocolPayloads: [payload] }), /Reservation journal unavailable/);
 setFixture(1168);
 assert.throws(() => app.buildChainedMintPsbt({ feeRate: 0.28, fromAddress, network: "livenet", isLast: false,
   inputs: [{ ...fixture.utxo, previousOutput: fixture.previous.outs[0], previousTxHex: fixture.previous.toHex() }],
@@ -268,5 +281,34 @@ for (const [rate, expected] of [[0.28, 77], [0.123456789, null], [1e21, null]]) 
   assert.equal(expression(text(appSource, disabled), { canPrepareTransferUtxos: true,
     estimatedTransferSplitFeeSats: transfer }), expected === null);
 }
-console.log(JSON.stringify({ ok: true, rationalVectors: vectors, unsignedPsbtFixtures: unsignedFixtures,
+// Listing and transfer must agree on availability; a missing capacity is not zero.
+const spendableLabelNode = unique(appSource, node => ts.isJsxElement(node) &&
+  node.openingElement.tagName.getText(appSource.tree) === "strong" &&
+  text(appSource, node).includes("{listSpendableBalanceLabel}"));
+let balanceStateFixtures = 0;
+for (const [connected, ready, error, amount, atoms, expected] of [
+  [false, false, "", 0, undefined, "Connect UniSat"],
+  [true, false, "", 0, undefined, "Loading"],
+  [true, false, "Capacity unavailable", 0, undefined, "Unavailable"],
+  [true, true, "", 0, "0", "0 WORK"],
+  [true, true, "", 1, "10000000000000001", "10000000000000001 WORK"],
+]) {
+  let displayCalls = 0;
+  const label = expression(initializer(appSource, "listSpendableBalanceLabel"), {
+    walletConnected: connected, transferBalanceReady: ready, transferBalanceError: error,
+    transferToken: { ticker: "WORK" }, listSpendableBalance: amount,
+    listSpendableBalanceAtoms: atoms,
+    tokenAmountDisplay: (_token, value, _unused, exactAtoms) => {
+      displayCalls++; assert.equal(value, amount); assert.equal(exactAtoms, atoms);
+      return exactAtoms ?? String(value);
+    },
+  });
+  assert.equal(label, expected);
+  assert.equal(displayCalls, connected && ready ? 1 : 0);
+  assert.equal(renderToStaticMarkup(expression(text(appSource, spendableLabelNode), {
+    React, listSpendableBalanceLabel: label,
+  })), `<strong>${expected}</strong>`);
+  balanceStateFixtures++;
+}
+console.log(JSON.stringify({ ok: true, rationalVectors: vectors, unsignedPsbtFixtures: unsignedFixtures, balanceStateFixtures,
   scope: "Actual wallet, Computer, Boost and chained-mint source; exact fees, dust, bounds and safe preview rendering. Local unsigned fixtures only; no network, signature or broadcast." }));

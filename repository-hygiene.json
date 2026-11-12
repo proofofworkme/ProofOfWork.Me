@@ -244,6 +244,7 @@
       "WORK_MAIL_BATCH_SENDS.md"
     ],
     "support-notes": [
+      "AUDIT_TRANSITIONS.md",
       "deploy/jobs/README.md",
       "deploy/browser-dns/README.md",
       "deploy/dns-verification/README.md",

@@ -56,13 +56,24 @@ export function withPrivateRequestContext(run, { makeId = opaqueId } = {}) {
   const requestId = safeId(makeId);
   return requestId ? requestScope.run({ requestId, work: 'request' }, run) : run();
 }
+// Whitelisted routing flags only; never emit query strings, keys or checkpoint hashes.
+export function canonicalSummaryReadClass(url) {
+  if (url.pathname !== '/api/v1/internal/canonical-summary') return undefined;
+  const storedExact = url.searchParams.get('storedExact') === '1';
+  return Object.freeze({ mode: storedExact ? 'stored-exact' : 'live-build',
+    transport: !storedExact && url.searchParams.get('workProjectionTransport') === 'v1' ? 'projection-v1' : 'json',
+    checkpointRequested: url.searchParams.has('checkpointHeight') || url.searchParams.has('checkpointHash') });
+}
 export function observePrivateHttpRequest(request, response, handle, { observer = receipt => console.log(JSON.stringify(receipt)), makeId = opaqueId } = {}) {
   return withPrivateRequestContext(() => {
     const context = requestScope.getStore();
     const started = Date.now();
     let route = 'other';
     try {
-      const path = new URL(request.url ?? '/', 'http://localhost').pathname;
+      const url = new URL(request.url ?? '/', 'http://localhost');
+      const path = url.pathname;
+      const summaryClass = canonicalSummaryReadClass(url);
+      if (context && summaryClass) context.summaryClass = summaryClass;
       if (['/health', '/api/v1/token', '/api/v1/token-summary', '/api/v1/token-history', '/api/v1/marketplace-summary', '/api/v1/health',
         '/api/v1/registry', '/api/v1/ids', '/api/v1/registry-summary', '/api/v1/ids-summary', '/api/v1/dns', '/api/v1/dns-summary', '/api/v1/log', '/api/v1/log-summary',
         '/api/v1/activity', '/api/v1/activity-summary', '/api/v1/work-summary', '/api/v1/work-floor', '/api/v1/growth-summary',
@@ -122,6 +133,7 @@ export function createWalletReadCoalescer({ makeId = opaqueId, observer = defaul
 }
 
 const phases = new Set([
+  "canonical-summary-build", "canonical-summary-checkpoint-before", "canonical-summary-ledger", "canonical-summary-checkpoint-after", "registry-hydration-admission", "registry-raw-transaction", "registry-prevouts",
   "registry-final-electrum", "registry-final-core", "registry-final-history", "registry-final-pending", "registry-listing-fence", "registry-pending-sql", "registry-replay", "registry-pending-hydration", "registry-confirmed-hydration", "registry-initial-pending", "registry-initial-history", "registry-initial-electrum", "registry-initial-core", "registry-transaction-rpc", "registry-block-rpc", "registry-build", "registry-join-wait",
   'snapshot-client-wait', 'snapshot-open', 'snapshot-assembly', 'snapshot-sql-wait',
   'full-audit-queue-wait', 'full-audit-execution', 'wallet-supply', 'wallet-capacity',

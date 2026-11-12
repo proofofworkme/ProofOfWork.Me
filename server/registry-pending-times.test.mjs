@@ -393,6 +393,8 @@ test("wallet Q16 unavailable diagnostics identify the failed gate and preserve f
     const diagnostics = [];
     let exactCalls = 0;
     const reader = isolated(readerFunctions, ["payloadWithCurrentWorkPrecisionReadPolicy"], {
+      // Standalone read: no request-scoped snapshot is active.
+      walletReadSnapshot: { getStore: () => undefined },
       WORK_SUBATOM_PROJECTION_MODEL: "work-subatoms-v2",
       isWorkTokenId: (value) => value === "work",
       configuredWorkPrecisionV2ReaderPins: () => fixture.pins === null

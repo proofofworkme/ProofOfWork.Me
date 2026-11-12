@@ -168,7 +168,9 @@ loaded rows; incomplete counts remain qualified. Notification navigation must
 preserve the departing draft and existing signing/navigation guards.
 
 Disconnected, loading, empty, pending, unavailable, stale, and confirmed states
-are distinct product states. An unverified read is not a confirmed zero. A calm
+are distinct product states. An unverified read is not a confirmed zero. Listing
+Spendable uses the same readiness/error state as transfer: loading or unavailable
+capacity must not render a numeric zero, while verified zero remains visible. A calm
 interface must still explain errors, uncertainty, incomplete coverage, and
 recovery actions. Preserve wallet/network scope and draft recovery when changing
 layout or presentation. No visual cleanup may silently sign, send, retry, clear

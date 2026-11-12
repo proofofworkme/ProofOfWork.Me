@@ -590,3 +590,15 @@ bundle remains unresolved and retryable; absence alone cannot establish a
 terminal-invalid outcome. Reaccepted records must pass current verification
 before a dropped projection returns to pending. Exact retained observation
 times survive that transition, independently of the current Core admission.
+
+### Canonical invalid PWID projection
+
+Post-activation raw replay rejections use the relational kind
+`id-event-invalid` and retain their exact semantic action in `attemptedKind`.
+The projection does not reinterpret a rejection as accepted. Raw transaction
+and script witnesses, replay outputs, rejection reasons, canonical positions,
+registry attribution and protocol state remain unchanged. Strict audits still
+require every rejection to match its exact canonical replay and byte witness.
+Historical projection corrections require explicit approval and exact,
+recoverable preimage/postimage fences; a writer fix alone does not authorize
+a historical replay or migration.

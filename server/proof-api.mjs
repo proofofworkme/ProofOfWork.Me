@@ -15273,9 +15273,9 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
     bitcoinRpcHydrationProducer(options.rpcHydrationProducer === "pending-verifier"
       ? "pending-verifier" : "transaction-read");
   const releaseHydration = options.includePrevouts === false
-    ? null : await bitcoinRpcAcquireHydrationSlot(producer);
+    ? null : await measurePrivateRegistryPhase("registry-hydration-admission", () => bitcoinRpcAcquireHydrationSlot(producer));
   try {
-    const response = await bitcoinRpc("getrawtransaction", [normalizedTxid, true]);
+    const response = await measurePrivateRegistryPhase("registry-raw-transaction", () => bitcoinRpc("getrawtransaction", [normalizedTxid, true]));
     if (!response) {
       if (options.strictAvailability === true) {
         throw transactionLookupUnavailableError(
@@ -15363,7 +15363,7 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
     const vout = (Array.isArray(raw.vout) ? raw.vout : []).map(
       coreVoutToMempoolVout,
     );
-    const vin = await mapWithConcurrencyStopAndDrain(
+    const vin = await measurePrivateRegistryPhase("registry-prevouts", () => mapWithConcurrencyStopAndDrain(
       Array.isArray(raw.vin) ? raw.vin : [],
       options.requireCanonicalPrevouts
         ? Math.min(2, Math.max(1, TX_FETCH_CONCURRENCY))
@@ -15408,7 +15408,7 @@ async function fetchTransactionFromBitcoinRpc(txid, network, options = {}) {
         }
         return nextInput;
       },
-    );
+    ));
     if (
       options.includeRawHex === true &&
       (
@@ -54523,6 +54523,10 @@ async function exactCanonicalSummaryCheckpoint(network, options = {}) {
 }
 
 async function internalCanonicalSummaryPayload(network, options = {}) {
+  return withPrivatePhaseTimings(() => measurePrivatePhase("canonical-summary-build", () => internalCanonicalSummaryPayloadObserved(network, options)));
+}
+
+async function internalCanonicalSummaryPayloadObserved(network, options = {}) {
   const { priorPendingSnapshot, pendingLogHash } = options;
   let pendingLogRevision;
   if (priorPendingSnapshot || pendingLogHash) {
@@ -54536,12 +54540,12 @@ async function internalCanonicalSummaryPayload(network, options = {}) {
   // A pending observation can revise only the live tip. Historical H-1 barriers
   // continue to use their own confirmed checkpoint and immutable oracle rules.
   const checkpointOptions = pendingLogRevision ? {} : options;
-  const before = await exactCanonicalSummaryCheckpoint(network, checkpointOptions);
+  const before = await measurePrivatePhase("canonical-summary-checkpoint-before", () => exactCanonicalSummaryCheckpoint(network, checkpointOptions));
   if (pendingLogRevision && (before.indexedThroughBlock !== Number(options.checkpointHeight) ||
       before.tipHash !== options.checkpointHash)) {
     throw freshDataUnavailableError("The requested pending Log checkpoint is no longer at the live tip.");
   }
-  const ledger = await buildIndexedCanonicalLedgerPayload(
+  const ledger = await measurePrivatePhase("canonical-summary-ledger", () => buildIndexedCanonicalLedgerPayload(
     network,
     "internal canonical summary",
     {
@@ -54549,7 +54553,7 @@ async function internalCanonicalSummaryPayload(network, options = {}) {
       exactHeight: before.indexedThroughBlock,
       replayVerifierBinding: options.replayVerifierBinding,
     },
-  );
+  ));
   if (
     !ledger ||
     ledger?.consistency?.ok !== true ||
@@ -54662,7 +54666,7 @@ async function internalCanonicalSummaryPayload(network, options = {}) {
     }
   }
 
-  const after = await exactCanonicalSummaryCheckpoint(network, checkpointOptions);
+  const after = await measurePrivatePhase("canonical-summary-checkpoint-after", () => exactCanonicalSummaryCheckpoint(network, checkpointOptions));
   if (
     after.indexedThroughBlock !== before.indexedThroughBlock ||
     after.tipHash !== before.tipHash

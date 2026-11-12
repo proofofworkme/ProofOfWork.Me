@@ -43132,6 +43132,18 @@ function TokenWalletWorkspace({
         ? "Unavailable"
         : "Loading";
   const listSpendableBalanceAtoms = selectedWalletSpendableBalanceAtoms;
+  const listSpendableBalanceLabel = !walletConnected
+    ? "Connect UniSat"
+    : transferBalanceReady
+    ? `${tokenAmountDisplay(
+        transferToken ?? {},
+        listSpendableBalance,
+        undefined,
+        listSpendableBalanceAtoms,
+      )} ${transferToken?.ticker ?? "TOKEN"}`
+    : transferBalanceError
+    ? "Unavailable"
+    : "Loading";
   const parsedListAmount = selectedListToken
     ? tokenAmountInput(selectedListToken, listAmount)
     : null;
@@ -43978,14 +43990,7 @@ function TokenWalletWorkspace({
               <div>
                 <span>Spendable</span>
                 <strong>
-                  {!walletConnected
-                    ? "Connect UniSat"
-                    : `${tokenAmountDisplay(
-                        transferToken ?? {},
-                        listSpendableBalance,
-                        undefined,
-                        listSpendableBalanceAtoms,
-                      )} ${transferToken?.ticker ?? "TOKEN"}`}
+                  {listSpendableBalanceLabel}
                 </strong>
               </div>
               <div>

@@ -1,0 +1,566 @@
+[
+  {
+    "eventId": 4982114,
+    "txid": "a60c4a8ae14cddd48873e6ea611d517a3d7541475ab4e9b41d6ccc437ab37e6d",
+    "height": 971676,
+    "kind": "id-seal-invalid",
+    "errors": [
+      "work-amo-v5-id-seal-invalid"
+    ],
+    "payload": {
+      "kind": "id-seal-invalid",
+      "txid": "a60c4a8ae14cddd48873e6ea611d517a3d7541475ab4e9b41d6ccc437ab37e6d",
+      "valid": false,
+      "parsed": {
+        "kind": "id-seal",
+        "listingId": "099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94",
+        "saleAuthorization": {
+          "id": "21",
+          "nonce": "mv9f7q6q-p74ks7njou",
+          "version": "pwid-sale-v4",
+          "priceSats": 2000,
+          "signature": "",
+          "anchorTxid": "099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94",
+          "anchorType": "sale-ticket-v1",
+          "anchorVout": 2,
+          "buyerAddress": "1AprkmYaHmquY4HBGYbBC5aY6qrUuiULYe",
+          "sellerAddress": "bc1phtdacdqdfq98xtr365lsuv43erzs43543mexq4upe3phfmfmqvnqgfdv6z",
+          "anchorSignature": "17afeb8a0b2b9abf3fa84733163bcf4c62cb6dd91c2133d096f1ee29cb490565b69c89c42da041b3ebad17833463bcb902a324bb36660b87811784ef0460334083",
+          "anchorValueSats": 546,
+          "sellerPublicKey": "0250a5eef62ba89834032030d632062efad568ba594f0c13211a00a70bcfc05ac5",
+          "anchorSigHashType": 131,
+          "anchorScriptPubKey": "5120badbdc340d480a732c71d53f0e32b1c8c50ac6958ef2605781cc4374ed3b0326"
+        }
+      },
+      "reason": "work-amo-v5-id-seal-invalid",
+      "status": "confirmed",
+      "derived": [],
+      "dropped": false,
+      "network": "livenet",
+      "payload": "pwid1:seal5:099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94:eyJhbmNob3JTY3JpcHRQdWJLZXkiOiI1MTIwYmFkYmRjMzQwZDQ4MGE3MzJjNzFkNTNmMGUzMmIxYzhjNTBhYzY5NThlZjI2MDU3ODFjYzQzNzRlZDNiMDMyNiIsImFuY2hvclNpZ0hhc2hUeXBlIjoxMzEsImFuY2hvclR5cGUiOiJzYWxlLXRpY2tldC12MSIsImFuY2hvclZhbHVlU2F0cyI6NTQ2LCJhbmNob3JWb3V0IjoyLCJidXllckFkZHJlc3MiOiIxQXBya21ZYUhtcXVZNEhCR1liQkM1YVk2cXJVdWlVTFllIiwiaWQiOiIyMSIsIm5vbmNlIjoibXY5ZjdxNnEtcDc0a3M3bmpvdSIsInByaWNlU2F0cyI6MjAwMCwic2VsbGVyQWRkcmVzcyI6ImJjMXBodGRhY2RxZGZxOTh4dHIzNjVsc3V2NDNlcnpzNDM1NDNtZXhxNHVwZTNwaGZtZm1xdm5xZ2ZkdjZ6Iiwic2VsbGVyUHVibGljS2V5IjoiMDI1MGE1ZWVmNjJiYTg5ODM0MDMyMDMwZDYzMjA2MmVmYWQ1NjhiYTU5NGYwYzEzMjExYTAwYTcwYmNmYzA1YWM1Iiwic2lnbmF0dXJlIjoiIiwidmVyc2lvbiI6InB3aWQtc2FsZS12NCIsImFuY2hvclNpZ25hdHVyZSI6IjE3YWZlYjhhMGIyYjlhYmYzZmE4NDczMzE2M2JjZjRjNjJjYjZkZDkxYzIxMzNkMDk2ZjFlZTI5Y2I0OTA1NjViNjljODljNDJkYTA0MWIzZWJhZDE3ODMzNDYzYmNiOTAyYTMyNGJiMzY2NjBiODc4MTE3ODRlZjA0NjAzMzQwODMiLCJhbmNob3JUeGlkIjoiMDk5Zjc5ZTg2ZjhmODQ5MTAwZWMwMzRiYTVlYWFlMDA3MzNlOTZhNGU3YTRkMTNiZTg2MzRjMTE2OGEyZWM5NCJ9",
+      "position": {
+        "blockHash": "00000000000000000000e2cc2ef5deb12463a3a321c3b86857c407ebc48f6e30",
+        "blockHeight": 971676,
+        "protocolVout": 1,
+        "recordOrdinal": 0,
+        "blockTransactionIndex": 2848
+      },
+      "protocol": "pwid1",
+      "blockHash": "00000000000000000000e2cc2ef5deb12463a3a321c3b86857c407ebc48f6e30",
+      "blockTime": "2026-10-16T06:08:20.000Z",
+      "confirmed": true,
+      "createdAt": "2026-10-16T06:08:20.000Z",
+      "dataBytes": 1053,
+      "listingId": "099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94",
+      "timestamp": "2026-10-16T06:08:20.000Z",
+      "amountSats": "0",
+      "blockIndex": 2848,
+      "reasonCode": "work-amo-v5-id-seal-invalid",
+      "recipients": [
+        {
+          "vout": 0,
+          "address": "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
+          "amountSats": "546"
+        }
+      ],
+      "blockHeight": 971676,
+      "indexedFrom": "log",
+      "participants": [
+        "bc1phtdacdqdfq98xtr365lsuv43erzs43543mexq4upe3phfmfmqvnqgfdv6z"
+      ],
+      "protocolVout": 1,
+      "recordOrdinal": 0,
+      "senderAddress": "bc1phtdacdqdfq98xtr365lsuv43erzs43543mexq4upe3phfmfmqvnqgfdv6z",
+      "_powEventIndex": 0,
+      "validationMode": "canonical-first-party-state",
+      "canonicalVerifier": "/api/v1/internal/work-amo-v5-block-verifier",
+      "_workAmoV5ReplayBound": true,
+      "workAmoV5RawCandidate": true,
+      "workAmoV5ReplayOutput": {
+        "projection": {
+          "kind": "id-seal",
+          "txid": "a60c4a8ae14cddd48873e6ea611d517a3d7541475ab4e9b41d6ccc437ab37e6d",
+          "valid": false,
+          "parsed": {
+            "kind": "id-seal",
+            "listingId": "099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94",
+            "saleAuthorization": {
+              "id": "21",
+              "nonce": "mv9f7q6q-p74ks7njou",
+              "version": "pwid-sale-v4",
+              "priceSats": 2000,
+              "signature": "",
+              "anchorTxid": "099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94",
+              "anchorType": "sale-ticket-v1",
+              "anchorVout": 2,
+              "buyerAddress": "1AprkmYaHmquY4HBGYbBC5aY6qrUuiULYe",
+              "sellerAddress": "bc1phtdacdqdfq98xtr365lsuv43erzs43543mexq4upe3phfmfmqvnqgfdv6z",
+              "anchorSignature": "17afeb8a0b2b9abf3fa84733163bcf4c62cb6dd91c2133d096f1ee29cb490565b69c89c42da041b3ebad17833463bcb902a324bb36660b87811784ef0460334083",
+              "anchorValueSats": 546,
+              "sellerPublicKey": "0250a5eef62ba89834032030d632062efad568ba594f0c13211a00a70bcfc05ac5",
+              "anchorSigHashType": 131,
+              "anchorScriptPubKey": "5120badbdc340d480a732c71d53f0e32b1c8c50ac6958ef2605781cc4374ed3b0326"
+            }
+          },
+          "derived": [],
+          "position": {
+            "blockHash": "00000000000000000000e2cc2ef5deb12463a3a321c3b86857c407ebc48f6e30",
+            "blockHeight": 971676,
+            "protocolVout": 1,
+            "recordOrdinal": 0,
+            "blockTransactionIndex": 2848
+          },
+          "protocol": "pwid1",
+          "reasonCode": "work-amo-v5-id-seal-invalid"
+        }
+      },
+      "workAmoV5ReplayOutcome": {
+        "kind": "pwid1-invalid",
+        "valid": false,
+        "reasonCode": "work-amo-v5-id-seal-invalid"
+      },
+      "workAmoV5RawDecodeValid": true,
+      "workAmoV5RawScriptWitness": {
+        "payloadHex": "70776964313a7365616c353a303939663739653836663866383439313030656330333462613565616165303037333365393661346537613464313362653836333463313136386132656339343a65794a68626d4e6f62334a5459334a706348525164574a4c5a586b694f6949314d544977596d466b596d526a4d7a51775a4451344d4745334d7a4a6a4e7a466b4e544e6d4d47557a4d6d4978597a686a4e544268597a59354e54686c5a6a49324d4455334f44466a597a517a4e7a526c5a444e694d444d794e694973496d467559326876636c4e705a306868633268556558426c496a6f784d7a4573496d467559326876636c5235634755694f694a7a5957786c4c5852705932746c644331324d534973496d467559326876636c5a686248566c55324630637949364e5451324c434a68626d4e6f62334a5762335630496a6f794c434a6964586c6c636b466b5a484a6c63334d694f694978515842796132315a595568746358565a4e45684352316c69516b4d3159566b3263584a5664576c5654466c6c49697769615751694f6949794d534973496d3576626d4e6c496a6f69625859355a6a64784e6e45746344633061334d33626d707664534973496e427961574e6c55324630637949364d6a41774d43776963325673624756795157526b636d567a63794936496d4a6a4d58426f64475268593252785a475a784f5468346448497a4e6a5673633356324e444e6c636e707a4e444d314e444e745a5868784e4856775a544e7761475a745a6d3178646d35785a325a6b646a5a364969776963325673624756795548566962476c6a53325635496a6f694d4449314d4745315a57566d4e6a4a69595467354f444d304d444d794d444d775a44597a4d6a41324d6d566d595751314e6a6869595455354e475977597a457a4d6a45785954417759546377596d4e6d597a413159574d314969776963326c6e626d463064584a6c496a6f6949697769646d567963326c7662694936496e423361575174633246735a5331324e434973496d467559326876636c4e705a323568644856795a534936496a453359575a6c596a68684d474979596a6c68596d597a5a6d45344e44637a4d7a45324d324a6a5a6a526a4e6a4a6a596a5a6b5a446b78597a49784d7a4e6b4d446b325a6a466c5a544935593249304f5441314e6a56694e6a6c6a4f446c6a4e444a6b595441304d57497a5a574a685a4445334f444d7a4e44597a596d4e694f54417959544d794e474a694d7a59324e6a42694f4463344d5445334f44526c5a6a41304e6a417a4d7a51774f444d694c434a68626d4e6f62334a5565476c6b496a6f694d446b355a6a63355a5467325a6a686d4f4451354d5441775a574d774d7a52695954566c5957466c4d4441334d7a4e6c4f545a684e4755335954526b4d544e695a5467324d7a526a4d5445324f4745795a574d354e434a39",
+        "reasonCode": "",
+        "decodeValid": true,
+        "decodeDetail": "",
+        "scriptPubKeyHex": "6a4d1d0470776964313a7365616c353a303939663739653836663866383439313030656330333462613565616165303037333365393661346537613464313362653836333463313136386132656339343a65794a68626d4e6f62334a5459334a706348525164574a4c5a586b694f6949314d544977596d466b596d526a4d7a51775a4451344d4745334d7a4a6a4e7a466b4e544e6d4d47557a4d6d4978597a686a4e544268597a59354e54686c5a6a49324d4455334f44466a597a517a4e7a526c5a444e694d444d794e694973496d467559326876636c4e705a306868633268556558426c496a6f784d7a4573496d467559326876636c5235634755694f694a7a5957786c4c5852705932746c644331324d534973496d467559326876636c5a686248566c55324630637949364e5451324c434a68626d4e6f62334a5762335630496a6f794c434a6964586c6c636b466b5a484a6c63334d694f694978515842796132315a595568746358565a4e45684352316c69516b4d3159566b3263584a5664576c5654466c6c49697769615751694f6949794d534973496d3576626d4e6c496a6f69625859355a6a64784e6e45746344633061334d33626d707664534973496e427961574e6c55324630637949364d6a41774d43776963325673624756795157526b636d567a63794936496d4a6a4d58426f64475268593252785a475a784f5468346448497a4e6a5673633356324e444e6c636e707a4e444d314e444e745a5868784e4856775a544e7761475a745a6d3178646d35785a325a6b646a5a364969776963325673624756795548566962476c6a53325635496a6f694d4449314d4745315a57566d4e6a4a69595467354f444d304d444d794d444d775a44597a4d6a41324d6d566d595751314e6a6869595455354e475977597a457a4d6a45785954417759546377596d4e6d597a413159574d314969776963326c6e626d463064584a6c496a6f6949697769646d567963326c7662694936496e423361575174633246735a5331324e434973496d467559326876636c4e705a323568644856795a534936496a453359575a6c596a68684d474979596a6c68596d597a5a6d45344e44637a4d7a45324d324a6a5a6a526a4e6a4a6a596a5a6b5a446b78597a49784d7a4e6b4d446b325a6a466c5a544935593249304f5441314e6a56694e6a6c6a4f446c6a4e444a6b595441304d57497a5a574a685a4445334f444d7a4e44597a596d4e694f54417959544d794e474a694d7a59324e6a42694f4463344d5445334f44526c5a6a41304e6a417a4d7a51774f444d694c434a68626d4e6f62334a5565476c6b496a6f694d446b355a6a63355a5467325a6a686d4f4451354d5441775a574d774d7a52695954566c5957466c4d4441334d7a4e6c4f545a684e4755335954526b4d544e695a5467324d7a526a4d5445324f4745795a574d354e434a39"
+      },
+      "workAmoV5ReplayRawWitness": {
+        "model": "canonical-raw-protocol-record-v1",
+        "rawRecordParts": [
+          {
+            "text": "pwid1:seal5:099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94:eyJhbmNob3JTY3JpcHRQdWJLZXkiOiI1MTIwYmFkYmRjMzQwZDQ4MGE3MzJjNzFkNTNmMGUzMmIxYzhjNTBhYzY5NThlZjI2MDU3ODFjYzQzNzRlZDNiMDMyNiIsImFuY2hvclNpZ0hhc2hUeXBlIjoxMzEsImFuY2hvclR5cGUiOiJzYWxlLXRpY2tldC12MSIsImFuY2hvclZhbHVlU2F0cyI6NTQ2LCJhbmNob3JWb3V0IjoyLCJidXllckFkZHJlc3MiOiIxQXBya21ZYUhtcXVZNEhCR1liQkM1YVk2cXJVdWlVTFllIiwiaWQiOiIyMSIsIm5vbmNlIjoibXY5ZjdxNnEtcDc0a3M3bmpvdSIsInByaWNlU2F0cyI6MjAwMCwic2VsbGVyQWRkcmVzcyI6ImJjMXBodGRhY2RxZGZxOTh4dHIzNjVsc3V2NDNlcnpzNDM1NDNtZXhxNHVwZTNwaGZtZm1xdm5xZ2ZkdjZ6Iiwic2VsbGVyUHVibGljS2V5IjoiMDI1MGE1ZWVmNjJiYTg5ODM0MDMyMDMwZDYzMjA2MmVmYWQ1NjhiYTU5NGYwYzEzMjExYTAwYTcwYmNmYzA1YWM1Iiwic2lnbmF0dXJlIjoiIiwidmVyc2lvbiI6InB3aWQtc2FsZS12NCIsImFuY2hvclNpZ25hdHVyZSI6IjE3YWZlYjhhMGIyYjlhYmYzZmE4NDczMzE2M2JjZjRjNjJjYjZkZDkxYzIxMzNkMDk2ZjFlZTI5Y2I0OTA1NjViNjljODljNDJkYTA0MWIzZWJhZDE3ODMzNDYzYmNiOTAyYTMyNGJiMzY2NjBiODc4MTE3ODRlZjA0NjAzMzQwODMiLCJhbmNob3JUeGlkIjoiMDk5Zjc5ZTg2ZjhmODQ5MTAwZWMwMzRiYTVlYWFlMDA3MzNlOTZhNGU3YTRkMTNiZTg2MzRjMTE2OGEyZWM5NCJ9",
+            "prefix": "pwid1:",
+            "payloadHex": "70776964313a7365616c353a303939663739653836663866383439313030656330333462613565616165303037333365393661346537613464313362653836333463313136386132656339343a65794a68626d4e6f62334a5459334a706348525164574a4c5a586b694f6949314d544977596d466b596d526a4d7a51775a4451344d4745334d7a4a6a4e7a466b4e544e6d4d47557a4d6d4978597a686a4e544268597a59354e54686c5a6a49324d4455334f44466a597a517a4e7a526c5a444e694d444d794e694973496d467559326876636c4e705a306868633268556558426c496a6f784d7a4573496d467559326876636c5235634755694f694a7a5957786c4c5852705932746c644331324d534973496d467559326876636c5a686248566c55324630637949364e5451324c434a68626d4e6f62334a5762335630496a6f794c434a6964586c6c636b466b5a484a6c63334d694f694978515842796132315a595568746358565a4e45684352316c69516b4d3159566b3263584a5664576c5654466c6c49697769615751694f6949794d534973496d3576626d4e6c496a6f69625859355a6a64784e6e45746344633061334d33626d707664534973496e427961574e6c55324630637949364d6a41774d43776963325673624756795157526b636d567a63794936496d4a6a4d58426f64475268593252785a475a784f5468346448497a4e6a5673633356324e444e6c636e707a4e444d314e444e745a5868784e4856775a544e7761475a745a6d3178646d35785a325a6b646a5a364969776963325673624756795548566962476c6a53325635496a6f694d4449314d4745315a57566d4e6a4a69595467354f444d304d444d794d444d775a44597a4d6a41324d6d566d595751314e6a6869595455354e475977597a457a4d6a45785954417759546377596d4e6d597a413159574d314969776963326c6e626d463064584a6c496a6f6949697769646d567963326c7662694936496e423361575174633246735a5331324e434973496d467559326876636c4e705a323568644856795a534936496a453359575a6c596a68684d474979596a6c68596d597a5a6d45344e44637a4d7a45324d324a6a5a6a526a4e6a4a6a596a5a6b5a446b78597a49784d7a4e6b4d446b325a6a466c5a544935593249304f5441314e6a56694e6a6c6a4f446c6a4e444a6b595441304d57497a5a574a685a4445334f444d7a4e44597a596d4e694f54417959544d794e474a694d7a59324e6a42694f4463344d5445334f44526c5a6a41304e6a417a4d7a51774f444d694c434a68626d4e6f62334a5565476c6b496a6f694d446b355a6a63355a5467325a6a686d4f4451354d5441775a574d774d7a52695954566c5957466c4d4441334d7a4e6c4f545a684e4755335954526b4d544e695a5467324d7a526a4d5445324f4745795a574d354e434a39",
+            "reasonCode": "",
+            "decodeValid": true,
+            "decodeDetail": "",
+            "protocolVout": 1,
+            "scriptPubKeyHex": "6a4d1d0470776964313a7365616c353a303939663739653836663866383439313030656330333462613565616165303037333365393661346537613464313362653836333463313136386132656339343a65794a68626d4e6f62334a5459334a706348525164574a4c5a586b694f6949314d544977596d466b596d526a4d7a51775a4451344d4745334d7a4a6a4e7a466b4e544e6d4d47557a4d6d4978597a686a4e544268597a59354e54686c5a6a49324d4455334f44466a597a517a4e7a526c5a444e694d444d794e694973496d467559326876636c4e705a306868633268556558426c496a6f784d7a4573496d467559326876636c5235634755694f694a7a5957786c4c5852705932746c644331324d534973496d467559326876636c5a686248566c55324630637949364e5451324c434a68626d4e6f62334a5762335630496a6f794c434a6964586c6c636b466b5a484a6c63334d694f694978515842796132315a595568746358565a4e45684352316c69516b4d3159566b3263584a5664576c5654466c6c49697769615751694f6949794d534973496d3576626d4e6c496a6f69625859355a6a64784e6e45746344633061334d33626d707664534973496e427961574e6c55324630637949364d6a41774d43776963325673624756795157526b636d567a63794936496d4a6a4d58426f64475268593252785a475a784f5468346448497a4e6a5673633356324e444e6c636e707a4e444d314e444e745a5868784e4856775a544e7761475a745a6d3178646d35785a325a6b646a5a364969776963325673624756795548566962476c6a53325635496a6f694d4449314d4745315a57566d4e6a4a69595467354f444d304d444d794d444d775a44597a4d6a41324d6d566d595751314e6a6869595455354e475977597a457a4d6a45785954417759546377596d4e6d597a413159574d314969776963326c6e626d463064584a6c496a6f6949697769646d567963326c7662694936496e423361575174633246735a5331324e434973496d467559326876636c4e705a323568644856795a534936496a453359575a6c596a68684d474979596a6c68596d597a5a6d45344e44637a4d7a45324d324a6a5a6a526a4e6a4a6a596a5a6b5a446b78597a49784d7a4e6b4d446b325a6a466c5a544935593249304f5441314e6a56694e6a6c6a4f446c6a4e444a6b595441304d57497a5a574a685a4445334f444d7a4e44597a596d4e694f54417959544d794e474a694d7a59324e6a42694f4463344d5445334f44526c5a6a41304e6a417a4d7a51774f444d694c434a68626d4e6f62334a5565476c6b496a6f694d446b355a6a63355a5467325a6a686d4f4451354d5441775a574d774d7a52695954566c5957466c4d4441334d7a4e6c4f545a684e4755335954526b4d544e695a5467324d7a526a4d5445324f4745795a574d354e434a39"
+          }
+        ]
+      },
+      "workAmoV5RawDecodeReasonCode": "",
+      "firstInputPrevoutScriptpubkey": "5120badbdc340d480a732c71d53f0e32b1c8c50ac6958ef2605781cc4374ed3b0326",
+      "workAmoV5PwidRegistryAttribution": {
+        "source": "canonical-work-amo-v5-state-delta",
+        "amountSats": "0",
+        "semanticKind": "id-seal",
+        "registryClaims": [],
+        "registryAddress": "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e"
+      }
+    }
+  },
+  {
+    "eventId": 5053988,
+    "txid": "2a879e276e899acea9dbef9a59410c722837cab2205d216f1880475d6e774d2e",
+    "height": 972028,
+    "kind": "id-register-invalid",
+    "errors": [
+      "work-amo-v5-id-registration-conflict"
+    ],
+    "payload": {
+      "id": "ai",
+      "kind": "id-register-invalid",
+      "txid": "2a879e276e899acea9dbef9a59410c722837cab2205d216f1880475d6e774d2e",
+      "valid": false,
+      "parsed": {
+        "id": "ai",
+        "kind": "id-register",
+        "pgpKey": "",
+        "ownerAddress": "bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc",
+        "receiveAddress": "bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc"
+      },
+      "reason": "work-amo-v5-id-registration-conflict",
+      "status": "confirmed",
+      "derived": [],
+      "dropped": false,
+      "network": "livenet",
+      "payload": "pwid1:r2:YWk:bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc:bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc",
+      "position": {
+        "blockHash": "00000000000000000001cf62750c8fe40a513a3ca6cae6640afbeeb00b624038",
+        "blockHeight": 972028,
+        "protocolVout": 1,
+        "recordOrdinal": 0,
+        "blockTransactionIndex": 2294
+      },
+      "protocol": "pwid1",
+      "blockHash": "00000000000000000001cf62750c8fe40a513a3ca6cae6640afbeeb00b624038",
+      "blockTime": "2026-10-18T17:01:02.000Z",
+      "confirmed": true,
+      "createdAt": "2026-10-18T17:01:02.000Z",
+      "dataBytes": 138,
+      "timestamp": "2026-10-18T17:01:02.000Z",
+      "amountSats": "0",
+      "blockIndex": 2294,
+      "reasonCode": "work-amo-v5-id-registration-conflict",
+      "recipients": [
+        {
+          "vout": 0,
+          "address": "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
+          "amountSats": "1000"
+        }
+      ],
+      "blockHeight": 972028,
+      "indexedFrom": "log",
+      "ownerAddress": "bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc",
+      "participants": [
+        "bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc"
+      ],
+      "protocolVout": 1,
+      "recordOrdinal": 0,
+      "senderAddress": "bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc",
+      "_powEventIndex": 0,
+      "receiveAddress": "bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc",
+      "validationMode": "canonical-first-party-state",
+      "canonicalVerifier": "/api/v1/internal/work-amo-v5-block-verifier",
+      "_workAmoV5ReplayBound": true,
+      "workAmoV5RawCandidate": true,
+      "workAmoV5ReplayOutput": {
+        "projection": {
+          "kind": "id-register",
+          "txid": "2a879e276e899acea9dbef9a59410c722837cab2205d216f1880475d6e774d2e",
+          "valid": false,
+          "parsed": {
+            "id": "ai",
+            "kind": "id-register",
+            "pgpKey": "",
+            "ownerAddress": "bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc",
+            "receiveAddress": "bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc"
+          },
+          "derived": [],
+          "position": {
+            "blockHash": "00000000000000000001cf62750c8fe40a513a3ca6cae6640afbeeb00b624038",
+            "blockHeight": 972028,
+            "protocolVout": 1,
+            "recordOrdinal": 0,
+            "blockTransactionIndex": 2294
+          },
+          "protocol": "pwid1",
+          "reasonCode": "work-amo-v5-id-registration-conflict"
+        }
+      },
+      "workAmoV5ReplayOutcome": {
+        "kind": "pwid1-invalid",
+        "valid": false,
+        "reasonCode": "work-amo-v5-id-registration-conflict"
+      },
+      "workAmoV5RawDecodeValid": true,
+      "workAmoV5RawScriptWitness": {
+        "payloadHex": "70776964313a72323a59576b3a626331706c716e326739646b7973706b34387238656b383370336563633332767a326739666e6c7730303679766d7671767838636e7879736b72743964633a626331706c716e326739646b7973706b34387238656b383370336563633332767a326739666e6c7730303679766d7671767838636e7879736b7274396463",
+        "reasonCode": "",
+        "decodeValid": true,
+        "decodeDetail": "",
+        "scriptPubKeyHex": "6a4c8a70776964313a72323a59576b3a626331706c716e326739646b7973706b34387238656b383370336563633332767a326739666e6c7730303679766d7671767838636e7879736b72743964633a626331706c716e326739646b7973706b34387238656b383370336563633332767a326739666e6c7730303679766d7671767838636e7879736b7274396463"
+      },
+      "workAmoV5ReplayRawWitness": {
+        "model": "canonical-raw-protocol-record-v1",
+        "rawRecordParts": [
+          {
+            "text": "pwid1:r2:YWk:bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc:bc1plqn2g9dkyspk48r8ek83p3ecc32vz2g9fnlw006yvmvqvx8cnxyskrt9dc",
+            "prefix": "pwid1:",
+            "payloadHex": "70776964313a72323a59576b3a626331706c716e326739646b7973706b34387238656b383370336563633332767a326739666e6c7730303679766d7671767838636e7879736b72743964633a626331706c716e326739646b7973706b34387238656b383370336563633332767a326739666e6c7730303679766d7671767838636e7879736b7274396463",
+            "reasonCode": "",
+            "decodeValid": true,
+            "decodeDetail": "",
+            "protocolVout": 1,
+            "scriptPubKeyHex": "6a4c8a70776964313a72323a59576b3a626331706c716e326739646b7973706b34387238656b383370336563633332767a326739666e6c7730303679766d7671767838636e7879736b72743964633a626331706c716e326739646b7973706b34387238656b383370336563633332767a326739666e6c7730303679766d7671767838636e7879736b7274396463"
+          }
+        ]
+      },
+      "workAmoV5RawDecodeReasonCode": "",
+      "firstInputPrevoutScriptpubkey": "5120f826a415b624036a9c67cd8f10c738c454c129054cfee7bf4466d80618f89989",
+      "workAmoV5PwidRegistryAttribution": {
+        "source": "canonical-work-amo-v5-state-delta",
+        "amountSats": "0",
+        "semanticKind": "id-register",
+        "registryClaims": [],
+        "registryAddress": "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e"
+      }
+    }
+  },
+  {
+    "eventId": 5053996,
+    "txid": "8c7763b10c804bca60631ec3a20967ccd0fc369ad063ba6567c54b814e414688",
+    "height": 972032,
+    "kind": "id-register-invalid",
+    "errors": [
+      "work-amo-v5-id-registration-conflict"
+    ],
+    "payload": {
+      "id": "ordi",
+      "kind": "id-register-invalid",
+      "txid": "8c7763b10c804bca60631ec3a20967ccd0fc369ad063ba6567c54b814e414688",
+      "valid": false,
+      "parsed": {
+        "id": "ordi",
+        "kind": "id-register",
+        "pgpKey": "",
+        "ownerAddress": "bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz",
+        "receiveAddress": "bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz"
+      },
+      "reason": "work-amo-v5-id-registration-conflict",
+      "status": "confirmed",
+      "derived": [],
+      "dropped": false,
+      "network": "livenet",
+      "payload": "pwid1:r2:b3JkaQ:bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz:bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz",
+      "position": {
+        "blockHash": "00000000000000000000face2cb9eeabbd50b23da99e8115b5782f5bafb4f3a5",
+        "blockHeight": 972032,
+        "protocolVout": 1,
+        "recordOrdinal": 0,
+        "blockTransactionIndex": 1977
+      },
+      "protocol": "pwid1",
+      "blockHash": "00000000000000000000face2cb9eeabbd50b23da99e8115b5782f5bafb4f3a5",
+      "blockTime": "2026-10-18T17:32:34.000Z",
+      "confirmed": true,
+      "createdAt": "2026-10-18T17:32:34.000Z",
+      "dataBytes": 141,
+      "timestamp": "2026-10-18T17:32:34.000Z",
+      "amountSats": "0",
+      "blockIndex": 1977,
+      "reasonCode": "work-amo-v5-id-registration-conflict",
+      "recipients": [
+        {
+          "vout": 0,
+          "address": "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
+          "amountSats": "1000"
+        }
+      ],
+      "blockHeight": 972032,
+      "indexedFrom": "log",
+      "ownerAddress": "bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz",
+      "participants": [
+        "bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz"
+      ],
+      "protocolVout": 1,
+      "recordOrdinal": 0,
+      "senderAddress": "bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz",
+      "_powEventIndex": 0,
+      "receiveAddress": "bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz",
+      "validationMode": "canonical-first-party-state",
+      "canonicalVerifier": "/api/v1/internal/work-amo-v5-block-verifier",
+      "_workAmoV5ReplayBound": true,
+      "workAmoV5RawCandidate": true,
+      "workAmoV5ReplayOutput": {
+        "projection": {
+          "kind": "id-register",
+          "txid": "8c7763b10c804bca60631ec3a20967ccd0fc369ad063ba6567c54b814e414688",
+          "valid": false,
+          "parsed": {
+            "id": "ordi",
+            "kind": "id-register",
+            "pgpKey": "",
+            "ownerAddress": "bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz",
+            "receiveAddress": "bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz"
+          },
+          "derived": [],
+          "position": {
+            "blockHash": "00000000000000000000face2cb9eeabbd50b23da99e8115b5782f5bafb4f3a5",
+            "blockHeight": 972032,
+            "protocolVout": 1,
+            "recordOrdinal": 0,
+            "blockTransactionIndex": 1977
+          },
+          "protocol": "pwid1",
+          "reasonCode": "work-amo-v5-id-registration-conflict"
+        }
+      },
+      "workAmoV5ReplayOutcome": {
+        "kind": "pwid1-invalid",
+        "valid": false,
+        "reasonCode": "work-amo-v5-id-registration-conflict"
+      },
+      "workAmoV5RawDecodeValid": true,
+      "workAmoV5RawScriptWitness": {
+        "payloadHex": "70776964313a72323a62334a6b61513a62633170797437767a65387334347933736a646c67616d306c356135333061706d7337306d366d61666372706e6d676b6e6a3270677665736b657573767a3a62633170797437767a65387334347933736a646c67616d306c356135333061706d7337306d366d61666372706e6d676b6e6a3270677665736b657573767a",
+        "reasonCode": "",
+        "decodeValid": true,
+        "decodeDetail": "",
+        "scriptPubKeyHex": "6a4c8d70776964313a72323a62334a6b61513a62633170797437767a65387334347933736a646c67616d306c356135333061706d7337306d366d61666372706e6d676b6e6a3270677665736b657573767a3a62633170797437767a65387334347933736a646c67616d306c356135333061706d7337306d366d61666372706e6d676b6e6a3270677665736b657573767a"
+      },
+      "workAmoV5ReplayRawWitness": {
+        "model": "canonical-raw-protocol-record-v1",
+        "rawRecordParts": [
+          {
+            "text": "pwid1:r2:b3JkaQ:bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz:bc1pyt7vze8s44y3sjdlgam0l5a530apms70m6mafcrpnmgknj2pgveskeusvz",
+            "prefix": "pwid1:",
+            "payloadHex": "70776964313a72323a62334a6b61513a62633170797437767a65387334347933736a646c67616d306c356135333061706d7337306d366d61666372706e6d676b6e6a3270677665736b657573767a3a62633170797437767a65387334347933736a646c67616d306c356135333061706d7337306d366d61666372706e6d676b6e6a3270677665736b657573767a",
+            "reasonCode": "",
+            "decodeValid": true,
+            "decodeDetail": "",
+            "protocolVout": 1,
+            "scriptPubKeyHex": "6a4c8d70776964313a72323a62334a6b61513a62633170797437767a65387334347933736a646c67616d306c356135333061706d7337306d366d61666372706e6d676b6e6a3270677665736b657573767a3a62633170797437767a65387334347933736a646c67616d306c356135333061706d7337306d366d61666372706e6d676b6e6a3270677665736b657573767a"
+          }
+        ]
+      },
+      "workAmoV5RawDecodeReasonCode": "",
+      "firstInputPrevoutScriptpubkey": "512022fcc164f0ad491849bf4776ffd3b48bfa1dc3cfdeb7d4e0619ed169c9414333",
+      "workAmoV5PwidRegistryAttribution": {
+        "source": "canonical-work-amo-v5-state-delta",
+        "amountSats": "0",
+        "semanticKind": "id-register",
+        "registryClaims": [],
+        "registryAddress": "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e"
+      }
+    }
+  },
+  {
+    "eventId": 5062710,
+    "txid": "7686b6de4121654342aa45b612c6c69eb75c1615b7cf2a16ac32a5a55f8a1af4",
+    "height": 974245,
+    "kind": "id-seal-invalid",
+    "errors": [
+      "work-amo-v5-id-seal-invalid"
+    ],
+    "payload": {
+      "kind": "id-seal-invalid",
+      "txid": "7686b6de4121654342aa45b612c6c69eb75c1615b7cf2a16ac32a5a55f8a1af4",
+      "valid": false,
+      "parsed": {
+        "kind": "id-seal",
+        "listingId": "099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94",
+        "saleAuthorization": {
+          "id": "21",
+          "nonce": "mv9f7q6q-p74ks7njou",
+          "version": "pwid-sale-v4",
+          "priceSats": 2000,
+          "signature": "",
+          "anchorTxid": "099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94",
+          "anchorType": "sale-ticket-v1",
+          "anchorVout": 2,
+          "buyerAddress": "1AprkmYaHmquY4HBGYbBC5aY6qrUuiULYe",
+          "sellerAddress": "bc1phtdacdqdfq98xtr365lsuv43erzs43543mexq4upe3phfmfmqvnqgfdv6z",
+          "anchorSignature": "17afeb8a0b2b9abf3fa84733163bcf4c62cb6dd91c2133d096f1ee29cb490565b69c89c42da041b3ebad17833463bcb902a324bb36660b87811784ef0460334083",
+          "anchorValueSats": 546,
+          "sellerPublicKey": "0250a5eef62ba89834032030d632062efad568ba594f0c13211a00a70bcfc05ac5",
+          "anchorSigHashType": 131,
+          "anchorScriptPubKey": "5120badbdc340d480a732c71d53f0e32b1c8c50ac6958ef2605781cc4374ed3b0326"
+        }
+      },
+      "reason": "work-amo-v5-id-seal-invalid",
+      "status": "confirmed",
+      "derived": [],
+      "dropped": false,
+      "network": "livenet",
+      "payload": "pwid1:seal5:099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94:eyJhbmNob3JTY3JpcHRQdWJLZXkiOiI1MTIwYmFkYmRjMzQwZDQ4MGE3MzJjNzFkNTNmMGUzMmIxYzhjNTBhYzY5NThlZjI2MDU3ODFjYzQzNzRlZDNiMDMyNiIsImFuY2hvclNpZ0hhc2hUeXBlIjoxMzEsImFuY2hvclR5cGUiOiJzYWxlLXRpY2tldC12MSIsImFuY2hvclZhbHVlU2F0cyI6NTQ2LCJhbmNob3JWb3V0IjoyLCJidXllckFkZHJlc3MiOiIxQXBya21ZYUhtcXVZNEhCR1liQkM1YVk2cXJVdWlVTFllIiwiaWQiOiIyMSIsIm5vbmNlIjoibXY5ZjdxNnEtcDc0a3M3bmpvdSIsInByaWNlU2F0cyI6MjAwMCwic2VsbGVyQWRkcmVzcyI6ImJjMXBodGRhY2RxZGZxOTh4dHIzNjVsc3V2NDNlcnpzNDM1NDNtZXhxNHVwZTNwaGZtZm1xdm5xZ2ZkdjZ6Iiwic2VsbGVyUHVibGljS2V5IjoiMDI1MGE1ZWVmNjJiYTg5ODM0MDMyMDMwZDYzMjA2MmVmYWQ1NjhiYTU5NGYwYzEzMjExYTAwYTcwYmNmYzA1YWM1Iiwic2lnbmF0dXJlIjoiIiwidmVyc2lvbiI6InB3aWQtc2FsZS12NCIsImFuY2hvclNpZ25hdHVyZSI6IjE3YWZlYjhhMGIyYjlhYmYzZmE4NDczMzE2M2JjZjRjNjJjYjZkZDkxYzIxMzNkMDk2ZjFlZTI5Y2I0OTA1NjViNjljODljNDJkYTA0MWIzZWJhZDE3ODMzNDYzYmNiOTAyYTMyNGJiMzY2NjBiODc4MTE3ODRlZjA0NjAzMzQwODMiLCJhbmNob3JUeGlkIjoiMDk5Zjc5ZTg2ZjhmODQ5MTAwZWMwMzRiYTVlYWFlMDA3MzNlOTZhNGU3YTRkMTNiZTg2MzRjMTE2OGEyZWM5NCJ9",
+      "position": {
+        "blockHash": "00000000000000000000d6ca93c32805774847dccf88537500f9365534cdfe98",
+        "blockHeight": 974245,
+        "protocolVout": 1,
+        "recordOrdinal": 0,
+        "blockTransactionIndex": 1086
+      },
+      "protocol": "pwid1",
+      "blockHash": "00000000000000000000d6ca93c32805774847dccf88537500f9365534cdfe98",
+      "blockTime": "2026-11-02T10:42:58.000Z",
+      "confirmed": true,
+      "createdAt": "2026-11-02T10:42:58.000Z",
+      "dataBytes": 1053,
+      "listingId": "099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94",
+      "timestamp": "2026-11-02T10:42:58.000Z",
+      "amountSats": "0",
+      "blockIndex": 1086,
+      "reasonCode": "work-amo-v5-id-seal-invalid",
+      "recipients": [
+        {
+          "vout": 0,
+          "address": "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e",
+          "amountSats": "546"
+        }
+      ],
+      "blockHeight": 974245,
+      "indexedFrom": "log",
+      "participants": [
+        "bc1phtdacdqdfq98xtr365lsuv43erzs43543mexq4upe3phfmfmqvnqgfdv6z"
+      ],
+      "protocolVout": 1,
+      "recordOrdinal": 0,
+      "senderAddress": "bc1phtdacdqdfq98xtr365lsuv43erzs43543mexq4upe3phfmfmqvnqgfdv6z",
+      "_powEventIndex": 0,
+      "validationMode": "canonical-first-party-state",
+      "canonicalVerifier": "/api/v1/internal/work-amo-v5-block-verifier",
+      "_workAmoV5ReplayBound": true,
+      "workAmoV5RawCandidate": true,
+      "workAmoV5ReplayOutput": {
+        "projection": {
+          "kind": "id-seal",
+          "txid": "7686b6de4121654342aa45b612c6c69eb75c1615b7cf2a16ac32a5a55f8a1af4",
+          "valid": false,
+          "parsed": {
+            "kind": "id-seal",
+            "listingId": "099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94",
+            "saleAuthorization": {
+              "id": "21",
+              "nonce": "mv9f7q6q-p74ks7njou",
+              "version": "pwid-sale-v4",
+              "priceSats": 2000,
+              "signature": "",
+              "anchorTxid": "099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94",
+              "anchorType": "sale-ticket-v1",
+              "anchorVout": 2,
+              "buyerAddress": "1AprkmYaHmquY4HBGYbBC5aY6qrUuiULYe",
+              "sellerAddress": "bc1phtdacdqdfq98xtr365lsuv43erzs43543mexq4upe3phfmfmqvnqgfdv6z",
+              "anchorSignature": "17afeb8a0b2b9abf3fa84733163bcf4c62cb6dd91c2133d096f1ee29cb490565b69c89c42da041b3ebad17833463bcb902a324bb36660b87811784ef0460334083",
+              "anchorValueSats": 546,
+              "sellerPublicKey": "0250a5eef62ba89834032030d632062efad568ba594f0c13211a00a70bcfc05ac5",
+              "anchorSigHashType": 131,
+              "anchorScriptPubKey": "5120badbdc340d480a732c71d53f0e32b1c8c50ac6958ef2605781cc4374ed3b0326"
+            }
+          },
+          "derived": [],
+          "position": {
+            "blockHash": "00000000000000000000d6ca93c32805774847dccf88537500f9365534cdfe98",
+            "blockHeight": 974245,
+            "protocolVout": 1,
+            "recordOrdinal": 0,
+            "blockTransactionIndex": 1086
+          },
+          "protocol": "pwid1",
+          "reasonCode": "work-amo-v5-id-seal-invalid"
+        }
+      },
+      "workAmoV5ReplayOutcome": {
+        "kind": "pwid1-invalid",
+        "valid": false,
+        "reasonCode": "work-amo-v5-id-seal-invalid"
+      },
+      "workAmoV5RawDecodeValid": true,
+      "workAmoV5RawScriptWitness": {
+        "payloadHex": "70776964313a7365616c353a303939663739653836663866383439313030656330333462613565616165303037333365393661346537613464313362653836333463313136386132656339343a65794a68626d4e6f62334a5459334a706348525164574a4c5a586b694f6949314d544977596d466b596d526a4d7a51775a4451344d4745334d7a4a6a4e7a466b4e544e6d4d47557a4d6d4978597a686a4e544268597a59354e54686c5a6a49324d4455334f44466a597a517a4e7a526c5a444e694d444d794e694973496d467559326876636c4e705a306868633268556558426c496a6f784d7a4573496d467559326876636c5235634755694f694a7a5957786c4c5852705932746c644331324d534973496d467559326876636c5a686248566c55324630637949364e5451324c434a68626d4e6f62334a5762335630496a6f794c434a6964586c6c636b466b5a484a6c63334d694f694978515842796132315a595568746358565a4e45684352316c69516b4d3159566b3263584a5664576c5654466c6c49697769615751694f6949794d534973496d3576626d4e6c496a6f69625859355a6a64784e6e45746344633061334d33626d707664534973496e427961574e6c55324630637949364d6a41774d43776963325673624756795157526b636d567a63794936496d4a6a4d58426f64475268593252785a475a784f5468346448497a4e6a5673633356324e444e6c636e707a4e444d314e444e745a5868784e4856775a544e7761475a745a6d3178646d35785a325a6b646a5a364969776963325673624756795548566962476c6a53325635496a6f694d4449314d4745315a57566d4e6a4a69595467354f444d304d444d794d444d775a44597a4d6a41324d6d566d595751314e6a6869595455354e475977597a457a4d6a45785954417759546377596d4e6d597a413159574d314969776963326c6e626d463064584a6c496a6f6949697769646d567963326c7662694936496e423361575174633246735a5331324e434973496d467559326876636c4e705a323568644856795a534936496a453359575a6c596a68684d474979596a6c68596d597a5a6d45344e44637a4d7a45324d324a6a5a6a526a4e6a4a6a596a5a6b5a446b78597a49784d7a4e6b4d446b325a6a466c5a544935593249304f5441314e6a56694e6a6c6a4f446c6a4e444a6b595441304d57497a5a574a685a4445334f444d7a4e44597a596d4e694f54417959544d794e474a694d7a59324e6a42694f4463344d5445334f44526c5a6a41304e6a417a4d7a51774f444d694c434a68626d4e6f62334a5565476c6b496a6f694d446b355a6a63355a5467325a6a686d4f4451354d5441775a574d774d7a52695954566c5957466c4d4441334d7a4e6c4f545a684e4755335954526b4d544e695a5467324d7a526a4d5445324f4745795a574d354e434a39",
+        "reasonCode": "",
+        "decodeValid": true,
+        "decodeDetail": "",
+        "scriptPubKeyHex": "6a4d1d0470776964313a7365616c353a303939663739653836663866383439313030656330333462613565616165303037333365393661346537613464313362653836333463313136386132656339343a65794a68626d4e6f62334a5459334a706348525164574a4c5a586b694f6949314d544977596d466b596d526a4d7a51775a4451344d4745334d7a4a6a4e7a466b4e544e6d4d47557a4d6d4978597a686a4e544268597a59354e54686c5a6a49324d4455334f44466a597a517a4e7a526c5a444e694d444d794e694973496d467559326876636c4e705a306868633268556558426c496a6f784d7a4573496d467559326876636c5235634755694f694a7a5957786c4c5852705932746c644331324d534973496d467559326876636c5a686248566c55324630637949364e5451324c434a68626d4e6f62334a5762335630496a6f794c434a6964586c6c636b466b5a484a6c63334d694f694978515842796132315a595568746358565a4e45684352316c69516b4d3159566b3263584a5664576c5654466c6c49697769615751694f6949794d534973496d3576626d4e6c496a6f69625859355a6a64784e6e45746344633061334d33626d707664534973496e427961574e6c55324630637949364d6a41774d43776963325673624756795157526b636d567a63794936496d4a6a4d58426f64475268593252785a475a784f5468346448497a4e6a5673633356324e444e6c636e707a4e444d314e444e745a5868784e4856775a544e7761475a745a6d3178646d35785a325a6b646a5a364969776963325673624756795548566962476c6a53325635496a6f694d4449314d4745315a57566d4e6a4a69595467354f444d304d444d794d444d775a44597a4d6a41324d6d566d595751314e6a6869595455354e475977597a457a4d6a45785954417759546377596d4e6d597a413159574d314969776963326c6e626d463064584a6c496a6f6949697769646d567963326c7662694936496e423361575174633246735a5331324e434973496d467559326876636c4e705a323568644856795a534936496a453359575a6c596a68684d474979596a6c68596d597a5a6d45344e44637a4d7a45324d324a6a5a6a526a4e6a4a6a596a5a6b5a446b78597a49784d7a4e6b4d446b325a6a466c5a544935593249304f5441314e6a56694e6a6c6a4f446c6a4e444a6b595441304d57497a5a574a685a4445334f444d7a4e44597a596d4e694f54417959544d794e474a694d7a59324e6a42694f4463344d5445334f44526c5a6a41304e6a417a4d7a51774f444d694c434a68626d4e6f62334a5565476c6b496a6f694d446b355a6a63355a5467325a6a686d4f4451354d5441775a574d774d7a52695954566c5957466c4d4441334d7a4e6c4f545a684e4755335954526b4d544e695a5467324d7a526a4d5445324f4745795a574d354e434a39"
+      },
+      "workAmoV5ReplayRawWitness": {
+        "model": "canonical-raw-protocol-record-v1",
+        "rawRecordParts": [
+          {
+            "text": "pwid1:seal5:099f79e86f8f849100ec034ba5eaae00733e96a4e7a4d13be8634c1168a2ec94:eyJhbmNob3JTY3JpcHRQdWJLZXkiOiI1MTIwYmFkYmRjMzQwZDQ4MGE3MzJjNzFkNTNmMGUzMmIxYzhjNTBhYzY5NThlZjI2MDU3ODFjYzQzNzRlZDNiMDMyNiIsImFuY2hvclNpZ0hhc2hUeXBlIjoxMzEsImFuY2hvclR5cGUiOiJzYWxlLXRpY2tldC12MSIsImFuY2hvclZhbHVlU2F0cyI6NTQ2LCJhbmNob3JWb3V0IjoyLCJidXllckFkZHJlc3MiOiIxQXBya21ZYUhtcXVZNEhCR1liQkM1YVk2cXJVdWlVTFllIiwiaWQiOiIyMSIsIm5vbmNlIjoibXY5ZjdxNnEtcDc0a3M3bmpvdSIsInByaWNlU2F0cyI6MjAwMCwic2VsbGVyQWRkcmVzcyI6ImJjMXBodGRhY2RxZGZxOTh4dHIzNjVsc3V2NDNlcnpzNDM1NDNtZXhxNHVwZTNwaGZtZm1xdm5xZ2ZkdjZ6Iiwic2VsbGVyUHVibGljS2V5IjoiMDI1MGE1ZWVmNjJiYTg5ODM0MDMyMDMwZDYzMjA2MmVmYWQ1NjhiYTU5NGYwYzEzMjExYTAwYTcwYmNmYzA1YWM1Iiwic2lnbmF0dXJlIjoiIiwidmVyc2lvbiI6InB3aWQtc2FsZS12NCIsImFuY2hvclNpZ25hdHVyZSI6IjE3YWZlYjhhMGIyYjlhYmYzZmE4NDczMzE2M2JjZjRjNjJjYjZkZDkxYzIxMzNkMDk2ZjFlZTI5Y2I0OTA1NjViNjljODljNDJkYTA0MWIzZWJhZDE3ODMzNDYzYmNiOTAyYTMyNGJiMzY2NjBiODc4MTE3ODRlZjA0NjAzMzQwODMiLCJhbmNob3JUeGlkIjoiMDk5Zjc5ZTg2ZjhmODQ5MTAwZWMwMzRiYTVlYWFlMDA3MzNlOTZhNGU3YTRkMTNiZTg2MzRjMTE2OGEyZWM5NCJ9",
+            "prefix": "pwid1:",
+            "payloadHex": "70776964313a7365616c353a303939663739653836663866383439313030656330333462613565616165303037333365393661346537613464313362653836333463313136386132656339343a65794a68626d4e6f62334a5459334a706348525164574a4c5a586b694f6949314d544977596d466b596d526a4d7a51775a4451344d4745334d7a4a6a4e7a466b4e544e6d4d47557a4d6d4978597a686a4e544268597a59354e54686c5a6a49324d4455334f44466a597a517a4e7a526c5a444e694d444d794e694973496d467559326876636c4e705a306868633268556558426c496a6f784d7a4573496d467559326876636c5235634755694f694a7a5957786c4c5852705932746c644331324d534973496d467559326876636c5a686248566c55324630637949364e5451324c434a68626d4e6f62334a5762335630496a6f794c434a6964586c6c636b466b5a484a6c63334d694f694978515842796132315a595568746358565a4e45684352316c69516b4d3159566b3263584a5664576c5654466c6c49697769615751694f6949794d534973496d3576626d4e6c496a6f69625859355a6a64784e6e45746344633061334d33626d707664534973496e427961574e6c55324630637949364d6a41774d43776963325673624756795157526b636d567a63794936496d4a6a4d58426f64475268593252785a475a784f5468346448497a4e6a5673633356324e444e6c636e707a4e444d314e444e745a5868784e4856775a544e7761475a745a6d3178646d35785a325a6b646a5a364969776963325673624756795548566962476c6a53325635496a6f694d4449314d4745315a57566d4e6a4a69595467354f444d304d444d794d444d775a44597a4d6a41324d6d566d595751314e6a6869595455354e475977597a457a4d6a45785954417759546377596d4e6d597a413159574d314969776963326c6e626d463064584a6c496a6f6949697769646d567963326c7662694936496e423361575174633246735a5331324e434973496d467559326876636c4e705a323568644856795a534936496a453359575a6c596a68684d474979596a6c68596d597a5a6d45344e44637a4d7a45324d324a6a5a6a526a4e6a4a6a596a5a6b5a446b78597a49784d7a4e6b4d446b325a6a466c5a544935593249304f5441314e6a56694e6a6c6a4f446c6a4e444a6b595441304d57497a5a574a685a4445334f444d7a4e44597a596d4e694f54417959544d794e474a694d7a59324e6a42694f4463344d5445334f44526c5a6a41304e6a417a4d7a51774f444d694c434a68626d4e6f62334a5565476c6b496a6f694d446b355a6a63355a5467325a6a686d4f4451354d5441775a574d774d7a52695954566c5957466c4d4441334d7a4e6c4f545a684e4755335954526b4d544e695a5467324d7a526a4d5445324f4745795a574d354e434a39",
+            "reasonCode": "",
+            "decodeValid": true,
+            "decodeDetail": "",
+            "protocolVout": 1,
+            "scriptPubKeyHex": "6a4d1d0470776964313a7365616c353a303939663739653836663866383439313030656330333462613565616165303037333365393661346537613464313362653836333463313136386132656339343a65794a68626d4e6f62334a5459334a706348525164574a4c5a586b694f6949314d544977596d466b596d526a4d7a51775a4451344d4745334d7a4a6a4e7a466b4e544e6d4d47557a4d6d4978597a686a4e544268597a59354e54686c5a6a49324d4455334f44466a597a517a4e7a526c5a444e694d444d794e694973496d467559326876636c4e705a306868633268556558426c496a6f784d7a4573496d467559326876636c5235634755694f694a7a5957786c4c5852705932746c644331324d534973496d467559326876636c5a686248566c55324630637949364e5451324c434a68626d4e6f62334a5762335630496a6f794c434a6964586c6c636b466b5a484a6c63334d694f694978515842796132315a595568746358565a4e45684352316c69516b4d3159566b3263584a5664576c5654466c6c49697769615751694f6949794d534973496d3576626d4e6c496a6f69625859355a6a64784e6e45746344633061334d33626d707664534973496e427961574e6c55324630637949364d6a41774d43776963325673624756795157526b636d567a63794936496d4a6a4d58426f64475268593252785a475a784f5468346448497a4e6a5673633356324e444e6c636e707a4e444d314e444e745a5868784e4856775a544e7761475a745a6d3178646d35785a325a6b646a5a364969776963325673624756795548566962476c6a53325635496a6f694d4449314d4745315a57566d4e6a4a69595467354f444d304d444d794d444d775a44597a4d6a41324d6d566d595751314e6a6869595455354e475977597a457a4d6a45785954417759546377596d4e6d597a413159574d314969776963326c6e626d463064584a6c496a6f6949697769646d567963326c7662694936496e423361575174633246735a5331324e434973496d467559326876636c4e705a323568644856795a534936496a453359575a6c596a68684d474979596a6c68596d597a5a6d45344e44637a4d7a45324d324a6a5a6a526a4e6a4a6a596a5a6b5a446b78597a49784d7a4e6b4d446b325a6a466c5a544935593249304f5441314e6a56694e6a6c6a4f446c6a4e444a6b595441304d57497a5a574a685a4445334f444d7a4e44597a596d4e694f54417959544d794e474a694d7a59324e6a42694f4463344d5445334f44526c5a6a41304e6a417a4d7a51774f444d694c434a68626d4e6f62334a5565476c6b496a6f694d446b355a6a63355a5467325a6a686d4f4451354d5441775a574d774d7a52695954566c5957466c4d4441334d7a4e6c4f545a684e4755335954526b4d544e695a5467324d7a526a4d5445324f4745795a574d354e434a39"
+          }
+        ]
+      },
+      "workAmoV5RawDecodeReasonCode": "",
+      "firstInputPrevoutScriptpubkey": "5120badbdc340d480a732c71d53f0e32b1c8c50ac6958ef2605781cc4374ed3b0326",
+      "workAmoV5PwidRegistryAttribution": {
+        "source": "canonical-work-amo-v5-state-delta",
+        "amountSats": "0",
+        "semanticKind": "id-seal",
+        "registryClaims": [],
+        "registryAddress": "bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e"
+      }
+    }
+  }
+]

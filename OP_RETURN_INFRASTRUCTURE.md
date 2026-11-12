@@ -9300,3 +9300,44 @@ bounds are 13,285,088 and 3,319,606 bytes; estimated total new evidence is
 capacity, never treated as scratch credit. These are planning bounds; the
 native plan and final whole-release admission must still pass with actual
 post-cleanup allocations, new build sizes and package/evidence overhead.
+
+## November 12 audit remediation candidate
+
+The operator approved shipping the seven audit follow-up areas, then separately
+approved rejection-metadata normalization for events 4982114, 5053988, 5053996
+and 5062710. Preparation is not evidence of completed deployment or repair.
+The exact transaction must preserve raw transactions, replay evidence, ownership,
+credits, balances, ledger records and all other row fields. Its pre/postimage
+fences and reversible preimages remain separate audit artifacts. No broad
+historical replay is authorized by that four-row approval.
+
+The scoped runtime adapter in `deploy/audit-remediation` preserves accepted
+source overlays and pins its four changed/new files. It changes the rejected
+PWID projection writer, not the strict auditor or protocol validity rules.
+Private summary observations distinguish stored-exact versus live-build and
+JSON versus projection transport; RPC phase totals can overlap and must not be
+added as if sequential wall time. Diagnostics are not a measured speedup.
+
+UI builds now require an owner-controlled direct child of the separate data
+volume at `/data/proofofwork-ui-builds`, a single writer, 100 GiB free reserve,
+4 GiB per-run admission budget and 20 GiB retained aggregate admission budget.
+These phase checks are not hard filesystem quotas. Failed runs remain for
+inspection; no automatic age-based deletion occurs. The UI deployment floor
+remains 8 GiB plus 64 MiB growth reserve, separate from monitor warning levels.
+
+`AUDIT_TRANSITIONS.md` records isolated regression coverage and explicit gaps.
+The fee harness includes reservation exclusion and fail-closed journal errors;
+the listing display does not turn unavailable capacity into zero. A restore
+rehearsal, independent discovery/prevout checks, interactive wallet verification
+and a final source/live release-sync receipt require their own results and must
+not be inferred from source tests. The new live checker preserves stable-tip
+positive WORK parity, runtime hash, monitor and rollback-lifecycle gates; run
+the strict ID audit separately after the approved metadata repair.
+
+The next UI publication admits only the existing 7ea/037 predecessor pair and
+its exact outgoing 037 archive, two sidecars and rollback tree. Historical
+retirement receipts remain immutable and admitted by their original writer
+hashes. The 7ea immediate rollback and separately held c3969 fallback are
+preserved. Retiring outgoing UI paths additionally requires independently
+verified equivalent recovery copies; a source-build archive is not equivalent
+to the normalized UI archive solely because its commit matches.

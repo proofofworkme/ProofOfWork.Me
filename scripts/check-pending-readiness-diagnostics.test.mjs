@@ -68,8 +68,24 @@ const ORIGINAL_STAGE="function workQ16PendingVerifierStageReady(\n  stageValue,\
 
 const ORIGINAL_QUERY_ARGUMENTS_SHA256=["e71de58dc0d8252f4f86a62541f92b6ef52c5c33ac979b7f24f865151025c129","72c9d96d8993bc1e6d4dcaeed6187650d3228065878619743a0ae60d5e5e728c","951806fcacd54c49ab923bf5886b026d83891cdfff8ac6bc385c71d75bdb04f1","f10e20728e77f302935d7b4f1031c77dca8743a680305ee8cdf2f818e584bbb5","8d549b9a0586bff02b706f457e85990cf5416eae93d18e38a0ce3e371b98fe56","aaf5218a9e933467f768e31064b4cea8eb4ee41d0e08e7f74bac37a7b1cdecdf","404fe31eb4c55521ad51b123f232b903fb9f1c490b672547f1db81d070871a33","ba0e8f8c0275d3a52b1d270bd788ce9c96a69b64522822f68d39f1393e2074c7","92e96a0230abc02b2aec656075d2c9bd854b688887f84c5bb09c6aa3956916f1","8a573e84dc83c2808c3479d3d62cf176176f4a6654d617390bf95ac2af6aa775","53471374bea5334d9700cf3422086bdc5d565b08b2efc5fb879840971dae4ff3","07ec236a9b9e2194044c29cefe9ceed4a25e4be40b471da65003bd7e2065dde7","9e73b7f8a06485f32b59d8996ed5b42935e83f2ba04a6a26fd36891e32b7e623","43f5c26c12915c866924a48fddc6e9394e4519f28e8159d9ed9077409f67a49d","311eecf3baccc7d6738682d77be2c5cfe52f60f6dffaf54c51e4fb369a2e492f","363e5613973a24c83349a029ea6d64daa608a7af3eda95047186cb33e34d55f1","c1806f81072c85e4a7885f29e6f2a0e6daca038ffac5824a36b2bbcadde8e873","4d248c7f50ce5e548d8e6d018fcd7eda04f67e3a402adaf2a0dbe88d73400021","789b44b9990c7d88da3542aa5c6b25148409a57d64b88f00362513cda78a031f","284e6837dcffbcfb958bcca7a59d13a4a5fb49636aebcda32b52b1842df5f2d7","f10e20728e77f302935d7b4f1031c77dca8743a680305ee8cdf2f818e584bbb5"];
 
-test('full audit executes the exact original query arguments and no added scan',()=>{
- const queries=[];function visit(n){if(ts.isCallExpression(n)&&n.expression.getText(ast)==='client.query')queries.push(createHash('sha256').update(n.arguments.map(x=>x.getText(ast)).join('\n')).digest('hex'));ts.forEachChild(n,visit)}visit(full);assert.deepEqual(queries,ORIGINAL_QUERY_ARGUMENTS_SHA256);
+test('full audit preserves original query arguments apart from the reviewed chunk-aware transition reader',()=>{
+ // 698e03d preserves payload semantics using the verified chunk-aware reader.
+ // Keep the original oracle: permit exactly its two transition payload reads,
+ // not arbitrary SQL or parameter changes, and retain the query-count fence.
+ const reader='proof_indexer.read_work_transition_payload_v1(transition.network,transition.block_height,transition.block_hash,transition.payload)';
+ let replacements=0;
+ const queries=[];
+ function visit(n){
+  if(ts.isCallExpression(n)&&n.expression.getText(ast)==='client.query'){
+   const text=n.arguments.map(x=>x.getText(ast)).join('\n');
+   const original=text.replaceAll(reader,()=>{replacements++;return 'transition.payload';});
+   queries.push(createHash('sha256').update(original).digest('hex'));
+  }
+  ts.forEachChild(n,visit);
+ }
+ visit(full);
+ assert.equal(replacements,2);
+ assert.deepEqual(queries,ORIGINAL_QUERY_ARGUMENTS_SHA256);
 });
 test('actual verifier stage refusal predicates remain identical apart from passive base diagnostic',()=>{
  const originalAst=ts.createSourceFile('original-stage.mjs',ORIGINAL_STAGE,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);const conditions=(f,a)=>{const out=[];function visit(n){if(ts.isIfStatement(n))out.push(canonicalExpression(n.expression.getText(a)));ts.forEachChild(n,visit)}visit(f);return out;};const before=conditions(originalAst.statements[0],originalAst),after=conditions(declaration('workQ16PendingVerifierStageReady'),ast);assert.equal(before.length,2);assert.deepEqual(after,before);

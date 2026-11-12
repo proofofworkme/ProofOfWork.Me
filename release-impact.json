@@ -1,26 +1,31 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "registry-timing-and-repaired-lifecycle-source-integration",
-  "liveCheck": "scripts/check-health-followup-live.mjs",
+  "upgrade": "audit-remediation-id-storage-capacity-and-verification",
+  "liveCheck": "scripts/check-audit-remediation-live.mjs",
   "ciTests": [
-    "scripts/check-registry-phase-measurement.test.mjs",
-    "scripts/check-registry-timing-controller.test.mjs",
-    "scripts/check-ui-storage-adoption.test.mjs",
-    "scripts/check-wallet-readiness-preflight.test.mjs",
-    "scripts/check-ui-followup-retirement.test.mjs",
-    "scripts/check-ui-d4ee-trees.test.mjs"
+    "server/pwid-rejection-projection.test.mjs",
+    "scripts/check-fee-capacity-regression.test.mjs",
+    "scripts/check-canonical-performance-observation.test.mjs",
+    "scripts/check-audit-remediation-release.test.mjs",
+    "scripts/check-pending-readiness-diagnostics.test.mjs",
+    "server/registry-pending-times.test.mjs",
+    "scripts/check-wallet-read-coalescing.test.mjs",
+    "scripts/check-ui-remediation-retirement.test.mjs"
   ],
   "reviews": [
     {
       "targets": [
-        "api"
+        "api",
+        "indexer",
+        "id",
+        "backfill-reorg"
       ],
       "disposition": "affected",
-      "reason": "Bounded private registry phase timing changes observation only. Exact response/error identity, readiness, single-flight ownership, fresh proof, snapshot lifetime and writes remain unchanged. The exact two-file runtime overlay preserves all accepted API foundations; source and runtime candidate hashes are separately pinned. Preparation does not authorize production activation.",
+      "reason": "Rejected canonical PWID records use the existing strict invalid-event projection contract without changing replay validity, raw witnesses or accounting. Scoped four-file runtime installation preserves all accepted overlays. Private whitelisted diagnostics preserve fresh proof and errors.",
       "evidence": [
-        "scripts/check-registry-phase-measurement.test.mjs",
-        "deploy/registry-timing/check.test.py",
-        "scripts/check-health-followup-live.mjs"
+        "server/pwid-rejection-projection.test.mjs",
+        "scripts/check-canonical-performance-observation.test.mjs",
+        "deploy/audit-remediation/check.test.py"
       ]
     },
     {
@@ -29,10 +34,20 @@
         "marketplace",
         "token",
         "wallet",
+        "nft"
+      ],
+      "disposition": "affected",
+      "reason": "Listing spendable capacity distinguishes loading and unavailable from verified zero. Exact quantities, fee arithmetic, reservation exclusions and transaction authority remain unchanged; unsigned fixtures verify the actual source.",
+      "evidence": [
+        "scripts/check-fee-capacity-regression.test.mjs",
+        "scripts/check-audit-remediation-live.mjs"
+      ]
+    },
+    {
+      "targets": [
         "work",
         "infinity",
         "inception",
-        "indexer",
         "activity",
         "boost",
         "browser",
@@ -40,16 +55,13 @@
         "desktop",
         "dns",
         "growth",
-        "id",
         "jobs",
         "landing",
-        "nft",
         "pages",
         "permission",
         "publish",
         "search",
         "wire",
-        "backfill-reorg",
         "accounting",
         "local-signing",
         "files",
@@ -58,16 +70,12 @@
         "compatibility"
       ],
       "disposition": "compatible",
-      "reason": "All standalone and embedded UI sources, protocol bytes, local signing, index/replay, pending/confirmed transitions and accounting remain unchanged. The dependent worker restart is only the existing controlled runtime cutover, not a writer change. The reviewed one-time adoption source preserves immutable completed-retirement lineage and current/prior/fallback proofs. New builds carry coherent source provenance only after separate publication/storage/retirement approval; the separately approved exact037/d9fa predecessor transition is admitted with a matching writer hash and actual receipt replay regression. Publication still waits for recovery, cleanup and fresh admission.",
+      "reason": "Protocol wire bytes, economic arithmetic, ownership, signing and other product behavior are unchanged. All managed bundles retain coherent source provenance. Guarded data-volume build admission and repeatable isolated transitions improve operational verification without replacing live acceptance or human wallet signing.",
       "evidence": [
-        "scripts/check-ui-storage-adoption.test.mjs",
-        "deploy/ui-retention/check-lifecycle-remote.test.py",
-        "deploy/audit30/check-ui-storage.test.py",
-        "scripts/check-wallet-readiness-preflight.test.mjs",
-        "scripts/check-health-followup-live.mjs",
-        "scripts/check-ui-followup-retirement.test.mjs",
-        "scripts/check-ui-d4ee-trees.test.mjs",
-        "deploy/health-cleanup/check-d4ee.test.py"
+        "deploy/publish/check-build-capacity.test.py",
+        "scripts/check-summary-transition-freshness.test.mjs",
+        "scripts/check-audit-remediation-release.test.mjs",
+        "scripts/check-ui-remediation-retirement.test.mjs"
       ]
     }
   ]
