@@ -29,7 +29,8 @@ BOOTSTRAP_IDS={'26500e4d2ff7-20261002T054938Z','835e30258d23-20261002T052338Z'}
 # Approved historical writer versions remain admitted after later reviewed
 # upgrades; adding another version needs an explicit source review. No future
 # retirement existed before this canonical plan-serialization contract.
-KNOWN_RETIREMENT_CONTROLLERS={'72729b581a6fa13c9547cf2758aafcb761bcda7d1c7019f6b08ddc38a4afc99d',
+KNOWN_RETIREMENT_CONTROLLERS={'7645c9cb11788b73db1d041d6f57f3a0e3be24d44d8e45cb7bec13b273c3485f',
+                            '72729b581a6fa13c9547cf2758aafcb761bcda7d1c7019f6b08ddc38a4afc99d',
                             '3b53f6ec62de46229b64fff11e9e9a92f969bd697fb2d5dad2558c9f9e69c316',
                             'bb8ff4478c86217eed226fdd968d4dcb798646c6b0304e35741b0b2436aa1fad',
                             '007f5f393f61199fdbd7cc12fb2648f8676c4fbbd1ba3d557ce308e8f7abaac1',
@@ -259,6 +260,55 @@ def verify_fallback_hold(hold, layout, pair, cache):
             or {fp['path']:fp['sha256'] for fp in snapshots} != hold['snapshotSha256']):
         raise ValueError('Preserved fallback no longer matches its verified in-place evidence')
 
+PRESERVED_1042_ADMISSIONS = {
+    'archive': '41d9f26342dbb646aa235a49ac48ec88ae91be3112b23d41b4818c5c52b90a3a',
+    'root': '14599bc9f168376980959d1d82e653ff935c01ca404198933da8d275f239dedf',
+}
+
+def preserved_1042_hold(layout, bindings, admissions):
+    previous, current = S.PRESERVED_1042_PREDECESSOR, S.PRESERVED_1042_INTRODUCER
+    positions = [n for n,a in enumerate(admissions) if a['retainedPair']['current'] == current]
+    if not positions:
+        return None
+    if len(positions) != 1 or positions[0] == 0:
+        raise ValueError('Invalid 1042 hold lineage')
+    n = positions[0]
+    original, introduction = admissions[n-1:n+1]
+    if (introduction['retainedPair'] != {'current': current, 'previous': previous}
+            or original['retainedPair']['current'] != previous
+            or bindings[n-1]['sha256'] != PRESERVED_1042_ADMISSIONS['archive']
+            or bindings[n]['sha256'] != PRESERVED_1042_ADMISSIONS['root']):
+        raise ValueError('1042 hold admission differs')
+    root, = introduction['roots']
+    archive, = original['archives']
+    objects = [root['snapshot'], archive['snapshot'], *archive['sidecars']]
+    if [fp['path'] for fp in objects] != S.preserved_1042_paths(layout):
+        raise ValueError('1042 hold path set differs')
+    manifest, = [r for r in root['snapshot']['entries'] if r['path'] == '.proofofwork-ui-release']
+    return {'model':'verified-1042-in-place-hold-v1','releaseId':previous,'introducedBy':current,
+            'admissions':dict(PRESERVED_1042_ADMISSIONS),'manifestSha256':manifest['sha256'],
+            'archivePayloadSha256':archive['payloadSha256'],
+            'snapshotSha256':{fp['path']:fp['sha256'] for fp in objects}}
+
+def verify_1042_hold(hold, layout, pair, cache):
+    if hold is None:
+        return
+    paths = S.preserved_1042_paths(layout)
+    root = (pair['previous'] if pair['previous']['path'] == paths[0] and paths[1] in cache
+            else S.release_proof(Path(paths[0]),layout,cache))
+    archive = cache[paths[1]]
+    snapshots = [root['snapshot'], archive['snapshot'], *archive['sidecars']]
+    if (root['fields']['release_id'] != S.PRESERVED_1042_PREDECESSOR
+            or hold['model'] != 'verified-1042-in-place-hold-v1'
+            or hold['releaseId'] != S.PRESERVED_1042_PREDECESSOR
+            or hold['introducedBy'] != S.PRESERVED_1042_INTRODUCER
+            or hold['admissions'] != PRESERVED_1042_ADMISSIONS
+            or root['manifestSha256'] != hold['manifestSha256']
+            or archive['payloadSha256'] != hold['archivePayloadSha256']
+            or {fp['path']:fp['sha256'] for fp in snapshots} != hold['snapshotSha256']):
+        raise ValueError('1042 hold physical evidence differs')
+
+
 def load_index(path,expected,layout,approval_sha):
     index,h=S.read_json(Path(path),expected)
     schema=index.get('schema')
@@ -369,6 +419,12 @@ def load_index(path,expected,layout,approval_sha):
             if held - keep and (plan['delete'] or plan['moves'] or plan['policyScope']['eligible']):
                 S.validate_plan(plan, layout, 'future-retention', approval_sha)
             keep.update(held)
+        extra = preserved_1042_hold(layout, source_rows, source_admissions)
+        if extra:
+            held = set(extra['snapshotSha256'])
+            if held - keep and plan['policyScope'].get('preservedRelease1042') != extra:
+                raise ValueError('Retirement plan lost its exact 1042 hold')
+            keep.update(held)
         eligible=[dict(path=path,kind='rollback-root') for path in source_roots if path not in keep and path not in retired]+[dict(path=path,kind='managed-release-archive' if path.endswith('.tgz') else 'archive-sidecar') for path in source_assets if path not in keep and path not in retired]
         eligible.sort(key=lambda r:(r['kind']!='rollback-root',r['path']))
         if plan['policyScope'].get('eligible')!=eligible:raise ValueError('Retirement plan scope does not derive from admitted ordinary assets')
@@ -395,6 +451,13 @@ def policy_scope(index,layout,approval_sha,details=False):
         if held & data['retired']:
             raise ValueError('Retired object cannot enter the preserved fallback')
         keep.update(held)
+    extra = preserved_1042_hold(layout,data['index']['admissions'],data['admissions'])
+    verify_1042_hold(extra,layout,pair,cache)
+    if extra:
+        held = set(extra['snapshotSha256'])
+        if held & data['retired']:
+            raise ValueError('Retired object cannot enter the 1042 hold')
+        keep.update(held)
     eligible=[];qualified=[];observed={}
     for path,r in data['roots'].items():
         if not os.path.lexists(path):
@@ -419,6 +482,7 @@ def policy_scope(index,layout,approval_sha,details=False):
     eligible.sort(key=lambda r:(r['kind']!='rollback-root',r['path']))
     scope=dict(eligible=eligible,admissionIndex=dict(path=data['indexPath'],sha256=data['indexSha256']),policy='current-and-one-fully-verified-prior; only explicit admitted ordinary assets; traditional prune timers remain masked',excludedHistoricalAssetsNotDiscovered=True)
     if hold:scope['preservedFallback']=hold
+    if extra:scope['preservedRelease1042']=extra
     if data['migration']:scope['qualifiedArchiveProofs']=qualified
     return (scope,dict(data,eligibleSnapshots=observed),pair) if details else scope
 
@@ -431,7 +495,7 @@ def custody_closure(index_path,index_sha,layout,approval_sha):
     old=data['migrationReview']['historicalAssetCensus'] if data['migrationReview'] else []
     return dict(index=dict(path=data['indexPath'],sha256=data['indexSha256']),protectedReleaseIds=sorted(pair_ids(pair).values()),
         admittedReleaseIds=sorted(data['releaseIds']),retiredOrdinaryPaths=sorted(data['retired']),
-        protectedPaths=sorted(set(protected_paths(pair))|set(scope.get('preservedFallback',{}).get('snapshotSha256',{}))|
+        protectedPaths=sorted(set(protected_paths(pair))|set(scope.get('preservedRelease1042',{}).get('snapshotSha256',{}))|set(scope.get('preservedFallback',{}).get('snapshotSha256',{}))|
             {str(layout.archives/pair[k]['fields']['archive_name'])+suffix for k in ('current','previous') for suffix in ('','.sha256','.provenance')}),
         pair=pair,migrationExcludedPaths=sorted(r['path'] for r in old if r['path'] not in data['roots'] and r['path'] not in data['assets']),
         historicalObligations=[r for r in old if r['status']=='unresolved-missing-historical-object'],

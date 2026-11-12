@@ -19,7 +19,8 @@
     "scripts/check-activity-fee-factor.test.mjs",
     "scripts/check-activity-runtime-release.test.mjs",
     "scripts/check-incb-h-minus-one.test.mjs",
-    "scripts/check-incb-components-forward.test.mjs"
+    "scripts/check-incb-components-forward.test.mjs",
+    "scripts/check-ui-preserved-1042.test.mjs"
   ],
   "reviews": [
     {
@@ -300,11 +301,12 @@
         "compatibility"
       ],
       "disposition": "affected",
-      "reason": "This target consumes corrected canonical accounting or its readiness dependencies. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity. Forward witnessed INCB projection binds its aggregate mint to the exact authenticated raw direct-recipient position; component validation proves cumulative recipient rounding without altering native records. The API pre-materialization projection now sets its canonical token-mint discriminator before strict binding; an actual API-mapping regression covers the previously missing kind without relaxing guards. Worker transition normalization revalidates and preserves the exact H-minus-one witness for both component consumers; captured API fixture qualification is an explicit separate gate.",
+      "reason": "This target consumes corrected canonical accounting or its readiness dependencies. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity. Forward witnessed INCB projection binds its aggregate mint to the exact authenticated raw direct-recipient position; component validation proves cumulative recipient rounding without altering native records. The API pre-materialization projection now sets its canonical token-mint discriminator before strict binding; an actual API-mapping regression covers the previously missing kind without relaxing guards. Worker transition normalization revalidates and preserves the exact H-minus-one witness for both component consumers; captured API fixture qualification is an explicit separate gate. Publication lifecycle adds only the already-installed exact authenticated in-place 1042 hold, preserving the independent older fallback, resource accounting and historical completion proofs; it grants no retirement or future-pair authority. This reconciliation does not include linked Publish/Boost, Growth-model or Mail changes.",
       "evidence": [
         "scripts/check-incb-h-minus-one.test.mjs",
         "scripts/check-index-recovery-behavior.mjs",
-        "scripts/check-incb-components-forward.test.mjs"
+        "scripts/check-incb-components-forward.test.mjs",
+        "scripts/check-ui-preserved-1042.test.mjs"
       ]
     }
   ]

@@ -1016,6 +1016,17 @@ def preserved_fallback_paths(layout):
     return [str(root), *(str(archive) + suffix for suffix in ('', '.sha256', '.provenance'))]
 
 
+# Exact additive in-place hold. No expiry, release operation, or authority to
+# retire any later pair. Existing fallback remains a separate obligation.
+PRESERVED_1042_PREDECESSOR = '1042efea2aa1-20261112T074918Z'
+PRESERVED_1042_INTRODUCER = 'e2669bc1fd32-20261112T163804Z'
+
+def preserved_1042_paths(layout):
+    root = layout.roots / ('proofofwork-www-pre-' + PRESERVED_1042_INTRODUCER)
+    archive = layout.archives / ('proofofwork-ui-release-' + PRESERVED_1042_PREDECESSOR + '.tgz')
+    return [str(root), *(str(archive) + suffix for suffix in ('', '.sha256', '.provenance'))]
+
+
 def reviewed_forecast(rule):
     if not isinstance(rule, dict):
         return False
@@ -1072,7 +1083,7 @@ def validate_plan(plan,layout,kind,approval_sha):
         if plan['delete']!=[] and [{k:r[k] for k in ('path','kind')} for r in plan['delete']]!=plan['policyScope']['eligible']:raise ValueError('Future admission scope differs')
         if plan['moves']:raise ValueError('Future policy cannot relocate sources')
     else:raise ValueError('Unsupported plan kind')
-    held = [Path(p) for p in preserved_fallback_paths(layout)]
+    held = [Path(p) for p in preserved_fallback_paths(layout) + preserved_1042_paths(layout)]
     targets = [Path(r['path']) for r in plan['delete']]
     targets.extend(Path(r[k]) for r in plan['moves'] for k in ('source','target'))
     if any(p == h or p in h.parents or h in p.parents for p in targets for h in held):

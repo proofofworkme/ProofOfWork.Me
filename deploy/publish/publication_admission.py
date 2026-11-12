@@ -60,6 +60,9 @@ def require_obligation(observed, private, release=None):
             raise ValueError('Missing verified preserved fallback on or after its introduction')
     elif not private:
         raise ValueError('Verified preserved fallback requires private zero-retirement publication')
+    extra = observed.get('verifiedPreservedRelease1042')
+    if extra is not None and not private:
+        raise ValueError('Exact 1042 hold requires private preservation-only publication')
     if release is not None and (not re.fullmatch('[a-f0-9]{12}-[0-9]{8}T[0-9]{6}Z', release)
             or any(release[13:] <= prior[13:] for prior in observed['binding']['pair'].values())):
         raise ValueError('Proposed release must follow its authenticated predecessor pair')
@@ -75,6 +78,8 @@ def check_observation(observed, private, rule=None, *, release=None, compare=Fal
     forecast = observed['privateStageRetention']
     if not reviewed_forecast(forecast):
         raise ValueError('Private staging would retire previously admitted data: ' + str(forecast['wouldRetire']))
+    if forecast.get('preservedRelease1042') != observed.get('verifiedPreservedRelease1042'):
+        raise ValueError('Private forecast lost exact 1042 hold')
     if (forecast.get('preservedFallback') != hold
             or (compare and forecast != rule)):
         raise ValueError('Private publication forecast differs from installed retention evidence')
@@ -148,5 +153,6 @@ def installed_admission(binding, release, private, rule, lock_fd):
         raise ValueError('Installed lifecycle binding changed since preflight')
     check_observation(observed, private, rule, release=release, compare=True)
     return {'verifiedPreservedFallback':observed['verifiedPreservedFallback'], 'retentionIndex':observed['index'],
+            'verifiedPreservedRelease1042':observed.get('verifiedPreservedRelease1042'),
             **({'verifiedPreFallbackIndex':observed['verifiedPreFallbackIndex']}
                if observed['verifiedPreservedFallback'] is None else {})}

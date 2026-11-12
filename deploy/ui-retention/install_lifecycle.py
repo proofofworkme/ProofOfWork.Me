@@ -677,7 +677,30 @@ def completed_package_review(payload, package, old_runtime, review):
     state = review['state']; index = state['index']
     scope = policy.policy_scope(index, runtime.layout, APPROVAL)
     require(not scope['eligible'], 'New package finds eligible ordinary assets')
-    boot_proofs = {}
+    extra = scope.get('preservedRelease1042')
+    if extra is not None:
+        old_scope = old_runtime.P.policy_scope(index, old_runtime.layout, APPROVAL)
+        prior_extra = old_scope.get('preservedRelease1042')
+        require(old_scope.get('preservedFallback') == scope.get('preservedFallback'),
+                'Additive hold changed existing fallback proof')
+        if prior_extra is None:
+            require(context['pair'] == {'current':storage.PRESERVED_1042_INTRODUCER,
+                                      'previous':storage.PRESERVED_1042_PREDECESSOR}
+                    and not old_scope['eligible'] and not scope['eligible'],
+                    '1042 hold may only be introduced at exact completed e266/1042 pair')
+            # It was protected by the old verified current/prior pair already.
+            # No formerly eligible or absent object can be revived by migration.
+            paths = set(extra['snapshotSha256'])
+            pair, _ = old_runtime.current()
+            cache = {}
+            old_runtime.S.release_proof(Path(storage.preserved_1042_paths(runtime.layout)[0]),
+                                       runtime.layout, cache)
+            policy.verify_1042_hold(extra, runtime.layout, pair, cache)
+        else:
+            require(prior_extra == extra, 'Upgrade removed or changed existing 1042 hold')
+    elif old_runtime.P.policy_scope(index, old_runtime.layout, APPROVAL).get('preservedRelease1042') is not None:
+        raise ValueError('Upgrade cannot remove the exact 1042 hold')
+    boot_proofs = {'preservedRelease1042':extra} if extra is not None else {}
     if 'journalEvidenceMigration' in review:
         attestation = storage.verify_expired_boot_journal(storage.EXPIRED_BOOT_JOURNAL['invocation'])
         require(attestation == review['journalEvidenceMigration'], 'Journal migration attestation changed')
@@ -789,6 +812,9 @@ def verify_activated_upgrade(result, prefix=Path('/')):
     status = runtime.status({'requireComplete': True})
     require(status['retentionComplete'] is True and status['stateSha256'] == state_sha,
             'Activated package did not verify completed retention')
+    extra = result.get('completionVerification', {}).get('preservedRelease1042')
+    require(status.get('verifiedPreservedRelease1042') == extra,
+            'Activated package lost the exact 1042 hold')
     receipt = {'path': str(Path(result['intent']['path']).parent / 'completed.json'),
                'sha256': sha(encoded(result))}
     read_bound(receipt['path'], receipt['sha256'])

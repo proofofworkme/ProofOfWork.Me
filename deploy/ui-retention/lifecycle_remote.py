@@ -625,6 +625,7 @@ class Runtime:
         unfinished = self.unfinished_intents()
         completion_verification = None
         verified_fallback = None
+        verified_1042 = None
         no_fallback_index = None
         settled = bool(state and state.get('status') == 'complete' and not state.get('pending')
                        and not state.get('activePhase') and not unfinished)
@@ -639,6 +640,7 @@ class Runtime:
                 require(not scope['eligible'],
                         'Completed state has eligible ordinary assets')
                 verified_fallback = scope.get('preservedFallback')
+                verified_1042 = scope.get('preservedRelease1042')
                 if verified_fallback is None:
                     require(all(row['retainedPair']['current'] != self.S.PRESERVED_FALLBACK_INTRODUCER
                                 for row in admitted['admissions']), 'Verified index contains the fallback introducer')
@@ -666,11 +668,15 @@ class Runtime:
                     *(str(archive)+suffix for suffix in ('','.sha256','.provenance'))}
             if verified_fallback:
                 keep.update(verified_fallback['snapshotSha256'])
+            if verified_1042:
+                keep.update(verified_1042['snapshotSha256'])
             leaving = sorted((set(admitted['roots']) | set(admitted['assets'])) - set(admitted['retired']) - keep)
             projection = {'privateStageRetention': {'model':'private-stage-zero-retirement-v1','releaseId':release,
                 'previousPair':context['pair'],'stateSha256':digest,'index':state['index'],'wouldRetire':leaving}}
             if verified_fallback:
                 projection['privateStageRetention']['preservedFallback'] = verified_fallback
+            if verified_1042:
+                projection['privateStageRetention']['preservedRelease1042'] = verified_1042
             if leaving:
                 forecast = projection['privateStageRetention']
                 forecast['model'] = 'private-stage-reviewed-retirement-v1'
@@ -678,6 +684,7 @@ class Runtime:
             require(complete, 'Published UI is healthy; retention-incomplete blocks another upload')
         return {'ok': True, 'initialized': state is not None, 'retentionComplete': complete,
                 **({'verifiedPreservedFallback': verified_fallback} if complete and state and state.get('index') else {}),
+                **({'verifiedPreservedRelease1042': verified_1042} if complete and state and state.get('index') else {}),
                 **({'verifiedPreFallbackIndex': no_fallback_index} if no_fallback_index else {}),
                 **({'verifiedAccessTimeReconciliation': completion_verification['verifiedAccessTimeReconciliation']}
                    if self.completion_access_time_reconciliation is not None and completion_verification else {}),
@@ -747,6 +754,11 @@ class Runtime:
             require(plan.get('privateStageRetention',{}).get('forecast',{}).get('preservedFallback') ==
                     plan.get('policyScope',{}).get('preservedFallback') == scope['preservedFallback'],
                     'Completed private publication lost its in-place fallback evidence')
+        extra = scope.get('preservedRelease1042')
+        if extra and context['pair']['current'] != self.S.PRESERVED_1042_INTRODUCER:
+            require(plan.get('privateStageRetention',{}).get('forecast',{}).get('preservedRelease1042') ==
+                    plan.get('policyScope',{}).get('preservedRelease1042') == extra,
+                    'Completed publication lost its exact 1042 hold')
         if 'privateStageRetention' in plan:
             self.verify_private_retirement(plan)
             require(sorted(row['path'] for row in receipt['completed']) == plan['privateStageRetention']['forecast']['wouldRetire'], 'Private staging receipt records retirement')
@@ -867,6 +879,11 @@ class Runtime:
             require(rule and rule['forecast'].get('preservedFallback') == existing_hold,
                     'Published plan lacks the admitted in-place fallback hold')
             self.P.verify_fallback_hold(existing_hold,self.layout,pair,{})
+        existing_1042 = self.P.preserved_1042_hold(self.layout,data['index']['admissions'],data['admissions'])
+        if existing_1042:
+            require(rule and rule['forecast'].get('preservedRelease1042') == existing_1042,
+                    'Published plan lacks the exact 1042 hold')
+            self.P.verify_1042_hold(existing_1042,self.layout,pair,{})
         operation_id, intent, active_sha = self.begin('prepare-cycle', frame, state, state_sha, context)
         _, https_binding = self.store('ui-lifecycle-' + operation_id + '-https.json', frame['httpsReceipt'])
         if context['pair']['current'] not in data['releaseIds']:
@@ -880,6 +897,9 @@ class Runtime:
         if scope.get('preservedFallback'):
             require(rule and rule['forecast'].get('preservedFallback') == scope['preservedFallback']
                     and sorted(r['path'] for r in scope['eligible']) == rule['forecast']['wouldRetire'], 'Publication requires the same fallback hold and reviewed retirement paths')
+        if scope.get('preservedRelease1042'):
+            require(rule and rule['forecast'].get('preservedRelease1042') == scope['preservedRelease1042'],
+                    'Publication changed exact 1042 hold')
         plan = self.S.create_plan(self.layout, 'future-retention', APPROVAL_SHA, scope)
         if rule:
             plan['privateStageRetention'] = rule
@@ -920,6 +940,8 @@ class Runtime:
                     scope.get('preservedFallback') == rule['forecast'].get('preservedFallback') ==
                     plan['policyScope'].get('preservedFallback'),
                     'Private staging cannot retire newly eligible data or change an in-place hold')
+            require(scope.get('preservedRelease1042') == rule['forecast'].get('preservedRelease1042') ==
+                    plan['policyScope'].get('preservedRelease1042'), '1042 hold differs before apply')
             self.verify_private_retirement(plan)
         operation_id, intent, active_sha = self.begin('apply-vps-retention' if vps_only else 'apply-ordinary', frame, state, state_sha, context)
         for row in ([] if vps_only else frame.get('custodyRecords', [])):

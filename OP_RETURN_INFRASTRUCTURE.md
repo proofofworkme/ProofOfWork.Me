@@ -9397,3 +9397,29 @@ Operating-memory and protocol-document review: no new protocol, fee split,
 wallet authority, ID/DNS/marketplace/mail rule or SOUL posture is introduced.
 Historical audits and failed benchmark evidence are retained; no cleanup is part
 of this source commit.
+
+## Exact 1042 preservation-only publication hold — 2026-11-12
+
+The pending linked Boost/Publish release requires an additive in-place safety
+hold over the existing 1042 archive, its SHA/provenance sidecars, and the
+pre-e266 rollback root. This is separate from the older verified fallback.
+The two exact admission hashes and all four physical snapshots are verified;
+no copies are made and every retained byte remains charged to normal capacity
+budgets. There is no expiry, removal command, general future-pair permission,
+or cleanup authorization in this extension.
+
+The package uses the existing completed-cycle lifecycle upgrade:
+`install_lifecycle.py plan-upgrade-complete` binds the current config/state,
+then `upgrade` verifies old and new completion proofs before the guarded switch.
+The additional hold may first be introduced only at the exact completed
+e266/1042 pair. Existing admissions and completion receipts are not rewritten.
+Both pre-switch review and post-switch normal status must verify the unchanged
+older fallback and exact additional hold. Failed or uncertain upgrades retain
+their evidence and block publication until reconciled.
+
+Fresh private closed-input publication must then forecast zero retirement;
+ordinary publication is not a bypass. Current root reserve (8 GiB plus 64 MiB),
+5 GiB scratch, retained-budget limits and resource envelopes remain unchanged.
+If admission fails, stop rather than relaxing a limit. Retaining 1042 does not
+authorize releasing that hold after this rollout: removal needs a separate
+owner-authorized, reviewed migration with fresh recovery and capacity evidence.
