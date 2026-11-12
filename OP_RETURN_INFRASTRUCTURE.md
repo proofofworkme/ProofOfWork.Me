@@ -9357,3 +9357,43 @@ are unchanged. Pending counts are event counts, not necessarily transaction
 counts: batch transactions can contribute many valid public events. Regression
 fixtures preserve filtered/profile and unavailable scope and reject inconsistent
 count proofs. This change affects standalone Log and embedded Computer/badge.
+
+
+### Canonical activity fee factoring (2026-11-12 candidate)
+
+The livenet live-activity reader factors transaction input/output totals and fee
+evidence once per selected confirmed transaction. This is an execution-plan
+change, not a protocol or accounting migration. Every base relation remains
+explicitly network-bound. Nullable-height admission is aggregated per transaction,
+then the original per-event confirmed/height gate is applied to each output row.
+The nested CASE preserves the original malformed-evidence and integer-overflow
+evaluation domain. No historical record, raw payload, credit or ledger is rewritten.
+Snapshot, membership, replay, confirmed-only and non-livenet SQL remain unchanged.
+
+The retained post-fix isolated snapshot at checkpoint 975557 produced exactly
+33,155 native-ordered rows (237,095,071 bytes) in all four A/B/B/A streams. Original
+query times were 32.923 and 30.231 seconds; candidate times were 2.273 and 2.276
+seconds. The common output SHA-256 is
+`b088e8c05699de0e0112f9ab872386f9fa5e11b3426ed576bb0a45a765bb6ea5`.
+This proves a roughly 92.8% execution-time reduction for that isolated query,
+not a whole-application latency claim. The 54 synthetic cases also check excluded
+malformed evidence, cross-network shadow records, null/wrong heights and the
+expected SQLSTATE 22003 overflow case. Source-mode tests bind the SQL projections
+and preserve native ordering. Earlier rejected plan variants and a transport-only
+failed benchmark remain in the audit evidence, not silently superseded.
+
+`deploy/activity-fee-factor` prepares a single-function, exact-hash splice into the
+accepted Node reader. Prefix/suffix bytes, all other accepted overlays and the
+runtime Git baseline are retained. The established guarded API/worker cutover is
+reused for coordinated activation and rollback; it is not evidence that the worker
+directly imports the reader. Core, Electrs and PostgreSQL are not restarted.
+The exact predecessor bytes/metadata and whole-file rollback remain available.
+Production acceptance additionally requires the reviewed runtime plan, live health
+and stable-checkpoint observations, accepted-overlay archival and the complete
+22-surface source/preview/UI synchronization gate. The isolated result alone does
+not mean the candidate has been deployed or that historical replay is complete.
+
+Operating-memory and protocol-document review: no new protocol, fee split,
+wallet authority, ID/DNS/marketplace/mail rule or SOUL posture is introduced.
+Historical audits and failed benchmark evidence are retained; no cleanup is part
+of this source commit.

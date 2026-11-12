@@ -1,0 +1,104 @@
+{
+  "live": {
+    "full": "63401a6fa0ea691c9e6417c6be86e3c15c06e382c7533b6e7adc203b60847912",
+    "selected": "67402c223c7c3c315b7e455ce05c03fc53c7c3b836b28d3bc7a86daa815b2d15",
+    "projection": "24ed71cdd23ab16b808e7dd35f344ab973537b138f132f873faeb5d579f9a03b",
+    "tail": "89f6ba8b912ec073e2a5f71e11d79637f18ec7496070ec0d574e4e97604dead9",
+    "params": [
+      "livenet",
+      [
+        "mail",
+        "token-mint"
+      ]
+    ]
+  },
+  "testnet": {
+    "full": "63401a6fa0ea691c9e6417c6be86e3c15c06e382c7533b6e7adc203b60847912",
+    "selected": "67402c223c7c3c315b7e455ce05c03fc53c7c3b836b28d3bc7a86daa815b2d15",
+    "projection": "24ed71cdd23ab16b808e7dd35f344ab973537b138f132f873faeb5d579f9a03b",
+    "tail": "89f6ba8b912ec073e2a5f71e11d79637f18ec7496070ec0d574e4e97604dead9",
+    "params": [
+      "testnet",
+      [
+        "mail",
+        "token-mint"
+      ]
+    ]
+  },
+  "confirmed": {
+    "full": "35d67484b7910dfb4b44f62e8cbcb4da2ccb471be25f0da681a045bc7bd31810",
+    "selected": "c0655f0ca9ab3c7f0639ea5e02bb9aac92ed27ac84939665e6943cc80364e427",
+    "projection": "24ed71cdd23ab16b808e7dd35f344ab973537b138f132f873faeb5d579f9a03b",
+    "tail": "89f6ba8b912ec073e2a5f71e11d79637f18ec7496070ec0d574e4e97604dead9",
+    "params": [
+      "livenet",
+      [
+        "mail",
+        "token-mint"
+      ]
+    ]
+  },
+  "snapshot": {
+    "full": "d2167d60d3e03acf8bd07380862992c42dedc2a390050b25bdf8aab5627a07af",
+    "selected": "cbc23daea6e2de3ed7af85ffa2c5c3a2e5e7791f182c532441028dcb686f751c",
+    "projection": "24ed71cdd23ab16b808e7dd35f344ab973537b138f132f873faeb5d579f9a03b",
+    "tail": "89f6ba8b912ec073e2a5f71e11d79637f18ec7496070ec0d574e4e97604dead9",
+    "params": [
+      "livenet",
+      [
+        "mail",
+        "token-mint"
+      ],
+      975515,
+      "2026-11-12T00:00:00.000Z"
+    ]
+  },
+  "snapshot-confirmed": {
+    "full": "4894d9ab0f055e945796ed953949b3583af178e735335d9cb2e009c855a469a4",
+    "selected": "1dadaf64465bb265507fbf49bc4e1516bf135f3eb003488e6a14bd504bb252bd",
+    "projection": "24ed71cdd23ab16b808e7dd35f344ab973537b138f132f873faeb5d579f9a03b",
+    "tail": "89f6ba8b912ec073e2a5f71e11d79637f18ec7496070ec0d574e4e97604dead9",
+    "params": [
+      "livenet",
+      [
+        "mail",
+        "token-mint"
+      ],
+      975515,
+      "2026-11-12T00:00:00.000Z"
+    ]
+  },
+  "membership": {
+    "full": "70a97729f81b0b6ba671307935aa1ce6bd88f14b5676fd53285e46ff308aebfa",
+    "selected": "17547b932ea42953f3185460a6f5710e467a61192623cc79383b8e444876c1f3",
+    "projection": "24ed71cdd23ab16b808e7dd35f344ab973537b138f132f873faeb5d579f9a03b",
+    "tail": "89f6ba8b912ec073e2a5f71e11d79637f18ec7496070ec0d574e4e97604dead9",
+    "params": [
+      "livenet",
+      [
+        "mail",
+        "token-mint"
+      ],
+      975515,
+      "2026-11-12T00:00:00.000Z",
+      [
+        2,
+        7
+      ]
+    ]
+  },
+  "replay": {
+    "full": "49f6b750a68f6c4a0244fa1efdcc4986482272491fc94c8e823455f76f0540d4",
+    "selected": "328a2643773fc7b52457b1db9930de6bc5777621097a43f227556362b32e703d",
+    "projection": "24ed71cdd23ab16b808e7dd35f344ab973537b138f132f873faeb5d579f9a03b",
+    "tail": "89f6ba8b912ec073e2a5f71e11d79637f18ec7496070ec0d574e4e97604dead9",
+    "params": [
+      "livenet",
+      [
+        "mail",
+        "token-mint"
+      ],
+      975515
+    ]
+  }
+}

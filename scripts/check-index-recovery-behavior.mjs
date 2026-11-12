@@ -17449,6 +17449,10 @@ check("canonical miner-fee coverage fails closed on partial normalized rows", as
     Array.from(activity.canonicalMinerFeeCoverage.missingConfirmedTxids),
     [txid],
   );
+  assert.match(activitySql, /transaction_fee_evidence AS MATERIALIZED/u);
+  assert.match(activitySql, /qualifying_event.status = 'confirmed'/u);
+  assert.match(activitySql, /CASE WHEN e.status = 'confirmed' AND \(e.block_height IS NULL OR e.block_height = transaction_row.block_height\) THEN fee_evidence.fee_sats ELSE NULL END AS canonical_miner_fee_sats/u);
+  assert.match(activitySql, /fee_evidence.fee_sats IS NOT NULL THEN true ELSE false END AS canonical_miner_fee_covered/u);
   assert.match(
     activitySql,
     /jsonb_typeof\(\s*transaction_row\.raw_tx->'canonicalBlockScan'\s*\)\s*=\s*'object'/u,
@@ -17459,7 +17463,7 @@ check("canonical miner-fee coverage fails closed on partial normalized rows", as
         /input_totals\.input_count\s*=\s*jsonb_array_length\(transaction_row\.raw_tx->'vin'\)/gu,
       ) ?? []
     ).length,
-    2,
+    1,
   );
   assert.match(
     activitySql,
@@ -17475,12 +17479,12 @@ check("canonical miner-fee coverage fails closed on partial normalized rows", as
         /output_totals\.valued_output_count\s*=\s*output_totals\.output_count/gu,
       ) ?? []
     ).length,
-    2,
+    1,
   );
   assert.equal(
     (activitySql.match(/jsonb_exists\([\s\S]*?'coinbase'[\s\S]*?\)/gu) ?? [])
       .length,
-    5,
+    3,
   );
   assert.match(
     activitySql,
@@ -17492,7 +17496,7 @@ check("canonical miner-fee coverage fails closed on partial normalized rows", as
         /NOT jsonb_exists\([\s\S]*?'coinbase'[\s\S]*?\)\s+AND\s+input_totals\.input_count > 0/gu,
       ) ?? []
     ).length,
-    2,
+    1,
   );
 });
 
@@ -82135,7 +82139,7 @@ check("canonical activity SQL carries the exact relational event tuple", async (
   );
 
   const selectedEventsSql =
-    /WITH selected_events AS \(\s*SELECT([\s\S]*?)FROM proof_indexer\.events e/u.exec(
+    /WITH selected_events AS (?:NOT MATERIALIZED )?\(\s*SELECT([\s\S]*?)FROM proof_indexer\.events e/u.exec(
       activitySql,
     )?.[1] ?? "";
   const finalSelectStart = activitySql.lastIndexOf(

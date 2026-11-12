@@ -1,7 +1,7 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "growth-work-links-reviewed-retention-transition",
-  "liveCheck": "scripts/check-audit-remediation-live.mjs",
+  "upgrade": "growth-work-links-activity-fee-factor",
+  "liveCheck": "scripts/check-activity-fee-factor-live.mjs",
   "ciTests": [
     "server/pwid-rejection-projection.test.mjs",
     "scripts/check-fee-capacity-regression.test.mjs",
@@ -15,7 +15,9 @@
     "scripts/check-growth-display.test.mjs",
     "scripts/check-growth-forecast.test.mjs",
     "scripts/check-work-chart-sampling.test.mjs",
-    "src/features/boost/boostWebLinks.test.mjs"
+    "src/features/boost/boostWebLinks.test.mjs",
+    "scripts/check-activity-fee-factor.test.mjs",
+    "scripts/check-activity-runtime-release.test.mjs"
   ],
   "reviews": [
     {
@@ -23,10 +25,11 @@
         "landing"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -34,10 +37,11 @@
         "id"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -45,10 +49,11 @@
         "dns"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -56,12 +61,13 @@
         "computer"
       ],
       "disposition": "affected",
-      "reason": "Embedded WORK chart and Boost rendering consume the same changed components; shell and all other embedded writers unchanged. Exact reviewed private-stage transition (1042,7ea) preserves held c3969 and immediate1042, with recovery-backed outgoing7ea retirement only after verified publication; capacity floors and future-pair refusal remain unchanged.",
+      "reason": "Embedded WORK chart and Boost rendering consume the same changed components; shell and all other embedded writers unchanged. Exact reviewed private-stage transition (1042,7ea) preserves held c3969 and immediate1042, with recovery-backed outgoing7ea retirement only after verified publication; capacity floors and future-pair refusal remain unchanged. Canonical activity live reads factor identical per-transaction fee evidence once; selected events, all 26 fields, native order, raw payload and final per-event status/height guards remain exact. Isolated saved-snapshot ABBA proves byte equality, not whole-app latency.",
       "evidence": [
         "tests/browser/bare-domain-links.spec.mjs",
         "tests/browser/ledger-charts.spec.mjs",
         "deploy/audit30/check-ui-storage.test.py",
-        "scripts/check-ui-remediation-retirement.test.mjs"
+        "scripts/check-ui-remediation-retirement.test.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -69,10 +75,11 @@
         "desktop"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -80,10 +87,11 @@
         "browser"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -91,10 +99,11 @@
         "boost"
       ],
       "disposition": "affected",
-      "reason": "Shared BoostText recognizes safe bare web domains while preserving source bytes, native DNS/identity paths and code literal text.",
+      "reason": "Shared BoostText recognizes safe bare web domains while preserving source bytes, native DNS/identity paths and code literal text. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "src/features/boost/boostWebLinks.test.mjs",
-        "tests/browser/bare-domain-links.spec.mjs"
+        "tests/browser/bare-domain-links.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -102,10 +111,11 @@
         "publish"
       ],
       "disposition": "compatible",
-      "reason": "Uses BoostText dnsOnly path, which remains unchanged; article body/source is not newly autolinked.",
+      "reason": "Uses BoostText dnsOnly path, which remains unchanged; article body/source is not newly autolinked. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "src/features/boost/BoostText.tsx",
-        "tests/browser/publish-ui.spec.mjs"
+        "tests/browser/publish-ui.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -113,10 +123,11 @@
         "search"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -124,10 +135,11 @@
         "code"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -135,10 +147,11 @@
         "jobs"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -146,10 +159,11 @@
         "marketplace"
       ],
       "disposition": "compatible",
-      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK.",
+      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-work-chart-sampling.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -157,10 +171,11 @@
         "token"
       ],
       "disposition": "compatible",
-      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK.",
+      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-work-chart-sampling.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -168,10 +183,11 @@
         "wallet"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -179,10 +195,11 @@
         "work"
       ],
       "disposition": "affected",
-      "reason": "Separate sampled history and canonical current marker; action count and source freshness labels; no replay/math change.",
+      "reason": "Separate sampled history and canonical current marker; action count and source freshness labels; no replay/math change. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-work-chart-sampling.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -190,10 +207,11 @@
         "infinity"
       ],
       "disposition": "compatible",
-      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK.",
+      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-work-chart-sampling.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -201,21 +219,23 @@
         "inception"
       ],
       "disposition": "compatible",
-      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK.",
+      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-work-chart-sampling.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
       "targets": [
         "activity"
       ],
-      "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "disposition": "affected",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Canonical activity live reads factor identical per-transaction fee evidence once; selected events, all 26 fields, native order, raw payload and final per-event status/height guards remain exact. Isolated saved-snapshot ABBA proves byte equality, not whole-app latency.",
       "evidence": [
         "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -223,10 +243,11 @@
         "growth"
       ],
       "disposition": "affected",
-      "reason": "Responsive layout, bounded metric presentation with exact disclosures, canonical directory and explicit scenario gaps; numeric forecast unchanged.",
+      "reason": "Responsive layout, bounded metric presentation with exact disclosures, canonical directory and explicit scenario gaps; numeric forecast unchanged. Canonical activity live reads factor identical per-transaction fee evidence once; selected events, all 26 fields, native order, raw payload and final per-event status/height guards remain exact. Isolated saved-snapshot ABBA proves byte equality, not whole-app latency.",
       "evidence": [
         "scripts/check-growth-display.test.mjs",
-        "scripts/check-growth-forecast.test.mjs"
+        "scripts/check-growth-forecast.test.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -234,10 +255,11 @@
         "pages"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -245,10 +267,11 @@
         "permission"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -256,10 +279,11 @@
         "nft"
       ],
       "disposition": "compatible",
-      "reason": "Computer/NFT compatibility alias retained; no new NFT accounting or standalone writer. Shared Computer bundle carries the same embedded reader fixes.",
+      "reason": "Computer/NFT compatibility alias retained; no new NFT accounting or standalone writer. Shared Computer bundle carries the same embedded reader fixes. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
       "evidence": [
         "tests/browser/bare-domain-links.spec.mjs",
-        "tests/browser/ledger-charts.spec.mjs"
+        "tests/browser/ledger-charts.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs"
       ]
     },
     {
@@ -275,14 +299,16 @@
         "notifications",
         "compatibility"
       ],
-      "disposition": "compatible",
-      "reason": "Presentation-only changes do not alter signed bytes, node admission, indexing/backfill/replay, ownership, pending/confirmed/reorg authority, or exactly-once value. Exact canonical Q8 values and original text remain intact. DNS/Permission inventory coverage is not new forecast calibration; numeric model outputs are unchanged. Missing values remain unavailable and unsafe links inert. Historical WORK accounting remains a separately disclosed limitation, not repaired by display separation.",
+      "disposition": "affected",
+      "reason": "Presentation-only changes do not alter signed bytes, node admission, indexing/backfill/replay, ownership, pending/confirmed/reorg authority, or exactly-once value. Exact canonical Q8 values and original text remain intact. DNS/Permission inventory coverage is not new forecast calibration; numeric model outputs are unchanged. Missing values remain unavailable and unsafe links inert. Historical WORK accounting remains a separately disclosed limitation, not repaired by display separation. Canonical activity live reads factor identical per-transaction fee evidence once; selected events, all 26 fields, native order, raw payload and final per-event status/height guards remain exact. Isolated saved-snapshot ABBA proves byte equality, not whole-app latency.",
       "evidence": [
         "scripts/check-growth-forecast.test.mjs",
         "scripts/check-work-chart-sampling.test.mjs",
         "src/features/boost/boostWebLinks.test.mjs",
         "tests/browser/ledger-charts.spec.mjs",
-        "tests/browser/bare-domain-links.spec.mjs"
+        "tests/browser/bare-domain-links.spec.mjs",
+        "scripts/check-activity-fee-factor.test.mjs",
+        "deploy/activity-fee-factor/check.test.py"
       ]
     }
   ]

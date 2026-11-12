@@ -39199,8 +39199,11 @@ export async function proofIndexCanonicalActivityPayload(
     ? `AND canonical_block.indexed_at <= ${snapshotTimeParam}::timestamptz`
     : "";
 
-  const result = await pool.query(
-    `
+  // Factor fee evidence only for the verified live livenet query mode.
+  // Snapshot, membership, replay and other-network reads retain original SQL.
+  const factorLiveFees = network === "livenet" && includePending &&
+    !requestedSnapshotId && !membershipRestricted && !replayCheckpointRequested;
+  const originalActivitySql = `
       WITH selected_events AS (
         SELECT
           e.payload,
@@ -39496,7 +39499,264 @@ export async function proofIndexCanonicalActivityPayload(
         ) DESC,
         e.txid DESC,
         e.event_id DESC
-    `,
+    `;
+  const result = await pool.query(
+    factorLiveFees ? `
+      WITH selected_events AS NOT MATERIALIZED (
+        SELECT
+          e.payload,
+          e.protocol,
+          e.kind,
+          e.status,
+          e.event_time,
+          e.block_time,
+          e.created_at,
+          e.block_height,
+          e.block_index,
+          e.op_return_vout,
+          e.record_ordinal,
+          e.txid,
+          e.event_id,
+          e.network
+        FROM proof_indexer.events e
+        WHERE e.network = $1
+          AND e.valid = true
+          AND e.status IN ('confirmed', 'pending')
+          ${includePending ? "" : "AND e.status = 'confirmed'"}
+          AND e.kind = ANY($2::text[])
+          AND (
+            e.kind NOT LIKE 'token-%'
+            OR e.protocol = 'pwt1'
+          )
+          ${snapshotWhere}
+          ${membershipWhere}
+          ${replayCheckpointWhere}
+      ),
+      selected_txids AS (
+        SELECT DISTINCT txid
+        FROM selected_events
+        WHERE status = 'confirmed'
+      ),
+      input_totals AS MATERIALIZED (
+        SELECT
+          i.txid,
+          COUNT(*)::integer AS input_count,
+          COUNT(i.value_sats)::integer AS valued_input_count,
+          SUM(i.value_sats)::numeric AS input_value_sats
+        FROM proof_indexer.tx_inputs i
+        JOIN selected_txids selected
+          ON selected.txid = i.txid
+        WHERE i.network = $1
+        GROUP BY i.txid
+      ),
+      output_totals AS MATERIALIZED (
+        SELECT
+          o.txid,
+          COUNT(*)::integer AS output_count,
+          COUNT(o.value_sats)::integer AS valued_output_count,
+          SUM(o.value_sats)::numeric AS output_value_sats
+        FROM proof_indexer.tx_outputs o
+        JOIN selected_txids selected
+          ON selected.txid = o.txid
+        WHERE o.network = $1
+        GROUP BY o.txid
+      ),
+      transaction_fee_admission AS MATERIALIZED (
+        SELECT qualifying_event.txid,
+          bool_or(qualifying_event.block_height IS NULL
+            OR qualifying_event.block_height = qualifying_transaction.block_height)
+            AS fee_admitted
+        FROM selected_events qualifying_event
+        JOIN proof_indexer.transactions qualifying_transaction
+          ON qualifying_transaction.network = $1
+         AND qualifying_transaction.txid = qualifying_event.txid
+        WHERE qualifying_event.status = 'confirmed'
+        GROUP BY qualifying_event.txid
+      ),
+      transaction_fee_evidence AS MATERIALIZED (
+        SELECT transaction_row.txid,
+          CASE WHEN selected.fee_admitted THEN CASE
+          WHEN transaction_row.status = 'confirmed'
+            AND transaction_row.block_hash IS NOT NULL
+            AND transaction_row.block_height IS NOT NULL
+            AND canonical_block.canonical = true
+            AND canonical_block.block_hash = transaction_row.block_hash
+            AND canonical_block.height = transaction_row.block_height
+            AND jsonb_typeof(transaction_row.raw_tx) = 'object'
+            AND jsonb_typeof(
+              transaction_row.raw_tx->'canonicalBlockScan'
+            ) = 'object'
+            AND transaction_row.raw_tx->'canonicalBlockScan'->>'network' =
+              transaction_row.network
+            AND transaction_row.raw_tx->'canonicalBlockScan'->>'height' =
+              transaction_row.block_height::text
+            AND lower(
+              transaction_row.raw_tx->'canonicalBlockScan'->>'blockHash'
+            ) = lower(transaction_row.block_hash)
+            AND lower(COALESCE(transaction_row.raw_tx->>'txid', '')) = transaction_row.txid
+            AND jsonb_typeof(transaction_row.raw_tx->'vin') = 'array'
+            AND jsonb_typeof(transaction_row.raw_tx->'vout') = 'array'
+            AND output_totals.output_count > 0
+            AND output_totals.valued_output_count =
+              output_totals.output_count
+            AND output_totals.output_count =
+              jsonb_array_length(
+                CASE
+                  WHEN jsonb_typeof(transaction_row.raw_tx->'vout') = 'array'
+                    THEN transaction_row.raw_tx->'vout'
+                  ELSE '[]'::jsonb
+                END
+              )
+            AND (
+              (
+                jsonb_array_length(transaction_row.raw_tx->'vin') = 1
+                AND jsonb_typeof(transaction_row.raw_tx->'vin'->0) = 'object'
+                AND jsonb_exists(
+                  transaction_row.raw_tx->'vin'->0,
+                  'coinbase'
+                )
+                AND input_totals.input_count = 1
+                AND input_totals.valued_input_count = 0
+              )
+              OR (
+                NOT jsonb_exists(
+                  transaction_row.raw_tx->'vin'->0,
+                  'coinbase'
+                )
+                AND
+                input_totals.input_count > 0
+                AND input_totals.valued_input_count = input_totals.input_count
+                AND input_totals.input_count =
+                  jsonb_array_length(transaction_row.raw_tx->'vin')
+                AND input_totals.input_value_sats >=
+                  output_totals.output_value_sats
+              )
+            )
+          THEN CASE
+            WHEN jsonb_exists(
+              transaction_row.raw_tx->'vin'->0,
+              'coinbase'
+            ) THEN 0
+            ELSE (
+              input_totals.input_value_sats - output_totals.output_value_sats
+            )::bigint
+          END
+          ELSE NULL
+        END ELSE NULL END AS fee_sats
+        FROM proof_indexer.transactions transaction_row
+        JOIN transaction_fee_admission selected
+          ON selected.txid = transaction_row.txid
+         ${transactionSnapshotWhere}
+        LEFT JOIN proof_indexer.blocks canonical_block
+          ON canonical_block.network = $1
+         AND canonical_block.network = transaction_row.network
+         AND canonical_block.block_hash = transaction_row.block_hash
+         AND canonical_block.height = transaction_row.block_height
+         AND canonical_block.canonical = true
+         ${blockSnapshotWhere}
+        LEFT JOIN input_totals
+          ON input_totals.txid = transaction_row.txid
+        LEFT JOIN output_totals
+          ON output_totals.txid = transaction_row.txid
+        WHERE transaction_row.network = $1
+      )
+      SELECT
+        e.payload,
+        e.protocol,
+        e.kind,
+        e.status,
+        e.event_time,
+        COALESCE(e.block_time, transaction_row.block_time) AS block_time,
+        e.created_at,
+        e.block_height,
+        e.txid,
+        e.event_id,
+        transaction_row.status AS transaction_status,
+        transaction_row.block_height AS transaction_block_height,
+        transaction_row.block_index AS transaction_block_index,
+        transaction_row.block_hash AS block_hash,
+        canonical_block.block_hash AS canonical_block_hash,
+        (
+          (
+            e.status = 'confirmed'
+            AND e.block_height IS NULL
+            AND transaction_row.block_height IS NULL
+          )
+          OR COALESCE(e.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+          OR COALESCE(transaction_row.block_height, 0) >=
+            ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+        ) AS canonical_position_required,
+        CASE
+          WHEN COALESCE(e.block_height, 0) >=
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            OR COALESCE(transaction_row.block_height, 0) >=
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            THEN CASE
+              WHEN e.status = 'confirmed'
+                AND transaction_row.status = 'confirmed'
+                AND e.block_height IS NOT NULL
+                AND transaction_row.block_height = e.block_height
+                AND e.block_index IS NOT NULL
+                AND transaction_row.block_index = e.block_index
+                AND canonical_block.canonical = true
+                AND canonical_block.block_hash =
+                  transaction_row.block_hash
+                AND canonical_block.height =
+                  transaction_row.block_height
+                THEN e.block_index
+              ELSE NULL
+            END
+          WHEN COALESCE(e.block_height, 0) <
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            AND COALESCE(transaction_row.block_height, 0) <
+              ${WORK_AMO_V5_ACTIVATION_HEIGHT}
+            THEN COALESCE(
+              e.block_index,
+              CASE
+                WHEN e.payload->>'blockIndex' ~ '^[0-9]+$'
+                  THEN (e.payload->>'blockIndex')::integer
+                WHEN e.payload->>'_powBlockIndex' ~ '^[0-9]+$'
+                  THEN (e.payload->>'_powBlockIndex')::integer
+                WHEN transaction_row.raw_tx->'canonicalBlockScan'->>'blockIndex' ~
+                  '^[0-9]+$'
+                  THEN (
+                    transaction_row.raw_tx->'canonicalBlockScan'->>'blockIndex'
+                  )::integer
+                ELSE NULL
+              END
+            )
+          ELSE NULL
+        END AS block_index,
+        e.op_return_vout,
+        e.record_ordinal,
+        CASE WHEN e.status = 'confirmed' AND (e.block_height IS NULL OR e.block_height = transaction_row.block_height) THEN fee_evidence.fee_sats ELSE NULL END AS canonical_miner_fee_sats,
+        CASE WHEN e.status = 'confirmed' AND (e.block_height IS NULL OR e.block_height = transaction_row.block_height) AND fee_evidence.fee_sats IS NOT NULL THEN true ELSE false END AS canonical_miner_fee_covered
+      FROM selected_events e
+      LEFT JOIN proof_indexer.transactions transaction_row
+        ON transaction_row.network = $1
+       AND transaction_row.network = e.network
+       AND transaction_row.txid = e.txid
+       ${transactionSnapshotWhere}
+      LEFT JOIN proof_indexer.blocks canonical_block
+        ON canonical_block.network = $1
+         AND canonical_block.network = transaction_row.network
+       AND canonical_block.block_hash = transaction_row.block_hash
+       AND canonical_block.height = transaction_row.block_height
+       AND canonical_block.canonical = true
+       ${blockSnapshotWhere}
+      LEFT JOIN transaction_fee_evidence fee_evidence
+        ON fee_evidence.txid = e.txid
+      ORDER BY
+        COALESCE(
+          e.event_time,
+          e.block_time,
+          transaction_row.block_time,
+          e.created_at
+        ) DESC,
+        e.txid DESC,
+        e.event_id DESC
+    ` : originalActivitySql,
     queryParams,
   );
   const snapshot = replayCheckpointRequested
