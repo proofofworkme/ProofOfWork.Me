@@ -1,11 +1,9 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "bounded-wallet-readiness-and-health-inventory",
-  "liveCheck": "scripts/check-health-readiness-live.mjs",
+  "upgrade": "receipt-bound-completed-storage-adoption",
+  "liveCheck": "scripts/check-ui-storage-adoption-live.mjs",
   "ciTests": [
-    "scripts/check-wallet-readiness-preflight.test.mjs",
-    "scripts/check-ui-health-retirement.test.mjs",
-    "scripts/check-ui-ad330-duplicates.test.mjs"
+    "scripts/check-ui-storage-adoption.test.mjs"
   ],
   "reviews": [
     {
@@ -18,20 +16,7 @@
         "infinity",
         "inception",
         "api",
-        "indexer"
-      ],
-      "disposition": "affected",
-      "reason": "WORK and all-credit wallet reads share bounded account-independent preliminary proof, then retain independent owned snapshots and closing Core checks. The single audit runner preserves context and cancellation. Worker callers share the same unchanged proof validators and bounded scheduler; no writer or replay data changes. PostgreSQL monitoring recognizes the exact already-deployed additive storage inventory.",
-      "evidence": [
-        "scripts/check-wallet-readiness-preflight.test.mjs",
-        "scripts/wallet-request-readiness.test.mjs",
-        "scripts/wallet-proof-readiness-failure.test.mjs",
-        "scripts/check-postgres-query-health.py",
-        "scripts/check-health-readiness-live.mjs"
-      ]
-    },
-    {
-      "targets": [
+        "indexer",
         "activity",
         "boost",
         "browser",
@@ -57,16 +42,13 @@
         "compatibility"
       ],
       "disposition": "compatible",
-      "reason": "No protocol bytes, transaction signing, admission proof rules, fee/accounting calculation, historical replay, reorg handling, or UI interaction changes. Registry fresh-read tip fences remain strict. These surfaces use the same existing readers and cannot acquire authority from display state. The separately approved exact predecessor retirement preserves the immediate rollback, held fallback, all other source/evidence and existing capacity limits. The separately approved obsolete source and exact duplicate-file retirement uses verified recovery copies and a one-shot hash-bound controller; no capacity threshold or general retention eligibility changes. The separately approved 2048-file failed-transfer cleanup preserves the truncated video, all directories and receipts, with durable NODE restoration proof. Coordinated finite transport deadlines increase to 45/115/120/125 minutes; storage, integrity, proof, service resource and bounded termination checks are unchanged.",
+      "reason": "One exact approved operational adoption records an already completed four-path retirement without deleting or publishing again. It admits only the reviewed storage writer hash and verifies the unchanged live037 UI, d9fa rollback, c3969 fallback, guards and capacities. Protocol bytes, writers, signing, node admission, index/replay, APIs, accounting and every standalone/embedded surface stay unchanged. The repair is an isolated tool package: its successful verification does not claim that this branch commit is the published website or that merging it would satisfy source synchronization.",
       "evidence": [
-        "scripts/check-live-data-contract.mjs",
-        "scripts/check-node-ops-contract.mjs",
-        "deploy/publish/check-preservation-admission.test.py",
-        "deploy/health-readiness/check.test.py",
-        "deploy/health-cleanup/check.test.py",
-        "deploy/health-cleanup/check-ad330.test.py",
-        "deploy/publish/check-ui-release.test.py",
-        "deploy/publish/check-private-staging.test.py"
+        "scripts/check-ui-storage-adoption.test.mjs",
+        "scripts/check-ui-storage-adoption-live.mjs",
+        "deploy/ui-retention/check-storage-adoption.test.py",
+        "deploy/ui-retention/check-lifecycle-remote.test.py",
+        "deploy/audit30/check-ui-storage.test.py"
       ]
     }
   ]

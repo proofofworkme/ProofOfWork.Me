@@ -244,6 +244,29 @@ def validate_config(path, expected):
     return config, digest, package
 
 
+# Exact approval applies only to adopting the already completed November 11 retirement.
+STORAGE_COMPLETION_ADOPTION = {'completion': {'path': '/var/backups/proofofwork-ui/cleanup-evidence/audit30-future-retention-20261111T234622.322199Z-004-completed.json',
+                'sha256': 'c2e5367a526c588f2dc7ffc8aacb0b58aba6d1a1d5cfff12d1634bb46a2b119c'},
+ 'config': 'bd41876cdd609f5c6a6e2b1a79d1628f2f22010c660c5a3d405929995b4c28c6',
+ 'index': {'path': '/var/backups/proofofwork-ui/cleanup-evidence/audit30-policy-admission-index-ordinary-037f8db7edcc-20261111T182211Z.json',
+           'sha256': '68f6ebd859ea4161b4605f9b7cb8d60ab8a2c041cb067138bff946101ddbcb8a'},
+ 'ordinaryPlan': {'path': '/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-release-037f8db7edcc-20261111T182211Z-ordinary-plan.json',
+                  'sha256': 'e7adc6b907507cf80701f6ac8f3ff3601dbd0fcb39b64a295bf2261c44846590'},
+ 'pair': {'current': '037f8db7edcc-20261111T182211Z', 'previous': 'd9fa69d9e1e4-20261110T210615Z'},
+ 'phaseIntent': {'path': '/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-ordinary-037f8db7edcc-20261111T182211Z-intent.json',
+                 'sha256': 'd766a75489438aa65310599d8cc8411a2239dadfef6105c55195576e18582c60'},
+ 'publication': {'path': '/var/tmp/proofofwork-deploy/recovery-publish-037f8db7edcc-20261111T182211Z-initial/receipt.json',
+                 'sha256': '8d611ebac9e362fe5f8c2989c5c410e0a7b833da4c6f300039f5b147dda1c399'},
+ 'release': '037f8db7edcc-20261111T182211Z',
+ 'retiredPaths': ['/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4eeffaf28f1-20261109T160000Z.tgz',
+                  '/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4eeffaf28f1-20261109T160000Z.tgz.provenance',
+                  '/var/backups/proofofwork-ui/releases/proofofwork-ui-release-d4eeffaf28f1-20261109T160000Z.tgz.sha256',
+                  '/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-d9fa69d9e1e4-20261110T210615Z'],
+ 'state': '7074d22448a398bbd30eb1f5aab861542d5dd571bf25545465aa171ef8948e4c',
+ 'storageIntent': {'path': '/var/backups/proofofwork-ui/cleanup-evidence/audit30-future-retention-20261111T234622.322199Z-intent.json',
+                   'sha256': '18669da63b2e61971457fff7de477124584c54e4e5184f65c3d007950543b29f'},
+ 'writer': '007f5f393f61199fdbd7cc12fb2648f8676c4fbbd1ba3d557ce308e8f7abaac1'}
+
 class Runtime:
     def __init__(self, config, config_sha, storage, policy, custody=None, layout=None, *, verify_upgrade=False,
                  completion_access_time_reconciliation=None, completion_historical_bulk_preservation=None):
@@ -258,6 +281,7 @@ class Runtime:
         # Only the installer calls this constructor keyword, while holding the
         # deployment lock. The public dispatcher never accepts a bypass frame.
         self.verify_upgrade = verify_upgrade
+        self.verify_adoption = False
         # Only an authenticated completed-config repair supplies this exact proof.
         # Normal status and every public mutation frame remain strict.
         self.completion_access_time_reconciliation = completion_access_time_reconciliation
@@ -321,7 +345,72 @@ class Runtime:
                         'Preserved completion upgrade proof differs')
             self.verify_status_seal(upgrade, completed, template,
                                     skip=self.verify_upgrade)
+        self.storage_adoption(value)
         return value, digest
+
+    def storage_adoption(self, state, *, verify_seal=True):
+        """Authenticate the one approved adoption independently of later upgrades."""
+        adoption = state.get('lastStorageAdoption')
+        if adoption is None:
+            return None
+        pin = STORAGE_COMPLETION_ADOPTION
+        journal = self.layout.evidence / ('ui-lifecycle-storage-adoption-' + pin['release'])
+        require(set(adoption) == {'intentPath', 'intentSha256', 'completionPath'}
+                and adoption['intentPath'] == str(journal / 'intent.json')
+                and adoption['completionPath'] == str(journal / 'adopted.json'), 'Adoption namespace differs')
+        intent, intent_sha = read_json(adoption['intentPath'], adoption['intentSha256'])
+        done, done_sha = read_json(adoption['completionPath'])
+        require(intent.get('schema') == 'pow-ui-storage-completion-adoption-intent-v1'
+                and intent.get('disposition') == 'completed-storage-adopted-without-replay'
+                and intent.get('deletionAllowed') is False and intent.get('publicationAllowed') is False
+                and intent['plan']['authority'] == pin
+                and intent['plan']['schema'] == 'pow-ui-storage-completion-adoption-plan-v1'
+                and done.get('schema') == 'pow-ui-storage-completion-adopted-v1'
+                and done.get('ok') is True and done.get('authority') == pin
+                and done.get('deletionPerformed') is False and done.get('publicationPerformed') is False
+                and done.get('originalPhaseEvidencePreserved') is True and done.get('retentionComplete') is True
+                and done['intent'] == {'path': adoption['intentPath'], 'sha256': intent_sha},
+                'Adoption terminal authority differs')
+        prior, _ = read_json(journal / 'prior-state.json', pin['state'])
+        read(journal / 'prior-config.json', pin['config'])
+        require(prior['revision'] == 220 and prior['lastIntent'] == pin['phaseIntent']
+                and prior['pending']['stage'] == 'applying', 'Adoption prior state differs')
+        template = intent['stateTemplate']
+        reconstructed = dict(template, lastStorageAdoption=dict(template['lastStorageAdoption'], intentSha256=intent_sha))
+        require(template['lastStorageAdoption'] == {k: adoption[k] for k in ('intentPath','completionPath')}
+                and reconstructed['lastStorageAdoption'] == adoption
+                and intent['stateTemplateSha256'] == sha(encoded(template))
+                and done['state'] == {'path': str(self.state_path), 'sha256': sha(encoded(reconstructed))}
+                and done['stateRevision'] == template['revision'] == 222
+                and state['revision'] >= 222
+                and done['config'] == {'path': str(CONFIG_PATH), 'sha256': template['configSha256']}
+                and template['configSha256'] == intent['plan']['payload']['configSha256']
+                and template['status'] == 'complete' and template['pending'] is None
+                and template['activePhase'] is None and template['lastUpgrade'] == {}
+                and template['index'] == pin['index']
+                and template['lastIntent'] == prior['lastIntent']
+                and template['lastCompleted'] == {
+                    'cycleId':'release-' + pin['release'], 'retentionPolicy':VPS_POLICY,
+                    'retainedPair':pin['pair'], 'ordinaryPlan':pin['ordinaryPlan'], 'ordinaryReceipt':pin['completion']},
+                'Adoption state transition differs')
+        for binding in (pin['phaseIntent'], pin['ordinaryPlan'], pin['completion'],
+                        pin['storageIntent'], pin['index'], pin['publication']):
+            read(binding['path'], binding['sha256'])
+        require(not os.path.lexists(Path(pin['phaseIntent']['path']).with_name(
+                    Path(pin['phaseIntent']['path']).name.removesuffix('-intent.json') + '-completed.json')),
+                'Original failed phase was fabricated as completed')
+        if state['revision'] == 222:
+            require(state == reconstructed, 'Initial adopted state changed')
+        if verify_seal and not self.verify_adoption:
+            verified, _ = read_json(journal / 'verified.json')
+            require(verified == {'schema':'pow-ui-storage-adoption-verified-v1',
+                    'adoptionReceipt':{'path':adoption['completionPath'],'sha256':done_sha},
+                    'state':done['state'],'config':done['config'],
+                    'contextSha256':sha(encoded(template['completedContext']))},
+                    'Adoption post-switch verification differs')
+        return {'intent':done['intent'], 'receipt':{'path':adoption['completionPath'],'sha256':done_sha},
+                'state':reconstructed, 'sealedPhaseIntent':pin['phaseIntent']}
+
 
     def verify_status_seal(self, upgrade, completed, template, *, skip=False):
         if not upgrade.get('statusVerificationPath'):
@@ -394,8 +483,12 @@ class Runtime:
     def unfinished_intents(self):
         paths = sorted(self.layout.evidence.glob('ui-lifecycle-*-intent.json'))
         require(len(paths) <= 100000, 'Lifecycle evidence enumeration exceeds bound')
+        state, _ = self.state()
+        adoption = self.storage_adoption(state) if state else None
+        sealed = adoption['sealedPhaseIntent']['path'] if adoption else None
         return [str(path) for path in paths
-                if not os.path.lexists(path.with_name(path.name.removesuffix('-intent.json') + '-completed.json'))]
+                if str(path) != sealed and
+                not os.path.lexists(path.with_name(path.name.removesuffix('-intent.json') + '-completed.json'))]
 
     def cas(self, before_sha, value, operation_id):
         _, actual = self.state()

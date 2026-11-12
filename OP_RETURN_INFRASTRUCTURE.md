@@ -9166,3 +9166,41 @@ discovery and projection readers, and the shared wire codec. No schema, package,
 service-unit or native-storage wrapper change is required. Source, build,
 verification and the single latest verified backup remain on the VPS; normal
 release synchronization and retention completion still apply.
+
+## One-time completed-storage adoption — November 12, 2026
+
+The November 11 release `037f8db7edcc-20261111T182211Z` was published and
+public HTTPS verification passed. Its exact approved predecessor retirement
+completed, but lifecycle revision 220 remained in `applying` because the policy
+reader did not recognize the reviewed storage writer's new SHA-256. The writer
+change added only the approved d9fa/d4ee predecessor pair. The immutable storage
+completion, original plan, baseline and intent hashes agree.
+
+`deploy/ui-retention/reconcile_storage_completion.py` implements the explicitly
+approved one-time, non-deleting, non-publishing repair. It accepts only the
+hardcoded original state/config, lifecycle intent, ordinary plan, successful
+storage completion, resulting index and publication receipt. Qualification
+reverifies the current 037 release, d9fa rollback, c3969 fallback, original
+guards, capacity and exact four already-absent retirement targets. The reviewed
+policy admits only that additional writer hash. Unknown writers still fail.
+
+The plan binds a committed, exported tool payload and all observed guards and
+evidence. Apply repeats qualification under the deployment lock, preserves the
+entire prior state/config and all existing proofs in a new immutable adoption
+journal, and installs a new source-pinned tool package. The new adoption receipt
+explicitly seals only the old incomplete lifecycle intent; it does not invent
+the missing original phase-completed receipt. Interrupted switches refuse
+normal lifecycle activity, and an occupied adoption journal refuses replay.
+A normal post-switch status seal is required before completion is accepted.
+
+The separate `export-payload`, `plan` and `apply` commands permit a bounded
+tool-only stream from the node VPS, without another source/dependency archive.
+The original released source, publication plan and HTTPS receipts are unchanged.
+Publisher reserve, scratch caps, monitoring thresholds and held fallback
+requirements are unchanged. There is no new retirement or publication authority.
+
+Operational adoption does not make a later repair commit the published website
+source. Keep this repair isolated until source integration is explicitly settled;
+merging it to main would require a separately authorized synchronization release
+under the existing release-sync contract. Do not alter published provenance or
+claim full source coherence merely because operational recovery passed.

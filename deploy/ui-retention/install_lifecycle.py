@@ -474,6 +474,14 @@ def completed_review(runtime, request):
         checkpoint, checkpoint_sha = prior, upgrade['priorStateSha256']
     else:
         raise ValueError('Completed upgrade chain exceeds bound')
+    # A storage adoption is an explicit new terminal proof, not the missing
+    # original apply completion. Its sealed state is a valid upgrade checkpoint.
+    adoption = runtime.storage_adoption(checkpoint) if hasattr(runtime, 'storage_adoption') else None
+    if adoption and checkpoint == adoption['state']:
+        return {'state': state, 'stateSha256': state_sha, 'context': status['context'],
+                'completionIntent': adoption['intent'], 'completionReceipt': adoption['receipt'],
+                'lastCompleted': state['lastCompleted'], 'fullCompletionVerified': True,
+                'storageCompletionAdopted': True}
     intent_binding = checkpoint['lastIntent']
     intent = json.loads(read_bound(intent_binding['path'], intent_binding['sha256']))
     path = Path(intent_binding['path'])
