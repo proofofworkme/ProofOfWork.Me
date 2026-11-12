@@ -23,6 +23,8 @@ Product roles follow the [public surface map](../README.md), [ID rules](../PROOF
 
 | Product | Role | Economic owner / lane | Activity and boundary |
 | --- | --- | --- | --- |
+| DNS | economic | DNS / AMO / No standalone DNS forecast; trades in marketplaceSats | Names, resolver updates, subdomains and verified page links. Confirmed DNS registrations and mutations are tracked live, but this scenario has no dedicated DNS usage forecast. Trading stays in its existing AMO basket; resolution and navigation add no payment. |
+| Permission | shared | Existing Mail / confirmed event accounting / Existing carrier lanes; no separate forecast | Wallet-authorized grants, replacements and revocations. No independent Permission usage forecast is assumed. Existing transaction payments and carrier accounting count once; reading a grant creates no value or authority. |
 | Jobs | shared | Mail / Files / Existing Mail / Files lanes | Briefs, proposals, assignments, delivery and accepted proof payments.. Included in existing Mail/Files demand; no independent job count or reward forecast is assumed. |
 | Code | shared | Mail / Files / mailSats / driveSats; codeWrites + codeVbytes (nonadditive) | Wallet-owned repositories and source revision records. Source and controls reuse existing carrier demand and payments once; only Code metadata adds bytes. Reads and downloads create no activity. |
 | Publish | shared | Mail / Files / Browser authoring / Existing content lanes | Articles built from existing public content. Article views, search and identity display do not add payments or transaction demand. |

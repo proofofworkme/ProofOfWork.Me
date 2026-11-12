@@ -21,7 +21,7 @@ import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { ProfileImage } from "./BoostProfileImages";
 import { boostRouteHref, type BoostFeedPayload } from "./boostProtocol";
 import { isValidBitcoinAddress } from "./boostWallet";
-import { boostWebLinks } from "./boostWebLinks.mjs";
+import { boostWebLinks, boostWebLinkCodeRanges } from "./boostWebLinks.mjs";
 
 type TextContext = {
   embedded: boolean;
@@ -265,10 +265,14 @@ function MentionLink({ text, value, context }: { text: string; value: string; co
 export function BoostText({ text, dnsOnly = false, network }: { text: string; dnsOnly?: boolean; network?: BitcoinNetwork }) {
   const context = useContext(BoostTextContext);
   const segments = useMemo(() => dnsOnly ? parsePowDnsText(text) : parseBoostText(text), [text, dnsOnly]);
+  const codeRanges = useMemo(() => boostWebLinkCodeRanges(text), [text]);
   const selectedNetwork = network ?? context?.network;
   if ((!context && !dnsOnly) || !selectedNetwork) return <>{text}</>;
+  let sourceOffset = 0;
   return <>{segments.map((segment, index) => {
-    if (!dnsOnly && segment.kind === "text") return <Fragment key={index}>{boostWebLinks(segment.text).map((part, partIndex) =>
+    const segmentOffset = sourceOffset;
+    sourceOffset += segment.text.length;
+    if (!dnsOnly && segment.kind === "text") return <Fragment key={index}>{boostWebLinks(segment.text, { codeRanges, sourceOffset: segmentOffset }).map((part, partIndex) =>
       part.href ? <a key={partIndex} className="boost-text-link boost-web-link" href={part.href}
         target="_blank" rel="noopener noreferrer" onClick={event => event.stopPropagation()}>{part.text}</a>
         : <Fragment key={partIndex}>{part.text}</Fragment>)}</Fragment>;

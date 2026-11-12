@@ -1,3 +1,5 @@
+import GrowthProductCoverage from "./features/growth/GrowthProductCoverage";
+import { growthMagnitude } from "./features/growth/growthDisplay.mjs";
 import { ReviewDialog } from "./shared/components/ReviewDialog";
 import { ActionTransactionReview, type ActionReview } from "./shared/components/ActionTransactionReview";
 import { ActionRecoveryPanel } from "./shared/components/ActionRecoveryPanel";
@@ -48432,6 +48434,13 @@ function WorkFloorChart({ btcUsd, points, unit, onUnitChange, quote }: {
   onUnitChange: (unit: WorkFloorChartUnit) => void;
   quote?: WorkFloorQuote;
 }) {
+  const confirmedActions = quote?.stats?.confirmedComputerActions;
+  const actionCoverage = Number.isSafeInteger(confirmedActions) && Number(confirmedActions) >= 0
+    ? `${Number(confirmedActions).toLocaleString()} confirmed actions`
+    : "Confirmed action total unavailable";
+  const snapshotTime = quote?.indexedAt && Number.isFinite(Date.parse(quote.indexedAt))
+    ? new Date(quote.indexedAt).toISOString()
+    : "unavailable";
   const usdAvailable = Number.isFinite(btcUsd) && btcUsd > 0;
   const observations: ChartPoint[] = points.map((point, index) => {
     const proofs = chartProofDecimal(point.floorSatsExact ?? point.floorSats, point.floorQ8);
@@ -48447,13 +48456,19 @@ function WorkFloorChart({ btcUsd, points, unit, onUnitChange, quote }: {
       detail: unit === "usd" ? `${proofs ? `${formatExactDecimal(proofs)} proofs / WORK` : "Proof value unavailable"} · ${point.label}` : point.label,
     };
   });
+  const separateCurrentValue = Boolean(points[points.length - 1]?.floorQ8) && points.slice(0, -1).some((point) => !point.floorQ8);
   return <LedgerChart
     title="WORK floor history"
     unitLabel={`${unit === "usd" ? "USD" : "Proofs"} / WORK`}
     controls={<ChartUnitControl unit={unit} onChange={onUnitChange} label="WORK chart unit" />}
-    series={unit === "usd" && !usdAvailable ? [] : [{ id: "floor", label: "Confirmed floor", style: "line", points: observations }]}
-    coverage={`Sampled confirmed history · ${points.length.toLocaleString()} supplied observations${quote?.indexedThroughBlock ? ` · Snapshot through block ${quote.indexedThroughBlock.toLocaleString()}` : ""}${quote?.indexedAt ? ` · Updated ${formatDate(quote.indexedAt)}` : ""}`}
-    quoteNote={unit === "usd" ? `USD at current rate · display estimate, not historical exchange rates${quote?.btcUsdIndexedAt ? ` · Quote ${formatDate(quote.btcUsdIndexedAt)}` : " · Quote time unavailable"}` : undefined}
+    latestLabel={separateCurrentValue ? "Verified current value" : undefined}
+    primarySeriesId={separateCurrentValue ? "current-floor" : "floor"}
+    series={unit === "usd" && !usdAvailable ? [] : separateCurrentValue ? [
+      { id: "historical-floor", label: "Historical estimate", style: "line", points: observations.slice(0, -1) },
+      { id: "current-floor", label: "Verified current value", style: "points", points: observations.slice(-1) },
+    ] : [{ id: "floor", label: "Floor", style: "line", points: observations }]}
+    coverage={`${actionCoverage} · ${points.length.toLocaleString()} chart samples. Sampling is capped; new actions still update values.${quote?.indexedThroughBlock ? ` Snapshot through block ${quote.indexedThroughBlock.toLocaleString()}.` : " Snapshot block unavailable."} Snapshot updated: ${snapshotTime}.`}
+    quoteNote={`${separateCurrentValue ? "Historical estimates and current value use different accounting sources, not a continuous price history." : "Historical samples are approximate replay values."}${unit === "usd" ? ` USD at current rate is a display estimate, not historical exchange rates${quote?.btcUsdIndexedAt ? ` · Quote ${formatDate(quote.btcUsdIndexedAt)}` : " · Quote time unavailable"}.` : ""}`}
     emptyMessage={unit === "usd" && !usdAvailable ? "USD quote unavailable. Choose Proofs to inspect the confirmed history." : "Confirmed floor history is unavailable for this snapshot."}
   />;
 }
@@ -49103,10 +49118,7 @@ function GrowthWorkspace({
           <span className="landing-kicker">ProofOfWork Computer growth model</span>
           <h2>Model the future. Measure the chain.</h2>
           <p>
-            The candle-gold line is modeled ProofOfWork Computer network value. The
-            olive line is real confirmed mainnet value from IDs, Mail, Infinity
-            Bonds, Inception Bonds, Drive, DNS, AMO, Browser, Credits, and Wallet.
-            The forecast includes Boost, Publish articles, bonds, credit activity, and transfers with shared payments counted once.
+            Compare an explicit scenario with confirmed Computer value. The model is not a prediction or a current valuation. Explore every product below, with shared payments counted once.
           </p>
         </div>
         <div className="growth-model-card">
@@ -49118,7 +49130,7 @@ function GrowthWorkspace({
               <h3>Forecast version</h3>
               <p>
                 {forecastVersion === "all-products"
-                  ? `All-product scenario revised ${GROWTH_MODEL_GENERATED_ON}.`
+                  ? `Shared-lane scenario revised ${GROWTH_MODEL_GENERATED_ON}.`
                   : `Original baseline generated ${LEGACY_GROWTH_MODEL_GENERATED_ON}.`}{" "}
                 Both use the {GROWTH_MODEL_START_DATE} model origin.
               </p>
@@ -49131,15 +49143,16 @@ function GrowthWorkspace({
               value={forecastVersion}
               onChange={(event) => setForecastVersion(event.target.value === "legacy" ? "legacy" : "all-products")}
             >
-              <option value="all-products">All products · {GROWTH_MODEL_GENERATED_ON}</option>
+              <option value="all-products">Shared-lane scenario · {GROWTH_MODEL_GENERATED_ON}</option>
               <option value="legacy">Original baseline · {LEGACY_GROWTH_MODEL_GENERATED_ON}</option>
             </select>
           </label>
           <p className="field-note">
             {forecastVersion === "all-products"
-              ? "Explicit assumptions for every product, using the historical May origin. This scenario is not calibrated to current activity and does not revise confirmed network value."
+              ? "Shared-lane assumptions using the historical May origin, not a forecast for every product. See Products for coverage gaps. This scenario is not calibrated to current activity and does not revise confirmed network value."
               : "The original forecast remains available for comparison. Boost was not included in this baseline."}
           </p>
+          <details className="growth-baseline-details"><summary>Baseline assumptions</summary>
           <dl className="growth-assumption-list">
             <div>
               <dt>Baseline value</dt>
@@ -49166,7 +49179,7 @@ function GrowthWorkspace({
                 sat/vB
               </dd>
             </div>
-          </dl>
+          </dl></details>
           <button
             className="secondary small"
             disabled={busy}
@@ -49193,6 +49206,7 @@ function GrowthWorkspace({
       <div className="growth-stat-grid" aria-label="Growth headline stats">
         <div>
           <MetricValue
+            displayValue={growthMagnitude(authoritativeNetworkValueSats)}
             exactValue={bondProofAmountDisplay(authoritativeNetworkValueSats, authoritativeNetworkValueQ8)}
             label="Real network value"
             unit="proofs"
@@ -49202,18 +49216,23 @@ function GrowthWorkspace({
           </span>
         </div>
         <div>
-          <strong>{growthSats(modelNow.sats)}</strong>
+          <MetricValue displayValue={growthMagnitude(modelNow.sats)} exactValue={modelNow.sats.toLocaleString("en-US", { maximumFractionDigits: 8 })} label="Modeled value now" unit="proofs" />
           <span>Modeled value now · {growthUsdForSats(modelNow.sats)}</span>
         </div>
         <div>
-          <strong>
-            {valueDeltaSats >= 0 ? "+" : ""}
-            {growthSats(valueDeltaSats)}
-          </strong>
+          <MetricValue
+            displayValue={`${valueDeltaSats >= 0 ? "+" : ""}${growthMagnitude(valueDeltaSats)}`}
+            exactValue={valueDeltaSats.toLocaleString("en-US", { maximumFractionDigits: 8 })}
+            label="Difference from scenario"
+            unit="proofs"
+          />
           <span>
-            {valueDeltaPct >= 0 ? "+" : ""}
-            {growthPercent(valueDeltaPct)} versus model now
+            Difference from model now
           </span>
+          <details className="growth-metric-breakdown"><summary>Percentage difference</summary><span>
+            {valueDeltaPct >= 0 ? "+" : ""}{(valueDeltaPct * 100).toLocaleString("en-US", { maximumFractionDigits: 8 })}%
+          </span></details>
+
         </div>
         <div>
           <strong>{currentActual.toLocaleString()}</strong>
@@ -49226,9 +49245,7 @@ function GrowthWorkspace({
           <span>Confirmed computer actions</span>
         </div>
         <div>
-          <strong>
-            {marketplaceFlowSats.toLocaleString()}
-          </strong>
+          <MetricValue displayValue={growthMagnitude(marketplaceFlowSats)} exactValue={marketplaceFlowSats.toLocaleString("en-US")} label="AMO flow" unit="proofs" />
           <span>
             AMO flow proofs · {marketplaceSaleVolumeSats.toLocaleString()} sale ·{" "}
             {marketplaceSaleCount.toLocaleString()} confirmed sales ·{" "}
@@ -49237,11 +49254,12 @@ function GrowthWorkspace({
         </div>
         <div>
           <MetricValue
+            displayValue={growthMagnitude(creditNetworkValueSats)}
             exactValue={bondProofAmountDisplay(creditNetworkValueSats, creditNetworkValueQ8)}
             label="WORK live event value"
             unit="proofs"
           />
-          <span>
+          <details className="growth-metric-breakdown"><summary>Value breakdown</summary><span>
             WORK live event value · {bondProofAmountDisplay(
               creditMovementLiveValueSats,
               creditMovementLiveValueQ8,
@@ -49251,7 +49269,7 @@ function GrowthWorkspace({
             )} frozen event ·{" "}
             {creditSalePaymentFlowSats.toLocaleString()} sale proofs ·{" "}
             {creditMutationFlowSats.toLocaleString()} mutation proofs
-          </span>
+          </span></details>
         </div>
       </div>
 
@@ -49334,7 +49352,7 @@ function GrowthWorkspace({
             <span>
               <i className="model" /> Modeled now
             </span>
-            <strong>{growthSats(modelNow.sats)}</strong>
+            <MetricValue displayValue={growthMagnitude(modelNow.sats)} exactValue={modelNow.sats.toLocaleString("en-US", { maximumFractionDigits: 8 })} label="Modeled value now" unit="proofs" />
             <small>
               {growthUsdForSats(modelNow.sats)} at {elapsedYears.toFixed(2)} years
             </small>
@@ -49343,7 +49361,7 @@ function GrowthWorkspace({
             <span>
               <i className="actual" /> Real now
             </span>
-            <strong>{growthSats(authoritativeNetworkValueSats)}</strong>
+            <MetricValue displayValue={growthMagnitude(authoritativeNetworkValueSats)} exactValue={bondProofAmountDisplay(authoritativeNetworkValueSats, authoritativeNetworkValueQ8)} label="Real network value" unit="proofs" />
             <small>
               {growthUsdForSats(authoritativeNetworkValueSats)} from confirmed events
             </small>
@@ -49352,7 +49370,7 @@ function GrowthWorkspace({
             <span>
               <i className="model" /> 12m model
             </span>
-            <strong>{growthSats(oneYear.totalSats)}</strong>
+            <MetricValue displayValue={growthMagnitude(oneYear.totalSats)} exactValue={oneYear.totalSats.toLocaleString("en-US", { maximumFractionDigits: 8 })} label="12 month modeled value" unit="proofs" />
             <small>{growthUsdForSats(oneYear.totalSats)} success path</small>
           </div>
         </div>
@@ -49425,6 +49443,9 @@ function GrowthWorkspace({
             </p>
           </div>
         </div>
+        <GrowthProductCoverage />
+        <h3>Measured and modeled activity lanes</h3>
+        <p className="field-note">These existing accounting lanes are not a second sum of the product directory. Shared products reuse their underlying lane.</p>
         <div className="growth-product-grid">
           <GrowthProductCard
             actual={growthSats(

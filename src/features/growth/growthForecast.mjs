@@ -708,6 +708,8 @@ export const GROWTH_ASSUMPTIONS = [
 ];
 
 export const GROWTH_PRODUCT_COVERAGE = [
+  { product: "dns", name: "DNS", role: "economic", owner: "DNS / AMO", modeledLane: "No standalone DNS forecast; trades in marketplaceSats", activity: "Names, resolver updates, subdomains and verified page links", assumption: "Confirmed DNS registrations and mutations are tracked live, but this scenario has no dedicated DNS usage forecast. Trading stays in its existing AMO basket; resolution and navigation add no payment.", source: "PROOFOFWORK_DNS.md; confirmed DNS events" },
+  { product: "permission", name: "Permission", role: "shared", owner: "Existing Mail / confirmed event accounting", modeledLane: "Existing carrier lanes; no separate forecast", activity: "Wallet-authorized grants, replacements and revocations", assumption: "No independent Permission usage forecast is assumed. Existing transaction payments and carrier accounting count once; reading a grant creates no value or authority.", source: "PERMISSION.md; canonical Permission records" },
   { product: "jobs", name: "Jobs", activity: "Briefs, proposals, assignments, delivery and accepted proof payments.",
     assumption: "Included in existing Mail/Files demand; no independent job count or reward forecast is assumed.",
     owner: "Mail / Files", role: "shared", modeledLane: "Existing Mail / Files lanes", source: "JOBS.md; complete checkpoint-bound Jobs observations" },

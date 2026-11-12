@@ -27,6 +27,8 @@ export type LedgerChartProps = {
   title: string;
   unitLabel: string;
   series: ChartSeries[];
+  primarySeriesId?: string;
+  latestLabel?: string;
   controls?: ReactNode;
   formatTick?: (value: string) => string;
   coverage?: string;
@@ -71,7 +73,7 @@ function PointMark({ x, y, style, index, selected = false }: {
 }
 
 export function LedgerChart({
-  title, unitLabel, series, controls, formatTick = compactChartValue, coverage, quoteNote,
+  title, unitLabel, series, primarySeriesId, latestLabel, controls, formatTick = compactChartValue, coverage, quoteNote,
   emptyMessage = 'No confirmed observations are available.',
 }: LedgerChartProps) {
   const id = useId();
@@ -84,7 +86,7 @@ export function LedgerChart({
       point, series: item, seriesIndex, key: `${item.id}:${point.id}:${pointIndex}`,
     }))), [series]);
   const scale = useMemo(() => createChartScale(observations.map(({ point }) => point.value), { mode }), [observations, mode]);
-  const primarySeries = series.find((item) => item.style === 'line' && item.points.length) || series.find((item) => item.points.length);
+  const primarySeries = series.find((item) => item.id === primarySeriesId && item.points.length) || series.find((item) => item.style === 'line' && item.points.length) || series.find((item) => item.points.length);
   const latest = primarySeries?.points[primarySeries.points.length - 1];
   const defaultIndex = Math.max(0, observations.findIndex((item) => item.point === latest));
   const selectedIndex = selection ? observations.findIndex((item) => item.key === selection) : defaultIndex;
@@ -163,12 +165,12 @@ export function LedgerChart({
         <div className="ledger-chart-heading-copy">
           <h4 id={`${id}-title`}>{title}</h4>
           {latest && (
-            <p className="ledger-chart-current" aria-label={`Latest ${primarySeries?.label}: ${exactValue(latest)}`}>
+            <p className="ledger-chart-current" aria-label={`${latestLabel ?? `Latest ${primarySeries?.label}`}: ${exactValue(latest)}`}>
               <span>{latest.approximate ? '≈ ' : ''}{formatTick(latest.value)}</span>
               <span className="ledger-chart-unit">{unitLabel}</span>
             </p>
           )}
-          {latest && <p className="ledger-chart-latest">Latest {primarySeries?.label} · {validTime(latest.time) ? dateOnly.format(latest.time) : 'Time unavailable'}</p>}
+          {latest && <p className="ledger-chart-latest">{latestLabel ?? `Latest ${primarySeries?.label}`} · {validTime(latest.time) ? dateOnly.format(latest.time) : 'Time unavailable'}</p>}
         </div>
         <div className="ledger-chart-toolbar">
           {controls}

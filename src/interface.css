@@ -727,4 +727,45 @@
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto; transition-duration: 0s; }
   }
+  /* Growth: top-aligned overview, readable metrics, explicit surface coverage. */
+  .growth-workspace { gap: 24px; }
+  .growth-workspace .growth-hero { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 20px; }
+  .growth-workspace .growth-hero > div:first-child { max-width: 780px; }
+  .growth-workspace .growth-hero h2 { font: 500 clamp(26px, 4vw, 38px)/1.2 var(--font-ui); letter-spacing: -.035em; }
+  .growth-workspace .growth-model-card { grid-template-columns: minmax(0, 1fr) minmax(220px, 1fr); align-items: start; gap: 12px 24px; }
+  .growth-workspace .growth-model-card .id-card-head { grid-column: 1; }
+  .growth-workspace .growth-forecast-select { grid-column: 2; grid-row: 1; }
+  .growth-workspace .growth-model-card > .field-note { margin: 0; }
+  .growth-workspace .growth-model-card > button { justify-self: start; min-height: 44px; }
+  .growth-workspace .growth-baseline-details summary,
+  .growth-workspace .growth-coverage summary,
+  .growth-workspace .growth-metric-breakdown summary { min-height: 44px; padding-block: 12px; cursor: pointer; font-size: 14px; }
+  .growth-workspace .growth-stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--border); overflow: visible; }
+  .growth-workspace .growth-stat-grid > div { background: var(--surface); padding: 20px; align-content: start; gap: 12px; }
+  .growth-workspace .growth-stat-grid > div:last-child { grid-column: 1 / -1; }
+  .growth-workspace .growth-stat-grid :is(strong, .proof-metric-display > span) { color: var(--text); font-size: clamp(20px, 2.3vw, 28px); font-variant-numeric: tabular-nums; }
+  .growth-workspace .growth-stat-grid > div > span { font-size: 14px; line-height: 1.5; }
+  .growth-workspace .proof-metric-exact summary { min-height: 44px; padding-block: 12px; font-size: 14px; }
+  .growth-workspace .growth-metric-breakdown { min-width: 0; }
+  .growth-workspace .growth-metric-breakdown > span { display: block; overflow-wrap: anywhere; line-height: 1.6; }
+  .growth-coverage { display: grid; gap: 16px; }
+  .growth-coverage-grid { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 24px; }
+  .growth-coverage-grid > li { min-width: 0; border-bottom: 1px solid var(--border); padding: 16px 0; }
+  .growth-coverage-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
+  .growth-coverage-heading a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 500; color: var(--text); }
+  .growth-coverage-heading h4 { margin: 0; font-size: 16px; }
+  .growth-coverage-heading > span { color: var(--text-muted); font-size: 12px; }
+  .growth-coverage-grid p { font-size: 14px; line-height: 1.6; margin: 4px 0; }
+  .growth-coverage-grid dl { margin: 8px 0; font-size: 14px; }
+  .growth-coverage-grid dt { color: var(--text-muted); }
+  .growth-coverage-grid dd { margin: 0 0 12px; overflow-wrap: anywhere; }
+  @media (max-width: 900px) {
+    .growth-workspace .growth-stat-grid, .growth-coverage-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 600px) {
+    .growth-workspace .growth-model-card, .growth-workspace .growth-stat-grid, .growth-coverage-grid { grid-template-columns: minmax(0, 1fr); }
+    .growth-workspace .growth-forecast-select { grid-column: 1; grid-row: auto; }
+    .growth-workspace .growth-stat-grid > div { padding: 16px; }
+  }
+
 }

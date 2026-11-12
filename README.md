@@ -114,7 +114,8 @@ Production app roles:
 - `infinity.proofofwork.me` is the standalone Infinity Bond / POWB market and bond composer.
 - `inception.proofofwork.me` is the standalone Inception Bond / INCB market and bond composer.
 - `log.proofofwork.me` is the standalone public ProofOfWork Computer log for tx-backed ProofOfWork actions.
-- `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled ProofOfWork Computer network value with real confirmed chain value in proofs and USD.
+- `growth.proofofwork.me` is the standalone public growth dashboard comparing modeled ProofOfWork Computer network value with real confirmed chain value in proofs and USD. Its surface directory follows the canonical app menu plus Mail and Files workspaces, explicitly distinguishing economic lanes, shared carriers, and read-only views. Directory completeness is not new forecast calibration: DNS has live accounting but no dedicated usage forecast; Permission and Jobs reuse carrier assumptions without independent demand curves. DNS and Permission coverage does not add a new value lane. Large headline values use compact presentation with keyboard/touch-accessible exact values and copy controls; the historical scenario origin and calculations are unchanged.
+- WORK charts distinguish bounded chart samples from confirmed Computer actions. When historical approximate samples and the verified current Q8 value use different accounting sources, they render as a separate historical line and current marker rather than an implied continuous history. This presentation does not repair or certify historical replay accounting.
 - The root landing page can feature public on-chain social proof, with testimonial links pointing directly to their ProofOfWork transactions.
 - The landing page links to the current public YouTube overview video.
 

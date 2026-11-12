@@ -1,6 +1,6 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "audit-remediation-public-log-count-scope",
+  "upgrade": "growth-coverage-work-samples-safe-domain-links",
   "liveCheck": "scripts/check-audit-remediation-live.mjs",
   "ciTests": [
     "server/pwid-rejection-projection.test.mjs",
@@ -11,58 +11,261 @@
     "server/registry-pending-times.test.mjs",
     "scripts/check-wallet-read-coalescing.test.mjs",
     "scripts/check-ui-remediation-retirement.test.mjs",
-    "scripts/check-log-count-scope.test.mjs"
+    "scripts/check-log-count-scope.test.mjs",
+    "scripts/check-growth-display.test.mjs",
+    "scripts/check-growth-forecast.test.mjs",
+    "scripts/check-work-chart-sampling.test.mjs",
+    "src/features/boost/boostWebLinks.test.mjs"
   ],
   "reviews": [
     {
       "targets": [
-        "api",
-        "indexer",
-        "id",
-        "backfill-reorg"
+        "landing"
       ],
-      "disposition": "affected",
-      "reason": "Rejected canonical PWID records use the existing strict invalid-event projection contract without changing replay validity, raw witnesses or accounting. Scoped four-file runtime installation preserves all accepted overlays. Private whitelisted diagnostics preserve fresh proof and errors.",
+      "disposition": "compatible",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
       "evidence": [
-        "server/pwid-rejection-projection.test.mjs",
-        "scripts/check-canonical-performance-observation.test.mjs",
-        "deploy/audit-remediation/check.test.py"
+        "scripts/check-growth-display.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
       ]
     },
     {
       "targets": [
-        "computer",
-        "marketplace",
-        "token",
-        "wallet",
+        "id"
+      ],
+      "disposition": "compatible",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "evidence": [
+        "scripts/check-growth-display.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "dns"
+      ],
+      "disposition": "compatible",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "evidence": [
+        "scripts/check-growth-display.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "computer"
+      ],
+      "disposition": "affected",
+      "reason": "Embedded WORK chart and Boost rendering consume the same changed components; shell and all other embedded writers unchanged.",
+      "evidence": [
+        "tests/browser/bare-domain-links.spec.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "desktop"
+      ],
+      "disposition": "compatible",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "evidence": [
+        "scripts/check-growth-display.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "browser"
+      ],
+      "disposition": "compatible",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "evidence": [
+        "scripts/check-growth-display.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "boost"
+      ],
+      "disposition": "affected",
+      "reason": "Shared BoostText recognizes safe bare web domains while preserving source bytes, native DNS/identity paths and code literal text.",
+      "evidence": [
+        "src/features/boost/boostWebLinks.test.mjs",
+        "tests/browser/bare-domain-links.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "publish"
+      ],
+      "disposition": "compatible",
+      "reason": "Uses BoostText dnsOnly path, which remains unchanged; article body/source is not newly autolinked.",
+      "evidence": [
+        "src/features/boost/BoostText.tsx",
+        "tests/browser/publish-ui.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "search"
+      ],
+      "disposition": "compatible",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "evidence": [
+        "scripts/check-growth-display.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "code"
+      ],
+      "disposition": "compatible",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "evidence": [
+        "scripts/check-growth-display.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "jobs"
+      ],
+      "disposition": "compatible",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "evidence": [
+        "scripts/check-growth-display.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "marketplace"
+      ],
+      "disposition": "compatible",
+      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK.",
+      "evidence": [
+        "scripts/check-work-chart-sampling.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "token"
+      ],
+      "disposition": "compatible",
+      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK.",
+      "evidence": [
+        "scripts/check-work-chart-sampling.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "wallet"
+      ],
+      "disposition": "compatible",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "evidence": [
+        "scripts/check-growth-display.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "work"
+      ],
+      "disposition": "affected",
+      "reason": "Separate sampled history and canonical current marker; action count and source freshness labels; no replay/math change.",
+      "evidence": [
+        "scripts/check-work-chart-sampling.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "infinity"
+      ],
+      "disposition": "compatible",
+      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK.",
+      "evidence": [
+        "scripts/check-work-chart-sampling.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "inception"
+      ],
+      "disposition": "compatible",
+      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK.",
+      "evidence": [
+        "scripts/check-work-chart-sampling.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "activity"
+      ],
+      "disposition": "compatible",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "evidence": [
+        "scripts/check-growth-display.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "growth"
+      ],
+      "disposition": "affected",
+      "reason": "Responsive layout, bounded metric presentation with exact disclosures, canonical directory and explicit scenario gaps; numeric forecast unchanged.",
+      "evidence": [
+        "scripts/check-growth-display.test.mjs",
+        "scripts/check-growth-forecast.test.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "pages"
+      ],
+      "disposition": "compatible",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "evidence": [
+        "scripts/check-growth-display.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
+        "permission"
+      ],
+      "disposition": "compatible",
+      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin.",
+      "evidence": [
+        "scripts/check-growth-display.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
+      ]
+    },
+    {
+      "targets": [
         "nft"
       ],
-      "disposition": "affected",
-      "reason": "Listing spendable capacity distinguishes loading and unavailable from verified zero. Exact quantities, fee arithmetic, reservation exclusions and transaction authority remain unchanged; unsigned fixtures verify the actual source. Embedded Log and its sidebar badge use authenticated public action counts, excluding proven supplemental ledger-only counts.",
+      "disposition": "compatible",
+      "reason": "Computer/NFT compatibility alias retained; no new NFT accounting or standalone writer. Shared Computer bundle carries the same embedded reader fixes.",
       "evidence": [
-        "scripts/check-fee-capacity-regression.test.mjs",
-        "scripts/check-audit-remediation-live.mjs",
-        "scripts/check-log-count-scope.test.mjs"
+        "tests/browser/bare-domain-links.spec.mjs",
+        "tests/browser/ledger-charts.spec.mjs"
       ]
     },
     {
       "targets": [
-        "work",
-        "infinity",
-        "inception",
-        "boost",
-        "browser",
-        "code",
-        "desktop",
-        "dns",
-        "growth",
-        "jobs",
-        "landing",
-        "pages",
-        "permission",
-        "publish",
-        "search",
         "wire",
+        "indexer",
+        "api",
+        "backfill-reorg",
         "accounting",
         "local-signing",
         "files",
@@ -71,23 +274,13 @@
         "compatibility"
       ],
       "disposition": "compatible",
-      "reason": "Protocol wire bytes, economic arithmetic, ownership, signing and other product behavior are unchanged. All managed bundles retain coherent source provenance. Guarded data-volume build admission and repeatable isolated transitions improve operational verification without replacing live acceptance or human wallet signing. Archive transport admits only exact canonical data-volume build outputs with pinned owner, metadata and digest checks; legacy temporary transport constraints remain unchanged.",
+      "reason": "Presentation-only changes do not alter signed bytes, node admission, indexing/backfill/replay, ownership, pending/confirmed/reorg authority, or exactly-once value. Exact canonical Q8 values and original text remain intact. DNS/Permission inventory coverage is not new forecast calibration; numeric model outputs are unchanged. Missing values remain unavailable and unsafe links inert. Historical WORK accounting remains a separately disclosed limitation, not repaired by display separation.",
       "evidence": [
-        "deploy/publish/check-build-capacity.test.py",
-        "scripts/check-summary-transition-freshness.test.mjs",
-        "scripts/check-audit-remediation-release.test.mjs",
-        "scripts/check-ui-remediation-retirement.test.mjs",
-        "deploy/publish/check-ui-native-dispatch.test.py"
-      ]
-    },
-    {
-      "targets": [
-        "activity"
-      ],
-      "disposition": "affected",
-      "reason": "Public Log overview total and confirmed counts use the same authenticated canonical public scope as pagination. Proven supplemental ledger entries remain unchanged in API data, filtered/profile scope and unavailable states remain guarded.",
-      "evidence": [
-        "scripts/check-log-count-scope.test.mjs"
+        "scripts/check-growth-forecast.test.mjs",
+        "scripts/check-work-chart-sampling.test.mjs",
+        "src/features/boost/boostWebLinks.test.mjs",
+        "tests/browser/ledger-charts.spec.mjs",
+        "tests/browser/bare-domain-links.spec.mjs"
       ]
     }
   ]

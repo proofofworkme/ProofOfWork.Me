@@ -36,7 +36,7 @@ function token(tokenId, ticker) {
   };
 }
 
-function workFloor({ zero = false } = {}) {
+function workFloor({ zero = false, mixed = false } = {}) {
   const actualValue = {
     workNetworkValueAccountingModel: "canonical-exact-work-network-q8-v1",
     creditMinerFeeAccountingModel: "canonical-unique-tx-input-output-v1",
@@ -65,7 +65,7 @@ function workFloor({ zero = false } = {}) {
     indexedThroughBlock: 972100, indexedThroughBlockHash: HASH,
     snapshotId: "ledger-charts-fixture", stats: { confirmedComputerActions: 3 },
     chartPoints: [zero ? "0" : "100000000", "1000000000", "10000000001"].map((floorQ8, index) => ({
-      floorQ8, floorSats: Number(floorQ8) / 1e8,
+      ...(mixed && index < 2 ? {} : { floorQ8 }), floorSats: Number(floorQ8) / 1e8,
       networkValueQ8: (BigInt(floorQ8) * 21_000_000n).toString(),
       networkValueSats: Number(floorQ8) / 1e8 * 21_000_000,
       label: `Confirmed checkpoint ${index + 1}`, years: 0.1 + index / 365,
@@ -335,5 +335,30 @@ for (const theme of ["light", "dark"]) {
       await chart.screenshot({ path: screenshot });
       await testInfo.attach(`${surface.name}-${theme}-320`, { path: screenshot, contentType: "image/png" });
     }
+  });
+}
+
+for (const width of [320, 1440]) {
+  test(`WORK separates historical estimates from canonical current at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await fixtures(page, { mixed: true });
+    await page.goto("/?work=1");
+    const chart = page.locator(".ledger-chart").first();
+    await expect(chart).toBeVisible({ timeout: 45000 });
+    await expect(chart).toContainText("3 confirmed actions");
+    await expect(chart).toContainText("chart samples. Sampling is capped");
+    await expect(chart).toContainText("Historical estimate");
+    await expect(chart).toContainText("Verified current value");
+    await expect(chart).toContainText("not a continuous price history");
+    const inspector = chart.getByRole("slider", { name: /^Inspect observation/u });
+    await expect(inspector).toHaveAttribute("aria-valuetext", /100.00000001/);
+    await inspector.focus();
+    await page.keyboard.press("Home");
+    await expect(inspector).not.toHaveAttribute("aria-valuetext", /100.00000001/);
+    await page.keyboard.press("End");
+    await expect(inspector).toHaveAttribute("aria-valuetext", /100.00000001/);
+    const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
+    expect(widths.document).toBeLessThanOrEqual(widths.viewport + 1);
+    await chart.screenshot({ path: testInfo.outputPath(`work-mixed-${width}.png`) });
   });
 }

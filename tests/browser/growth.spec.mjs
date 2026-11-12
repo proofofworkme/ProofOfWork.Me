@@ -84,7 +84,7 @@ test("Growth versions change the forecast and preserve canonical real value", as
     await expect(card).not.toContainText("Not modeled");
     await expect(card.locator(".growth-product-metrics > div").nth(1)).toContainText("proofs");
   }
-  const boost = page.locator(".growth-product-card").filter({ has: page.getByRole("heading", { name: "Boost", exact: true }) });
+  const boost = page.locator(".growth-product-card").filter({ has: page.getByRole("heading", { name: "Boost & Publish", exact: true }) });
   await expect(boost).toContainText("1 post");
   const real = page.locator(".growth-stat-grid > div").first();
   const beforeReal = await real.innerText();
@@ -108,14 +108,14 @@ test("Growth versions change the forecast and preserve canonical real value", as
 for (const mode of ["legacy", "mismatch"]) {
   test(`Growth keeps missing or mismatched Boost metrics unavailable: ${mode}`, async ({ page }) => {
     await openGrowth(page, mode);
-    const boost = page.locator(".growth-product-card").filter({ has: page.getByRole("heading", { name: "Boost", exact: true }) });
+    const boost = page.locator(".growth-product-card").filter({ has: page.getByRole("heading", { name: "Boost & Publish", exact: true }) });
     await expect(boost).toContainText("Unavailable");
     await expect(boost).not.toContainText("0 posts");
     await expect(page.locator(".growth-stat-grid > div").first()).toContainText("21,000,000");
   });
 }
 
-test("Boost details and assumptions fit a narrow Growth viewport", async ({ page }) => {
+test("Boost details and assumptions fit a narrow Growth viewport", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openGrowth(page);
   await page.locator(".growth-boost-details summary").click();
@@ -128,8 +128,8 @@ test("Boost details and assumptions fit a narrow Growth viewport", async ({ page
   const widths = await page.evaluate(() => ({ viewport: innerWidth,
     document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
   expect(Math.max(widths.document, widths.body)).toBeLessThanOrEqual(widths.viewport + 1);
-  await page.locator(".growth-boost-details").screenshot({ path: "/tmp/boost-growth-details-mobile.png" });
-  await page.locator(".growth-model-details").screenshot({ path: "/tmp/all-product-growth-assumptions-mobile.png" });
+  await page.locator(".growth-boost-details").screenshot({ path: testInfo.outputPath("boost-growth-details-mobile.png") });
+  await page.locator(".growth-model-details").screenshot({ path: testInfo.outputPath("all-product-growth-assumptions-mobile.png") });
 });
 
 
@@ -153,3 +153,28 @@ test("Growth keeps every exact large-value digit readable and copyable on mobile
   await metric.getByRole("button", { name: "Copy exact value" }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`${exact} proofs`);
 });
+
+for (const width of [320, 768, 1440]) {
+  test(`Growth overview and full surface directory fit ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await openGrowth(page, "large");
+    const baseline = page.locator(".growth-baseline-details");
+    await expect(baseline).not.toHaveAttribute("open", "");
+    await baseline.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    await expect(baseline).toHaveAttribute("open", "");
+    await baseline.locator("summary").click();
+    const metric = page.locator(".growth-stat-grid > div").first();
+    await expect(metric.locator("data > span")).toContainText("E");
+    await metric.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    await expect(metric.locator("code")).toContainText("9,007,199,254,740,993.12345678");
+    const directory = page.locator(".growth-coverage-grid");
+    await expect(directory.locator(":scope > li")).toHaveCount(23);
+    for (const name of ["DNS", "Permission", "Code", "Jobs", "Home", "Growth"]) {
+      await expect(directory.getByRole("link", { name, exact: true })).toBeVisible();
+    }
+    const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
+    expect(widths.document).toBeLessThanOrEqual(widths.viewport + 1);
+  });
+}
