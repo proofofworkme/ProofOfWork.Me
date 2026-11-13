@@ -1,17 +1,16 @@
 #!/usr/bin/env node
-// Read-only composition: retain both independent release gates, never activate writes.
+// Read-only composition: retain independent release gates, never activate writes.
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { publicVerificationEnvironment } from "./check-publish-linked-remote.mjs";
 export function runLinkedGrowthLive({env=process.env,run=spawnSync}={}) {
   const root=fileURLToPath(new URL("../",import.meta.url));
-  for (const script of ["check-publish-linked-live.mjs","check-current-growth-live.mjs","check-activity-fee-factor-live.mjs"]) {
-    const childEnv={...env};
-    // Only the existing linked checker may receive private loopback verification settings.
-    if(script!=="check-publish-linked-live.mjs") {
-      delete childEnv.POW_INTERNAL_VERIFIER_TOKEN;
-      delete childEnv.POW_PUBLISH_CHECK_ORIGIN;
-      delete childEnv.POW_PUBLISH_CHECK_MODE;
-    }
+  const linked=env.POW_PUBLISH_CHECK_MODE==="preactivation"
+    ? "check-publish-linked-remote.mjs" : "check-publish-linked-live.mjs";
+  for (const script of [linked,"check-current-growth-live.mjs","check-activity-fee-factor-live.mjs"]) {
+    // Only the linked verifier receives mode/source configuration. Public children
+    // never receive a private token, loopback origin, or remote source settings.
+    const childEnv=script===linked ? {...env,GIT_OPTIONAL_LOCKS:"0"} : publicVerificationEnvironment(env);
     const result=run(process.execPath,["scripts/"+script],{
       cwd:root,env:childEnv,stdio:"inherit",timeout:600_000
     });

@@ -56,7 +56,7 @@ assert.equal(after.ready, true);
 assert.equal(after.checks.node.tipHeight, height, "Core advanced; repeat the complete probe at a stable tip");
 assert.equal(after.checks.node.bestBlockHash, hash, "Core changed; repeat the complete probe at a stable tip");
 
-const expectedRuntime = JSON.parse(execFileSync("python3", ["-I", "-B", "-c", `import ast,json,pathlib
+const expectedRuntime = JSON.parse(execFileSync("python3", ["-I", "-B", "-c", `import ast,json,pathlib,re
 values={}
 for path in ('deploy/audit-remediation/profile.py','deploy/activity-fee-factor/profile.py'):
  module=ast.parse(pathlib.Path(path).read_text())
@@ -65,6 +65,19 @@ for path in ('deploy/audit-remediation/profile.py','deploy/activity-fee-factor/p
   assert len(assignments)==1
   if path.endswith('activity-fee-factor/profile.py') and name=='PRESERVED': continue
   values.update(ast.literal_eval(assignments[0].value))
+# The accepted linked release supersedes exactly these three historical pins.
+# Read reviewed source constants, never learn expected hashes from the live host.
+expected={'server/proof-api.mjs','server/db/proof-index-reader.mjs','server/db/read-only-snapshot.mjs',
+          'server/wallet-read-observation.mjs','scripts/backfill-proof-indexer.mjs','server/pwid-rejection-projection.mjs'}
+replaced={'server/proof-api.mjs','server/db/proof-index-reader.mjs','scripts/backfill-proof-indexer.mjs'}
+assert set(values)==expected
+module=ast.parse(pathlib.Path('deploy/linked-publish/profile.py').read_text())
+assignments=[node for node in module.body if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='AFTER' for t in node.targets)]
+assert len(assignments)==1
+linked=ast.literal_eval(assignments[0].value)
+assert isinstance(linked,dict) and set(linked)&expected==replaced
+values.update({path:linked[path] for path in replaced})
+assert set(values)==expected and all(isinstance(value,str) and re.fullmatch('[0-9a-f]{64}',value) for value in values.values())
 print(json.dumps(values))`], { encoding: "utf8", timeout: 15_000 }));
 assert.equal(Object.keys(expectedRuntime).length, 6);
 const monitorHash = createHash("sha256").update(readFileSync("deploy/proofofwork-postgres-query-health.sh")).digest("hex");

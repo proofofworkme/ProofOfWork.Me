@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Read-only release smoke. Does not sign, upload, or fabricate a v2 article.
 import { assertLinkedPublishCapability } from "../src/shared/protocol/publishLinkedCapability.mjs";
-import { normalizePublishArticleMetadata, publishArticleVerification, publishArticleBodyBytes } from "../src/shared/protocol/publishArticle.mjs";
+import { normalizePublishArticleMetadata, publishArticleVerification, publishArticleBodyBytes } from "../src/shared/protocol/publishArticleMetadata.mjs";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 

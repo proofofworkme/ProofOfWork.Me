@@ -30,7 +30,8 @@ ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C', 'GIT_OPTIONAL_LOC
 EVIDENCE_RESERVE = 32*1024**2
 TOTAL_LOG_CEILING = 16*1024**2
 RECEIVE_TIMEOUT_SECONDS = 2700
-TRANSPORT_RUNTIME_SECONDS = 6900
+STAGE_TIMEOUT_SECONDS = 1800
+TRANSPORT_RUNTIME_SECONDS = 7800
 captured_log_bytes = 0
 
 
@@ -776,7 +777,7 @@ if phase != 'source':
         capacity('check', BASE, model['peakAdditionalBytes'] + (0 if private_staging else stage_archive_upper) + EVIDENCE_RESERVE, 'stage')
         stager_args = []
     run([helpers['stager']['path'], '--release-id', release, '--surfaces-root', str(preserved / 'surfaces'),
-         '--stage-root', str(stage), '--deduplicate-managed-files', *stager_args], 'stager.log', timeout=900)
+         '--stage-root', str(stage), '--deduplicate-managed-files', *stager_args], 'stager.log', timeout=STAGE_TIMEOUT_SECONDS)
     if phase == 'preserved-stage-resume':
         recovery_parent = Path(p['preservedStageResume']['privateCandidateParent'])
         directory(recovery_parent); assert not os.path.lexists(recovery_parent / 'candidate')

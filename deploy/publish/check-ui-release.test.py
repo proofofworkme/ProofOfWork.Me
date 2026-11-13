@@ -456,9 +456,9 @@ class ReleaseRefusals(unittest.TestCase):
                 patch.object(subprocess, 'run') as run:
             self.transport.main()
         self.assertEqual(run.call_count, 1)
-        self.assertEqual(run.call_args.kwargs['timeout'], 7200)
+        self.assertEqual(run.call_args.kwargs['timeout'], 8100)
         command = shlex.split(run.call_args.args[0][-1])
-        self.assertIn('--property=RuntimeMaxSec=6900', command)
+        self.assertIn('--property=RuntimeMaxSec=7800', command)
         self.assertIn('--property=TimeoutStopSec=30s', command)
         self.assertIn('--property=KillMode=control-group', command)
         self.assertIn('--property=MemoryMax=4G', command)
@@ -759,12 +759,20 @@ class TransportStreamDeadlines(unittest.TestCase):
     def test_both_receivers_and_parent_wrapper_use_finite_nested_budgets(self):
         tree = ast.parse((ROOT/'remote_transport.py').read_bytes())
         values = {}
-        names = {'RECEIVE_TIMEOUT_SECONDS', 'TRANSPORT_RUNTIME_SECONDS'}
+        names = {'RECEIVE_TIMEOUT_SECONDS', 'STAGE_TIMEOUT_SECONDS', 'TRANSPORT_RUNTIME_SECONDS'}
         assignments = [node for node in tree.body if isinstance(node, ast.Assign) and
                        any(isinstance(target, ast.Name) and target.id in names for target in node.targets)]
         exec(compile(ast.Module(body=assignments, type_ignores=[]), '<budget-fixture>', 'exec'), values)
         self.assertEqual(values['RECEIVE_TIMEOUT_SECONDS'], 2700)
-        self.assertEqual(values['TRANSPORT_RUNTIME_SECONDS'], 6900)
+        self.assertEqual(values['TRANSPORT_RUNTIME_SECONDS'], 7800)
+        self.assertEqual(values['STAGE_TIMEOUT_SECONDS'], 1800)
+        stages = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and
+                  isinstance(node.func, ast.Name) and node.func.id == 'run' and len(node.args) > 1 and
+                  isinstance(node.args[1], ast.Constant) and node.args[1].value == 'stager.log']
+        self.assertEqual(len(stages), 1)
+        stage_timeout = next(k.value for k in stages[0].keywords if k.arg == 'timeout')
+        self.assertIsInstance(stage_timeout, ast.Name)
+        self.assertEqual(stage_timeout.id, 'STAGE_TIMEOUT_SECONDS')
         receivers = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and
                      isinstance(node.func, ast.Name) and node.func.id == 'run' and len(node.args) > 1 and
                      isinstance(node.args[1], ast.Constant) and node.args[1].value == 'receiver.log']
@@ -775,13 +783,13 @@ class TransportStreamDeadlines(unittest.TestCase):
             self.assertEqual(timeout.id, 'RECEIVE_TIMEOUT_SECONDS')
         wrapper = safe_module('transport_preserve.py')
         self.assertEqual(wrapper.TRANSPORT_RUNTIME_SECONDS, values['TRANSPORT_RUNTIME_SECONDS'])
-        self.assertEqual(wrapper.TRANSPORT_REMOTE_TIMEOUT_SECONDS, 7200)
-        bounded_children = 2700+120+600+900+600+600+8*90
+        self.assertEqual(wrapper.TRANSPORT_REMOTE_TIMEOUT_SECONDS, 8100)
+        bounded_children = 2700+120+600+1800+600+600+8*90
         self.assertEqual(values['TRANSPORT_RUNTIME_SECONDS']-bounded_children, 660)
-        self.assertGreater(wrapper.TRANSPORT_REMOTE_TIMEOUT_SECONDS, 6900+2*60+30)
+        self.assertGreater(wrapper.TRANSPORT_REMOTE_TIMEOUT_SECONDS, 7800+2*60+30)
         documentation = (ROOT.parents[1]/"OP_RETURN_INFRASTRUCTURE.md").read_text()
-        self.assertIn("Release-specific local relays must allow 7,500", documentation)
-        self.assertEqual(7500-wrapper.TRANSPORT_REMOTE_TIMEOUT_SECONDS, 300)
+        self.assertIn("Release-specific local relays must allow 8,400", documentation)
+        self.assertEqual(8400-wrapper.TRANSPORT_REMOTE_TIMEOUT_SECONDS, 300)
 
 
 class PublishCompatibilityTimeout(unittest.TestCase):

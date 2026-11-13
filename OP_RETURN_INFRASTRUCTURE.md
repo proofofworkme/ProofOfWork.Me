@@ -677,8 +677,8 @@ The October 28 streamed release exposed a child deadline that elapsed while
 blocking on its input feed, before the outer service deadline. Current transport
 drains child output while feeding input under one enforced deadline, including
 blocked input and backpressure. The receiver allows 2,700 seconds; the transport
-unit allows 6,900 seconds with its existing 30-second stop grace; the remote
-supervisor allows 7,200 seconds. Release-specific local relays must allow 7,500
+unit allows 7,800 seconds with its existing 30-second stop grace; the remote
+supervisor allows 8,100 seconds. Release-specific local relays must allow 8,400
 seconds so they cannot expire first. The larger finite bounds cover receiving,
 staging, archive construction and verification; they do not relax size, capacity,
 hash, provenance or receipt checks. A partial extraction without a verified
@@ -689,10 +689,20 @@ On November 11 the operator approved these four coordinated bounds after the
 receive deadline on a congested operator-mediated route. The replacement
 continues to fail closed on incomplete input, extra bytes, hash mismatch,
 capacity failure or deadline expiry. Each release-specific relay must enforce
-the 7,500-second outer bound for the entire two-SSH pipeline, with bounded
+the current 8,400-second outer bound for the entire two-SSH pipeline, with bounded
 process-group termination. No private key transfer or agent forwarding is used.
 The failed release identity and its receipts are preserved; it is not resumed
 as a verified input.
+
+The November 13 deployment-only successor gives the stager a finite 1,800-second
+deadline after a complete candidate reached the preceding 900-second deadline
+before final verification and rename. This is a fresh normal release, not a
+success receipt for the failed attempt. The coordinated 7,800/8,100/8,400-second
+transport bounds retain the existing 660-second child-budget margin and both
+300-second outer margins. Receiver and archive deadlines, resource limits,
+process-group termination, capacity, source, native exchange, lifecycle and
+receipt assertions are unchanged. A slower or failed stage still stops closed;
+these bounds are not a completion-time guarantee.
 The separately approved one-shot ad330 duplicate controller removes only the
 2,048 complete files whose bytes match the retained NODE archive. It preserves
 the truncated wallet video, all 170 descendant directories and the outer root,
