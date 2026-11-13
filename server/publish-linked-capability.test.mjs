@@ -250,3 +250,38 @@ test("operator preactivation fails closed for missing evidence, bad network, sou
  const result=await raced.preactivation({network:"livenet",fresh:true});
  assert.equal(result.ready,false);assert.equal(result.enabled,false);assert.equal(result.writesEnabled,true);
 });
+
+
+test("unrelated ancestor churn is allowed but ancestor identity and source changes fail closed",async()=>{
+  const root=sourceFixture(),ancestor=dirname(root);
+  try {
+    const initial=linkedSourceClosure(root);
+    for(const asyncMode of [false,true])for(const targetPath of [ancestor,root,join(root,"server")])
+    for(const field of ["mtimeNs","ctimeNs","size","ino","mode","uid","gid","symlink","type"]) {
+      let seen=0;
+      const operations={
+        stat:path=>{
+          const actual=lstatSync(path,{bigint:true});
+          if(path!==targetPath || ++seen===1)return actual;
+          return new Proxy(actual,{get(target,key){
+            if(field==="symlink" && key==="isSymbolicLink")return ()=>true;
+            if(field==="type" && key==="mode")return target.mode ^ 0o040000n;
+            if(key===field)return target[key]+1n;
+            const value=target[key];return typeof value==="function"?value.bind(target):value;
+          }});
+        },
+        names:readdirSync,read:readFileSync,
+      };
+      const benign=targetPath===ancestor && ["mtimeNs","ctimeNs","size"].includes(field);
+      // Ownership was not part of the original in-tree identity contract.
+      if(targetPath!==ancestor && ["uid","gid"].includes(field))continue;
+      if(asyncMode) {
+        if(benign)assert.deepEqual(await linkedSourceClosureAsync(root,operations),initial,field);
+        else await assert.rejects(()=>linkedSourceClosureAsync(root,operations),/changed|symlink/u,field);
+      } else {
+        if(benign)assert.deepEqual(linkedSourceClosure(root,operations),initial,field);
+        else assert.throws(()=>linkedSourceClosure(root,operations),/changed|symlink/u,field);
+      }
+    }
+  } finally {rmSync(root,{recursive:true,force:true});}
+});

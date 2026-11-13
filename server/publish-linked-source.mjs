@@ -17,8 +17,14 @@ function* scan(root) {
     const stat=yield ["stat",path];
     if(stat.isSymbolicLink()) throw new Error("Linked source symlink is not allowed.");
     const previous=observed.get(path);
-    if(previous && previous.identity!==identity(stat)) throw new Error("Linked source changed while reading.");
-    if(!previous) observed.set(path,{identity:identity(stat),directory:stat.isDirectory()});
+    // Ancestors outside this source own unrelated siblings. Their content churn
+    // is not source mutation; still pin ownership, permissions and inode.
+    const outside=path!==directory && !path.startsWith(directory+sep);
+    const fingerprint=outside
+      ? [stat.dev,stat.ino,stat.mode,stat.uid,stat.gid].map(String).join(":")
+      : identity(stat);
+    if(previous && previous.identity!==fingerprint) throw new Error("Linked source changed while reading.");
+    if(!previous) observed.set(path,{identity:fingerprint,directory:stat.isDirectory()});
     return stat;
   }
   // A source-root symlink and symlinked parents are just as unsafe as leaf links.

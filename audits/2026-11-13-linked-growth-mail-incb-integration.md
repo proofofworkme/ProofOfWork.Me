@@ -51,3 +51,10 @@ The scoped profile now binds all three retained emergency dependencies and an
 exact reviewed API active/base/candidate conflict triple. The additive resolver
 rejects changed inputs or conflict bytes; generator and exact replay checks pass.
 No generic conflict relaxation or runtime installation is performed.
+
+Fresh sealed CI exposed an intermittent source-envelope false positive: unrelated
+ancestor directory churn (for example other tests creating temporary directories)
+was treated as source mutation. The scanner now pins outside-source ancestors by
+device, inode, permissions and ownership while retaining symlink rejection and
+full file/directory/content checks within the source. Deterministic regressions
+distinguish benign ancestor timestamps/size from forbidden identity changes.
