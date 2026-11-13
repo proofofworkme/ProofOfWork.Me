@@ -301,6 +301,8 @@ import {
   normalizeWorkAmoV5RawWorkState,
   projectWorkAmoV5RawEvents,
   replayWorkAmoV5RawBlock,
+  normalizeInceptionHMinusOneWitness,
+  INCEPTION_H_MINUS_ONE_REPAIR_HEIGHT,
   workAmoV5RawGenericStateCommitment,
   workAmoV5RawBlockDiscoveryEnvelope,
   workAmoV5RawIdStateCommitment,
@@ -71325,7 +71327,7 @@ async function completeWorkAmoV5BlockProjection(
       workState: q16OpeningWorkState,
     };
   }
-  const replay = replayWorkAmoV5RawBlock({
+  const replayInput = {
     blockHeaderHex: context.blockHeaderHex,
     blockTransactions: context.blockTransactions,
     expectedBlockHash: blockHash,
@@ -71342,7 +71344,16 @@ async function completeWorkAmoV5BlockProjection(
     workAmoV8: v7ReplayInputs.workAmoV8,
     workBatchV1,
     workMailBatchV1,
-  });
+  };
+  let replay;
+  try {
+    replay = replayWorkAmoV5RawBlock(replayInput);
+  } catch (error) {
+    if (error?.message !== "work-amo-incb-h-minus-one-witness-required") throw error;
+    const inceptionHMinusOneWitness = await workAmoInceptionHMinusOneWitness(context, opening, network, error.acceptedInceptionTxids);
+    if (!inceptionHMinusOneWitness) throw error;
+    replay = replayWorkAmoV5RawBlock({...replayInput, inceptionHMinusOneWitness});
+  }
   const bip141Witness = normalizedWorkAmoV5Bip141Witness(
     replay.bip141Witness,
     replay.blockTransactionCount,
@@ -71601,6 +71612,7 @@ async function completeWorkAmoV5BlockProjection(
       : WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
     network,
     openingNetworkValueQ8: opening.state.networkValueQ8,
+    ...(replay.inceptionHMinusOneWitness ? {inceptionHMinusOneWitness: replay.inceptionHMinusOneWitness} : {}),
     openingStateCommitment,
     openingSufficientState: opening.state,
     previousBlockHash,
@@ -71977,6 +71989,62 @@ function workAmoV5GenericVerifierStateFromProjection(
   return state;
 }
 
+async function workAmoInceptionHMinusOneWitness(context, opening, network, acceptedTxids) {
+  if (Number(context.indexedThroughBlock) < INCEPTION_H_MINUS_ONE_REPAIR_HEIGHT) return null;
+  const bonds = mailActivityItemsFromTransactions(context.transactions, network)
+    .filter((bond) => bond.confirmed === true && isInceptionBondActivityItem(bond) &&
+      acceptedTxids?.includes(String(bond.txid ?? "").toLowerCase()));
+  if (!bonds.length) return null;
+  const snapshot = await proofIndexCanonicalSummaryLedgerPayload(
+    network, Number(context.indexedThroughBlock) - 1, context.previousBlockHash);
+  // Retained transitions carry the authenticated witness in their committed
+  // chain preimage. Historical replay may outlive the summary cache, but must
+  // still match the independently authenticated canonical issuance checkpoint.
+  const archived = snapshot ? null : await proofIndexWorkAmoBlockTransition(
+    network, Number(context.indexedThroughBlock), context.blockHash);
+  const archivedWitness = archived?.payload?.inceptionHMinusOneWitness;
+  const historicalOptions = snapshot ? null : await canonicalInceptionIssuanceOptions(
+    network, bonds, {previousBlockHashByBlockHash: new Map([
+      [context.blockHash, context.previousBlockHash],
+    ])});
+  const checkpoints = bonds.map((bond) => snapshot
+    ? canonicalInceptionValueSnapshotCheckpoint(snapshot, bond)
+    : historicalOptions?.preBondCheckpoint?.(bond));
+  if ((!snapshot && !archivedWitness) || checkpoints.some((checkpoint) => !checkpoint)) {
+    throw inceptionValueSnapshotUnavailableError(bonds[0], {reason: "raw-replay-green-h-minus-one-summary-unavailable"});
+  }
+  const checkpoint = checkpoints[0];
+  if (checkpoints.some((item) => item.workNetworkValueQ8 !== checkpoint.workNetworkValueQ8 ||
+      item.valueSnapshotCanonicalSummaryHash !== checkpoint.valueSnapshotCanonicalSummaryHash ||
+      item.valueSnapshotId !== checkpoint.valueSnapshotId)) {
+    throw inceptionValueSnapshotUnavailableError(bonds[0], {reason: "raw-replay-h-minus-one-summary-disagreement"});
+  }
+  const dnsOverlayQ8 = snapshot
+    ? workAmoV5DnsGrowthOverlayFromActualValue(snapshot.workFloor?.actualValue).dnsTotalQ8.toString()
+    : archivedWitness.dnsOverlayQ8;
+  if (archivedWitness && (
+    archivedWitness.snapshotId !== checkpoint.valueSnapshotId ||
+    archivedWitness.canonicalSummaryHash !== checkpoint.valueSnapshotCanonicalSummaryHash ||
+    archivedWitness.networkValueQ8 !== checkpoint.workNetworkValueQ8 ||
+    archivedWitness.blockHash !== checkpoint.valueSnapshotBlockHash ||
+    archivedWitness.blockHeight !== checkpoint.valueSnapshotBlockHeight
+  )) throw inceptionValueSnapshotUnavailableError(bonds[0], {reason: "archived-h-minus-one-witness-disagreement"});
+  return normalizeInceptionHMinusOneWitness({
+    model: "canonical-incb-h-minus-one-summary-witness-v1",
+    network, status: "green",
+    blockHeight: checkpoint.valueSnapshotBlockHeight,
+    blockHash: checkpoint.valueSnapshotBlockHash,
+    snapshotId: checkpoint.valueSnapshotId,
+    canonicalSummaryHash: checkpoint.valueSnapshotCanonicalSummaryHash,
+    networkValueQ8: checkpoint.workNetworkValueQ8,
+    openingNetworkValueQ8: opening.state.networkValueQ8,
+    openingStateCommitment: workAmoV5CanonicalStateCommitment(opening.state),
+    dnsOverlayQ8,
+  }, {openingEconomicState: opening.state,
+    expectedBlockHeight: Number(context.indexedThroughBlock),
+    expectedPreviousBlockHash: context.previousBlockHash});
+}
+
 async function workAmoV5InceptionVerifierStateFromProjection(
   projection,
   context,
@@ -72091,7 +72159,13 @@ async function workAmoV5InceptionVerifierStateFromProjection(
     if (
       !checkpoint ||
       String(checkpoint.workNetworkValueQ8 ?? "") !==
-        String(transition.openingNetworkValueQ8 ?? "")
+        String(transition.inceptionHMinusOneWitness?.networkValueQ8 ?? transition.openingNetworkValueQ8 ?? "") ||
+      (transition.inceptionHMinusOneWitness && (
+        checkpoint.valueSnapshotId !== transition.inceptionHMinusOneWitness.snapshotId ||
+        checkpoint.valueSnapshotCanonicalSummaryHash !== transition.inceptionHMinusOneWitness.canonicalSummaryHash ||
+        checkpoint.valueSnapshotBlockHash !== transition.inceptionHMinusOneWitness.blockHash ||
+        checkpoint.valueSnapshotBlockHeight !== transition.inceptionHMinusOneWitness.blockHeight
+      ))
     ) {
       fail("the hash-bound H-1 value differs from the AMO block opening value");
     }

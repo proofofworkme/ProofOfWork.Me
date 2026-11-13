@@ -4128,6 +4128,11 @@ export async function canonicalWorkAmoV5TransitionEvidence(
           );
         }
       }
+      // This legacy migration audits the V5 era, not modern witnessed replay.
+      // Never silently omit an archived H-minus-one witness or modern inputs.
+      if (payload.inceptionHMinusOneWitness) {
+        throw new Error("Legacy V5 migration cannot audit witnessed Inception transitions; use the current canonical replay worker.");
+      }
       replay = replayWorkAmoV5RawBlock({
         blockHeaderHex: fullBlock.blockHeaderHex,
         blockTransactions: block.tx,

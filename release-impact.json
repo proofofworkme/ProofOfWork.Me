@@ -1,6 +1,6 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "growth-work-links-activity-fee-factor",
+  "upgrade": "incb-authenticated-h-minus-one-oracle-emergency",
   "liveCheck": "scripts/check-activity-fee-factor-live.mjs",
   "ciTests": [
     "server/pwid-rejection-projection.test.mjs",
@@ -17,7 +17,8 @@
     "scripts/check-work-chart-sampling.test.mjs",
     "src/features/boost/boostWebLinks.test.mjs",
     "scripts/check-activity-fee-factor.test.mjs",
-    "scripts/check-activity-runtime-release.test.mjs"
+    "scripts/check-activity-runtime-release.test.mjs",
+    "scripts/check-incb-h-minus-one.test.mjs"
   ],
   "reviews": [
     {
@@ -25,11 +26,10 @@
         "landing"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -37,23 +37,21 @@
         "id"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
       "targets": [
         "dns"
       ],
-      "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "disposition": "affected",
+      "reason": "This target consumes corrected canonical accounting or its readiness dependencies. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -61,25 +59,21 @@
         "computer"
       ],
       "disposition": "affected",
-      "reason": "Embedded WORK chart and Boost rendering consume the same changed components; shell and all other embedded writers unchanged. Exact reviewed private-stage transition (1042,7ea) preserves held c3969 and immediate1042, with recovery-backed outgoing7ea retirement only after verified publication; capacity floors and future-pair refusal remain unchanged. Canonical activity live reads factor identical per-transaction fee evidence once; selected events, all 26 fields, native order, raw payload and final per-event status/height guards remain exact. Isolated saved-snapshot ABBA proves byte equality, not whole-app latency.",
+      "reason": "This target consumes corrected canonical accounting or its readiness dependencies. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "tests/browser/bare-domain-links.spec.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "deploy/audit30/check-ui-storage.test.py",
-        "scripts/check-ui-remediation-retirement.test.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
       "targets": [
         "desktop"
       ],
-      "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "disposition": "affected",
+      "reason": "This target consumes corrected canonical accounting or its readiness dependencies. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -87,23 +81,21 @@
         "browser"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
       "targets": [
         "boost"
       ],
-      "disposition": "affected",
-      "reason": "Shared BoostText recognizes safe bare web domains while preserving source bytes, native DNS/identity paths and code literal text. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "disposition": "compatible",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "src/features/boost/boostWebLinks.test.mjs",
-        "tests/browser/bare-domain-links.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -111,11 +103,10 @@
         "publish"
       ],
       "disposition": "compatible",
-      "reason": "Uses BoostText dnsOnly path, which remains unchanged; article body/source is not newly autolinked. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "src/features/boost/BoostText.tsx",
-        "tests/browser/publish-ui.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -123,11 +114,10 @@
         "search"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -135,11 +125,10 @@
         "code"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -147,11 +136,10 @@
         "jobs"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -159,11 +147,10 @@
         "marketplace"
       ],
       "disposition": "compatible",
-      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-work-chart-sampling.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -171,11 +158,10 @@
         "token"
       ],
       "disposition": "compatible",
-      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-work-chart-sampling.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -183,11 +169,10 @@
         "wallet"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -195,11 +180,10 @@
         "work"
       ],
       "disposition": "affected",
-      "reason": "Separate sampled history and canonical current marker; action count and source freshness labels; no replay/math change. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "This target consumes corrected canonical accounting or its readiness dependencies. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-work-chart-sampling.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -207,23 +191,21 @@
         "infinity"
       ],
       "disposition": "compatible",
-      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-work-chart-sampling.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
       "targets": [
         "inception"
       ],
-      "disposition": "compatible",
-      "reason": "Shared LedgerChart defaults remain unchanged; new primarySeriesId/latestLabel overrides are used only by WORK. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "disposition": "affected",
+      "reason": "This target consumes corrected canonical accounting or its readiness dependencies. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-work-chart-sampling.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -231,23 +213,21 @@
         "activity"
       ],
       "disposition": "affected",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Canonical activity live reads factor identical per-transaction fee evidence once; selected events, all 26 fields, native order, raw payload and final per-event status/height guards remain exact. Isolated saved-snapshot ABBA proves byte equality, not whole-app latency.",
+      "reason": "This target consumes corrected canonical accounting or its readiness dependencies. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
       "targets": [
         "growth"
       ],
-      "disposition": "affected",
-      "reason": "Responsive layout, bounded metric presentation with exact disclosures, canonical directory and explicit scenario gaps; numeric forecast unchanged. Canonical activity live reads factor identical per-transaction fee evidence once; selected events, all 26 fields, native order, raw payload and final per-event status/height guards remain exact. Isolated saved-snapshot ABBA proves byte equality, not whole-app latency.",
+      "disposition": "compatible",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-display.test.mjs",
-        "scripts/check-growth-forecast.test.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -255,11 +235,10 @@
         "pages"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -267,11 +246,10 @@
         "permission"
       ],
       "disposition": "compatible",
-      "reason": "No route, writer, reader, API, or surface component changed; shared bundle rebuilt at same source pin. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-display.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -279,11 +257,10 @@
         "nft"
       ],
       "disposition": "compatible",
-      "reason": "Computer/NFT compatibility alias retained; no new NFT accounting or standalone writer. Shared Computer bundle carries the same embedded reader fixes. Activity reader optimization preserves the complete downstream data contract; this surface has no new writer or protocol semantics.",
+      "reason": "No target-specific writer, route or UI component changes; compatibility still depends on coherent canonical readers and readiness. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "tests/browser/bare-domain-links.spec.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     },
     {
@@ -300,15 +277,10 @@
         "compatibility"
       ],
       "disposition": "affected",
-      "reason": "Presentation-only changes do not alter signed bytes, node admission, indexing/backfill/replay, ownership, pending/confirmed/reorg authority, or exactly-once value. Exact canonical Q8 values and original text remain intact. DNS/Permission inventory coverage is not new forecast calibration; numeric model outputs are unchanged. Missing values remain unavailable and unsafe links inert. Historical WORK accounting remains a separately disclosed limitation, not repaired by display separation. Canonical activity live reads factor identical per-transaction fee evidence once; selected events, all 26 fields, native order, raw payload and final per-event status/height guards remain exact. Isolated saved-snapshot ABBA proves byte equality, not whole-app latency.",
+      "reason": "This target consumes corrected canonical accounting or its readiness dependencies. Emergency oracle-only correction from live e2669bc; no linked Publish/Boost, Growth-model or Mail-composer changes are included. At and after block 975611 accepted INCB bonds require an authenticated predecessor summary witness binding the exact DNS overlay, raw opening commitment and canonical predecessor. Recipient-aggregate rounding and shared-transfer frozen valuation follow the existing H-minus-one rule. Previously committed transitions and pre-boundary replay remain unchanged; the raw accumulator does not receive DNS value and movements/fees must not be counted twice. Missing, stale or conflicting witness evidence fails closed. See audits/2026-11-12-incb-h-minus-one-oracle.md for evidence and limitations. Retained baseline liveCheck is only an existing activity regression gate, not oracle qualification: isolated physical-database materialization, actual-block replay, historical byte parity, canonical readiness/status and post-cutover protocol parity remain mandatory separate gates. Existing native-storage runtime overlays and recovery artifacts must be preserved. This manifest does not assert deployment, complete audit assurance or live parity.",
       "evidence": [
-        "scripts/check-growth-forecast.test.mjs",
-        "scripts/check-work-chart-sampling.test.mjs",
-        "src/features/boost/boostWebLinks.test.mjs",
-        "tests/browser/ledger-charts.spec.mjs",
-        "tests/browser/bare-domain-links.spec.mjs",
-        "scripts/check-activity-fee-factor.test.mjs",
-        "deploy/activity-fee-factor/check.test.py"
+        "scripts/check-incb-h-minus-one.test.mjs",
+        "scripts/check-index-recovery-behavior.mjs"
       ]
     }
   ]

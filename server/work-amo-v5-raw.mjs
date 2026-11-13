@@ -1565,6 +1565,12 @@ function normalizeStateDelta(value) {
     creditFixedSats,
     economicOutputs,
     ...(movement ? { movement } : {}),
+    ...(source.movementFrozenNetworkValueQ8 !== undefined
+      ? {movementFrozenNetworkValueQ8: (() => {
+          const value = exactUnsignedText(source.movementFrozenNetworkValueQ8, {positive: true});
+          if (!movement || !value) throw new TypeError("work-amo-incb-frozen-value-invalid");
+          return value;
+        })()} : {}),
     ...(Object.hasOwn(source, "quoteHead")
       ? { quoteHead: source.quoteHead }
       : {}),
@@ -1611,7 +1617,8 @@ function applyEconomicDelta(
     movementDescriptor =
       movementValueDescriptor(normalized.movement);
     nextCreditMovementFrozenValueQ8 +=
-      (movementDescriptor.amount * before) /
+      (movementDescriptor.amount * (normalized.movementFrozenNetworkValueQ8
+        ? BigInt(normalized.movementFrozenNetworkValueQ8) : before)) /
       movementDescriptor.denominator;
   }
   const nextForBase = {
@@ -2165,6 +2172,7 @@ function evaluatePwm(record, context) {
       const openingNetworkValueQ8 = BigInt(
         context.blockOpeningEconomicState.networkValueQ8,
       );
+      const processedWorkSends = [];
       for (const send of priorWorkSends) {
         const matchedBondRecipientVouts = payments
           .filter(
@@ -2182,13 +2190,18 @@ function evaluatePwm(record, context) {
         const amountAtoms = BigInt(
           q16Send ? send.amountSubatoms : send.amountAtoms,
         );
-        const attachedWorkLiveValueAtSendQ8 =
+        const aggregateIncrement = context.inceptionHMinusOneWitness
+          ? inceptionAttachmentIncrement(amountAtoms, q16Send,
+            processedWorkSends.filter((prior) => prior.recipientAddress === send.recipientAddress),
+            openingNetworkValueQ8) : null;
+        const attachedWorkLiveValueAtSendQ8 = aggregateIncrement?.valueQ8 ??
           (amountAtoms * openingNetworkValueQ8) /
           (q16Send
             ? WORK_AMO_V8_MOVEMENT_DENOMINATOR
             : WORK_AMO_V5_MOVEMENT_DENOMINATOR);
-        const attachedWorkIssuanceUnits =
+        const attachedWorkIssuanceUnits = aggregateIncrement?.issuanceUnits ??
           attachedWorkLiveValueAtSendQ8 / WORK_AMO_VALUE_Q8_SCALE;
+        processedWorkSends.push(send);
         if (
           attachedWorkIssuanceUnits > 0n &&
           !adjustGenericBalance(
@@ -3597,12 +3610,17 @@ function evaluateWorkPwt(record, context, parsed) {
       const openingNetworkValueQ8 = BigInt(
         context.blockOpeningEconomicState.networkValueQ8,
       );
-      const attachedWorkLiveValueAtSendQ8 =
+      const aggregateIncrement = context.inceptionHMinusOneWitness
+        ? inceptionAttachmentIncrement(amountAtoms, q16,
+          (context.workSendsByTxid.get(record.txid) ?? []).filter(
+            (prior) => prior.recipientAddress === parsed.recipientAddress),
+          openingNetworkValueQ8) : null;
+      const attachedWorkLiveValueAtSendQ8 = aggregateIncrement?.valueQ8 ??
         (amountAtoms * openingNetworkValueQ8) /
         (q16
           ? WORK_AMO_V8_MOVEMENT_DENOMINATOR
           : WORK_AMO_V5_MOVEMENT_DENOMINATOR);
-      const attachedWorkIssuanceUnits =
+      const attachedWorkIssuanceUnits = aggregateIncrement?.issuanceUnits ??
         attachedWorkLiveValueAtSendQ8 / WORK_AMO_VALUE_Q8_SCALE;
       genericState = cloneGenericState(context.genericState);
       if (
@@ -5397,7 +5415,95 @@ function normalizedWorkMailBatchV1ReplayContext({ blockHeight, workMailBatchV1 }
   return { commitment, evaluation: commitment };
 }
 
-export function replayWorkAmoV5RawBlock({
+export const INCEPTION_H_MINUS_ONE_REPAIR_HEIGHT = 975611;
+
+// A witnessed INCB oracle is separate from the immutable AMO opening state.
+// Legacy replay without a witness remains byte-for-byte unchanged.
+export function normalizeInceptionHMinusOneWitness(witness, options) {
+  if (!witness) return null;
+  const opening = options.openingEconomicState;
+  const commitment = workAmoV5CanonicalStateCommitment(opening);
+  const exact = (value) => typeof value === "string" && /^(0|[1-9][0-9]*)$/u.test(value);
+  if (Number(options.expectedBlockHeight) < INCEPTION_H_MINUS_ONE_REPAIR_HEIGHT ||
+      witness.model !== "canonical-incb-h-minus-one-summary-witness-v1" ||
+      witness.network !== "livenet" || witness.status !== "green" ||
+      witness.blockHeight !== options.expectedBlockHeight - 1 ||
+      witness.blockHash !== options.expectedPreviousBlockHash ||
+      !/^[0-9a-f]{64}$/u.test(witness.blockHash) ||
+      !/^[0-9a-f]{64}$/u.test(witness.canonicalSummaryHash) ||
+      !/^[0-9a-f]{24}$/u.test(witness.snapshotId) ||
+      !exact(witness.networkValueQ8) || !exact(witness.dnsOverlayQ8) ||
+      !exact(witness.openingNetworkValueQ8) ||
+      witness.openingNetworkValueQ8 !== opening.networkValueQ8 ||
+      BigInt(witness.networkValueQ8) !== BigInt(opening.networkValueQ8) + BigInt(witness.dnsOverlayQ8) ||
+      witness.openingStateCommitment?.model !== commitment.model ||
+      witness.openingStateCommitment?.sha256 !== commitment.sha256 ||
+      witness.openingStateCommitment?.payloadBytes !== commitment.payloadBytes) {
+    throw new TypeError("work-amo-incb-h-minus-one-witness-invalid");
+  }
+  return {model: witness.model, network: witness.network, status: witness.status,
+    blockHeight: witness.blockHeight, blockHash: witness.blockHash,
+    snapshotId: witness.snapshotId, canonicalSummaryHash: witness.canonicalSummaryHash,
+    networkValueQ8: witness.networkValueQ8, dnsOverlayQ8: witness.dnsOverlayQ8,
+    openingNetworkValueQ8: witness.openingNetworkValueQ8,
+    openingStateCommitment: commitment};
+}
+
+// Recipient issuance rounds once over the complete matched WORK amount. Each
+// accepted send receives only the difference from the previous recipient total,
+// so ordering does not change supply and earlier sends are never counted twice.
+export function inceptionAttachmentIncrement(amount, q16, priorSends, networkValueQ8) {
+  const toSubatoms = (send) => send.amountStorageModel === WORK_SUBATOM_PROJECTION_MODEL
+    ? BigInt(send.amountSubatoms)
+    : BigInt(send.amountAtoms) * (WORK_AMO_V8_MOVEMENT_DENOMINATOR / WORK_AMO_V5_MOVEMENT_DENOMINATOR);
+  const prior = priorSends.reduce((sum, send) => sum + toSubatoms(send), 0n);
+  const current = q16 ? BigInt(amount) : BigInt(amount) *
+    (WORK_AMO_V8_MOVEMENT_DENOMINATOR / WORK_AMO_V5_MOVEMENT_DENOMINATOR);
+  const valueBefore = prior * BigInt(networkValueQ8) / WORK_AMO_V8_MOVEMENT_DENOMINATOR;
+  const valueAfter = (prior + current) * BigInt(networkValueQ8) / WORK_AMO_V8_MOVEMENT_DENOMINATOR;
+  return {valueQ8: valueAfter - valueBefore,
+    issuanceUnits: valueAfter / WORK_AMO_VALUE_Q8_SCALE - valueBefore / WORK_AMO_VALUE_Q8_SCALE};
+}
+
+function inceptionWitnessAttribution(replay) {
+  const parents = replay.events.filter((event) => event.valid && event.protocol === "pwm1" &&
+    event.parsed?.tokenFamily === "INCB").map((event) => ({txid: event.txid,
+      position: event.position, recipients: event.output?.recipients ?? []}));
+  const transfers = replay.events.filter((event) => event.valid && event.protocol === "pwt1" &&
+    event.parsed?.kind === "send" && event.output?.tokenId === WORK_TOKEN_ID &&
+    parents.some((parent) => parent.txid === event.txid &&
+      parent.recipients.some((recipient) => recipient.address === event.output.recipientAddress)))
+    .map((event) => ({identity: event.stateDelta.movement.identity,
+      movement: event.stateDelta.movement, recipientAddress: event.output.recipientAddress}));
+  return {parents, transfers};
+}
+
+export function replayWorkAmoV5RawBlock(options = {}) {
+  const witness = normalizeInceptionHMinusOneWitness(options.inceptionHMinusOneWitness, options);
+  if (!witness) {
+    const replay = replayWorkAmoV5RawBlockInternal({...options, inceptionFrozenMovements: null});
+    if (Number(options.expectedBlockHeight) >= INCEPTION_H_MINUS_ONE_REPAIR_HEIGHT &&
+        inceptionWitnessAttribution(replay).parents.length) {
+      const error = new TypeError("work-amo-incb-h-minus-one-witness-required");
+      error.acceptedInceptionTxids = [...new Set(inceptionWitnessAttribution(replay).parents.map((parent) => parent.txid))];
+      throw error;
+    }
+    return replay;
+  }
+  // Discovery is never persisted. Only the second replay is committed, and
+  // its exact admitted parents/recipients/transfers must reproduce discovery.
+  const discovery = replayWorkAmoV5RawBlockInternal({...options, inceptionHMinusOneWitness: witness, inceptionFrozenMovements: null});
+  const attribution = inceptionWitnessAttribution(discovery);
+  if (!attribution.parents.length) return discovery;
+  const replay = replayWorkAmoV5RawBlockInternal({...options, inceptionHMinusOneWitness: witness,
+    inceptionFrozenMovements: new Set(attribution.transfers.map((item) => item.identity))});
+  if (JSON.stringify(inceptionWitnessAttribution(replay)) !== JSON.stringify(attribution)) {
+    throw new TypeError("work-amo-incb-witness-admission-changed");
+  }
+  return replay;
+}
+
+function replayWorkAmoV5RawBlockInternal({
   blockHeaderHex,
   blockTransactions,
   expectedBlockHash,
@@ -5413,6 +5519,8 @@ export function replayWorkAmoV5RawBlock({
   workAmoV8 = null,
   workBatchV1 = null,
   workMailBatchV1 = null,
+  inceptionHMinusOneWitness = null,
+  inceptionFrozenMovements = null,
 } = {}) {
   const openingValidation = validateWorkAmoV5SufficientState(
     openingEconomicState,
@@ -5606,7 +5714,7 @@ export function replayWorkAmoV5RawBlock({
   let idState = idOpeningState;
   let workState = workOpeningState;
   const blockOpeningEconomicState = {
-    networkValueQ8: economicState.networkValueQ8,
+    networkValueQ8: inceptionHMinusOneWitness?.networkValueQ8 ?? economicState.networkValueQ8,
   };
   const nextDerivedOrdinalByTransactionVout = new Map();
   for (const record of ordered) {
@@ -5646,6 +5754,7 @@ export function replayWorkAmoV5RawBlock({
       transactionCount: countsByTxid.size,
     },
     model: WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+    ...(inceptionHMinusOneWitness ? {inceptionHMinusOneWitness} : {}),
     openingStateCommitment:
       workAmoV5CanonicalStateCommitment(economicState),
     ...(v6Replay.commitment
@@ -5674,6 +5783,7 @@ export function replayWorkAmoV5RawBlock({
         )
       : evaluateRecord(record, {
           blockOpeningEconomicState,
+          inceptionHMinusOneWitness,
           claimedByTxid,
           countsByTxid,
           economicState,
@@ -5718,6 +5828,9 @@ export function replayWorkAmoV5RawBlock({
       workCurrent: workState,
     });
     if (normalized.valid) {
+      if (inceptionFrozenMovements?.has(normalized.stateDelta.movement?.identity)) {
+        normalized.stateDelta.movementFrozenNetworkValueQ8 = inceptionHMinusOneWitness.networkValueQ8;
+      }
       const applied = applyEconomicDelta(
         economicState,
         normalized.stateDelta,
@@ -6028,6 +6141,7 @@ export function replayWorkAmoV5RawBlock({
     ...(mailBatchReplay.commitment
       ? { workMailBatchV1: mailBatchReplay.commitment }
       : {}),
+    ...(inceptionHMinusOneWitness ? {inceptionHMinusOneWitness} : {}),
     records: ordered,
     stateCommitment,
     tokenStateCommitment,

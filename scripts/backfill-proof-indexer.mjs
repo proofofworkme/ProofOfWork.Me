@@ -19341,6 +19341,14 @@ async function pruneLedgerSnapshots(
         WHERE network = $1
           AND COALESCE(payload->>'issuanceValueSnapshotId', '') <> ''
         UNION
+        SELECT DISTINCT payload->'inceptionHMinusOneWitness'->>'snapshotId' AS snapshot_id
+        FROM proof_indexer.work_amo_block_transitions
+        WHERE network = $1
+          AND block_height >= 975611
+          AND payload->'inceptionHMinusOneWitness'->>'model' =
+            'canonical-incb-h-minus-one-summary-witness-v1'
+          AND COALESCE(payload->'inceptionHMinusOneWitness'->>'snapshotId', '') <> ''
+        UNION
         SELECT DISTINCT entry->'snapshot'->>'snapshotId' AS snapshot_id
         FROM proof_indexer.meta rebuild
         JOIN proof_indexer.meta witness
