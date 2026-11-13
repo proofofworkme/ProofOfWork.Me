@@ -429,6 +429,9 @@ def admission_tools(source):
 
 def preflight(args):
     closed = getattr(args, 'closed_request', None)
+    existing = getattr(args, 'existing_inventory', False)
+    if existing and not closed:
+        raise ValueError('Existing inventory requires an exact closed input request')
     request = json.loads(Path(closed).read_bytes()) if closed else {}
     if 'inputCompactorSha256' in request:
         lifecycle = lifecycle_module().status(require_complete=True, prospective_release=request['releaseId'])
@@ -461,7 +464,7 @@ def preflight(args):
         if not 0 < len(packed) <= 65536 or hashlib.sha256(packed).hexdigest() != request['inventorySha256']:
             raise ValueError('Closed input request does not match inventory')
         target = '/var/tmp/proofofwork-deploy/recovery-control-' + request['releaseId'] + '-inventory-' + request['inventorySha256'] + '.zlib'
-        remote(['/usr/bin/python3', '-I', '-B', '-c', guard.decode() + UPLOAD, request['inventorySha256'], target, json.dumps(gate)], data=packed,
+        remote(['/usr/bin/python3', '-I', '-B', '-c', guard.decode() + (EXISTING_INVENTORY if existing else UPLOAD), request['inventorySha256'], target, json.dumps(gate)], data=packed,
                timeout=CONTROL_UPLOAD_TIMEOUT_SECONDS)
         phase = (ROOT / 'phase_capacity.py').read_bytes()
         script = ('import base64\nPHASE_SOURCE=base64.b64decode(' + repr(base64.b64encode(phase).decode()) +
@@ -663,6 +666,49 @@ def make_plan(args):
                       'retainedRoots': len(c['retainedRoots']), 'admissions': c['admissions'],
                       'archiveUpperBoundBytes': c['stageArchiveUpperBoundBytes']}))
 
+EXISTING_INVENTORY = r'''
+import fcntl,hashlib,os,pathlib,re,stat,subprocess,sys
+INVENTORY_PARENT = pathlib.Path('/var/tmp/proofofwork-deploy')
+def inventory_identity(s):
+ return tuple(getattr(s,k) for k in ('st_dev','st_ino','st_mode','st_uid','st_gid','st_nlink','st_size','st_atime_ns','st_mtime_ns','st_ctime_ns','st_blocks'))
+def verify_existing_inventory(target,expected_sha,expected_raw):
+ assert re.fullmatch('[0-9a-f]{64}',expected_sha) and 0<len(expected_raw)<=65536
+ assert hashlib.sha256(expected_raw).hexdigest()==expected_sha
+ p=pathlib.Path(target); parent=p.parent; ps=parent.lstat()
+ parent_identity=tuple(getattr(ps,k) for k in ('st_dev','st_ino','st_mode','st_uid','st_gid'))
+ assert parent==INVENTORY_PARENT and parent.resolve(strict=True)==parent
+ assert stat.S_ISDIR(ps.st_mode) and ps.st_uid==ps.st_gid==0 and stat.S_IMODE(ps.st_mode)==0o700
+ assert re.fullmatch('recovery-control-[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z-inventory-'+expected_sha+r'\.zlib',p.name)
+ before=p.lstat(); identity=inventory_identity(before)
+ assert p.resolve(strict=True)==p and stat.S_ISREG(before.st_mode)
+ assert before.st_uid==before.st_gid==0 and before.st_nlink==1 and stat.S_IMODE(before.st_mode)==0o600
+ assert before.st_size==len(expected_raw)
+ fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME)
+ with os.fdopen(fd,'rb') as stream:
+  assert inventory_identity(os.fstat(stream.fileno()))==identity
+  actual=stream.read(65537)
+  assert inventory_identity(os.fstat(stream.fileno()))==identity
+ assert inventory_identity(p.lstat())==identity and p.resolve(strict=True)==p
+ after_parent=parent.lstat()
+ assert tuple(getattr(after_parent,k) for k in ('st_dev','st_ino','st_mode','st_uid','st_gid'))==parent_identity
+ assert parent.resolve(strict=True)==parent
+ assert actual==expected_raw and hashlib.sha256(actual).hexdigest()==expected_sha
+ return {'path':str(p),'sha256':expected_sha,'bytes':len(actual),'identity':identity,'readOnly':True}
+sha,target,gate=sys.argv[1:]
+lock='/run/proofofwork-ui/deploy.lock'; info=os.lstat(lock)
+assert stat.S_ISREG(info.st_mode) and info.st_uid==info.st_gid==0 and info.st_nlink==1 and not info.st_mode & 0o7022
+fd=os.open(lock,os.O_RDONLY|os.O_NOFOLLOW); assert os.fstat(fd).st_ino==info.st_ino
+fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+installed_admission(*json.loads(gate),fd)
+raw=sys.stdin.buffer.read(65537)
+assert 0<len(raw)<=65536 and hashlib.sha256(raw).hexdigest()==sha
+env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LC_ALL':'C','POW_UI_DEPLOY_LOCK_FD':str(fd)}
+for kind in ['check-scratch','check']:
+ subprocess.run(['/usr/bin/python3','-I','-B','/usr/local/sbin/proofofwork-ui-capacity',kind,'--path','/var/tmp/proofofwork-deploy','--additional-bytes','65536','--additional-inodes','4','--phase','recovery-plan-install'],env=env,pass_fds=(fd,),timeout=60,check=True,stdout=subprocess.DEVNULL)
+print(json.dumps({'inventoryReused':verify_existing_inventory(target,sha,raw)}))
+'''
+
+
 UPLOAD = r'''
 import fcntl,hashlib,os,pathlib,stat,subprocess,sys
 sha,target,gate=sys.argv[1:]
@@ -720,7 +766,7 @@ def main():
     parser.add_argument('--repo', type=Path, default=REPO, help='Exact clean committed release checkout')
     sub = parser.add_subparsers(dest='command', required=True)
     p = sub.add_parser('prepare-closed-input'); p.add_argument('build_receipt'); p.add_argument('output'); p.add_argument('--private-staging', action='store_true'); p.set_defaults(fn=prepare_closed_input)
-    p = sub.add_parser('preflight'); p.add_argument('output'); p.add_argument('--closed-request'); p.set_defaults(fn=preflight)
+    p = sub.add_parser('preflight'); p.add_argument('output'); p.add_argument('--closed-request'); p.add_argument('--existing-inventory', action='store_true', help='Read-verify the exact previously uploaded immutable inventory; never overwrite it'); p.set_defaults(fn=preflight)
     p = sub.add_parser('make-plan'); p.add_argument('build_receipt'); p.add_argument('preflight'); p.add_argument('output'); p.add_argument('--attempt', default='initial')
     p.add_argument('--input-storage', choices=('release-evidence-v1', 'deploy-scratch-v1'), default='release-evidence-v1')
     p.add_argument('--resume-plan'); p.add_argument('--resume-evidence'); p.add_argument('--resume-inventory'); p.add_argument('--preserved-plan'); p.add_argument('--preserved-evidence'); p.add_argument('--preserved-incoming-receipt'); p.add_argument('--preserved-inventory'); p.set_defaults(fn=make_plan)

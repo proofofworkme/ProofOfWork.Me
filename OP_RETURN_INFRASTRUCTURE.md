@@ -97,7 +97,18 @@ release. The policy applies to every upgrade, regardless of protocol name.
 ### UI archive admission and verification
 
 For a new closed-input release, run `deploy/publish/release.py prepare-closed-input`
-on the build VPS. Preflight and transport re-evaluate the candidate against the
+on the build VPS. For a fresh census after an earlier preflight uploaded the
+same immutable inventory, explicitly add `preflight --existing-inventory` with
+the exact original closed-input request. It verifies the root-owned private
+file, single link, unchanged descriptor/path identity and exact bytes/hash under
+the same deployment lock and lifecycle/capacity gates. Missing or changed input
+refuses; nothing is created, replaced or removed by reuse. Ordinary upload stays
+exclusive. This is fresh measurement, not reuse of an old capacity admission.
+A reviewed deployment-only tooling successor may use the existing artifact via
+`artifact_tooling_binding`; record separate tooling provenance and keep final
+GitHub/main, primary preview and public UI aligned to the product artifact commit.
+Do not relabel an artifact with the tooling commit.
+Preflight and transport re-evaluate the candidate against the
 installed stager, current surfaces and pinned helper hashes before sending any
 release bytes. The received stage must reproduce the same closure. Historical
 plans retain their original accounting, including the 10 GiB floor in their sealed receipts.

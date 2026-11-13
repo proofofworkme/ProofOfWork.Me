@@ -3032,5 +3032,144 @@ class VpsVerificationTests(unittest.TestCase):
         self.assertIn('powadmin@65.108.122.87', argv)
         self.assertIn('StrictHostKeyChecking=yes', argv)
 
+
+
+class ExistingInventoryWrapperTests(unittest.TestCase):
+    def test_explicit_reuse_keeps_canonical_preflight_and_default_exclusive(self):
+        module=safe_module('release.py')
+        with tempfile.TemporaryDirectory(prefix='pow-reuse-wrapper-') as directory:
+            request=Path(directory)/'request.json'; packed=b'closed-inventory'
+            request.write_bytes(raw_json({'releaseId':RELEASE,'commit':COMMIT,'inventorySha256':hashlib.sha256(packed).hexdigest(),'inputCompactorSha256':'c'*64}))
+            Path(str(request)+'.zlib').write_bytes(packed)
+            binding={'pair':{'current':'0'*12+'-20261001T010000Z','previous':'1'*12+'-20260930T010000Z'}}
+            status={'binding':binding,'verifiedPreservedFallback':{'model':'verified-fallback-in-place-v1'},'privateStageRetention':{'model':'private-stage-zero-retirement-v1','wouldRetire':[]}}
+            scripts=[]
+            for reuse in (False,True):
+                remote=unittest.mock.Mock(side_effect=[None,subprocess.TimeoutExpired('preflight',1500)])
+                with patch.dict(module.preflight.__globals__,remote=remote,admission_source=lambda *a:(ROOT/'publication_admission.py').read_bytes(),lifecycle_module=lambda:types.SimpleNamespace(status=lambda **k:status)), patch.object(subprocess,'check_output',side_effect=lambda command:(ROOT/Path(command[-1]).name).read_bytes()):
+                    with self.assertRaises(subprocess.TimeoutExpired):module.preflight(types.SimpleNamespace(closed_request=str(request),existing_inventory=reuse,output=str(Path(directory)/'out')))
+                script=remote.call_args_list[0].args[0][4]
+                self.assertIn(module.EXISTING_INVENTORY if reuse else module.UPLOAD,script)
+                self.assertEqual(remote.call_args_list[0].kwargs['data'],packed)
+                self.assertEqual([c.kwargs['timeout'] for c in remote.call_args_list],[900,1500])
+                scripts.append(remote.call_args_list[1].kwargs['data'])
+            self.assertEqual(*scripts)
+            self.assertFalse((Path(directory)/'out').exists())
+    def test_reuse_without_closed_request_refuses_before_remote(self):
+        module=safe_module('release.py')
+        with patch.dict(module.preflight.__globals__,remote=unittest.mock.Mock(side_effect=AssertionError('remote called'))):
+            with self.assertRaisesRegex(ValueError,'exact closed'):module.preflight(types.SimpleNamespace(existing_inventory=True))
+    def test_default_uploader_stays_exclusive(self):
+        source=safe_module('release.py').UPLOAD
+        self.assertIn("with p.open('xb')",source)
+        self.assertNotIn('inventoryReused',source)
+
+
+@unittest.skipUnless(os.geteuid()==0,'Exact root-owned metadata fixture requires isolated root invocation')
+class ExistingInventoryNativeTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory(prefix='pow-existing-inventory-')
+        self.base=Path(self.temp.name); self.base.chmod(0o700)
+        self.raw=b'immutable-closed-inventory';self.sha=hashlib.sha256(self.raw).hexdigest()
+        self.path=self.base/('recovery-control-'+RELEASE+'-inventory-'+self.sha+'.zlib')
+        self.path.write_bytes(self.raw);self.path.chmod(0o600)
+        self.code=safe_module('release.py').EXISTING_INVENTORY
+        nodes=[n for n in ast.parse(self.code).body if isinstance(n,(ast.Import,ast.ImportFrom,ast.FunctionDef))]
+        self.ns={};exec(compile(ast.Module(body=nodes,type_ignores=[]),'inventory-fixture','exec'),self.ns)
+        self.ns['INVENTORY_PARENT']=self.base
+    def tearDown(self):self.temp.cleanup()
+    def verify(self):return self.ns['verify_existing_inventory'](str(self.path),self.sha,self.raw)
+    def test_exact_identity_bytes_and_metadata_remain_unchanged(self):
+        before=self.ns['inventory_identity'](self.path.lstat());names=list(self.base.iterdir())
+        result=self.verify()
+        self.assertEqual(tuple(result['identity']),before);self.assertTrue(result['readOnly'])
+        self.assertEqual(self.ns['inventory_identity'](self.path.lstat()),before);self.assertEqual(list(self.base.iterdir()),names)
+    def test_missing(self):
+        self.path.unlink()
+        with self.assertRaises(FileNotFoundError):self.verify()
+    def test_symlink(self):
+        other=self.base/'original';self.path.rename(other);self.path.symlink_to(other)
+        with self.assertRaises(AssertionError):self.verify()
+    def test_hardlink(self):
+        os.link(self.path,self.base/'alias')
+        with self.assertRaises(AssertionError):self.verify()
+    def test_mode(self):
+        self.path.chmod(0o640)
+        with self.assertRaises(AssertionError):self.verify()
+    def test_owner(self):
+        os.chown(self.path,65534,0)
+        with self.assertRaises(AssertionError):self.verify()
+    def test_group(self):
+        os.chown(self.path,0,65534)
+        with self.assertRaises(AssertionError):self.verify()
+    def test_parent_mode(self):
+        self.base.chmod(0o750)
+        with self.assertRaises(AssertionError):self.verify()
+    def test_bytes(self):
+        self.path.write_bytes(b'x'*len(self.raw))
+        with self.assertRaises(AssertionError):self.verify()
+    def test_hash(self):
+        with self.assertRaises(AssertionError):self.ns['verify_existing_inventory'](str(self.path),'0'*64,self.raw)
+    def test_wrong_name(self):
+        self.path=self.path.rename(self.base/'wrong.zlib')
+        with self.assertRaises(AssertionError):self.verify()
+    def test_size(self):
+        self.path.write_bytes(self.raw+b'x')
+        with self.assertRaises(AssertionError):self.verify()
+    def test_descriptor_race(self):
+        original=os.fstat
+        def changed(fd):
+            s=original(fd); fields={k:getattr(s,k) for k in dir(s) if k.startswith('st_')};fields['st_ino']+=1
+            return types.SimpleNamespace(**fields)
+        with patch.object(os,'fstat',side_effect=changed),self.assertRaises(AssertionError):self.verify()
+    def test_path_replacement_race(self):
+        original=Path.lstat;calls=0
+        def changed(p):
+            nonlocal calls
+            s=original(p)
+            if p==self.path:
+                calls+=1
+                if calls==2:
+                    fields={k:getattr(s,k) for k in dir(s) if k.startswith('st_')};fields['st_ino']+=1
+                    return types.SimpleNamespace(**fields)
+            return s
+        with patch.object(Path,'lstat',changed),self.assertRaises(AssertionError):self.verify()
+    def parent_race(self,field):
+        original=Path.lstat;calls=0
+        def changed(p):
+            nonlocal calls
+            s=original(p)
+            if p==self.base:
+                calls+=1
+                if calls==2:
+                    fields={k:getattr(s,k) for k in dir(s) if k.startswith('st_')}
+                    fields[field]=fields[field]+1 if field=='st_ino' else fields[field]|0o020
+                    return types.SimpleNamespace(**fields)
+            return s
+        with patch.object(Path,'lstat',changed),self.assertRaises(AssertionError):self.verify()
+    def test_parent_metadata_race(self):self.parent_race('st_mode')
+    def test_parent_replacement_race(self):self.parent_race('st_ino')
+    def test_full_bootstrap_lock_and_admission_order(self):
+        # Actual lock/inventory file descriptors; host paths and subprocesses are fixture boundaries.
+        lock=self.base/'lock';lock.write_bytes(b'');lock.chmod(0o600)
+        original_lstat=os.lstat;original_open=os.open
+        def local_lstat(p,*a,**k):return original_lstat(lock if p=='/run/proofofwork-ui/deploy.lock' else p,*a,**k)
+        def local_open(p,*a,**k):return original_open(lock if p=='/run/proofofwork-ui/deploy.lock' else p,*a,**k)
+        tree=ast.parse(self.code);tree.body=[n for n in tree.body if not (isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='INVENTORY_PARENT' for t in n.targets))]
+        compiled=compile(tree,'inventory-bootstrap-fixture','exec')
+        for conflict in (True,False):
+            events=[];g={'json':json,'INVENTORY_PARENT':self.base,'installed_admission':lambda *a:events.append('admission')}
+            real_flock=fcntl.flock
+            def flock(*a):
+                events.append('lock')
+                if conflict:raise BlockingIOError('fixture lock occupied')
+                return real_flock(*a)
+            try:
+                with patch.object(os,'lstat',local_lstat),patch.object(os,'open',local_open),patch.object(fcntl,'flock',flock),patch.object(subprocess,'run',side_effect=lambda *a,**k:events.append(a[0][4])),patch.object(sys,'argv',['fixture',self.sha,str(self.path),'[]']),patch.object(sys,'stdin',types.SimpleNamespace(buffer=io.BytesIO(self.raw))),contextlib.redirect_stdout(io.StringIO()):exec(compiled,g)
+            except BlockingIOError:self.assertTrue(conflict)
+            finally:
+                if 'fd' in g:os.close(g['fd'])
+            self.assertEqual(events,['lock'] if conflict else ['lock','admission','check-scratch','check'])
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
