@@ -1,4 +1,4 @@
-import importlib.util,sys,tempfile,os,io,json
+import importlib.util,sys,tempfile,os,io,json,time
 from pathlib import Path
 os.umask(0o077)
 r=Path(__file__).resolve().parents[1]
@@ -9,8 +9,16 @@ with tempfile.TemporaryDirectory() as t:
  root=Path(t);p=root/'source';p.mkdir();(p/'a').write_bytes(b'unique');(p/'link').symlink_to('a')
  try:E.inventory(p,os.geteuid());raise AssertionError('strict allowed missing manifest/link')
  except ValueError:pass
- # First read stabilizes atime for intentionally exercised symlink.
- os.readlink(p/'link')
+ # A same-tick read can leave atime == mtime/ctime under relatime.
+ # Stabilize this disposable fixture before capturing immutable evidence;
+ # never weaken the production inventory or removal identity checks.
+ deadline=time.monotonic()+2.0
+ while True:
+  os.readlink(p/'link')
+  link_stat=(p/'link').lstat()
+  if link_stat.st_atime_ns>max(link_stat.st_mtime_ns,link_stat.st_ctime_ns):break
+  if time.monotonic()>=deadline:raise AssertionError('Fixture symlink atime did not stabilize')
+  time.sleep(0.002)
  inv=E.inventory(p,os.geteuid(),require_manifest=False,allow_symlinks=True);expected=dict(inv['fingerprint'],inventory=inv['records'])
  archive=root/'custody.tgz'
  with archive.open('wb') as out:E.archive_root(p,expected,out,os.geteuid(),require_manifest=False,allow_symlinks=True)
