@@ -125,3 +125,35 @@ contents. On this minimal branch, all 553 recovery checks, 43 portable witness /
 wallet / batch / DNS tests, and AMO V5/V6 checks pass without those fixture edits.
 Actual runtime deployment must preserve separately accepted production overlays,
 match the isolated physical-fixture runtime, and pass rollback/readiness gates.
+
+## Physical-fixture finding and additional forward correction
+
+The faithful physical clone matched production catalog and reached the real
+API verification successfully, including exact INCB supply
+`9404520723478393444` (above signed 64-bit range). Its first materialization
+attempt refused before persistence: the application placed the aggregate mint
+at body `pwm1:m:incb` output 2, while canonical raw PWM aggregation correctly
+anchors the parent at its first subject carrier, output 1. The original mint
+binding guard caught this; the checkpoint remained 975610.
+
+The correction binds only forward witnessed application mint coordinates to the
+unique authenticated direct-recipient raw child, then proves all existing
+recipient, descriptor, parent, amount and snapshot invariants. Native raw
+records and historical positions are not rewritten. Component validation also
+recomputes cumulative Q16 recipient increments, rather than incorrectly
+assuming each incremental issuance equals an independently floored send value.
+Tampered or unavailable witness/component evidence remains fail-closed.
+
+This is an additional material source correction beyond initially approved
+commit 1023472. That commit has not been pushed or deployed. A successor must
+pass full physical materialization and review and receive fresh publication
+approval before production action.
+
+The successor's local gates pass: 47 focused tests, AMO V5/V6 checks, and
+553/553 recovery checks. All 17 declared CI test files report 119 passes,
+zero failures and one explicitly skipped real-PostgreSQL wallet-coalescing
+integration case. Safe private test copies preserve controller permission
+guards; no production permissions were changed. The strict carrier helper also
+passes against the captured real API item and native transition: only vout 2
+becomes vout 1; issuance and authenticated component evidence remain exact.
+Full persisted-block and subsequent canonical-summary tests remain mandatory.

@@ -25370,7 +25370,7 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
           `Canonical AMO prepared item has no exact replay outcome at ${position.key}.`,
         );
       }
-      const incbComponents = canonicalIncbReplayComponents(item, transition.replayRecords);
+      const incbComponents = canonicalIncbReplayComponents(item, transition.replayRecords, transition.inceptionHMinusOneWitness);
       if (incbComponents) {
         for (const component of incbComponents.attachments) {
           const key = workAmoV5ReplayPositionKey(component).key;
@@ -25829,7 +25829,7 @@ async function workAmoV5CanonicalBlockEventSet(client, transition) {
       };
       syntheticParentKeys.push(`${txid}:${protocolVout}`);
     }
-    const incbComponents = canonicalIncbReplayComponents(payload, transition.replayRecords);
+    const incbComponents = canonicalIncbReplayComponents(payload, transition.replayRecords, transition.inceptionHMinusOneWitness);
     const componentEvents = [];
     if (incbComponents) {
       if (workAmoV5CanonicalPayloadCommitment(payload.workAmoV5IncbReplayComponents).sha256 !==

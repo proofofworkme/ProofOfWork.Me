@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { bindCanonicalIncbMintPosition } from "./incb-replay-components.mjs";
 import { isReadOnlySnapshotBudgetError } from "./db/read-only-snapshot.mjs";
 import { privateRegistryObservationId, withPrivateRegistryObservation, measurePrivateRegistryPhase, measurePrivateRegistryPhaseSync, createWalletReadCoalescer, walletReadIdentity, measurePrivatePhase, withPrivatePhaseTimings, privateReadContext } from "./wallet-read-observation.mjs";
 const coalesceWalletRead = createWalletReadCoalescer();
@@ -72180,7 +72181,7 @@ async function workAmoV5InceptionVerifierStateFromProjection(
     const txid = String(mint.txid ?? "").trim().toLowerCase();
     const recordOrdinal = (mintOrdinalByTxid.get(txid) ?? 0) + 1;
     mintOrdinalByTxid.set(txid, recordOrdinal);
-    return {
+    const projected = {
       ...mint,
       ...canonicalInceptionMintMetadata(mint),
       amountSats: 0,
@@ -72192,6 +72193,10 @@ async function workAmoV5InceptionVerifierStateFromProjection(
       rawCandidate: false,
       recordOrdinal,
     };
+    return transition.inceptionHMinusOneWitness
+      ? bindCanonicalIncbMintPosition(projected, transition.replayRecords,
+          transition.inceptionHMinusOneWitness)
+      : projected;
   });
   const issuance = inceptionIssuanceMetadataFromMints(mints);
   if (

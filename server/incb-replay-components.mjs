@@ -1,5 +1,5 @@
-import { WORK_TOKEN_ID } from "./work-units.mjs";
-import { WORK_AMO_V5_INCB_TOKEN_ID, workAmoV5CanonicalPayloadCommitment } from "./work-amo-v5.mjs";
+import { WORK_SUBATOM_UNIT_SCALE, WORK_TOKEN_ID } from "./work-units.mjs";
+import { WORK_AMO_V5_MAX_SUPPLY, WORK_AMO_V5_INCB_TOKEN_ID, workAmoV5CanonicalPayloadCommitment } from "./work-amo-v5.mjs";
 
 const integer = (value) => /^(0|[1-9][0-9]*)$/u.test(String(value ?? "")) ? BigInt(value) : null;
 const positionKey = (value) => {
@@ -12,13 +12,28 @@ const equal = (a, b) => workAmoV5CanonicalPayloadCommitment(a).sha256 === workAm
 // derived records. The application stores one canonical mint per recipient.
 // Prove that exact fan-in without rewriting the native event set or issuing
 // either component twice. This operates only on an already verified transition.
-export function canonicalIncbReplayComponents(mint, records) {
+export function canonicalIncbReplayComponents(mint, records, oracle = null) {
   if (mint?.kind !== "token-mint" || mint?.tokenId !== WORK_AMO_V5_INCB_TOKEN_ID ||
       mint?.validationMode !== "canonical-incb-bond-projection") return null;
   const fail = () => { throw new Error("Canonical INCB replay components do not bind one exact recipient mint."); };
   if (mint.confirmed !== true || mint.valid === false || mint.protocol !== "pwt1" ||
       mint.sourceBondTxid !== mint.txid || !mint.minterAddress ||
       mint.bondRecipientAddress !== mint.minterAddress || integer(mint.amountSats) !== 0n) return fail();
+  const forward = Number(mint.blockHeight) >= 975611;
+  if (forward) {
+    if (!oracle || oracle.model !== "canonical-incb-h-minus-one-summary-witness-v1" ||
+        oracle.status !== "green" || oracle.network !== "livenet" || mint.network !== oracle.network ||
+        oracle.blockHeight !== mint.blockHeight - 1 ||
+        !/^[0-9a-f]{64}$/u.test(oracle.blockHash) ||
+        !/^[0-9a-f]{64}$/u.test(oracle.canonicalSummaryHash) ||
+        !/^[0-9a-f]{24}$/u.test(oracle.snapshotId) ||
+        integer(oracle.networkValueQ8) === null ||
+        mint.issuanceValueSnapshotBlockHeight !== oracle.blockHeight ||
+        mint.issuanceValueSnapshotBlockHash !== oracle.blockHash ||
+        mint.issuanceValueSnapshotId !== oracle.snapshotId ||
+        mint.issuanceValueSnapshotCanonicalSummaryHash !== oracle.canonicalSummaryHash ||
+        mint.issuanceValueSnapshotWorkNetworkValueQ8 !== oracle.networkValueQ8) return fail();
+  } else if (oracle) return fail();
   const candidates = records.filter((record) => record.txid === mint.txid &&
     record.protocol === "pwt1" && record.rawCandidate === false &&
     record.output?.projection?.kind === "token-mint" &&
@@ -28,6 +43,9 @@ export function canonicalIncbReplayComponents(mint, records) {
   const attachments = candidates.filter((record) => record.output.projection.workSendPosition);
   const primary = direct.find((record) => positionKey(record) === positionKey(mint));
   if (direct.length !== 1 || !primary || new Set(candidates.map(positionKey)).size !== candidates.length) return fail();
+  // Canonical native order defines each cumulative recipient rounding increment.
+  if (forward) candidates.sort((a, b) => a.position.protocolVout - b.position.protocolVout ||
+    a.position.recordOrdinal - b.position.recordOrdinal);
   let units = 0n, attachedUnits = 0n, attachedQ8 = 0n, subatoms = 0n;
   for (const record of candidates) {
     const p = record.output.projection;
@@ -60,7 +78,13 @@ export function canonicalIncbReplayComponents(mint, records) {
           positionKey(p.parentPosition) !== positionKey(primary.output.projection.parentPosition) ||
           !Array.isArray(p.matchedBondRecipientVouts) || p.matchedBondRecipientVouts.length !== 1 ||
           p.matchedBondRecipientVouts[0] !== mint.bondRecipientVout ||
-          value === null || quantity === null || quantity <= 0n || amount !== value / 100000000n) return fail();
+          value === null || quantity === null || quantity <= 0n || (!forward && amount !== value / 100000000n)) return fail();
+      if (forward) {
+        const denominator = WORK_AMO_V5_MAX_SUPPLY * WORK_SUBATOM_UNIT_SCALE;
+        const before = subatoms * BigInt(oracle.networkValueQ8) / denominator;
+        const after = (subatoms + quantity) * BigInt(oracle.networkValueQ8) / denominator;
+        if (value !== after - before || amount !== after / 100000000n - before / 100000000n) return fail();
+      }
       attachedUnits += amount; attachedQ8 += value; subatoms += quantity;
     }
   }
@@ -73,4 +97,24 @@ export function canonicalIncbReplayComponents(mint, records) {
     position: record.position, derivedId: record.output.projection.derivedId,
     rawWitnessSha256: workAmoV5CanonicalPayloadCommitment(record.rawWitness).sha256,
   })) };
+}
+
+// Forward-only application position binding. Native replay records are immutable.
+export function bindCanonicalIncbMintPosition(mint, records, oracle) {
+  if (!oracle || Number(mint?.blockHeight) < 975611) {
+    throw new Error("Canonical INCB forward position binding requires its oracle witness.");
+  }
+  const direct = records.filter((record) => record.txid === mint.txid &&
+    record.rawCandidate === false && record.protocol === "pwt1" &&
+    record.output?.projection?.kind === "token-mint" &&
+    record.output.projection.tokenId === WORK_AMO_V5_INCB_TOKEN_ID &&
+    record.output.projection.recipientAddress === mint.minterAddress &&
+    !record.output.projection.workSendPosition);
+  if (direct.length !== 1) throw new Error("Canonical INCB direct recipient position is not unique.");
+  const bound = {...mint, protocolVout: direct[0].position.protocolVout,
+    recordOrdinal: direct[0].position.recordOrdinal};
+  if (!canonicalIncbReplayComponents(bound, records, oracle)) {
+    throw new Error("Canonical INCB forward position binding requires one verified mint.");
+  }
+  return bound;
 }
