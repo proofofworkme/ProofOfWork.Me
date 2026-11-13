@@ -9,7 +9,7 @@ import { ArrowLeft, BookOpen, Eye, PenLine, RefreshCw, Send } from "lucide-react
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { FeeRateControl } from "../../shared/components/FeeRateControl";
 import { ActionTransactionReview } from "../../shared/components/ActionTransactionReview";
-import { YouTubeLinkCards } from "../../shared/media/YouTubeLinkCards";
+import { PublishBodyEditor } from "./PublishBodyEditor";
 import { PUBLISH_DATA_CARRIER_LIMIT } from "../../shared/protocol/publishArticle.mjs";
 import { buildPublishPlan, type PreparedPublish, type PublishPlan } from "./publishProtocol";
 import type { BoostIdentityIntent } from "../boost/boostProtocol";
@@ -42,6 +42,7 @@ export function PublishComposer({ address, network, identity, connecting = false
   const [feeInput, setFeeInput] = useState(() => String(emptyDraft(initialFeeRate).feeRate));
   const [loadedKey, setLoadedKey] = useState("");
   const [preview, setPreview] = useState(false);
+  const [composing, setComposing] = useState(false);
   const [upload, setUpload] = useState<{file: File; wallet: PublishWallet; scope: string; hash: string}>();
   const [prepared, setPrepared] = useState<PreparedPublish>();
   const [busy, setBusy] = useState(false);
@@ -114,20 +115,22 @@ export function PublishComposer({ address, network, identity, connecting = false
   const update = (patch: Partial<Draft>) => { setDraft(value => ({ ...value, ...patch, ...(patch.body !== undefined && patch.body !== value.body ? {linkedFile: undefined} : {}) })); setError(""); };
 
   async function uploadArticle() {
-    if (flight.current || !budget.plan || !overBudget || network !== "livenet" || !address) return;
+    if (composing || flight.current || !budget.plan || !overBudget || network !== "livenet" || !address) return;
     const expectedScope = scope;
     flight.current = true; setBusy(true); setError("");
     try {
       assertLinkedPublishCapability(await fetchProofApiJson("/api/v1/boost?capabilities=linked-articles-v2&fresh=1", network), network);
       const bytes = new TextEncoder().encode(draft.body);
       const wallet = (await import("../../App")).powcatWallet;
-      if (!alive.current || currentScope.current !== expectedScope) return;
+      if (!alive.current) return;
+      if (currentScope.current !== expectedScope) { setError("Your article or byline changed while preparing the upload. Your draft is preserved. Review it and try again."); return; }
       setUpload({file: new File([bytes], "article.txt", {type: "text/plain"}), wallet, scope: expectedScope, hash: sha256Hex(bytes)});
     } catch (cause) { if (alive.current) setError(cause instanceof Error ? cause.message : "Article upload unavailable."); }
     finally { flight.current = false; if (alive.current) setBusy(false); }
   }
 
   function preserveDraftBeforeExit() {
+    if (composing) { setError("Finish the current text composition before leaving."); return false; }
     if (!flight.current && !loadedKey && loadError && unloadedDraftExit.current === scope) return true;
     if (flight.current || loadedKey !== storageKey) {
       setError("Wait for the current wallet or draft operation before leaving this editor.");
@@ -166,6 +169,7 @@ export function PublishComposer({ address, network, identity, connecting = false
   });
 
   async function leaveWriter() {
+    if (composing) { preserveDraftBeforeExit(); return; }
     if (flight.current || loadedKey !== storageKey || loadError) { preserveDraftBeforeExit(); return; }
     const expectedScope = scope;
     flight.current = true; setBusy(true);
@@ -237,32 +241,32 @@ export function PublishComposer({ address, network, identity, connecting = false
 
   return <section className="publish-composer" aria-labelledby="publish-composer-title">
     <div className="publish-writer-head">
-      <button className="secondary small" disabled={busy} onClick={leaveWriter} type="button"><ArrowLeft size={18} /> Back to {returnLabel}</button>
+      <button className="secondary small" disabled={busy || composing} onClick={leaveWriter} type="button"><ArrowLeft size={18} /> Back to {returnLabel}</button>
       <div><span>Write on ProofOfWork</span><h1 id="publish-composer-title">{preview ? "Preview your article" : "New article"}</h1></div>
     </div>
-    <form onSubmit={prepare}>
+    <form onSubmit={event=>{if(composing){event.preventDefault();setError("Finish the current text composition before publishing.");}else void prepare(event);}}>
+      <div hidden={Boolean(upload && upload.scope === scope)}>
       <div className="publish-editor-toolbar">
         <span>{identityId ? `${identityId}@proofofwork.me` : address ? "Your connected address" : "Connect to choose your byline"}</span>
-        <button className="secondary small" type="button" onClick={() => setPreview(value => !value)}>
+        <button className="secondary small" type="button" disabled={composing} onClick={() => setPreview(value => !value)}>
           {preview ? <><PenLine size={15} /> Edit</> : <><Eye size={15} /> Preview</>}
         </button>
       </div>
-      {preview ? <article className="publish-reading publish-preview"><h1>{draft.title || "Untitled article"}</h1>
-        <p className="publish-byline">{identityId ? `${identityId}@proofofwork.me` : "Your address"} · Draft · {Math.max(1, Math.ceil(words / 220))} min read</p>
-        <div className="publish-article-body">{draft.body || "Your article text will appear here."}</div>
-        <YouTubeLinkCards text={draft.body} />
-      </article> : <>
-        <label className="publish-title-label"><span>Title</span><input aria-label="Article title" className="publish-title-input" maxLength={140} placeholder="Give your story a title" value={draft.title} onChange={event => update({ title: event.target.value })} disabled={busy} /></label>
-        <label className="publish-body-label"><span>Article</span><textarea aria-label="Article text" className="publish-body-input" placeholder="Start writing…" value={draft.body} onChange={event => update({ body: event.target.value })} disabled={busy} /></label>
-      </>}
+      <div className={preview ? "publish-reading publish-preview" : undefined}>
+        {preview ? <><h1>{draft.title || "Untitled article"}</h1>
+          <p className="publish-byline">{identityId ? `${identityId}@proofofwork.me` : "Your address"} · Draft · {Math.max(1, Math.ceil(words / 220))} min read</p></>
+          : <label className="publish-title-label"><span>Title</span><input aria-label="Article title" className="publish-title-input" maxLength={140} placeholder="Give your story a title" value={draft.title} onChange={event => update({ title: event.target.value })} disabled={busy} /></label>}
+        <PublishBodyEditor key={storageKey} body={draft.body} preview={preview} disabled={busy} onChange={body=>update({body})} onError={setError} onComposingChange={setComposing}/>
+      </div>
+      </div>
       <div className={overBudget ? "publish-budget is-over" : "publish-budget"} aria-live="polite">
         <span>{words.toLocaleString()} words</span>
         <span>{budget.plan ? `${budget.plan.carrierBytes.toLocaleString()} / ${PUBLISH_DATA_CARRIER_LIMIT.toLocaleString()} bytes` : `${PUBLISH_DATA_CARRIER_LIMIT.toLocaleString()} available bytes`}</span>
         <progress aria-label="Aggregate OP_RETURN budget" max={PUBLISH_DATA_CARRIER_LIMIT} value={budget.plan?.carrierBytes ?? 0} />
         <small>{draft.linkedFile ? "Final article reference transaction only. Confirmed file parts carry the full text." : "Inline transaction budget includes title, metadata, text and script overhead. Larger articles use linked transactions, up to 4,000,000 UTF-8 bytes."}</small>
       </div>
-      {overBudget && budget.plan && <div className="publish-linked-upload"><p>Publish the article text as linked file transactions first. Each part and the linker require local signing and confirmation; then review the final article post. Miner fees apply to each transaction.</p>
-        <button type="button" className="secondary" disabled={busy || !address || network !== "livenet"} onClick={() => void uploadArticle()}>Upload article text in linked parts</button></div>}
+      {overBudget && budget.plan && <div className="publish-linked-upload"><p>Publish the full article text, including every editing page, as linked file transactions first. Each part and the linker require local signing and confirmation; then review the final article post. Miner fees apply to each transaction.</p>
+        <button type="button" className="secondary" disabled={busy || composing || !address || network !== "livenet"} onClick={() => void uploadArticle()}>Upload article text in linked parts</button></div>}
       {upload && upload.scope === scope && <PowcatPublisher key={`${network}:${address}:article:${upload.hash}`} address={address} network={network}
         defaultFeeRate={draft.feeRate} wallet={upload.wallet} initialFile={upload.file} autoOpen attachLabel="Use verified article text"
         onClose={() => setUpload(undefined)} onAttachVerified={link => {
@@ -284,7 +288,7 @@ export function PublishComposer({ address, network, identity, connecting = false
       {draftNotice ? <p className="field-note" role="status">{draftNotice}</p> : null}
       {error || overBudget || (budget.error && draft.body) ? <p className="field-note bad" role="alert">{error || budget.error || "This text needs linked file transactions before the final article review."}</p> : null}
       {network !== "livenet" ? <p className="field-note">Article publishing uses mainnet. Switch to mainnet to prepare a review.</p> : null}
-      <div className="publish-editor-actions"><button className="secondary" onClick={leaveWriter} type="button" disabled={busy}><ArrowLeft size={16} /> Save draft and back</button>
+      <div className="publish-editor-actions"><button className="secondary" onClick={leaveWriter} type="button" disabled={busy || composing}><ArrowLeft size={16} /> Save draft and back</button>
         {!address ? !hasUnisat && isMobileWalletBrowser(navigator) ? <UnisatMobileHandoff /> : <button className="primary" onClick={onConnect} type="button" disabled={connecting}>{connecting ? <RefreshCw className="refresh-spin" size={16} /> : <BookOpen size={16} />} {connecting ? "Connecting…" : "Connect to publish"}</button> : <button className="primary" type="submit" disabled={busy || connecting || !budget.plan || overBudget || network !== "livenet" || loadedKey !== storageKey}>
           {busy ? <RefreshCw className="refresh-spin" size={16} /> : <Send size={16} />} {busy ? "Preparing…" : "Review publication"}</button>}
       </div>

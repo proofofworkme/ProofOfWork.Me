@@ -93,3 +93,9 @@
 @media (max-width: 800px) { .publish-composer .publish-body-input { font-size: 18px; } }
 
 }
+
+@layer interface {
+ .publish-page-controls { display:flex;flex-wrap:wrap;gap:8px;margin-block:12px; }
+ .publish-page-controls p { flex-basis:100%;margin:0;font-size:13px;overflow-wrap:anywhere; }
+ .publish-composer .publish-body-input { max-height:70vh;overflow:auto;min-width:0; }
+}

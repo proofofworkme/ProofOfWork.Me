@@ -379,3 +379,19 @@ evidence. Confirmed, pending and dropped status remain distinct, and wallet
 rejection retains the entered currency and amount. The article reader retains
 its spaced header and accessible Back to articles arrow on standalone Publish
 and Computer.
+
+## Large-draft editing and exact bytes
+
+Publish keeps the complete draft in browser storage and uses at most 16,384 UTF-16
+units per visible editor/preview page. The page controls explicitly identify the
+visible range; publication always uses the entire article, not the current page.
+Clipboard text is intercepted before native textarea insertion. Display-normalized
+line breaks map back to the original CRLF/CR bytes; edits replace only the selected
+source range. Surrogate pairs are never divided at page boundaries. Oversized
+pastes leave the existing draft unchanged. IME composition disables page navigation
+and leaving until committed. Unsupported clipboard content does not delete a selection.
+The linked upload hides the editor while preserving its exact draft and restores it
+on cancellation. A byline/draft change during preparation cancels safely with an
+explicit retry message. This does not raise the 4,000,000-byte article limit or any
+per-transaction limit. Final compiled browser and unsigned preparation gates are
+required before deployment.

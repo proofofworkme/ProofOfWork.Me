@@ -89,4 +89,43 @@ class Phases(unittest.TestCase):
    return value
   with patch.dict(g,{'stopped':stopped}),patch.object(g['subprocess'],'run',lambda *a,**k:subprocess.CompletedProcess([],0,b'{"ok":true}',b'')):
    with self.assertRaises(stage['StageUncertain']):func(Path('/data/stage'),'build','release','a'*64,1,lambda:None)
+
+class Deadlines(unittest.TestCase):
+ def test_shared_build_check_deadline(self):
+  fn=runpy.run_path(str(HERE/'coordinator.py'))['bounded_prebuild'];now=[0];seen=[]
+  def st(mode,deadline=None):
+   seen.append((mode,deadline));now[0]+=1199 if mode=='build' else .5
+   return {'ready':True}
+  result=fn(st,lambda:now[0]);self.assertEqual(seen,[('build',1200),('check',1200)])
+  self.assertEqual(result['buildAttempts'],1)
+ def test_exhausted_build_never_checks(self):
+  fn=runpy.run_path(str(HERE/'coordinator.py'))['bounded_prebuild'];now=[0];seen=[]
+  def st(mode,deadline=None):
+   seen.append(mode);now[0]=1200;return {'ready':True}
+  with self.assertRaises(ValueError):fn(st,lambda:now[0])
+  self.assertEqual(seen,['build'])
+ def test_late_check_rejected(self):
+  fn=runpy.run_path(str(HERE/'coordinator.py'))['bounded_prebuild'];now=[0]
+  def st(mode,deadline=None):
+   now[0]+=1199 if mode=='build' else 2;return {'ready':True}
+  with self.assertRaises(ValueError):fn(st,lambda:now[0])
+ def test_expired_budget_never_launches(self):
+  fn=stage['run_stage'];g=fn.__globals__
+  with patch.dict(g,{'stopped':lambda _:True}),patch.object(g['time'],'monotonic',lambda:1200),patch.object(g['subprocess'],'run') as run:
+   with self.assertRaises(ValueError):fn(Path('/data/stage'),'build','release','a'*64,1,lambda:None,deadline=1200)
+   run.assert_not_called()
+ def test_remaining_budget_caps_child(self):
+  fn=stage['run_stage'];g=fn.__globals__;seen=[]
+  def run(cmd,**kw):
+   seen.append((cmd,kw));return subprocess.CompletedProcess(cmd,0,b'{"ok":true}',b'')
+  with patch.dict(g,{'stopped':lambda _:True}),patch.object(g['time'],'monotonic',lambda:1199),patch.object(g['subprocess'],'run',run):
+   fn(Path('/data/stage'),'build','release','a'*64,1,lambda:None,deadline=1200)
+  self.assertEqual(seen[0][1]['timeout'],1)
+  self.assertIn('--property=RuntimeMaxSec=1',seen[0][0])
+ def test_deadline_timeout_unverified_child_remains_uncertain(self):
+  fn=stage['run_stage'];g=fn.__globals__
+  def run(cmd,**kw):raise subprocess.TimeoutExpired(cmd,1)
+  with patch.dict(g,{'stopped':lambda _:True}),patch.object(g['time'],'monotonic',lambda:1199),patch.object(g['subprocess'],'run',run):
+   with self.assertRaises(stage['StageUncertain']):fn(Path('/data/stage'),'build','release','a'*64,1,lambda:None,deadline=1200)
+
 if __name__=='__main__':unittest.main()

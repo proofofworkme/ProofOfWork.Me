@@ -685,3 +685,94 @@ test("Publish delayed linked receipt recovery cannot overwrite a newer writer se
   await expect.poll(async()=>(await storedPublishDraft(page,address))?.body).toBe("New writer exact body");
   expect(await page.evaluate(()=>window.publishSignatureCalls)).toBe(0);
 });
+
+// Large-document editing must never put the full body into the native textarea.
+async function stored(page) {
+ return page.evaluate(async address=>{
+  const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('proofofwork-publish-drafts',1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+  const raw=await new Promise((resolve,reject)=>{const t=db.transaction('drafts','readonly'),r=t.objectStore('drafts').get('proofofwork.publish.draft.v1:livenet:'+address);t.oncomplete=()=>resolve(r.result);t.onerror=()=>reject(t.error);});db.close();
+  const body=JSON.parse(raw||'{"body":""}').body,bytes=new TextEncoder().encode(body),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(x=>x.toString(16).padStart(2,'0')).join('');
+  return {hash,bytes:bytes.length,tail:body.slice(-20)};
+ },address);
+}
+async function enter(page) {
+ await fixture(page,{wallet:true,selectedIdentity:true});
+ await page.addInitScript(()=>{window.qaHeartbeat={maxGapMs:0};let last=performance.now();setInterval(()=>{let now=performance.now();window.qaHeartbeat.maxGapMs=Math.max(window.qaHeartbeat.maxGapMs,now-last);last=now;},50);});
+ await page.goto('/?publish=1&write=1');
+ await page.getByRole('button',{name:'Connect UniSat',exact:true}).click();
+ await expect(page.locator('.publish-body-input')).toBeVisible();
+}
+async function paste(page,text) {
+ await page.locator('.publish-body-input').click();
+ await page.evaluate(async text=>navigator.clipboard.writeText(text),text);
+ await page.keyboard.press('Control+V');
+}
+for(const shape of ['single-token','multiline','unicode'])test('Paged editor real paste, suffix, preview and reload: '+shape,async({page},testInfo)=>{
+ await enter(page);
+ const body=shape==='single-token'?'x'.repeat(3999999):shape==='multiline'?('x'.repeat(79)+'\n').repeat(49999)+'x'.repeat(79):'😀'.repeat(999999)+'abc';
+ const began=Date.now();await paste(page,body);
+ await expect.poll(()=>stored(page).then(x=>x.bytes),{timeout:15000}).toBe(3999999);
+ expect((await page.locator('.publish-body-input').inputValue()).length).toBeLessThanOrEqual(16384);
+ await page.keyboard.type('Z');
+ const expected=createHash('sha256').update(body+'Z').digest('hex');
+ await expect.poll(()=>stored(page).then(x=>x.hash),{timeout:15000}).toBe(expected);
+ await expect(page.getByText(/Editing one page:/)).toBeVisible();
+ await page.getByRole('button',{name:'Preview',exact:true}).click();
+ await expect(page.getByText(/Partial preview:/)).toBeVisible();
+ await page.screenshot({path:testInfo.outputPath('paged-'+shape+'-preview.png'),fullPage:true});
+ expect((await page.locator('.publish-article-body').innerText()).length).toBeLessThanOrEqual(16384);
+ await page.getByRole('button',{name:'Edit',exact:true}).click();
+ await page.getByRole('button',{name:'Previous text page',exact:true}).click();
+ await expect.poll(()=>stored(page).then(x=>x.hash)).toBe(expected);
+ const heartbeat=await page.evaluate(()=>window.qaHeartbeat);
+ await page.reload();await expect(page.locator('.publish-body-input')).toBeVisible({timeout:15000});
+ await expect.poll(()=>stored(page).then(x=>x.hash)).toBe(expected);
+ await testInfo.attach('editor-'+shape,{body:Buffer.from(JSON.stringify({realClipboardPaste:true,bytes:4000000,sha256:expected,elapsedMs:Date.now()-began,heartbeat})),contentType:'application/json'});
+});
+test('Paged editor nontext clipboard and IME composition preserve draft',async({page},testInfo)=>{
+ await enter(page);const input=page.locator('.publish-body-input');
+ await input.fill('original');
+ await input.evaluate(el=>{el.setSelectionRange(0,8);const d=new DataTransfer();d.setData('text/html','<b>not plain text</b>');el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}));});
+ await expect(input).toHaveValue('original');
+ await input.dispatchEvent('compositionstart',{data:''});await input.fill('composed');
+ await expect(page.getByRole('button',{name:'Save draft and back',exact:true})).toBeDisabled();
+ await expect(page.getByRole('button',{name:'Back to Articles',exact:true})).toBeDisabled();
+ await expect.poll(()=>stored(page).then(x=>x.tail)).toBe('original');
+ await input.dispatchEvent('compositionend',{data:'composed'});
+ await input.dispatchEvent('input',{inputType:'insertCompositionText',data:'composed',isComposing:false});
+ await expect.poll(()=>stored(page).then(x=>x.tail)).toBe('composed');
+ await expect(page.getByRole('button',{name:'Save draft and back',exact:true})).toBeEnabled();
+});
+test('Paged editor real clipboard CRLF and CR bytes are preserved',async({page},testInfo)=>{
+ await enter(page);const body='A\r\nB\rC\n😀';await paste(page,body);
+ await expect.poll(()=>stored(page).then(x=>x.hash)).toBe(createHash('sha256').update(body).digest('hex'));
+});
+
+test("Paged editor upload scope drift preserves draft, explains cancellation and allows stable retry",async({page})=>{
+  await fixture(page,{wallet:true,selectedIdentity:true});
+  let releaseIdentity,releaseCapability,requested=false;
+  const identityGate=new Promise(resolve=>releaseIdentity=resolve),capabilityGate=new Promise(resolve=>releaseCapability=resolve);
+  await page.route(url=>url.pathname.endsWith("/api/v1/ids/alice"),async route=>{await identityGate;return route.fallback();});
+  await page.route(url=>url.pathname.endsWith("/api/v1/boost")&&url.searchParams.has("capabilities"),async route=>{
+    requested=true;await capabilityGate;return route.fulfill({json:{model:"publish-linked-capability-v2",network:"livenet",enabled:true,readerVersion:2,indexerVersion:2,serverTime:new Date().toISOString(),checkpoint:{height:975624,hash:"a".repeat(64)}}});
+  });
+  await page.goto("/?publish=1&write=1");
+  await page.getByRole("button",{name:"Connect UniSat",exact:true}).click();
+  await page.getByLabel("Article title",{exact:true}).fill("Scope guard");
+  const body="x".repeat(100001);await paste(page,body);
+  const hash=createHash("sha256").update(body).digest("hex");
+  await expect.poll(()=>stored(page).then(x=>x.hash)).toBe(hash);
+  await page.locator(".publish-linked-upload button").click();
+  await expect.poll(()=>requested).toBe(true);releaseIdentity();
+  await expect(page.locator(".publish-editor-toolbar")).toContainText("alice@proofofwork.me");
+  releaseCapability();
+  await expect(page.getByRole("alert")).toContainText("Your article or byline changed while preparing the upload. Your draft is preserved.");
+  await expect(page.getByRole("dialog",{name:"Publish linked file"})).toHaveCount(0);
+  await expect.poll(()=>stored(page).then(x=>x.hash)).toBe(hash);
+  expect(await page.evaluate(()=>window.publishSignatureCalls)).toBe(0);
+  await page.locator(".publish-linked-upload button").click();
+  await expect(page.getByRole("dialog",{name:"Publish linked file"})).toBeVisible();
+  expect(await page.evaluate(()=>window.publishSignatureCalls)).toBe(0);
+  await page.getByRole("dialog",{name:"Publish linked file"}).getByRole("button",{name:"Close",exact:true}).click();
+  await expect.poll(()=>stored(page).then(x=>x.hash)).toBe(hash);
+});

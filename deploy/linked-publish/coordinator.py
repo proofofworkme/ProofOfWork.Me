@@ -5,6 +5,16 @@ HERE=Path(__file__).resolve().parent
 execute_phases=runpy.run_path(str(HERE/'phases.py'))['execute_phases']
 _stage=runpy.run_path(str(HERE/'stage.py'))
 stage_sources,run_stage,need=(_stage[k] for k in ('stage_sources','run_stage','need'))
+def bounded_prebuild(stage,clock=time.monotonic):
+ started=clock();deadline=started+1200;attempts=0
+ while clock()<deadline and attempts<100:
+  attempts+=1;last=stage('build',deadline=deadline)
+  need(clock()<deadline,'Bounded v6 prebuild deadline exhausted; leave writes off')
+  if last.get('ready') is True:
+   result=stage('check',deadline=deadline)
+   need(clock()<deadline,'Bounded v6 prebuild deadline exhausted; leave writes off')
+   result['buildAttempts']=attempts;result['elapsedSeconds']=round(clock()-started,3);return result
+ raise RuntimeError('Bounded v6 prebuild incomplete; leave writes off')
 def coordinate(release,plan,plan_sha):
  need(os.geteuid()==0 and sys.flags.isolated,'Use isolated root coordinator on node')
  engine=release['engine'];code=release['controller']()
@@ -33,16 +43,11 @@ def coordinate(release,plan,plan_sha):
    need(self.marker is not None and ns['safe_read'](ns['HOLD'],65536)==self.marker,'Search hold changed')
    need(all(json.loads(self.marker).get(k)==v for k,v in manifest['searchHold']['bindings'].items()),'Wrong Search hold')
    ns['require_search_held'](ns['states'](ns['SEARCH']))
-  def stage(self,mode,run_id=None):
+  def stage(self,mode,run_id=None,deadline=None):
    self.sequence+=1
-   return run_stage(path,mode,plan['releaseId'],plan_sha,self.sequence,self.check_hold,run_id)
+   return run_stage(path,mode,plan['releaseId'],plan_sha,self.sequence,self.check_hold,run_id,deadline=deadline)
   def prebuild(self):
-   started=time.monotonic();last=None;attempts=0
-   while time.monotonic()-started<1200 and attempts<100:
-    attempts+=1;last=self.stage('build')
-    if last.get('ready') is True:
-     result=self.stage('check');result['buildAttempts']=attempts;result['elapsedSeconds']=round(time.monotonic()-started,3);return result
-   raise RuntimeError('Bounded v6 prebuild incomplete; leave writes off')
+   return bounded_prebuild(self.stage)
   def install(self):
    self.check_hold()
    # No config changes here: reject any existing enabled writer in a future

@@ -55,13 +55,13 @@ def stage_sources(release,plan,plan_sha):
  need(observed==set(sources),'Unexpected stage source')
  for name,raw in sources.items():need(ns['safe_read'](path/name)==raw,'Changed staged bytes: '+name)
  return path
-def command(path,mode,release_id,unit,run_id=None):
+def command(path,mode,release_id,unit,run_id=None,runtime_seconds=300):
  args=['/usr/bin/systemd-run','--quiet','--pipe','--wait','--collect','--service-type=exec','--unit='+unit,
  '--property=User=powadmin','--property=Group=powadmin','--property=NoNewPrivileges=true',
  '--property=PrivateDevices=true','--property=PrivateTmp=true','--property=ProtectSystem=strict',
  '--property=ProtectHome=true','--property=CapabilityBoundingSet=','--property=MemorySwapMax=0',
  '--property=MemoryMax=512M','--property=CPUQuota=100%','--property=IOWeight=25',
- '--property=IOSchedulingClass=idle','--property=Nice=10','--property=RuntimeMaxSec=300',
+ '--property=IOSchedulingClass=idle','--property=Nice=10','--property=RuntimeMaxSec='+str(runtime_seconds),
  '--property=LimitCORE=0','--property=WorkingDirectory='+str(path),
  '--property=EnvironmentFile=/etc/proofofwork-api/proof-indexer-db.env',
  '--property=EnvironmentFile=/etc/proofofwork-api/bitcoin-rpc.env',
@@ -72,12 +72,16 @@ def stopped(unit):
  p=subprocess.run(['/usr/bin/systemctl','show',unit,'--property=LoadState','--property=ActiveState','--property=MainPID'],capture_output=True,text=True,timeout=15)
  row=dict(line.split('=',1) for line in p.stdout.splitlines() if '=' in line)
  return row.get('LoadState')=='not-found' or (row.get('ActiveState') in ('inactive','failed') and row.get('MainPID')=='0')
-def run_stage(path,mode,release_id,plan_sha,sequence,hold_check,run_id=None):
+def run_stage(path,mode,release_id,plan_sha,sequence,hold_check,run_id=None,deadline=None):
  hold_check()
  unit='pow-linked-'+plan_sha[:12]+'-'+str(sequence)+'-'+mode
  need(stopped(unit),'Stage unit already active')
+ remaining=330 if deadline is None else deadline-time.monotonic()
+ need(remaining>=1,'Prebuild deadline exhausted before child launch')
+ timeout=min(330,remaining)
+ runtime_seconds=min(300,int(remaining))
  try:
-  p=subprocess.run(command(path,mode,release_id,unit,run_id),capture_output=True,timeout=330)
+  p=subprocess.run(command(path,mode,release_id,unit,run_id,runtime_seconds),capture_output=True,timeout=timeout)
  except BaseException as error:
   try:
    subprocess.run(['/usr/bin/systemctl','stop',unit],check=True,capture_output=True,timeout=40)
@@ -89,6 +93,7 @@ def run_stage(path,mode,release_id,plan_sha,sequence,hold_check,run_id=None):
  except BaseException as error:
   raise StageUncertain('Staged terminal observation unavailable: '+unit) from error
  hold_check()
+ need(deadline is None or time.monotonic()<deadline,'Prebuild deadline exhausted after child stop')
  need(len(p.stdout)<2*1024**2 and len(p.stderr)<2*1024**2,'Staged evidence output exceeds bound')
  try:result=json.loads(p.stdout)
  except (ValueError,UnicodeError) as error:raise RuntimeError('Staged result unavailable: '+unit) from error

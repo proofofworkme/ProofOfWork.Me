@@ -58,3 +58,25 @@ was treated as source mutation. The scanner now pins outside-source ancestors by
 device, inode, permissions and ownership while retaining symlink rejection and
 full file/directory/content checks within the source. Deterministic regressions
 distinguish benign ancestor timestamps/size from forbidden identity changes.
+
+## Large-editor and bounded-prebuild follow-up
+
+The exact 1e44fb4 build passed all 67 existing browser cases, but new full 4 MB
+preparation tests exposed native full-text textarea/layout stalls. No-wrap and
+spellcheck-disabled diagnostics were insufficient for a 50,000-line body.
+A bounded editor/preview now renders only a clearly labeled page while retaining
+the complete exact draft; real clipboard paste is intercepted before native insertion.
+Independent review caught and corrected a surrogate/CRLF caret-window edge, an IME
+leave path, and unsupported-clipboard selection deletion before integration.
+Five real-browser diagnostics passed ASCII/multiline/Unicode paste, suffix-at-end,
+exact stored SHA, preview/navigation/reload, IME ordering and original CRLF bytes.
+Full Publish preparation also passed 42 unsigned parts plus one linker, exact 4 MB
+reconstruction, saved-progress resume, pending and reorg guards. These were dirty-source
+diagnostics, not final release qualification; exact final compiled gates remain required.
+No real signature or broadcast was produced.
+
+Independent deployment review also identified that a per-stage timeout could overrun
+the stated 1200-second prebuild budget. Build/check now share one absolute monotonic
+deadline and cannot launch or accept successful work after it. Bounded child stop and
+terminal-state recovery may continue beyond that work deadline. Failure remains
+writer-off; uncertain child state does not authorize recovery publication.
