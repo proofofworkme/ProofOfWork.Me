@@ -44,6 +44,25 @@ From the final clean committed candidate, use `release.py plan COMMIT OUTPUT`
 through isolated root Python on the node. Inspect the exact resulting plan and
 its SHA. No production state changes in the planning phase.
 
+## Stage source permissions
+
+The v2 stage namespace is `/data/proofofwork-linked-publish-stage-v2`.
+The earlier private-mode failed stage is retained as incident evidence and is
+never chmodded or reused. The isolated-root release caller keeps its private
+`077` umask. Only exclusive creation of reviewed public source files and stage
+directories temporarily uses `022`, restored in `finally`: root-owned directories
+must be exactly `0755`, source files exactly `0644`, and ancestors must be safe
+and traversable. Existing unsafe objects are rejected, not repaired. No secrets
+or environment files are copied into this source-only stage.
+
+Ordinary deployment tests cover restoration of the caller umask. The explicit
+`sudo python3 -I -B deploy/linked-publish/stage-modes.test.py --native-root`
+regression creates a unique synthetic evidence directory under `/data` and runs
+a bounded hardened service as `powadmin`, proving traversal, exact source reads,
+non-writability and denial of a synthetic private sentinel. It does not execute
+schema SQL or read production credentials. Keep its compact output and fixture
+with the qualification evidence; it is not a production cutover.
+
 ## Single-owner apply sequence
 
 Apply requires two environment values identifying a final read-only

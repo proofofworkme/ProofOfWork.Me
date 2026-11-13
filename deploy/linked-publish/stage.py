@@ -1,9 +1,10 @@
 """Stage only the plan-bound merged dependency closure on the node VPS."""
 import hashlib,json,os,stat,subprocess,time
+from contextlib import contextmanager
 from pathlib import Path
 class StageUncertain(RuntimeError): pass
 NODE=Path('/opt/node-v24.18.0-linux-x64/bin/node')
-STAGES=Path('/data/proofofwork-linked-publish-stage')
+STAGES=Path('/data/proofofwork-linked-publish-stage-v2')
 EXTRA=('deploy/linked-publish/stage.mjs','deploy/linked-publish/pin-serving.mjs','deploy/linked-publish/census.mjs',
        'server/sql/proof-search-linked-publish-v1.sql','server/sql/proof-search-v1.sql')
 def need(value,message):
@@ -11,9 +12,30 @@ def need(value,message):
 def directory(path):
  info=path.lstat()
  need(path.resolve(strict=True)==path and stat.S_ISDIR(info.st_mode) and info.st_uid==info.st_gid==0 and not info.st_mode&0o022,'Unsafe stage directory')
+@contextmanager
+def source_creation_modes():
+ # Only reviewed public source is staged; never apply this to credentials.
+ # This coordinator is single-threaded. Restore the caller's private umask
+ # even when exclusive creation fails. Never chmod existing artifacts.
+ previous=os.umask(0o022)
+ try:yield
+ finally:os.umask(previous)
+def stage_directory(path):
+ directory(path)
+ need(stat.S_IMODE(path.lstat().st_mode)==0o755,'Stage directory is not readable/traversable')
+def create_stage_directory(path):
+ directory(path.parent)
+ with source_creation_modes():path.mkdir(mode=0o755,exist_ok=True)
+ stage_directory(path)
+def source_file(path):
+ info=path.lstat()
+ need(stat.S_ISREG(info.st_mode) and info.st_nlink==1 and info.st_uid==info.st_gid==0
+      and stat.S_IMODE(info.st_mode)==0o644,'Unsafe staged source metadata')
 def write(path,raw):
- with os.fdopen(os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o644),'wb') as f:
+ with source_creation_modes():fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o644)
+ with os.fdopen(fd,'wb') as f:
   f.write(raw);f.flush();os.fsync(f.fileno())
+ source_file(path)
 def stage_sources(release,plan,plan_sha):
  ns=release['engine']['namespace'](release['controller']())
  manifest=plan['runtimeManifestTemplate'];candidates=ns['validate_manifest'](manifest)
@@ -32,28 +54,38 @@ def stage_sources(release,plan,plan_sha):
  for name in EXTRA:
   sources[name]=release['engine']['git']('show',plan['sourceCommit']+':'+name)
  need(sum(map(len,sources.values()))<48*1024**2,'Stage size bound exceeded')
- directory(STAGES.parent);STAGES.mkdir(mode=0o755,exist_ok=True);directory(STAGES)
+ for ancestor in reversed((STAGES.parent,*STAGES.parent.parents)):
+  directory(ancestor)
+  need(ancestor.lstat().st_mode&0o005==0o005,'Stage ancestor not publicly traversable')
+ create_stage_directory(STAGES)
  path=STAGES/plan_sha
  proof={'format':'linked-publish-stage-v1','commit':plan['sourceCommit'],'planSha256':plan_sha,
   'sourceHashes':{name:ns['sha'](raw) for name,raw in sources.items()}}
  if not os.path.lexists(path):
-  path.mkdir(mode=0o755)
+  create_stage_directory(path)
   for name,raw in sources.items():
-   dest=path/name;dest.parent.mkdir(parents=True,exist_ok=True,mode=0o755);write(dest,raw)
+   dest=path/name
+   for relative in reversed(dest.parent.relative_to(path).parents):
+    if str(relative)!='.':create_stage_directory(path/relative)
+   if dest.parent!=path:create_stage_directory(dest.parent)
+   write(dest,raw)
   libs=ns['ROOT']/'node_modules';need(libs.resolve(strict=True)==libs and libs.is_dir(),'Unsafe runtime dependencies')
   os.symlink(libs,path/'node_modules');write(path/'stage.json',(json.dumps(proof,sort_keys=True)+'\n').encode())
- directory(path)
+ stage_directory(path)
+ source_file(path/'stage.json')
  need(json.loads(ns['safe_read'](path/'stage.json'))==proof,'Stage provenance changed')
  need(os.readlink(path/'node_modules')==str(ns['ROOT']/'node_modules'),'Stage modules changed')
  observed=set()
  for parent,dirs,files in os.walk(path,followlinks=False):
-  directory(Path(parent))
+  stage_directory(Path(parent))
   for name in dirs:
    item=Path(parent)/name
    if item.is_symlink():need(item==path/'node_modules','Unexpected stage symlink')
   observed.update(str((Path(parent)/name).relative_to(path)) for name in files if Path(parent)/name!=path/'stage.json')
  need(observed==set(sources),'Unexpected stage source')
- for name,raw in sources.items():need(ns['safe_read'](path/name)==raw,'Changed staged bytes: '+name)
+ for name,raw in sources.items():
+  source_file(path/name)
+  need(ns['safe_read'](path/name)==raw,'Changed staged bytes: '+name)
  return path
 def command(path,mode,release_id,unit,run_id=None,runtime_seconds=300):
  args=['/usr/bin/systemd-run','--quiet','--pipe','--wait','--collect','--service-type=exec','--unit='+unit,
