@@ -168,3 +168,21 @@ oracle, recipient, coordinate or validation guard is relaxed. The new regression
 executes the actual API mapping with a kindless issuance object, reproduces the
 previous exact failure, and proves corrected mapping plus wrong-token refusal.
 The physical API-to-database and rollback gates remain required.
+
+## Worker transition witness propagation
+
+The physical run next exposed a representation-boundary omission: the worker
+kept the raw transition payload but dropped its H-1 witness from the normalized
+object used by prepared and persisted component validation. The normalizer now
+revalidates that witness against the exact opening state, height and prior hash,
+then preserves it for both consumers. A captured real API transition regression
+runs the complete normalizer, binds the real mint, and rejects missing/tampered
+witness data. The optional captured-fixture check must be run with explicit
+fixture paths; it is not counted as coverage when those paths are absent.
+Archive/reorg consumers use this same normalization path. No ledger rewriting,
+guard relaxation or raw transition change is introduced.
+
+Captured-fixture release regression: 554/554 passed with actual API block 975611
+and reconstructed historical block 975610, including unchanged historical
+witness absence and strict tampered value/hash/commitment rejection. The complete
+private API-to-database run remains a separate mandatory gate.

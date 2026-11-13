@@ -188,6 +188,7 @@ import {
   WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
   WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
   normalizeWorkAmoV5RawWorkState,
+  normalizeInceptionHMinusOneWitness,
   workAmoV5RawGenericStateCommitment,
   workAmoV5RawIdStateCommitment,
 } from "../server/work-amo-v5-raw.mjs";
@@ -24244,6 +24245,13 @@ function normalizedWorkAmoV5BlockTransition(
       `Canonical AMO V5 block transition is invalid at ${blockHeight}:${normalizedBlockHash}.`,
     );
   }
+  const inceptionHMinusOneWitness = normalizeInceptionHMinusOneWitness(
+    transition.inceptionHMinusOneWitness, {
+      openingEconomicState: openingState.state,
+      expectedBlockHeight: blockHeight,
+      expectedPreviousBlockHash: normalizedPreviousBlockHash,
+    },
+  );
   return {
     bip141Witness,
     blockAtomic: true,
@@ -24267,6 +24275,9 @@ function normalizedWorkAmoV5BlockTransition(
     network: NETWORK,
     openingCommitment,
     openingNetworkValueQ8,
+    ...(inceptionHMinusOneWitness
+      ? { inceptionHMinusOneWitness }
+      : {}),
     openingState: openingState.state,
     payload: transition,
     previousBlockHash: normalizedPreviousBlockHash,

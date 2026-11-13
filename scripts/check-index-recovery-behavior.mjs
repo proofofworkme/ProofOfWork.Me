@@ -1,3 +1,4 @@
+import * as actualWorkAmoV5 from "../server/work-amo-v5.mjs";
 import { WORK_Q16_PENDING_EVENT_PROTOCOLS } from "../server/work-q16-pending-projection.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { canonicalPwidRejectionProjection } from "../server/pwid-rejection-projection.mjs";
@@ -19,7 +20,8 @@ import { REVIEWED_INCB_REPLAY_BASELINE, reviewedIncbReplayBaselineEvidence, revi
 import { canonicalSummaryPayloadHash, readCanonicalSummaryStream, SUMMARY_STREAM_TYPE } from "../server/canonical-summary-stream.mjs";
 import { decodeWorkTransferProjection, isWorkTransferProjectionReference, prepareWorkTransferProjection, readWorkTransferProjection, storeWorkTransferProjection, workTransferProjectionSqlEligibility } from "../server/db/work-transfer-projection-store.mjs";
 import { SCOPED_INCB_ORACLE_PIN, scopedIncbOracleProjectionRows, storedScopedIncbOracle, canonicalSummarySnapshotIdOutsideScopedOracle } from "../server/incb-scoped-oracle.mjs";
-import { canonicalIncbReplayComponents } from "../server/incb-replay-components.mjs";
+import { canonicalIncbReplayComponents, bindCanonicalIncbMintPosition } from "../server/incb-replay-components.mjs";
+import { normalizeInceptionHMinusOneWitness } from "../server/work-amo-v5-raw.mjs";
 import assert from "node:assert/strict";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { EventEmitter } from "node:events";
@@ -88993,6 +88995,58 @@ check("audited invalid PWID projections normalize at the real replay writer boun
     }
   }
 });
+
+
+if (process.env.POW_INCB_PHYSICAL_TRANSITION_FIXTURE) {
+ check("actual physical transition normalization preserves authenticated oracle for both component consumers", () => {
+  const envelope=JSON.parse(readFileSync(process.env.POW_INCB_PHYSICAL_TRANSITION_FIXTURE));
+  const transition=envelope.workAmoV5BlockTransition ?? envelope;
+  const event=JSON.parse(readFileSync(process.env.POW_INCB_PHYSICAL_MINT_FIXTURE));
+  const mint=event.item ?? event.items.find(item=>item.kind === "token-mint");
+  const pos=(value)=>{const p=value.position ?? value; const position={...p,blockTransactionIndex:p.blockTransactionIndex ?? p.blockIndex};
+   return {position,key:[p.blockHeight,position.blockTransactionIndex,p.protocolVout,p.recordOrdinal].join(":")};};
+  const normalize=isolatedFunction(BACKFILL_PATH,"normalizedWorkAmoV5BlockTransition",{
+   NETWORK:"livenet", WORK_AMO_V8_DECLARATION_PINS_CONFIGURED:true,
+   WORK_AMO_V8_CONFIGURED_ACTIVATION_HEIGHT:transition.workAmoV8.activationHeight,
+   WORK_AMO_V5_ACTIVATION_HEIGHT: 961381,
+   WORK_AMO_V5_BLOCK_SEQUENCER_MODEL, WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
+   WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL, WORK_AMO_V5_RAW_TRANSITION_CHAIN_MODEL,
+   WORK_AMO_V5_STATE_COMMITMENT_MODEL, WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL:actualWorkAmoV5.WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL,
+   WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL:actualWorkAmoV5.WORK_AMO_V5_PAYLOAD_COMMITMENT_MODEL,WORK_AMO_V8_TOKEN_STATE_PREIMAGE_MODEL,
+   WORK_PRECISION_V2_MIGRATION_META_KEY:transition.precisionMigrationMarkerKey,
+   canonicalWorkAmoTransitionCommitment:isolatedFunction(BACKFILL_PATH,"canonicalWorkAmoTransitionCommitment"),
+   normalizedWorkAmoV5Bip141Witness, normalizeInceptionHMinusOneWitness,
+   workAmoV8CanonicalTokenStateCommitment,workAmoV6CanonicalTokenStateCommitment,
+   workAmoV5RawGenericStateCommitment,workAmoV5RawIdStateCommitment,
+   workAmoV5CanonicalStateCommitment,validateWorkAmoV5SufficientState,
+   workAmoV5CanonicalPayloadCommitment:isolatedCanonicalPayloadCommitment,
+   canonicalIntegerText:isolatedFunction(BACKFILL_PATH,"canonicalIntegerText"), canonicalJsonText:isolatedFunction(BACKFILL_PATH,"canonicalJsonText"),
+   workAmoV5ReplayPositionKey:pos
+  });
+  const args={blockHash:transition.blockHash,blockHeight:transition.blockHeight,previousBlockHash:transition.previousBlockHash};
+  const normalized=normalize(envelope,args);
+  assert.deepEqual(JSON.parse(JSON.stringify(normalized.inceptionHMinusOneWitness)),transition.inceptionHMinusOneWitness);
+  const bound=bindCanonicalIncbMintPosition(mint,normalized.replayRecords,normalized.inceptionHMinusOneWitness);
+  assert.ok(canonicalIncbReplayComponents(bound,normalized.replayRecords,normalized.inceptionHMinusOneWitness));
+  const without={...normalized};delete without.inceptionHMinusOneWitness;
+  assert.throws(()=>canonicalIncbReplayComponents(bound,without.replayRecords,without.inceptionHMinusOneWitness));
+  for (const mutate of [w=>w.networkValueQ8="1",w=>w.blockHash="0".repeat(64),w=>w.openingStateCommitment.sha256="0".repeat(64)]) {
+   const bad=structuredClone(envelope);mutate((bad.workAmoV5BlockTransition ?? bad).inceptionHMinusOneWitness);
+   assert.throws(()=>normalize(bad,args),/witness-invalid/);
+  }
+  const absent=structuredClone(envelope);delete (absent.workAmoV5BlockTransition ?? absent).inceptionHMinusOneWitness;
+  const withoutWitness=normalize(absent,args);
+  assert.equal(Object.hasOwn(withoutWitness,"inceptionHMinusOneWitness"),false);
+  assert.throws(()=>canonicalIncbReplayComponents(bound,withoutWitness.replayRecords,withoutWitness.inceptionHMinusOneWitness));
+  const legacyEnvelope=JSON.parse(readFileSync(process.env.POW_INCB_PHYSICAL_LEGACY_FIXTURE));
+  const legacy=legacyEnvelope.workAmoV5BlockTransition ?? legacyEnvelope;
+  assert.equal(Object.hasOwn(legacy,"inceptionHMinusOneWitness"),false);
+  const normalizedLegacy=normalize(legacyEnvelope,{blockHash:legacy.blockHash,blockHeight:legacy.blockHeight,previousBlockHash:legacy.previousBlockHash});
+  assert.equal(Object.hasOwn(normalizedLegacy,"inceptionHMinusOneWitness"),false);
+ });
+} else {
+ console.log("skip - actual physical INCB normalization regression requires POW_INCB_PHYSICAL_TRANSITION_FIXTURE, POW_INCB_PHYSICAL_MINT_FIXTURE and POW_INCB_PHYSICAL_LEGACY_FIXTURE; mandatory release gate");
+}
 
 let failures = 0;
 for (const test of tests) {
