@@ -157,3 +157,14 @@ guards; no production permissions were changed. The strict carrier helper also
 passes against the captured real API item and native transition: only vout 2
 becomes vout 1; issuance and authenticated component evidence remain exact.
 Full persisted-block and subsequent canonical-summary tests remain mandatory.
+
+## API pre-materialization discriminator correction
+
+The exact successor physical test failed before persistence because the API
+issuance mint is not yet a materialized event and lacked its `kind` discriminator.
+The strict component binder correctly returned no eligible mint. Set the
+canonical `token-mint` kind in the API projection before binding; no arithmetic,
+oracle, recipient, coordinate or validation guard is relaxed. The new regression
+executes the actual API mapping with a kindless issuance object, reproduces the
+previous exact failure, and proves corrected mapping plus wrong-token refusal.
+The physical API-to-database and rollback gates remain required.

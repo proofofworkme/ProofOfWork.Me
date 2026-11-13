@@ -72184,6 +72184,7 @@ async function workAmoV5InceptionVerifierStateFromProjection(
     const projected = {
       ...mint,
       ...canonicalInceptionMintMetadata(mint),
+      kind: "token-mint",
       amountSats: 0,
       chargesTransactionFee: false,
       claimsEconomicOutputs: false,

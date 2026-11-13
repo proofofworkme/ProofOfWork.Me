@@ -55,3 +55,27 @@ test('forward witness omission, stale identity and arithmetic tampering fail clo
    const f=fixture();change(f);assert.throws(()=>canonicalIncbReplayComponents(f.mint,f.records,f.oracle));
  }
 });
+
+// Exercise the API mapping itself, not the already-materialized event fixture.
+test('API pre-materialization mint receives canonical kind before forward binding',()=>{
+ const f=fixture(); delete f.mint.kind; f.mint.protocolVout=2;
+ const source=readFileSync(new URL('../server/proof-api.mjs',import.meta.url),'utf8');
+ const start=source.indexOf('  const mintOrdinalByTxid = new Map();',source.indexOf('async function workAmoV5InceptionVerifierStateFromProjection'));
+ const end=source.indexOf('  const issuance = inceptionIssuanceMetadataFromMints(mints);',start);
+ assert.ok(start>=0 && end>start);
+ const map=new Function('inceptionMintsWithLiveIssuance','canonicalInceptionMintMetadata',
+  'bindCanonicalIncbMintPosition','seedMints','issuanceBonds','ledger','options','transition',
+  source.slice(start,end)+'return mints;');
+ const previousMap=new Function('inceptionMintsWithLiveIssuance','canonicalInceptionMintMetadata',
+  'bindCanonicalIncbMintPosition','seedMints','issuanceBonds','ledger','options','transition',
+  source.slice(start,end).replace('      kind: "token-mint",\n','')+'return mints;');
+ assert.throws(()=>previousMap(()=>[f.mint],()=>({}),bindCanonicalIncbMintPosition,[],[],{}, {},
+  {replayRecords:f.records,inceptionHMinusOneWitness:f.oracle}),/requires one verified mint/);
+ const [bound]=map(()=>[f.mint],()=>({}),bindCanonicalIncbMintPosition,[],[],{}, {},
+  {replayRecords:f.records,inceptionHMinusOneWitness:f.oracle});
+ assert.equal(bound.kind,'token-mint'); assert.equal(bound.protocolVout,1);
+ assert.equal(bound.amount,f.mint.amount); assert.equal(f.mint.kind,undefined);
+ const bad=structuredClone(f); bad.mint.tokenId='incorrect';
+ assert.throws(()=>map(()=>[bad.mint],()=>({}),bindCanonicalIncbMintPosition,[],[],{}, {},
+  {replayRecords:bad.records,inceptionHMinusOneWitness:bad.oracle}));
+});
