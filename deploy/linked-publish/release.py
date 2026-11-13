@@ -27,19 +27,24 @@ def controller():
     if body.count(syntax) != 1:
         raise RuntimeError("Unexpected runtime syntax validator")
     body = body.replace(syntax, b"        if row['path'] != 'server/sql/proof-search-linked-publish-v1.sql':\n" + b"    " + syntax)
+    admission = b"m = json.loads(raw); candidates = validate_manifest(m)"
+    if body.count(admission) != 1:
+        raise RuntimeError("Unexpected controller admission sequence")
+    body = body.replace(admission, admission + b"; validate_linked_stage(m.get('linkedStage'), m['sourceCommit'], m.get('linkedPlanSha256'), ROOT)")
     gateway = b"    for unit in GATEWAY:\n"
     if body.count(gateway) != 1:
         raise RuntimeError("Unexpected public gateway restore sequence")
     body = body.replace(gateway, b"    require_linked_writer_off()\n" + gateway)
     return (body.replace(prefix, b"backup = BACKUPS/('linked-publish-'")
             + b"\n" + (HERE / "profile.py").read_bytes()
+            + b"\n" + (HERE / "stage-contract.py").read_bytes()
             + b"\n" + (HERE / "preinstall.py").read_bytes()
             + b"\nif __name__ == '__main__': main()\n")
 
 
 def source_fence(commit):
     original_source_fence(commit)
-    for name in ("release.py", "profile.py", "coordinator.py", "stage.py", "stage.mjs", "phases.py", "pin-serving.mjs", "qualification.py", "preinstall.py", "census.mjs"):
+    for name in ("release.py", "profile.py", "stage-contract.py", "coordinator.py", "stage.py", "stage.mjs", "phases.py", "pin-serving.mjs", "qualification.py", "preinstall.py", "census.mjs"):
         if (HERE / name).read_bytes() != engine["git"]("show", f"{commit}:deploy/linked-publish/{name}"):
             raise RuntimeError("Linked Publish tool differs from committed source")
 

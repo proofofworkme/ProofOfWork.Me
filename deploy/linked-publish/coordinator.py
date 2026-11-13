@@ -26,7 +26,11 @@ def coordinate(release,plan,plan_sha):
  ns['validate_manifest'](manifest)
  need(manifest['sourceCommit']==plan['sourceCommit'] and manifest['releaseId']==plan['releaseId'],'Plan binding mismatch')
  path=stage_sources(release,plan,plan_sha)
- manifest['linkedStage']={'path':str(path),'sha256':hashlib.sha256((path/'stage.json').read_bytes()).hexdigest()}
+ proof_raw=(path/'stage.json').read_bytes();proof=json.loads(proof_raw)
+ manifest['linkedPlanSha256']=plan_sha
+ manifest['linkedStage']={'path':str(path),'sha256':hashlib.sha256(proof_raw).hexdigest(),'planSha256':plan_sha,
+  'sourceHashes':proof['sourceHashes'],'nodeModules':ns['linked_stage_modules'](ns['ROOT'])}
+ ns['validate_linked_stage'](manifest['linkedStage'],plan['sourceCommit'],plan_sha,ns['ROOT'])
  files=manifest['searchHold']['bindings']['files']
  hold_args=['--release-id',plan['releaseId'],'--attempt','initial','--service-sha256',files[ns['SEARCH'][0]],'--timer-sha256',files[ns['SEARCH'][1]]]
  outcome={'format':'linked-publish-prebuild-rollout-v1','releaseId':plan['releaseId'],'sourceCommit':plan['sourceCommit'],'planSha256':plan_sha,'stage':str(path),'writerEnabled':False}

@@ -63,6 +63,39 @@ non-writability and denial of a synthetic private sentinel. It does not execute
 schema SQL or read production credentials. Keep its compact output and fixture
 with the qualification evidence; it is not a production cutover.
 
+## Shared stage handoff and incident boundaries
+
+`stage-contract.py` is the single namespace and proof-format authority. The
+producer loads it; the scoped controller embeds its exact source-fenced bytes.
+The coordinator binds the independently verified plan SHA, source hash set,
+proof hash and accepted runtime dependency-directory identity. Validation runs
+before acquiring the Search hold, before draining applications, and again at
+the drained census boundary. The checks cover exact stage-owned modes, safe
+ancestors, canonical relative paths, complete staged file/directory inventory,
+source hashes, proof format and the exact dependency symlink target. Existing
+runtime dependency/lockfile fences remain mandatory; directory identity does
+not claim to hash every installed third-party dependency file.
+
+The 2026-11-13 staging incident had two distinct failures. The initial private
+umask prevented the non-root child from starting. Its correction introduced a
+new namespace but missed the preinstall consumer's old literal path; separately
+passing producer/consumer tests did not compose their handoff. The later attempt
+passed current Search readiness, then rejected the path before census or
+candidate installation and completed verified old-byte rollback. Retain all
+failed stages and recovery receipts. `sourceWritesStarted` records entry to the
+install wrapper before census, not proof that candidate bytes were written.
+
+A restored Search hold receipt is immutable. The same release ID and `initial`
+attempt cannot be reused: a separately approved attempt needs a new supported
+plan/release ID and qualification, not deleted receipts or an attempt override.
+Tip advancement during prebuild remains a strict fail-closed readiness outcome.
+No automatic retries, stale-readiness acceptance or writer activation are added.
+
+Composed fixture coverage must distinguish actual source staging, PostgreSQL,
+census and file installation/rollback from explicitly simulated host service,
+process and inventory boundaries. It does not certify live gateway/systemd
+cutover merely because a synthetic sequence passed.
+
 ## Single-owner apply sequence
 
 Apply requires two environment values identifying a final read-only

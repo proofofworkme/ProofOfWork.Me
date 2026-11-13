@@ -1,10 +1,11 @@
 """Stage only the plan-bound merged dependency closure on the node VPS."""
-import hashlib,json,os,stat,subprocess,time
+import hashlib,json,os,stat,subprocess,time,runpy
 from contextlib import contextmanager
 from pathlib import Path
 class StageUncertain(RuntimeError): pass
 NODE=Path('/opt/node-v24.18.0-linux-x64/bin/node')
-STAGES=Path('/data/proofofwork-linked-publish-stage-v2')
+_contract=runpy.run_path(str(Path(__file__).with_name('stage-contract.py')))
+STAGES=_contract['LINKED_STAGE_ROOT']
 EXTRA=('deploy/linked-publish/stage.mjs','deploy/linked-publish/pin-serving.mjs','deploy/linked-publish/census.mjs',
        'server/sql/proof-search-linked-publish-v1.sql','server/sql/proof-search-v1.sql')
 def need(value,message):
@@ -59,7 +60,7 @@ def stage_sources(release,plan,plan_sha):
   need(ancestor.lstat().st_mode&0o005==0o005,'Stage ancestor not publicly traversable')
  create_stage_directory(STAGES)
  path=STAGES/plan_sha
- proof={'format':'linked-publish-stage-v1','commit':plan['sourceCommit'],'planSha256':plan_sha,
+ proof={'format':_contract['LINKED_STAGE_FORMAT'],'commit':plan['sourceCommit'],'planSha256':plan_sha,
   'sourceHashes':{name:ns['sha'](raw) for name,raw in sources.items()}}
  if not os.path.lexists(path):
   create_stage_directory(path)

@@ -41,13 +41,13 @@ class Hook(unittest.TestCase):
   self.assertLess(body.index('require_linked_writer_off()'),body.index('for unit in GATEWAY:'))
  def test_successful_child_with_failed_terminal_observation_blocks_restore(self):
   ns,calls=self.namespace();digest=lambda b:hashlib.sha256(b).hexdigest()
-  root=Path('/data/proofofwork-linked-publish-stage')/('a'*64);hold=Path('/run/hold')
+  root=runpy.run_path(str(HERE/'stage-contract.py'))['LINKED_STAGE_ROOT']/('a'*64);hold=Path('/run/hold')
   proof={'commit':'b'*40,'planSha256':'a'*64,'sourceHashes':{'helper.mjs':digest(b'source')}}
   proof_raw=json.dumps(proof).encode()
   manifest={'sourceCommit':'b'*40,'releaseId':'release','linkedStage':{'path':str(root),'sha256':digest(proof_raw)},'searchHold':{'markerSha256':digest(b'hold')},'nodeSha256':digest(b'node')}
   values={'manifest.json':json.dumps(manifest).encode(),'stage.json':proof_raw,'helper.mjs':b'source','hold':b'hold','node':b'node'}
   def bad(*args,**kwargs):raise OSError('systemctl failed')
-  ns.update(json=json,Path=Path,SHA=re.compile(r'[0-9a-f]{64}\Z'),sha=digest,HOLD=hold,
+  ns.update(ROOT=Path('/runtime'),validate_linked_stage=lambda *args:(root,proof),json=json,Path=Path,SHA=re.compile(r'[0-9a-f]{64}\Z'),sha=digest,HOLD=hold,
    safe_read=lambda p,*a:values[p.name],require_apps_drained=lambda:None,
    subprocess=SimpleNamespace(run=lambda *a,**k:subprocess.CompletedProcess([],0,b'{"ok":true}',b''),check_output=bad),
    durable=lambda *a:None)

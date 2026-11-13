@@ -50,6 +50,80 @@ def native():
    proof=json.loads((stage/'stage.json').read_bytes())
    assert proof['sourceHashes']=={name:digest(value) for name,value in {**public,**extra}.items()}
    assert (stage/'node_modules').is_symlink() and os.readlink(stage/'node_modules')==str(fake/'node_modules')
+   contract=runpy.run_path(str(Path(__file__).with_name('stage-contract.py')))
+   validator=contract['validate_linked_stage'];validator.__globals__['LINKED_STAGE_ROOT']=g['STAGES']
+   binding={'path':str(stage),'sha256':digest((stage/'stage.json').read_bytes()),'planSha256':'b'*64,
+    'sourceHashes':proof['sourceHashes'],'nodeModules':contract['linked_stage_modules'](fake)}
+   assert validator(binding,'a'*40,'b'*64,fake)[0]==stage
+   import copy
+   negatives=[]
+   for field,value in [('planSha256','c'*64),('sha256','0'*64),('path',str(stage.parent.parent/'legacy'/stage.name))]:
+    changed=copy.deepcopy(binding);changed[field]=value;negatives.append(changed)
+   changed=copy.deepcopy(binding);changed['sourceHashes'].pop('package.json');negatives.append(changed)
+   changed=copy.deepcopy(binding);changed['nodeModules']['inode']+=1;negatives.append(changed)
+   for changed in negatives:
+    try:validator(changed,'a'*40,'b'*64,fake)
+    except (ValueError,FileNotFoundError):pass
+    else:raise AssertionError('Changed stage contract accepted')
+   original=(stage/'stage.json').read_bytes();wrong=dict(proof,format='legacy-invalid');(stage/'stage.json').write_text(json.dumps(wrong))
+   changed=copy.deepcopy(binding);changed['sha256']=digest((stage/'stage.json').read_bytes())
+   try:validator(changed,'a'*40,'b'*64,fake)
+   except ValueError:pass
+   else:raise AssertionError('Wrong proof format accepted')
+   (stage/'stage.json').write_bytes(original)
+   assert validator(binding,'a'*40,'b'*64,fake)[0]==stage
+
+   validator_negatives=['binding-plan','proof-sha','legacy-path','closure-omission','dependency-inode','proof-format']
+   def rejected(label,changed=binding):
+    try:validator(changed,'a'*40,'b'*64,fake)
+    except (ValueError,FileNotFoundError):validator_negatives.append(label)
+    else:raise AssertionError('Tampered validator input accepted: '+label)
+   wrong=dict(proof,commit='c'*40)
+   wrong_raw=json.dumps(wrong).encode();S['write'](root/'retained-wrong-commit-proof.json',wrong_raw)
+   (stage/'stage.json').write_bytes(wrong_raw)
+   changed=copy.deepcopy(binding);changed['sha256']=digest(wrong_raw)
+   rejected('proof-commit',changed)
+   (stage/'stage.json').write_bytes(original)
+   source_target=stage/'nested/deep/fixture.mjs'
+   for label,body,private,owner in [
+    ('source-bytes',b'changed-public-source',False,None),
+    ('source-mode',raw,True,None),
+    ('source-uid-gid',raw,False,(65534,65534))]:
+    retained=root/('retained-original-'+label);source_target.rename(retained)
+    if private:
+     fd=os.open(source_target,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
+     with os.fdopen(fd,'wb') as out:out.write(body)
+    else:S['write'](source_target,body)
+    if owner:os.chown(source_target,*owner)
+    rejected(label)
+    source_target.rename(root/('retained-tampered-'+label));retained.rename(source_target)
+   source_target.rename(root/'retained-original-file-link')
+   source_target.symlink_to(root/'retained-original-file-link')
+   rejected('source-symlink')
+   source_target.rename(root/'retained-source-symlink')
+   (root/'retained-original-file-link').rename(source_target)
+   (stage/'nested').rename(root/'retained-original-nested')
+   (stage/'nested').symlink_to(root/'retained-original-nested',target_is_directory=True)
+   rejected('internal-parent-symlink')
+   (stage/'nested').rename(root/'retained-parent-symlink')
+   (root/'retained-original-nested').rename(stage/'nested')
+   stages_parent=stage.parent
+   stages_parent.rename(root/'retained-original-stages')
+   stages_parent.symlink_to(root/'retained-original-stages',target_is_directory=True)
+   rejected('stage-parent-symlink')
+   stages_parent.rename(root/'retained-stage-parent-symlink')
+   (root/'retained-original-stages').rename(stages_parent)
+   other_modules=root/'other-synthetic-modules';S['create_stage_directory'](other_modules)
+   (stage/'node_modules').rename(root/'retained-original-modules-link')
+   (stage/'node_modules').symlink_to(other_modules,target_is_directory=True)
+   rejected('dependency-link-target')
+   (stage/'node_modules').rename(root/'retained-wrong-modules-link')
+   (root/'retained-original-modules-link').rename(stage/'node_modules')
+   S['write'](stage/'unexpected-public-extra',b'extra')
+   rejected('unexpected-closure')
+   (stage/'unexpected-public-extra').rename(root/'retained-unexpected-public-extra')
+   assert validator(binding,'a'*40,'b'*64,fake)[0]==stage
+
    for name,value in {**public,**extra}.items():assert (stage/name).read_bytes()==value
    # A restrictive preexisting stage is rejected without mode repair.
    bad=g['STAGES']/('c'*64);bad.mkdir(mode=0o755)
@@ -98,7 +172,7 @@ console.log(JSON.stringify({ok:true,uid:process.getuid(),sha256:crypto.createHas
    '--property=WorkingDirectory='+str(target.parent),str(S['NODE']),'-e',js,str(target),str(private),str(stage)]
   result=subprocess.run(cmd,check=True,capture_output=True,text=True,timeout=45)
   proof=json.loads(result.stdout);assert proof['ok'] and proof['sha256']==hashlib.sha256(raw).hexdigest()
-  print(json.dumps({'ok':True,'fixture':str(root),'child':proof,'callerUmask':'077','syntheticOnly':True,'fullStageSourcesVerified':True,'exactReuseVerified':True,'restrictiveExistingRejected':True}))
+  print(json.dumps({'ok':True,'fixture':str(root),'child':proof,'callerUmask':'077','syntheticOnly':True,'fullStageSourcesVerified':True,'exactReuseVerified':True,'restrictiveExistingRejected':True,'realValidatorNegatives':validator_negatives}))
  finally:os.umask(old)
 if __name__=='__main__':
  if sys.argv[1:]==['--native-root']:native()

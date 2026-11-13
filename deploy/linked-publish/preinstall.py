@@ -40,21 +40,7 @@ def require_linked_writer_off():
 def linked_preinstall_census(backup):
     global linked_census_uncertain
     m = json.loads(safe_read(backup / 'manifest.json', 20*1024**2))
-    stage = m.get('linkedStage', {})
-    root = Path(stage.get('path', ''))
-    require(root.is_absolute() and root.parent == Path('/data/proofofwork-linked-publish-stage')
-            and SHA.fullmatch(root.name), 'Missing bound linked stage')
-    proof_raw = safe_read(root / 'stage.json', 4*1024**2)
-    require(sha(proof_raw) == stage.get('sha256'), 'Linked stage proof changed')
-    proof = json.loads(proof_raw)
-    require(proof.get('commit') == m['sourceCommit'] and proof.get('planSha256') == root.name,
-            'Linked stage source differs')
-    hashes = proof.get('sourceHashes', {})
-    require(1 <= len(hashes) <= 320, 'Invalid staged source inventory')
-    for name, digest in hashes.items():
-        require(isinstance(name, str) and not name.startswith('/') and '..' not in name.split('/')
-                and SHA.fullmatch(digest) and sha(safe_read(root / name)) == digest,
-                'Changed preinstall census source')
+    root, proof = validate_linked_stage(m.get('linkedStage'), m['sourceCommit'], m.get('linkedPlanSha256'), ROOT)
     require_apps_drained()
     hold_raw = safe_read(HOLD, 65536)
     require(sha(hold_raw) == m['searchHold']['markerSha256'], 'Census hold changed')
