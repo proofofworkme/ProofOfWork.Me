@@ -61,6 +61,42 @@ class ArchiveTests(unittest.TestCase):
             with self.assertRaises(ValueError): m.validate_source_manifest({**good,**change})
 
 
+class PredecessorMigrationTests(unittest.TestCase):
+    def predecessor(self):
+        return {'format':'proof-of-work-publish-render-source-v1','commit':'a'*40,'tree':'b'*40,
+                'files':{name:'c'*64 for name in m.PREDECESSOR_SOURCE_FILES}}
+
+    def test_exact_predecessor_is_capture_only(self):
+        old=self.predecessor()
+        with patch.object(m,'PREDECESSOR_MANIFEST_SHA256',m.digest(m.encoded(old))):
+            self.assertEqual(m.validate_captured_source_manifest(old),m.PREDECESSOR_SOURCE_FILES)
+            with self.assertRaises(ValueError):m.validate_source_manifest(old)
+            for key,value in [('commit','d'*40),('tree','e'*40),('files',{**old['files'],m.PREDECESSOR_SOURCE_FILES[0]:'f'*64})]:
+                with self.assertRaises(ValueError):m.validate_captured_source_manifest({**old,key:value})
+
+    def test_incomplete_new_closure_and_unreviewed_prior_refuse(self):
+        new={'format':'proof-of-work-publish-render-source-v1','commit':'a'*40,'tree':'b'*40,
+             'files':{name:'c'*64 for name in m.SOURCE_FILES}}
+        self.assertEqual(m.validate_captured_source_manifest(new),m.SOURCE_FILES)
+        for name in m.SOURCE_FILES:
+            bad={**new,'files':{k:v for k,v in new['files'].items() if k!=name}}
+            with self.assertRaises(ValueError):m.validate_source_manifest(bad)
+            with self.assertRaises(ValueError):m.validate_captured_source_manifest(bad)
+        with self.assertRaises(ValueError):m.validate_captured_source_manifest(self.predecessor())
+
+    def test_explicit_prior_file_verification_keeps_candidate_default_strict(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);old=self.predecessor()
+            for name in m.PREDECESSOR_SOURCE_FILES:
+                p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b'old source')
+                old['files'][name]=m.digest(b'old source')
+            with patch.object(m,'directory'),patch.object(m,'read_safe',lambda p:Path(p).read_bytes()):
+                m.verify_source(root,old,source_files=m.PREDECESSOR_SOURCE_FILES)
+                with self.assertRaises(ValueError):m.verify_source(root,old)
+                (root/m.PREDECESSOR_SOURCE_FILES[0]).write_bytes(b'tampered')
+                with self.assertRaises(ValueError):m.verify_source(root,old,source_files=m.PREDECESSOR_SOURCE_FILES)
+
+
 class HealthTests(unittest.TestCase):
     def test_full_current_ui_provenance_and_wrong_ui(self):
         source={'commit':'a'*40,'tree':'b'*40,'files':{'module':'c'*64}}

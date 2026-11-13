@@ -25,8 +25,18 @@ SOURCE_FILES = (
     'server/publish-render/reader.mjs', 'server/publish-render/document.mjs',
     'server/publish-render/handler.mjs', 'server/publish-render/server.mjs',
     'src/app/seoMetadata.mjs', 'src/app/publishArticleSeo.mjs',
+    'src/shared/protocol/publishArticleMetadata.mjs', 'src/shared/protocol/boostText.mjs',
+    'src/shared/protocol/powcatLimits.mjs', 'src/shared/protocol/publishReaderPage.mjs',
+)
+# Capture-only migration from the exact verified live renderer. Never a candidate.
+PREDECESSOR_SOURCE_FILES = (
+    'server/publish-render/reader.mjs', 'server/publish-render/document.mjs',
+    'server/publish-render/handler.mjs', 'server/publish-render/server.mjs',
+    'src/app/seoMetadata.mjs', 'src/app/publishArticleSeo.mjs',
     'src/shared/protocol/publishArticle.mjs', 'src/shared/protocol/boostText.mjs',
 )
+PREDECESSOR_MANIFEST_SHA256 = '5bb727cd7dcf97443775405f60da4cbe887ac627abf48d3db7453a69c0b980db'
+
 SURFACES = set('activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft pages permission publish search token wallet work'.split())
 UNIT_NAME = 'proofofwork-publish-render.service'
 UNIT_TEMPLATE = 'deploy/publish-render/' + UNIT_NAME
@@ -200,9 +210,9 @@ def capture():
     renderer = {'unit': optional_file(UNIT), 'active': optional_file(ACTIVE),
                 'wanted': wanted_target(), 'state': state(UNIT_NAME)}
     if renderer['active'] is not None:
-        manifest = json.loads(read_safe(ACTIVE, 65536)); validate_source_manifest(manifest)
+        manifest = json.loads(read_safe(ACTIVE, 65536)); captured_files = validate_captured_source_manifest(manifest)
         source = ROOT/'releases'/manifest['commit']
-        verify_source(source, manifest)
+        verify_source(source, manifest, source_files=captured_files)
         require(read_safe(source/'release.json', 65536) == read_safe(ACTIVE, 65536), 'Active manifest differs')
         renderer['manifest'] = manifest
     else:
@@ -214,16 +224,32 @@ def capture():
         'node': tree_inventory(NODE_ROOT) if os.path.lexists(NODE_ROOT) else None}
 
 
-def validate_source_manifest(value):
+def validate_manifest_files(value, source_files):
     require(set(value) == {'format', 'commit', 'tree', 'files'} and
         value['format'] == 'proof-of-work-publish-render-source-v1' and
         HEX40.fullmatch(value['commit']) and HEX40.fullmatch(value['tree']) and
-        set(value['files']) == set(SOURCE_FILES) and
+        set(value['files']) == set(source_files) and
         all(HEX64.fullmatch(v) for v in value['files'].values()), 'Invalid renderer source manifest')
 
 
-def verify_source(root, manifest):
+def validate_source_manifest(value):
+    # Candidate packages and activation always require the complete new closure.
+    validate_manifest_files(value, SOURCE_FILES)
+
+
+def validate_captured_source_manifest(value):
+    if set(value.get('files', {})) == set(SOURCE_FILES):
+        validate_source_manifest(value)
+        return SOURCE_FILES
+    validate_manifest_files(value, PREDECESSOR_SOURCE_FILES)
+    require(digest(encoded(value)) == PREDECESSOR_MANIFEST_SHA256,
+        'Unreviewed predecessor renderer manifest')
+    return PREDECESSOR_SOURCE_FILES
+
+
+def verify_source(root, manifest, *, source_files=SOURCE_FILES):
     directory(root)
+    require(set(manifest['files']) == set(source_files), 'Source verification closure differs')
     for name, expected in manifest['files'].items():
         require(digest(read_safe(root/name)) == expected, 'Renderer source differs: ' + name)
 

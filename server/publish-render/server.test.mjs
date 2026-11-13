@@ -13,7 +13,8 @@ import { loadRendererSource, readUiTemplate, startPublishRenderServer } from "./
 const TX = "a".repeat(64), COMMIT = "b".repeat(40), TREE = "c".repeat(40);
 const sourceFiles = ["server/publish-render/reader.mjs", "server/publish-render/document.mjs",
   "server/publish-render/handler.mjs", "server/publish-render/server.mjs", "src/app/seoMetadata.mjs",
-  "src/app/publishArticleSeo.mjs", "src/shared/protocol/publishArticle.mjs", "src/shared/protocol/boostText.mjs"];
+  "src/app/publishArticleSeo.mjs", "src/shared/protocol/publishArticleMetadata.mjs", "src/shared/protocol/boostText.mjs",
+  "src/shared/protocol/powcatLimits.mjs", "src/shared/protocol/publishReaderPage.mjs"];
 const repo = fileURLToPath(new URL("../../", import.meta.url));
 const template = '<!doctype html><html><head><!--proof-seo:start--><!--proof-seo-surface:publish--><title>Generic</title><!--proof-seo:end--><script type="module" src="/assets/app.js"></script></head><body><div id="root"><!--proof-seo-body:start--><!--proof-seo-body:end--></div></body></html>';
 const ui = { format: "proof-of-work-ui-source-v1", commit: COMMIT, tree: TREE, trackedDirty: false };
@@ -88,7 +89,7 @@ function request(port, path, method = "GET", headers = {}) {
   });
 }
 
-test("source release manifest binds exactly the eight packaged dependencies and their bytes", t => {
+test("source release manifest binds exactly the ten standalone packaged dependencies and their bytes", t => {
   const fixture = sourceFixture(t);
   const loaded = loadRendererSource(fixture.root, fixture.path);
   assert.deepEqual(loaded, { commit: COMMIT, tree: TREE, files: fixture.manifest.files });

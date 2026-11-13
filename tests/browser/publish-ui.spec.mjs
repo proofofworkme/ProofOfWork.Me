@@ -297,7 +297,9 @@ test("full text drafts autosave, preview, and enforce the complete carrier budge
   await expect(page.locator(".publish-budget")).toHaveClass(/is-over/);
   await page.getByRole("button", { name: "Save draft and back" }).click();
   await page.getByRole("button", { name: "Write your next article" }).click();
-  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue("x".repeat(100_000));
+  expect((await page.getByRole("textbox", { name: "Article text", exact: true }).inputValue()).length).toBeLessThanOrEqual(16384);
+  await expect(page.getByText(/Editing one page:/)).toBeVisible();
+  await expect.poll(async()=> (await storedPublishDraft(page,"disconnected"))?.body).toBe("x".repeat(100_000));
 });
 
 for (const width of [390, 1440]) {
@@ -775,4 +777,48 @@ test("Paged editor upload scope drift preserves draft, explains cancellation and
   expect(await page.evaluate(()=>window.publishSignatureCalls)).toBe(0);
   await page.getByRole("dialog",{name:"Publish linked file"}).getByRole("button",{name:"Close",exact:true}).click();
   await expect.poll(()=>stored(page).then(x=>x.hash)).toBe(hash);
+});
+
+for(const width of [390,1440])for(const shape of ['single-token','multiline','unicode','link-dense'])test('Bounded published reader exact4MB: '+shape+' at '+width,async({page},testInfo)=>{
+ await page.setViewportSize({width,height:900});
+ const body=shape==='single-token'?'x'.repeat(4000000):shape==='multiline'?('x'.repeat(79)+'\n').repeat(50000):shape==='unicode'?'😀'.repeat(1000000):('PROOFOFWORK.ME abc.pow plain text\n').repeat(130000).slice(0,4000000);
+ const hash=createHash('sha256').update(body).digest('hex'),txid='a'.repeat(64);
+ await fixture(page);
+ await page.addInitScript(()=>{window.qaHeartbeat={maxGapMs:0,ticks:0};let last=performance.now();setInterval(()=>{const n=performance.now();window.qaHeartbeat.maxGapMs=Math.max(window.qaHeartbeat.maxGapMs,n-last);window.qaHeartbeat.ticks++;last=n;},50);});
+ const article={v:2,title:'Maximum exact linked article',source:'linked-powcat1',size:4000000,sha256:hash,linkerTxid:'e'.repeat(64)};
+ const articlePost={...post,article,articleVerification:'canonical-linked-powcat1-article-v2',text:article.title,articleBody:body};
+ await page.route(url=>url.pathname.endsWith('/api/v1/boost'),route=>{
+  if(route.request().method()!=='GET')return route.abort();
+  const u=new URL(route.request().url()),payload=u.searchParams.has('detail')?{complete:true,snapshotId:'max-reader',mode:'detail',post:articlePost,items:[],totalCount:0,hasMore:false,start:0}:{complete:true,snapshotId:'max-reader',items:[articlePost],totalCount:1,hasMore:false,start:0,network:'livenet'};
+  return route.fulfill({json:payload});
+ });
+ const began=Date.now();await page.goto('/?publish=1&article='+txid);
+ await expect(page.locator('.publish-article-body')).toBeVisible({timeout:60000});
+ const readyMs=Date.now()-began;
+ const visible=page.locator('.publish-article-body');
+ const first=await visible.evaluate(el=>({start:Number(el.dataset.sourceStart),end:Number(el.dataset.sourceEnd),text:el.textContent}));
+ expect(first.start).toBe(0);expect(first.end).toBeLessThanOrEqual(16384);expect(first.text).toBe(body.slice(first.start,first.end));
+ await expect(page.locator('nav[aria-label="Verified article reading pages"]')).toContainText('Partial reading view');
+ await page.getByRole('button',{name:'Next reading page',exact:true}).click();
+ const second=await visible.evaluate(el=>({start:Number(el.dataset.sourceStart),end:Number(el.dataset.sourceEnd),text:el.textContent}));
+ expect(second.start).toBe(first.end);expect(second.text).toBe(body.slice(second.start,second.end));
+ await page.getByRole('button',{name:'Previous reading page',exact:true}).click();expect(await visible.textContent()).toBe(first.text);
+ const download=page.getByRole('link',{name:'Download full verified text',exact:true});await expect(download).toBeVisible();
+ const proof=await download.evaluate(async el=>{const bytes=new Uint8Array(await(await fetch(el.href)).arrayBuffer());return {bytes:bytes.length,sha256:Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(x=>x.toString(16).padStart(2,'0')).join('')};});expect(proof).toEqual({bytes:4000000,sha256:hash});
+ await page.evaluate(()=>document.addEventListener('click',e=>{if(e.target.closest('a[download]')){window.qaDownloadClick=true;e.preventDefault();}},true));await download.click();expect(await page.evaluate(()=>window.qaDownloadClick)).toBe(true);
+ await page.context().grantPermissions(['clipboard-read','clipboard-write']);
+ await page.getByRole('button',{name:'Copy full verified text',exact:true}).click();await expect(page.getByText('Full verified text copied.',{exact:true})).toBeVisible();
+ const copy=await page.evaluate(async()=>{const bytes=new TextEncoder().encode(await navigator.clipboard.readText());return {bytes:bytes.length,sha256:Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(x=>x.toString(16).padStart(2,'0')).join('')};});expect(copy).toEqual(proof);
+ await page.mouse.wheel(0,600);await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ const heartbeat=await page.evaluate(()=>window.qaHeartbeat);
+ expect(heartbeat.maxGapMs).toBeLessThan(2000);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width+1);
+ if(shape==='link-dense'){
+  const link=page.locator('.publish-article-body a').first();await expect(link).toBeVisible();
+  const href=await link.getAttribute('href');
+  await page.evaluate(()=>document.addEventListener('click',e=>{const a=e.target.closest('a');if(a?.closest('.publish-article-body')){window.qaClickedHref=a.getAttribute('href');e.preventDefault();}},true));
+  await link.click();expect(await page.evaluate(()=>window.qaClickedHref)).toBe(href);
+ }
+ await page.screenshot({path:testInfo.outputPath('reader-'+shape+'-'+width+'.png')});
+ await testInfo.attach('reader-'+shape+'-'+width+'.json',{body:JSON.stringify({syntheticCanonicalApi:true,shape,width,readyMs,elapsedMs:Date.now()-began,heartbeat,...proof}),contentType:'application/json'});
 });

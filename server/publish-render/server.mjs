@@ -12,7 +12,8 @@ const SOURCE_FILES = Object.freeze([
   "server/publish-render/reader.mjs", "server/publish-render/document.mjs",
   "server/publish-render/handler.mjs", "server/publish-render/server.mjs",
   "src/app/seoMetadata.mjs", "src/app/publishArticleSeo.mjs",
-  "src/shared/protocol/publishArticle.mjs", "src/shared/protocol/boostText.mjs",
+  "src/shared/protocol/publishArticleMetadata.mjs", "src/shared/protocol/boostText.mjs",
+  "src/shared/protocol/powcatLimits.mjs", "src/shared/protocol/publishReaderPage.mjs",
 ]);
 
 function boundedRead(path, limit) {

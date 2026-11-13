@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   normalizePublishArticleMetadata, publishArticleBodyBytes, PUBLISH_ARTICLE_VERIFICATION, publishArticleVerification,
-} from "../../src/shared/protocol/publishArticle.mjs";
+} from "../../src/shared/protocol/publishArticleMetadata.mjs";
 
 const HASH = /^[0-9a-f]{64}$/u;
 const CURSOR_PREFIX = "boost-feed-v1.";

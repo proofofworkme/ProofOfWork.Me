@@ -9,7 +9,11 @@ class Guards(unittest.TestCase):
   self.m=runpy.run_path(str(HERE/'release.py'))
   self.ns=self.m['engine']['namespace'](self.m['controller']())
  def test_scope_and_preserved_foundations(self):
-  self.assertEqual(len(self.ns['ALLOWED']),15)
+  self.assertEqual(set(self.ns['ALLOWED']),{'src/shared/protocol/publishArticleMetadata.mjs', 'server/boost-growth.mjs', 'src/shared/protocol/powcatLimits.mjs', 'server/db/proof-index-reader.mjs', 'server/search-projection.mjs', 'src/shared/protocol/publishReaderPage.mjs', 'src/shared/protocol/publishArticle.mjs', 'server/publish-linked.mjs', 'server/publish-linked-source.mjs', 'src/shared/protocol/powcat1.mjs', 'scripts/backfill-proof-indexer.mjs', 'server/powcat-index.mjs', 'server/sql/proof-search-linked-publish-v1.sql', 'server/search-linked-publish.mjs', 'scripts/backfill-proof-search.mjs', 'server/db/boost-growth-reader.mjs', 'server/db/search-reader.mjs', 'server/powcat-reader.mjs', 'server/proof-api.mjs'})
+  expected_reader_scope={'src/shared/protocol/publishReaderPage.mjs','src/shared/protocol/publishArticleMetadata.mjs','src/shared/protocol/powcatLimits.mjs','src/shared/protocol/powcat1.mjs'}
+  self.assertTrue(expected_reader_scope <= set(self.ns['ALLOWED']))
+  self.assertTrue((expected_reader_scope-{'src/shared/protocol/powcat1.mjs'}) <= set(self.ns['NEW']))
+  self.assertNotIn('src/shared/protocol/powcat1.mjs',self.ns['PRESERVED'])
   self.assertEqual(self.ns['INSTALL_ORDER'][-1],'server/proof-api.mjs')
   self.assertEqual(set(self.ns['AFTER']),set(self.ns['ALLOWED']))
   self.assertIn('server/search-generation-sharing.mjs',self.ns['PRESERVED'])

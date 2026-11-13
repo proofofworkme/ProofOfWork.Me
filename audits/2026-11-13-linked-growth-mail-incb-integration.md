@@ -34,7 +34,7 @@ INCB and historical transition recovery then passed 554/554.
 Prior 772/Growth and dirty-source Mail browser receipts are historical evidence,
 not qualification of this successor. Fresh exact-source browser, native Search,
 runtime profile, build and final gate receipts remain required. Regenerate the
-15-file scoped profile against accepted live emergency overlays, explicitly
+19-file scoped profile against accepted live emergency overlays, explicitly
 preserving raw INCB math, component helper and migration dependencies.
 
 Deploy writer-off first under the existing guarded coordinator, qualify v6
@@ -80,3 +80,64 @@ the stated 1200-second prebuild budget. Build/check now share one absolute monot
 deadline and cannot launch or accept successful work after it. Bounded child stop and
 terminal-state recovery may continue beyond that work deadline. Failure remains
 writer-off; uncertain child state does not authorize recovery publication.
+
+## Maximum-size reading regression and isolated correction
+
+The exact ae829333 compiled diagnostic exposed two further regressions: a single
+4 MB unbroken text node overflowed the mobile/desktop reader, and a DNS-link-dense
+article blocked the browser main thread for up to 9.56 seconds. A separate mobile
+writer preview grid overflow was corrected with explicit minimum sizing, not
+hidden overflow.
+
+The successor uses a full-source lexical parse and bounded 16,384 UTF-16-unit
+reading pages. Pages preserve complete DNS tokens, code/URL context, surrogate
+pairs and CRLF boundaries. Labels explicitly identify a partial view; complete
+verified text remains available through exact-byte download and full copy.
+No-JavaScript HTML exposes the same bounded first page and a strict read-only
+verified download route. Neither evidence, stored content nor protocol limits
+are rewritten.
+
+Isolated diagnostics passed eight maximum-size cases across ASCII single-token,
+multiline, Unicode and DNS-dense text at 390/1440 px, including page navigation,
+exact 4 MB download/copy hashes, link interaction and width checks. Main-thread
+heartbeat gaps were 0.59–1.30 seconds in the diagnostic Vite environment; initial
+load timings included module/network overhead and are not a compiled benchmark.
+These are source-diagnostic results, not exact-release or live-deployment claims.
+
+Pure metadata validation and verification-tag functions were moved unchanged into
+a dependency-free shared module. The preexisting 4,000,000-byte file limit has one
+pure shared declaration, re-exported by powcat1. Independent review compared 106
+vectors and exact function bodies with the prior source. The runtime overlay
+inventory explicitly includes every changed/new helper; emergency foundation
+hashes and preservation checks remain unchanged.
+
+Final exact-source CI, standalone renderer packaging/startup and rollback gates,
+native Search fixture, compiled UI/browser suite, capacity admission and release
+coordination remain mandatory. No writer activation or production deployment is
+asserted by this section.
+
+### Preseal qualification of the bounded-reader successor
+
+The integrated canonical-mode worktree passed declared CI (456 passed, zero
+failed, one existing explicit native-fixture skip), the captured recovery
+fixture, TypeScript, 22 isolated-root renderer installer tests and 20 prebuild
+deadline-controller tests. Independent extraction review passed 106 differential
+vectors; the standalone renderer package passed 12 checks with no repository
+node_modules, including exact 4 MB downloads and HEAD responses.
+
+The complete 83-case development browser diagnostic passed with final source,
+helper and dependency fingerprints unchanged. It includes all earlier UI/Growth/
+Mail cases, six real clipboard/IME/editor cases, eight maximum-size reader cases,
+and two full 42-part-plus-linker unsigned preparation/resume/reorg cases. It used
+a separately reviewed, monotonic 30-second initial development-server readiness
+measurement because unbundled Vite module loading exceeded the normal five-second
+UI assertions. The original interrupted run and its startup failures are retained.
+No application assertion timeout or production startup behavior was changed.
+The final compiled 83-case runner has no development readiness grace and requires
+a clean exact commit, matching compiled provenance and an exact launcher digest.
+
+The final runtime inventory is 19 files. The independently reviewed standalone
+renderer inventory is 10 files; the exact fingerprinted old eight-file renderer
+is accepted only for predecessor capture, never as a new candidate. That old
+renderer is not a v2-capable postactivation rollback. Writer activation remains
+separate and requires the complete matching v2-safe rollback bundle and live gates.

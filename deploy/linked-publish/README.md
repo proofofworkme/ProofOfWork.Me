@@ -10,8 +10,9 @@ The node runtime has accepted native-storage, observation and shared-confirmed
 Search adaptations not represented by its historical Git HEAD. Never reset it
 or copy the canonical checkout over it.
 
-`prepare-profile.py` produces an exact 15-file overlay, including the additive
-SQL. It preserves import adaptations, uses independently reviewed exact
+`prepare-profile.py` produces an exact 19-file overlay, including the additive
+SQL, bounded-reader helper, pure metadata/limits modules and the unchanged
+powcat1 limit import/re-export. It preserves import adaptations, uses independently reviewed exact
 active/base/candidate triples for semantic Search integration, and rejects
 unreviewed conflicts. Run it on the VPS after source freeze, review every
 before/after hash, and commit the generated profile with the final source.

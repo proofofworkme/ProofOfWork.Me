@@ -1,7 +1,8 @@
 import { Buffer } from "buffer";
 import { crypto, opcodes, script, Transaction } from "bitcoinjs-lib";
 
-export const POWCAT_MAX_FILE_BYTES = 4_000_000;
+import { POWCAT_MAX_FILE_BYTES } from "./powcatLimits.mjs";
+export { POWCAT_MAX_FILE_BYTES } from "./powcatLimits.mjs";
 export const POWCAT_MAX_PART_BYTES = 96_000;
 export const POWCAT_MAX_PARTS = 67;
 const MAX_WEIGHT = 400_000;

@@ -77,13 +77,18 @@ test("excerpt is bounded by Unicode characters and unknown publication times are
   assert.equal(publishArticleMetadata(record(" \n\t ")).description, "");
 });
 
-test("maximum size text is retained completely through worst-case HTML escaping", () => {
+test("large text has an explicitly partial escaped first page and complete download access", () => {
   const article = record("<&\r\n'".repeat(20_000));
-  assert.equal(article.size, 100_000);
   const html = renderArticleDocument(template, article);
-  const body = /data-publish-exact-body>(.*?)<\/div>/su.exec(html)[1];
-  assert.equal(body, "&lt;&amp;&#13;\n&#39;".repeat(20_000));
-  assert.ok(Buffer.byteLength(html) < 1024 * 1024);
+  const match = /data-publish-partial-body data-source-start="0" data-source-end="(\d+)">(.*?)<\/div>/su.exec(html);
+  assert.ok(match); assert.ok(Number(match[1]) <= 16384);
+  assert.match(html, /Partial reading view/u);
+  assert.match(html, /download=text/u);
+  assert.ok(!html.includes("data-publish-exact-body"));
+  const decoded = match[2].replace(/&(amp|lt|gt|quot|#39|#13);/gu,
+    (_, entity) => ({ amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'", "#13": "\r" })[entity]);
+  assert.equal(decoded, article.body.slice(0, Number(match[1])));
+  assert.ok(Buffer.byteLength(html) < 100_000);
 });
 
 test("directory is readable without JavaScript and pagination does not misstate deduped article counts", () => {

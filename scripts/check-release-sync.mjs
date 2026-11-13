@@ -56,7 +56,8 @@ assert.equal(renderer.ui?.tree, tree);
 assert.equal(renderer.ui?.trackedDirty, false);
 const rendererFiles = ['server/publish-render/reader.mjs', 'server/publish-render/document.mjs',
   'server/publish-render/handler.mjs', 'server/publish-render/server.mjs', 'src/app/seoMetadata.mjs',
-  'src/app/publishArticleSeo.mjs', 'src/shared/protocol/publishArticle.mjs', 'src/shared/protocol/boostText.mjs'];
+  'src/app/publishArticleSeo.mjs', 'src/shared/protocol/publishArticleMetadata.mjs', 'src/shared/protocol/boostText.mjs',
+  'src/shared/protocol/powcatLimits.mjs', 'src/shared/protocol/publishReaderPage.mjs'];
 assert.deepEqual(Object.keys(renderer.files ?? {}).sort(), [...rendererFiles].sort(), 'Unexpected renderer source inventory');
 for (const file of rendererFiles) assert.equal(renderer.files[file], createHash('sha256').update(readFileSync(resolve(primary, file))).digest('hex'), `Installed Publish renderer source differs: ${file}`);
 results.push(rendererUrl);

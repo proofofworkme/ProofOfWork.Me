@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { escapeHtml, serializeJsonLd, resolvePageMetadata, INDEX_ROBOTS, NOINDEX_ROBOTS } from "../../src/app/seoMetadata.mjs";
 import { PUBLISH_ORIGIN, PUBLISH_SERVER_CONTENT_ID, PUBLISH_SERVER_METADATA_ID, publishArticleMetadata, publishArticleSeoFacts } from "../../src/app/publishArticleSeo.mjs";
-import { publishArticleBodyBytes } from "../../src/shared/protocol/publishArticle.mjs";
-import { parsePowDnsText } from "../../src/shared/protocol/boostText.mjs";
+import { publishArticleBodyBytes } from "../../src/shared/protocol/publishArticleMetadata.mjs";
+import { buildReaderModel, verifiedReaderPage, READER_PAGE_UNITS } from "../../src/shared/protocol/publishReaderPage.mjs";
 
 // Character references prevent HTML's input preprocessing from folding CRLF.
 const exactText = value => escapeHtml(value).replace(/\r/gu, "&#13;");
@@ -61,7 +61,7 @@ const navigation = `<nav aria-label="Publish"><a href="${PUBLISH_ORIGIN}/">Proof
 const author = facts => `<a rel="author" href="${PUBLISH_ORIGIN}/?profile=${encodeURIComponent(facts.authorAddress)}">${exactText(facts.authorDisplay)}</a>`;
 const date = facts => facts.publishedAt ? ` · <time datetime="${facts.publishedAt}">${facts.publishedAt.slice(0, 10)}</time>` : "";
 
-export function renderArticleDocument(template, article) {
+export function verifiedArticleBytes(article) {
   const facts = publishArticleSeoFacts(article);
   const bytes = publishArticleBodyBytes(article.body);
   if (!bytes || bytes.length !== facts.size || createHash("sha256").update(bytes).digest("hex") !== facts.sha256 ||
@@ -69,12 +69,20 @@ export function renderArticleDocument(template, article) {
       !/^[a-f0-9]{64}$/u.test(article.checkpoint?.hash ?? "") || !article.checkpoint.snapshotId) {
     throw new TypeError("Verified article bytes and checkpoint are required.");
   }
-  const body = parsePowDnsText(article.body).map(segment => segment.kind === "dns"
+  return bytes;
+}
+export function renderArticleDocument(template, article) {
+  const bytes = verifiedArticleBytes(article);
+  const facts = publishArticleSeoFacts(article);
+  const page = verifiedReaderPage(buildReaderModel(article.body));
+  const partial = article.body.length > READER_PAGE_UNITS;
+  const readerNotice = partial ? `<p class="publish-server-status">Partial reading view: text positions 1–${page.end} of ${page.total} (UTF-16 units). The complete verified article contains ${bytes.length} UTF-8 bytes. Enable JavaScript to read page by page, or <a href="/?article=${facts.txid}&amp;download=text">download full verified text</a>.</p>` : "";
+  const body = page.segments.map(segment => segment.kind === "dns"
     ? `<a href="https://browser.proofofwork.me/?name=${encodeURIComponent(segment.value)}&amp;network=livenet" target="_blank" rel="noopener noreferrer" aria-label="${exactText(segment.text)} (open in Browser, new tab)">${exactText(segment.text)}</a>`
     : exactText(segment.text)).join("");
   return document(template, publishArticleMetadata(facts), `${navigation}<article><h1>${exactText(facts.title)}</h1>
 <p class="publish-server-byline">By ${author(facts)}${date(facts)} · Confirmed</p>
-<div class="publish-server-body" data-publish-exact-body>${body}</div>
+${readerNotice}<div class="publish-server-body" ${partial ? `data-publish-partial-body data-source-start="0" data-source-end="${page.end}"` : "data-publish-exact-body"}>${body}</div>
 <p class="publish-server-status">Confirmed article text verified at block ${article.checkpoint.height}. Interactive features recheck the confirmed record when JavaScript loads.</p>
 <details><summary>Exact article evidence</summary><p>${facts.size} UTF-8 bytes · Verified SHA-256</p><code>${facts.sha256}</code><code>${facts.txid}</code><p>Original author: ${exactText(facts.authorAddress)}</p></details></article>`, facts);
 }

@@ -1,5 +1,5 @@
 import { resolveSeoRoute } from "../../src/app/seoMetadata.mjs";
-import { renderArticleDocument, renderDirectoryDocument, renderUnavailableDocument, renderArticleSitemap } from "./document.mjs";
+import { verifiedArticleBytes, renderArticleDocument, renderDirectoryDocument, renderUnavailableDocument, renderArticleSitemap } from "./document.mjs";
 
 const ORIGIN = "https://publish.proofofwork.me";
 const TRACKING = /^(?:utm_[a-z0-9_]+|gclid|fbclid|msclkid)$/iu;
@@ -12,6 +12,14 @@ export function resolvePublishRenderRequest(value) {
   let url;
   try { url = new URL(value, ORIGIN); } catch { return null; }
   if (["/", "/index.html"].includes(url.pathname)) {
+    if (url.searchParams.has("download")) {
+      if (url.searchParams.getAll("download").length !== 1 || url.searchParams.get("download") !== "text") return { kind: "invalid" };
+      const publicUrl = new URL(url);
+      publicUrl.searchParams.delete("download");
+      const policy = resolveSeoRoute({ surface: "publish", url: publicUrl });
+      if (policy.kind !== "public-detail" || !publicUrl.searchParams.has("article")) return { kind: "invalid" };
+      return { kind: "download", txid: publicUrl.searchParams.get("article").toLowerCase() };
+    }
     const policy = resolveSeoRoute({ surface: "publish", url });
     if (policy.kind !== "public-detail" || !url.searchParams.has("article")) return null;
     return { kind: "article", txid: url.searchParams.get("article").toLowerCase() };
@@ -82,6 +90,17 @@ export function createPublishDocumentHandler({ reader, readTemplate, sitemapDead
     if (activeRequests >= 32) return { status: 503, headers: { ...headers, "Retry-After": "30", "X-Robots-Tag": "noindex, nofollow" }, body: "Article reader is busy. Please try again.\n" };
     activeRequests++;
     try {
+      if (target.kind === "download") {
+        const downloadHeaders = { ...headers, "Content-Type": "text/plain; charset=utf-8", "X-Robots-Tag": "noindex, nofollow" };
+        try {
+          const article = await reader.readArticle(target.txid);
+          const bytes = verifiedArticleBytes(article);
+          return { status: 200, headers: { ...downloadHeaders, "Content-Disposition": `attachment; filename="proofofwork-article-${target.txid}.txt"`, "Content-Length": String(bytes.length) }, body: method === "HEAD" ? "" : Buffer.from(bytes) };
+        } catch (error) {
+          const status = error?.statusCode === 404 ? 404 : 503;
+          return { status, headers: { ...downloadHeaders, ...(status === 503 ? { "Retry-After": "30" } : {}) }, body: method === "HEAD" ? "" : "Confirmed article evidence is unavailable.\n" };
+        }
+      }
       const template = await readTemplate();
       if (target.kind === "invalid") return { status: 400, headers: { ...headers, "X-Robots-Tag": "noindex, nofollow" }, body: renderUnavailableDocument(template, { status: 400, message: "This article address is not supported." }) };
       try {

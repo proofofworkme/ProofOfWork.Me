@@ -17,6 +17,21 @@ renderer modules match those installed hashes. The public renderer provenance
 and release-sync checks distinguish the installed renderer commit from the
 current UI commit; neither implies a node-host Git reset.
 
+The candidate renderer contains the exact ten-file standalone source closure,
+including pure article metadata, the shared 4 MB limit and bounded reader-page
+helpers. It does not import Bitcoin transaction libraries or rely on a nearby
+repository `node_modules` directory. Package construction, activation and the
+running server require this exact candidate file set and all source hashes.
+
+Capture alone also recognizes the exact previously verified eight-file
+`0ec078ccc530bdabac9b8babb10adc66d33eb240` renderer manifest, pinned by its
+canonical SHA-256 `5bb727cd7dcf97443775405f60da4cbe887ac627abf48d3db7453a69c0b980db`.
+It verifies those existing files and matching retained `release.json` before
+accepting the predecessor. Other eight-file manifests, incomplete new closures,
+and changed predecessor bytes refuse. This exception does not allow an old
+manifest as a new installation candidate. Failure restoration keeps the exact
+old unit and active-manifest bytes; new candidate source remains preserved.
+
 The unit binds `127.0.0.1:8084`, uses the fixed upstream
 `http://10.77.0.2:8081`, and reads the live Publish `app.html` and
 `source-provenance.json`. It runs as a dynamic unprivileged user with read-only

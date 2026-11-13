@@ -99,3 +99,8 @@
  .publish-page-controls p { flex-basis:100%;margin:0;font-size:13px;overflow-wrap:anywhere; }
  .publish-composer .publish-body-input { max-height:70vh;overflow:auto;min-width:0; }
 }
+
+@layer interface {
+ .publish-editor-content { min-width:0; display:grid; grid-template-columns:minmax(0,1fr); gap:22px; }
+ .publish-editor-content[hidden] { display:none; }
+}

@@ -9,14 +9,14 @@ RUNTIME=pathlib.Path('/opt/proofofwork-api')
 BASE='e2669bc1fd32eba625c1a65fb2a102ba6433fb7a'
 ORDER=[
  'server/sql/proof-search-linked-publish-v1.sql',
- 'server/publish-linked-source.mjs','src/shared/protocol/publishArticle.mjs',
+ 'server/publish-linked-source.mjs','src/shared/protocol/publishArticle.mjs','src/shared/protocol/publishReaderPage.mjs','src/shared/protocol/publishArticleMetadata.mjs','src/shared/protocol/powcatLimits.mjs','src/shared/protocol/powcat1.mjs',
  'server/powcat-index.mjs','server/powcat-reader.mjs','server/publish-linked.mjs',
  'server/search-linked-publish.mjs','server/search-projection.mjs',
  'server/db/search-reader.mjs','server/db/proof-index-reader.mjs',
  'server/boost-growth.mjs','server/db/boost-growth-reader.mjs',
  'scripts/backfill-proof-search.mjs','scripts/backfill-proof-indexer.mjs','server/proof-api.mjs']
 sha=lambda raw:hashlib.sha256(raw).hexdigest()
-# These live emergency dependencies are outside the 15-file feature scope.
+# These live emergency dependencies are outside the 19-file feature scope.
 # A changed math/helper/migration baseline requires a separately reviewed update.
 EMERGENCY_PRESERVED={
  'server/work-amo-v5-raw.mjs':'5481e61bfdf47a73a1a8a648e6936da3673e0e05a6f18c271f28824cfba72658',

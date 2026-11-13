@@ -245,7 +245,7 @@ export function PublishComposer({ address, network, identity, connecting = false
       <div><span>Write on ProofOfWork</span><h1 id="publish-composer-title">{preview ? "Preview your article" : "New article"}</h1></div>
     </div>
     <form onSubmit={event=>{if(composing){event.preventDefault();setError("Finish the current text composition before publishing.");}else void prepare(event);}}>
-      <div hidden={Boolean(upload && upload.scope === scope)}>
+      <div className="publish-editor-content" hidden={Boolean(upload && upload.scope === scope)}>
       <div className="publish-editor-toolbar">
         <span>{identityId ? `${identityId}@proofofwork.me` : address ? "Your connected address" : "Connect to choose your byline"}</span>
         <button className="secondary small" type="button" disabled={composing} onClick={() => setPreview(value => !value)}>

@@ -185,3 +185,39 @@ test("only ongoing sitemap reads coalesce, and the request ceiling returns bound
   finish(); assert.ok((await Promise.all(readers)).every(result => result.status === 200));
   assert.equal((await busy(request(articleUrl))).status, 200);
 });
+
+test("full verified downloads preserve exact 4 MB bytes without template or HTML work", async () => {
+  for (const body of ["x".repeat(4000000), "😀".repeat(1000000), "abc.pow\r\n".repeat(444444)+"xxxx"]) {
+    const source = article(TX, body);
+    assert.equal(source.size,4000000);
+    const render = handler({readArticle:async()=>source},()=>{throw new Error("Download must not read HTML template");});
+    const url = articleUrl+"&download=text";
+    const result = await render(request(url));
+    assert.equal(result.status,200);assert.ok(Buffer.isBuffer(result.body));
+    assert.equal(result.body.length,4000000);assert.equal(hash(result.body),source.sha256);
+    assert.equal(result.headers["Content-Type"],"text/plain; charset=utf-8");
+    assert.equal(result.headers["Content-Length"],"4000000");
+    assert.match(result.headers["Content-Disposition"],/^attachment; filename="proofofwork-article-[a-f0-9]{64}\.txt"$/u);
+    assert.equal(result.headers["Cache-Control"],"no-store");assert.equal(result.headers["X-Content-Type-Options"],"nosniff");
+    const head=await render(request(url,"HEAD"));assert.equal(head.status,200);assert.equal(head.body,"");assert.deepEqual(head.headers,result.headers);
+  }
+});
+test("download route refuses duplicate/private/unsupported requests and corrupt or missing evidence",async()=>{
+  for(const suffix of ["&download=text&download=text","&download=html","&download=text&network=testnet4","&download=text&write=1","&download=text&article="+OTHER]) {
+    assert.equal(resolvePublishRenderRequest(articleUrl+suffix)?.kind,"invalid");
+  }
+  const url=articleUrl+"&download=text";
+  assert.equal((await handler()(request(url,"POST"))).status,405);
+  const corrupt=article();corrupt.body+="corrupt";
+  const result=await handler({readArticle:async()=>corrupt})(request(url));
+  assert.equal(result.status,503);assert.ok(!result.headers["Content-Disposition"]);
+  assert.equal((await handler({readArticle:async()=>{throw Object.assign(new Error("not found"),{statusCode:404});}})(request(url))).status,404);
+});
+test("maximum SSR text remains a bounded exact first page with full evidence and no hidden body",async()=>{
+  for(const body of ["x".repeat(4000000),"abc.pow\r\n".repeat(444444)+"xxxx","😀".repeat(1000000)]) {
+    const source=article(TX,body),result=await handler({readArticle:async()=>source})(request(articleUrl));
+    assert.equal(result.status,200);assert.ok(Buffer.byteLength(result.body)<1_000_000);
+    assert.match(result.body,/data-publish-partial-body/u);assert.match(result.body,/download=text/u);
+    assert.ok(result.body.includes(source.sha256));assert.ok(!result.body.includes(body));
+  }
+});
