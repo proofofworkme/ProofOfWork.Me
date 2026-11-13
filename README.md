@@ -1032,7 +1032,7 @@ Rules to preserve:
 - Publish articles add a typed commitment to an original Boost post. Their titles retain the short text limit; exact UTF-8 bodies use all remaining space within the aggregate 100,000-byte OP_RETURN script policy. Boost previews and Publish full readers share the original txid, profiles, selected IDs, likes, replies and reboosts. The [Publish specification](PUBLISH.md) defines same-transaction body verification, private drafts, wallet review, recovery and shared identity.
 - Original posts carry a self-directed Proof and/or WORK signal to the author's own ProofOfWork address. They do not require the 546-proof Boost registry fee. A WORK-only original binds its declared Q16 signal to an exact, canonical same-transaction WORK self-transfer. Authors pay the miner fee and any WORK mutation fee.
 - Both the public and Computer-embedded Boost “Post a Boost” and “Review Boost” buttons open the same composer with Proof and WORK signal choices, including WORK-only, and Files attachments. The separate Computer Mail compose Boost option retains its positive Proof self-send requirement and optional WORK attachment. Proof signal is the self-send amount; WORK signal uses a canonical local-wallet WORK transfer in the same transaction.
-- Post media uses the existing Mail/Files attachment path. Boost JSON stores file proof metadata and pointers, not duplicate media bytes. A same-transaction media pointer must match exactly one verified Mail attachment by SHA-256, size, MIME type, and name before indexing; the client rechecks those fields and the attachment bytes before rendering. Profile pictures and banners are chosen from confirmed Files on the profile owner's address.
+- Post media uses the existing Mail/Files attachment path. Files up to 4,000,000 logical bytes use confirmed `powcat1` linked transactions; the post retains a hash-bound small Mail pointer attachment. Linked previews are requested explicitly and re-verify the pointer, file and canonical confirmation; unavailable files never render unchecked bytes. Ordinary Boost text and replies remain limited to 140 characters. Boost JSON stores file proof metadata and pointers, not duplicate media bytes. A same-transaction media pointer must match exactly one verified Mail attachment by SHA-256, size, MIME type, and name before indexing; the client rechecks those fields and the attachment bytes before rendering. Profile pictures and banners are chosen from confirmed Files on the profile owner's address.
 - `pwb1:like`, `pwb1:reply`, `pwb1:reboost`, `pwb1:follow`, and `pwb1:unfollow` are paid social actions. Likes, replies, and reboosts pay at least 546 proofs directly to the current Boost owner, and the confirmed owner-directed amount increments the original Boost’s proof signal. A follow sends 546 proofs to the followed profile, not the Boost registry; unfollow retains its profile-target payment rule. Self-follow is invalid. The shared fee-rate dashboard lets users select miner fees for the direct composer, replies, likes, and reboosts. The latest confirmed follow/unfollow event for a follower-address plus target-address pair determines the active graph edge.
 - A `pwb1:post` JSON may include `quoteTxid` for quote-style rendering. The public composer, detail view, reply composer, reboost menu, optimistic action state, and shared transaction status bar are part of the Boost surface; wallet signing remains local.
 - Production transfer writers require the current confirmed Boost owner, accept a raw address or confirmed ProofOfWork ID resolved to its owner address, and pay the 546-proof Boost registry fee. Listing-sale mutations (`list5`, `seal5`, `delist5`, and `buy5`) also pay that registry fee; historical registry-paid social actions remain replayable.
@@ -1739,3 +1739,37 @@ broadcast require verified declaration evidence, current canonical replay and
 the independently enabled batch write gate. See [WORK Batch Sends V1](WORK_BATCH_SENDS.md)
 for wire rules, atomic accounting and activation. Existing Mail and send3 behavior
 is unchanged.
+
+## Current-product Growth scenario
+
+Growth defaults to the display-only `2026-11-12-products-v2` scenario. The
+October 6 shared-lane calculation and original May comparison remain selectable
+and retain their historical arithmetic. This is a product-scope update, not a
+new observed baseline or a prediction. The May origin, adoption curve, ID stock
+rule and modeled USD path are retained; the new illustrative fee-rate scenario
+defaults to 0.1 proof/vB and is selectable at 0.5, 1 and 2 (existing app editor presets), plus the historical 0.00001 sensitivity input. None is a live quote, protocol rule or signing recommendation; the rate materially changes assumed demand.
+
+DNS has explicit registration, mutation, owner-action and market workloads.
+Permission, Jobs and Publish reserve disjoint subsets of existing Mail/Files
+capacity, and Pages is the named HTML-authoring subset. Read-only views and
+aliases add no economic event. Offered job rewards, DNS owner self-payments,
+linked parts and linkers do not invent new economic value. Standalone social
+payment estimates represent direct owner payments; the original October Boost
+registry assumption remains historical only.
+
+The illustrative workload assumes 1% of general Files, Boost media and Publish
+bodies use a 4,000,000-byte linked publication. At 96,000-byte parts this means
+42 part transactions, one linker and one delivery, not one 4 MB transaction.
+The model replaces the existing content-size allowance and counts only the
+additional physical transactions. All physical lanes share one capacity cap;
+no additional content payment is added for the same file. This scenario does
+not enable publishing, quote wallet fees, simulate exact WORK feedback, or
+change canonical accounting. It does not assume repeated views or reuse require
+republishing; Code and job attachments retain their inherited size averages.
+
+See the [versioned model report](output/proofofwork-computer-growth-model-2026-11-12-products-v2.md)
+and [machine-readable inputs and results](output/proofofwork-computer-growth-model-2026-11-12-products-v2.json).
+Regenerate with `npm run model:growth:current`; validate with `npm run check:growth`.
+The old generated outputs remain historical comparison artifacts.
+
+The combined linked Publish / current-products Growth release uses `scripts/check-linked-growth-live.mjs`: both read-only live gates must pass. Linked preactivation mode and loopback verifier settings are preserved only for the linked checker; Growth receives no verifier token. This gate does not activate writers or establish successful new signing. Exact 1042 retention evidence and all existing linked deployment gates remain required.

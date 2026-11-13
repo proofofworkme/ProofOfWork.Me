@@ -1,3 +1,4 @@
+import { admitIndexedLinkedArticle, linkedArticleEvidenceForTx, linkedArticleEvidenceMatches, recordPublishLinkedCapability } from '../server/publish-linked.mjs';
 import { canonicalPwidRejectionProjection } from "../server/pwid-rejection-projection.mjs";
 import { buildWorkBatchPayload, parseWorkBatchPayload } from "../src/shared/protocol/workBatch.mjs";
 import {
@@ -33,7 +34,7 @@ import { JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_META_KEY, JOBS_DISCOVERY_EMPTY_SHA
 import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, CODE_DISCOVERY_EMPTY_SHA256, advanceCodeCandidateDigest, exactCodeOutputProofs, codeCandidateEventClosure, prefilterCodeRawBlock, assertCodeRawBlockCandidatesMatch } from "../server/code-repositories.mjs";
 import {
   normalizePublishArticleMetadata, publishArticleBodyFromRecords,
-  publishArticleDataCarrierBytes, PUBLISH_ARTICLE_VERIFICATION, PUBLISH_DATA_CARRIER_LIMIT,
+  publishArticleDataCarrierBytes, PUBLISH_ARTICLE_VERIFICATION, PUBLISH_DATA_CARRIER_LIMIT, publishArticleVerification,
 } from "../src/shared/protocol/publishArticle.mjs";
 import {
   DNS_SUBDOMAIN_ACTIVATION_HEIGHT, DNS_SUBDOMAIN_PREFIX,
@@ -5081,7 +5082,8 @@ function boostPostItemFromJson(tx, message, action, post) {
   const item = {
     ...base,
     action,
-    ...(article ? { article, articleVerification: PUBLISH_ARTICLE_VERIFICATION } : {}),
+    ...(article ? { article, articleVerification: publishArticleVerification(article),
+      ...(article.v === 2 && linkedArticleEvidenceForTx(tx) ? { articleDependencies: linkedArticleEvidenceForTx(tx) } : {}) } : {}),
     authorAddress: sender,
     boostTxid: tx.txid,
     currentOwnerAddress: sender,
@@ -5102,9 +5104,11 @@ function boostPostItemFromJson(tx, message, action, post) {
     const carrierBytes = publishArticleDataCarrierBytes(tx);
     if (action !== "post" || post?.v !== 1 || !article || media ||
         carrierBytes === null || carrierBytes > PUBLISH_DATA_CARRIER_LIMIT ||
-        publishArticleBodyFromRecords(protocolMessagesFromTx(tx), article,
-          bytes => createHash("sha256").update(bytes).digest("hex")) === null) {
-      return invalidProtocolItem(item, "Publish article requires one exact, hash-verified same-transaction text body within the aggregate OP_RETURN limit.");
+        (article.v === 1 ? publishArticleBodyFromRecords(protocolMessagesFromTx(tx), article,
+          bytes => createHash("sha256").update(bytes).digest("hex")) === null :
+          !linkedArticleEvidenceMatches(article, { txid: tx.txid, blockHeight: base.blockHeight,
+            blockHash: base.blockHash, protocolVout: base.protocolVout }, linkedArticleEvidenceForTx(tx)))) {
+      return invalidProtocolItem(item, "Publish article requires exact verified inline text or earlier canonical linked text within the aggregate transaction limit.");
     }
   }
   if (workSignalDeclared && workSignalText !== "0" && !workSignalSubatoms) {
@@ -8428,6 +8432,8 @@ function preparedProtocolItemsWithCanonicalWorkTipReplay(preparedItems, replayRe
 }
 
 async function preparedProtocolItemsForTx(tx, messages, options = {}) {
+  // Derive current dependency authority for both fresh blocks and stored-raw replay.
+  await admitIndexedLinkedArticle(tx, { rpc: bitcoinRpc, network: NETWORK });
   const recovered = await canonicalRecoveryItemsForTx(tx, messages, options);
   if (recovered.length > 0) {
     return preparedProtocolItemsWithCanonicalMailAttachments(recovered);
@@ -27168,6 +27174,9 @@ async function backfillBlockScanSource(client, source) {
       await advanceJobsDiscoveryCheckpoint(client, { height, blockHash: nextIndexedThroughBlockHash,
         previousBlockHash: String(block.previousblockhash).toLowerCase(),
         candidates: preparedTransactions.filter(prepared => jobsCandidateParts(prepared.rawTx).length > 0).map(prepared => prepared.rawTx) });
+      if (nextComplete) await recordPublishLinkedCapability(client, {
+        network: NETWORK, height, blockHash: nextIndexedThroughBlockHash,
+      });
       await client.query("COMMIT");
       indexed += blockIndexed;
       skipped += blockSkipped;

@@ -3165,3 +3165,42 @@ test('Marketplace review: seller authorization leads to a separate seal publicat
   expect(await page.evaluate(()=>window.__mailComposeFixture.signCalls)).toBe(1);
   await publication.getByRole('button',{name:'Back to task'}).click();expect(broadcasts).toBe(0);
 });
+
+for (const mailBatchMode of ["ready", "paused", "unavailable"]) {
+  test(`Mail bond routing: INCB WORK review survives ordinary batch ${mailBatchMode} without signing`, async ({ page }) => {
+    await installWallet(page);
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+        writeText: async text => { window.__mailBondReviewEvidence = JSON.parse(text); },
+      } });
+    });
+    await installApiFixtures(page, { mailBatchMode, walletBalanceSubatoms: "18000000000000000000000" });
+    const broadcasts = await forbidBatchBroadcasts(page);
+    await openConnectedCompose(page);
+    await page.getByRole("combobox", { name: "To", exact: true }).fill(SENDER);
+    await page.getByLabel("Message").fill("incb");
+    await page.getByLabel("WORK each").fill("1800000");
+    await expect(page.locator(".mail-send-button")).toBeEnabled();
+    await page.locator(".mail-send-button").click();
+    const review = page.getByRole("dialog", { name: "Review mail transaction" });
+    await expect(review).toBeVisible();
+    await expect(review).toContainText("Bond WORK attachment: 546 proofs per recipient");
+    await review.getByText("Inspect message and transaction evidence", { exact: true }).click();
+    await review.getByRole("button", { name: "Copy review evidence" }).click();
+    const evidence = await page.evaluate(() => window.__mailBondReviewEvidence);
+    expect(evidence.message).toBe("incb");
+    expect(evidence.registry.proofs).toBe("546");
+    expect(evidence.evidence.records).toContain("pwm1:m:incb");
+    expect(evidence.evidence.records).toContain(`pwt1:send3:${WORK_TOKEN_ID}:18000000000000000000000:${SENDER}`);
+    expect(evidence.evidence.records.some(record => record.startsWith("pwt1:mailbatch1:"))).toBe(false);
+    expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
+    await review.getByRole("button", { name: "Back to compose" }).click();
+    await expect(page.getByLabel("Message")).toHaveValue("incb");
+    await expect(page.getByLabel("WORK each")).toHaveValue("1800000");
+    expect(broadcasts).toEqual([]);
+    if (mailBatchMode !== "ready") {
+      await page.getByLabel("Message").fill("ordinary mail");
+      await expect(page.locator(".mail-send-button")).toBeDisabled();
+    }
+  });
+}

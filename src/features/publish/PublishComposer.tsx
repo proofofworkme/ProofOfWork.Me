@@ -1,3 +1,9 @@
+import { fetchProofApiJson } from "../../shared/api/proofApiClient";
+import { assertLinkedPublishCapability } from "../../shared/protocol/publishLinkedCapability.mjs";
+import { readPublishDraft, writePublishDraft, writePublishDraftPair, removePublishDraft } from "./publishDraftStore";
+import { PowcatPublisher } from "../powcat/PowcatPublisher";
+import type { PublishWallet } from "../powcat/powcatPublish";
+import { sha256Hex } from "../../shared/utils/encoding";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowLeft, BookOpen, Eye, PenLine, RefreshCw, Send } from "lucide-react";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
@@ -12,7 +18,7 @@ import { isMobileWalletBrowser } from "../../shared/wallet/walletLinks";
 import { UnisatMobileHandoff } from "../../shared/components/UnisatMobileHandoff";
 import { socialFeeRateFromInput, validSocialFeeRate } from "../boost/socialFeePreference";
 
-type Draft = { title: string; body: string; signal: number; feeRate: number };
+type Draft = { title: string; body: string; signal: number; feeRate: number; linkedFile?: {txid: string; fileHash: string} };
 const emptyDraft = (feeRate: number): Draft => ({ title: "", body: "", signal: 546, feeRate: validSocialFeeRate(feeRate) ? feeRate : 1 });
 
 export function PublishComposer({ address, network, identity, connecting = false, hasUnisat = true, onConnect, onClose, onPrepare, onSign, restoreDraft, initialFeeRate = 1, onFeeRateChange, returnLabel = "Articles", onLeaveGuardChange }: {
@@ -36,6 +42,7 @@ export function PublishComposer({ address, network, identity, connecting = false
   const [feeInput, setFeeInput] = useState(() => String(emptyDraft(initialFeeRate).feeRate));
   const [loadedKey, setLoadedKey] = useState("");
   const [preview, setPreview] = useState(false);
+  const [upload, setUpload] = useState<{file: File; wallet: PublishWallet; scope: string; hash: string}>();
   const [prepared, setPrepared] = useState<PreparedPublish>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -43,6 +50,9 @@ export function PublishComposer({ address, network, identity, connecting = false
   const [loadError, setLoadError] = useState("");
   const [draftNotice, setDraftNotice] = useState("");
   const flight = useRef(false);
+  const savedDraft = useRef("");
+  const completedPublicationExit = useRef("");
+  const unloadedDraftExit = useRef("");
   const alive = useRef(true);
   const scope = JSON.stringify([storageKey, identity, draft, feeInput]);
   const currentScope = useRef(scope);
@@ -50,68 +60,85 @@ export function PublishComposer({ address, network, identity, connecting = false
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
-    setPrepared(undefined);
-    setError("");
-    setSaveError("");
-    setLoadError("");
-    setDraftNotice("");
-    try {
-      const raw = localStorage.getItem(storageKey);
-      let candidate = raw ? JSON.parse(raw) : emptyDraft(sharedFeeRate.current);
-      if (typeof candidate.title !== "string" || typeof candidate.body !== "string" ||
-          !Number.isSafeInteger(candidate.signal) || !Number.isFinite(candidate.feeRate)) {
-        throw new Error("The saved draft could not be read. Preserve local storage before repairing it.");
-      }
-      const guestKey = `proofofwork.publish.draft.v1:${network}:disconnected`;
-      if (address && loadedKey === guestKey && (draft.title.trim() || draft.body.trim())) {
-        if (candidate.title.trim() || candidate.body.trim()) {
-          localStorage.setItem(guestKey, JSON.stringify(candidate));
-          setDraftNotice("Continuing the draft you started before connecting. Your previous wallet draft is preserved in the disconnected draft.");
+    let cancelled = false;
+    unloadedDraftExit.current = "";
+    setPrepared(undefined); setError(""); setSaveError(""); setLoadError(""); setDraftNotice(""); savedDraft.current = "";
+    void (async () => {
+      try {
+        const raw = await readPublishDraft(storageKey);
+        if (cancelled) return;
+        let candidate = raw ? JSON.parse(raw) : emptyDraft(sharedFeeRate.current);
+        if (typeof candidate.title !== "string" || typeof candidate.body !== "string" ||
+            !Number.isSafeInteger(candidate.signal) || !Number.isFinite(candidate.feeRate)) throw new Error("The saved draft could not be read. Preserve browser storage before repairing it.");
+        const guestKey = `proofofwork.publish.draft.v1:${network}:disconnected`;
+        let displacedWalletDraft: Draft | undefined;
+        if (!restoreDraft && address && loadedKey === guestKey && (draft.title.trim() || draft.body.trim())) {
+          if (candidate.title.trim() || candidate.body.trim()) {
+            displacedWalletDraft = candidate;
+            if (!cancelled) setDraftNotice("Continuing your disconnected draft. Your previous wallet draft is preserved in the disconnected draft.");
+          }
+          candidate = draft;
         }
-        candidate = draft;
+        const loaded = restoreDraft ?? candidate;
+        if (cancelled) return;
+        if (displacedWalletDraft) await writePublishDraftPair(guestKey, displacedWalletDraft, storageKey, loaded);
+        else await writePublishDraft(storageKey, loaded);
+        if (cancelled) return;
+        savedDraft.current = JSON.stringify([storageKey, loaded]);
+        setDraft(loaded); setFeeInput(String(loaded.feeRate)); setLoadedKey(storageKey);
+      } catch (cause) {
+        if (cancelled) return;
+        const message = cause instanceof Error ? cause.message : "The saved draft could not be read.";
+        setLoadError(message); setSaveError(message);
       }
-      const loaded = restoreDraft ?? candidate;
-      setDraft(loaded);
-      setFeeInput(String(loaded.feeRate));
-    } catch (cause) {
-      const cleared = emptyDraft(sharedFeeRate.current);
-      setDraft(cleared);
-      setFeeInput(String(cleared.feeRate));
-      const message = cause instanceof Error ? cause.message : "The saved draft could not be read.";
-      setLoadError(message);
-      setSaveError(message);
-    }
-    setLoadedKey(storageKey);
+    })();
+    return () => { cancelled = true; };
   }, [storageKey, restoreDraft]);
   useEffect(() => {
-    if (loadedKey !== storageKey || saveError) return;
-    try { localStorage.setItem(storageKey, JSON.stringify(draft)); }
-    catch { setSaveError("Draft autosave is unavailable. Copy your text before leaving this editor."); }
-  }, [draft, loadedKey, storageKey, saveError]);
+    if (loadedKey !== storageKey || loadError) return;
+    let cancelled = false;
+    const snapshot = JSON.stringify([storageKey, draft]);
+    void writePublishDraft(storageKey, draft).then(() => {
+      if (!cancelled) { savedDraft.current = snapshot; setSaveError(""); }
+    }, () => { if (!cancelled) setSaveError("Draft autosave is unavailable. Copy your text before leaving this editor."); });
+    return () => { cancelled = true; };
+  }, [draft, loadedKey, storageKey, loadError]);
   useEffect(() => { setPrepared(undefined); }, [scope]);
 
   const budget = useMemo(() => {
-    try { return { plan: buildPublishPlan(draft.title, draft.body, draft.signal, identity), error: "" }; }
+    try { return { plan: buildPublishPlan(draft.title, draft.body, draft.signal, identity, draft.linkedFile), error: "" }; }
     catch (cause) { return { plan: undefined, error: cause instanceof Error ? cause.message : "Article is invalid." }; }
-  }, [draft.title, draft.body, draft.signal, identity]);
+  }, [draft.title, draft.body, draft.signal, draft.linkedFile, identity]);
   const overBudget = Boolean(budget.plan && budget.plan.carrierBytes > PUBLISH_DATA_CARRIER_LIMIT);
   const words = draft.body.trim() ? draft.body.trim().split(/\s+/u).length : 0;
-  const update = (patch: Partial<Draft>) => { setDraft(value => ({ ...value, ...patch })); setError(""); };
+  const update = (patch: Partial<Draft>) => { setDraft(value => ({ ...value, ...patch, ...(patch.body !== undefined && patch.body !== value.body ? {linkedFile: undefined} : {}) })); setError(""); };
+
+  async function uploadArticle() {
+    if (flight.current || !budget.plan || !overBudget || network !== "livenet" || !address) return;
+    const expectedScope = scope;
+    flight.current = true; setBusy(true); setError("");
+    try {
+      assertLinkedPublishCapability(await fetchProofApiJson("/api/v1/boost?capabilities=linked-articles-v2&fresh=1", network), network);
+      const bytes = new TextEncoder().encode(draft.body);
+      const wallet = (await import("../../App")).powcatWallet;
+      if (!alive.current || currentScope.current !== expectedScope) return;
+      setUpload({file: new File([bytes], "article.txt", {type: "text/plain"}), wallet, scope: expectedScope, hash: sha256Hex(bytes)});
+    } catch (cause) { if (alive.current) setError(cause instanceof Error ? cause.message : "Article upload unavailable."); }
+    finally { flight.current = false; if (alive.current) setBusy(false); }
+  }
 
   function preserveDraftBeforeExit() {
+    if (!flight.current && !loadedKey && loadError && unloadedDraftExit.current === scope) return true;
     if (flight.current || loadedKey !== storageKey) {
       setError("Wait for the current wallet or draft operation before leaving this editor.");
       return false;
     }
     if (loadError) { setSaveError(loadError); return false; }
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(draft));
-      setSaveError("");
-      return true;
-    } catch {
-      setSaveError("Draft autosave is unavailable. Copy your text before leaving this editor. Saving must succeed before Back can leave this page.");
+    if (savedDraft.current !== JSON.stringify([storageKey, draft])) {
+      setSaveError("Wait for the draft to finish saving before leaving, or copy your text if browser storage is unavailable.");
       return false;
     }
+    return true;
   }
 
   useEffect(() => {
@@ -128,8 +155,28 @@ export function PublishComposer({ address, network, identity, connecting = false
     };
   });
 
-  function leaveWriter() {
-    if (preserveDraftBeforeExit()) onClose();
+  useEffect(() => {
+    const completedSnapshot = completedPublicationExit.current;
+    if (!completedSnapshot) return;
+    completedPublicationExit.current = String();
+    // Register the cleared draft's leave guard before requesting navigation.
+    // Never carry this completion into a different wallet or draft scope.
+    if (!flight.current && savedDraft.current === completedSnapshot &&
+        JSON.stringify([storageKey, draft]) === completedSnapshot) onClose();
+  });
+
+  async function leaveWriter() {
+    if (flight.current || loadedKey !== storageKey || loadError) { preserveDraftBeforeExit(); return; }
+    const expectedScope = scope;
+    flight.current = true; setBusy(true);
+    try {
+      await writePublishDraft(storageKey, draft);
+      if (!alive.current || currentScope.current !== expectedScope) return;
+      savedDraft.current = JSON.stringify([storageKey, draft]); setSaveError("");
+      // The persisted snapshot is complete before the parent checks its guard.
+      flight.current = false; setBusy(false); onClose();
+    } catch { if (alive.current) setSaveError("Draft autosave is unavailable. Copy your text before leaving this editor."); }
+    finally { flight.current = false; if (alive.current) setBusy(false); }
   }
 
   async function prepare(event: FormEvent) {
@@ -143,6 +190,8 @@ export function PublishComposer({ address, network, identity, connecting = false
     const expectedScope = scope;
     flight.current = true; setBusy(true); setError("");
     try {
+      await writePublishDraft(storageKey, draft);
+      if (!alive.current || currentScope.current !== expectedScope) return;
       onFeeRateChange?.(selectedFeeRate);
       const next = await onPrepare(budget.plan, selectedFeeRate);
       if (alive.current && currentScope.current === expectedScope) setPrepared(next);
@@ -162,15 +211,26 @@ export function PublishComposer({ address, network, identity, connecting = false
       setPrepared(undefined);
       await onSign(prepared, assertCurrent);
       assertCurrent();
-      localStorage.removeItem(storageKey);
+      await removePublishDraft(storageKey);
+      assertCurrent();
       const cleared = emptyDraft(sharedFeeRate.current);
+      savedDraft.current = JSON.stringify([storageKey, cleared]);
+      completedPublicationExit.current = savedDraft.current;
       setDraft(cleared);
       setFeeInput(String(cleared.feeRate));
-      onClose();
+      flight.current = false; setBusy(false);
     } catch (cause) {
       if (alive.current) { setPrepared(undefined); setError(cause instanceof Error ? cause.message : "Article signing failed."); }
     } finally { flight.current = false; if (alive.current) setBusy(false); }
   }
+
+  if (loadedKey !== storageKey) return <section className="publish-composer" role="status"><p>{loadError || "Loading your private article draft…"}</p>
+    {loadError && <button type="button" className="secondary" onClick={() => {
+      // Explicit escape only when this editor has never exposed an editable draft.
+      if (flight.current || loadedKey || !loadError) { preserveDraftBeforeExit(); return; }
+      unloadedDraftExit.current = scope;
+      onClose();
+    }}>Back without changing saved drafts</button>}</section>;
 
   if (prepared) return <ActionTransactionReview review={prepared.review} returnFocus={null}
     onCancel={() => { if (!flight.current) setPrepared(undefined); }} onApprove={() => void sign()} />;
@@ -199,8 +259,16 @@ export function PublishComposer({ address, network, identity, connecting = false
         <span>{words.toLocaleString()} words</span>
         <span>{budget.plan ? `${budget.plan.carrierBytes.toLocaleString()} / ${PUBLISH_DATA_CARRIER_LIMIT.toLocaleString()} bytes` : `${PUBLISH_DATA_CARRIER_LIMIT.toLocaleString()} available bytes`}</span>
         <progress aria-label="Aggregate OP_RETURN budget" max={PUBLISH_DATA_CARRIER_LIMIT} value={budget.plan?.carrierBytes ?? 0} />
-        <small>Includes your title, article metadata, text, and all OP_RETURN script overhead.</small>
+        <small>{draft.linkedFile ? "Final article reference transaction only. Confirmed file parts carry the full text." : "Inline transaction budget includes title, metadata, text and script overhead. Larger articles use linked transactions, up to 4,000,000 UTF-8 bytes."}</small>
       </div>
+      {overBudget && budget.plan && <div className="publish-linked-upload"><p>Publish the article text as linked file transactions first. Each part and the linker require local signing and confirmation; then review the final article post. Miner fees apply to each transaction.</p>
+        <button type="button" className="secondary" disabled={busy || !address || network !== "livenet"} onClick={() => void uploadArticle()}>Upload article text in linked parts</button></div>}
+      {upload && upload.scope === scope && <PowcatPublisher key={`${network}:${address}:article:${upload.hash}`} address={address} network={network}
+        defaultFeeRate={draft.feeRate} wallet={upload.wallet} initialFile={upload.file} autoOpen attachLabel="Use verified article text"
+        onClose={() => setUpload(undefined)} onAttachVerified={link => {
+          if (currentScope.current !== upload.scope || link.fileHash !== upload.hash) { setError("The linked file does not match this draft. Recheck the article text."); return; }
+          update({linkedFile: {txid: link.txid, fileHash: link.fileHash}}); setUpload(undefined);
+        }} />}
       <div className="publish-publishing-options"><label>Proof signal<input type="number" aria-label="Article proof signal" min={546} step={1} value={draft.signal} onChange={event => update({ signal: Number(event.target.value) })} disabled={busy} /></label>
         <FeeRateControl feeRate={draft.feeRate} disabled={busy} inputValue={feeInput}
           setFeeRate={value => update({ feeRate: value })} setInputValue={value => {
@@ -214,7 +282,7 @@ export function PublishComposer({ address, network, identity, connecting = false
       <p className="field-note">Your draft stays in this browser. Publishing makes the exact text public and permanent. Proof signal returns to your wallet; the miner fee is spent. {identityId ? "Your selected PowID is published as your shared Boost profile in this transaction." : "Your public byline uses your confirmed Boost profile or address."}</p>
       {saveError ? <p className="field-note bad" role="alert">{saveError}</p> : null}
       {draftNotice ? <p className="field-note" role="status">{draftNotice}</p> : null}
-      {error || overBudget ? <p className="field-note bad" role="alert">{error || "This article exceeds the available transaction budget. Shorten it before publishing."}</p> : null}
+      {error || overBudget || (budget.error && draft.body) ? <p className="field-note bad" role="alert">{error || budget.error || "This text needs linked file transactions before the final article review."}</p> : null}
       {network !== "livenet" ? <p className="field-note">Article publishing uses mainnet. Switch to mainnet to prepare a review.</p> : null}
       <div className="publish-editor-actions"><button className="secondary" onClick={leaveWriter} type="button" disabled={busy}><ArrowLeft size={16} /> Save draft and back</button>
         {!address ? !hasUnisat && isMobileWalletBrowser(navigator) ? <UnisatMobileHandoff /> : <button className="primary" onClick={onConnect} type="button" disabled={connecting}>{connecting ? <RefreshCw className="refresh-spin" size={16} /> : <BookOpen size={16} />} {connecting ? "Connecting…" : "Connect to publish"}</button> : <button className="primary" type="submit" disabled={busy || connecting || !budget.plan || overBudget || network !== "livenet" || loadedKey !== storageKey}>

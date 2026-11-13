@@ -6622,6 +6622,17 @@ The [scoped release controller](deploy/powcat/release.py) composes only the
 API and its two new reader modules with the accepted node overlays, then
 records the verified source inventory and latest VPS archive.
 
+Boost linked media preserves a standard same-transaction Mail pointer attachment,
+then resolves its `powcat1` file on explicit reader request. Publish version 2
+adds a typed `linked-powcat1` article commitment and compact canonical dependency
+evidence; exact bodies are freshly resolved, not duplicated across database
+rows. Both retain the 100,000-byte per-transaction policy. The final linked
+article's PWM attachment uses existing Files/Mail delivery attribution once;
+parts and linker keep their existing fee accounting, and the final post remains
+one Boost article. This does not reinterpret older inline article economics.
+[PUBLISH.md](PUBLISH.md) specifies the versioned contract, source verification,
+wallet-local recovery and four-million-byte logical text limit.
+
 The mail endpoint:
 
 - Scans address history.

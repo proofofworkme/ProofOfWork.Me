@@ -3,8 +3,9 @@ import { TextDecoder } from 'node:util';
 import { decodeCanonicalOpReturnOutput, CANONICAL_PROTOCOL_PREFIXES } from './canonical-op-return.mjs';
 import { CODE_EMPTY_SHA256 } from '../src/shared/protocol/codeRepository.mjs';
 import { compactPowcatSearchSource, linkedFileEvidence, searchPowcatCoverage } from './search-powcat.mjs';
+import { linkedSearchParserState } from './search-linked-publish.mjs';
 
-export const SEARCH_INDEX_VERSION = 'proof-search-v5-powcat-files';
+export const SEARCH_INDEX_VERSION = 'proof-search-v6-linked-publish-content';
 export const SEARCH_MAX_DETAIL_BYTES = 2_000_000;
 export const SEARCH_PROTOCOLS = Object.freeze([...new Set([...CANONICAL_PROTOCOL_PREFIXES.map(prefix=>prefix.slice(0,-1)),'powcat1','unknown','transaction'])]);
 const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -264,11 +265,12 @@ export async function searchSourceWitness(client, network, height) {
     AND NOT EXISTS(SELECT 1 FROM proof_indexer.tx_outputs p WHERE p.network=$1 AND p.txid=r.txid
       AND p.vout=r.vout AND lower(p.scriptpubkey)=r.script)`,[network,height]);
   const linkedFiles = await searchPowcatCoverage(client,network,height);
-  return { linkedFiles, powcatGroups:row.powcat_groups, total:Number(row.total), confirmed:Number(row.confirmed), confirmedRecords:Number(row.confirmed_records), canonicalHash:row.canonical_hash,
+  const linkedParserIdentity=await linkedSearchParserState(client);
+  return { linkedParserIdentity,linkedFiles, powcatGroups:row.powcat_groups, total:Number(row.total), confirmed:Number(row.confirmed), confirmedRecords:Number(row.confirmed_records), canonicalHash:row.canonical_hash,
     volatileHashes:row.volatile_hashes, missingRawTransactions:Number(row.missing_raw_transactions),missingRawCarriers:Number(rawCoverage.rows[0].missing) };
 }
 export function sameCanonicalSearchContent(left, right) {
-  return left?.canonicalHash === right?.canonicalHash && left?.confirmed === right?.confirmed &&
+  return left?.linkedParserIdentity === right?.linkedParserIdentity && left?.canonicalHash === right?.canonicalHash && left?.confirmed === right?.confirmed &&
     left?.confirmedRecords === right?.confirmedRecords && left?.missingRawTransactions === right?.missingRawTransactions &&
     left?.missingRawCarriers === right?.missingRawCarriers;
 }

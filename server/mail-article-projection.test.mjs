@@ -1,3 +1,4 @@
+import { verifiedWorkMailBatchEventIds } from "./db/work-mail-batch-reader.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -80,7 +81,7 @@ function readerRuntime(rows) {
     "mailMemoFromEvent", "addressMailRowPayloads", "mailMessageProjectionRank",
     "mergeMailProjectionMessage", "compareMailMessages", "dedupeMailProjectionMessages",
     "proofIndexAddressMailPayload"], {
-    normalizeEventPayload: value => value, canonicalEventPayload: value => value,
+    normalizeEventPayload: value => value, canonicalEventPayload: value => value, verifiedWorkMailBatchEventIds,
     canonicalMailAttachedCreditsFromRow: () => [], historicalDroppedMailOutboxWitnessesForAddress: () => [],
     bondTagForKind: () => null,
     WORK_AMO_V5_ACTIVATION_HEIGHT: 0, WORK_TOKEN_ID: "c".repeat(64),

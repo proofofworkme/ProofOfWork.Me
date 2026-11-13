@@ -123,6 +123,86 @@ Its reader requests fresh exact-txid Boost detail and renders article text only
 when confirmed metadata, UTF-8 size, SHA-256 and the full body agree. Malformed,
 pending or unavailable evidence does not establish a verified Mail article.
 
+## Linked articles up to 4 MB
+
+The additive version-2 article form carries text in the existing `powcat1`
+linked-file transport. It does not increase the 100,000-byte transaction carrier
+limit, change historical version-1 articles, or add media to the text-only writer.
+The logical limit is **4,000,000 UTF-8 bytes**, not four million characters.
+
+```json
+{"v":2,"title":"Article title","source":"linked-powcat1","size":123456,"sha256":"<exact body hash>","linkerTxid":"<confirmed powcat1 linker txid>"}
+```
+
+The final post contains exactly one standard Mail attachment encoding the
+139-byte `pwm1:cat1:<linkerTxid>:<sha256>` pointer, with no competing inline text,
+subject or attachment. Its metadata commits the logical body; the attachment
+metadata commits the pointer bytes. The file must have MIME `text/plain` and
+valid, nonempty UTF-8 under the existing exact text round-trip rules (without NUL or a leading BOM). Canonical admission verifies every part,
+ordered unique part references, exact bytes/hash/length, active-chain inclusion
+and confirmation order. Missing or reorganized dependencies are unavailable,
+never successful empty articles. Version 2 uses the distinct
+`canonical-linked-powcat1-article-v2` verification marker. A pointer alone cannot
+establish that marker.
+
+New linked uploads and final article preparation, signing and broadcast require
+fresh `publish-linked-capability-v2` readiness from the same mainnet API. The
+operational `PUBLISH_LINKED_WRITES_ENABLED` gate defaults off and is enabled only
+after the complete reader/indexer release is verified. Readiness also binds the
+new indexer's successful canonical checkpoint and source identities. A stale,
+old-version, rolled-back or unavailable response blocks new writes and preserves
+the draft. This readiness switch does not determine protocol validity, change
+replay rules, or prevent reading already confirmed linked articles.
+
+Large drafts first open the existing resumable local-wallet file publisher.
+Every part must confirm before its linker; the linker must be verified before
+the final social transaction. Each transaction has a separate miner fee and
+local signature. Changing article text invalidates its draft linker association;
+changing its title does not alter the exact file bytes. Signed outcomes remain
+unknown until checked, and another publication is blocked while unresolved.
+No application server signs or broadcasts on behalf of the author.
+
+Draft text is stored in wallet/network-scoped IndexedDB so four-megabyte bodies
+do not exceed localStorage's smaller UTF-16 quota. Existing localStorage drafts
+are imported without deleting their original value. Failed reads, writes, quota
+or aborted transactions preserve saved drafts and block an unsafe exit. Version-2
+recovery receipts retain the exact signed final transaction, linker, size, hash,
+identity and payment fields instead of duplicating the body. Restoring a dropped
+task re-fetches and verifies its text; an unavailable file does not erase the
+receipt or authorize a new broadcast. Historical version-1 receipts are unchanged.
+
+The index stores compact dependency evidence rather than copying four-megabyte
+bodies into every event. Article detail and initial HTML re-verify exact bytes
+before rendering. Mail retains its pointer envelope and fetches the verified
+body for display. Existing Mail/Files and Boost payment attribution remains
+nonadditive. The linked article final transaction uses the existing PWM attachment
+delivery lane rather than reclassifying it as a legacy inline memo. File parts
+and the linker retain their existing fee accounting; the final post contributes
+one observed Boost article. No historical ledger rules are changed.
+
+### Full-body Search and operational readiness
+
+Linked articles are searchable across their entire exact body, including phrase
+boundaries between transport parts. Matching, ranking, filters and pagination
+use the existing Search query semantics, not independent per-part searches.
+Derived body bytes are retained once per content hash; generation references
+and parser-qualified positions do not create another economic event. Existing
+confirmed-generation sharing and recursive retention remain in force.
+
+Canonical dependency changes invalidate the Search witness and article
+verification. Rebuilds must requalify those bytes before they become ready.
+Storage or query limits cause explicit unavailability, never truncation or a
+false complete result. Unicode excerpt presentation uses database character
+boundaries; matching is not limited to that excerpt.
+
+The writer requires fresh full-body Search coverage and capacity for the next
+maximum-size article. Operators can qualify this readiness through the existing
+authenticated loopback verifier while keeping writes disabled. That private
+diagnostic never grants write capability. The release must stage a complete
+generation, preserve the serving generation and qualify a version-2-capable
+writer-disabled rollback before any new publication is enabled. See
+[the Search implementation contract](LINKED_PUBLISH_SEARCH.md).
+
 ## Shared people and engagement
 
 Boost, Publish and Computer share confirmed profiles, avatars, banners,

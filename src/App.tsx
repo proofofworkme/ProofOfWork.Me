@@ -8,7 +8,7 @@ import { WorkBatchPanel } from "./features/work-batch/WorkBatchPanel";
 import { assertSameWorkBatchRoutes, assertWorkBatchReady, resolveWorkBatchDraft, type WorkBatchDraft } from "./features/work-batch/workBatchClient.mjs";
 import { buildWorkBatchPayload, WORK_BATCH_REGISTRY_FEE_PROOFS } from "./shared/protocol/workBatch.mjs";
 import { assertNoUnresolvedWorkBatch, WORK_BATCH_RECEIPT_MARKER, WORK_MAIL_BATCH_RECEIPT_MARKER } from "./shared/work/workBatchRecovery";
-import { assertSameMailRoutes, canonicalMailRecipients, planWorkMailAttachment, readWorkMailBatchStatus, workMailAttachmentMode, type WorkMailBatchStatus, type WorkMailAttachmentPlan } from "./features/mail-work-batch/workMailBatchClient.mjs";
+import { assertSameMailRoutes, canonicalMailRecipients, mailWorkBondKind, planWorkMailAttachment, readWorkMailBatchStatus, workMailAttachmentMode, type WorkMailBatchStatus, type WorkMailAttachmentPlan } from "./features/mail-work-batch/workMailBatchClient.mjs";
 import { LedgerChart, type ChartPoint, type ChartSeries } from "./shared/charts/LedgerChart";
 import { APP_ICONS } from "./app/appIcons";
 import type { PagesPublicationDraft, PagesDnsLinkRequest, PagesViewState, PagesBrowserTarget } from "./features/pages/PagesWorkspace";
@@ -315,6 +315,8 @@ import {
   growthSatsToUsdAtYears,
   type GrowthForecastRow,
 } from "./features/growth/growthForecast.mjs";
+import { CURRENT_GROWTH_INPUTS, CURRENT_GROWTH_MODEL_DATE, currentGrowthModelRow } from "./features/growth/currentGrowthModel.mjs";
+import CurrentGrowthDetails from "./features/growth/CurrentGrowthDetails";
 import {
   boostMarketplaceListingsFromItems,
   boostRouteHref,
@@ -24270,6 +24272,13 @@ export default function App() {
     network,
     workAttachmentSpendableAtoms > 0n,
   );
+  const mailBondKind = mailWorkBondKind({ message: memo, parentTxid: replyParentTxid,
+    hasAttachment: Boolean(attachment), socialMode });
+  const mailWorkUsesIndividualTransfers = socialMode || Boolean(mailBondKind);
+  const mailBondWorkAllowed = !mailBondKind || canAttachWorkToBond(
+    mailBondKind === "inception" ? INCEPTION_BOND_UI : INFINITY_BOND_UI, address, network,
+    (workAtomsFromIntegerString(workAttachmentPreviewSpendability?.confirmedBalanceSubatoms) ?? 0n) > 0n,
+  );
   const mailWorkAttachmentRequested = messageWorkAmountAtoms > 0n;
   const mailWorkFloorHydrationRequired = mailWorkAttachmentRequested;
   const mailWorkAdmissionMode = workWriteModeForQuote(workFloorQuote);
@@ -24315,7 +24324,7 @@ export default function App() {
   const workAttachmentBalanceOk =
     !messageWorkAmountInvalid &&
     (messageWorkAmountAtoms <= 0n ||
-      (messageWorkAttachmentAllowed &&
+      (messageWorkAttachmentAllowed && mailBondWorkAllowed &&
         workAttachmentPayloads.length > 0 &&
         workAttachmentTotalAtoms <= workAttachmentSpendableAtoms));
   const mailWorkWalletAuthorityLoading =
@@ -24351,6 +24360,10 @@ export default function App() {
             ? mailWorkAdmissionError
             : mailWorkAdmissionPaused
               ? `WORK transfers are paused${mailWorkPauseReason ? ` (${mailWorkPauseReason})` : ""}. Send will unlock when verified write admission is ready.`
+              : mailWorkAttachmentRequested && mailBondKind && !mailBondWorkAllowed
+                ? mailBondKind === "inception"
+                  ? "A confirmed WORK balance is required to attach WORK to an Inception Bond."
+                  : "WORK bond attachments are enabled only for approved Infinity Bond senders."
               : mailWorkAttachmentPreview.error
                 ? mailWorkAttachmentPreview.error
               : mailWorkPayloadUnavailable
@@ -27612,7 +27625,7 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (network !== "livenet" || socialMode || !mailWorkAttachmentRequested || (!composeOpen && activeFolder !== "drafts")) {
+    if (network !== "livenet" || mailWorkUsesIndividualTransfers || !mailWorkAttachmentRequested || (!composeOpen && activeFolder !== "drafts")) {
       setMailWorkBatchStatus(undefined);
       setMailWorkBatchStatusError("");
       return;
@@ -27631,7 +27644,7 @@ export default function App() {
       }
     }, WORK_FLOOR_LIVE_REFRESH_MS);
     return () => { cancelled = true; stop(); };
-  }, [network, socialMode, mailWorkAttachmentRequested, address, composeOpen, activeFolder, loadWorkMailBatchStatus]);
+  }, [network, mailWorkUsesIndividualTransfers, mailWorkAttachmentRequested, address, composeOpen, activeFolder, loadWorkMailBatchStatus]);
 
   useEffect(() => {
     if (network !== "livenet" || !mailWorkFloorHydrationRequired) {
@@ -31184,7 +31197,7 @@ export default function App() {
   }
 
   async function attachFile(file: File) {
-    if (file.size > MAX_ATTACHMENT_BYTES && !pagesRoute && !pagesPublicationScopeRef.current && !socialMode && network === "livenet") {
+    if (file.size > MAX_ATTACHMENT_BYTES && !pagesRoute && !pagesPublicationScopeRef.current && network === "livenet") {
       if (file.size > POWCAT_MAX_FILE_BYTES) {
         setStatus({ tone: "bad", text: "A linked file can contain up to 4,000,000 bytes." });
       } else {
@@ -34517,8 +34530,8 @@ export default function App() {
 
     try {
       const filePointer = powcatPointerFromAttachment(attachment);
-      if (attachment?.mime === POWCAT_MAIL_MIME && (!filePointer || socialMode || pagesRoute || pagesPublicationScopeRef.current)) {
-        throw new Error("Choose a valid linked file in ordinary Mail.");
+      if (attachment?.mime === POWCAT_MAIL_MIME && (!filePointer || pagesRoute || pagesPublicationScopeRef.current)) {
+        throw new Error("Choose a valid linked file in Mail or Boost.");
       }
       const linkedFile = filePointer ? await readLinkedFile(filePointer.txid, network, filePointer.fileHash) : undefined;
       assertMailContext();
@@ -34648,11 +34661,19 @@ export default function App() {
           return;
         }
 
+        if (mailBondKind && !canAttachWorkToBond(
+          mailBondKind === "inception" ? INCEPTION_BOND_UI : INFINITY_BOND_UI, address, network,
+          (workAtomsFromIntegerString(latestSpendability.confirmedBalanceSubatoms) ?? 0n) > 0n,
+        )) {
+          throw new Error(mailBondKind === "inception"
+            ? "A confirmed WORK balance is required to attach WORK to an Inception Bond."
+            : "WORK bond attachments are enabled only for approved Infinity Bond senders.");
+        }
         preparedWorkAttachmentMode = (await freshWorkWriteMode()).mode;
-        const currentMailStatus = socialMode ? undefined : await loadWorkMailBatchStatus();
+        const currentMailStatus = mailWorkUsesIndividualTransfers ? undefined : await loadWorkMailBatchStatus();
         preparedMailWorkPlan = planWorkMailAttachment({ recipients: resolvedRoutes,
           amountSubatoms: workAttachmentAtoms.toString(), status: currentMailStatus,
-          previousStatus: socialMode ? undefined : mailWorkAttachmentPreview.plan?.status, socialMode,
+          previousStatus: mailWorkUsesIndividualTransfers ? undefined : mailWorkAttachmentPreview.plan?.status, socialMode,
           message: memo, parentTxid: replyParentTxid, hasAttachment: Boolean(attachment),
           legacyPayload: recipientAddress => buildTokenSendPayload(WORK_TOKEN_ID,
             workDecimalFromAtoms(workAttachmentAtoms), recipientAddress, preparedWorkAttachmentMode),
@@ -34822,7 +34843,7 @@ export default function App() {
       const assertCurrentMailWork = async () => {
         if (!preparedWorkAttachmentMode || !preparedMailWorkPlan) return;
         await freshWorkWriteMode(preparedWorkAttachmentMode);
-        if (!socialMode) {
+        if (!mailWorkUsesIndividualTransfers) {
           const current = workMailAttachmentMode(await loadWorkMailBatchStatus(), preparedMailWorkPlan.status);
           if (current.mode !== preparedMailWorkPlan.mode) throw new Error("Mail WORK activation changed. Review the current transaction again.");
         }
@@ -48889,9 +48910,14 @@ function GrowthWorkspace({
   workFloorQuote?: WorkFloorQuote;
   onRefresh: () => void;
 }) {
-  const [forecastVersion, setForecastVersion] = useState<"all-products" | "legacy">("all-products");
-  const modelRows = forecastVersion === "all-products" ? GROWTH_MODEL_ROWS : LEGACY_GROWTH_MODEL_ROWS;
-  const modelChartRows = forecastVersion === "all-products" ? GROWTH_MODEL_CHART_ROWS : LEGACY_GROWTH_MODEL_CHART_ROWS;
+  const [forecastVersion, setForecastVersion] = useState<"all-products" | "october" | "legacy">("all-products");
+  const [scenarioFeeRate, setScenarioFeeRate] = useState(CURRENT_GROWTH_INPUTS.feeRate);
+  const currentRows = useMemo(() => GROWTH_MODEL_INPUTS.horizons.map(horizon => currentGrowthModelRow(horizon, { ...CURRENT_GROWTH_INPUTS, feeRate: scenarioFeeRate })), [scenarioFeeRate]);
+  const currentChartRows = useMemo(() => [growthModelStartRow(), ...currentRows], [currentRows]);
+  const modelRows = forecastVersion === "all-products" ? currentRows : forecastVersion === "october" ? GROWTH_MODEL_ROWS : LEGACY_GROWTH_MODEL_ROWS;
+  const currentOneYear = currentRows.find(row => row.years === 1)!;
+  const currentFiveYear = currentRows.find(row => row.years === 5)!;
+  const modelChartRows = forecastVersion === "all-products" ? currentChartRows : forecastVersion === "october" ? GROWTH_MODEL_CHART_ROWS : LEGACY_GROWTH_MODEL_CHART_ROWS;
   const boostObservation = growthSummary?.boost ?? normalizeBoostGrowth(undefined, undefined);
   const [growthEventPageIndex, setGrowthEventPageIndex] = useState(0);
   const pendingRecords = registryRecords.filter((record) => !record.confirmed);
@@ -49130,9 +49156,10 @@ function GrowthWorkspace({
               <h3>Forecast version</h3>
               <p>
                 {forecastVersion === "all-products"
-                  ? `Shared-lane scenario revised ${GROWTH_MODEL_GENERATED_ON}.`
+                  ? `Current-product scenario revised ${CURRENT_GROWTH_MODEL_DATE}.`
+                  : forecastVersion === "october" ? `Historical shared-lane scenario ${GROWTH_MODEL_GENERATED_ON}.`
                   : `Original baseline generated ${LEGACY_GROWTH_MODEL_GENERATED_ON}.`}{" "}
-                Both use the {GROWTH_MODEL_START_DATE} model origin.
+                All retain the {GROWTH_MODEL_START_DATE} model origin; none is current chain calibration.
               </p>
             </div>
           </div>
@@ -49141,17 +49168,29 @@ function GrowthWorkspace({
             <select
               aria-label="Growth forecast"
               value={forecastVersion}
-              onChange={(event) => setForecastVersion(event.target.value === "legacy" ? "legacy" : "all-products")}
+              onChange={(event) => setForecastVersion(event.target.value === "legacy" ? "legacy" : event.target.value === "october" ? "october" : "all-products")}
             >
-              <option value="all-products">Shared-lane scenario · {GROWTH_MODEL_GENERATED_ON}</option>
+              <option value="all-products">Current products · {CURRENT_GROWTH_MODEL_DATE}</option>
+              <option value="october">October comparison · {GROWTH_MODEL_GENERATED_ON}</option>
               <option value="legacy">Original baseline · {LEGACY_GROWTH_MODEL_GENERATED_ON}</option>
             </select>
           </label>
           <p className="field-note">
             {forecastVersion === "all-products"
-              ? "Shared-lane assumptions using the historical May origin, not a forecast for every product. See Products for coverage gaps. This scenario is not calibrated to current activity and does not revise confirmed network value."
+              ? "Explicit DNS, Permission, Jobs, Publish and Pages workloads, plus a 1% linked 4 MB content scenario. The selected illustrative fee rate materially changes assumed demand. The historical assumption was 0.00001 proof/vB. No rate is a live quote or protocol rule. Confirmed network value is unchanged."
+              : forecastVersion === "october" ? "Preserved October 6 arithmetic. Some products only share older demand assumptions; DNS has no independent workload forecast."
               : "The original forecast remains available for comparison. Boost was not included in this baseline."}
           </p>
+          {forecastVersion === "all-products" ? <label className="growth-forecast-select">
+            <span>Illustrative fee rate · proofs/vB</span>
+            <select aria-label="Growth scenario fee rate" value={String(scenarioFeeRate)} onChange={event => setScenarioFeeRate(Number(event.target.value))}>
+              <option value="0.1">0.1 · lower-fee scenario (default)</option>
+              <option value="0.5">0.5 · scenario</option>
+              <option value="1">1 · scenario</option>
+              <option value="2">2 · scenario</option>
+              <option value="0.00001">0.00001 · historical sensitivity only</option>
+            </select>
+          </label> : null}
           <details className="growth-baseline-details"><summary>Baseline assumptions</summary>
           <dl className="growth-assumption-list">
             <div>
@@ -49173,7 +49212,7 @@ function GrowthWorkspace({
             <div>
               <dt>Scenario fee rate</dt>
               <dd>
-                {GROWTH_MODEL_INPUTS.canonicalFee.toLocaleString("en-US", {
+                {(forecastVersion === "all-products" ? scenarioFeeRate : GROWTH_MODEL_INPUTS.canonicalFee).toLocaleString("en-US", {
                   maximumFractionDigits: 5,
                 })}{" "}
                 sat/vB
@@ -49443,7 +49482,20 @@ function GrowthWorkspace({
             </p>
           </div>
         </div>
-        <GrowthProductCoverage />
+        <GrowthProductCoverage current={forecastVersion === "all-products"} />
+        {forecastVersion === "all-products" ? <section className="growth-events-card" aria-label="Current product scenario activity">
+          <h3>Annual workload at the 12-month model horizon</h3>
+          <p>Illustrative executed activity after shared-carrier allocation and the common capacity cap. These are not live counts and are not extra value buckets.</p>
+          <dl className="growth-assumption-list">
+            <div><dt>Permission records</dt><dd>{growthCompactNumber(currentOneYear.permissionWrites)}</dd></div>
+            <div><dt>Jobs records</dt><dd>{growthCompactNumber(currentOneYear.jobsWrites)}</dd></div>
+            <div><dt>Publish articles</dt><dd>{growthCompactNumber(currentOneYear.publishWrites)}</dd></div>
+            <div><dt>Pages / HTML publications</dt><dd>{growthCompactNumber(currentOneYear.pagesWrites)}</dd></div>
+            <div><dt>Boost media publications</dt><dd>{growthCompactNumber(currentOneYear.boostMediaWrites)}</dd></div>
+            <div><dt>Linked 4 MB publications</dt><dd>{growthCompactNumber(currentOneYear.linkedPublications)}</dd></div>
+            <div><dt>Additional part/linker transactions</dt><dd>{growthCompactNumber(currentOneYear.linkedExtraWrites)}</dd></div>
+          </dl>
+        </section> : null}
         <h3>Measured and modeled activity lanes</h3>
         <p className="field-note">These existing accounting lanes are not a second sum of the product directory. Shared products reuse their underlying lane.</p>
         <div className="growth-product-grid">
@@ -49465,11 +49517,11 @@ function GrowthWorkspace({
             actual={growthSats(actualValue.dnsSats)}
             actualLabel={`${growthUsdForSats(actualValue.dnsSats)} · ${dnsRegistryFlowSats.toLocaleString()} registry proofs · ${dnsRegistrations.toLocaleString()} .pow names · ${dnsActions.toLocaleString()} actions`}
             icon={<Search size={24} />}
-            modelFiveYear={forecastVersion === "all-products" ? "Tracked live" : "Not modeled"}
-            modelFiveYearLabel={forecastVersion === "all-products" ? `${dnsTotalFlowSats.toLocaleString()} total DNS flow proofs` : "Original baseline"}
+            modelFiveYear={forecastVersion === "all-products" ? growthSats(currentFiveYear.dnsSats) : "Not modeled"}
+            modelFiveYearLabel={forecastVersion === "all-products" ? `${growthCompactNumber(currentFiveYear.dnsRegistrations)} scenario registrations` : "Historical comparison"}
             modelLabel="confirmed registry value"
-            modelOneYear={forecastVersion === "all-products" ? "Tracked live" : "Not modeled"}
-            modelOneYearLabel={forecastVersion === "all-products" ? `${actualValue.dnsMarketplaceFeeSats.toLocaleString()} AMO fee proofs · ${dnsMarketplaceActions.toLocaleString()} marketplace actions` : "Original baseline"}
+            modelOneYear={forecastVersion === "all-products" ? growthSats(currentOneYear.dnsSats) : "Not modeled"}
+            modelOneYearLabel={forecastVersion === "all-products" ? `${growthCompactNumber(currentOneYear.dnsRegistrations)} scenario registrations` : "Historical comparison"}
             name="DNS"
             note=".pow registrations and resolver mutations count as DNS registry value; DNS sale-ticket activity is counted in AMO."
           />
@@ -49494,13 +49546,13 @@ function GrowthWorkspace({
               ? `${boostObservation.counts.socialActions.toLocaleString()} social records · ${boostObservation.counts.sales.toLocaleString()} purchase records`
               : "Waiting for complete Boost history at the Growth snapshot"}
             icon={<Zap size={24} />}
-            modelFiveYear={forecastVersion === "all-products" ? growthSats(fiveYear.boostSats) : "Not modeled"}
-            modelFiveYearLabel={forecastVersion === "all-products" ? growthUsdForSats(fiveYear.boostSats) : "Original baseline"}
+            modelFiveYear={forecastVersion !== "legacy" ? growthSats(fiveYear.boostSats) : "Not modeled"}
+            modelFiveYearLabel={forecastVersion !== "legacy" ? growthUsdForSats(fiveYear.boostSats) : "Original baseline"}
             modelLabel="scenario value"
-            modelOneYear={forecastVersion === "all-products" ? growthSats(oneYear.boostSats) : "Not modeled"}
-            modelOneYearLabel={forecastVersion === "all-products" ? growthUsdForSats(oneYear.boostSats) : "Original baseline"}
+            modelOneYear={forecastVersion !== "legacy" ? growthSats(oneYear.boostSats) : "Not modeled"}
+            modelOneYearLabel={forecastVersion !== "legacy" ? growthUsdForSats(oneYear.boostSats) : "Original baseline"}
             name="Boost & Publish"
-            note="Posts, articles, shared social activity, and sale-ticket flow. Articles are part of the existing Boost scenario; shared Mail and WORK value is counted once."
+            note="Posts, articles, shared social activity, and sale-ticket flow. Article bodies and media have their own shared-carrier allocation; social/market flow is shown here without duplicate Mail or WORK value."
           >
             <Suspense
               fallback={<p className="field-note" role="status">Loading verified Boost detail…</p>}
@@ -49518,8 +49570,8 @@ function GrowthWorkspace({
             actual="Confirmed activity"
             actualLabel="Code checkpoint observations"
             icon={<Code2 size={24} />}
-            modelOneYear={forecastVersion === "all-products" ? (oneYear.codeWrites ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 }) : "Not modeled"}
-            modelFiveYear={forecastVersion === "all-products" ? (fiveYear.codeWrites ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 }) : "Not modeled"}
+            modelOneYear={forecastVersion !== "legacy" ? (oneYear.codeWrites ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 }) : "Not modeled"}
+            modelFiveYear={forecastVersion !== "legacy" ? (fiveYear.codeWrites ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 }) : "Not modeled"}
             modelOneYearLabel="shared carrier records"
             modelFiveYearLabel="shared carrier records"
             modelLabel="scenario activity"
@@ -49534,7 +49586,7 @@ function GrowthWorkspace({
           <GrowthProductCard
             actual="Confirmed activity" actualLabel="Jobs checkpoint observations"
             icon={<CheckSquare size={24} />} name="Jobs"
-            modelOneYear="Included in Mail / Files" modelFiveYear="Included in Mail / Files"
+            modelOneYear={forecastVersion === "all-products" ? `${growthCompactNumber(currentOneYear.jobsWrites)} records` : "Included in Mail / Files"} modelFiveYear={forecastVersion === "all-products" ? `${growthCompactNumber(currentFiveYear.jobsWrites)} records` : "Included in Mail / Files"}
             modelOneYearLabel="shared carriers" modelFiveYearLabel="shared carriers" modelLabel="shared activity"
             note="Briefs, proposals, assignments, delivery, and accepted payments use existing Mail/Files carriers. Offered rewards add no value; confirmed payments are attributed once through their existing lane."
           >
@@ -49547,11 +49599,11 @@ function GrowthWorkspace({
             actual={growthSats(actualValue.infinityBondSats)}
             actualLabel={`${growthUsdForSats(actualValue.infinityBondSats)} · ${actualValue.infinityBondFlowSats.toLocaleString()} bond proofs · ${infinityBondActions.toLocaleString()} bond actions`}
             icon={<InfinityIcon size={24} />}
-            modelFiveYear={forecastVersion === "all-products" ? growthSats(fiveYear.infinitySats ?? 0) : "Not modeled"}
-            modelFiveYearLabel={forecastVersion === "all-products" ? growthUsdForSats(fiveYear.infinitySats ?? 0) : "Original baseline"}
+            modelFiveYear={forecastVersion !== "legacy" ? growthSats(fiveYear.infinitySats ?? 0) : "Not modeled"}
+            modelFiveYearLabel={forecastVersion !== "legacy" ? growthUsdForSats(fiveYear.infinitySats ?? 0) : "Original baseline"}
             modelLabel="confirmed bond value"
-            modelOneYear={forecastVersion === "all-products" ? growthSats(oneYear.infinitySats ?? 0) : "Not modeled"}
-            modelOneYearLabel={forecastVersion === "all-products" ? growthUsdForSats(oneYear.infinitySats ?? 0) : "Original baseline"}
+            modelOneYear={forecastVersion !== "legacy" ? growthSats(oneYear.infinitySats ?? 0) : "Not modeled"}
+            modelOneYearLabel={forecastVersion !== "legacy" ? growthUsdForSats(oneYear.infinitySats ?? 0) : "Original baseline"}
             name="Infinity"
             note="Direct POWB bond payments; synthetic issuance and AMO trades are counted through their owning activity."
           />
@@ -49559,11 +49611,11 @@ function GrowthWorkspace({
             actual={growthSats(actualValue.inceptionBondSats)}
             actualLabel={`${growthUsdForSats(actualValue.inceptionBondSats)} · ${actualValue.inceptionBondFlowSats.toLocaleString()} bond proofs · ${inceptionBondActions.toLocaleString()} bond actions`}
             icon={<GitBranch size={24} />}
-            modelFiveYear={forecastVersion === "all-products" ? growthSats(fiveYear.inceptionSats ?? 0) : "Not modeled"}
-            modelFiveYearLabel={forecastVersion === "all-products" ? growthUsdForSats(fiveYear.inceptionSats ?? 0) : "Original baseline"}
+            modelFiveYear={forecastVersion !== "legacy" ? growthSats(fiveYear.inceptionSats ?? 0) : "Not modeled"}
+            modelFiveYearLabel={forecastVersion !== "legacy" ? growthUsdForSats(fiveYear.inceptionSats ?? 0) : "Original baseline"}
             modelLabel="confirmed bond value"
-            modelOneYear={forecastVersion === "all-products" ? growthSats(oneYear.inceptionSats ?? 0) : "Not modeled"}
-            modelOneYearLabel={forecastVersion === "all-products" ? growthUsdForSats(oneYear.inceptionSats ?? 0) : "Original baseline"}
+            modelOneYear={forecastVersion !== "legacy" ? growthSats(oneYear.inceptionSats ?? 0) : "Not modeled"}
+            modelOneYearLabel={forecastVersion !== "legacy" ? growthUsdForSats(oneYear.inceptionSats ?? 0) : "Original baseline"}
             name="Inception"
             note="Direct INCB bond payments. Attached WORK and fixed H-1 issuance are not forecast as extra value."
           />
@@ -49611,11 +49663,11 @@ function GrowthWorkspace({
             actual={growthSats(actualValue.computerEventSats)}
             actualLabel={`${growthUsdForSats(actualValue.computerEventSats)} · ${computerEventFlowSats.toLocaleString()} other confirmed log proofs`}
             icon={<GitBranch size={24} />}
-            modelFiveYear={forecastVersion === "all-products" ? growthSats(fiveYear.computerEventSats ?? 0) : "Not modeled"}
-            modelFiveYearLabel={forecastVersion === "all-products" ? growthUsdForSats(fiveYear.computerEventSats ?? 0) : "Original baseline"}
+            modelFiveYear={forecastVersion !== "legacy" ? growthSats(fiveYear.computerEventSats ?? 0) : "Not modeled"}
+            modelFiveYearLabel={forecastVersion !== "legacy" ? growthUsdForSats(fiveYear.computerEventSats ?? 0) : "Original baseline"}
             modelLabel="confirmed log value"
-            modelOneYear={forecastVersion === "all-products" ? growthSats(oneYear.computerEventSats ?? 0) : "Not modeled"}
-            modelOneYearLabel={forecastVersion === "all-products" ? growthUsdForSats(oneYear.computerEventSats ?? 0) : "Original baseline"}
+            modelOneYear={forecastVersion !== "legacy" ? growthSats(oneYear.computerEventSats ?? 0) : "Not modeled"}
+            modelOneYearLabel={forecastVersion !== "legacy" ? growthUsdForSats(oneYear.computerEventSats ?? 0) : "Original baseline"}
             name="Confirmed Events"
             note="Unbucketed confirmed Log proofs are counted once; product-specific DNS, ID, marketplace, bond, browser, and credit actions stay in their own lanes."
           />
@@ -49635,11 +49687,11 @@ function GrowthWorkspace({
             actual={growthSats(actualValue.walletSats)}
             actualLabel={`${growthUsdForSats(actualValue.walletSats)} · ${walletFlowSats.toLocaleString()} transfer proofs · ${confirmedTokenTransfers.toLocaleString()} transfers`}
             icon={<Wallet size={24} />}
-            modelFiveYear={forecastVersion === "all-products" ? growthSats(fiveYear.walletSats ?? 0) : "Not modeled"}
-            modelFiveYearLabel={forecastVersion === "all-products" ? growthUsdForSats(fiveYear.walletSats ?? 0) : "Original baseline"}
+            modelFiveYear={forecastVersion !== "legacy" ? growthSats(fiveYear.walletSats ?? 0) : "Not modeled"}
+            modelFiveYearLabel={forecastVersion !== "legacy" ? growthUsdForSats(fiveYear.walletSats ?? 0) : "Original baseline"}
             modelLabel="confirmed transfer value"
-            modelOneYear={forecastVersion === "all-products" ? growthSats(oneYear.walletSats ?? 0) : "Not modeled"}
-            modelOneYearLabel={forecastVersion === "all-products" ? growthUsdForSats(oneYear.walletSats ?? 0) : "Original baseline"}
+            modelOneYear={forecastVersion !== "legacy" ? growthSats(oneYear.walletSats ?? 0) : "Not modeled"}
+            modelOneYearLabel={forecastVersion !== "legacy" ? growthUsdForSats(oneYear.walletSats ?? 0) : "Original baseline"}
             name="Wallet"
             note="Standalone Credit and WORK transfer registry fees are modeled here; balances and attached transfers add no duplicate value."
           />
@@ -49650,11 +49702,11 @@ function GrowthWorkspace({
             )} proofs`}
             actualLabel={`${growthUsdForSats(creditNetworkValueSats)} · ${bondProofAmountDisplay(creditEventLiveValueSats, creditEventLiveValueQ8)} live WORK event · ${bondProofAmountDisplay(creditEventFrozenValueSats, creditEventFrozenValueQ8)} frozen WORK event · ${bondProofAmountDisplay(creditMovementLiveValueSats, creditMovementLiveValueQ8)} live WORK mark · ${bondProofAmountDisplay(creditMovementFrozenValueSats, creditMovementFrozenValueQ8)} frozen WORK mark · ${creditSalePaymentFlowSats.toLocaleString()} sale proofs · ${creditProofPaymentFlowSats.toLocaleString()} mint/create proofs · ${creditMinerFeeFlowSats.toLocaleString()} miner proofs`}
             icon={<TrendingUp size={24} />}
-            modelFiveYear={forecastVersion === "all-products" ? `${growthCompactNumber(fiveYear.workMovementWrites ?? 0)} movements` : "Not modeled"}
-            modelFiveYearLabel={forecastVersion === "all-products" ? `${growthSats(fiveYear.workFloorSats ?? 0)} / WORK scenario floor` : "Original baseline"}
+            modelFiveYear={forecastVersion !== "legacy" ? `${growthCompactNumber(fiveYear.workMovementWrites ?? 0)} movements` : "Not modeled"}
+            modelFiveYearLabel={forecastVersion !== "legacy" ? `${growthSats(fiveYear.workFloorSats ?? 0)} / WORK scenario floor` : "Original baseline"}
             modelLabel="live event value"
-            modelOneYear={forecastVersion === "all-products" ? `${growthCompactNumber(oneYear.workMovementWrites ?? 0)} movements` : "Not modeled"}
-            modelOneYearLabel={forecastVersion === "all-products" ? `${growthSats(oneYear.workFloorSats ?? 0)} / WORK scenario floor` : "Original baseline"}
+            modelOneYear={forecastVersion !== "legacy" ? `${growthCompactNumber(oneYear.workMovementWrites ?? 0)} movements` : "Not modeled"}
+            modelOneYearLabel={forecastVersion !== "legacy" ? `${growthSats(oneYear.workFloorSats ?? 0)} / WORK scenario floor` : "Original baseline"}
             name="WORK Credit Value"
             note="Forecast movements share Wallet and AMO activity. The scenario floor is derived from total value; canonical WORK revaluation stays in the confirmed ledger."
           />
@@ -49669,7 +49721,7 @@ function GrowthWorkspace({
         <Suspense
           fallback={<div className="workspace-code-loading" role="status">Loading model detail…</div>}
         >
-          <GrowthModelDetails historical={forecastVersion === "legacy"} />
+          <>{forecastVersion === "all-products" ? <CurrentGrowthDetails feeRate={scenarioFeeRate} /> : <GrowthModelDetails historical={forecastVersion === "legacy"} />}</>
         </Suspense>
         <article>
           <h3>Blockspace constraint</h3>
@@ -60892,12 +60944,12 @@ function ComposePane({
           </span>
         </label>
         <span>
-          {allowLinkedFiles && !socialMode && network === "livenet" ? "One file up to 4 MB. Files over 60,000 bytes use linked transactions." :
+          {allowLinkedFiles && network === "livenet" ? "One file up to 4 MB. Files over 60,000 bytes use linked transactions." :
             `One file, ${formatBytes(MAX_ATTACHMENT_BYTES)} max before encoding.`}
         </span>
       </div>
 
-      {allowLinkedFiles && !socialMode && network === "livenet" && <details>
+      {allowLinkedFiles && network === "livenet" && <details>
         <summary>Attach a linked file from Files</summary>
         <p className="field-note">Publish files up to 4 MB in Files, then enter the linker TXID here.</p>
         <PowcatLink key={`${network}:${sender}:${attachment?.sha256 ?? ""}`} network={network} disabled={busy} onAttach={setAttachment} />
@@ -61019,7 +61071,7 @@ function Reader({
   const article = verifiedMailArticle(message);
   const hasArticleEvidence = Boolean(message.article || message.articleVerification);
   const articleScope = JSON.stringify([message.txid, message.network, message.memo, article]);
-  const [articleRead, setArticleRead] = useState<{ scope: string; status: "loading" | "verified" | "unavailable" }>();
+  const [articleRead, setArticleRead] = useState<{ scope: string; status: "loading" | "verified" | "unavailable"; body?: string }>();
   const [articleRetry, setArticleRetry] = useState(0);
   useEffect(() => {
     if (!article) return;
@@ -61033,10 +61085,10 @@ function Reader({
       const freshArticle = post ? verifiedMailArticle({ ...post, memo: post.articleBody ?? "" }) : null;
       if (payload.complete !== true || payload.mode !== "detail" || !payload.snapshotId || payload.network !== message.network ||
           post?.txid !== message.txid || post.kind !== "boost-post" ||
-          post.articleBody !== message.memo || JSON.stringify(freshArticle) !== JSON.stringify(article)) {
+          (article.v === 1 && post.articleBody !== message.memo) || JSON.stringify(freshArticle) !== JSON.stringify(article)) {
         throw new Error("Article evidence does not match this Mail record.");
       }
-      if (!controller.signal.aborted) setArticleRead({ scope: articleScope, status: "verified" });
+      if (!controller.signal.aborted) setArticleRead({ scope: articleScope, status: "verified", body: post.articleBody });
     }).catch(() => {
       if (!controller.signal.aborted) setArticleRead({ scope: articleScope, status: "unavailable" });
     });
@@ -61303,7 +61355,7 @@ function Reader({
 
       {hasArticleEvidence ? (
         article && articleStatus === "verified" ? (
-          <><p className="field-note">Confirmed article · Exact text verified</p><pre>{message.memo}</pre></>
+          <><p className="field-note">Confirmed article · Exact text verified</p><pre>{articleRead?.body}</pre></>
         ) : article && articleStatus === "loading" ? (
           <p role="status">Verifying article text…</p>
         ) : (

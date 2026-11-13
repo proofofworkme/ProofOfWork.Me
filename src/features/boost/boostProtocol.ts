@@ -48,7 +48,7 @@ export type BoostProfile = {
 export type BoostFeedItem = {
   article?: PublishArticleMetadata;
   articleBody?: string;
-  articleVerification?: "canonical-same-tx-pwm1-message-v1";
+  articleVerification?: "canonical-same-tx-pwm1-message-v1" | "canonical-linked-powcat1-article-v2";
   eventId?: string | number;
   actionCount?: number;
   actionSignalSats?: number;

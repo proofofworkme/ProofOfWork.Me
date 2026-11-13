@@ -29,6 +29,13 @@ Before the new era, a verified inactive status preserves legacy Mail WORK
 attachments for at most ten recipients, with 546 registry proofs per recipient.
 Unknown, incomplete or active-but-unready status fails closed and never selects
 that fallback. Boost, Jobs and bond attachments keep their existing rules.
+Standalone `incb` and `powb` Mail bodies (without a reply, file or Boost marker)
+retain the existing individual `send2`/`send3` WORK attachment route, including
+the era gate, at most ten recipients and 546 registry proofs per recipient.
+They never emit `mailbatch1` and do not depend on ordinary-Mail batch readiness.
+The composer preserves the exact draft and uses the same bond sender eligibility,
+fresh WORK capacity, transaction review and recovery checks as the existing paths.
+Replies and files containing those words remain ordinary Mail, not bond actions.
 
 The wallet signs locally and requires supported signatures committing every
 input and output. It stores a recovery receipt before asynchronous rechecks;

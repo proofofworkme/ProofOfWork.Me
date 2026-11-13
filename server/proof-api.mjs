@@ -1,5 +1,16 @@
 #!/usr/bin/env node
 import { bindCanonicalIncbMintPosition } from "./incb-replay-components.mjs";
+import { verifyLinkedArticle, linkedArticleEvidenceMatches, createCoalescedLinkedFileReader, createLinkedWriterCapabilityEndpoint } from './publish-linked.mjs';
+const linkedWriterCapabilityEndpoint=createLinkedWriterCapabilityEndpoint({
+  readMarker:()=>proofIndexPublishLinkedCapabilityPayload("livenet"),
+  readHealth:()=>healthPayload({force:true}),
+  readSearch:checkpoint=>linkedArticleSearchWriterReadiness("livenet",checkpoint,{
+    verifyCheckpoint:async height=>{const result=await bitcoinRpc("getblockhash",[height]);return result?.ok?result.result:null;},
+  }),
+  searchContract:{model:LINKED_PUBLISH_SEARCH_MODEL,indexVersion:SEARCH_INDEX_VERSION},
+  blockHashAtHeight:async height=>{const result=await bitcoinRpc("getblockhash",[height]);return result?.ok?result.result:null;},
+  enabled:()=>process.env.PUBLISH_LINKED_WRITES_ENABLED === "1",
+});
 import { isReadOnlySnapshotBudgetError } from "./db/read-only-snapshot.mjs";
 import { privateRegistryObservationId, withPrivateRegistryObservation, measurePrivateRegistryPhase, measurePrivateRegistryPhaseSync, createWalletReadCoalescer, walletReadIdentity, measurePrivatePhase, withPrivatePhaseTimings, privateReadContext } from "./wallet-read-observation.mjs";
 const coalesceWalletRead = createWalletReadCoalescer();
@@ -55,7 +66,7 @@ import { boostTextMatchesTag } from "../src/shared/protocol/boostText.mjs";
 import {
   normalizePublishArticleMetadata, publishArticleBodyFromRecords,
   publishArticleMetadataFromPayload,
-  publishArticleDataCarrierBytes, PUBLISH_ARTICLE_VERIFICATION, PUBLISH_DATA_CARRIER_LIMIT,
+  publishArticleDataCarrierBytes, PUBLISH_ARTICLE_VERIFICATION, PUBLISH_DATA_CARRIER_LIMIT, publishArticleVerification,
 } from "../src/shared/protocol/publishArticle.mjs";
 
 import { SCOPED_INCB_ORACLE_PIN, canonicalSummarySnapshotIdOutsideScopedOracle } from "./incb-scoped-oracle.mjs";
@@ -372,7 +383,9 @@ import {
   incbReplaySnapshotFingerprint,
   normalizeIncbReplaySnapshotDescriptor,
 } from "./incb-range-replay-witness.mjs";
-import { searchPayload, searchDetailPayload } from "./db/search-reader.mjs";
+import { searchPayload, searchDetailPayload, linkedArticleSearchWriterReadiness } from "./db/search-reader.mjs";
+import { LINKED_PUBLISH_SEARCH_MODEL } from "./search-linked-publish.mjs";
+import { SEARCH_INDEX_VERSION } from "./search-projection.mjs";
 import { CODE_SNAPSHOT_MODEL, qualifyCodeLogPayload } from "./code-repositories.mjs";
 import { codeLinkedSourceFromCore, codeReferenceSourceFromCore } from "./db/code-reader.mjs";
 import { JOBS_SNAPSHOT_MODEL, jobsLogPayloadHasCandidates, qualifyJobsLogPayload } from "./jobs.mjs";
@@ -400,6 +413,7 @@ import {
   proofIndexCanonicalSummaryLedgerPayload,
   proofIndexScopedIncbIssuanceOraclePayload,
   proofIndexCanonicalStateMetaPayload,
+  proofIndexPublishLinkedCapabilityPayload,
   proofIndexCanonicalTransactionPositionsPayload,
   proofIndexCanonicalTransactionsPayload,
   proofIndexConfirmedValueEventsAfterBlock,
@@ -8925,6 +8939,7 @@ const readPowcatFile = createPowcatReader({ chain: "main", rpc: async (method, p
   if (!reply?.ok) throw Object.assign(new Error("Core RPC unavailable."), { code: reply?.error?.code });
   return reply.result;
 } });
+const readPublishLinkedFile = createCoalescedLinkedFileReader(readPowcatFile);
 
 let activePowcatRequests = 0;
 function admitPowcatRequest(response) {
@@ -56232,9 +56247,13 @@ function boostEventSearchText(item, state, profileState) {
 }
 
 function boostArticleMetadata(item) {
-  if (item?.kind !== "boost-post" || !item?.article ||
-      item.articleVerification !== PUBLISH_ARTICLE_VERIFICATION) return null;
-  return normalizePublishArticleMetadata(item.article);
+  if (item?.kind !== "boost-post" || !item?.article) return null;
+  const article = normalizePublishArticleMetadata(item.article);
+  if (!article || item.articleVerification !== publishArticleVerification(article)) return null;
+  if (article.v === 2 && !linkedArticleEvidenceMatches(article, {
+    txid: item.txid, blockHeight: item.blockHeight, blockHash: item.blockHash, protocolVout: item.protocolVout,
+  }, item.articleDependencies)) return null;
+  return article;
 }
 
 function boostEventPostText(item) {
@@ -56712,7 +56731,8 @@ function boostFeedItemFromEvent(
 
   return {
     actionType,
-    ...(article ? { article, articleVerification: PUBLISH_ARTICLE_VERIFICATION } : {}),
+    ...(article ? { article, articleVerification: publishArticleVerification(article),
+      ...(article.v === 2 ? { articleDependencies: item.articleDependencies } : {}) } : {}),
     eventId: item?.eventId,
     actionCount:
       Number(counter.likes ?? 0) +
@@ -57175,6 +57195,17 @@ async function boostCanonicalArticleBody(network, item) {
   const article = boostArticleMetadata(item);
   if (!article) throw boostProjectionError("Confirmed Publish article is unavailable.", 404);
   const transaction = await boostCanonicalMarketTransaction(network, item);
+  if (article.v === 2) {
+    const linked = await verifyLinkedArticle(transaction, { txid: item.txid, blockHeight: item.blockHeight,
+      blockHash: item.blockHash }, { network, readFile: readPublishLinkedFile, blockHashAtHeight: async height => {
+        const response = await bitcoinRpc("getblockhash", [height]);
+        if (!response?.ok) throw boostProjectionError("Article canonical checkpoint is unavailable.");
+        return response.result;
+      } });
+    if (!linked || JSON.stringify(linked.article) !== JSON.stringify(article))
+      throw boostProjectionError("Linked article disagrees with its confirmed record.");
+    return linked.body;
+  }
   const records = transaction.vout.map((output, voutIndex) => {
     const record = canonicalProtocolCandidateFromOutput(output);
     return record ? { ...record, voutIndex } : null;
@@ -83137,6 +83168,18 @@ async function handleRequest(request, response) {
       return;
     }
 
+    if (url.pathname === "/api/v1/internal/publish-linked-readiness") {
+      if (request.method !== "GET" || !internalVerifierRequestAllowed(request)) {
+        errorResponse(response, 404, "Not found.");
+        return;
+      }
+      const receipt=await linkedWriterCapabilityEndpoint.preactivation({
+        network:url.searchParams.get("network"),fresh:url.searchParams.get("fresh")==="1",
+      });
+      jsonResponse(response, 200, receipt, "no-store");
+      return;
+    }
+
     if (url.pathname === "/api/v1/internal/pending-discovery-hints") {
       if (request.method !== "GET" || !internalVerifierRequestAllowed(request)) {
         errorResponse(response, 404, "Not found.");
@@ -83982,6 +84025,11 @@ async function handleRequest(request, response) {
     }
 
     if (url.pathname === "/api/v1/boost") {
+      if (url.searchParams.get("capabilities") === "linked-articles-v2") {
+        const capability=await linkedWriterCapabilityEndpoint({network,fresh:freshRead});
+        jsonResponse(response,200,capability,"no-store");
+        return;
+      }
       jsonResponse(
         response,
         200,

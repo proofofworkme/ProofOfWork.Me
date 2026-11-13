@@ -13,7 +13,7 @@ import { boostGrowthObservedAction, createBoostGrowthObservation } from "../serv
 import { decimalValueToQ8, formatWorkSubatoms, q8ToCanonicalDecimal, q8ToNumber, WORK_SUBATOM_UNIT_SCALE } from "../server/work-units.mjs";
 
 const { normalizePublishArticleMetadata, publishArticleMetadataFromPayload, publishArticleBodyBytes,
-  publishArticleBodyFromRecords, publishArticleDataCarrierBytes, PUBLISH_ARTICLE_VERIFICATION } = articleProtocol;
+  publishArticleBodyFromRecords, publishArticleDataCarrierBytes, PUBLISH_ARTICLE_VERIFICATION, publishArticleVerification } = articleProtocol;
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 const txid = id => id.toString(16).padStart(64, "0");
 const blockHash = "a".repeat(64);
@@ -182,7 +182,7 @@ function event(id, fields = {}) {
 
 test("article feed uses complete canonical pagination and unchanged engagement counts", async () => {
   const body = "Exact full body.\n";
-  const original = event(1, { article: metadata(body), articleVerification: PUBLISH_ARTICLE_VERIFICATION, payload: payload(metadata(body)) });
+  const original = event(1, { article: metadata(body), articleVerification: PUBLISH_ARTICLE_VERIFICATION, publishArticleVerification, payload: payload(metadata(body)) });
   const like = event(2, { kind: "boost-like", targetTxid: original.txid, authorAddress: "reader" });
   const reboost = event(3, { kind: "boost-reboost", targetTxid: original.txid, authorAddress: "reader" });
   const events = [original, like, reboost, event(4), ...Array.from({ length: 225 }, (_, index) =>
@@ -213,7 +213,7 @@ test("article feed uses complete canonical pagination and unchanged engagement c
 test("article detail reads exact raw txid body and preserves the social activity lane", async () => {
   const body = "  Exact full body.\r\nTrailing whitespace.  \n";
   const tx = transaction(body);
-  const original = event(1, { article: metadata(body), articleVerification: PUBLISH_ARTICLE_VERIFICATION, payload: payload(metadata(body)) });
+  const original = event(1, { article: metadata(body), articleVerification: PUBLISH_ARTICLE_VERIFICATION, publishArticleVerification, payload: payload(metadata(body)) });
   const like = event(2, { kind: "boost-like", authorAddress: "reader", targetTxid: original.txid });
   const read = api([original, like], tx);
   const detail = await read("livenet", new URLSearchParams({ detail: original.txid, activity: "likes" }));
@@ -232,7 +232,7 @@ test("same-transaction selected ID profile gives an article its shared Boost byl
   tx.vout.push(opReturn(profilePayload));
   assert.equal(publishArticleBodyFromRecords(records(tx), metadata(body), hash), body);
   assert.equal(parseArticle(tx, body).valid, true);
-  const original = event(1, { article: metadata(body), articleVerification: PUBLISH_ARTICLE_VERIFICATION,
+  const original = event(1, { article: metadata(body), articleVerification: PUBLISH_ARTICLE_VERIFICATION, publishArticleVerification,
     payload: payload(metadata(body)) });
   const selectedProfile = event(1, { eventId: "2", kind: "boost-profile", protocolVout: 3,
     profileId: "writer", profile: { id: "writer", name: "writer@proofofwork.me" } });

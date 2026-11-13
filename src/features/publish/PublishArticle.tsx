@@ -4,7 +4,7 @@ import { failServerArticleRead, finishServerArticleRead, useVerifiedDocumentMeta
 import { publishArticleMetadata, publishArticleSeoFacts } from "../../app/publishArticleSeo.mjs";
 import { formatDate } from "../../functions";
 import { explorerTxUrl, type BitcoinNetwork } from "../../shared/bitcoin/networks";
-import { PUBLISH_ARTICLE_VERIFICATION, normalizePublishArticleMetadata, publishArticleBodyBytes } from "../../shared/protocol/publishArticle.mjs";
+import { publishArticleVerification, normalizePublishArticleMetadata, publishArticleBodyBytes } from "../../shared/protocol/publishArticle.mjs";
 import { sha256Hex } from "../../shared/utils/encoding";
 import type { BoostFeedItem } from "../boost/boostProtocol";
 import { BoostText } from "../boost/BoostText";
@@ -13,7 +13,7 @@ import { publishHref } from "./publishProtocol";
 
 export function PublishArticleCard({ item, network, embedded = false }: { item: BoostFeedItem; network: BitcoinNetwork; embedded?: boolean }) {
   const article = normalizePublishArticleMetadata(item.article);
-  if (!article || item.articleVerification !== PUBLISH_ARTICLE_VERIFICATION || !item.confirmed) return null;
+  if (!article || item.articleVerification !== publishArticleVerification(article) || !item.confirmed) return null;
   return <a className="publish-article-card" href={publishHref({ txid: item.txid, network, embedded })}>
     <span className="publish-card-label"><BookOpen size={14} /> Article · Confirmed</span>
     <h2>{article.title}</h2>
@@ -25,7 +25,7 @@ export function PublishArticleCard({ item, network, embedded = false }: { item: 
 export function PublishArticleText({ item, network, onVerified }: { item: BoostFeedItem; network: BitcoinNetwork; onVerified?: (verified: boolean) => void }) {
   const article = normalizePublishArticleMetadata(item.article);
   const bytes = publishArticleBodyBytes(item.articleBody);
-  const verified = article && item.confirmed && item.articleVerification === PUBLISH_ARTICLE_VERIFICATION &&
+  const verified = article && item.confirmed && item.articleVerification === publishArticleVerification(article) &&
     bytes && bytes.length === article.size && sha256Hex(bytes) === article.sha256;
   const facts = verified ? publishArticleSeoFacts({ ...article, txid: item.txid, body: item.articleBody!,
     authorAddress: item.authorAddress, authorDisplay: item.authorDisplay || item.authorAddress,

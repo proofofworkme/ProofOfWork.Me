@@ -1290,6 +1290,10 @@ function isolatedFunction(path, name, globals = {}) {
       : "";
   };
   const context = vm.createContext({
+    // Block-order fixtures use synthetic short hashes. The real metadata writer
+    // and exact source/checkpoint binding are covered by publish-linked-capability.
+    recordPublishLinkedCapability: async () => {},
+
     canonicalSummaryPayloadHash, readCanonicalSummaryStream, SUMMARY_STREAM_TYPE,
     isWorkTransferProjectionReference, prepareWorkTransferProjection, readWorkTransferProjection, storeWorkTransferProjection, workTransferProjectionSqlEligibility,
     structuredClone,
@@ -35042,6 +35046,7 @@ check("block verification completes before the atomic block transaction", async 
   const events = [];
   const txid = "4".repeat(64);
   let failVolatileCleanup = false;
+  let failCapability = false;
   const backfillBlockScanSource = isolatedFunction(
     BACKFILL_PATH,
     "backfillBlockScanSource",
@@ -35053,6 +35058,13 @@ check("block verification completes before the atomic block transaction", async 
       CANONICAL_FAULT_META_KEY: "canonical:fault",
       CANONICAL_REBUILD_META_KEY: "canonical:rebuild",
       NETWORK: "livenet",
+      recordPublishLinkedCapability: async (_client, checkpoint) => {
+        assert.equal(checkpoint.network,"livenet");
+        assert.equal(checkpoint.height,101);
+        assert.equal(checkpoint.blockHash,"h101");
+        events.push("linked-capability");
+        if(failCapability) throw new Error("linked capability failed");
+      },
       canonicalRebuildCheckpointValue: () => null,
       proofIndexerMetaValue: async () => null,
       bitcoinRpc: async (method, params = []) => {
@@ -35144,6 +35156,7 @@ check("block verification completes before the atomic block transaction", async 
     "balances",
     "checkpoint",
     "lock:" + JOBS_DISCOVERY_META_KEY,
+    "linked-capability",
     "COMMIT",
   ]);
 
@@ -35163,6 +35176,14 @@ check("block verification completes before the atomic block transaction", async 
     "volatile-cleanup",
     "ROLLBACK",
   ]);
+  events.length=0;
+  failVolatileCleanup=false;
+  failCapability=true;
+  await rejection(backfillBlockScanSource(client,{label:"block-scan"}),
+    error=>/linked capability failed/.test(error.message));
+  assert.ok(events.includes("linked-capability"));
+  assert.equal(events.at(-1),"ROLLBACK");
+  assert.equal(events.includes("COMMIT"),false);
 });
 
 check("active range replay regenerates deleted exact H-1 checkpoints before verification", async () => {

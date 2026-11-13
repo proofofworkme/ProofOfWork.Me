@@ -1,4 +1,6 @@
+import {confirmedBase,effectiveDocuments} from '../search-generation-sharing.mjs';
 import { createProofIndexPool } from './postgres.mjs';
+import { linkedPublishSearchCoverage, linkedSearchCapacity, LINKED_SEARCH_MAX_POSTINGS_BYTES, LINKED_PUBLISH_SEARCH_MODEL } from '../search-linked-publish.mjs';
 import { compactPowcatSearchSource, qualifiedPowcatSearchCoverage } from '../search-powcat.mjs';
 import {
   SEARCH_INDEX_VERSION, SEARCH_MAX_DETAIL_BYTES, SEARCH_SOURCES_SQL, SEARCH_PROTOCOLS,
@@ -58,16 +60,20 @@ async function readyRun(client,network,options,requestedRunId='') {
   if (block.rowCount!==1) throw searchError('Search indexed block is no longer canonical.');
   const witness=await searchSourceWitness(client,network,run.checkpoint_height);
   if (witness.missingRawTransactions || witness.missingRawCarriers || !sameCanonicalSearchContent(witness,run.source_witness)) throw searchError('Search coverage changed or raw transaction evidence is incomplete. Refresh after reindexing.',503,'SEARCH_COVERAGE_CHANGED');
-  return { run,witness };
+  const base=await confirmedBase(client,network,run);
+  if(base.run_id!==run.run_id)await verifySearchCheckpoint(options.verifyCheckpoint,network,base.checkpoint_height,base.checkpoint_hash);
+  const linkedCoverage=await linkedPublishSearchCoverage(client,network,base.run_id);
+  if(!linkedCoverage.ready)throw searchError('Linked article Search coverage is incomplete. Retry after indexing completes.',503,'SEARCH_LINKED_COVERAGE_CHANGED');
+  return { run,witness,base,linkedCoverage };
 }
-async function coverageForRun(client,network,run,witness) {
-  const result=await client.query(`SELECT protocol,kind,status,valid,record->'source'->>'type' AS type,count(*)::integer AS count,
+async function coverageForRun(client,network,run,witness,base,linkedCoverage) {
+  const result=await client.query(`${effectiveDocuments(2,4)} SELECT protocol,kind,status,valid,record->'source'->>'type' AS type,count(*)::integer AS count,
       count(*) FILTER (WHERE protocol='powcat1' AND canonical AND status='confirmed' AND record->'source'->>'type'='event')::integer AS typed_count,
       encode(sha256(convert_to(string_agg(id || ':' || source_hash,E'\\n' ORDER BY id COLLATE "C")
         FILTER (WHERE protocol='powcat1' AND canonical AND status='confirmed' AND record->'source'->>'type'='event'),'UTF8')),'hex') AS typed_hash
-    FROM proof_indexer.search_documents WHERE network=$1 AND run_id=$2
+    FROM search_effective_documents WHERE network=$1 AND run_id=$2
       AND (status='confirmed' OR source_hash=$3::jsonb->>id)
-    GROUP BY protocol,kind,status,valid,record->'source'->>'type'`,[network,run.run_id,JSON.stringify(witness.volatileHashes)]);
+    GROUP BY protocol,kind,status,valid,record->'source'->>'type'`,[network,run.run_id,JSON.stringify(witness.volatileHashes),base.run_id]);
   const byProtocol=Object.fromEntries(SEARCH_PROTOCOLS.map(protocol=>[protocol,{total:0,confirmed:0,valid:0,invalid:0}])),sourceCounts={ events:0,carriers:0,files:0,transactions:0,scripts:0,confirmed:0,pending:0,dropped:0,orphaned:0 },kinds=new Set();
   for (const row of result.rows) {
     const stats=byProtocol[row.protocol]??={ total:0,confirmed:0,valid:0,invalid:0 };
@@ -81,7 +87,7 @@ async function coverageForRun(client,network,run,witness) {
     kinds.add(row.kind);
   }
   const linkedFiles = qualifiedPowcatSearchCoverage(run.source_witness,witness,result.rows);
-  return { ready:true,linkedFiles,checkpointHeight:Number(run.checkpoint_height),checkpointHash:run.checkpoint_hash,indexVersion:SEARCH_INDEX_VERSION,
+  return { ready:true,linkedFiles,linkedArticles:linkedCoverage,checkpointHeight:Number(run.checkpoint_height),checkpointHash:run.checkpoint_hash,indexVersion:SEARCH_INDEX_VERSION,
     lastIndexedAt:new Date(run.completed_at).toISOString(),sourceCounts,byProtocol,kinds:[...kinds].sort(),
     witnessSha256:witness.canonicalHash,missingRawTransactions:0,missingRawCarriers:0,
     pendingVisibility:'best-effort',volatileObservationAt:new Date(run.completed_at).toISOString(),
@@ -107,10 +113,10 @@ async function readTransaction(options,callback) {
 export async function searchPayload(network,params,options={}) {
   const request=normalizeSearchRequest(network,params),cursor=decodeSearchCursor(request.cursor),queryHash=searchQueryFingerprint(request);
   return readTransaction(options,async client=>{
-    const {run,witness}=await readyRun(client,network,options,cursor?.runId??'');
+    const {run,witness,base,linkedCoverage}=await readyRun(client,network,options,cursor?.runId??'');
     const paginationHash=request.status==='confirmed'?witness.canonicalHash:searchSha256(witness.canonicalHash+JSON.stringify(witness.volatileHashes));
     if (cursor && (cursor.queryHash!==queryHash || cursor.sourceHash!==paginationHash || cursor.checkpointHash!==run.checkpoint_hash)) throw searchError('Search query or checkpoint changed. Start from the first page.',409,'SEARCH_CURSOR_CHANGED');
-    const values=[network,run.run_id,request.q,likeLiteral(request.q),JSON.stringify(witness.volatileHashes)];
+    const values=[network,run.run_id,request.q,likeLiteral(request.q),JSON.stringify(witness.volatileHashes),base.run_id];
     // The canonical witness is checked in this same repeatable-read snapshot.
     // Volatile rows must still match their current observed source hash.
     const filters=['d.network=$1','d.run_id=$2',"(d.status='confirmed' OR d.source_hash=$5::jsonb->>d.id)"];
@@ -122,19 +128,32 @@ export async function searchPayload(network,params,options={}) {
     if (request.validity!=='all') filters.push(`d.valid=${request.validity==='valid'?'true':'false'}`);
     if (request.protocol) filters.push(`d.protocol=${add(request.protocol)}`);
     if (request.kind) filters.push(`d.kind=${add(request.kind)}`);
-    filters.push("($3::text='' OR d.search_vector @@ websearch_to_tsquery('simple'::regconfig,$3) OR lower(d.search_text) LIKE $4 ESCAPE E'\\\\')");
-    const where=filters.join(' AND '),rank="ts_rank_cd(d.search_vector,websearch_to_tsquery('simple'::regconfig,$3))";
+
+    const linked=linkedCoverage.articles>0;
+    const from=linked ? `search_effective_documents d
+      LEFT JOIN proof_indexer.search_linked_refs lr ON lr.network=d.network AND lr.run_id=$6::text AND lr.id=d.id
+      LEFT JOIN proof_indexer.search_linked_contents lc ON lc.network=lr.network AND lc.content_hash=lr.content_hash
+      LEFT JOIN proof_indexer.search_linked_postings lp ON lp.network=lr.network AND lp.content_hash=lr.content_hash AND lp.parser_identity=lr.parser_identity
+      CROSS JOIN LATERAL (SELECT CASE WHEN lr.id IS NULL THEN d.search_vector ELSE
+        proof_indexer.search_linked_query_vector(lp.postings,d.search_vector,lr.prefix_tokens,websearch_to_tsquery('simple'::regconfig,$3)) END AS value) lv`
+      : 'search_effective_documents d';
+    const vector=linked?'lv.value':'d.search_vector';
+    const text=linked?"CASE WHEN lr.id IS NULL THEN d.search_text ELSE d.search_text||E'\\n'||lc.body END":'d.search_text';
+    filters.push(`($3::text='' OR ${vector} @@ websearch_to_tsquery('simple'::regconfig,$3) OR lower(${text}) LIKE $4 ESCAPE E'\\\\')`);
+
+    const where=filters.join(' AND '),rank=`ts_rank_cd(${vector},websearch_to_tsquery('simple'::regconfig,$3))`;
     const position='d.block_height DESC NULLS LAST,d.block_index DESC NULLS LAST,d.vout DESC NULLS LAST,d.ordinal DESC NULLS LAST,d.id COLLATE "C"';
     const ordering=request.sort==='proofs'?`d.amount_proofs DESC,${position}`:request.sort==='oldest'?'d.block_height ASC NULLS LAST,d.block_index ASC NULLS LAST,d.vout ASC NULLS LAST,d.ordinal ASC NULLS LAST,d.id COLLATE "C"':request.sort==='relevance'&&request.q?`${rank} DESC,${position}`:position;
-    const totalResult=await client.query(`SELECT count(*)::integer AS total FROM proof_indexer.search_documents d WHERE ${where}`,values);
+    const totalResult=await client.query(`${effectiveDocuments(2,6)} SELECT count(*)::integer AS total FROM ${from} WHERE ${where}`,values);
     const total=Number(totalResult.rows[0].total),offset=cursor?.offset??0;
     if (cursor && offset>=total) throw searchError('Search cursor is outside its result inventory.',409,'SEARCH_CURSOR_CHANGED');
     const limitParam=add(request.limit),offsetParam=add(offset);
-    const result=await client.query(`SELECT d.record,d.search_text FROM proof_indexer.search_documents d
-      WHERE ${where} ORDER BY ${ordering} LIMIT ${limitParam} OFFSET ${offsetParam}`,values);
-    const results=result.rows.map(row=>({...row.record,excerpt:searchExcerpt(row.search_text,request.q)}));
+    const result=await client.query(`${effectiveDocuments(2,6)} SELECT d.record,${linked?"CASE WHEN lr.id IS NULL THEN d.search_text ELSE NULL END":"d.search_text"} AS search_text,
+        ${linked?"CASE WHEN lr.id IS NOT NULL THEN proof_indexer.search_linked_excerpt(d.search_text,lc.body,$3) ELSE NULL END":"NULL::text"} AS linked_excerpt
+      FROM ${from} WHERE ${where} ORDER BY ${ordering} LIMIT ${limitParam} OFFSET ${offsetParam}`,values);
+    const results=result.rows.map(row=>({...row.record,excerpt:row.linked_excerpt??searchExcerpt(row.search_text,request.q)}));
     const end=offset+results.length,hasMore=end<total;
-    const coverage=await coverageForRun(client,network,run,witness);
+    const coverage=await coverageForRun(client,network,run,witness,base,linkedCoverage);
     await verifySearchCheckpoint(options.verifyCheckpoint,network,run.checkpoint_height,run.checkpoint_hash);
     return {network,q:request.q,results,pagination:{limit:request.limit,returned:results.length,total,hasMore,
       nextCursor:hasMore?encodeSearchCursor({runId:run.run_id,queryHash,sourceHash:paginationHash,checkpointHash:run.checkpoint_hash,offset:end}):''},coverage};
@@ -143,16 +162,30 @@ export async function searchPayload(network,params,options={}) {
 export async function searchDetailPayload(network,id,params,options={}) {
   if (typeof id!=='string' || id.length>200 || !/^(?:event:[1-9]\d*|(?:carrier|script|file):[0-9a-f]{64}:[0-9]+(?::[0-9]+)?|transaction:[0-9a-f]{64})$/u.test(id)) throw searchError('Invalid Search record identity.',400,'SEARCH_QUERY_INVALID');
   return readTransaction(options,async client=>{
-    const {run,witness}=await readyRun(client,network,options);
-    const result=await client.query(`${SEARCH_SOURCES_SQL} SELECT d.record,d.payload,d.raw_payload,d.evidence,d.search_text,s.source
-      FROM proof_indexer.search_documents d JOIN sources s ON s.id=d.id AND s.source_hash=d.source_hash
-      WHERE d.network=$1 AND d.run_id=$3 AND d.id=$4`,[network,run.checkpoint_height,run.run_id,id]);
+    const {run,witness,base,linkedCoverage}=await readyRun(client,network,options);
+    const result=await client.query(`${effectiveDocuments(3,5)}, ${SEARCH_SOURCES_SQL.replace(/^\s*WITH /u,'')} SELECT d.record,d.payload,d.raw_payload,d.evidence,d.search_text,s.source
+      FROM search_effective_documents d JOIN sources s ON s.id=d.id AND s.source_hash=d.source_hash
+      WHERE d.network=$1 AND d.run_id=$3 AND d.id=$4`,[network,run.checkpoint_height,run.run_id,id,base.run_id]);
     if (result.rowCount!==1) throw searchError('Search record is unavailable at the verified checkpoint.',404,'SEARCH_RECORD_UNAVAILABLE');
-    const row=result.rows[0],coverage=await coverageForRun(client,network,run,witness);
+    const row=result.rows[0],coverage=await coverageForRun(client,network,run,witness,base,linkedCoverage);
     await verifySearchCheckpoint(options.verifyCheckpoint,network,run.checkpoint_height,run.checkpoint_hash);
     const output={ network,record:{...row.record,excerpt:searchExcerpt(row.search_text,'')},payload:row.payload,rawPayload:row.raw_payload,
       evidence:{...row.evidence,checkpointHeight:coverage.checkpointHeight,checkpointHash:coverage.checkpointHash,source:compactPowcatSearchSource(row.source)},coverage };
     if (Buffer.byteLength(JSON.stringify(output),'utf8')>SEARCH_MAX_DETAIL_BYTES) throw searchError('This evidence exceeds the bounded Search detail envelope. Inspect its source transaction.',413,'SEARCH_DETAIL_TOO_LARGE');
     return output;
+  });
+}
+
+export async function linkedArticleSearchWriterReadiness(network,checkpoint,options={}) {
+  return readTransaction(options,async client=>{
+    const lock=await client.query("SELECT pg_try_advisory_xact_lock_shared(hashtext('proof-search-linked-maintenance-v1')) AS locked");
+    if(!lock.rows[0]?.locked)throw searchError('Linked Search maintenance is active.',503,'SEARCH_LINKED_MAINTENANCE');
+    const {run,linkedCoverage}=await readyRun(client,network,options);
+    if(Number(run.checkpoint_height)!==checkpoint?.height || run.checkpoint_hash!==checkpoint?.hash)
+      throw searchError('Linked article Search has not reached the current canonical checkpoint.',503,'SEARCH_LINKED_NOT_CURRENT');
+    const storage=await linkedSearchCapacity(client,{...options.capacityOptions,
+      reserveBytes:LINKED_SEARCH_MAX_POSTINGS_BYTES+4_000_000});
+    return {model:LINKED_PUBLISH_SEARCH_MODEL,ready:true,checkpoint:{height:Number(run.checkpoint_height),hash:run.checkpoint_hash},
+      indexVersion:SEARCH_INDEX_VERSION,parserIdentity:linkedCoverage.parserIdentity,fullBodySearch:true,storage};
   });
 }

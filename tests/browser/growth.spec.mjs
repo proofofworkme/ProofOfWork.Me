@@ -59,7 +59,7 @@ function growthFixture(mode = "ready") {
   return payload;
 }
 
-async function openGrowth(page, mode = "ready") {
+async function openGrowth(page, mode = "ready", fromComputer = false) {
   await page.route("**/api/v1/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     const payload = growthFixture(mode);
@@ -70,7 +70,13 @@ async function openGrowth(page, mode = "ready") {
       : { items: [], activity: [], records: [], tokens: [], indexedAt: NOW };
     await route.fulfill({ contentType: "application/json", body: JSON.stringify(json) });
   });
-  await page.goto("/?growth=1");
+  if (fromComputer) {
+    await page.goto("/");
+    await page.getByRole("button",{name:"Insights",exact:true}).click();
+    const growthLink=page.getByRole("menuitem",{name:/^Growth\b/});
+    await expect(growthLink).toHaveAttribute("href","/?growth=1");
+    await growthLink.click();
+  } else await page.goto("/?growth=1");
   await expect(page.getByRole("combobox", { name: "Growth forecast" })).toBeVisible({ timeout: 45_000 });
 }
 
@@ -178,3 +184,65 @@ for (const width of [320, 768, 1440]) {
     expect(widths.document).toBeLessThanOrEqual(widths.viewport + 1);
   });
 }
+
+test("Current product scenario exposes scope and keeps October comparison unchanged", async ({ page }) => {
+  await openGrowth(page);
+  const select=page.getByRole("combobox",{name:"Growth forecast"});
+  await expect(select).toHaveValue("all-products");
+  await expect(select.locator("option:checked")).toHaveText("Current products · 2026-11-12");
+  await expect(page.locator(".growth-model-card")).toContainText("historical assumption was 0.00001");
+  const real=page.locator(".growth-stat-grid > div").first();
+  const before=await real.innerText();
+  const model=page.locator(".growth-stat-grid > div").nth(1);
+  const beforeModel=await model.innerText();
+  await page.getByRole("combobox",{name:"Growth scenario fee rate"}).selectOption("2");
+  await expect(model).not.toHaveText(beforeModel,{useInnerText:true});
+  await expect(real).toHaveText(before,{useInnerText:true});
+  await page.getByRole("combobox",{name:"Growth scenario fee rate"}).selectOption("0.1");
+  await expect(model).toHaveText(beforeModel,{useInnerText:true});
+
+  const activity=page.getByRole("region",{name:"Current product scenario activity"});
+  await expect(activity).toContainText("Permission records");
+  await expect(activity).toContainText("Linked 4 MB publications");
+  const dns=page.locator(".growth-product-card").filter({has:page.getByRole("heading",{name:"DNS",exact:true})});
+  await expect(dns).not.toContainText("Not modeled");
+  await select.selectOption("october");
+  await expect(activity).toHaveCount(0);
+  await expect(dns).toContainText("Not modeled");
+  await expect(real).toHaveText(before,{useInnerText:true});
+  await select.selectOption("legacy");
+  await expect(real).toHaveText(before,{useInnerText:true});
+  await select.selectOption("all-products");
+  await expect(activity).toBeVisible();
+  await expect(real).toHaveText(before,{useInnerText:true});
+});
+
+for(const theme of ["light","dark"]) {
+  test(`Current Growth assumptions and selectors fit 320px short viewport in ${theme}`,async({page},testInfo)=>{
+    await page.addInitScript(value=>localStorage.setItem("proofofwork-me-appearance-v1",value),theme);
+    await page.setViewportSize({width:320,height:480});
+    await openGrowth(page);
+    await page.getByText("Usage, value, and blockspace assumptions",{exact:true}).click();
+    await page.getByText("Where each app enters the model",{exact:true}).click();
+    await expect(page.locator(".growth-model-details")).toContainText("44 transactions");
+    await expect(page.locator(".growth-model-details")).toContainText("linked delivery moves to Files");
+    const width=await page.evaluate(()=>({viewport:innerWidth,document:document.documentElement.scrollWidth}));
+    expect(width.document).toBeLessThanOrEqual(width.viewport+1);
+    await page.locator(".growth-model-card").screenshot({path:testInfo.outputPath(`current-growth-${theme}.png`)});
+  });
+}
+
+
+test("Computer links to current Growth and preserves fee sensitivity without wallet signing", async ({page}) => {
+  await openGrowth(page,"ready",true);
+  await expect(page.getByRole("combobox",{name:"Growth forecast"})).toHaveValue("all-products");
+  const real=page.locator(".growth-stat-grid > div").first();
+  const before=await real.innerText();
+  await page.getByRole("combobox",{name:"Growth scenario fee rate"}).selectOption("0.5");
+  await expect(real).toHaveText(before,{useInnerText:true});
+  await page.getByRole("combobox",{name:"Growth forecast"}).selectOption("october");
+  await expect(page.getByRole("combobox",{name:"Growth scenario fee rate"})).toHaveCount(0);
+  await page.getByRole("combobox",{name:"Growth forecast"}).selectOption("all-products");
+  await expect(page.getByRole("combobox",{name:"Growth scenario fee rate"})).toHaveValue("0.5");
+  await expect(real).toHaveText(before,{useInnerText:true});
+});

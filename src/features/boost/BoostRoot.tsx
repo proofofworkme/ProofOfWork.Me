@@ -1,3 +1,11 @@
+import { assertLinkedPublishCapability } from "../../shared/protocol/publishLinkedCapability.mjs";
+import { sha256Hex } from "../../shared/utils/encoding";
+import { BoostLinkedMedia } from "./BoostLinkedMedia";
+import { POWCAT_MAIL_MIME, buildPowcatMailAttachment, powcatPointerFromAttachment } from "../../shared/protocol/powcatMail.mjs";
+import { POWCAT_MAX_FILE_BYTES } from "../../shared/protocol/powcat1.mjs";
+import { PowcatPublisher } from "../powcat/PowcatPublisher";
+import { PowcatLink, readLinkedFile, readVerifiedPowcatBytes } from "../powcat/PowcatLink";
+import type { PublishWallet } from "../powcat/powcatPublish";
 import { buildBoostTip, buildBoostWorkTip, boostTipAmount, BOOST_TIP_DEFAULT_SATS } from "../../shared/protocol/boostTip.mjs";
 import { failServerArticleRead, finishServerArticleRead } from "../../app/documentMetadata";
 import {
@@ -594,6 +602,7 @@ function BoostMedia({ item, network }: { item: BoostFeedItem; network: BitcoinNe
   }, [item.boostTxid, item.media?.url, item.media?.mime, item.media?.name,
     item.media?.sha256, item.media?.size, item.media?.source, item.txid, network]);
 
+  if (item.media?.mime === POWCAT_MAIL_MIME) return <BoostLinkedMedia item={item} network={network} />;
   if (!mediaUrl || mediaError) return null;
   return item.media?.mime?.toLowerCase().startsWith("video/") ? (
     <video className="boost-post-media" controls preload="metadata" src={mediaUrl} />
@@ -672,7 +681,7 @@ function ReboostedPost({
           {post.article ? <PublishArticleCard item={post} network={network} /> :
             post.text ? <p className="boost-post-text"><BoostText text={post.text} /></p> : null}
           {!post.article && post.text ? <YouTubeLinkCards text={post.text} /> : null}
-          {post.media?.mime && /^(?:image|video)\//iu.test(post.media.mime) ? (
+          {post.media?.mime && (post.media.mime === POWCAT_MAIL_MIME || /^(?:image|video)\//iu.test(post.media.mime)) ? (
             <BoostMedia item={post} network={network} />
           ) : null}
           <div className="boost-reboosted-signal">
@@ -887,7 +896,7 @@ function BoostPost({
               item.text ? <p className="boost-post-text"><BoostText text={item.text} /></p> : null}
             {!item.article && item.text ? <YouTubeLinkCards text={item.text} /> : null}
 
-            {item.media?.mime && /^(?:image|video)\//iu.test(item.media.mime) ? (
+            {item.media?.mime && (item.media.mime === POWCAT_MAIL_MIME || /^(?:image|video)\//iu.test(item.media.mime)) ? (
               <BoostMedia item={item} network={network} />
             ) : null}
           </>
@@ -1095,10 +1104,11 @@ export default function BoostRoot({
   const [publishWriterOpen, setPublishWriterOpen] = useState(() => isPublish && isPublishWriterLocation());
   const [publishWriterReturn, setPublishWriterReturn] = useState(() => readPublishWriterReturn(window.history.state));
   const publishWriterLeaveGuard = useRef<(() => boolean) | undefined>(undefined);
+  const publishRestoreSession = useRef(0);
   const publishWriterOpenRef = useRef(publishWriterOpen);
   publishWriterOpenRef.current = publishWriterOpen;
   const [publishRestoreDraft, setPublishRestoreDraft] = useState<{ address: string; network: BitcoinNetwork;
-    draft: { title: string; body: string; signal: number; feeRate: number } }>();
+    draft: { title: string; body: string; signal: number; feeRate: number; linkedFile?: {txid: string; fileHash: string} } }>();
   const [publishReceipts, setPublishReceipts] = useState<ActionReceipt[]>([]);
   const [publishRecoveryError, setPublishRecoveryError] = useState("");
   const [publishRecoveryChecking, setPublishRecoveryChecking] = useState(false);
@@ -1169,6 +1179,10 @@ export default function BoostRoot({
   const [postWorkSpendable, setPostWorkSpendable] = useState<bigint | undefined>();
   const [postWorkStatus, setPostWorkStatus] = useState("");
   const [postAttachment, setPostAttachment] = useState<MailAttachment | undefined>();
+  const [linkedUpload, setLinkedUpload] = useState<{file: File; hash: string; wallet: PublishWallet; address: string; network: BitcoinNetwork}>();
+  const linkedUploadScope = useRef({address, network});
+  linkedUploadScope.current = {address, network};
+  useEffect(() => { setLinkedUpload(undefined); }, [address, network, directPostOpen]);
   const [replyTarget, setReplyTarget] = useState<BoostFeedItem | undefined>();
   const [replyText, setReplyText] = useState("");
   const paidActionInFlight = useRef(false);
@@ -1847,6 +1861,13 @@ export default function BoostRoot({
     }
   }
 
+  async function verifyPublishLinkedFile(plan: PublishPlan) {
+    if (plan.article.v !== 2) return;
+    assertLinkedPublishCapability(await fetchProofApiJson("/api/v1/boost?capabilities=linked-articles-v2&fresh=1", network), network);
+    const file = await readLinkedFile(plan.article.linkerTxid, network, plan.article.sha256);
+    if (file.mime !== "text/plain" || file.size !== plan.article.size) throw new Error("The confirmed linked article does not match its exact text commitment.");
+  }
+
   async function preparePublishArticle(plan: PublishPlan, articleFeeRate: number): Promise<PreparedPublish> {
     if (publishSigning.current || actionBusy) throw new Error("Another wallet action is in progress.");
     requirePublishBudget(plan);
@@ -1859,6 +1880,7 @@ export default function BoostRoot({
     setActionBusy("post");
     try {
       assertPublishRecovery(plan);
+      await verifyPublishLinkedFile(plan);
       await verifyPublishWriter(address, identityId, expectedScope, plan.identity);
       const exclusions = await fetchReservedAmoAnchorOutpoints(address, network, boostListingAnchorOutpoints(items));
       const paymentPsbt = await buildBoostPaymentPsbt({ excludeOutpoints: exclusions, preferChange: true,
@@ -1889,6 +1911,7 @@ export default function BoostRoot({
     try {
       assertCurrent();
       assertPublishRecovery(prepared.plan);
+      await verifyPublishLinkedFile(prepared.plan);
       await verifyPublishWriter(prepared.address, prepared.identityId, expectedScope, prepared.plan.identity);
       await verifyPublishFunding(prepared);
       assertCurrent();
@@ -1896,10 +1919,12 @@ export default function BoostRoot({
         inputCount: prepared.paymentPsbt.inputCount, psbtHex: prepared.paymentPsbt.psbtHex,
         signInputIndexes: prepared.paymentPsbt.walletInputIndexes, network: prepared.network,
         signingAddress: prepared.address, wallet: window.unisat!,
-        onSigned: txid => {
+        onSigned: (txid, rawHex) => {
           receipt = { txid, address: prepared.address, network: prepared.network, title: "Publish article",
             key: `publish:${prepared.plan.article.sha256}`, createdAt: new Date().toISOString(), status: "unknown",
-            fields: [["Title", prepared.plan.article.title], ["Body", prepared.plan.body],
+            fields: [["Title", prepared.plan.article.title],
+              ...(prepared.plan.article.v === 2 ? [["Linked article", prepared.plan.article.linkerTxid],
+                ["Body size", String(prepared.plan.article.size)], ["Signed transaction", rawHex]] as [string, string][] : [["Body", prepared.plan.body]] as [string, string][]),
               ["Proof signal", String(prepared.plan.proofSignalSats)], ["Fee rate", String(prepared.feeRate)],
               ["Selected identity", prepared.identityId], ["SHA-256", prepared.plan.article.sha256]] };
           retainPublishReceipt(receipt);
@@ -1908,6 +1933,7 @@ export default function BoostRoot({
           assertCurrent();
           await verifyPublishWriter(prepared.address, prepared.identityId, expectedScope, prepared.plan.identity);
           await verifyPublishFunding(prepared);
+          await verifyPublishLinkedFile(prepared.plan);
           assertCurrent();
         },
       });
@@ -2088,6 +2114,9 @@ export default function BoostRoot({
     setStatus({ tone: "idle", text: "Preparing Boost post..." });
     try {
       const ready = await ensureBoostWriterReady(false);
+      const linkedPointer = powcatPointerFromAttachment(postAttachment);
+      if (postAttachment?.mime === POWCAT_MAIL_MIME && !linkedPointer) throw new Error("Invalid linked-file pointer attachment.");
+      if (linkedPointer) await readLinkedFile(linkedPointer.txid, network, linkedPointer.fileHash);
       const workCapacity = workSubatoms > 0n
         ? await fetchBoostWorkCapacity(ready.walletAddress)
         : undefined;
@@ -2114,9 +2143,11 @@ export default function BoostRoot({
           `pwm1:m:${postText}`,
           ...attachmentPayloads,
         ],
-        beforeBroadcast: workPayload
+        beforeBroadcast: workPayload || linkedPointer
           ? async () => {
               await assertActiveWalletAddress(window.unisat!, ready.walletAddress);
+              if (linkedPointer) await readLinkedFile(linkedPointer.txid, network, linkedPointer.fileHash);
+              if (!workPayload) return;
               const latest = await fetchBoostWorkCapacity(ready.walletAddress);
               if (workSubatoms > latest.spendableSubatoms) {
                 throw new Error("WORK capacity changed while signing. No transaction was broadcast.");
@@ -2579,6 +2610,7 @@ export default function BoostRoot({
         setPublishWriterReturn(readPublishWriterReturn(state));
         return;
       }
+      publishRestoreSession.current++;
       setPublishWriterOpen(nextWriting);
       setArticleRoute(nextWriting ? "" : initialSearchParam("article"));
       setPublishWriterReturn(readPublishWriterReturn(window.history.state));
@@ -2588,10 +2620,12 @@ export default function BoostRoot({
     };
     const beforeWriterLeave = (event: Event) => {
       if (publishWriterOpenRef.current && publishWriterLeaveGuard.current && !publishWriterLeaveGuard.current()) event.preventDefault();
+      else publishRestoreSession.current++;
     };
     window.addEventListener("popstate", restoreWriterLocation, true);
     window.addEventListener("proofofwork:before-publish-writer-leave", beforeWriterLeave);
     return () => {
+      publishRestoreSession.current++;
       window.removeEventListener("popstate", restoreWriterLocation, true);
       window.removeEventListener("proofofwork:before-publish-writer-leave", beforeWriterLeave);
     };
@@ -2962,6 +2996,25 @@ export default function BoostRoot({
     </form>;
   }
 
+  async function attachBoostFile(file: File) {
+    const scope = {address, network};
+    try {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        if (network !== "livenet" || !address) throw new Error("Connect your mainnet wallet for linked files.");
+        if (file.size > POWCAT_MAX_FILE_BYTES) throw new Error("Choose a file up to 4,000,000 bytes.");
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        if (bytes.length !== file.size) throw new Error("The selected file changed while loading.");
+        const hash = sha256Hex(bytes);
+        const wallet = (await import("../../App")).powcatWallet;
+        if (linkedUploadScope.current.address !== scope.address || linkedUploadScope.current.network !== scope.network) return;
+        setLinkedUpload({file, hash, wallet, ...scope});
+      } else {
+        const attachment = await attachmentFromFile(file);
+        if (linkedUploadScope.current.address === scope.address && linkedUploadScope.current.network === scope.network) setPostAttachment(attachment);
+      }
+    } catch (error) { setStatus({tone: "bad", text: error instanceof Error ? error.message : "File upload unavailable."}); }
+  }
+
   function openBoostComposer(quote?: BoostFeedItem) {
     if (composerStateRef.current.busy || composerNavigationPending.current) return;
     if (!compactBoost) composerHistoryRef.current = undefined;
@@ -2998,6 +3051,7 @@ export default function BoostRoot({
   }
 
   function openPublishWriter() {
+    publishRestoreSession.current++;
     setToolsOpen(false);
     clearSocialOverlays();
     if (!isPublishWriterLocation()) {
@@ -3028,11 +3082,15 @@ export default function BoostRoot({
 
   function closePublishWriter() {
     if (publishSigning.current) return;
-    setPublishRestoreDraft(undefined);
+    publishRestoreSession.current++;
     if (readPublishWriterReturn(window.history.state)) {
+      // Keep the restored input stable until popstate accepts the saved exit.
+      // Clearing it now reloads IndexedDB while this writer is still mounted,
+      // resetting its save witness and causing its own leave guard to block Back.
       window.history.back();
       return;
     }
+    setPublishRestoreDraft(undefined);
     window.history.replaceState(null, "", publishHref({ network, embedded }));
     setPublishWriterReturn(undefined);
     setPublishWriterOpen(false);
@@ -3203,13 +3261,37 @@ export default function BoostRoot({
         restoringDisabled={Boolean(actionBusy)} canRestore={() => false} onRestore={() => { setStatus({ tone: "idle", text: "Inspect the tip transaction and its status. Open the target content to review a new tip." }); }}
         onCheck={() => void checkTipReceipts()} workspaceHref={receipt => isPublish ? publishHref({ txid: receipt.fields.find(field => field[0] === "Target")?.[1], network: receipt.network, embedded }) : boostTimelineHref(embedded, receipt.network)} />
       {isPublish ? <ActionRecoveryPanel receipts={publishReceipts} error={publishRecoveryError}
-        checking={publishRecoveryChecking} restoringDisabled={Boolean(actionBusy)}
+        checking={publishRecoveryChecking} restoringDisabled={Boolean(actionBusy) || publishWriterOpen}
         canRestore={receipt => receipt.status === "dropped"}
         onRestore={receipt => {
-          const fields = Object.fromEntries(receipt.fields);
-          setPublishRestoreDraft({ address: receipt.address, network: receipt.network,
-            draft: { title: fields.Title ?? "", body: fields.Body ?? "", signal: Number(fields["Proof signal"] ?? 546), feeRate: Number(fields["Fee rate"] ?? 1) } });
-          openPublishWriter();
+          if (publishWriterOpenRef.current || publishSigning.current) return;
+          void (async () => {
+            const expectedScope = currentWriterScope.current;
+            const expectedSession = ++publishRestoreSession.current;
+            const fields = Object.fromEntries(receipt.fields);
+            try {
+              let body = fields.Body ?? "";
+              let linkedFile: {txid: string; fileHash: string} | undefined;
+              if (fields["Linked article"]) {
+                const file = await readLinkedFile(fields["Linked article"], receipt.network, fields["SHA-256"]);
+                if (file.mime !== "text/plain" || String(file.size) !== fields["Body size"]) throw new Error("Recovered article metadata does not match the retained receipt.");
+                const controller = new AbortController();
+                const timeout = window.setTimeout(() => controller.abort(), 120_000);
+                try {
+                  const bytes = await readVerifiedPowcatBytes(file, receipt.network, controller.signal);
+                  body = new TextDecoder("utf-8", {fatal:true,ignoreBOM:true}).decode(bytes);
+                  linkedFile = {txid:file.txid,fileHash:file.fileHash};
+                } finally { window.clearTimeout(timeout); }
+              }
+              if (expectedScope !== currentWriterScope.current || expectedSession !== publishRestoreSession.current) return;
+              setPublishRestoreDraft({ address: receipt.address, network: receipt.network,
+                draft: { title: fields.Title ?? "", body, signal: Number(fields["Proof signal"] ?? 546), feeRate: Number(fields["Fee rate"] ?? 1), linkedFile } });
+              openPublishWriter();
+            } catch (error) {
+              if (expectedScope === currentWriterScope.current && expectedSession === publishRestoreSession.current)
+                setPublishRecoveryError(error instanceof Error ? error.message : "Linked article recovery unavailable. The original receipt is preserved.");
+            }
+          })();
         }} onCheck={() => void checkPublishReceipts()} workspaceHref={receipt => publishHref({ txid: receipt.txid, network: receipt.network, embedded })} /> : null}
       {isPublish && publishWriterOpen ? <section className="publish-writer-workspace" aria-label="Article writer" role={embedded ? undefined : "main"}>
         {address ? <details className="publish-writer-identity"><summary>Byline identity · {activeIdentity?.id ? `${activeIdentity.id}@proofofwork.me` : shortAddress(address)}</summary>{renderIdentityControls()}</details> : null}
@@ -3941,13 +4023,7 @@ export default function BoostRoot({
                         const file = event.currentTarget.files?.[0];
                         event.currentTarget.value = "";
                         if (!file) return;
-                        void attachmentFromFile(file).then(
-                          setPostAttachment,
-                          (error) => setStatus({
-                            tone: "bad",
-                            text: error instanceof Error ? error.message : "Boost attachment could not be read.",
-                          }),
-                        );
+                        void attachBoostFile(file);
                       }}
                       type="file"
                     />
@@ -3956,7 +4032,12 @@ export default function BoostRoot({
                       <span>{postAttachment ? "Replace attachment" : "Attach file"}</span>
                     </span>
                   </label>
-                  <span>One file, {formatBytes(MAX_ATTACHMENT_BYTES)} max before encoding.</span>
+                  <span>{network === "livenet" ? "One file up to 4 MB. Files over 60,000 bytes require linked transactions and confirmation before posting." : `One file, ${formatBytes(MAX_ATTACHMENT_BYTES)} max before encoding. Linked files require Mainnet.`}</span>
+                  {network === "livenet" && <details><summary>Attach a confirmed linked file</summary><PowcatLink network={network} disabled={Boolean(actionBusy)} onAttach={setPostAttachment} /></details>}
+                  {linkedUpload && directPostOpen && linkedUpload.address === address && linkedUpload.network === network && <PowcatPublisher
+                    key={`${network}:${address}:boost`} address={address} network={network} defaultFeeRate={feeRate} wallet={linkedUpload.wallet}
+                    initialFile={linkedUpload.file} autoOpen onClose={() => setLinkedUpload(undefined)} attachLabel="Attach to Boost"
+                    onAttachVerified={link => { if (link.fileHash !== linkedUpload.hash) { setStatus({tone: "bad", text: "The verified file differs from the selected Boost attachment."}); return; } setPostAttachment(buildPowcatMailAttachment(link)); setLinkedUpload(undefined); }} />}
                 </div>
                 {postAttachment ? (
                   <div className="boost-post-attachment-selected">

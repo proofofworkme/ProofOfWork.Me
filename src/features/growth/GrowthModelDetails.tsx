@@ -9,12 +9,12 @@ export default function GrowthModelDetails({ historical }: { historical: boolean
     <article className="growth-model-details">
       <h3>Every product, one allocation</h3>
       <p>
-        Version {GROWTH_MODEL_VERSION} covers the complete product family. Usage,
+        Historical version {GROWTH_MODEL_VERSION} maps products to shared lanes, but has no separate DNS or Permission workload. Usage,
         payment, elasticity, and size inputs are explicit scenario assumptions,
         anchored to the original May baseline. They are not current measurements
         or a simulation of canonical WORK revaluation.
       </p>
-      {historical ? <p>The chart currently shows the historical comparison. The all-product assumptions below apply when All products is selected.</p> : null}
+      {historical ? <p>The chart currently shows the historical comparison. The assumptions below describe the October 6 comparison.</p> : null}
       <details>
         <summary>Usage, value, and blockspace assumptions</summary>
         <div className="growth-model-assumptions">

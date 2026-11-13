@@ -1,3 +1,7 @@
+import { powcatPointerFromAttachment } from "./powcatMail.mjs";
+import { POWCAT_MAX_FILE_BYTES, powcatSha256 } from "./powcat1.mjs";
+export const PUBLISH_LINKED_ARTICLE_SOURCE = "linked-powcat1";
+export const PUBLISH_LINKED_ARTICLE_VERIFICATION = "canonical-linked-powcat1-article-v2";
 export const PUBLISH_ARTICLE_SOURCE = "same-tx-pwm1-message";
 export const PUBLISH_ARTICLE_VERIFICATION = "canonical-same-tx-pwm1-message-v1";
 export const PUBLISH_DATA_CARRIER_LIMIT = 100_000;
@@ -12,13 +16,16 @@ export function publishArticleBodyBytes(body) {
 
 export function normalizePublishArticleMetadata(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
-      value.v !== 1 || value.source !== PUBLISH_ARTICLE_SOURCE ||
+      !((value.v === 1 && value.source === PUBLISH_ARTICLE_SOURCE) ||
+        (value.v === 2 && value.source === PUBLISH_LINKED_ARTICLE_SOURCE &&
+         typeof value.linkerTxid === "string" && /^[0-9a-f]{64}$/u.test(value.linkerTxid))) ||
       typeof value.title !== "string" || !value.title.trim() || value.title.length > 140 ||
       !publishArticleBodyBytes(value.title) ||
-      !Number.isSafeInteger(value.size) || value.size < 1 || value.size > PUBLISH_DATA_CARRIER_LIMIT ||
+      !Number.isSafeInteger(value.size) || value.size < 1 || value.size > (value.v === 2 ? POWCAT_MAX_FILE_BYTES : PUBLISH_DATA_CARRIER_LIMIT) ||
       typeof value.sha256 !== "string" || !/^[0-9a-f]{64}$/u.test(value.sha256) ||
-      Object.keys(value).some(key => !["v", "title", "source", "size", "sha256"].includes(key))) return null;
-  return { v: 1, title: value.title, source: PUBLISH_ARTICLE_SOURCE, size: value.size, sha256: value.sha256 };
+      Object.keys(value).some(key => !["v", "title", "source", "size", "sha256", ...(value.v === 2 ? ["linkerTxid"] : [])].includes(key))) return null;
+  return { v: value.v, title: value.title, source: value.source, size: value.size, sha256: value.sha256,
+    ...(value.v === 2 ? {linkerTxid: value.linkerTxid} : {}) };
 }
 
 export function publishArticleMetadataFromPayload(payload) {
@@ -42,7 +49,7 @@ export function publishArticleMetadataFromPayload(payload) {
 // ambiguity. A hash callback keeps this verifier usable in Node and the browser.
 export function publishArticleBodyFromRecords(records, metadata, sha256) {
   const article = normalizePublishArticleMetadata(metadata);
-  if (!article || !Array.isArray(records) || typeof sha256 !== "function") return null;
+  if (!article || article.v !== 1 || !Array.isArray(records) || typeof sha256 !== "function") return null;
   const position = record => record?.voutIndex ?? record?.protocolVout;
   const ordered = [...records].sort((a, b) => position(a) - position(b));
   if (ordered.some((record, index) => !Number.isSafeInteger(position(record)) || position(record) < 0 ||
@@ -71,4 +78,65 @@ export function publishArticleDataCarrierBytes(transaction) {
     if (script.slice(0, 2).toLowerCase() === "6a") size += script.length / 2;
   }
   return size;
+}
+
+export function publishArticleVerification(metadata) {
+  const article = normalizePublishArticleMetadata(metadata);
+  return article ? article.v === 2 ? PUBLISH_LINKED_ARTICLE_VERIFICATION : PUBLISH_ARTICLE_VERIFICATION : null;
+}
+
+// This verifies only the small same-transaction pointer commitment. Canonical
+// adapters must independently bind that attachment to the original raw post.
+export function publishLinkedArticlePointerMatches(metadata, attachment) {
+  const article = normalizePublishArticleMetadata(metadata);
+  const pointer = powcatPointerFromAttachment(attachment);
+  return !!article && article.v === 2 && !!pointer &&
+    pointer.txid === article.linkerTxid && pointer.fileHash === article.sha256;
+}
+
+// The adapter supplies a completely resolved canonical powcat file, including
+// earlier-block part/linker order and reorg fences. This pure step checks bytes,
+// not chain authority; it never grants a verification marker on its own.
+export function publishLinkedArticleBody(metadata, file) {
+  const article = normalizePublishArticleMetadata(metadata);
+  if (!article || article.v !== 2 || !file || file.txid !== article.linkerTxid ||
+      file.mime !== "text/plain" || file.size !== article.size || file.fileHash !== article.sha256 ||
+      !(file.bytes instanceof Uint8Array) || file.bytes.length !== article.size ||
+      powcatSha256(file.bytes) !== article.sha256) return null;
+  try {
+    const body = new TextDecoder("utf-8", {fatal: true, ignoreBOM: true}).decode(file.bytes);
+    const bytes = publishArticleBodyBytes(body);
+    return body.trim() && bytes && bytes.length === file.bytes.length &&
+      powcatSha256(bytes) === article.sha256 ? body : null;
+  } catch { return null; }
+}
+
+// Linked articles use exactly one canonical 139-byte pointer attachment; no
+// inline text, subject or second attachment can compete with the body source.
+export function linkedArticlePointerFromRecords(records, metadata, carrierBytes) {
+  const article = normalizePublishArticleMetadata(metadata);
+  if (!article || article.v !== 2 || !Array.isArray(records) ||
+      !Number.isSafeInteger(carrierBytes) || carrierBytes < 1 || carrierBytes > PUBLISH_DATA_CARRIER_LIMIT) return null;
+  const position = record => record?.voutIndex ?? record?.protocolVout;
+  const ordered = [...records].sort((a, b) => position(a) - position(b));
+  if (ordered.some((record, index) => !Number.isSafeInteger(position(record)) || position(record) < 0 ||
+      (index > 0 && position(ordered[index - 1]) === position(record)))) return null;
+  const originals = ordered.filter(record => record?.prefix === "pwb1:" && String(record.text).startsWith("pwb1:post:"));
+  if (originals.length !== 1 || originals[0].decodeValid !== true ||
+      JSON.stringify(publishArticleMetadataFromPayload(originals[0].text)) !== JSON.stringify(article)) return null;
+  const pwm = ordered.filter(record => record?.prefix === "pwm1:");
+  if (pwm.length !== 1 || pwm[0].decodeValid !== true) return null;
+  const match = /^pwm1:a:([A-Za-z0-9_-]+):([A-Za-z0-9_-]+):139:([0-9a-f]{64}):0\/1:([A-Za-z0-9_-]{186})$/u.exec(pwm[0].text);
+  if (!match) return null;
+  try {
+    const decode = encoded => {
+      const raw = atob(encoded.replace(/-/gu, "+").replace(/_/gu, "/"));
+      if (btoa(raw).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "") !== encoded) throw new Error("Noncanonical base64url");
+      return new TextDecoder("utf-8", {fatal: true}).decode(Uint8Array.from(raw, c => c.charCodeAt(0)));
+    };
+    const attachment = {mime: decode(match[1]), name: decode(match[2]), size: 139, sha256: match[3], data: match[4]};
+    if (!attachment.name || attachment.name.length > 120 || /[\u0000-\u001f]/u.test(attachment.name) ||
+        !publishLinkedArticlePointerMatches(article, attachment)) return null;
+    return {txid: article.linkerTxid, fileHash: article.sha256};
+  } catch { return null; }
 }

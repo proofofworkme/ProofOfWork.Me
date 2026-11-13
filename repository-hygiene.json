@@ -69,6 +69,17 @@
         "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.json",
         "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md"
       ]
+    },
+    {
+      "generator": "scripts/generate-current-growth.mjs",
+      "inputs": [
+        "src/features/growth/currentGrowthModel.mjs",
+        "src/features/growth/growthForecast.mjs"
+      ],
+      "outputs": [
+        "output/proofofwork-computer-growth-model-2026-11-12-products-v2.json",
+        "output/proofofwork-computer-growth-model-2026-11-12-products-v2.md"
+      ]
     }
   ],
   "noteInventory": {
@@ -225,16 +236,19 @@
       "audits/2026-10-09-audit32-first-batch-four-root-partial-recovery-hygiene-close.evidence.json",
       "audits/2026-10-10-audit32-retained-local-path-budget-amendment-v1.json",
       "audits/2026-11-08-ui-publisher-capacity-floor-approval.json",
-      "audits/2026-11-12-incb-h-minus-one-oracle.md"
+      "audits/2026-11-12-incb-h-minus-one-oracle.md",
+      "audits/2026-11-13-linked-growth-mail-incb-integration.md"
     ],
     "presentation-and-generated-notes": [
       "PROOFOFWORK_GENERAL_DECK.md",
       "output/proofofwork-computer-agent-adoption-model.md",
       "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md",
       "output/historical/2026-05-13/README.md",
-      "output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md"
+      "output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md",
+      "output/proofofwork-computer-growth-model-2026-11-12-products-v2.md"
     ],
     "staged-or-future-protocol-notes": [
+      "LINKED_PUBLISH_SEARCH.md",
       "ENCRYPTION.md",
       "ONCHAIN_APP.md",
       "UNWRITER_GITHUB_RESEARCH.md",
@@ -270,7 +284,8 @@
       "deploy/work-batch-reader-fix/README.md",
       "deploy/work-batch-reader-recovery/README.md",
       "deploy/work-batch-pending-summary-fix/README.md",
-      "deploy/mail-work-batch/README.md"
+      "deploy/mail-work-batch/README.md",
+      "deploy/linked-publish/README.md"
     ]
   },
   "protectedTrackedPaths": [

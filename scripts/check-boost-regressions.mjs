@@ -8,7 +8,7 @@ import * as projection from "../server/boost-projection.mjs";
 import { verifiedBoostTicketClosures } from "../server/boost-marketplace-proof.mjs";
 import { decimalValueToQ8, formatWorkSubatoms, q8ToCanonicalDecimal, q8ToNumber, WORK_SUBATOM_UNIT_SCALE } from "../server/work-units.mjs";
 import { parseBoostText, parsePowDnsText, boostTextMatchesTag } from "../src/shared/protocol/boostText.mjs";
-import { normalizePublishArticleMetadata, PUBLISH_ARTICLE_VERIFICATION } from "../src/shared/protocol/publishArticle.mjs";
+import { normalizePublishArticleMetadata, PUBLISH_ARTICLE_VERIFICATION, publishArticleVerification } from "../src/shared/protocol/publishArticle.mjs";
 
 const apiSource = await readFile(new URL("../server/proof-api.mjs", import.meta.url), "utf8");
 function definition(name) {
@@ -57,7 +57,7 @@ function reader(events, mutate = (page) => page) {
 }
 function server(readPage, overrides = {}) {
   const context = vm.createContext({ console, URLSearchParams, ...projection, verifiedBoostTicketClosures, boostTextMatchesTag,
-    normalizePublishArticleMetadata, PUBLISH_ARTICLE_VERIFICATION,
+    normalizePublishArticleMetadata, PUBLISH_ARTICLE_VERIFICATION, publishArticleVerification,
     decimalValueToQ8, formatWorkSubatoms, q8ToCanonicalDecimal, q8ToNumber,
     WORK_SUBATOM_UNIT_SCALE, WORK_TOKEN_MAX_SUPPLY: 21_000_000,
     proofIndexReadFeatureEnabled: () => true, proofIndexEventHistoryPayload: readPage,

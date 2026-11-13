@@ -118,7 +118,22 @@ export async function readBoostGrowthObservation(pool, network, checkpoint, load
             'protocol', e.protocol, 'kind', e.kind, 'status', e.status,
             'valid', e.valid, 'validation_errors', e.validation_errors,
             'op_return_vout', e.op_return_vout, 'record_ordinal', e.record_ordinal,
-            'raw_payload', e.raw_payload, 'payload', e.payload
+            'raw_payload', e.raw_payload, 'payload', e.payload,
+            'linked_article_root_raw_hex', CASE WHEN e.payload->'article'->>'v'='2' THEN
+              (SELECT rt.raw_tx->>'hex' FROM proof_indexer.transactions rt
+               WHERE rt.network=e.network AND rt.txid=e.payload->'article'->>'linkerTxid') END,
+            'linked_article_dependencies_canonical', CASE WHEN e.payload->'article'->>'v'='2' THEN
+              jsonb_typeof(e.payload->'articleDependencies'->'dependencies')='array' AND
+              NOT EXISTS (SELECT 1 FROM jsonb_array_elements(
+                CASE WHEN jsonb_typeof(e.payload->'articleDependencies'->'dependencies')='array'
+                  THEN e.payload->'articleDependencies'->'dependencies' ELSE '[]'::jsonb END) dep
+                LEFT JOIN proof_indexer.transactions dt ON dt.network=e.network AND dt.txid=dep->>'txid'
+                LEFT JOIN proof_indexer.blocks db ON db.network=dt.network AND db.height=dt.block_height
+                  AND db.block_hash=dt.block_hash AND db.canonical=true
+                WHERE dt.status IS DISTINCT FROM 'confirmed' OR db.block_hash IS NULL OR
+                  dt.block_hash IS DISTINCT FROM dep->>'blockHash' OR
+                  dt.block_height::text IS DISTINCT FROM dep->>'blockHeight')
+              ELSE NULL END
           ) ORDER BY e.op_return_vout, e.record_ordinal, e.event_id) AS events
         FROM boost_transactions selected
         JOIN proof_indexer.transactions t ON t.network = $1 AND t.txid = selected.txid

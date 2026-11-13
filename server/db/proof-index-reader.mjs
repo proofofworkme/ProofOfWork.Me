@@ -1,3 +1,4 @@
+import { linkedArticleCanonicalProjectionMatches, publishLinkedCapabilityKey } from '../publish-linked.mjs';
 import { measurePrivatePhase } from "../wallet-read-observation.mjs";
 import { withReadOnlySnapshot } from "./read-only-snapshot.mjs";
 import { canonicalSealTime } from "../canonical-seal-time.mjs";
@@ -13,7 +14,7 @@ import { isWorkTransferProjectionReference, readWorkTransferProjection, workTran
 import { AsyncLocalStorage as WalletRequestAsyncLocalStorage } from "node:async_hooks";
 import {
   normalizePublishArticleMetadata, publishArticleBodyBytes,
-  PUBLISH_ARTICLE_VERIFICATION,
+  PUBLISH_ARTICLE_VERIFICATION, publishArticleVerification, publishLinkedArticlePointerMatches,
 } from "../../src/shared/protocol/publishArticle.mjs";
 import { compareCanonicalUtf8 } from "../canonical-order.mjs";
 import { decodeCanonicalOpReturnOutput } from "../canonical-op-return.mjs";
@@ -41466,12 +41467,24 @@ const ADDRESS_MAIL_EVENT_KINDS = [
 // before exposing its compact article commitment to mailbox readers.
 export function verifiedMailArticleFields(message, companion) {
   if (!message || (message.confirmed !== true && message.status !== "confirmed") ||
-      message.attachment || !companion || companion.kind !== "boost-post" ||
+      !companion || companion.kind !== "boost-post" ||
       companion.confirmed !== true || companion.valid === false ||
-      companion.articleVerification !== PUBLISH_ARTICLE_VERIFICATION ||
+      companion.articleVerification !== publishArticleVerification(companion.article) ||
       !/^[0-9a-f]{64}$/u.test(String(message.txid ?? "")) ||
       companion.txid !== message.txid) return {};
   const article = normalizePublishArticleMetadata(companion.article);
+  if (article?.v === 2) {
+    if (!publishLinkedArticlePointerMatches(article, message.attachment) ||
+        !linkedArticleCanonicalProjectionMatches(article, { txid: companion.txid,
+          blockHeight: companion.blockHeight, blockHash: companion.blockHash,
+          protocolVout: companion.protocolVout }, companion.articleDependencies,
+          companion.articleCanonicalRootHex, companion.articleDependenciesCanonical)) return {};
+    return { socialMode: true, article, articleVerification: publishArticleVerification(article),
+      articleDependencies: companion.articleDependencies, articleCanonicalRootHex: companion.articleCanonicalRootHex,
+      articleDependenciesCanonical: true, blockHeight: companion.blockHeight,
+      blockHash: companion.blockHash, protocolVout: companion.protocolVout };
+  }
+  if (message.attachment) return {};
   const bytes = publishArticleBodyBytes(message.memo);
   // Event display text is historically trimmed; the verified commitment keeps
   // the complete title. Compare that display form without changing the title.
@@ -41490,7 +41503,9 @@ export function revalidateMailArticleMessage(message, sources) {
       txid: source.txid, kind: "boost-post",
       confirmed: source.confirmed === true || source.status === "confirmed",
       text: source.article.title, article: source.article,
-      articleVerification: source.articleVerification,
+      articleVerification: source.articleVerification, articleDependencies: source.articleDependencies,
+      articleCanonicalRootHex: source.articleCanonicalRootHex, articleDependenciesCanonical: source.articleDependenciesCanonical,
+      blockHeight: source.blockHeight, blockHash: source.blockHash, protocolVout: source.protocolVout,
     });
     if (fields.article) return { ...plain, ...fields };
   }
@@ -42218,7 +42233,23 @@ export async function proofIndexAddressMailPayload(network, address) {
           post.network, post.txid, post.block_height, post.block_index,
           jsonb_agg(post.payload || jsonb_build_object(
             'kind', post.kind, 'txid', post.txid, 'confirmed', true,
-            'valid', true
+            'valid', true, 'blockHeight', post.block_height, 'blockHash', transaction_record.block_hash,
+            'protocolVout', post.op_return_vout,
+            'articleCanonicalRootHex', CASE WHEN post.payload->'article'->>'v'='2' THEN
+              (SELECT rt.raw_tx->>'hex' FROM proof_indexer.transactions rt
+               WHERE rt.network=post.network AND rt.txid=post.payload->'article'->>'linkerTxid') END,
+            'articleDependenciesCanonical', CASE WHEN post.payload->'article'->>'v'='2' THEN
+              jsonb_typeof(post.payload->'articleDependencies'->'dependencies')='array' AND
+              NOT EXISTS (SELECT 1 FROM jsonb_array_elements(
+                CASE WHEN jsonb_typeof(post.payload->'articleDependencies'->'dependencies')='array'
+                  THEN post.payload->'articleDependencies'->'dependencies' ELSE '[]'::jsonb END) dep
+                LEFT JOIN proof_indexer.transactions dt ON dt.network=post.network AND dt.txid=dep->>'txid'
+                LEFT JOIN proof_indexer.blocks db ON db.network=dt.network AND db.height=dt.block_height
+                  AND db.block_hash=dt.block_hash AND db.canonical=true
+                WHERE dt.status IS DISTINCT FROM 'confirmed' OR db.block_hash IS NULL OR
+                  dt.block_hash IS DISTINCT FROM dep->>'blockHash' OR
+                  dt.block_height::text IS DISTINCT FROM dep->>'blockHeight')
+              ELSE NULL END
           ) ORDER BY post.op_return_vout, post.record_ordinal, post.event_id) AS records
         FROM proof_indexer.events post
         JOIN candidate_mail_transactions candidate_mail
@@ -46364,4 +46395,17 @@ async function proofIndexWalletPendingWitnessHasOldTip(pool, network) {
     /^[0-9a-f]{64}$/u.test(currentHash) && /^[0-9a-f]{64}$/u.test(pendingHash) &&
     (pending.height < current.height ||
       (pending.height === current.height && pendingHash !== currentHash));
+}
+
+export async function proofIndexPublishLinkedCapabilityPayload(network) {
+  const pool = proofIndexPool();
+  if (!pool || network !== "livenet") return null;
+  const result = await pool.query(`
+    SELECT m.value FROM proof_indexer.meta m
+    JOIN proof_indexer.blocks b ON b.network=$1 AND b.canonical=true
+      AND b.height::text=m.value->'checkpoint'->>'height'
+      AND b.block_hash=m.value->'checkpoint'->>'hash'
+    WHERE m.key=$2
+  `,[network,publishLinkedCapabilityKey(network)]);
+  return result.rows.length===1?result.rows[0].value:null;
 }

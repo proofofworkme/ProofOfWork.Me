@@ -1,8 +1,9 @@
+import { linkedArticleCanonicalProjectionMatches } from './publish-linked.mjs';
 import { parseBoostTip, parseBoostWorkTip } from "../src/shared/protocol/boostTip.mjs";
 import { createHash } from "node:crypto";
 import {
   normalizePublishArticleMetadata, publishArticleBodyFromRecords,
-  publishArticleDataCarrierBytes, PUBLISH_DATA_CARRIER_LIMIT,
+  publishArticleDataCarrierBytes, PUBLISH_DATA_CARRIER_LIMIT, linkedArticlePointerFromRecords,
 } from "../src/shared/protocol/publishArticle.mjs";
 import { decodeCanonicalOpReturnOutput } from "./canonical-op-return.mjs";
 import { WORK_TOKEN_ID } from "./work-units.mjs";
@@ -206,8 +207,12 @@ export function createBoostGrowthObservation(checkpoint) {
             ...decodeCanonicalOpReturnOutput(output), voutIndex,
           })).filter(record => record.prefix);
           if (!boundRawRecord(tx, event) || carrierBytes === null || carrierBytes > PUBLISH_DATA_CARRIER_LIMIT ||
-              publishArticleBodyFromRecords(records, article,
-                bytes => createHash("sha256").update(bytes).digest("hex")) === null) {
+              (article.v === 1 ? publishArticleBodyFromRecords(records, article,
+                bytes => createHash("sha256").update(bytes).digest("hex")) === null :
+                !linkedArticlePointerFromRecords(records, article, carrierBytes) ||
+                !linkedArticleCanonicalProjectionMatches(article, { txid: row.txid, blockHeight: Number(row.block_height),
+                  blockHash: row.block_hash, protocolVout: event.op_return_vout }, event.payload.articleDependencies,
+                  event.linked_article_root_raw_hex, event.linked_article_dependencies_canonical))) {
             throw new Error("Exact confirmed Publish article body evidence is unavailable.");
           }
         }

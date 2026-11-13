@@ -1,10 +1,13 @@
+import { buildPowcatMailAttachment } from "../../shared/protocol/powcatMail.mjs";
+import { buildAttachmentPayloads } from "../../shared/protocol/mailAttachment";
+import { POWCAT_MAX_FILE_BYTES } from "../../shared/protocol/powcat1.mjs";
 import * as bitcoin from "bitcoinjs-lib";
 import { Buffer } from "buffer";
 import { appHref, isLocalPreviewHost } from "../../app/routeRegistry";
 import type { BitcoinNetwork } from "../../shared/bitcoin/networks";
 import { encodeTextBase64Url, sha256Hex } from "../../shared/utils/encoding";
 import {
-  PUBLISH_ARTICLE_SOURCE,
+  PUBLISH_ARTICLE_SOURCE, PUBLISH_LINKED_ARTICLE_SOURCE,
   PUBLISH_DATA_CARRIER_LIMIT,
   publishArticleBodyBytes,
   type PublishArticleMetadata,
@@ -52,7 +55,7 @@ function bodyChunks(body: string) {
   return chunks;
 }
 
-export function buildPublishPlan(titleValue: string, body: string, proofSignalSats: number, identity?: BoostIdentityIntent): PublishPlan {
+export function buildPublishPlan(titleValue: string, body: string, proofSignalSats: number, identity?: BoostIdentityIntent, linkedFile?: {txid: string; fileHash: string}): PublishPlan {
   const title = titleValue.trim();
   if (!title || title.length > 140 || !publishArticleBodyBytes(title)) {
     throw new Error("Enter an article title of up to 140 characters.");
@@ -64,12 +67,18 @@ export function buildPublishPlan(titleValue: string, body: string, proofSignalSa
   if (!Number.isSafeInteger(proofSignalSats) || proofSignalSats < 546) {
     throw new Error("Add at least 546 whole proofs of signal to your article.");
   }
-  const article: PublishArticleMetadata = {
-    v: 1, title, source: PUBLISH_ARTICLE_SOURCE, size: bytes.length, sha256: sha256Hex(bytes),
-  };
+  if (bytes.length > POWCAT_MAX_FILE_BYTES) throw new Error("Article text can contain up to 4,000,000 UTF-8 bytes.");
+  const bodyHash = sha256Hex(bytes);
+  if (linkedFile && (!/^[0-9a-f]{64}$/u.test(linkedFile.txid) || linkedFile.fileHash !== bodyHash)) {
+    throw new Error("The linked publication does not match this article text.");
+  }
+  const article: PublishArticleMetadata = linkedFile ? {
+    v: 2, title, source: PUBLISH_LINKED_ARTICLE_SOURCE, size: bytes.length, sha256: bodyHash, linkerTxid: linkedFile.txid,
+  } : {v: 1, title, source: PUBLISH_ARTICLE_SOURCE, size: bytes.length, sha256: bodyHash};
   const post = `pwb1:post:${encodeTextBase64Url(JSON.stringify({ v: 1, text: title, article, proofSignalSats }))}`;
   const payloads = [...(identity ? [buildBoostProfilePayload({ id: identity.id, intent: identity })] : []), post,
-    ...bodyChunks(body).map(chunk => `pwm1:m:${chunk}`)];
+    ...(linkedFile ? buildAttachmentPayloads(buildPowcatMailAttachment({...linkedFile, name: "article.txt"})) :
+      bodyChunks(body).map(chunk => `pwm1:m:${chunk}`))];
   // Compile the same scripts as the wallet builder. Even an over-budget draft
   // gets an exact count; admission happens before transaction preparation.
   const carrierBytes = payloads.reduce((sum, payload) => sum + bitcoin.payments.embed({

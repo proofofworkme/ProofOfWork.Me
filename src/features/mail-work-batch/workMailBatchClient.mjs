@@ -72,6 +72,13 @@ export function assertSameMailRoutes(previous, fresh) {
   if (key(previous) !== key(fresh)) throw new Error("A Mail recipient route changed. Review the current destinations again.");
 }
 
+/** Bond memos retain the individual transfer protocol; this is not a failed-batch fallback. */
+export function mailWorkBondKind({ message = "", parentTxid, hasAttachment = false, socialMode = false } = {}) {
+  if (socialMode || parentTxid || hasAttachment || typeof message !== "string") return null;
+  const memo = message.trim().toLowerCase();
+  return memo === "incb" ? "inception" : memo === "powb" ? "infinity" : null;
+}
+
 export function planWorkMailAttachment({ recipients, amountSubatoms, status, previousStatus, legacyPayload, socialMode = false, message = "", parentTxid, hasAttachment = false }) {
   if (!Array.isArray(recipients) || recipients.length < 1 || recipients.length > WORK_MAIL_BATCH_MAX_RECIPIENTS) throw new Error("Mail requires 1–256 unique recipients.");
   if (typeof amountSubatoms !== "string" || amountSubatoms.length > 24 || !/^(?:0|[1-9][0-9]*)$/u.test(amountSubatoms) || BigInt(amountSubatoms) > WORK_MAIL_BATCH_MAX_SUBATOMS) {
@@ -81,17 +88,18 @@ export function planWorkMailAttachment({ recipients, amountSubatoms, status, pre
   const total = amount * BigInt(recipients.length);
   if (total > WORK_MAIL_BATCH_MAX_SUBATOMS) throw new Error("The total WORK attachment exceeds the WORK supply.");
   if (!amount) return { mode: "none", payloads: [], registryFeeProofs: 0, totalAmountSubatoms: "0", recipientCount: recipients.length, feeLabel: "" };
-  const selected = socialMode ? { mode: "legacy" } : workMailAttachmentMode(status, previousStatus);
+  const bondKind = mailWorkBondKind({ message, parentTxid, hasAttachment, socialMode });
+  const selected = socialMode || bondKind ? { mode: "legacy" } : workMailAttachmentMode(status, previousStatus);
   if (selected.mode === "legacy") {
     if (recipients.length > LEGACY_MAIL_WORK_MAX_RECIPIENTS) {
-      throw new Error("Before Mail batch activation, WORK attachments support at most 10 recipients at 546 proofs each.");
+      throw new Error("Individual WORK attachments support at most 10 recipients at 546 proofs each.");
     }
     if (typeof legacyPayload !== "function") throw new Error("Legacy WORK transfer admission is unavailable.");
     const payloads = recipients.map(row => legacyPayload(row.address));
     if (payloads.some(value => typeof value !== "string" || !value)) throw new Error("Legacy WORK transfer admission is unavailable.");
     return { ...selected, payloads, registryFeeProofs: WORK_MAIL_BATCH_REGISTRY_FEE_PROOFS * recipients.length,
       totalAmountSubatoms: total.toString(), recipientCount: recipients.length,
-      feeLabel: `Legacy WORK attachment: 546 proofs per recipient · ${WORK_MAIL_BATCH_REGISTRY_FEE_PROOFS * recipients.length} proofs total.` };
+      feeLabel: `${bondKind ? "Bond" : "Legacy"} WORK attachment: 546 proofs per recipient · ${WORK_MAIL_BATCH_REGISTRY_FEE_PROOFS * recipients.length} proofs total.` };
   }
   if (!workMailBatchMemoIsOrdinary({ message, parentTxid, hasAttachment })) {
     throw new Error("This record is a Jobs or bond action. Use its dedicated workspace; Mail WORK batches require an ordinary Mail message, reply, or file.");

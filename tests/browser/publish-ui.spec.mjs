@@ -28,21 +28,31 @@ funding.addInput(Buffer.alloc(32, 1), 0);
 funding.addOutput(bitcoin.address.toOutputScript(address), 2_000_000n);
 const fundingUtxo = { txid: funding.getId(), vout: 0, value: 2_000_000, status: { confirmed: true } };
 
+async function storedPublishDraft(page, address) {
+  return page.evaluate(async address => {
+    const db = await new Promise((resolve, reject) => { const request = indexedDB.open("proofofwork-publish-drafts", 1);
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+    try { const raw = await new Promise((resolve, reject) => { const request = db.transaction("drafts").objectStore("drafts").get(`proofofwork.publish.draft.v1:livenet:${address}`);
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); return raw ? JSON.parse(raw) : null; }
+    finally { db.close(); }
+  }, address);
+}
+
 async function fixture(page, { wallet = false, alteredBody = false, recovery = false, selectedIdentity = false, emptyWalletDraft = false, availabilityUnavailable = false,
-  articleBody = body, articleTitle = article.title, network = "livenet" } = {}) {
+  articleBody = body, articleTitle = article.title, network = "livenet", recoveryFields } = {}) {
   const identityRead = { ownership: "owned", requests: [] };
   const fixtureArticle = { ...article, title: articleTitle, size: Buffer.byteLength(articleBody), sha256: createHash("sha256").update(articleBody).digest("hex") };
   const fixturePost = { ...post, article: fixtureArticle, text: articleTitle };
-  if (wallet) await page.addInitScript(({ address, utxo, recovery, identity, emptyWalletDraft }) => {
+  if (wallet) await page.addInitScript(({ address, utxo, recovery, identity, emptyWalletDraft, recoveryFields }) => {
     if (window !== window.top) return;
     window.publishSignatureCalls = 0;
     window.unisat = { getAccounts: async () => [address], requestAccounts: async () => [address],
       getNetwork: async () => "livenet", getBitcoinUtxos: async () => [utxo], on() {}, removeListener() {},
       signPsbt: async () => { window.publishSignatureCalls++; throw new Error("Rejected by test wallet"); } };
-    if (recovery) localStorage.setItem("proofofwork-action-receipts-v1", JSON.stringify([{ txid: "d".repeat(64), address, network: "livenet", title: "Publish article", key: "publish:unknown", createdAt: "2026-10-03T12:00:00Z", status: recovery === "dropped" ? "dropped" : "unknown", fields: [["Title", "Retained article"], ["Body", "Retained work"]] }]));
+    if (recovery) localStorage.setItem("proofofwork-action-receipts-v1", JSON.stringify([{ txid: "d".repeat(64), address, network: "livenet", title: "Publish article", key: "publish:unknown", createdAt: "2026-10-03T12:00:00Z", status: recovery === "dropped" ? "dropped" : "unknown", fields: recoveryFields ?? [["Title", "Retained article"], ["Body", "Retained work"]] }]));
     if (identity) localStorage.setItem("proofofwork.boost.profileIntent.v1", JSON.stringify({ [`livenet:${address}`]: identity }));
     if (emptyWalletDraft) localStorage.setItem(`proofofwork.publish.draft.v1:livenet:${address}`, JSON.stringify({ title: "", body: "", signal: 546, feeRate: 1 }));
-  }, { address, utxo: fundingUtxo, recovery, identity: selectedIdentity ? signedIdentity : null, emptyWalletDraft });
+  }, { address, utxo: fundingUtxo, recovery, identity: selectedIdentity ? signedIdentity : null, emptyWalletDraft, recoveryFields });
   await page.route("**/api/v1/**", async route => {
     const url = new URL(route.request().url());
     url.pathname = url.pathname.replace(/^\/test-api(?=\/api\/)/u, "");
@@ -156,6 +166,8 @@ test("Computer Publish restores the selected ID and draft when mounted and reope
   await page.getByRole("textbox", { name: "Article title", exact: true }).fill(article.title);
   await page.getByRole("textbox", { name: "Article text", exact: true }).fill(body);
   await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+  await expect(page).not.toHaveURL(/write=1/);
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveCount(0);
   await openApp("Mail");
   await expect(page.getByRole("region", { name: "Publish workspace", exact: true })).toHaveCount(0);
   await openApp("Publish");
@@ -357,6 +369,10 @@ test("a dropped publication restores into the writer without reviving stale reco
   await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue("Retained work");
   await page.getByRole("textbox", { name: "Article text", exact: true }).fill("Continued recovered article");
   await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+  // IndexedDB persistence finishes before the asynchronous Back navigation.
+  // Wait for the destination before asking Chrome for its forward entry.
+  await expect(page).not.toHaveURL(/write=1/);
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveCount(0);
   await page.goForward();
   await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue("Continued recovered article");
   expect(await page.evaluate(() => window.publishSignatureCalls)).toBe(0);
@@ -368,11 +384,8 @@ test("storage failure preserves unsaved article text through manual, browser, an
   await page.getByRole("button", { name: "Write your next article" }).click();
   await page.getByRole("textbox", { name: "Article title", exact: true }).fill(article.title);
   await page.evaluate(() => {
-    window.publishOriginalSetItem = Storage.prototype.setItem;
-    Storage.prototype.setItem = function(key, value) {
-      if (key.startsWith("proofofwork.publish.draft.v1:")) throw new DOMException("Fixture storage full", "QuotaExceededError");
-      return window.publishOriginalSetItem.call(this, key, value);
-    };
+    window.publishOriginalPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function() { throw new DOMException("Fixture storage full", "QuotaExceededError"); };
   });
   await page.getByRole("textbox", { name: "Article text", exact: true }).fill(body);
   await expect(page.getByRole("alert").filter({ hasText: "autosave is unavailable" })).toBeVisible();
@@ -384,7 +397,7 @@ test("storage failure preserves unsaved article text through manual, browser, an
   await expect(page).toHaveURL(/write=1/);
   await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue(body);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.evaluate(() => { Storage.prototype.setItem = window.publishOriginalSetItem; });
+  await page.evaluate(() => { IDBObjectStore.prototype.put = window.publishOriginalPut; });
   await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
   await expect(page.getByRole("button", { name: "Write your next article" })).toBeVisible();
   await page.getByRole("button", { name: "Write your next article" }).click();
@@ -441,7 +454,7 @@ test("connecting preserves the active guest article over an existing empty walle
   await page.getByRole("button", { name: "Connect to publish", exact: true }).click();
   await expect(page.getByRole("button", { name: "Review publication", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue(body);
-  await expect.poll(() => page.evaluate(address => JSON.parse(localStorage.getItem(`proofofwork.publish.draft.v1:livenet:${address}`)).body, address)).toBe(body);
+  await expect.poll(async () => (await storedPublishDraft(page, address))?.body).toBe(body);
 });
 
 async function openIdentifiedWriter(page, embedded) {
@@ -458,10 +471,9 @@ async function expectPreservedUnsignedArticle(page) {
   await expect(page.getByRole("dialog", { name: "Publish article", exact: true })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Article title", exact: true })).toHaveValue(article.title);
   await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue(body);
-  await expect.poll(() => page.evaluate(address => {
-    const saved = JSON.parse(localStorage.getItem(`proofofwork.publish.draft.v1:livenet:${address}`));
+  await expect.poll(async () => { const saved = await storedPublishDraft(page, address);
     return { title: saved?.title, body: saved?.body };
-  }, address)).toEqual({ title: article.title, body });
+  }).toEqual({ title: article.title, body });
   expect(await page.evaluate(() => window.publishSignatureCalls)).toBe(0);
 }
 
@@ -520,3 +532,156 @@ for (const embedded of [false, true]) {
     await expectPreservedUnsignedArticle(page);
   });
 }
+
+
+test("Publish waits for the save completion before allowing Back", async ({ page }) => {
+  await fixture(page, { wallet: true });
+  await page.goto("/?publish=1");
+  await page.getByRole("button", { name: "Connect UniSat", exact: true }).click();
+  await page.getByRole("button", { name: "Write your next article" }).click();
+  await page.getByRole("textbox", { name: "Article title", exact: true }).fill(article.title);
+  await page.getByRole("textbox", { name: "Article text", exact: true }).fill(body);
+  await expect.poll(async () => (await storedPublishDraft(page,address))?.body).toBe(body);
+  await page.evaluate(() => {
+    const original=Object.getOwnPropertyDescriptor(IDBTransaction.prototype,"oncomplete");
+    Object.defineProperty(IDBTransaction.prototype,"oncomplete",{...original,set(callback){
+      if(this.mode!=="readwrite" || window.publishSaveHeld)return original.set.call(this,callback);
+      window.publishSaveHeld=true;
+      Object.defineProperty(IDBTransaction.prototype,"oncomplete",original);
+      original.set.call(this,event=>{window.releasePublishSave=()=>callback.call(this,event);});
+    }});
+  });
+  await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+  await expect.poll(()=>page.evaluate(()=>typeof window.releasePublishSave)).toBe("function");
+  await expect(page).toHaveURL(/write=1/);
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue(body);
+  expect(await page.evaluate(()=>window.dispatchEvent(new Event("proofofwork:before-publish-writer-leave",{cancelable:true})))).toBe(false);
+  await page.evaluate(()=>window.releasePublishSave());
+  await expect(page).not.toHaveURL(/write=1/);
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveCount(0);
+  await page.goForward();
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue(body);
+  expect(await page.evaluate(()=>window.publishSignatureCalls)).toBe(0);
+});
+
+test("Publish blocks exit during a mocked signature and closes with an empty draft after mocked broadcast", async ({ page }) => {
+  await fixture(page, { wallet: true });
+  // Only the documented disposable fixture key is used. Every broadcast is
+  // intercepted here; no request or transaction reaches a node or real wallet.
+  await page.exposeFunction("signFixturePublishPsbt",hex=>{
+    const psbt=bitcoin.Psbt.fromHex(hex);
+    psbt.signAllInputs({publicKey:ecc.pointFromScalar(fixtureKey,true),sign:hash=>ecc.sign(hash,fixtureKey)});
+    psbt.finalizeAllInputs();return psbt.toHex();
+  });
+  let broadcasts=0;
+  await page.route(url=>url.pathname === "/api/v1/broadcast/tx",async route=>{
+    expect(route.request().method()).toBe("POST");
+    const raw=route.request().postDataJSON().txHex;
+    broadcasts++;
+    return route.fulfill({json:{txid:bitcoin.Transaction.fromHex(raw).getId()}});
+  });
+  await page.goto("/?publish=1");
+  await page.getByRole("button", { name: "Connect UniSat", exact: true }).click();
+  await page.evaluate(()=>{
+    window.unisat.signPsbt=async hex=>{
+      window.publishSignatureCalls++;
+      await new Promise(resolve=>{window.releasePublishSignature=resolve;});
+      return window.signFixturePublishPsbt(hex);
+    };
+  });
+  await page.getByRole("button", { name: "Write your next article" }).click();
+  await page.getByRole("textbox", { name: "Article title", exact: true }).fill(article.title);
+  await page.getByRole("textbox", { name: "Article text", exact: true }).fill(body);
+  await page.getByRole("button", { name: "Review publication", exact: true }).click();
+  await page.getByRole("dialog", { name: "Publish article", exact: true }).getByRole("button", { name: "Continue to wallet", exact: true }).click();
+  await expect.poll(()=>page.evaluate(()=>typeof window.releasePublishSignature)).toBe("function");
+  expect(await page.evaluate(()=>window.dispatchEvent(new Event("proofofwork:before-publish-writer-leave",{cancelable:true})))).toBe(false);
+  await expect(page).toHaveURL(/write=1/);
+  expect(broadcasts).toBe(0);
+  await page.evaluate(()=>window.releasePublishSignature());
+  await expect(page).not.toHaveURL(/write=1/);
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveCount(0);
+  expect(broadcasts).toBe(1);
+  expect(await page.evaluate(()=>window.publishSignatureCalls)).toBe(1);
+  await page.goForward();
+  await expect(page.getByRole("textbox", { name: "Article title", exact: true })).toHaveValue("");
+  await expect(page.getByRole("textbox", { name: "Article text", exact: true })).toHaveValue("");
+});
+
+
+test("Publish failed draft read allows explicit Back without changing saved drafts", async ({ page }) => {
+  await fixture(page);
+  await page.goto("/?publish=1");
+  await page.getByRole("button", { name: "Write your next article" }).click();
+  await page.getByRole("textbox", { name: "Article text", exact: true }).fill("Preserved unreadable draft");
+  await page.getByRole("button", { name: "Save draft and back", exact: true }).click();
+  await expect(page).not.toHaveURL(/write=1/);
+  const originalDraft = await storedPublishDraft(page, "disconnected");
+  await page.evaluate(() => {
+    window.originalDraftGet = IDBObjectStore.prototype.get;
+    window.originalDraftPut = IDBObjectStore.prototype.put;
+    window.originalDraftDelete = IDBObjectStore.prototype.delete;
+    window.draftMutations = 0;
+    IDBObjectStore.prototype.get = function() { throw new Error("Fixture draft read failed"); };
+    IDBObjectStore.prototype.put = function(...args) { window.draftMutations++; return window.originalDraftPut.apply(this,args); };
+    IDBObjectStore.prototype.delete = function(...args) { window.draftMutations++; return window.originalDraftDelete.apply(this,args); };
+  });
+  await page.getByRole("button", { name: "Write your next article" }).click();
+  const escape = page.getByRole("button", {name:"Back without changing saved drafts",exact:true});
+  await expect(escape).toBeVisible();
+  await expect(page.getByRole("textbox", {name:"Article text",exact:true})).toHaveCount(0);
+  expect(await page.evaluate(()=>window.dispatchEvent(new Event("proofofwork:before-publish-writer-leave",{cancelable:true})))).toBe(false);
+  await escape.click();
+  await expect(page).not.toHaveURL(/write=1/);
+  await expect(escape).toHaveCount(0);
+  expect(await page.evaluate(()=>window.draftMutations)).toBe(0);
+  await page.evaluate(()=>{IDBObjectStore.prototype.get=window.originalDraftGet;});
+  expect(await storedPublishDraft(page,"disconnected")).toEqual(originalDraft);
+});
+
+test("Publish delayed linked receipt recovery cannot overwrite a newer writer session", async ({ page }) => {
+  const linkedId="e".repeat(64), recoveredBody="Late retained linked article";
+  const fileHash=createHash("sha256").update(recoveredBody).digest("hex");
+  await fixture(page, {wallet:true,recovery:"dropped", recoveryFields:[["Title","Late recovered title"],["Linked article",linkedId],["SHA-256",fileHash],["Body size",String(Buffer.byteLength(recoveredBody))]]});
+  await page.addInitScript(()=>{
+    const originalFetch=window.fetch;
+    window.fetch=async (...args)=>{
+      const response=await originalFetch(...args);
+      if(String(args[0]).includes("download=1")){
+        const getReader=response.body.getReader.bind(response.body);
+        response.body.getReader=(...options)=>{
+          const reader=getReader(...options), cancel=reader.cancel.bind(reader);
+          reader.cancel=(...values)=>cancel(...values).finally(()=>setTimeout(()=>{window.recoveryReadCompleted=true;},0));
+          return reader;
+        };
+      }
+      return response;
+    };
+  });
+  let releaseDownload, downloadStarted=false;
+  const heldDownload=new Promise(resolve=>{releaseDownload=resolve;});
+  await page.route("**/api/v1/powcat/**",async route=>{
+    if(new URL(route.request().url()).searchParams.has("download")){
+      downloadStarted=true;await heldDownload;
+      return route.fulfill({contentType:"text/plain",body:recoveredBody});
+    }
+    return route.fulfill({json:{network:"livenet",confirmed:true,txid:linkedId,fileHash,
+      size:Buffer.byteLength(recoveredBody),name:"article.txt",mime:"text/plain",partTxids:["f".repeat(64)],
+      blockHeight:1,blockHash:"1".repeat(64)}});
+  });
+  await page.goto("/?publish=1");
+  await page.getByRole("button", {name:"Connect UniSat",exact:true}).click();
+  await page.getByText("Transaction recovery · 0 unresolved · 1 resolved",{exact:true}).click();
+  await page.getByText("Resolved transaction history (1)",{exact:true}).click();
+  await page.getByRole("button",{name:"Restore task fields",exact:true}).click();
+  await expect.poll(()=>downloadStarted).toBe(true);
+  await page.getByRole("button",{name:"Write your next article"}).click();
+  await page.getByRole("textbox",{name:"Article title",exact:true}).fill("New writer title");
+  await page.getByRole("textbox",{name:"Article text",exact:true}).fill("New writer exact body");
+  releaseDownload();
+  await expect.poll(()=>page.evaluate(()=>window.recoveryReadCompleted)).toBe(true);
+  await expect(page.getByRole("textbox",{name:"Article title",exact:true})).toHaveValue("New writer title");
+  await expect(page.getByRole("textbox",{name:"Article text",exact:true})).toHaveValue("New writer exact body");
+  await expect.poll(async()=>(await storedPublishDraft(page,address))?.body).toBe("New writer exact body");
+  expect(await page.evaluate(()=>window.publishSignatureCalls)).toBe(0);
+});

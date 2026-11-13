@@ -1,10 +1,17 @@
-export type PublishArticleMetadata = {
+export type InlinePublishArticleMetadata = {
   v: 1;
   title: string;
   source: "same-tx-pwm1-message";
   size: number;
   sha256: string;
 };
+export type LinkedPublishArticleMetadata = { v: 2; title: string; source: "linked-powcat1"; size: number; sha256: string; linkerTxid: string };
+export type PublishArticleMetadata = InlinePublishArticleMetadata | LinkedPublishArticleMetadata;
+export const PUBLISH_LINKED_ARTICLE_SOURCE: "linked-powcat1";
+export const PUBLISH_LINKED_ARTICLE_VERIFICATION: "canonical-linked-powcat1-article-v2";
+export function publishArticleVerification(metadata: unknown): typeof PUBLISH_ARTICLE_VERIFICATION | typeof PUBLISH_LINKED_ARTICLE_VERIFICATION | null;
+export function publishLinkedArticlePointerMatches(metadata: unknown, attachment: unknown): boolean;
+export function publishLinkedArticleBody(metadata: unknown, file: unknown): string | null;
 export const PUBLISH_ARTICLE_SOURCE: "same-tx-pwm1-message";
 export const PUBLISH_ARTICLE_VERIFICATION: "canonical-same-tx-pwm1-message-v1";
 export const PUBLISH_DATA_CARRIER_LIMIT: 100000;
@@ -13,3 +20,4 @@ export function normalizePublishArticleMetadata(value: unknown): PublishArticleM
 export function publishArticleMetadataFromPayload(payload: unknown): PublishArticleMetadata | null;
 export function publishArticleBodyFromRecords(records: unknown, metadata: unknown, sha256: (bytes: Uint8Array) => string): string | null;
 export function publishArticleDataCarrierBytes(transaction: unknown): number | null;
+export function linkedArticlePointerFromRecords(records: unknown, metadata: unknown, carrierBytes: number | null): {txid: string; fileHash: string} | null;

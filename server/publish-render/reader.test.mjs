@@ -66,7 +66,7 @@ test("invalid paths and origins cannot control the upstream request", async () =
   for (const apiOrigin of ["file:///tmp/x", "https://user:password@api.example", "https://api.example/path", "https://api.example?x=1", "https://api.example#x", "https://api.\nexample", "not a URL"]) {
     assert.throws(() => createPublishReader({ apiOrigin }), TypeError);
   }
-  for (const options of [{ timeoutMs: 0 }, { timeoutMs: 60_001 }, { maxConcurrent: 17 }, { maxConcurrent: 0 }, { maxResponseBytes: Infinity }]) {
+  for (const options of [{ timeoutMs: 0 }, { timeoutMs: 100_001 }, { maxConcurrent: 17 }, { maxConcurrent: 0 }, { maxResponseBytes: Infinity }]) {
     assert.throws(() => readerFor(null, options), TypeError);
   }
 });
@@ -191,4 +191,17 @@ test("timeouts cover response streaming, retain occupied abort-ignoring slots an
   await assert.rejects(streaming.readArticle(TX), error => error.code === "PUBLISH_TIMEOUT"); streaming.close();
   const closing = readerFor(null, { fetchImpl: (_url, { signal: abort }) => new Promise((_, reject) => abort.addEventListener("abort", () => reject(abort.reason))) });
   const read = closing.readArticle(TX); await tick(); closing.close(); await assert.rejects(read, unavailable);
+});
+
+test("linked4MB body fits worst-case JSON escaping within finite response bounds", async () => {
+  const body = "x" + String.fromCharCode(1).repeat(3_999_999);
+  const record = post(body);
+  record.article = { ...record.article, v: 2, source: "linked-powcat1", linkerTxid: OTHER };
+  record.articleVerification = "canonical-linked-powcat1-article-v2";
+  const payload = detail(record);
+  assert.ok(Buffer.byteLength(JSON.stringify(payload)) > 24_000_000);
+  assert.equal((await readerFor(payload).readArticle(TX)).body, body);
+  assert.throws(() => readerFor(payload, {maxResponseBytes: 25 * 1024 ** 2 + 1}), TypeError);
+  record.article.size = 4_000_001;
+  await assert.rejects(readerFor(payload).readArticle(TX), unavailable);
 });

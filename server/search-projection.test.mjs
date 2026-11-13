@@ -144,7 +144,7 @@ test('Page references index source identity without treating supplied text as ve
   const doc = buildSearchDocument(source({ protocol: 'pwc1', kind: 'code-commit', amountSats: '0',
     payload: { metadata, path: 'index.html', source: { content: 'unverified injected words', data: 'untrusted' } } }), HASH);
   assert.equal(doc.record.valid, true); assert.equal(doc.record.file, undefined);
-  assert.equal(SEARCH_INDEX_VERSION, 'proof-search-v5-powcat-files');
+  assert.equal(SEARCH_INDEX_VERSION, 'proof-search-v6-linked-publish-content');
   assert.equal(doc.evidence.indexVersion, SEARCH_INDEX_VERSION);
   assert.deepEqual(doc.record.sourceReference, { txid: HASH, kind: 'body', vout: 2, sha256: HASH, size: 20, verified: false });
   assert.equal(doc.record.codeAuthority.requiresRepositoryReplay, true);

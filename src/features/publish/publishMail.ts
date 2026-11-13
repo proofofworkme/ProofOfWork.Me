@@ -3,13 +3,13 @@ import {
   normalizePublishArticleMetadata, publishArticleBodyBytes,
   publishArticleBodyFromRecords, publishArticleDataCarrierBytes,
   publishArticleMetadataFromPayload, PUBLISH_ARTICLE_VERIFICATION,
-  PUBLISH_DATA_CARRIER_LIMIT, type PublishArticleMetadata,
+  PUBLISH_DATA_CARRIER_LIMIT, publishArticleVerification, publishLinkedArticlePointerMatches, PUBLISH_LINKED_ARTICLE_VERIFICATION, type PublishArticleMetadata,
 } from "../../shared/protocol/publishArticle.mjs";
 import { sha256Hex } from "../../shared/utils/encoding";
 
 export type MailArticleEvidence = {
   article?: PublishArticleMetadata;
-  articleVerification?: typeof PUBLISH_ARTICLE_VERIFICATION;
+  articleVerification?: typeof PUBLISH_ARTICLE_VERIFICATION | typeof PUBLISH_LINKED_ARTICLE_VERIFICATION;
 };
 
 export function verifiedMailArticle(message: {
@@ -18,6 +18,12 @@ export function verifiedMailArticle(message: {
 }) {
   const article = normalizePublishArticleMetadata(message.article);
   const bytes = publishArticleBodyBytes(message.memo);
+  if (article?.v === 2) {
+    return (message.confirmed === true || message.status === "confirmed") &&
+      message.articleVerification === publishArticleVerification(article) &&
+      (message.attachment ? publishLinkedArticlePointerMatches(article, message.attachment) :
+        bytes && bytes.length === article.size && sha256Hex(bytes) === article.sha256) ? article : null;
+  }
   return article && !message.attachment &&
     (message.confirmed === true || message.status === "confirmed") &&
     message.articleVerification === PUBLISH_ARTICLE_VERIFICATION && bytes &&

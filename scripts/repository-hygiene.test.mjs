@@ -72,6 +72,7 @@ const FIXTURE_CONFIG = {
     'ledger-and-audit-evidence': [],
     'staged-or-future-protocol-notes': [],
     'presentation-and-generated-notes': [
+      'output/proofofwork-computer-growth-model-2026-11-12-products-v2.md',
       'PROOFOFWORK_GENERAL_DECK.md',
       'output/proofofwork-computer-agent-adoption-model.md',
       'output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md',
@@ -161,7 +162,18 @@ const FIXTURE_CONFIG = {
       "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.json",
       "output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md"
     ]
-  }
+  },
+{
+  "generator": "scripts/generate-current-growth.mjs",
+  "inputs": [
+    "src/features/growth/currentGrowthModel.mjs",
+    "src/features/growth/growthForecast.mjs"
+  ],
+  "outputs": [
+    "output/proofofwork-computer-growth-model-2026-11-12-products-v2.json",
+    "output/proofofwork-computer-growth-model-2026-11-12-products-v2.md"
+  ]
+}
 ],
 };
 
@@ -433,6 +445,14 @@ function createFixture(t, { withObsoleteFile = false } = {}) {
   for (const output of forecastGroup.outputs) {
     write(root, output, 'fixture-forecast\n');
   }
+  const currentGroup = FIXTURE_CONFIG.generatedArtifacts[3];
+  write(root, currentGroup.inputs[0], "export const currentBytes = 'fixture-current\\n';\n");
+  write(root, currentGroup.generator, [
+    "import { writeFileSync } from 'node:fs';",
+    "import { currentBytes } from '../src/features/growth/currentGrowthModel.mjs';",
+    `for (const output of ${JSON.stringify(currentGroup.outputs)}) writeFileSync(output, currentBytes);`,
+  ].join('\n'));
+  for (const output of currentGroup.outputs) write(root, output, 'fixture-current\n');
   for (const hook of ['pre-commit', 'prepare-commit-msg', 'commit-msg']) {
     write(
       root,
@@ -1360,4 +1380,13 @@ test('range requires trailers when a merge commit changes the mechanical result'
     cli(root, 'range', base, head, '--ci', '--require-ancestor'),
     'a content-altering merge without its own attestations',
   );
+});
+
+
+test('check detects current-product scenario artifact drift', (t) => {
+  const root = createFixture(t);
+  const group = FIXTURE_CONFIG.generatedArtifacts[3];
+  expectSuccess(cli(root, 'check', '--ci'), 'unchanged current scenario');
+  write(root, group.outputs[0], 'stale current model\n');
+  expectFailure(cli(root, 'check', '--ci'), 'current scenario drift');
 });

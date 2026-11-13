@@ -32,8 +32,9 @@ function need(ok, message) { if (!ok) throw new IndexUnavailable(message); }
 // Each resolved dependency is independently bound to an active Core block.
 // A missing dependency is terminal for an already confirmed linker only
 // after a synchronized txindex covers the linker's own block.
-export async function resolveIndexedPowcatFile(tx, position, rpc) {
+export async function resolveIndexedPowcatFile(tx, position, rpc, { includeEvidence = false } = {}) {
   const checked = new Map([[position.blockHeight, position.blockHash]]);
+  const dependencies = [{ txid: tx.txid, blockHeight: position.blockHeight, blockHash: position.blockHash }];
   const index = await rpc("getindexinfo", ["txindex"]);
   need(index?.txindex?.synced === true && index.txindex.best_block_height >= position.blockHeight,
     "powcat index needs synchronized Core txindex");
@@ -59,13 +60,14 @@ export async function resolveIndexedPowcatFile(tx, position, rpc) {
       need(header?.hash === raw.blockhash && header.confirmations > 0 && Number.isSafeInteger(header.height)
         && (!checked.has(header.height) || checked.get(header.height) === header.hash), "powcat part position changed");
       checked.set(header.height, header.hash);
+      dependencies.push({ txid: id, blockHeight: header.height, blockHash: header.hash });
       return { hex: raw.hex, blockHeight: header.height, blockHash: header.hash };
     });
   } catch (error) {
     if (error instanceof IndexUnavailable) throw error;
   }
   for (const [height, expected] of checked) need(await rpc("getblockhash", [height]) === expected, "powcat verification reorganized");
-  return resolved;
+  return resolved && includeEvidence ? { ...resolved, dependencies } : resolved;
 }
 
 export async function powcatObservations(tx, position, rpc) {

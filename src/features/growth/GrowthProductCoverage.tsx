@@ -1,16 +1,18 @@
 import { APP_LINKS } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
 import { GROWTH_PRODUCT_COVERAGE } from "./growthForecast.mjs";
+import { CURRENT_GROWTH_PRODUCT_COVERAGE } from "./currentGrowthModel.mjs";
 
 const roles: Record<string, string> = {
   economic: "Activity lane", shared: "Shared accounting", aggregate: "Aggregate",
   derived: "Derived metric", "read-only": "Read-only",
 };
 
-export default function GrowthProductCoverage() {
+export default function GrowthProductCoverage({ current = true }: { current?: boolean }) {
+  const coverageRows = current ? CURRENT_GROWTH_PRODUCT_COVERAGE : GROWTH_PRODUCT_COVERAGE;
   const products = APP_LINKS.map((link) => ({
     link,
-    coverage: GROWTH_PRODUCT_COVERAGE.find((item) =>
+    coverage: coverageRows.find((item) =>
       item.name === link.label || (link.label === "Credit" && item.product === "credit")),
   }));
   return (
@@ -36,7 +38,7 @@ export default function GrowthProductCoverage() {
             </details> : null}
           </li>
         ))}
-        {GROWTH_PRODUCT_COVERAGE.filter((item) => item.product === "mail" || item.product === "files").map((item) => (
+        {coverageRows.filter((item) => item.product === "mail" || item.product === "files").map((item) => (
           <li key={item.product}>
             <div className="growth-coverage-heading"><h4>{item.name}</h4><span>Computer workspace</span></div>
             <p>{item.activity}</p>

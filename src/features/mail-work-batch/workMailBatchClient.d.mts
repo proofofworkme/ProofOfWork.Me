@@ -7,3 +7,5 @@ export function workMailAttachmentMode(value: unknown, previous?: WorkMailBatchS
 export function canonicalMailRecipients(to: Array<{ paymentAddress: string; isId: boolean; displayRecipient: string; id?: string }>, cc: Array<{ paymentAddress: string; isId: boolean; displayRecipient: string; id?: string }>, network?: string): MailRoute[];
 export function assertSameMailRoutes(previous: MailRoute[], fresh: MailRoute[]): void;
 export function planWorkMailAttachment(options: { recipients: MailRoute[]; amountSubatoms: string; status?: unknown; previousStatus?: WorkMailBatchStatus; legacyPayload?: (address: string) => string; socialMode?: boolean; message?: string; parentTxid?: string; hasAttachment?: boolean }): WorkMailAttachmentPlan;
+
+export function mailWorkBondKind(options?: { message?: string; parentTxid?: string; hasAttachment?: boolean; socialMode?: boolean }): "inception" | "infinity" | null;

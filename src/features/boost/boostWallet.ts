@@ -924,7 +924,7 @@ export async function signAndBroadcastBoostPsbt({
   requireP2pkhAllInputs = false,
 }: {
   beforeBroadcast?: () => Promise<void>;
-  onSigned?: (txid: string) => void | Promise<void>;
+  onSigned?: (txid: string, rawHex: string) => void | Promise<void>;
   inputCount: number;
   network: BitcoinNetwork;
   psbtHex: string;
@@ -1004,7 +1004,7 @@ export async function signAndBroadcastBoostPsbt({
     rawUnsignedTransactionIntent(signedTransaction),
   );
   if (previousOutputs) assertP2pkhAllSignedInputs(signedTransaction, previousOutputs);
-  await onSigned?.(signedTransaction.getId());
+  await onSigned?.(signedTransaction.getId(), signedTransaction.toHex());
   await beforeBroadcast?.();
   await verifyUploadReservations();
   return broadcastRawTransaction(signedTransaction.toHex(), network);

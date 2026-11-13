@@ -71,10 +71,10 @@
     "check:read-projections": "node --test server/read-projections.test.mjs server/amo-listing-read.test.mjs server/db/canonical-work-listing-batch.test.mjs server/db/summary-component-read.test.mjs server/db/log-history-page.test.mjs server/db/log-history-transfer-display.test.mjs server/marketplace-authority-read.test.mjs server/marketplace-core-summary-selection.test.mjs scripts/checkpoint-canonical-digest.test.mjs scripts/summary-component-read.test.mjs scripts/wallet-request-readiness.test.mjs scripts/wallet-proof-readiness-failure.test.mjs scripts/check-pending-base-worker.test.mjs scripts/marketplace-private-phases.test.mjs",
     "check:boost-tips": "node --test scripts/check-boost-tips.test.mjs scripts/check-boost-tip-work-capacity.test.mjs scripts/plan-boost-work-tip-repair.test.mjs && node scripts/check-boost-regressions.mjs",
     "check:boost-regressions": "node scripts/check-inflight-request-pool.mjs && node --test scripts/check-boost-regressions.mjs src/shared/media/youtubeLinks.test.mjs",
-    "check:publish": "node --test scripts/check-publish-articles.mjs server/mail-article-projection.test.mjs && node scripts/check-social-identity.test.mjs && node scripts/check-publish-recovery.test.mjs",
+    "check:publish": "node --test scripts/check-publish-linked-live.test.mjs scripts/check-publish-articles.mjs scripts/check-publish-linked-contract.test.mjs scripts/check-publish-draft-store.test.mjs server/publish-linked.test.mjs server/publish-linked-capability.test.mjs server/mail-article-projection.test.mjs && node scripts/check-social-identity.test.mjs && node scripts/check-publish-recovery.test.mjs",
     "check:publish:ssr": "node --test server/publish-render/*.test.mjs scripts/check-publish-ssr-live.test.mjs && python3 -I -B deploy/publish-render/check-install.test.py",
     "check:publish:ssr:live": "node scripts/check-publish-ssr-live.mjs",
-    "check:search": "node --test server/search-projection.test.mjs scripts/backfill-proof-search.test.mjs",
+    "check:search": "node --test server/search-linked-publish.test.mjs server/search-projection.test.mjs scripts/backfill-proof-search.test.mjs",
     "check:code": "node scripts/check-code-repositories.mjs && node --test scripts/check-code-client.test.mjs server/code-repositories.test.mjs server/db/code-reader.test.mjs",
     "check:code:browser": "playwright test --config playwright.ui.config.mjs code-ui.spec.mjs code-reference-ui.spec.mjs",
     "check:jobs": "node --test server/jobs*.test.mjs server/db/jobs*.test.mjs scripts/check-jobs*.test.mjs",
@@ -136,7 +136,7 @@
     "rank:powids": "node scripts/rank-powid-transactions.mjs",
     "proof-api": "node server/proof-api.mjs",
     "model:growth": "node scripts/generate-growth-forecast.mjs",
-    "check:growth": "node --test scripts/check-growth-forecast.test.mjs scripts/check-boost-growth-client.test.mjs scripts/check-boost-growth.mjs scripts/check-growth-archive.test.mjs",
+    "check:growth": "node --test scripts/check-growth-forecast.test.mjs scripts/check-boost-growth-client.test.mjs scripts/check-boost-growth.mjs scripts/check-growth-archive.test.mjs scripts/check-current-growth.test.mjs",
     "check:ui-stage-dedup": "python3 -B scripts/check-ui-stage-dedup.py",
     "check:ui-retained-root": "python3 -B scripts/check-ui-retained-root.py",
     "check:approved-archive-prune": "python3 -B scripts/check-approved-archive-prune.py",
@@ -170,7 +170,9 @@
     "check:work-batch:pending-summary-fix": "python3 -I -B deploy/work-batch-pending-summary-fix/check-scoped-node.test.py && python3 -I -B deploy/work-batch-pending-summary-fix/check-release.test.py && python3 -I -B deploy/work-batch-pending-summary-fix/rehearsal.test.py && python3 -I -B deploy/work-batch-pending-summary-fix/runtime-archive.test.py",
     "build:work-mail-batch-declaration": "node scripts/build-work-mail-batch-declaration.mjs",
     "check:work-mail-batch": "node --test src/shared/protocol/workMailBatch.test.mjs server/work-mail-batch-*.test.mjs server/db/work-mail-batch-*.test.mjs scripts/check-work-mail-batch-*.test.mjs scripts/check-work-batch-summary-projection.test.mjs src/features/mail-work-batch/*.test.mjs",
-    "check:work-mail-batch:deploy": "python3 -I -B deploy/mail-work-batch/check-scoped-node.test.py && python3 -I -B deploy/mail-work-batch/check-release.test.py && python3 -I -B deploy/mail-work-batch/check-activation.test.py && node --test deploy/mail-work-batch/check-activation-probe.test.mjs && python3 -I -B deploy/mail-work-batch/runtime-archive.test.py"
+    "check:work-mail-batch:deploy": "python3 -I -B deploy/mail-work-batch/check-scoped-node.test.py && python3 -I -B deploy/mail-work-batch/check-release.test.py && python3 -I -B deploy/mail-work-batch/check-activation.test.py && node --test deploy/mail-work-batch/check-activation-probe.test.mjs && python3 -I -B deploy/mail-work-batch/runtime-archive.test.py",
+    "check:publish:deploy": "node --test scripts/check-publish-linked-deployment.test.mjs",
+    "model:growth:current": "node scripts/generate-current-growth.mjs"
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",

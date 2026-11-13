@@ -5,7 +5,14 @@ export const PUBLISH_SERVER_CONTENT_ID = "publish-server-content";
 export const PUBLISH_SERVER_METADATA_ID = "publish-server-metadata";
 
 export function publishArticleExcerpt(body) {
-  const characters = Array.from(String(body ?? "").replace(/\s+/gu, " ").trim());
+  const characters = [];
+  let gap = false;
+  for (const character of String(body ?? "")) {
+    if (/\s/u.test(character)) { gap = characters.length > 0; continue; }
+    if (gap) characters.push(" ");
+    gap = false; characters.push(character);
+    if (characters.length > 160) break;
+  }
   return characters.length > 160 ? `${characters.slice(0, 159).join("").trimEnd()}…` : characters.join("");
 }
 
@@ -13,7 +20,7 @@ export function publishArticleExcerpt(body) {
 export function publishArticleSeoFacts(article) {
   if (!article || !/^[a-f0-9]{64}$/iu.test(article.txid ?? "") ||
       typeof article.title !== "string" || !article.title.trim() || article.title.length > 140 ||
-      !Number.isSafeInteger(article.size) || article.size < 1 || article.size > 100_000 ||
+      !Number.isSafeInteger(article.size) || article.size < 1 || article.size > 4_000_000 ||
       !/^[a-f0-9]{64}$/u.test(article.sha256 ?? "") ||
       typeof article.authorAddress !== "string" || !article.authorAddress || article.authorAddress.length > 128) {
     throw new TypeError("Invalid verified article presentation facts.");

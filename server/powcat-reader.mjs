@@ -13,7 +13,7 @@ export function createPowcatReader({ rpc, chain, maxConcurrent = 2 }) {
     throw new Error("Invalid powcat reader configuration.");
   }
   let active = 0;
-  return async function read(txid, { signal } = {}) {
+  return async function read(txid, { signal, includeEvidence = false } = {}) {
     if (!hash(txid)) throw failure(400, "Invalid linker TXID.");
     if (active >= maxConcurrent) throw failure(429, "File verification is busy.");
     active++;
@@ -35,6 +35,7 @@ export function createPowcatReader({ rpc, chain, maxConcurrent = 2 }) {
         throw failure(503, "File verification requires a synchronized node on the selected chain.");
       }
       const byHash = new Map();
+      const dependencies = [];
       let rootBlock;
       const file = await resolvePowcatFile(txid, async id => {
         const proof = await call("gettxoutproof", [[id]]);
@@ -53,6 +54,7 @@ export function createPowcatReader({ rpc, chain, maxConcurrent = 2 }) {
         }
         const blockHeight = byHash.get(blockHash);
         if (id === txid) rootBlock = { blockHeight, blockHash };
+        dependencies.push({ txid: id, blockHeight, blockHash });
         const hex = await call("getrawtransaction", [id, 0]);
         return { hex, blockHeight, blockHash };
       });
@@ -60,7 +62,7 @@ export function createPowcatReader({ rpc, chain, maxConcurrent = 2 }) {
         if (await call("getblockhash", [blockHeight]) !== blockHash) throw failure(409, "File dependency was reorganized.");
       }
       if (await call("getblockhash", [tip.blocks]) !== tip.bestblockhash) throw failure(409, "File verification checkpoint was reorganized.");
-      return { ...file, ...rootBlock };
+      return { ...file, ...rootBlock, ...(includeEvidence ? { dependencies } : {}) };
     } catch (error) {
       if (error?.statusCode) throw error;
       throw failure(422, "The transactions do not form a valid powcat1 file.");

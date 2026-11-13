@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import {
-  normalizePublishArticleMetadata, publishArticleBodyBytes, PUBLISH_ARTICLE_VERIFICATION,
+  normalizePublishArticleMetadata, publishArticleBodyBytes, PUBLISH_ARTICLE_VERIFICATION, publishArticleVerification,
 } from "../../src/shared/protocol/publishArticle.mjs";
 
 const HASH = /^[0-9a-f]{64}$/u;
@@ -95,7 +95,7 @@ function articleSummary(post) {
     post.network === "livenet" && HASH.test(post.txid) &&
     (!post.boostTxid || post.boostTxid === post.txid));
   const article = normalizePublishArticleMetadata(post.article);
-  requireEvidence(article && post.articleVerification === PUBLISH_ARTICLE_VERIFICATION);
+  requireEvidence(article && post.articleVerification === publishArticleVerification(article));
   // Address authority comes from the existing confirmed API projection. Never
   // substitute the current asset owner, a profile label, or a caller parameter.
   requireEvidence(typeof post.authorAddress === "string" && post.authorAddress.length <= 128 &&
@@ -163,16 +163,19 @@ function directoryResult(payload, cursor) {
  * 16 waiting callers per key; no queue. A disconnected caller must not cancel
  * other callers' shared read. close() aborts every outstanding operation.
  */
-export function createPublishReader({ apiOrigin, fetchImpl = globalThis.fetch, timeoutMs = 15_000,
-  maxResponseBytes = 2 * 1024 ** 2, maxConcurrent = 2 } = {}) {
+// A4,000,000-byte UTF-8 article can expand to24,000,000 JSON bytes when
+// control characters are escaped. Allow bounded envelope headroom, two default
+// concurrent requests, and90s Core verification plus5s upstream overhead.
+export function createPublishReader({ apiOrigin, fetchImpl = globalThis.fetch, timeoutMs = 95_000,
+  maxResponseBytes = 25 * 1024 ** 2, maxConcurrent = 2 } = {}) {
   let origin;
   try {
     origin = new URL(apiOrigin);
     if (typeof apiOrigin !== "string" || /\s/u.test(apiOrigin) || !["https:", "http:"].includes(origin.protocol) ||
         origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) throw new Error();
   } catch { throw new TypeError("apiOrigin must be a trusted HTTP(S) origin without credentials, path, query or fragment."); }
-  for (const [name, value, ceiling] of [["timeoutMs", timeoutMs, 60_000],
-    ["maxResponseBytes", maxResponseBytes, 8 * 1024 ** 2], ["maxConcurrent", maxConcurrent, 16]]) {
+  for (const [name, value, ceiling] of [["timeoutMs", timeoutMs, 100_000],
+    ["maxResponseBytes", maxResponseBytes, 25 * 1024 ** 2], ["maxConcurrent", maxConcurrent, 16]]) {
     if (!Number.isSafeInteger(value) || value < 1 || value > ceiling) throw new TypeError(`Invalid ${name}.`);
   }
   if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl must be a function.");
