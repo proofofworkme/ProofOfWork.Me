@@ -368,6 +368,7 @@ const baselineDelta = [
   }
 ];
 const operatorPaths = new Set([
+ "scripts/lifecycle-status-witness.mjs", "scripts/lifecycle-status-witness.test.mjs",
  "scripts/fixtures/dual-release/native609.json", "scripts/fixtures/dual-release/browser609.json",
  "scripts/collect-dual-release-evidence.mjs", "scripts/collect-dual-release-evidence.test.mjs",
   "scripts/release-identity-proof.mjs",
@@ -385,6 +386,7 @@ const operatorPaths = new Set([
   "repository-hygiene.json"
 ]);
 const closurePaths = [
+ "scripts/lifecycle-status-witness.mjs",
  "deploy/proofofwork-postgres-query-health.sh",
  "deploy/linked-publish/profile.py",
  "deploy/activity-fee-factor/profile.py",

@@ -103,3 +103,26 @@ the original source and build-receipt fences. outcome: uncertain requires
 reconciliation of the named transient unit before retry; even a verified stopped
 failure is never a successful qualification or permission to retry. Failure
 diagnostics cannot recover the cause of an earlier discarded probe output.
+
+## Same-collection two-pass lifecycle verification
+
+The explicit collector performs two complete stock lifecycle status scans, before
+and after the other read-only probes. The activity probe alone may consume the
+first scan through an immutable process-local witness bound to the exact branded
+source proof and one collection. JSON, cloned handles, stale witnesses and reused
+or superseded witnesses cannot substitute. Standalone/default activity still
+runs its own complete lifecycle status.
+
+Activity labels this reuse provisional: the final independent full scan remains
+required. Qualification compares the entire stock status, including context,
+guards, manifests, holds, capacity authority, controller/config/state/index
+bindings and completion history. No status fields are treated as volatile or
+omitted. Only the separately reconstructed source proof's observation timestamp
+is excluded from source equality. Source identities and closure hashes remain
+exact. The original 900-second collection budget is unchanged and the witness
+also checks wall and monotonic age. Failure burns the consumed/finalized witness;
+a new collection is required, not an automatic probe retry.
+
+Tests use isolated synthetic transports and identity brands, including the real
+activity control flow. They do not establish production qualification, retirement,
+deployment, or writer activation.

@@ -8,6 +8,7 @@ import {createIdentityProof,requireIdentityProof,publicIdentityProof} from "./re
 import {runRemotePublishPreactivation} from "./check-publish-linked-remote.mjs";
 import {runActivityFeeFactorLive} from "./check-activity-fee-factor-live.mjs";
 
+import {beginLifecycleCollection,finishLifecycleCollection} from "./lifecycle-status-witness.mjs";
 const primary="/home/sixer/ProofOfWork.Me";
 const github="https://github.com/proofofworkme/ProofOfWork.Me.git";
 const buildRoot="/data/proofofwork-ui-builds/stock-064b699-20261114";
@@ -264,19 +265,19 @@ export async function collectDualReleaseEvidence({proof,archivalEvidence}={}) {
  const growthSha256=sha(exec("/usr/bin/git",["--no-replace-objects","-c","core.fsmonitor=false","-c","advice.graftFileDeprecated=false","-C",p.repository,"show",p.artifact.commit+":scripts/check-current-growth-live.mjs"]));
  const runtimeAfter=Object.fromEntries(original.plan.runtimeManifestTemplate.sources.map(row=>[row.path,row.after]));
  const nodeBefore=parseCollectedJson(ssh("node",nodeProgram,{source,artifact:ids.artifact,backend:ids.backend,runtimeAfter,archive:anchors.archive,growthSha256},240000));put("build",nodeBefore.build);
- const lifecycle=()=>parseCollectedJson(exec("python3",["-I","-B","deploy/ui-retention/lifecycle.py","status","--require-complete"],{cwd:p.repository,timeout:480000}));
- const lifecycleBefore=lifecycle();put("lifecycle",lifecycleBefore);
+ const lifecyclePass=beginLifecycleCollection(proof);
+ const lifecycleBefore=lifecyclePass.status;put("lifecycle",lifecycleBefore);
  const probe=runRemotePublishPreactivation({root:p.repository,identityProof:proof,env:{...transportEnv,POW_PUBLISH_CHECK_MODE:"preactivation",POW_PUBLISH_CHECK_NODE_SOURCE:source}});
  put("preactivation",probe);
  put("runtime",{...nodeBefore.runtime,writerEnabled:false}); // Actual typed probe above proved disabled.
  assert.equal(process.cwd(),p.repository,"Typed activity probe requires exact repository cwd");
- put("activity",await runActivityFeeFactorLive({identityProof:proof}));
+ put("activity",await runActivityFeeFactorLive({identityProof:proof,lifecycleWitness:lifecyclePass.witness}));
  const growthCommand="cd "+quote(source)+" && env -u NODE_OPTIONS -u NODE_PATH /opt/node-v24.18.0-linux-x64/bin/node scripts/check-current-growth-live.mjs";
  put("growth",exec("ssh",["-i","/home/sixer/.ssh/proofofwork_node_ed25519","-o","BatchMode=yes","-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=yes","-o","ConnectTimeout=15","powadmin@65.108.122.87",growthCommand],{timeout:180000}));
  assert.deepEqual(await primaryRead(),primaryBefore,"Primary changed during collection");
  assert.deepEqual(parseCollectedJson(ssh("ui",uiProgram,{verifier,verifierSha256:sha(verifier)},480000)),uiBefore,"UI changed during collection");
  assert.deepEqual(parseCollectedJson(ssh("node",nodeProgram,{source,artifact:ids.artifact,backend:ids.backend,runtimeAfter,archive:anchors.archive,growthSha256},240000)),nodeBefore,"Node changed during collection");
- const lifecycleAfter=lifecycle();assert.equal(lifecycleAfter.retentionComplete,true);assert.deepEqual(lifecycleAfter.pair,lifecycleBefore.pair);
+ finishLifecycleCollection(lifecyclePass.witness,proof);
  assert.deepEqual(parseCollectedJson(ssh("node",archiveProgram,Object.fromEntries(Object.entries(anchors).filter(([name])=>name!=="archive")))),archived,"Archival receipts changed during collection");
  assertProofSame(initial,createIdentityProof({repository:p.repository}));
  assert(Date.now()-started<=900000,"Collection exceeded freshness budget");
