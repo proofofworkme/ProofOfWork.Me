@@ -54,18 +54,22 @@ test("exact operator package scope rejects foreign entries and fake capabilities
  assert.throws(()=>bindInstalledRetentionPackage({...life,verifiedRetirementPolicyCodeSha256:"f".repeat(64)},att));
  assert.throws(()=>bindInstalledRetentionPackage(life,{...att,mode:"legacy-in-place"}));
 });
-test("protected installed package fixtures reject mutations without executing policy",()=>{
+function runProtectedPackageFixture(nonRootRejection = false) {
  const operator={commit:"a".repeat(40),tree:"b".repeat(40)};
  const expected=expectedRetentionPackage(operator,Object.fromEntries(retentionPackageFiles.map(p=>[p,Buffer.from(p+"\n")])));
  const program=String.raw`
-import contextlib,io,json,pathlib,sys,tempfile
+import contextlib,io,json,os,pathlib,sys,tempfile
 r=json.load(sys.stdin)
-for case in ('valid','commit','tree','hash','extra','bytes','path','pending','symlink','duplicate','legacy'):
+for case in (('valid',) if r['nonRootRejection'] else ('valid','commit','tree','hash','extra','bytes','path','pending','symlink','duplicate','legacy')):
  with tempfile.TemporaryDirectory(prefix='pow-package-fixture-') as tmp:
   root=pathlib.Path(tmp);root.chmod(0o700);package=root/'package';package.mkdir()
   expected={**r['expected'],'path':str(package)};manifest=expected['manifest'];cp=root/'config.json'
   for name in manifest['files']:
    p=package/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(name+'\n');p.chmod(0o600)
+  # Keep fixture permissions independent of the caller's umask.
+  package.chmod(0o700)
+  for directory in package.rglob('*'):
+   if directory.is_dir():directory.chmod(0o700)
   (package/'package.json').write_text(expected['manifestRaw']);(package/'package.json').chmod(0o600)
   config={'schema':'pow-ui-retention-lifecycle-config-v1','sourceCommit':manifest['sourceCommit'],'sourceTree':manifest['sourceTree'],'package':{'path':str(package),'sha256':expected['sha256']},'controller':{'path':str(package/'deploy/ui-retention/lifecycle_remote.py'),'sha256':manifest['files']['deploy/ui-retention/lifecycle_remote.py']['sha256']},'payloadRetirement':{'mode':'complete','policyCodeSha256':expected['sha256']}}
   if case=='commit':config['sourceCommit']='c'*40
@@ -84,6 +88,13 @@ for case in ('valid','commit','tree','hash','extra','bytes','path','pending','sy
   code=r['program'].replace("'/etc/proofofwork-retention/ui-lifecycle.json'",repr(str(cp)))
   # Fixture-only filesystem boundary: /tmp itself is intentionally writable.
   code=code.replace('for parent in p.parents:', 'for parent in [x for x in p.parents if x == pathlib.Path('+repr(str(root))+') or pathlib.Path('+repr(str(root))+') in x.parents]:')
+  if not r['nonRootRejection']:
+   # Fixture-only UID/GID namespace mapping; this does not certify real root ownership.
+   # The separate non-root case runs the unchanged production ownership checks.
+   assert code.count('info.st_uid==info.st_gid==0')==2
+   assert code.count('before.st_uid==before.st_gid==0')==1
+   code=code.replace('info.st_uid==info.st_gid==0','info.st_uid==os.getuid() and info.st_gid==os.getgid()')
+   code=code.replace('before.st_uid==before.st_gid==0','before.st_uid==os.getuid() and before.st_gid==os.getgid()')
   output=io.StringIO();old=sys.stdin;sys.stdin=io.StringIO(json.dumps({'expected':expected}));failed=False
   try:
    with contextlib.redirect_stdout(output):
@@ -92,8 +103,14 @@ for case in ('valid','commit','tree','hash','extra','bytes','path','pending','sy
      if e.code!=0:raise
   except (AssertionError,FileNotFoundError):failed=True
   finally:sys.stdin=old
-  assert failed==(case not in ('valid','legacy')),case
+  # The separate unprivileged case must fail the unmodified root-only ownership guard.
+  assert failed==(r['nonRootRejection'] or case not in ('valid','legacy')),case
   if not failed:assert json.loads(output.getvalue())['mode']==('legacy-in-place' if case=='legacy' else 'operator-retirement-package')
 `;
- execFileSync("/usr/bin/python3",["-I","-B","-c",program],{input:JSON.stringify({program:installedRetentionProgram,expected}),timeout:15000});
-});
+ execFileSync("/usr/bin/python3",["-I","-B","-c",program],{input:JSON.stringify({program:installedRetentionProgram,expected,nonRootRejection}),timeout:15000});
+}
+const protectedFixtureIsRoot = process.getuid?.() === 0 && process.getgid?.() === 0;
+test("fixture UID/GID namespace validates valid/legacy packages and rejects nine mutations", () => runProtectedPackageFixture());
+test("unprivileged installed package fixture is rejected by the unchanged root-ownership guard", {
+ skip: protectedFixtureIsRoot ? "Run as an unprivileged user to exercise actual ownership rejection" : false,
+}, () => runProtectedPackageFixture(true));
