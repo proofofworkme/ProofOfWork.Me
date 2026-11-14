@@ -152,12 +152,66 @@ fields=scope['verified_release'](root,pathlib.Path('/var/backups/proofofwork-ui/
 assert p.read_bytes()==before
 print(json.dumps({'manifestRaw':before.decode(),'inventories':{k.split('.')[1]:v for k,v in fields.items() if k.startswith('surface.') and k.endswith('.sha256')}}))
 `;
-const nodeProgram=String.raw`import hashlib,json,pathlib,stat,subprocess,sys
+export const nodeGitOwnerProgram=String.raw`import hashlib,os,pathlib,pwd,stat,subprocess
+SEALED_CONFIG_SHA256='b31f2ae31192674e0b589c54299ce5137160a5a07581cfffad1f767e69e0a7a1'
+SOURCE_GIT_ENV={'PATH':'/usr/bin:/bin','HOME':'/nonexistent','GIT_CONFIG_GLOBAL':'/dev/null','GIT_CONFIG_NOSYSTEM':'1','GIT_NO_REPLACE_OBJECTS':'1','GIT_OPTIONAL_LOCKS':'0','GIT_GRAFT_FILE':'/dev/null'}
+SOURCE_GIT_READS={('rev-parse','HEAD'),('rev-parse','HEAD^{tree}'),('status','--porcelain','--untracked-files=all'),('ls-files','-v')}
+def source_git_owner(uid,gid):
+ name='root' if uid==0 else 'powadmin'
+ account=pwd.getpwnam(name)
+ assert (uid,gid)==(account.pw_uid,account.pw_gid),'Unexpected source owner'
+ return name
+def source_git_meta(info,owner,directory):
+ assert (info.st_uid,info.st_gid)==owner,'Mixed source ownership'
+ assert not info.st_mode&0o022,'Writable source metadata'
+ assert (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)),'Symlink or unexpected source type'
+ if not directory:assert info.st_nlink==1,'Aliased Git metadata'
+ return (info.st_dev,info.st_ino,info.st_uid,info.st_gid,info.st_mode)
+def source_git_config(raw):
+ assert hashlib.sha256(raw).hexdigest()==SEALED_CONFIG_SHA256,'Sealed Git config changed'
+def source_git_stable(before,after):
+ assert before==after,'Source changed during owner-aware Git read'
+def source_git_fence(root):
+ assert root.is_absolute() and root.resolve(strict=True)==root,'Noncanonical source path'
+ info=root.lstat();owner=(info.st_uid,info.st_gid);name=source_git_owner(*owner)
+ rows=[(str(root),source_git_meta(info,owner,True))]
+ for parent in root.parents:
+  assert parent.resolve(strict=True)==parent,'Symlink source ancestor'
+  item=parent.lstat();expected=(0,0) if item.st_uid==0 else owner
+  rows.append((str(parent),source_git_meta(item,expected,True)))
+ gitdir=root/'.git';assert gitdir.resolve(strict=True)==gitdir,'Noncanonical Git directory'
+ rows.append((str(gitdir),source_git_meta(gitdir.lstat(),owner,True)))
+ for directory,dirs,files in os.walk(gitdir,followlinks=False):
+  for leaf in sorted(dirs+files):
+   path=pathlib.Path(directory)/leaf;item=path.lstat()
+   assert path.resolve(strict=True)==path,'Symlink Git metadata'
+   meta=source_git_meta(item,owner,leaf in dirs)
+   rows.append((str(path),meta,item.st_size,item.st_mtime_ns,item.st_ctime_ns))
+ source_git_config((gitdir/'config').read_bytes())
+ for namepart in ('objects/info/alternates','info/grafts','info/attributes'):
+  assert not (gitdir/namepart).exists(),'External Git metadata forbidden'
+ for path in (root/'scripts',root/'scripts/check-current-growth-live.mjs'):
+  assert path.resolve(strict=True)==path,'Symlink source checker'
+  rows.append((str(path),source_git_meta(path.lstat(),owner,path.name=='scripts')))
+ return (name,tuple(rows))
+def source_git(root,*args):
+ assert tuple(args) in SOURCE_GIT_READS,'Git operation outside read-only scope'
+ before=source_git_fence(root)
+ command=['/usr/sbin/runuser','-u',before[0],'--','/usr/bin/env','-i']
+ command += [key+'='+value for key,value in SOURCE_GIT_ENV.items()]
+ command += ['/usr/bin/git','--no-replace-objects','-c','core.fsmonitor=false','-c','core.untrackedCache=false','-c','advice.graftFileDeprecated=false','-C',str(root),*args]
+ result=subprocess.check_output(command,text=True,timeout=30,env=SOURCE_GIT_ENV).strip()
+ source_git_stable(before,source_git_fence(root))
+ return result
+`;
+const nodeProgram=String.raw`${nodeGitOwnerProgram}
+import hashlib,json,pathlib,stat,subprocess,sys
 r=json.load(sys.stdin);root=pathlib.Path(r['source']);receipt=root.parent/'build-receipt.json'
 def digest(p):
  assert p.resolve(strict=True)==p and stat.S_ISREG(p.lstat().st_mode)
  with p.open('rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
-def git(*a):return subprocess.check_output(['/usr/bin/git','--no-replace-objects','-c','core.fsmonitor=false','-c','advice.graftFileDeprecated=false','-C',str(root),*a],text=True,timeout=30,env={'PATH':'/usr/bin:/bin','HOME':'/nonexistent','GIT_CONFIG_GLOBAL':'/dev/null','GIT_CONFIG_NOSYSTEM':'1','GIT_NO_REPLACE_OBJECTS':'1','GIT_OPTIONAL_LOCKS':'0','GIT_GRAFT_FILE':'/dev/null'}).strip()
+def git(*a):return source_git(root,*a)
+owner_before=source_git_fence(root)
 before=receipt.read_bytes();value=json.loads(before)
 assert git('rev-parse','HEAD')==r['artifact']['commit'] and git('rev-parse','HEAD^{tree}')==r['artifact']['tree']
 assert not git('status','--porcelain','--untracked-files=all')
@@ -171,6 +225,7 @@ archive=pathlib.Path(r['archive']['path'])
 assert archive.stat().st_size==r['archive']['bytes']
 archiveSha=digest(archive);assert archiveSha==r['archive']['sha256']
 assert receipt.read_bytes()==before
+source_git_stable(owner_before,source_git_fence(root))
 print(json.dumps({'build':{'receipt':value,'sourceArchiveSha256':digest(sourceArchive),'surfacesArchiveSha256':digest(surfaces),'sourceCommit':git('rev-parse','HEAD'),'sourceTree':git('rev-parse','HEAD^{tree}'),'sourceClean':True},'runtime':{'sourceCommit':r['backend']['commit'],'runtimeAfter':runtime,'archiveSha256':archiveSha,'archiveBaseSourceCommit':'92eb5fbdaacf','acceptedOverlaySourceCommit':r['backend']['commit']}}))
 `;
 function idsOf(proof){return Object.fromEntries(["artifact","baselineOperator","backend","operator"].map(k=>[k,{...proof[k]}]));}

@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {createHash} from "node:crypto";
-import {collectDualReleaseEvidence,requireLiveCollection,parseCollectedJson,assembleCollectedEvidence,validateArchivalObservation,validatePrimaryObservation} from "./collect-dual-release-evidence.mjs";
+import {execFileSync} from "node:child_process";
+import {collectDualReleaseEvidence,requireLiveCollection,parseCollectedJson,assembleCollectedEvidence,validateArchivalObservation,validatePrimaryObservation,nodeGitOwnerProgram} from "./collect-dual-release-evidence.mjs";
 const ids=Object.fromEntries(["artifact","baselineOperator","backend","operator"].map((k,i)=>[k,{commit:String(i).repeat(40),tree:String(i).repeat(40)}]));
 const names=["primary","build","uiManifest","sourceProvenance","renderer","runtime","lifecycle","preactivation","activity","growth","nativeV2","browserV2"];
 const raw=Object.fromEntries(names.map(n=>[n,"{}"])),times=Object.fromEntries(names.map(n=>[n,"2026-01-01T00:00:00.000Z"]));
@@ -78,4 +79,66 @@ test("current operator main and product-artifact preview remain distinct",()=>{
  for(const mutation of [{commit:ids.baselineOperator.commit},{gitHubCommit:ids.baselineOperator.commit},{tree:ids.artifact.tree},{branch:"candidate"},{trackedDirty:true},
   {preview:{format:"proof-of-work-ui-source-v1",...ids.operator,trackedDirty:false}}])
   assert.throws(()=>validatePrimaryObservation({...value,...mutation},ids));
+});
+
+test("owner-aware sealed Git rejects ownership, symlink, config, operation and concurrent substitutions",()=>{
+ const suite=String.raw`
+import base64,tempfile,types,unittest
+from unittest.mock import patch
+CONFIG=base64.b64decode("W2NvcmVdCglyZXBvc2l0b3J5Zm9ybWF0dmVyc2lvbiA9IDAKCWZpbGVtb2RlID0gdHJ1ZQoJYmFyZSA9IGZhbHNlCglsb2dhbGxyZWZ1cGRhdGVzID0gdHJ1ZQpbcmVtb3RlICJvcmlnaW4iXQoJdXJsID0gL2RhdGEvcHJvb2ZvZndvcmstaGVhbHRoLWZpeGVzLTIwMjYxMTExL3NvdXJjZS13b3JrL2xpbmtlZC1zdG9jay1pbnZlbnRvcnktcmV1c2UtMjAyNjExMTMKCWZldGNoID0gK3JlZnMvaGVhZHMvKjpyZWZzL3JlbW90ZXMvb3JpZ2luLyoKW2JyYW5jaCAicmVsZWFzZS9zdG9jay1pbnZlbnRvcnktcmV1c2UtMjAyNjExMTMiXQoJcmVtb3RlID0gb3JpZ2luCgltZXJnZSA9IHJlZnMvaGVhZHMvcmVsZWFzZS9zdG9jay1pbnZlbnRvcnktcmV1c2UtMjAyNjExMTMK")
+class OwnerGit(unittest.TestCase):
+ def test_owner_selection(self):
+  with patch.object(pwd,'getpwnam',side_effect=lambda name:types.SimpleNamespace(pw_uid=0 if name=='root' else 1000,pw_gid=0 if name=='root' else 1000)):
+   self.assertEqual(source_git_owner(0,0),'root');self.assertEqual(source_git_owner(1000,1000),'powadmin')
+   for uid,gid in ((1001,1001),(1000,0),(0,1000)):
+    with self.assertRaises(AssertionError):source_git_owner(uid,gid)
+ def test_meta_fail_closed(self):
+  good=dict(st_dev=1,st_ino=2,st_uid=1000,st_gid=1000,st_mode=stat.S_IFREG|0o600,st_nlink=1)
+  source_git_meta(types.SimpleNamespace(**good),(1000,1000),False)
+  for change in ({'st_uid':0},{'st_gid':0},{'st_mode':stat.S_IFREG|0o622},{'st_mode':stat.S_IFLNK|0o777},{'st_nlink':2}):
+   with self.assertRaises(AssertionError):source_git_meta(types.SimpleNamespace(**{**good,**change}),(1000,1000),False)
+ def test_config_pin(self):
+  source_git_config(CONFIG)
+  for changed in (CONFIG+b'\n[include]\npath=/tmp/evil\n',CONFIG.replace(b'filemode = true',b'filemode = false')):
+   with self.assertRaises(AssertionError):source_git_config(changed)
+ def test_read_only_owner_argv_and_environment(self):
+  root=pathlib.Path('/data/fixture')
+  for name in ('root','powadmin'):
+   with patch.dict(os.environ,{'LD_PRELOAD':'evil','GIT_CONFIG_COUNT':'5','PATH':'/evil'},clear=False):
+    with patch('__main__.source_git_fence',return_value=(name,('fixed',))),patch.object(subprocess,'check_output',return_value='064\n') as run:
+     self.assertEqual(source_git(root,'rev-parse','HEAD'),'064')
+     command=run.call_args.args[0];self.assertEqual(command[:6],['/usr/sbin/runuser','-u',name,'--','/usr/bin/env','-i'])
+     self.assertIn('/usr/bin/git',command);self.assertNotIn('safe.directory',str(command))
+     self.assertEqual(run.call_args.kwargs['env'],SOURCE_GIT_ENV);self.assertNotIn('LD_PRELOAD',run.call_args.kwargs['env'])
+  with patch.object(subprocess,'check_output') as run:
+   with self.assertRaises(AssertionError):source_git(root,'reset','--hard')
+   run.assert_not_called()
+ def test_concurrent_fence(self):
+  with patch('__main__.source_git_fence',side_effect=[('powadmin',('before',)),('powadmin',('after',))]),patch.object(subprocess,'check_output',return_value='064'):
+   with self.assertRaises(AssertionError):source_git(pathlib.Path('/data/fixture'),'rev-parse','HEAD')
+ def test_filesystem_fences(self):
+  with tempfile.TemporaryDirectory() as temporary:
+   root=pathlib.Path(temporary)/'source';root.mkdir();(root/'.git').mkdir();(root/'.git/config').write_bytes(CONFIG)
+   (root/'scripts').mkdir();(root/'scripts/check-current-growth-live.mjs').write_text('// test')
+   actual=pathlib.Path.lstat
+   def protected(path):
+    result=actual(path)
+    if path in root.parents:
+     fields={key:getattr(result,key) for key in ('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns','st_nlink')}
+     return types.SimpleNamespace(**fields,st_uid=0,st_gid=0,st_mode=stat.S_IFDIR|0o755)
+    return result
+   with patch.object(pwd,'getpwnam',return_value=types.SimpleNamespace(pw_uid=os.getuid(),pw_gid=os.getgid())),patch.object(pathlib.Path,'lstat',protected):
+    source_git_fence(root)
+    (root/'.git/config').write_bytes(CONFIG+b'# changed')
+    with self.assertRaises(AssertionError):source_git_fence(root)
+    (root/'.git/config').write_bytes(CONFIG)
+    (root/'.git/info').mkdir();(root/'.git/info/attributes').write_text('*.mjs filter=evil')
+    with self.assertRaises(AssertionError):source_git_fence(root)
+    (root/'.git/info/attributes').unlink()
+    (root/'.git').rename(root/'real-git');(root/'.git').symlink_to(root/'real-git',target_is_directory=True)
+    with self.assertRaises(AssertionError):source_git_fence(root)
+unittest.main()
+`;
+ const output=execFileSync("/usr/bin/python3",["-I","-B","-c",nodeGitOwnerProgram+"\n"+suite],{encoding:"utf8",timeout:30000});
+ assert.equal(typeof output,"string");
 });

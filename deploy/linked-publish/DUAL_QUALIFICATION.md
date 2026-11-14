@@ -73,3 +73,14 @@ fresh live collection occur, local tests do not establish production qualificati
 The ordinary exact-HEAD release check remains unchanged and does not accept this
 intentional operator/artifact split. Package, lockfile, build config and all
 production modules remain identical to the compared released product.
+
+## Sealed-source Git ownership
+
+Protected artifact source may legitimately belong to powadmin rather than root.
+The collector checks canonical ancestor, source, Git metadata and checker paths,
+permits only the verified root or powadmin account, and pins the original sealed
+Git configuration. It runs only four explicit read-only Git command forms as
+that owner through fixed runuser with a cleared environment. Before/after
+metadata fences reject replacement or mutation. This does not add safe.directory
+exceptions, change ownership or permissions, or relax source cleanliness.
+The failed original collection remains evidence, not a success receipt.
