@@ -37,11 +37,18 @@ APPROVAL = 'df166edb2d9817dd4f8af24819880b6bf08b396b6aa483adaa141415fc709379'
 FILES = (
     'audits/2026-10-16-ui-retention-repair-approval.json',
     'audits/2026-10-16-ui-retention-repair-proposal.json',
-    'deploy/audit30/ui-storage.py', 'deploy/audit30/ui-release-policy.py',
+    'deploy/audit30/ui-storage.py',
+    'deploy/audit30/ui-release-policy.py',
     'deploy/proofofwork-ui-verified-retention.py',
-    'deploy/ui-retention/custody.py', 'deploy/ui-retention/inventory.py',
-    'deploy/ui-retention/removal.py', 'deploy/ui-retention/lifecycle_remote.py',
-    'deploy/ui-retention/install_lifecycle.py', 'deploy/ui-retention/lifecycle.py',
+    'deploy/ui-retention/custody.py',
+    'deploy/ui-retention/inventory.py',
+    'deploy/ui-retention/removal.py',
+    'deploy/ui-retention/lifecycle_remote.py',
+    'deploy/ui-retention/install_lifecycle.py',
+    'deploy/ui-retention/lifecycle.py',
+    'deploy/ui-retention/retirement_receipt.py',
+    'deploy/ui-retention/retirement_transition.py',
+    'deploy/ui-retention/retirement_controller.py',
 )
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 MAX_EVIDENCE = 64 * 1024**2

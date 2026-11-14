@@ -268,4 +268,169 @@ class DualQualification(unittest.TestCase):
   r,p,*_=self.fixture()
   with self.assertRaises(ValueError):M['validate_retained_rollback'](r,p,evidence)
 
+
+class RetirementConsumer(unittest.TestCase):
+ def fixture(self,sidecar_proof=None):
+  import base64
+  encode=lambda x:(json.dumps(x,sort_keys=True,separators=(',',':'))+'\n').encode()
+  sha=lambda b:hashlib.sha256(b).hexdigest()
+  pair=copy.deepcopy(M['RET_PAIR']);directory=M['RET_EVIDENCE_DIR'];paths=M['RET_PATHS']
+  def row(path,raw):
+   if not isinstance(raw,bytes):raw=encode(raw)
+   return {'path':path,'base64':base64.b64encode(raw).decode(),'sha256':sha(raw)}
+  side=row('/var/backups/proofofwork-ui/releases/kept.sha256',b'preserved\n')
+  inventory={'pair':pair,'allHistoricalEntriesHaveRetainedEquivalent':True}
+  restore={'uiInventoryBeforeAfterEqual':True,'staticReferencePass':True,'restoredEntries':2839,'scope':'isolated static archive restoration; NOT production synthetic'}
+  i=row(directory+'/inventory.json',inventory);r=row(directory+'/static-restore.json',restore)
+  proposal={'status':'PROPOSAL_ONLY_NOT_AUTHORIZED_FOR_EXECUTION','selected':[{'path':p} for p in paths],'pair':pair,'inventorySha256':i['sha256'],'rehearsalReceipt':{'sha256':r['sha256']},'allHistoricalEntriesHaveRetainedEquivalent':True,'historicalUnequalCount':0,'sidecarsKeep':[{'path':side['path'],'sha256':side['sha256']}]}
+  p=row(directory+'/proposal.json',proposal)
+  source={'schema':'pow-ui-retention-admission-index-v2','scopeApprovalSha256':'a'*64,'admissions':[{'path':'/var/backups/proofofwork-ui/cleanup-evidence/audit30-policy-admission-source.json','sha256':'b'*64}],'completedRetirements':[]}
+  src=row(M['RET_SOURCE_INDEX']['path'],source);source_binding={k:src[k] for k in ('path','sha256')}
+  pins={'RET_PROPOSAL_SHA':p['sha256'],'RET_INVENTORY_SHA':i['sha256'],'RET_RESTORE_SHA':r['sha256'],'RET_SOURCE_INDEX':source_binding}
+  approval=row(directory+'/owner-approval.json',{'schema':'pow-owner-exact-payload-retirement-approval-v1','proposalSha256':p['sha256'],'retiredPayloadPaths':list(paths),'retainedPair':pair,'permanent':True,'sourceMessageId':'SYNTHETIC-TEST-ONLY','approvedAtUtc':'2026-11-14T00:00:00Z'})
+  journal=[]
+  def add(event,data):
+   journal.append({'sequence':len(journal),'previousSha256':sha(encode(journal[-1])) if journal else None,'event':event,'data':data})
+  add('prepared',{'proposalSha256':p['sha256'],'inventorySha256':i['sha256'],'restoreSha256':r['sha256'],'approvalSha256':approval['sha256'],'preflightSha256':'d'*64,'pair':pair})
+  for n,path in enumerate(paths):
+   add('action-started',{'path':path,'index':n,'freshFenceSha256':'e'*64,'frozenInventorySha256':'3'*64})
+   add('action-reconciled',{'path':path,'index':n,'absenceProofSha256':'f'*64,'preservationProofSha256':'1'*64})
+  names={'finalFenceSha256':'final-fence.json','retainedPairProofSha256':'retained-pair-proof.json','sidecarsProofSha256':'sidecars-proof.json','historicalEvidenceProofSha256':'historical-evidence-proof.json'}
+  sidecar_list=[{'path':side['path'],'sha256':side['sha256']}]
+  final={k:row(directory+'/'+name,(sidecar_list if sidecar_proof is None else sidecar_proof) if k=='sidecarsProofSha256' else {'synthetic':name}) for k,name in names.items()}
+  add('completed',{**{k:v['sha256'] for k,v in final.items()},'successorPolicyCodeSha256':'2'*64})
+  terminal={'schema':'pow-exact-payload-retirement-completed-v1','proposalSha256':p['sha256'],'inventorySha256':i['sha256'],'restoreSha256':r['sha256'],'approvalSha256':approval['sha256'],'journal':journal,'journalHeadSha256':sha(encode(journal[-1])),'retiredPayloadPaths':list(paths),'retirementRetainedPair':pair,'sourceIndex':source_binding,'preservedSidecars':[{'path':side['path'],'sha256':side['sha256']}],'preservedHistoricalEvidenceSha256':final['historicalEvidenceProofSha256']['sha256'],'priorConfigSha256':M['RET_PRIOR_CONFIG_SHA'],'policyCodeSha256':'2'*64}
+  t=row(M['RET_TERMINAL_PATH'],terminal)
+  config={'package':{'sha256':'2'*64},'schema':'pow-ui-retention-lifecycle-config-v1','statePath':M['RET_STATE_PATH'],'scopeApprovalSha256':'a'*64,'payloadRetirement':{'mode':'complete','proposalSha256':p['sha256'],'receipt':{k:t[k] for k in ('path','sha256')},'priorConfigSha256':M['RET_PRIOR_CONFIG_SHA'],'sourceIndex':source_binding,'policyCodeSha256':'2'*64}}
+  c=row(M['RET_CONFIG_PATH'],config)
+  proof={'model':'intentionally-retired-payloads-retained-evidence-v1','proposalSha256':p['sha256'],'receipt':{k:t[k] for k in ('path','sha256')},'receiptSha256':t['sha256'],'journalHeadSha256':terminal['journalHeadSha256'],'policyCodeSha256':'2'*64,'retiredPayloadPaths':list(paths),'retirementRetainedPair':pair,'sourceIndex':source_binding,'recoveryVerification':'isolated-static-only'}
+  idx=row('/var/backups/proofofwork-ui/cleanup-evidence/audit30-policy-admission-index-current.json',{**source,'payloadRetirement':proof})
+  state={'schema':'pow-ui-retention-lifecycle-state-v1','configSha256':c['sha256'],'pending':None,'index':{k:idx[k] for k in ('path','sha256')}}
+  st=row(M['RET_STATE_PATH'],state)
+  bundle={'terminal':t,'ownerApproval':approval,'config':c,'state':st,'sourceIndex':src,'currentIndex':idx,'appendedAdmissions':[],'sidecars':[side],'finalProofs':final,'proposal':p,'inventory':i,'staticRestore':r}
+  trust={'configSha256':c['sha256'],'stateSha256':st['sha256'],'currentIndexSha256':idx['sha256'],'policyCodeSha256':'2'*64,'verifiedCurrentPair':pair}
+  return bundle,trust,pins
+ def test_final_sidecar_proof_rejects_wrong_type_scope_and_noncanonical_bytes(self):
+  for wrong in ({},[],{'synthetic':'sidecars-proof.json'},[{'path':'/tmp/other','sha256':'f'*64}],b'[]\n'):
+   with self.subTest(wrong=wrong):
+    bundle,trust,pins=self.fixture(sidecar_proof=wrong)
+    globals_=M['validate_dual_retirement_evidence'].__globals__
+    old={k:globals_[k] for k in pins}
+    try:
+     globals_.update(pins)
+     with self.assertRaisesRegex(ValueError,'Final sidecar proof differs'):
+      M['validate_dual_retirement_evidence'](bundle,trust)
+    finally:globals_.update(old)
+ def test_fixed_real_pins_refuse_synthetic_terminal(self):
+  bundle,trust,pins=self.fixture()
+  with self.assertRaises(ValueError):M['validate_dual_retirement_evidence'](bundle,trust)
+ def test_synthetic_authenticated_terminal_preserves_scope_and_no_filesystem_claim(self):
+  from unittest.mock import patch
+  bundle,trust,pins=self.fixture()
+  with patch.dict(M['validate_dual_retirement_evidence'].__globals__,pins):result=M['validate_dual_retirement_evidence'](bundle,trust)
+  self.assertTrue(result['ok']);self.assertFalse(result['filesystemVerified']);self.assertFalse(result['activationAllowed'])
+  self.assertEqual(result['proof']['retiredPayloadPaths'],list(M['RET_PATHS']))
+ def test_missing_wrong_trust_raw_sidecars_and_final_proofs_refuse(self):
+  from unittest.mock import patch
+  mutations=[lambda b,t:b.pop('ownerApproval'),lambda b,t:b['ownerApproval'].update(base64='e30='),lambda b,t:b.pop('state'),lambda b,t:t.update(configSha256='f'*64),
+   lambda b,t:t.update(stateSha256='f'*64),lambda b,t:t.update(currentIndexSha256='f'*64),
+   lambda b,t:t.update(policyCodeSha256='f'*64),lambda b,t:t.update(verifiedCurrentPair={}),
+   lambda b,t:b['terminal'].update(base64='e30='),lambda b,t:b['terminal'].update(path='/tmp/fake'),
+   lambda b,t:b.update(sidecars=[]),lambda b,t:b.update(finalProofs={}),
+   lambda b,t:b.update(appendedAdmissions=[b['terminal']]),lambda b,t:b['sourceIndex'].update(sha256='f'*64)]
+  for mutate in mutations:
+   b,t,pins=self.fixture();mutate(b,t)
+   with patch.dict(M['validate_dual_retirement_evidence'].__globals__,pins),self.subTest(mutate=mutate),self.assertRaises(ValueError):M['validate_dual_retirement_evidence'](b,t)
+
+
+ def test_journal_requires_frozen_inventory_and_complete_chain(self):
+  from unittest.mock import patch
+  import base64
+  for change in ('missing-frozen','bad-frozen','pending','wrong-head','wrong-approval','extra-action'):
+   b,t,pins=self.fixture();v=json.loads(base64.b64decode(b['terminal']['base64']));records=v['journal']
+   if change=='missing-frozen':del records[1]['data']['frozenInventorySha256']
+   elif change=='bad-frozen':records[1]['data']['frozenInventorySha256']='bad'
+   elif change=='pending':records=records[:2]
+   elif change=='wrong-head':records[1]['previousSha256']='f'*64
+   elif change=='wrong-approval':records[0]['data']['approvalSha256']='bad'
+   else:records.append(copy.deepcopy(records[-1]))
+   with patch.dict(M['RET_validate_chain'].__globals__,pins):
+    if change=='pending':self.assertEqual(M['RET_validate_chain'](records)['status'],'uncertain')
+    else:
+     with self.assertRaises(ValueError):M['RET_validate_chain'](records)
+ def test_integrated_retirement_needs_independent_trust_and_fresh_lifecycle_crossbinding(self):
+  from unittest.mock import patch
+  for mutate in ('none','missing-trust','wrong-live-pair','wrong-live-config'):
+   b,t,pins=self.fixture();d=DualQualification();fixture=d.fixture();r,p,i,n,files,q=fixture
+   with patch.dict(M['validate_dual_retirement_evidence'].__globals__,pins):
+    result=M['validate_dual_retirement_evidence'](b,t)
+    life=json.loads(q['evidence']['lifecycle']['raw'])
+    life.update(verifiedRetirementPolicyCodeSha256=t['policyCodeSha256'],verifiedPreservedRelease1042=None,verifiedPreservedFallback=None,verifiedRetiredPayloads=result['proof'],verifiedRetirementCurrentPair=result['verifiedCurrentPair'],pair=result['verifiedCurrentPair'],configSha256=t['configSha256'],stateSha256=t['stateSha256'],index={'path':b['currentIndex']['path'],'sha256':t['currentIndexSha256']},binding={'config':{'path':M['RET_CONFIG_PATH'],'sha256':t['configSha256']},'state':{'path':M['RET_STATE_PATH'],'sha256':t['stateSha256']}})
+    if mutate=='wrong-live-pair':life['verifiedRetirementCurrentPair']={}
+    if mutate=='wrong-live-config':life['configSha256']='f'*64
+    row=q['evidence']['lifecycle'];row['raw']=json.dumps(life);row['sha256']=hashlib.sha256(row['raw'].encode()).hexdigest()
+    activity=json.loads(q['evidence']['activity']['raw']);activity['pair']=life['pair'];row=q['evidence']['activity'];row['raw']=json.dumps(activity);row['sha256']=hashlib.sha256(row['raw'].encode()).hexdigest();d.reseal(fixture)
+    def run():return M['validate_dual_retained_rollback'](r,p,i,now=n,qualification_sha256=r['artifacts']['dualQualification']['sha256'],read=lambda path,_:files[path],retirement_evidence=b,retirement_trust=None if mutate=='missing-trust' else t)
+    if mutate=='none':self.assertTrue(run()['ok'])
+    else:
+     with self.subTest(mutate=mutate),self.assertRaises(ValueError):run()
+
+
+ def test_descendant_admissions_require_exact_hashes_and_contiguous_pair(self):
+  import base64
+  from unittest.mock import patch
+  for variant in ('valid','broken','wrong-hash','missing','prefix'):
+   b,t,pins=self.fixture()
+   def decoded(row):return json.loads(base64.b64decode(row['base64']))
+   def seal(row,value):
+    raw=(json.dumps(value,sort_keys=True,separators=(',',':'))+'\n').encode()
+    row.update(base64=base64.b64encode(raw).decode(),sha256=hashlib.sha256(raw).hexdigest())
+   next_pair={'current':'abcdef123456-20261115T010203Z','previous':M['RET_PAIR']['current']}
+   if variant=='broken':next_pair['previous']=M['RET_PAIR']['previous']
+   admission={'schema':'pow-audit30-ordinary-ui-release-admission-v1','host':'77.42.91.106','scopeApprovalSha256':'a'*64,'bootstrap':False,'releaseIds':[next_pair['current']],'retainedPair':next_pair}
+   row={'path':'/var/backups/proofofwork-ui/cleanup-evidence/audit30-policy-admission-next.json'};seal(row,admission)
+   idx=decoded(b['currentIndex']);idx['admissions'].append({k:row[k] for k in ('path','sha256')})
+   if variant=='prefix':idx['admissions'][0]['sha256']='f'*64
+   seal(b['currentIndex'],idx)
+   st=decoded(b['state']);st['index']={k:b['currentIndex'][k] for k in ('path','sha256')};seal(b['state'],st)
+   t.update(stateSha256=b['state']['sha256'],currentIndexSha256=b['currentIndex']['sha256'],verifiedCurrentPair=next_pair)
+   b['appendedAdmissions']=[] if variant=='missing' else [row]
+   if variant=='wrong-hash':row['sha256']='f'*64
+   with patch.dict(M['validate_dual_retirement_evidence'].__globals__,pins):
+    if variant=='valid':self.assertEqual(M['validate_dual_retirement_evidence'](b,t)['verifiedCurrentPair'],next_pair)
+    else:
+     with self.subTest(variant=variant),self.assertRaises(ValueError):M['validate_dual_retirement_evidence'](b,t)
+
+ def test_dual_in_place_holds_reject_retirement_conflicts(self):
+  d=DualQualification()
+  for kind in ('evidence','trust','proof','partial'):
+   fixture=d.fixture();r,p,i,n,files,q=fixture;kwargs={}
+   if kind=='evidence':kwargs['retirement_evidence']={}
+   elif kind=='trust':kwargs['retirement_trust']={}
+   else:
+    life=json.loads(q['evidence']['lifecycle']['raw'])
+    if kind=='proof':life['verifiedRetiredPayloads']={}
+    else:life['verifiedPreservedFallback']=None
+    row=q['evidence']['lifecycle'];row['raw']=json.dumps(life);row['sha256']=hashlib.sha256(row['raw'].encode()).hexdigest();d.reseal(fixture)
+   with self.subTest(kind=kind),self.assertRaises(ValueError):
+    M['validate_dual_retained_rollback'](r,p,i,now=n,qualification_sha256=r['artifacts']['dualQualification']['sha256'],read=lambda path,_:files[path],**kwargs)
+
+
+ def test_owner_approval_semantics_reject_even_with_rebound_outer_hashes(self):
+  import base64
+  from unittest.mock import patch
+  for key,value in [('schema','wrong'),('proposalSha256','f'*64),('retiredPayloadPaths',[]),('retainedPair',{}),('permanent',False),('sourceMessageId',''),('approvedAtUtc',''),('unexpected',True)]:
+   b,t,pins=self.fixture()
+   def decoded(row):return json.loads(base64.b64decode(row['base64']))
+   def seal(row,value):
+    raw=(json.dumps(value,sort_keys=True,separators=(',',':'))+'\n').encode()
+    row.update(base64=base64.b64encode(raw).decode(),sha256=hashlib.sha256(raw).hexdigest())
+   approval=decoded(b['ownerApproval']);approval[key]=value;seal(b['ownerApproval'],approval)
+   terminal=decoded(b['terminal']);terminal['approvalSha256']=b['ownerApproval']['sha256'];seal(b['terminal'],terminal)
+   config=decoded(b['config']);config['payloadRetirement']['receipt']['sha256']=b['terminal']['sha256'];seal(b['config'],config)
+   state=decoded(b['state']);state['configSha256']=b['config']['sha256'];seal(b['state'],state)
+   t.update(configSha256=b['config']['sha256'],stateSha256=b['state']['sha256'])
+   with patch.dict(M['validate_dual_retirement_evidence'].__globals__,pins),self.subTest(key=key),self.assertRaisesRegex(ValueError,'Exact owner approval evidence differs'):
+    M['validate_dual_retirement_evidence'](b,t)
+
 if __name__=='__main__':unittest.main()

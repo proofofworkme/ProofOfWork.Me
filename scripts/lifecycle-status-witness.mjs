@@ -5,6 +5,7 @@ import {performance} from "node:perf_hooks";
 import {fileURLToPath} from "node:url";
 import {resolve} from "node:path";
 import {createIdentityProof,requireIdentityProof,publicIdentityProof} from "./release-identity-proof.mjs";
+import {attestInstalledRetentionPackage,bindInstalledRetentionPackage,collectRetirementEvidence,validateRetainedHolds} from "./retirement-evidence.mjs";
 const witnesses=new WeakMap(),activeProofs=new WeakMap();
 export function parseStockStatus(raw,limit=8*1024**2) {
  assert.equal(typeof raw,"string");assert(Buffer.byteLength(raw)<=limit,"Oversized collection response");
@@ -50,8 +51,7 @@ function complete(status,proof) {
  assert.deepEqual(status.binding?.state,{path:"/var/lib/proofofwork-ui-retention/state.json",sha256:status.stateSha256});
  assert.deepEqual(status.binding?.pair,status.pair);assert.deepEqual(status.context?.pair,status.pair);
  assert.match(status.index?.sha256,/^[a-f0-9]{64}$/u);
- assert.equal(status.verifiedPreservedRelease1042?.releaseId,"1042efea2aa1-20261112T074918Z");
- assert.equal(status.verifiedPreservedFallback?.releaseId,"c3969c39c2b2-20261101T051206Z");
+ validateRetainedHolds(status,status.retirementEvidence);
  assert.equal(status.verifiedCapacityFloor?.rootReserveBytes,8*1024**3);
  assert.equal(status.verifiedCapacityFloor?.growthReserveBytes,64*1024**2);
  assert.deepEqual(status.binding?.capacityFloor,status.verifiedCapacityFloor);
@@ -59,11 +59,15 @@ function complete(status,proof) {
 }
 function readFullStatus(proof) {
  identity(proof);
+ const attestation=attestInstalledRetentionPackage(proof);
  const raw=execFileSync("/usr/bin/python3",["-I","-B","deploy/ui-retention/lifecycle.py","status","--require-complete"],
   {cwd:root,encoding:"utf8",env,timeout:480000,maxBuffer:8*1024**2});
- const status=complete(parseStockStatus(raw),proof);
+ const status=parseStockStatus(raw);
+ bindInstalledRetentionPackage(status,attestation);
+ if(status.verifiedRetiredPayloads)status.retirementEvidence=collectRetirementEvidence(status);
+ complete(status,proof);
  identity(proof);
- return freeze(status);
+ return freeze({status,attestation});
 }
 function fresh(record) {
  const wall=Date.now()-record.wall,elapsed=performance.now()-record.monotonic;
@@ -80,9 +84,9 @@ export function beginLifecycleCollection(proof) {
  activeProofs.delete(proof);
  identity(proof);
  const wall=Date.now(),monotonic=performance.now();
- const status=readFullStatus(proof);
+ const scan=readFullStatus(proof),status=scan.status;
  const witness=Object.freeze({format:"stock-lifecycle-collection-witness-v1"});
- const record={proof,status,wall,monotonic,phase:"ready"};fresh(record);witnesses.set(witness,record);activeProofs.set(proof,witness);
+ const record={proof,status,scan,wall,monotonic,phase:"ready"};fresh(record);witnesses.set(witness,record);activeProofs.set(proof,witness);
  return Object.freeze({witness,status});
 }
 export function consumeActivityLifecycle(witness,proof) {
@@ -93,10 +97,10 @@ export function consumeActivityLifecycle(witness,proof) {
 export function finishLifecycleCollection(witness,proof) {
  const record=bound(witness,proof,"consumed");
  record.phase="finished";activeProofs.delete(proof); // Failed/uncertain final scans require a new collection.
- const status=readFullStatus(proof);fresh(record);
+ const scan=readFullStatus(proof);fresh(record);
  // Stock status contains authenticated context, guards, holds, package/controller
  // bindings, capacity authority and completion history. It has no live observedAt
  // or free-space counter. Do not drop nested timestamps or any unknown field.
- assert.deepEqual(status,record.status,"Full lifecycle evidence changed between independent scans");
- return status;
+ assert.deepEqual(scan,record.scan,"Full lifecycle evidence or installed package changed between independent scans");
+ return scan.status;
 }

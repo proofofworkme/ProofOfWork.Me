@@ -266,7 +266,7 @@ export async function collectDualReleaseEvidence({proof,archivalEvidence}={}) {
  const runtimeAfter=Object.fromEntries(original.plan.runtimeManifestTemplate.sources.map(row=>[row.path,row.after]));
  const nodeBefore=parseCollectedJson(ssh("node",nodeProgram,{source,artifact:ids.artifact,backend:ids.backend,runtimeAfter,archive:anchors.archive,growthSha256},240000));put("build",nodeBefore.build);
  const lifecyclePass=beginLifecycleCollection(proof);
- const lifecycleBefore=lifecyclePass.status;put("lifecycle",lifecycleBefore);
+ put("lifecycle",lifecyclePass.status);
  const probe=runRemotePublishPreactivation({root:p.repository,identityProof:proof,env:{...transportEnv,POW_PUBLISH_CHECK_MODE:"preactivation",POW_PUBLISH_CHECK_NODE_SOURCE:source}});
  put("preactivation",probe);
  put("runtime",{...nodeBefore.runtime,writerEnabled:false}); // Actual typed probe above proved disabled.

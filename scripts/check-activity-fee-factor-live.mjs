@@ -7,6 +7,7 @@ import {fileURLToPath,pathToFileURL} from "node:url";
 import {resolve} from "node:path";
 import {requireIdentityProof,createIdentityProof} from "./release-identity-proof.mjs";
 
+import {collectRetirementEvidence,validateRetainedHolds,attestInstalledRetentionPackage,bindInstalledRetentionPackage} from "./retirement-evidence.mjs";
 import {consumeActivityLifecycle} from "./lifecycle-status-witness.mjs";
 const identityGit=(...args)=>execFileSync("/usr/bin/git",["--no-replace-objects","-c","core.fsmonitor=false",...args],{encoding:"utf8",timeout:15000,env:{PATH:"/usr/bin:/bin",HOME:"/nonexistent",LC_ALL:"C",GIT_CONFIG_NOSYSTEM:"1",GIT_CONFIG_GLOBAL:"/dev/null",GIT_OPTIONAL_LOCKS:"0"}}).trim();
 export function validateActivityIdentity(identityProof) {
@@ -114,9 +115,18 @@ const command = "sudo -n python3 -I -B -c '" + program.replaceAll("'", "'\\''") 
 const installed = JSON.parse(activityExec("ssh", ["-i", "/home/sixer/.ssh/proofofwork_node_ed25519", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=15", "powadmin@65.108.122.87", command], {
   input: JSON.stringify({ runtime: expectedRuntime, monitor: monitorHash }), encoding: "utf8", timeout: 90_000,
 }));
-const lifecycle = witnessedLifecycle ?? JSON.parse(activityExec("python3", [
+let lifecycle,retirementEvidence;
+if(witnessedLifecycle) {
+ lifecycle=witnessedLifecycle;retirementEvidence=witnessedLifecycle.retirementEvidence;
+} else {
+const packageAttestation=identityProof===undefined?undefined:attestInstalledRetentionPackage(identityProof);
+lifecycle = JSON.parse(activityExec("python3", [
   "-I", "-B", "deploy/ui-retention/lifecycle.py", "status", "--require-complete",
 ], { encoding: "utf8", timeout: 480_000, maxBuffer: 8 * 1024 ** 2 }));
+if(packageAttestation)bindInstalledRetentionPackage(lifecycle,packageAttestation);
+else assert(lifecycle.verifiedRetiredPayloads==null,"Retirement requires explicit qualified dual mode");
+retirementEvidence=lifecycle.verifiedRetiredPayloads ? collectRetirementEvidence(lifecycle) : undefined;
+}
 const implementationCommit = identityGit("rev-parse","HEAD");
 let commit=implementationCommit;
 if(identityProof!==undefined) {
@@ -129,9 +139,9 @@ assert.equal(lifecycle.publicationHealthy, true);
 assert.equal(lifecycle.retentionComplete, true);
 assert(lifecycle.pair.current.startsWith(commit.slice(0, 12) + "-"));
 // The rolling previous release may advance; the historical hold must remain verified.
-assert.equal(lifecycle.verifiedPreservedRelease1042?.releaseId, "1042efea2aa1-20261112T074918Z");
+validateRetainedHolds(lifecycle,retirementEvidence);
 assert.deepEqual(lifecycle.unfinishedIntents, []);
-assert.equal(lifecycle.verifiedPreservedFallback?.releaseId, "c3969c39c2b2-20261101T051206Z");
+
 assert.equal(lifecycle.verifiedCapacityFloor.rootReserveBytes, 8 * 1024 ** 3);
 assert.equal(lifecycle.verifiedCapacityFloor.growthReserveBytes, 64 * 1024 ** 2);
 // console.log(JSON.stringify({ ok: true: legacy assertion-block test boundary.
@@ -139,6 +149,7 @@ const result = { ok: true, height, hash, registryElapsedMs: registry.elapsedMs,
   walletElapsedMs: wallet.elapsedMs, ...installed, retentionComplete: true, pair: lifecycle.pair,
   scope: "stable-checkpoint reads, exact combined activity-reader runtime and completed UI lifecycle; transition measurements remain separate" };
 if(lifecycleWitness!==undefined) result.lifecycleEvidence={mode:"same-collection-before-full-scan",finalIndependentFullScanRequired:true};
+if(retirementEvidence) result.retirementReceiptSha256=lifecycle.verifiedRetiredPayloads.receiptSha256;
 if(identityProof!==undefined) {
  assert.equal(identityGit("rev-parse","HEAD"),implementationCommit,"Implementation changed during live check");
  const after=createIdentityProof({repository:identityProof.repository});

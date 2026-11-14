@@ -49,6 +49,52 @@ INDEX_V2 = 'pow-ui-retention-admission-index-v2'
 MIGRATION_SCHEMA = 'pow-ui-retention-lineage-migration-v1'
 REVIEW_SCHEMA = 'pow-ui-retention-migration-review-v1'
 
+def retirement_module():
+    if globals().get('_BOUND_RETIREMENT') is not None:
+        return globals()['_BOUND_RETIREMENT']
+    path = Path(__file__).resolve().parent.parent/'ui-retention/retirement_receipt.py'
+    info = path.lstat()
+    if path.resolve(strict=True) != path or info.st_uid != os.geteuid() or info.st_mode & 0o7022:
+        raise ValueError('Unsafe retirement verifier companion')
+    spec = importlib.util.spec_from_file_location('audit30_retirement_receipt', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+def verified_retirement(retirement, layout, pair=None):
+    if retirement is not None:
+        retirement_module().require_verified_retirement(retirement)
+        retirement.verify_scope(layout, pair)
+    return retirement
+
+def retirement_lineage(data, retirement):
+    """Original admissions/receipts remain immutable; apply a terminal overlay."""
+    if retirement is None:
+        if data['index'].get('payloadRetirement') is not None:
+            raise ValueError('Retirement index requires authenticated successor context')
+        return
+    if data['index'].get('payloadRetirement') != retirement.proof:
+        raise ValueError('Admission index retirement authority differs')
+    source_rows = retirement.source_admissions
+    source_done = retirement.source_retirements
+    rows = data['index']['admissions']
+    done = data['index'].get('completedRetirements', [])
+    if (not source_rows or rows[:len(source_rows)] != source_rows
+            or done[:len(source_done)] != source_done
+            or len(rows) < len(source_rows) or len(done) < len(source_done)):
+        raise ValueError('Retirement source index is not an immutable ancestor')
+    if data['admissions'][len(source_rows)-1]['retainedPair'] != retirement.source_pair:
+        raise ValueError('Retirement source pair differs')
+    previous = retirement.source_pair['current']
+    for row in data['admissions'][len(source_rows):]:
+        if row['retainedPair']['previous'] != previous:
+            raise ValueError('Retirement descendant admission skipped its immediate predecessor')
+        previous = row['retainedPair']['current']
+    selected = {path for path in set(data['roots']) | set(data['assets'])
+                if retirement.is_retired(path)}
+    if selected != set(retirement.proof['retiredPayloadPaths']):
+        raise ValueError('Retirement paths differ from admitted exact payloads')
+
 def print_plan(plan):
     """The exact approved stdout bytes must hash like the embedded plan object."""
     sys.stdout.buffer.write(S.encoded(plan));sys.stdout.buffer.flush()
@@ -194,7 +240,7 @@ def load_migration(binding,layout,approval_sha):
     if actual!=review['legacyOrdinaryPaths']:raise ValueError('Migration expanded legacy ordinary scope')
     return migration,review
 
-def admission(layout,approval_sha,bootstrap=False,index=None):
+def admission(layout,approval_sha,bootstrap=False,index=None, *, retirement=None):
     cache={};pair=S.protected_pair(layout,cache);guards,review=S.safeguards(layout)
     ids={pair[k]['fields']['release_id'] for k in ('current','previous')}
     if bootstrap:
@@ -202,7 +248,7 @@ def admission(layout,approval_sha,bootstrap=False,index=None):
     else:
         if not index:raise ValueError('Prior admissions required for new release')
         previous=pair['previous']['fields']['release_id']
-        prior=load_index(index['path'],index['sha256'],layout,approval_sha);covered=prior['releaseIds']
+        prior=load_index(index['path'],index['sha256'],layout,approval_sha,retirement=retirement);covered=prior['releaseIds']
         if previous not in covered:raise ValueError('Prior release lacks lifecycle admission')
         if prior['migration'] and previous!=prior['admissions'][-1]['retainedPair']['current']:
             raise ValueError('New release does not continue the latest admitted current release')
@@ -309,8 +355,11 @@ def verify_1042_hold(hold, layout, pair, cache):
         raise ValueError('1042 hold physical evidence differs')
 
 
-def load_index(path,expected,layout,approval_sha):
+def load_index(path,expected,layout,approval_sha, *, retirement=None):
+    if retirement is not None:retirement_module().require_verified_retirement(retirement)
     index,h=S.read_json(Path(path),expected)
+    if retirement is None and index.get('payloadRetirement') is not None:
+        raise ValueError('Retirement index requires authenticated successor context')
     schema=index.get('schema')
     if schema not in (INDEX_V1,INDEX_V2) or index.get('scopeApprovalSha256')!=approval_sha:raise ValueError('Wrong admission index')
     if schema==INDEX_V1 and approval_sha==S.REPAIR_APPROVAL_SHA:raise ValueError('Repair authority requires the explicit v2 migration lineage')
@@ -385,7 +434,14 @@ def load_index(path,expected,layout,approval_sha):
     _,review=S.safeguards(layout);S.held_boundary(list(roots)+list(assets),review,layout)
     retired=set();retirements=index.get('completedRetirements',[])
     if not isinstance(retirements,list) or len(retirements)>256 or len({r['path'] for r in retirements})!=len(retirements):raise ValueError('Duplicate or oversized retirement history')
+    lineage = dict(index=index, roots=roots, assets=assets, admissions=admissions)
+    retirement_lineage(lineage, retirement)
+    transition_position = len(retirement.source_retirements) if retirement is not None else None
     for position,row in enumerate(retirements):
+        transitioned = retirement is not None and position >= transition_position
+        if transitioned:
+            retired.update(retirement.proof['retiredPayloadPaths'])
+
         p=Path(row['path'])
         if p.parent!=layout.evidence:raise ValueError('Retirement receipt outside durable evidence')
         done,_=S.read_json(p,row['sha256'])
@@ -404,6 +460,8 @@ def load_index(path,expected,layout,approval_sha):
         if (source_index.get('schema')!=schema or source_index.get('scopeApprovalSha256')!=approval_sha
                 or source_index.get('migration')!=index.get('migration') or not source_rows or len(source_rows)>len(rows)
                 or source_rows!=rows[:len(source_rows)] or source_index.get('completedRetirements',[])!=retirements[:position]):raise ValueError('Retirement admission-index lineage differs')
+        if transitioned and source_index.get('payloadRetirement') != retirement.proof:
+            raise ValueError('Future retirement omitted terminal payload-retirement lineage')
         source_admissions=admissions[:len(source_rows)];pair=dict(current=plan['protected']['current']['fields']['release_id'],previous=plan['protected']['previous']['fields']['release_id'])
         if source_admissions[-1]['retainedPair']!=pair:raise ValueError('Retirement plan uses a stale admitted current/prior pair')
         if any(plan['protected'][k]['fields']['archive_name']!='proofofwork-ui-release-'+pair[k]+'.tgz' for k in ('current','previous')):raise ValueError('Retained current/prior archive name differs from admitted release identity')
@@ -411,18 +469,21 @@ def load_index(path,expected,layout,approval_sha):
         keep={plan['protected'][k]['path'] for k in ('current','previous')}|{str(layout.archives/('proofofwork-ui-release-'+pair[k]+'.tgz'))+suffix for k in ('current','previous') for suffix in ('','.sha256','.provenance')}
         hold = fallback_hold(layout,source_rows,source_admissions)
         if hold:
-            held = set(hold['snapshotSha256'])
+            held = {p for p in hold['snapshotSha256'] if not (transitioned and retirement.is_retired(p))}
             # Receipts from the introducing release predate this policy. The
             # same four objects were already protected by that release's pair.
-            if held - keep and plan['policyScope'].get('preservedFallback') != hold:
+            if transitioned:
+                if plan['policyScope'].get('verifiedRetiredPayloads') != retirement.proof:
+                    raise ValueError('Future retirement lost authenticated retired-payload proof')
+            elif held - keep and plan['policyScope'].get('preservedFallback') != hold:
                 raise ValueError('Retirement plan lost its preserved fallback evidence')
             if held - keep and (plan['delete'] or plan['moves'] or plan['policyScope']['eligible']):
                 S.validate_plan(plan, layout, 'future-retention', approval_sha)
             keep.update(held)
         extra = preserved_1042_hold(layout, source_rows, source_admissions)
         if extra:
-            held = set(extra['snapshotSha256'])
-            if held - keep and plan['policyScope'].get('preservedRelease1042') != extra:
+            held = {p for p in extra['snapshotSha256'] if not (transitioned and retirement.is_retired(p))}
+            if not transitioned and held - keep and plan['policyScope'].get('preservedRelease1042') != extra:
                 raise ValueError('Retirement plan lost its exact 1042 hold')
             keep.update(held)
         eligible=[dict(path=path,kind='rollback-root') for path in source_roots if path not in keep and path not in retired]+[dict(path=path,kind='managed-release-archive' if path.endswith('.tgz') else 'archive-sidecar') for path in source_assets if path not in keep and path not in retired]
@@ -437,24 +498,29 @@ def load_index(path,expected,layout,approval_sha):
                 if frozen.get('release',{}).get('fields')!=admitted['fields'] or logical(frozen['snapshot'])!=admitted['logicalSha256']:raise ValueError('Retired rollback differs from its admission')
             elif frozen['snapshot']!=source_assets[frozen['path']]:raise ValueError('Retired archive asset differs from its admitted snapshot')
         retired.update(wanted)
+    if retirement is not None:
+        retirement.verify_lineage(index, admissions)
+        retirement.verify_payloads(layout)
+        retired.update(retirement.proof['retiredPayloadPaths'])
     return dict(indexPath=str(path),indexSha256=h,admissions=admissions,releaseIds=release_ids,roots=roots,assets=assets,retired=retired,
                 migration=migration,migrationReview=migration_review_value,index=index)
 
-def policy_scope(index,layout,approval_sha,details=False):
-    data=load_index(index['path'],index['sha256'],layout,approval_sha);cache={};pair=S.protected_pair(layout,cache)
+def policy_scope(index,layout,approval_sha,details=False, *, retirement=None):
+    data=load_index(index['path'],index['sha256'],layout,approval_sha,retirement=retirement);cache={};pair=S.protected_pair(layout,cache)
+    verified_retirement(retirement, layout, pair)
     if data['admissions'][-1]['retainedPair']!=dict(current=pair['current']['fields']['release_id'],previous=pair['previous']['fields']['release_id']):raise ValueError('Live current/prior pair requires its latest verified admission before retirement planning')
     keep={pair[k]['path'] for k in ('current','previous')}|{str(layout.archives/pair[k]['fields']['archive_name'])+s for k in ('current','previous') for s in ('','.sha256','.provenance')}
     hold = fallback_hold(layout,data['index']['admissions'],data['admissions'])
-    verify_fallback_hold(hold,layout,pair,cache)
+    if retirement is None:verify_fallback_hold(hold,layout,pair,cache)
     if hold:
-        held = set(hold['snapshotSha256'])
+        held = {p for p in hold['snapshotSha256'] if not (retirement is not None and retirement.is_retired(p))}
         if held & data['retired']:
             raise ValueError('Retired object cannot enter the preserved fallback')
         keep.update(held)
     extra = preserved_1042_hold(layout,data['index']['admissions'],data['admissions'])
-    verify_1042_hold(extra,layout,pair,cache)
+    if retirement is None:verify_1042_hold(extra,layout,pair,cache)
     if extra:
-        held = set(extra['snapshotSha256'])
+        held = {p for p in extra['snapshotSha256'] if not (retirement is not None and retirement.is_retired(p))}
         if held & data['retired']:
             raise ValueError('Retired object cannot enter the 1042 hold')
         keep.update(held)
@@ -481,8 +547,12 @@ def policy_scope(index,layout,approval_sha,details=False):
         eligible.append(dict(path=path,kind='managed-release-archive' if path.endswith('.tgz') else 'archive-sidecar'))
     eligible.sort(key=lambda r:(r['kind']!='rollback-root',r['path']))
     scope=dict(eligible=eligible,admissionIndex=dict(path=data['indexPath'],sha256=data['indexSha256']),policy='current-and-one-fully-verified-prior; only explicit admitted ordinary assets; traditional prune timers remain masked',excludedHistoricalAssetsNotDiscovered=True)
-    if hold:scope['preservedFallback']=hold
-    if extra:scope['preservedRelease1042']=extra
+    if retirement is not None:
+        scope['verifiedRetiredPayloads'] = retirement.proof
+        scope['historicalPayloadHolds'] = {'fallback': hold, 'release1042': extra}
+    else:
+        if hold:scope['preservedFallback']=hold
+        if extra:scope['preservedRelease1042']=extra
     if data['migration']:scope['qualifiedArchiveProofs']=qualified
     return (scope,dict(data,eligibleSnapshots=observed),pair) if details else scope
 

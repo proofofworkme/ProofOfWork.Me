@@ -46,6 +46,9 @@ PACKAGE_FILES = (
     'deploy/ui-retention/custody.py', 'deploy/ui-retention/inventory.py',
     'deploy/ui-retention/removal.py', 'deploy/ui-retention/lifecycle_remote.py',
     'deploy/ui-retention/install_lifecycle.py', 'deploy/ui-retention/lifecycle.py',
+    'deploy/ui-retention/retirement_receipt.py',
+    'deploy/ui-retention/retirement_transition.py',
+    'deploy/ui-retention/retirement_controller.py',
 )
 
 
@@ -241,6 +244,11 @@ def validate_config(path, expected):
     require(config['approval'] == {'path': str(package / PACKAGE_FILES[0]), 'sha256': APPROVAL_SHA},
             'Approval file binding differs')
     read(config['approval']['path'], APPROVAL_SHA)
+    if config.get('payloadRetirement') is not None:
+        retirement = config['payloadRetirement']
+        require(isinstance(retirement, dict)
+                and retirement.get('policyCodeSha256') == binding['sha256'],
+                'Retirement policy identity differs from verified installed package')
     return config, digest, package
 
 
@@ -269,13 +277,17 @@ STORAGE_COMPLETION_ADOPTION = {'completion': {'path': '/var/backups/proofofwork-
 
 class Runtime:
     def __init__(self, config, config_sha, storage, policy, custody=None, layout=None, *, verify_upgrade=False,
-                 completion_access_time_reconciliation=None, completion_historical_bulk_preservation=None):
+                 completion_access_time_reconciliation=None, completion_historical_bulk_preservation=None,
+                 retirement=None):
         self.config = config
         self.config_sha = config_sha
         self.S = storage
         self.P = policy
         self.C = custody
         self.layout = layout or storage.Layout()
+        self.retirement = retirement
+        if retirement is not None:
+            policy.retirement_module().require_verified_retirement(retirement)
         self.state_path = Path(config['statePath'])
         self.lock_fd = None
         # Only the installer calls this constructor keyword, while holding the
@@ -287,7 +299,33 @@ class Runtime:
         self.completion_access_time_reconciliation = completion_access_time_reconciliation
         self.completion_historical_bulk_preservation = completion_historical_bulk_preservation
 
+    def load_index(self, path, digest):
+        if self.retirement is None:
+            return self.P.load_index(path, digest, self.layout, APPROVAL_SHA)
+        return self.P.load_index(path, digest, self.layout, APPROVAL_SHA,
+                                 retirement=self.retirement)
+
+    def policy_scope(self, index):
+        if self.retirement is None:
+            return self.P.policy_scope(index, self.layout, APPROVAL_SHA)
+        return self.P.policy_scope(index, self.layout, APPROVAL_SHA,
+                                   retirement=self.retirement)
+
+    def require_no_pending_payload_retirement(self):
+        binding = self.config.get('payloadRetirement')
+        if binding is not None:
+            require(isinstance(binding, dict) and binding.get('mode') == 'complete'
+                    and self.retirement is not None,
+                    'Payload retirement is pending or unauthenticated; publication blocked')
+        if self.retirement is not None:
+            require(isinstance(binding, dict)
+                    and binding.get('policyCodeSha256') == self.config['package']['sha256']
+                    and binding.get('receipt') == self.retirement.proof['receipt']
+                    and binding.get('proposalSha256') == self.retirement.proof['proposalSha256'],
+                    'Runtime retirement context differs from authenticated config')
+
     def current(self):
+        self.require_no_pending_payload_retirement()
         cache = {}
         pair = self.S.protected_pair(self.layout, cache)
         guards, _ = self.S.safeguards(self.layout, model=self.S.ROTATING_LOG_GUARD_MODEL)
@@ -303,6 +341,11 @@ class Runtime:
         require(value.get('schema') == 'pow-ui-retention-lifecycle-state-v1'
                 and value.get('configSha256') == self.config_sha
                 and type(value.get('revision')) is int, 'State authority differs')
+        if self.retirement is not None:
+            self.retirement.verify_lifecycle_state(value, self.config_sha)
+        else:
+            require(value.get('lastPayloadRetirement') is None,
+                    'Retirement lifecycle state requires authenticated successor')
         if value.get('lastUpgrade'):
             upgrade = value['lastUpgrade']
             journal = self.layout.evidence / ('ui-lifecycle-upgrade-' + self.config['package']['sha256'])
@@ -626,6 +669,7 @@ class Runtime:
         completion_verification = None
         verified_fallback = None
         verified_1042 = None
+        verified_retired = None
         no_fallback_index = None
         settled = bool(state and state.get('status') == 'complete' and not state.get('pending')
                        and not state.get('activePhase') and not unfinished)
@@ -634,14 +678,15 @@ class Runtime:
         complete = settled and (state.get('completedContext') == context or rotation is not None)
         if state and state.get('index'):
             index = state['index']
-            admitted = self.P.load_index(index['path'], index['sha256'], self.layout, APPROVAL_SHA)
+            admitted = self.load_index(index['path'], index['sha256'])
             if complete:
-                scope = self.P.policy_scope(index, self.layout, APPROVAL_SHA)
+                scope = self.policy_scope(index)
                 require(not scope['eligible'],
                         'Completed state has eligible ordinary assets')
                 verified_fallback = scope.get('preservedFallback')
                 verified_1042 = scope.get('preservedRelease1042')
-                if verified_fallback is None:
+                verified_retired = scope.get('verifiedRetiredPayloads')
+                if verified_fallback is None and verified_retired is None:
                     require(all(row['retainedPair']['current'] != self.S.PRESERVED_FALLBACK_INTRODUCER
                                 for row in admitted['admissions']), 'Verified index contains the fallback introducer')
                     cutoff = self.S.PRESERVED_FALLBACK_INTRODUCER[13:]
@@ -659,7 +704,7 @@ class Runtime:
             release = frame['prospectiveRelease']
             require(isinstance(release,str) and self.S.RELEASE_ID.fullmatch(release)
                     and release not in context['pair'].values(), 'Invalid proposed release identity')
-            admitted = self.P.load_index(state['index']['path'], state['index']['sha256'], self.layout, APPROVAL_SHA)
+            admitted = self.load_index(state['index']['path'], state['index']['sha256'])
             current = context['pair']['current']
             archive = self.layout.archives / ('proofofwork-ui-release-'+current+'.tgz')
             # At exchange only the current root becomes the new rollback. No
@@ -670,6 +715,10 @@ class Runtime:
                 keep.update(verified_fallback['snapshotSha256'])
             if verified_1042:
                 keep.update(verified_1042['snapshotSha256'])
+            if verified_retired:
+                # Sidecars remain evidence, not a new ordinary retirement candidate.
+                for hold in scope['historicalPayloadHolds'].values():
+                    if hold:keep.update(p for p in hold['snapshotSha256'] if not self.retirement.is_retired(p))
             leaving = sorted((set(admitted['roots']) | set(admitted['assets'])) - set(admitted['retired']) - keep)
             projection = {'privateStageRetention': {'model':'private-stage-zero-retirement-v1','releaseId':release,
                 'previousPair':context['pair'],'stateSha256':digest,'index':state['index'],'wouldRetire':leaving}}
@@ -677,14 +726,22 @@ class Runtime:
                 projection['privateStageRetention']['preservedFallback'] = verified_fallback
             if verified_1042:
                 projection['privateStageRetention']['preservedRelease1042'] = verified_1042
+            if verified_retired:
+                projection['privateStageRetention']['verifiedRetiredPayloads'] = verified_retired
             if leaving:
                 forecast = projection['privateStageRetention']
                 forecast['model'] = 'private-stage-reviewed-retirement-v1'
         if frame.get('requireComplete'):
             require(complete, 'Published UI is healthy; retention-incomplete blocks another upload')
+        if verified_retired:
+            self.retirement.verify_scope(self.layout)
         return {'ok': True, 'initialized': state is not None, 'retentionComplete': complete,
                 **({'verifiedPreservedFallback': verified_fallback} if complete and state and state.get('index') else {}),
                 **({'verifiedPreservedRelease1042': verified_1042} if complete and state and state.get('index') else {}),
+                **({'verifiedRetiredPayloads': verified_retired,
+                    'verifiedRetirementCurrentPair': self.retirement.verified_current_pair,
+                    'verifiedRetirementPolicyCodeSha256': self.config['package']['sha256']}
+                   if verified_retired else {}),
                 **({'verifiedPreFallbackIndex': no_fallback_index} if no_fallback_index else {}),
                 **({'verifiedAccessTimeReconciliation': completion_verification['verifiedAccessTimeReconciliation']}
                    if self.completion_access_time_reconciliation is not None and completion_verification else {}),
@@ -742,14 +799,27 @@ class Runtime:
         plan_binding = completed['ordinaryPlan']; receipt_binding = completed['ordinaryReceipt']
         plan, _ = read_json(plan_binding['path'], plan_binding['sha256'])
         receipt, _ = read_json(receipt_binding['path'], receipt_binding['sha256'])
-        index = self.P.load_index(state['index']['path'], state['index']['sha256'], self.layout, APPROVAL_SHA)
+        index = self.load_index(state['index']['path'], state['index']['sha256'])
         require(receipt_binding in index['index']['completedRetirements']
                 and receipt.get('status') == 'completed'
                 and receipt.get('planSha256') == self.S.digest(plan)
                 and self.P.pair_ids(plan['protected']) == context['pair']
                 and all(not os.path.lexists(row['path']) for row in plan['delete']),
                 'VPS ordinary retirement proof differs')
-        scope = self.P.policy_scope(state['index'], self.layout, APPROVAL_SHA)
+        scope = self.policy_scope(state['index'])
+        if scope.get('verifiedRetiredPayloads'):
+            require(self.retirement is not None and scope['verifiedRetiredPayloads'] == self.retirement.proof,
+                    'Completed state lost authenticated payload retirement')
+            # A pre-transition ordinary plan remains original historical evidence.
+            if plan.get('policyScope', {}).get('verifiedRetiredPayloads') is not None:
+                require(plan['policyScope']['verifiedRetiredPayloads'] == self.retirement.proof,
+                        'Completed plan has different payload retirement authority')
+                require(plan.get('privateStageRetention', {}).get('forecast', {}).get(
+                        'verifiedRetiredPayloads') == self.retirement.proof,
+                        'Completed publication lost payload retirement forecast')
+            else:
+                require(context['pair'] == self.retirement.source_pair,
+                        'Descendant completed plan omitted payload retirement authority')
         if scope.get('preservedFallback') and context['pair']['current'] != self.S.PRESERVED_FALLBACK_INTRODUCER:
             require(plan.get('privateStageRetention',{}).get('forecast',{}).get('preservedFallback') ==
                     plan.get('policyScope',{}).get('preservedFallback') == scope['preservedFallback'],
@@ -781,7 +851,7 @@ class Runtime:
         index = self.evidence('audit30-policy-admission-index-' + operation_id + '.json',
                               {'schema': self.P.INDEX_V2, 'scopeApprovalSha256': APPROVAL_SHA,
                                'migration': migration_binding, 'admissions': [anchor], 'completedRetirements': []})
-        self.P.load_index(index['path'], index['sha256'], self.layout, APPROVAL_SHA)
+        self.load_index(index['path'], index['sha256'])
         new = {'schema': 'pow-ui-retention-lifecycle-state-v1', 'configSha256': self.config_sha,
                'revision': 1, 'status': 'retention-incomplete', 'index': index, 'pending': None,
                'completedContext': None, 'lastIntent': intent}
@@ -873,13 +943,15 @@ class Runtime:
                     and context['pair']['previous']==rule['forecast']['previousPair']['current'],
                     'Private staging pre-exchange lifecycle state or next pair changed')
         index = state['index']
-        data = self.P.load_index(index['path'], index['sha256'], self.layout, APPROVAL_SHA)
-        existing_hold = self.P.fallback_hold(self.layout,data['index']['admissions'],data['admissions'])
+        data = self.load_index(index['path'], index['sha256'])
+        existing_hold = (self.P.fallback_hold(self.layout,data['index']['admissions'],data['admissions'])
+                         if self.retirement is None else None)
         if existing_hold or (rule and rule['forecast'].get('preservedFallback')):
             require(rule and rule['forecast'].get('preservedFallback') == existing_hold,
                     'Published plan lacks the admitted in-place fallback hold')
             self.P.verify_fallback_hold(existing_hold,self.layout,pair,{})
-        existing_1042 = self.P.preserved_1042_hold(self.layout,data['index']['admissions'],data['admissions'])
+        existing_1042 = (self.P.preserved_1042_hold(self.layout,data['index']['admissions'],data['admissions'])
+                         if self.retirement is None else None)
         if existing_1042:
             require(rule and rule['forecast'].get('preservedRelease1042') == existing_1042,
                     'Published plan lacks the exact 1042 hold')
@@ -887,13 +959,17 @@ class Runtime:
         operation_id, intent, active_sha = self.begin('prepare-cycle', frame, state, state_sha, context)
         _, https_binding = self.store('ui-lifecycle-' + operation_id + '-https.json', frame['httpsReceipt'])
         if context['pair']['current'] not in data['releaseIds']:
-            admission = self.P.admission(self.layout, APPROVAL_SHA, False, index)
+            admission = self.P.admission(self.layout, APPROVAL_SHA, False, index,
+                                         **({'retirement': self.retirement} if self.retirement is not None else {}))
             admission_binding = self.evidence('audit30-policy-admission-' + operation_id + '.json', admission)
             index_value = dict(data['index'], admissions=[*data['index']['admissions'], admission_binding])
             index = self.evidence('audit30-policy-admission-index-' + operation_id + '.json', index_value)
         else:
             require(data['admissions'][-1]['retainedPair'] == context['pair'], 'Latest admission does not bind live pair')
-        scope = self.P.policy_scope(index, self.layout, APPROVAL_SHA)
+        scope = self.policy_scope(index)
+        if scope.get('verifiedRetiredPayloads'):
+            require(rule and rule['forecast'].get('verifiedRetiredPayloads') == scope['verifiedRetiredPayloads'],
+                    'Publication lost authenticated retired-payload proof')
         if scope.get('preservedFallback'):
             require(rule and rule['forecast'].get('preservedFallback') == scope['preservedFallback']
                     and sorted(r['path'] for r in scope['eligible']) == rule['forecast']['wouldRetire'], 'Publication requires the same fallback hold and reviewed retirement paths')
@@ -935,13 +1011,18 @@ class Runtime:
         rule = self.private_stage_rule(pending['publicationReceipt']) if vps_only else None
         require(plan.get('privateStageRetention')==rule, 'Native retirement plan differs from published scope')
         if rule:
-            scope = self.P.policy_scope(pending['index'],self.layout,APPROVAL_SHA)
+            scope = self.policy_scope(pending['index'])
             require(vps_only and sorted(r['path'] for r in scope['eligible']) == rule['forecast']['wouldRetire'] and
                     scope.get('preservedFallback') == rule['forecast'].get('preservedFallback') ==
                     plan['policyScope'].get('preservedFallback'),
                     'Private staging cannot retire newly eligible data or change an in-place hold')
             require(scope.get('preservedRelease1042') == rule['forecast'].get('preservedRelease1042') ==
                     plan['policyScope'].get('preservedRelease1042'), '1042 hold differs before apply')
+            if self.retirement is not None:
+                require(scope.get('verifiedRetiredPayloads') ==
+                        rule['forecast'].get('verifiedRetiredPayloads') ==
+                        plan['policyScope'].get('verifiedRetiredPayloads') == self.retirement.proof,
+                        'Authenticated payload retirement differs before apply')
             self.verify_private_retirement(plan)
         operation_id, intent, active_sha = self.begin('apply-vps-retention' if vps_only else 'apply-ordinary', frame, state, state_sha, context)
         for row in ([] if vps_only else frame.get('custodyRecords', [])):
@@ -968,8 +1049,8 @@ class Runtime:
         completed = {'path': outcome['receiptPath'], 'sha256': outcome['receiptSha256']}
         next_index = dict(previous_index, completedRetirements=[*previous_index['completedRetirements'], completed])
         index = self.evidence('audit30-policy-admission-index-' + operation_id + '.json', next_index)
-        self.P.load_index(index['path'], index['sha256'], self.layout, APPROVAL_SHA)
-        require(not self.P.policy_scope(index, self.layout, APPROVAL_SHA)['eligible'], 'Ordinary assets remain eligible')
+        self.load_index(index['path'], index['sha256'])
+        require(not self.policy_scope(index)['eligible'], 'Ordinary assets remain eligible')
         new = dict(applying, revision=applying['revision'] + 1, index=index,
                    pending=dict(applying['pending'], stage='ordinary-complete', index=index, ordinaryReceipt=completed))
         return self.finish(operation_id, intent, applying_sha, new,
@@ -1014,7 +1095,7 @@ class Runtime:
         plan, plan_raw = embedded(frame['custodyPlan'])
         result, result_raw = embedded(frame['custodyResult'])
         require(plan.get('lifecycle') == self.lifecycle(state['index']), 'Fresh custody qualification index differs')
-        require(not self.P.policy_scope(state['index'], self.layout, APPROVAL_SHA)['eligible'],
+        require(not self.policy_scope(state['index'])['eligible'],
                 'Ordinary assets remain eligible')
         # The verifier authenticates remote terminal receipts and requalifies all
         # remaining discovered candidates; omitted eligible bulk cannot pass.
@@ -1038,6 +1119,7 @@ class Runtime:
                    'apply-ordinary': self.apply_ordinary, 'complete-cycle': self.complete_cycle,
                    'apply-vps-retention': self.apply_vps_retention, 'complete-vps-cycle': self.complete_vps_cycle}
         require(operation in methods and isinstance(frame, dict), 'Unsupported lifecycle operation/frame')
+        self.require_no_pending_payload_retirement()
         lock = self.S.lock(self.layout)
         try:
             self.lock_fd = lock
@@ -1052,10 +1134,20 @@ class Runtime:
 def installed_runtime(config_path, config_sha):
     config, config_sha, package = validate_config(config_path, config_sha)
     storage = load_module('lifecycle_storage', package / 'deploy/audit30/ui-storage.py')
-    policy = load_module('lifecycle_policy', package / 'deploy/audit30/ui-release-policy.py', _BOUND_STORAGE=storage)
+    retirement_module = load_module('lifecycle_retirement_receipt', package / 'deploy/ui-retention/retirement_receipt.py')
+    policy = load_module('lifecycle_policy', package / 'deploy/audit30/ui-release-policy.py',
+                         _BOUND_STORAGE=storage, _BOUND_RETIREMENT=retirement_module)
     custody = load_module('lifecycle_custody', package / 'deploy/ui-retention/custody.py')
     custody.load_helpers()
-    return Runtime(config, config_sha, storage, policy, custody)
+    retirement = None
+    if config.get('payloadRetirement') is not None:
+        require(config['payloadRetirement'].get('mode') == 'complete',
+                'Payload retirement is pending; publication blocked')
+        layout = storage.Layout()
+        retirement = retirement_module.load_verified_retirement(
+            config['payloadRetirement'], layout,
+            lambda checked_layout: storage.protected_pair(checked_layout, {}))
+    return Runtime(config, config_sha, storage, policy, custody, retirement=retirement)
 
 
 def private_stage_pre_exchange(config_path, config_sha, release, lock_fd):

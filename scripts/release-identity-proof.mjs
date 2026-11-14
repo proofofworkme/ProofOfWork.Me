@@ -367,9 +367,24 @@ const baselineDelta = [
     }
   }
 ];
+export const retentionOperatorPackagePaths=Object.freeze([
+ "audits/2026-10-16-ui-retention-repair-approval.json",
+ "audits/2026-10-16-ui-retention-repair-proposal.json",
+ "deploy/audit30/ui-storage.py","deploy/audit30/ui-release-policy.py",
+ "deploy/proofofwork-ui-verified-retention.py",
+ "deploy/ui-retention/custody.py","deploy/ui-retention/inventory.py",
+ "deploy/ui-retention/removal.py","deploy/ui-retention/lifecycle_remote.py",
+ "deploy/ui-retention/install_lifecycle.py","deploy/ui-retention/lifecycle.py",
+ "deploy/ui-retention/retirement_receipt.py","deploy/ui-retention/retirement_transition.py",
+ "deploy/ui-retention/retirement_controller.py",
+]);
 const operatorPaths = new Set([
+ "deploy/ui-retention/check-retirement-consumer-authority.test.py",
  "server/publish-linked-capability.test.mjs",
  "scripts/lifecycle-status-witness.mjs", "scripts/lifecycle-status-witness.test.mjs",
+ "scripts/check-exact-payload-retirement.test.mjs",
+"deploy/audit30/ui-release-policy.py","deploy/ui-retention/install_lifecycle.py","deploy/ui-retention/lifecycle_remote.py","deploy/ui-retention/retirement_receipt.py","deploy/ui-retention/retirement_controller.py","deploy/ui-retention/retirement_transition.py","deploy/ui-retention/check-retirement-receipt.test.py","deploy/ui-retention/check-retirement-context.test.py","deploy/ui-retention/check-retirement-controller.test.py","deploy/ui-retention/check-retirement-policy.test.py","deploy/ui-retention/check-retirement-transition.test.py","deploy/ui-retention/check-retirement-operator.test.py","deploy/ui-retention/check-retirement-authority-integration.test.py","deploy/ui-retention/EXACT_PAYLOAD_RETIREMENT.md",
+ "scripts/retirement-evidence.mjs", "scripts/retirement-evidence.test.mjs", "scripts/retirement-evidence-crosslanguage.test.mjs",
  "scripts/fixtures/dual-release/native609.json", "scripts/fixtures/dual-release/browser609.json",
  "scripts/collect-dual-release-evidence.mjs", "scripts/collect-dual-release-evidence.test.mjs",
   "scripts/release-identity-proof.mjs",
@@ -386,8 +401,9 @@ const operatorPaths = new Set([
   "release-impact.json",
   "repository-hygiene.json"
 ]);
-const closurePaths = [
+const closurePaths = [...retentionOperatorPackagePaths,
  "scripts/lifecycle-status-witness.mjs",
+ "scripts/retirement-evidence.mjs",
  "deploy/proofofwork-postgres-query-health.sh",
  "deploy/linked-publish/profile.py",
  "deploy/activity-fee-factor/profile.py",
@@ -398,7 +414,6 @@ const closurePaths = [
   "scripts/check-publish-linked-remote.mjs",
   "scripts/check-activity-fee-factor-live.mjs",
   "deploy/linked-publish/qualification.py",
-  "deploy/ui-retention/lifecycle.py",
   "package.json",
   "package-lock.json"
 ];

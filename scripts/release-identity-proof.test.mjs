@@ -124,9 +124,10 @@ test("Git identity reads ignore inherited executable, object and config override
  }finally{for(const key of keys)if(prior[key]===undefined)delete process.env[key];else process.env[key]=prior[key];}
 });
 
-test("unchanged lifecycle executor is bound and a hidden mode substitution refuses",t=>{
+test("unchanged lifecycle executor is bound and a hidden mode substitution refuses",async t=>{
  const code=readFileSync(new URL("./release-identity-proof.mjs",import.meta.url),"utf8");
- assert(code.slice(code.indexOf("const closurePaths ="),code.indexOf("const proofs")).includes('"deploy/ui-retention/lifecycle.py"'));
+ assert(code.slice(code.indexOf("const closurePaths ="),code.indexOf("const proofs")).includes("...retentionOperatorPackagePaths"));
+ assert((await import("./release-identity-proof.mjs")).retentionOperatorPackagePaths.includes("deploy/ui-retention/lifecycle.py"));
  const f=fixture(t),name="deploy/ui-retention/lifecycle.py";
  mkdirSync(dirname(resolve(f.root,name)),{recursive:true});writeFileSync(resolve(f.root,name),"# fixture");
  f.git("add",".");f.git("commit","-qm","lifecycle");const head=f.git("rev-parse","HEAD");
@@ -139,4 +140,16 @@ test("activity runtime profile and monitor inputs remain inside the committed cl
  const closure=code.slice(code.indexOf("const closurePaths ="),code.indexOf("const proofs"));
  for(const path of ["deploy/audit-remediation/profile.py","deploy/activity-fee-factor/profile.py","deploy/linked-publish/profile.py","deploy/proofofwork-postgres-query-health.sh"])
   assert(closure.includes(JSON.stringify(path)),path);
+});
+
+test("operator package closure exactly matches installed runtime and installer authority",async()=>{
+ const {retentionOperatorPackagePaths}=await import("./release-identity-proof.mjs");
+ const {retentionPackageFiles}=await import("./retirement-evidence.mjs");
+ assert.equal(retentionPackageFiles,retentionOperatorPackagePaths);
+ assert(Object.isFrozen(retentionOperatorPackagePaths));
+ assert.equal(new Set(retentionOperatorPackagePaths).size,14);
+ const root=resolve(dirname(fileURLToPath(import.meta.url)),"..");
+ const py="import ast,json,pathlib; root=pathlib.Path(__import__('sys').argv[1]); out=[];\nfor rel,name in [('deploy/ui-retention/lifecycle_remote.py','PACKAGE_FILES'),('deploy/ui-retention/install_lifecycle.py','FILES')]:\n tree=ast.parse((root/rel).read_text()); value=next(ast.literal_eval(n.value) for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id==name for t in n.targets)); out.append(value)\nprint(json.dumps(out))";
+ const values=JSON.parse(execFileSync("/usr/bin/python3",["-I","-B","-c",py,root],{encoding:"utf8"}));
+ for(const paths of values)assert.deepEqual(paths,retentionOperatorPackagePaths);
 });

@@ -288,7 +288,8 @@
       "deploy/linked-publish/README.md",
       "deploy/linked-publish/REMOTE_VERIFICATION.md",
       "deploy/ui-retention/fixtures/README.md",
-      "deploy/linked-publish/DUAL_QUALIFICATION.md"
+      "deploy/linked-publish/DUAL_QUALIFICATION.md",
+      "deploy/ui-retention/EXACT_PAYLOAD_RETIREMENT.md"
     ]
   },
   "protectedTrackedPaths": [

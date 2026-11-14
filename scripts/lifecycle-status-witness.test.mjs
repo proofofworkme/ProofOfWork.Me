@@ -6,6 +6,7 @@ import {registerHooks,syncBuiltinESMExports} from "node:module";
 import {fileURLToPath} from "node:url";
 import {performance} from "node:perf_hooks";
 const repository=fileURLToPath(new URL("../",import.meta.url)).replace(/\/$/u,"");
+const retirementURL=new URL("./retirement-evidence.mjs",import.meta.url).href;
 const identityURL=new URL("./release-identity-proof.mjs",import.meta.url).href;
 const brands=new WeakSet();
 const fixed={repository,artifact:{commit:"064b6991ae2a48e2069baedc767cd918d28ba052",tree:"a".repeat(40)},operator:{commit:"b".repeat(40),tree:"c".repeat(40)},digests:{source:"d".repeat(64)}};
@@ -19,11 +20,22 @@ globalThis.__stockWitnessTest={
 };
 const hook=registerHooks({load(url,context,next){
  if(url===identityURL)return {format:"module",shortCircuit:true,source:"export const requireIdentityProof=p=>globalThis.__stockWitnessTest.require(p); export const createIdentityProof=()=>globalThis.__stockWitnessTest.create(); export const publicIdentityProof=p=>globalThis.__stockWitnessTest.public(p);"};
+ if(url===retirementURL)return {format:"module",shortCircuit:true,source:"export const attestInstalledRetentionPackage=p=>globalThis.__stockRetentionTest.attest(p); export const bindInstalledRetentionPackage=(s,a)=>globalThis.__stockRetentionTest.bind(s,a); export const collectRetirementEvidence=s=>globalThis.__stockRetentionTest.collect(s); export const validateRetainedHolds=(s,b)=>globalThis.__stockRetentionTest.validate(s,b);"};
  return next(url,context);
 }});
 const realExec=childProcess.execFileSync;
 const realFetch=globalThis.fetch;
 let statusCalls=0,finalMutation,failStatus=false,standalone=false;
+let events=[],retired=false,missingEvidence=false,badProof=false,attestationFailure=false,bindFailure=false,packageVersion="original";
+globalThis.__stockRetentionTest={
+ attest:p=>{assert(brands.has(p));events.push("attest");if(attestationFailure)throw Error("untrusted installed package");return {mode:retired?"operator-retirement-package":"legacy-in-place",configSha256:"1".repeat(64),version:packageVersion};},
+ bind:(s,a)=>{events.push("bind");if(bindFailure)throw Error("package lifecycle mismatch");assert.equal(s.configSha256,a.configSha256);},
+ collect:s=>{events.push("retirement-read");assert(s.verifiedRetiredPayloads);if(missingEvidence)throw Error("missing terminal evidence");return {synthetic:true,receipt:s.verifiedRetiredPayloads.receiptSha256};},
+ validate:(s,b)=>{events.push("validate-holds");
+  if(s.verifiedRetiredPayloads){assert.equal(s.verifiedRetiredPayloads.model,"intentionally-retired-payloads-retained-evidence-v1");assert.equal(s.verifiedPreservedRelease1042,null);assert.equal(s.verifiedPreservedFallback,null);assert.deepEqual(b,{synthetic:true,receipt:s.verifiedRetiredPayloads.receiptSha256});}
+  else{assert.equal(s.verifiedPreservedRelease1042.releaseId,"1042efea2aa1-20261112T074918Z");assert.equal(s.verifiedPreservedFallback.releaseId,"c3969c39c2b2-20261101T051206Z");assert.equal(b,undefined);}
+ }
+};
 function status() {
  const pair={current:fixed.artifact.commit.slice(0,12)+"-20261114T020148Z",previous:"e2669bc1fd32-20261112T163804Z"};
  const floor={rootReserveBytes:8*1024**3,growthReserveBytes:64*1024**2,installedSha256:"e".repeat(64)};
@@ -40,8 +52,9 @@ childProcess.execFileSync=(command,args,options)=>{
  if(args.includes("deploy/ui-retention/lifecycle.py")){
   assert.equal(command,standalone?"python3":"/usr/bin/python3");assert.deepEqual(args,["-I","-B","deploy/ui-retention/lifecycle.py","status","--require-complete"]);
   if(!standalone)assert.deepEqual(options.env,{PATH:"/usr/bin:/bin",HOME:"/nonexistent"});assert.equal(options.timeout,480000);
-  statusCalls++;if(failStatus)throw new Error("synthetic full status failure");
-  const value=status();if(finalMutation)finalMutation(value);return JSON.stringify(value);
+  events.push("status");statusCalls++;if(failStatus)throw new Error("synthetic full status failure");
+  const value=status();if(retired){value.verifiedPreservedRelease1042=null;value.verifiedPreservedFallback=null;value.verifiedRetiredPayloads={model:badProof?"fake":"intentionally-retired-payloads-retained-evidence-v1",receiptSha256:"9".repeat(64)};}
+  if(finalMutation)finalMutation(value);return JSON.stringify(value);
  }
  if(command==="/usr/bin/git")return standalone?fixed.artifact.commit:fixed.operator.commit;
  if(command==="python3"||command==="/usr/bin/python3")return JSON.stringify(Object.fromEntries(["a","b","c","d","e","f"].map(k=>[k,"0".repeat(64)])));
@@ -61,7 +74,7 @@ globalThis.fetch=async url=>{
 };
 const witness=await import("./lifecycle-status-witness.mjs");
 const activity=await import("./check-activity-fee-factor-live.mjs");
-const reset=()=>{statusCalls=0;finalMutation=undefined;failStatus=false;standalone=false;source=fixed;};
+const reset=()=>{statusCalls=0;finalMutation=undefined;failStatus=false;standalone=false;source=fixed;events=[];retired=false;missingEvidence=false;badProof=false;attestationFailure=false;bindFailure=false;packageVersion="original";};
 test("two full scans with actual activity in between; no synthetic production qualification",async t=>{
  try {
  await t.test("exactly two hardwired full statuses, middle activity consumes immutable witness",async()=>{
@@ -71,6 +84,27 @@ test("two full scans with actual activity in between; no synthetic production qu
   assert.equal(activityResult.ok,true);assert.deepEqual(activityResult.lifecycleEvidence,{mode:"same-collection-before-full-scan",finalIndependentFullScanRequired:true});
   assert.equal(statusCalls,1);witness.finishLifecycleCollection(pass.witness,p);assert.equal(statusCalls,2);
   assert.throws(()=>witness.consumeActivityLifecycle(pass.witness,p));assert.throws(()=>witness.finishLifecycleCollection(pass.witness,p));
+ });
+ await t.test("retired branch verifies package before each full status and keeps middle activity provisional",async()=>{
+  reset();retired=true;const p=proof(),pass=witness.beginLifecycleCollection(p);
+  assert.deepEqual(events,["attest","status","bind","retirement-read","validate-holds"]);
+  const result=await activity.runActivityFeeFactorLive({identityProof:p,lifecycleWitness:pass.witness});
+  assert.equal(statusCalls,1);assert.equal(result.lifecycleEvidence.finalIndependentFullScanRequired,true);
+  witness.finishLifecycleCollection(pass.witness,p);
+  assert.equal(statusCalls,2);assert.equal(events.filter(x=>x==="attest").length,2);
+  assert.deepEqual(events.slice(-5),["attest","status","bind","retirement-read","validate-holds"]);
+ });
+ await t.test("missing or unknown retirement evidence cannot mint reusable witness",()=>{
+  for(const bad of ["missing","unknown"]){reset();retired=true;missingEvidence=bad==="missing";badProof=bad==="unknown";
+   assert.throws(()=>witness.beginLifecycleCollection(proof()));assert.equal(statusCalls,1);}
+ });
+ await t.test("untrusted package refuses before any installed policy execution",()=>{
+  reset();attestationFailure=true;assert.throws(()=>witness.beginLifecycleCollection(proof()),/untrusted/);assert.equal(statusCalls,0);
+  reset();bindFailure=true;assert.throws(()=>witness.beginLifecycleCollection(proof()),/mismatch/);assert.equal(statusCalls,1);assert(!events.includes("retirement-read"));
+ });
+ await t.test("final package must match first package even if lifecycle JSON unchanged",()=>{
+  reset();const p=proof(),pass=witness.beginLifecycleCollection(p);witness.consumeActivityLifecycle(pass.witness,p);packageVersion="changed";
+  assert.throws(()=>witness.finishLifecycleCollection(pass.witness,p),/package changed/);
  });
  await t.test("standalone typed activity still performs own full status",async()=>{
   reset();await activity.runActivityFeeFactorLive({identityProof:proof()});assert.equal(statusCalls,1);
@@ -133,5 +167,5 @@ test("two full scans with actual activity in between; no synthetic production qu
   reset();const p=proof(),pass=witness.beginLifecycleCollection(p);witness.consumeActivityLifecycle(pass.witness,p);finalMutation=mutate;
   assert.throws(()=>witness.finishLifecycleCollection(pass.witness,p));
  });
- } finally {childProcess.execFileSync=realExec;syncBuiltinESMExports();globalThis.fetch=realFetch;hook.deregister();delete globalThis.__stockWitnessTest;}
+ } finally {childProcess.execFileSync=realExec;syncBuiltinESMExports();globalThis.fetch=realFetch;hook.deregister();delete globalThis.__stockWitnessTest;delete globalThis.__stockRetentionTest;}
 });

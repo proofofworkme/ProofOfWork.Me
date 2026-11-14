@@ -8,6 +8,7 @@ import {resolve} from "node:path";
 import {fileURLToPath,pathToFileURL} from "node:url";
 import {createIdentityProof,requireIdentityProof,publicIdentityProof} from "./release-identity-proof.mjs";
 import {collectDualReleaseEvidence,requireLiveCollection,validateArchivalObservation} from "./collect-dual-release-evidence.mjs";
+import {validateRetainedHolds} from "./retirement-evidence.mjs";
 const sha=raw=>createHash("sha256").update(raw).digest("hex");
 const HASH=/^[a-f0-9]{64}$/u;
 export const surfaces=Object.freeze("activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft pages permission publish search token wallet work".split(" "));
@@ -74,8 +75,7 @@ export function validateEvidenceContents(bundle,ids,bindings,{now=Date.now(),val
  const lifecycle=data.lifecycle;
  assert.equal(lifecycle.publicationHealthy,true);assert.equal(lifecycle.retentionComplete,true);
  assert.equal(lifecycle.pair.current,manifest.release_id);assert.deepEqual(lifecycle.unfinishedIntents,[]);
- assert.equal(lifecycle.verifiedPreservedRelease1042?.releaseId,"1042efea2aa1-20261112T074918Z");
- assert.equal(lifecycle.verifiedPreservedFallback?.releaseId,"c3969c39c2b2-20261101T051206Z");
+ validateRetainedHolds(lifecycle,lifecycle.retirementEvidence);
  assert.equal(lifecycle.verifiedCapacityFloor?.rootReserveBytes,8*1024**3);
  assert.equal(lifecycle.verifiedCapacityFloor?.growthReserveBytes,64*1024**2);
  const probe=data.preactivation;
@@ -90,6 +90,7 @@ export function validateEvidenceContents(bundle,ids,bindings,{now=Date.now(),val
  const live=JSON.parse(remote.rawResult);assert.equal(live.mode,"preactivation");assert.equal(live.newLinkedWriteVerified,false);assert(!live.error);
  for(const name of ["disabled-writer reader/indexer/Search/capacity readiness","public writer remains disabled","complete article feed"])assert.equal(live.checks?.find(x=>x.name===name)?.pass,true);
  assert.deepEqual(data.activity.qualificationSubject,a);assert.equal(data.activity.ok,true);assert.equal(data.activity.retentionComplete,true);assert.deepEqual(data.activity.pair,lifecycle.pair);
+ if(lifecycle.retirementEvidence)assert.equal(data.activity.retirementReceiptSha256,lifecycle.verifiedRetiredPayloads.receiptSha256);
  assert.equal(data.growth.ok,true);assert.equal(data.growth.commit,a.commit);assert.equal(data.growth.canonicalParity,true);assert.deepEqual(data.growth.verified,["growth","computer"]);
  for(const name of ["nativeV2","browserV2"]) {
   const value=data[name],role=roles[name];

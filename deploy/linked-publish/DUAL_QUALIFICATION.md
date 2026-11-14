@@ -144,3 +144,23 @@ clock changes cannot affect production timing. Production scheduler/product
 bytes, package/lock, pinned probe closure, writer state and live data are unchanged.
 
 The edited server test is included in the recursive operational source envelope if deployed: the operator envelope therefore must not be equated to artifact064/backend609. This candidate is operator-only; never copy its server tree into live runtime or relabel original source receipts. Dual qualification continues reading the original sealed064 source and accepted609 runtime independently.
+
+
+## Explicit historical-payload retirement successor
+
+The legacy in-place 1042/c396 hold branch is unchanged. An alternative requires
+the exact reviewed retirement terminal, retained sidecars/history, original
+064/e266 pair and authenticated later lineage. It does not accept missing
+payloads or a success boolean as evidence.
+
+Before either full lifecycle scan executes successor policy, the collector
+authenticates every member of the fixed operator package against the qualified
+operator Git commit/tree and canonical package-manifest hash. Artifact064
+provenance remains separate. Both scans bind the complete lifecycle status and
+package attestation; the middle activity witness remains provisional until the
+independent final scan matches.
+
+See [the exact retirement operator runbook](../ui-retention/EXACT_PAYLOAD_RETIREMENT.md)
+for scope, pending publication block, recovery, fixture boundaries and mandatory
+fresh production admission. Local synthetic qualification is not evidence that
+production backups were removed or that the writer was activated.

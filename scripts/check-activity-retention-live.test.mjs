@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
+import {validateRetainedHolds} from "./retirement-evidence.mjs";
 const source=readFileSync(new URL("./check-activity-fee-factor-live.mjs",import.meta.url),"utf8");
 // Execute only the actual final assertion block, never network/process operations.
 const start=source.indexOf("assert.equal(lifecycle.publicationHealthy, true);");
 const end=source.indexOf("console.log(JSON.stringify({ ok: true",start);
 assert(start>=0&&end>start);
-const verify=new Function("assert","lifecycle","commit",source.slice(start,end));
+const block=new Function("assert","lifecycle","commit","validateRetainedHolds","retirementEvidence",source.slice(start,end));
+const verify=(assert,lifecycle,commit)=>block(assert,lifecycle,commit,validateRetainedHolds,undefined);
 const commit="064b6991ae2a48e2069baedc767cd918d28ba052";
 const fixture=()=>({publicationHealthy:true,retentionComplete:true,
  pair:{current:commit.slice(0,12)+"-20261114T020148Z",previous:"e266342ecc35-20261113T010000Z"},
