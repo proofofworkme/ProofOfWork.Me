@@ -99,19 +99,144 @@ fence()
 before=subprocess.run(["systemctl","show",unit,"-p","LoadState","-p","MainPID"],capture_output=True,text=True,timeout=15)
 need("LoadState=not-found" in before.stdout and "MainPID=0" in before.stdout,"Existing verification unit requires reconciliation")
 argv=["systemd-run","--unit="+unit,"--wait","--collect","--pipe","--property=CPUQuota=100%","--property=MemoryMax=256M","--property=MemorySwapMax=0","--property=RuntimeMaxSec=300","--property=NoNewPrivileges=yes","--property=PrivateTmp=yes","--property=ProtectSystem=strict","--property=EnvironmentFile=/etc/proofofwork-api/internal-verifier.env","--property=UnsetEnvironment=NODE_OPTIONS NODE_PATH","--setenv=GIT_OPTIONAL_LOCKS=0","--setenv=POW_PUBLISH_CHECK_MODE=preactivation","--setenv=POW_PUBLISH_CHECK_ORIGIN=http://127.0.0.1:8081","/opt/node-v24.18.0-linux-x64/bin/node",str(source/"scripts/check-publish-linked-live.mjs")]
-try:result=subprocess.run(argv,capture_output=True,env=environment,timeout=330)
-except subprocess.TimeoutExpired:
- print(json.dumps({"ok":False,"outcome":"uncertain","unit":unit,"message":"Reconcile this bounded verification unit before retrying."}));sys.exit(1)
-terminal=subprocess.check_output(["systemctl","show",unit,"-p","LoadState","-p","ActiveState","-p","MainPID"],text=True,timeout=15)
-absent=not (pathlib.Path("/sys/fs/cgroup/system.slice")/unit).exists()
-need("MainPID=0" in terminal and "ActiveState=inactive" in terminal and absent,"Verification unit not confirmed stopped; reconcile before retry")
-need(result.returncode==0,"Unchanged publish checker failed")
-need(len(result.stdout)<=2*1024**2,"Checker output too large")
-raw=result.stdout.decode();value=json.loads(raw)
-need(value.get("mode")=="preactivation" and not value.get("error") and value.get("newLinkedWriteVerified") is False,"Preactivation failed")
-fence();need(read(source.parent/"build-receipt.json")==receipt_raw,"Build receipt changed")
-print(json.dumps({"format":"publish-linked-remote-preactivation-v1","ok":True,"commit":request["commit"],"tree":request["tree"],"source":str(source),"checkerHashes":request["hashes"],"buildReceiptSha256":digest(receipt_raw),"unit":unit,"exitCode":result.returncode,"terminal":terminal,"cgroupAbsent":absent,"rawResult":raw,"rawResultSha256":digest(result.stdout),"noTokenTransferred":True,"productionMutation":False},sort_keys=True))
+
+CHECK_NAMES=("disabled-writer reader/indexer/Search/capacity readiness","public writer remains disabled","complete article feed","existing article exact body","existing article detail")
+ERROR_CODES={"Disabled-writer preactivation readiness is not fully verified.":"READINESS_NOT_VERIFIED","Writer must remain disabled after preactivation.":"WRITER_NOT_DISABLED","Article feed is incomplete":"ARTICLE_FEED_INCOMPLETE","Existing article detail proof mismatch":"ARTICLE_DETAIL_MISMATCH","Response bound exceeded":"RESPONSE_BOUND_EXCEEDED"}
+def sanitize_failure(stdout,overflow=False):
+ out={"stdoutStatus":"missing","checks":[],"unknownCheckCount":0,"checkerCode":"UNCLASSIFIED","httpStatus":None}
+ if overflow or len(stdout)>2*1024**2:out["stdoutStatus"]="oversized";return out,None
+ if not stdout:return out,None
+ def unique(rows):
+  value={}
+  for key,item in rows:
+   if key in value:raise ValueError("duplicate")
+   value[key]=item
+  return value
+ try:
+  value=json.loads(stdout.decode("utf8"),object_pairs_hook=unique)
+  if not isinstance(value,dict) or value.get("mode")!="preactivation" or value.get("newLinkedWriteVerified") is not False:raise ValueError("shape")
+  checks=value.get("checks")
+  if not isinstance(checks,list) or len(checks)>8:raise ValueError("checks")
+  seen=set();safe=[];unknown=0
+  for row in checks:
+   if not isinstance(row,dict) or not isinstance(row.get("name"),str) or (row.get("pass") is not None and type(row.get("pass")) is not bool) or "pass" not in row:raise ValueError("check")
+   name=row["name"]
+   if name in seen:raise ValueError("duplicate check")
+   seen.add(name)
+   if name in CHECK_NAMES:safe.append({"name":name,"pass":row["pass"]})
+   else:unknown+=1
+  error=value.get("error")
+  out.update(stdoutStatus="valid",checks=safe,unknownCheckCount=unknown)
+  if isinstance(error,str):
+   out["checkerCode"]=ERROR_CODES.get(error,"UNCLASSIFIED")
+   match=re.fullmatch(r"Read unavailable: ([1-5][0-9]{2})",error)
+   if match:out.update(checkerCode="HTTP_UNAVAILABLE",httpStatus=int(match[1]))
+  return out,value
+ except (ValueError,TypeError,UnicodeError,RecursionError):
+  out.update(stdoutStatus="invalid",checks=[],unknownCheckCount=0)
+  return out,None
+
+def capture_probe(args,env,timeout=330):
+ # No raw stderr is collected. Stdout memory stays bounded even for hostile output.
+ import selectors,time
+ process=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,env=env)
+ selector=selectors.DefaultSelector();selector.register(process.stdout,selectors.EVENT_READ)
+ chunks=[];size=0;overflow=False;timed_out=False;deadline=time.monotonic()+timeout
+ try:
+  while selector.get_map():
+   remaining=deadline-time.monotonic()
+   if remaining<=0:timed_out=True;break
+   for key,_ in selector.select(min(remaining,0.2)):
+    chunk=os.read(key.fileobj.fileno(),65536)
+    if not chunk:selector.unregister(key.fileobj);continue
+    keep=min(len(chunk),max(0,2*1024**2-size))
+    if keep:chunks.append(chunk[:keep])
+    size+=keep
+    if keep<len(chunk):overflow=True
+  if not timed_out:
+   try:process.wait(timeout=max(0.001,deadline-time.monotonic()))
+   except subprocess.TimeoutExpired:timed_out=True
+  if timed_out:
+   process.kill()
+   try:process.wait(timeout=5)
+   except subprocess.TimeoutExpired:pass
+ finally:selector.close();process.stdout.close()
+ return process.returncode,b"".join(chunks),overflow,timed_out
+
+def terminal_state():
+ state={"loadState":"unknown","activeState":"unknown","mainPid":None,"cgroupAbsent":False,"verified":False}
+ try:
+  text=subprocess.check_output(["systemctl","show",unit,"-p","LoadState","-p","ActiveState","-p","MainPID"],text=True,stderr=subprocess.DEVNULL,timeout=15)
+  values=dict(line.split("=",1) for line in text.splitlines())
+  state["loadState"]=values.get("LoadState") if values.get("LoadState") in ("loaded","not-found","masked","error","stub") else "unknown"
+  state["activeState"]=values.get("ActiveState") if values.get("ActiveState") in ("active","inactive","failed","activating","deactivating","reloading") else "unknown"
+  pid=values.get("MainPID","")
+  if re.fullmatch(r"[0-9]{1,10}",pid):state["mainPid"]=int(pid)
+  state["cgroupAbsent"]=not (pathlib.Path("/sys/fs/cgroup/system.slice")/unit).exists()
+  state["verified"]=state["mainPid"]==0 and state["activeState"]=="inactive" and state["cgroupAbsent"]
+ except (OSError,ValueError,subprocess.SubprocessError):pass
+ return state
+
+try:exit_code,stdout,overflow,timed_out=capture_probe(argv,environment)
+except OSError:exit_code,stdout,overflow,timed_out=None,b"",False,False
+terminal_info=terminal_state()
+safe,value=sanitize_failure(stdout,overflow)
+# Do not spend the remaining transport deadline re-fencing a failed probe.
+# False here means NOT VERIFIED, never a claim that source necessarily changed.
+source_ok=False
+code=None
+if timed_out:code="PROBE_TIMEOUT"
+elif not terminal_info["verified"]:code="TERMINAL_UNVERIFIED"
+elif safe["stdoutStatus"]!="valid":code="CHECKER_OUTPUT_"+safe["stdoutStatus"].upper()
+elif exit_code!=0:code=safe["checkerCode"] if safe["checkerCode"]!="UNCLASSIFIED" else "CHILD_EXIT_NONZERO"
+elif value.get("error"):code=safe["checkerCode"] if safe["checkerCode"]!="UNCLASSIFIED" else "CHECKER_REPORTED_ERROR"
+if code is None:
+ try:fence();need(read(source.parent/"build-receipt.json")==receipt_raw,"Build receipt changed");source_ok=True
+ except Exception:code="SOURCE_FENCE_FAILED"
+if code:
+ print(json.dumps({"format":"publish-linked-remote-failure-v1","ok":False,"unit":unit,"commit":request["commit"],"tree":request["tree"],"source":str(source),"outcome":"failed" if terminal_info["verified"] else "uncertain","code":code,"checkerExitCode":exit_code,"terminal":terminal_info,"checks":safe["checks"],"unknownCheckCount":safe["unknownCheckCount"],"stdoutStatus":safe["stdoutStatus"],"httpStatus":safe["httpStatus"],"sourceFenceVerified":source_ok},sort_keys=True,separators=(",",":")));sys.exit(1)
+raw=stdout.decode();terminal="LoadState="+terminal_info["loadState"]+"\nActiveState="+terminal_info["activeState"]+"\nMainPID="+str(terminal_info["mainPid"])+"\n"
+absent=terminal_info["cgroupAbsent"]
+print(json.dumps({"format":"publish-linked-remote-preactivation-v1","ok":True,"commit":request["commit"],"tree":request["tree"],"source":str(source),"checkerHashes":request["hashes"],"buildReceiptSha256":digest(receipt_raw),"unit":unit,"exitCode":exit_code,"terminal":terminal,"cgroupAbsent":absent,"rawResult":raw,"rawResultSha256":digest(stdout),"noTokenTransferred":True,"productionMutation":False},sort_keys=True))
 `;
+
+const diagnosticChecks = Object.freeze(["disabled-writer reader/indexer/Search/capacity readiness","public writer remains disabled","complete article feed","existing article exact body","existing article detail"]);
+const diagnosticCodes = new Set(["PROBE_TIMEOUT","TERMINAL_UNVERIFIED","SOURCE_FENCE_FAILED","CHECKER_OUTPUT_MISSING","CHECKER_OUTPUT_INVALID","CHECKER_OUTPUT_OVERSIZED","CHILD_EXIT_NONZERO","CHECKER_REPORTED_ERROR","READINESS_NOT_VERIFIED","WRITER_NOT_DISABLED","ARTICLE_FEED_INCOMPLETE","ARTICLE_DETAIL_MISMATCH","RESPONSE_BOUND_EXCEEDED","HTTP_UNAVAILABLE"]);
+const keysExactly = (value, keys) => {
+  assert(value && typeof value === "object" && !Array.isArray(value));
+  assert.deepEqual(Object.keys(value).sort(), [...keys].sort());
+};
+const canonicalDiagnostic = value => JSON.stringify(value, function(_key, item) {
+  return item && typeof item === "object" && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).sort().map(key => [key,item[key]])) : item;
+});
+export function validateRemoteFailure(raw, expected) {
+  assert.equal(typeof raw, "string"); assert(Buffer.byteLength(raw) <= 16384);
+  const value=JSON.parse(raw);
+  // The node emits canonical JSON. This also rejects duplicate/escaped property aliases.
+  assert.equal(raw.trim(),canonicalDiagnostic(value));
+  keysExactly(value,["format","ok","unit","commit","tree","source","outcome","code","checkerExitCode","terminal","checks","unknownCheckCount","stdoutStatus","httpStatus","sourceFenceVerified"]);
+  assert.equal(value.format,"publish-linked-remote-failure-v1");assert.equal(value.ok,false);
+  for(const key of ["unit","commit","tree","source"])assert.equal(value[key],expected[key]);
+  assert(diagnosticCodes.has(value.code));
+  assert(value.checkerExitCode===null || Number.isInteger(value.checkerExitCode)&&value.checkerExitCode>=-64&&value.checkerExitCode<=255);
+  assert(["valid","invalid","missing","oversized"].includes(value.stdoutStatus));
+  assert(value.httpStatus===null || Number.isInteger(value.httpStatus)&&value.httpStatus>=100&&value.httpStatus<=599);
+  assert.equal(typeof value.sourceFenceVerified,"boolean");
+  keysExactly(value.terminal,["loadState","activeState","mainPid","cgroupAbsent","verified"]);
+  const terminal=value.terminal;
+  assert(["loaded","not-found","masked","error","stub","unknown"].includes(terminal.loadState));
+  assert(["active","inactive","failed","activating","deactivating","reloading","unknown"].includes(terminal.activeState));
+  assert(terminal.mainPid===null || Number.isInteger(terminal.mainPid)&&terminal.mainPid>=0&&terminal.mainPid<=9999999999);
+  assert.equal(typeof terminal.cgroupAbsent,"boolean");assert.equal(typeof terminal.verified,"boolean");
+  assert.equal(terminal.verified,terminal.mainPid===0&&terminal.activeState==="inactive"&&terminal.cgroupAbsent);
+  assert.equal(value.outcome,terminal.verified?"failed":"uncertain");
+  assert(Array.isArray(value.checks)&&value.checks.length<=diagnosticChecks.length);
+  const seen=new Set();
+  for(const check of value.checks){keysExactly(check,["name","pass"]);assert(diagnosticChecks.includes(check.name)&&!seen.has(check.name));seen.add(check.name);assert(check.pass===null||typeof check.pass==="boolean");}
+  assert(Number.isInteger(value.unknownCheckCount)&&value.unknownCheckCount>=0&&value.unknownCheckCount<=8);
+  return value;
+}
 export function runRemotePublishPreactivation({
   env = process.env, root = fileURLToPath(new URL("../", import.meta.url)),
   identityProof, collect = localPublishSource, run = spawnSync, nonce = () => randomUUID().replaceAll("-", "").slice(0, 12),
@@ -141,6 +266,16 @@ export function runRemotePublishPreactivation({
     "powadmin@65.108.122.87", "sudo -n /usr/bin/python3 -I -B -c " + quote(remotePreactivationProgram)];
   const result = run("ssh", args, { input: JSON.stringify(request), encoding: "utf8",
     env: proof ? { PATH: "/usr/bin:/bin", GIT_OPTIONAL_LOCKS: "0" } : publicVerificationEnvironment(env), timeout: 360_000, maxBuffer: 2 * 1024 ** 2 });
+  // Only a complete validated failure envelope may improve a nonzero-exit report.
+  // Transport errors/truncation remain uncertain; never expose arbitrary SSH stderr.
+  if (!result.error && !result.signal && result.status === 1) {
+    let diagnostic;
+    try { diagnostic=validateRemoteFailure(result.stdout,{unit,commit:remoteBinding.commit,tree:remoteBinding.tree,source}); } catch {}
+    if (diagnostic) {
+      const error=new Error("Remote preactivation failed; reconcile " + unit + " before retrying. Safe diagnostic: " + JSON.stringify(diagnostic));
+      error.name="RemotePreactivationFailure";error.diagnostic=diagnostic;throw error;
+    }
+  }
   if (result.error || result.signal || result.status !== 0)
     throw new Error("Remote preactivation failed or is uncertain; reconcile " + unit + " before retrying.");
   const value = JSON.parse(result.stdout);

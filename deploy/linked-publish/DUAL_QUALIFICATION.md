@@ -84,3 +84,22 @@ that owner through fixed runuser with a cleared environment. Before/after
 metadata fences reject replacement or mutation. This does not add safe.directory
 exceptions, change ownership or permissions, or relax source cleanliness.
 The failed original collection remains evidence, not a success receipt.
+
+## Bounded failure diagnostics
+
+A failed protected probe emits only the fixed publish-linked-remote-failure-v1
+schema. Known check names retain true, false or null; omitted checks are not
+reported as failures. Unknown names and arbitrary checker errors are never
+copied. Child stdout is capped at 2 MiB while excess bytes are drained and
+discarded; stderr is discarded. The public diagnostic is capped at 16 KiB and
+accepts only canonical JSON, fixed classifications, bounded numbers and exact
+request identities. It contains no environment values, protected token, raw
+error/stderr or digest of secret-bearing raw output.
+
+sourceFenceVerified: false means the post-probe source fence was **not
+verified**, not that the source changed. Failed probes skip that expensive fence
+to reserve time for terminal reconciliation. A successful receipt still requires
+the original source and build-receipt fences. outcome: uncertain requires
+reconciliation of the named transient unit before retry; even a verified stopped
+failure is never a successful qualification or permission to retry. Failure
+diagnostics cannot recover the cause of an earlier discarded probe output.

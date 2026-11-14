@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { resolve, dirname, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { publishCheckerFiles, validateNodeBuildSource, localPublishSource, publicVerificationEnvironment,
-  remotePreactivationProgram, runRemotePublishPreactivation, assertPublishCheckerClosure } from "./check-publish-linked-remote.mjs";
+  remotePreactivationProgram, runRemotePublishPreactivation, assertPublishCheckerClosure, validateRemoteFailure } from "./check-publish-linked-remote.mjs";
 const sha=raw=>createHash("sha256").update(raw).digest("hex");
 const source="/data/proofofwork-ui-builds/candidate/proofofwork-ui-source-123456789abc-20261113T160000Z";
 const env={PATH:"/bin",POW_PUBLISH_CHECK_MODE:"preactivation",POW_PUBLISH_CHECK_NODE_SOURCE:source};
@@ -250,4 +250,126 @@ test("committed dual identity proof preserves artifact receipts and every remote
  await t.test("protected environment override refuses before transport",()=>{
   let ran=false;assert.throws(()=>invoke(()=>{},{env:{...env,POW_INTERNAL_VERIFIER_TOKEN:"synthetic"},run:()=>{ran=true;}}));assert.equal(ran,false);
  });
+});
+
+const canonical=value=>JSON.stringify(value,function(_key,item){return item&&typeof item==="object"&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(k=>[k,item[k]])):item;});
+function diagnostic(request,changes={}) {
+ return {format:"publish-linked-remote-failure-v1",ok:false,unit:request.unit,commit:request.commit,tree:request.tree,source:request.source,
+ outcome:"failed",code:"READINESS_NOT_VERIFIED",checkerExitCode:1,
+ terminal:{loadState:"not-found",activeState:"inactive",mainPid:0,cgroupAbsent:true,verified:true},
+ checks:[],unknownCheckCount:0,stdoutStatus:"valid",httpStatus:null,sourceFenceVerified:true,...changes};
+}
+test("nonzero child safe diagnostic survives CLI message without becoming success",()=>{
+ let error;
+ try{execute(()=>{},{run:(_exe,_args,opts)=>({status:1,stdout:canonical(diagnostic(JSON.parse(opts.input))),stderr:"SECRET_NOT_FOR_OUTPUT"})});}catch(e){error=e;}
+ assert.equal(error.name,"RemotePreactivationFailure");assert.equal(error.diagnostic.code,"READINESS_NOT_VERIFIED");
+ assert(error.message.includes('"checks":[]'));assert(!error.message.includes("SECRET_NOT_FOR_OUTPUT"));
+ assert.match(error.message,/reconcile pow-linked-verify-/);
+});
+for(const [name,change] of [
+ ["wrong unit",d=>d.unit="other"],["wrong commit",d=>d.commit="f".repeat(40)],
+ ["freeform error",d=>d.error="SECRET"],["unknown check",d=>d.checks=[{name:"SECRET",pass:false}]],
+ ["duplicate check",d=>d.checks=Array(2).fill({name:"complete article feed",pass:true})],
+ ["bad exit",d=>d.checkerExitCode="SECRET"],["unsafe terminal",d=>d.terminal.activeState="SECRET"],
+ ["false stopped",d=>d.terminal.mainPid=5],["bad code",d=>d.code="SECRET"],
+ ["bad HTTP",d=>d.httpStatus=999],["bad count",d=>d.unknownCheckCount=9],
+])test("untrusted failure diagnostic refuses "+name,()=>{
+ assert.throws(()=>execute(()=>{},{run:(_exe,_args,opts)=>{const d=diagnostic(JSON.parse(opts.input));change(d);return {status:1,stdout:canonical(d),stderr:"SECRET"};}}),e=>e.name!=="RemotePreactivationFailure"&&!e.message.includes("SECRET"));
+});
+test("duplicate JSON fields, truncation and oversized failures never echo input",()=>{
+ const req={unit:"unit",commit:binding.commit,tree:binding.tree,source},raw=canonical(diagnostic(req));
+ for(const text of [raw.replace('"ok":false','"ok":true,"ok":false'),raw.slice(0,-1),"SECRET".repeat(4000),"null","true","false","[]","42",'"text"',raw.replace('"ok":false','"ok":true,"\\u006fk":false')])
+  assert.throws(()=>validateRemoteFailure(text,req));
+ for(const transport of [{error:new Error("SECRET")},{signal:"SIGTERM"}])
+  assert.throws(()=>execute(()=>{},{run:(_e,_a,o)=>({status:1,stdout:canonical(diagnostic(JSON.parse(o.input))),...transport})}),e=>e.name!=="RemotePreactivationFailure"&&!e.message.includes("SECRET"));
+});
+test("known false/null statuses preserved; missing checks never fabricated",()=>{
+ const req={unit:"unit",commit:binding.commit,tree:binding.tree,source};
+ const d=diagnostic(req,{checks:[{name:"complete article feed",pass:false},{name:"existing article detail",pass:null}],unknownCheckCount:1});
+ assert.deepEqual(validateRemoteFailure(canonical(d),req).checks,d.checks);
+});
+test("node diagnostic sanitizer, terminal paths and bounded capture use no live services",()=>{
+ const program=String.raw`
+import ast,contextlib,hashlib,io,json,os,pathlib,re,subprocess,sys,unittest
+source=sys.stdin.read();nodes=ast.parse(source).body
+selected=[n for n in nodes if isinstance(n,ast.FunctionDef) and n.name in ('sanitize_failure','capture_probe','terminal_state') or isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id in ('CHECK_NAMES','ERROR_CODES') for t in n.targets)]
+scope=dict(globals());exec(compile(ast.Module(body=selected,type_ignores=[]),'<diagnostics>','exec'),scope)
+safe=scope['sanitize_failure']
+def payload(error='Disabled-writer preactivation readiness is not fully verified.',checks=None):
+ return json.dumps(dict(mode='preactivation',newLinkedWriteVerified=False,checks=[] if checks is None else checks,error=error)).encode()
+secret='SYNTHETIC_SECRET_DO_NOT_EMIT'
+for bad in (b'{',b'[]',b'null',b'true',b'false',b'42',b'"text"',b'\xff',b'{"mode":"x","mode":"preactivation"}',b'{"mode":"x","\\u006dode":"preactivation"}'):
+ assert safe(bad)[0]['stdoutStatus']=='invalid'
+for checks in ([{'name':'complete article feed','pass':True}]*2,[{'name':'complete article feed','pass':1}]):
+ assert safe(payload(checks=checks))[0]['stdoutStatus']=='invalid'
+v,_=safe(payload(secret,[{'name':secret,'pass':False},{'name':'complete article feed','pass':False}]))
+assert secret not in json.dumps(v) and v['unknownCheckCount']==1 and v['checks']==[{'name':'complete article feed','pass':False}]
+assert safe(payload('Read unavailable: 503'))[0]['httpStatus']==503
+assert safe(payload('Read unavailable: 503 '+secret))[0]['httpStatus'] is None
+assert safe(payload())[0]['checkerCode']=='READINESS_NOT_VERIFIED'
+assert safe(b'x'*(2*1024**2+1))[0]['stdoutStatus']=='oversized'
+assert safe(b'')[0]['stdoutStatus']=='missing'
+capture=scope['capture_probe']
+code,raw,overflow,timed=capture([sys.executable,'-I','-c','import sys;sys.stdout.write("x"*(3*1024**2));sys.stderr.write("'+secret+'");sys.exit(1)'],{'PATH':'/usr/bin:/bin'},5)
+assert code==1 and len(raw)==2*1024**2 and overflow and not timed and secret.encode() not in raw
+code,raw,overflow,timed=capture([sys.executable,'-I','-c','import time;time.sleep(5)'],{'PATH':'/usr/bin:/bin'},0.05)
+assert timed and code is not None
+# Execute actual remote result-handling block with only in-memory fixture services.
+start=next(i for i,n in enumerate(nodes) if isinstance(n,ast.Try) and any(isinstance(x,ast.Assign) and isinstance(x.value,ast.Call) and isinstance(x.value.func,ast.Name) and x.value.func.id=='capture_probe' for x in n.body))
+tail=compile(ast.Module(body=nodes[start:],type_ignores=[]),'<result>','exec')
+terminal=dict(loadState='not-found',activeState='inactive',mainPid=0,cgroupAbsent=True,verified=True)
+request=dict(unit='pow-linked-verify-'+('a'*12)+'-'+('b'*12)+'.service',commit='a'*40,tree='b'*40,source='/fixture',hashes={})
+for exit_code,stdout,timeout,endstate,sourceok,expected in [
+ (1,payload(),False,terminal,True,'READINESS_NOT_VERIFIED'),
+ (1,b'{',False,terminal,True,'CHECKER_OUTPUT_INVALID'),
+ (1,b'',False,terminal,True,'CHECKER_OUTPUT_MISSING'),
+ (0,payload(secret),False,terminal,True,'CHECKER_REPORTED_ERROR'),
+ (1,payload(),True,terminal,True,'PROBE_TIMEOUT'),
+ (1,payload(),False,{**terminal,'verified':False,'activeState':'active','mainPid':123},True,'TERMINAL_UNVERIFIED'),
+ (0,json.dumps(dict(mode='preactivation',checks=[],newLinkedWriteVerified=False)).encode(),False,terminal,False,'SOURCE_FENCE_FAILED'),
+]:
+ def fence():
+  if not sourceok:raise ValueError(secret)
+ local={**scope,'capture_probe':lambda *a:(exit_code,stdout,False,timeout),'terminal_state':lambda:endstate,'argv':[],'environment':{},'unit':request['unit'],'source':pathlib.Path('/fixture'),'request':request,'receipt_raw':b'fixed','read':lambda p:b'fixed','fence':fence,'need':lambda ok,msg:None if ok else (_ for _ in ()).throw(ValueError(msg))}
+ out=io.StringIO()
+ with contextlib.redirect_stdout(out):
+  try:exec(tail,local)
+  except SystemExit as e:assert e.code==1
+  else:raise AssertionError('failure returned success')
+ result=json.loads(out.getvalue());assert result['code']==expected and result['ok'] is False
+ assert secret not in out.getvalue() and len(out.getvalue())<16384
+ assert result['terminal']==endstate
+# A launch error never leaks its message; terminal uncertainty remains explicit.
+def launch_error(*args):raise OSError(secret)
+local={**scope,'capture_probe':launch_error,'terminal_state':lambda:{**terminal,'verified':False,'activeState':'unknown','mainPid':None},'argv':[],'environment':{},'unit':request['unit'],'source':pathlib.Path('/fixture'),'request':request}
+out=io.StringIO()
+with contextlib.redirect_stdout(out):
+ try:exec(tail,local)
+ except SystemExit as e:assert e.code==1
+ else:raise AssertionError('launch failure returned success')
+result=json.loads(out.getvalue())
+assert result['outcome']=='uncertain' and result['code']=='TERMINAL_UNVERIFIED'
+assert result['stdoutStatus']=='missing' and result['checkerExitCode'] is None and result['sourceFenceVerified'] is False
+assert secret not in out.getvalue()
+# Terminal helper handles failed/active/unknown states without leaking raw fields.
+from unittest.mock import patch
+scope['unit']=request['unit']
+for text,present,verified in [
+ ('LoadState=not-found\nActiveState=inactive\nMainPID=0\n',False,True),
+ ('LoadState=loaded\nActiveState=active\nMainPID=42\n',True,False),
+ ('LoadState='+secret+'\nActiveState='+secret+'\nMainPID='+secret+'\n',False,False),
+]:
+ with patch.object(subprocess,'check_output',return_value=text),patch.object(pathlib.Path,'exists',return_value=present):
+  state=scope['terminal_state']();assert state['verified']==verified and secret not in json.dumps(state)
+with patch.object(subprocess,'check_output',side_effect=subprocess.TimeoutExpired('fixture',15)):
+ assert scope['terminal_state']()['verified'] is False
+# Successful path preserves the old receipt format and exact original checker stdout.
+good=json.dumps(dict(mode='preactivation',checks=[{'name':'complete article feed','pass':True}],newLinkedWriteVerified=False)).encode()
+local={**scope,'capture_probe':lambda *a:(0,good,False,False),'terminal_state':lambda:terminal,'argv':[],'environment':{},'unit':request['unit'],'source':pathlib.Path('/fixture'),'request':request,'receipt_raw':b'fixed','read':lambda p:b'fixed','fence':lambda:None,'need':lambda ok,msg:None if ok else (_ for _ in ()).throw(ValueError(msg)),'digest':lambda raw:hashlib.sha256(raw).hexdigest()}
+out=io.StringIO()
+with contextlib.redirect_stdout(out):exec(tail,local)
+result=json.loads(out.getvalue());assert result['format']=='publish-linked-remote-preactivation-v1' and result['ok'] is True and result['rawResult']==good.decode()
+print('sanitizer, bounded capture, terminal, success and failure branches passed')
+`;
+ execFileSync("python3",["-I","-B","-c",program],{input:remotePreactivationProgram,timeout:15000});
 });
