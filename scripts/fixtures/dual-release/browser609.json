@@ -1,0 +1,404 @@
+{
+  "format": "linked-browser52-explicit-projection-v1",
+  "source": {
+    "commit": "609d5a10a07a83bb5f1e858e7f6c1d706e741ee1",
+    "tree": "cae54e036af5254698c5cd45020b382cb0982052",
+    "trackedDirty": false
+  },
+  "build": {
+    "commit": "609d5a10a07a83bb5f1e858e7f6c1d706e741ee1",
+    "tree": "cae54e036af5254698c5cd45020b382cb0982052",
+    "trackedDirty": false,
+    "releaseId": "609d5a10a07a-20261113T135929Z",
+    "surface": "computer"
+  },
+  "runnerSha256": "f21eea882342182db1a3fb3b640be46a75c74180d4a534ab91ca4a632fd1455c",
+  "syntheticApi": true,
+  "noWalletSigning": true,
+  "noRealWalletSigning": true,
+  "complete": true,
+  "results": [
+    {
+      "name": "4 MB linked draft persists across reload without changing transaction limits",
+      "status": "passed",
+      "elapsedMs": 14136
+    },
+    {
+      "name": "IndexedDB quota failure preserves unsaved text and blocks Back until saving succeeds",
+      "status": "passed",
+      "elapsedMs": 9531
+    },
+    {
+      "name": "verified linked Boost preview is removed when parent evidence is reorganized",
+      "status": "passed",
+      "elapsedMs": 4771
+    },
+    {
+      "name": "standalone Publish linkifies only DNS names in verified article bodies",
+      "status": "passed",
+      "elapsedMs": 9890
+    },
+    {
+      "name": "Computer linkifies only DNS names in verified article bodies",
+      "status": "passed",
+      "elapsedMs": 12565
+    },
+    {
+      "name": "Computer Publish restores the selected ID and draft when mounted and reopened with an already connected wallet",
+      "status": "passed",
+      "elapsedMs": 9426
+    },
+    {
+      "name": "Publish does not expose DNS links when the article body commitment fails",
+      "status": "passed",
+      "elapsedMs": 5084
+    },
+    {
+      "name": "Publish shares Boost navigation geometry at 390px",
+      "status": "passed",
+      "elapsedMs": 7529
+    },
+    {
+      "name": "Publish shares Boost navigation geometry at 768px",
+      "status": "passed",
+      "elapsedMs": 10021
+    },
+    {
+      "name": "Publish shares Boost navigation geometry at 960px",
+      "status": "passed",
+      "elapsedMs": 8632
+    },
+    {
+      "name": "Publish shares Boost navigation geometry at 1440px",
+      "status": "passed",
+      "elapsedMs": 7772
+    },
+    {
+      "name": "Publish shares Boost navigation geometry at 1280px in Computer",
+      "status": "passed",
+      "elapsedMs": 11732
+    },
+    {
+      "name": "articles share Boost engagement and fit 390px",
+      "status": "passed",
+      "elapsedMs": 7526
+    },
+    {
+      "name": "articles share Boost engagement and fit 1440px",
+      "status": "passed",
+      "elapsedMs": 7696
+    },
+    {
+      "name": "composer alignment: Publish standalone light 1440x900",
+      "status": "passed",
+      "elapsedMs": 10148
+    },
+    {
+      "name": "composer alignment: Publish standalone light 768x900",
+      "status": "passed",
+      "elapsedMs": 13889
+    },
+    {
+      "name": "composer alignment: Publish standalone light 320x640",
+      "status": "passed",
+      "elapsedMs": 12827
+    },
+    {
+      "name": "composer alignment: Publish standalone light 844x390",
+      "status": "passed",
+      "elapsedMs": 12295
+    },
+    {
+      "name": "composer alignment: Publish standalone dark 1440x900",
+      "status": "passed",
+      "elapsedMs": 12743
+    },
+    {
+      "name": "composer alignment: Publish standalone dark 768x900",
+      "status": "passed",
+      "elapsedMs": 12927
+    },
+    {
+      "name": "composer alignment: Publish standalone dark 320x640",
+      "status": "passed",
+      "elapsedMs": 11097
+    },
+    {
+      "name": "composer alignment: Publish standalone dark 844x390",
+      "status": "passed",
+      "elapsedMs": 11214
+    },
+    {
+      "name": "composer alignment: Publish Computer light 1440x900",
+      "status": "passed",
+      "elapsedMs": 13375
+    },
+    {
+      "name": "composer alignment: Publish Computer light 768x900",
+      "status": "passed",
+      "elapsedMs": 14869
+    },
+    {
+      "name": "composer alignment: Publish Computer light 320x640",
+      "status": "passed",
+      "elapsedMs": 15462
+    },
+    {
+      "name": "composer alignment: Publish Computer light 844x390",
+      "status": "passed",
+      "elapsedMs": 17461
+    },
+    {
+      "name": "composer alignment: Publish Computer dark 1440x900",
+      "status": "passed",
+      "elapsedMs": 15955
+    },
+    {
+      "name": "composer alignment: Publish Computer dark 768x900",
+      "status": "passed",
+      "elapsedMs": 13219
+    },
+    {
+      "name": "composer alignment: Publish Computer dark 320x640",
+      "status": "passed",
+      "elapsedMs": 13751
+    },
+    {
+      "name": "composer alignment: Publish Computer dark 844x390",
+      "status": "passed",
+      "elapsedMs": 11637
+    },
+    {
+      "name": "full text drafts autosave, preview, and enforce the complete carrier budget",
+      "status": "passed",
+      "elapsedMs": 5305
+    },
+    {
+      "name": "writer is a normal page with draft-preserving history at 390px",
+      "status": "passed",
+      "elapsedMs": 9671
+    },
+    {
+      "name": "writer is a normal page with draft-preserving history at 1440px",
+      "status": "passed",
+      "elapsedMs": 9329
+    },
+    {
+      "name": "direct writer path restores the scoped draft and has a safe Articles fallback",
+      "status": "passed",
+      "elapsedMs": 9515
+    },
+    {
+      "name": "a dropped publication restores into the writer without reviving stale recovery text on Forward",
+      "status": "passed",
+      "elapsedMs": 4315
+    },
+    {
+      "name": "storage failure preserves unsaved article text through manual, browser, and workspace Back",
+      "status": "passed",
+      "elapsedMs": 5448
+    },
+    {
+      "name": "article reader refuses text that does not match its exact on-chain commitment",
+      "status": "passed",
+      "elapsedMs": 5204
+    },
+    {
+      "name": "publication review contains exact transaction evidence and wallet rejection preserves the draft",
+      "status": "passed",
+      "elapsedMs": 5045
+    },
+    {
+      "name": "unknown signed publication blocks another article signature",
+      "status": "passed",
+      "elapsedMs": 4484
+    },
+    {
+      "name": "connecting preserves the active guest article over an existing empty wallet draft",
+      "status": "passed",
+      "elapsedMs": 5530
+    },
+    {
+      "name": "standalone Publish: selected confirmed PowID opens exact publication review while new-ID availability is unavailable",
+      "status": "passed",
+      "elapsedMs": 6947
+    },
+    {
+      "name": "standalone Publish: transferred confirmed ownership blocks publication review and preserves the draft",
+      "status": "passed",
+      "elapsedMs": 6470
+    },
+    {
+      "name": "standalone Publish: unavailable confirmed ownership blocks publication review and preserves the draft",
+      "status": "passed",
+      "elapsedMs": 7597
+    },
+    {
+      "name": "standalone Publish: an ID transfer after publication review prevents wallet signing and preserves the draft",
+      "status": "passed",
+      "elapsedMs": 6954
+    },
+    {
+      "name": "Computer Publish: selected confirmed PowID opens exact publication review while new-ID availability is unavailable",
+      "status": "passed",
+      "elapsedMs": 8272
+    },
+    {
+      "name": "Computer Publish: transferred confirmed ownership blocks publication review and preserves the draft",
+      "status": "passed",
+      "elapsedMs": 7922
+    },
+    {
+      "name": "Computer Publish: unavailable confirmed ownership blocks publication review and preserves the draft",
+      "status": "passed",
+      "elapsedMs": 7513
+    },
+    {
+      "name": "Computer Publish: an ID transfer after publication review prevents wallet signing and preserves the draft",
+      "status": "passed",
+      "elapsedMs": 9381
+    },
+    {
+      "name": "Publish waits for the save completion before allowing Back",
+      "status": "passed",
+      "elapsedMs": 5282
+    },
+    {
+      "name": "Publish blocks exit during a mocked signature and closes with an empty draft after mocked broadcast",
+      "status": "passed",
+      "elapsedMs": 4712
+    },
+    {
+      "name": "Publish failed draft read allows explicit Back without changing saved drafts",
+      "status": "passed",
+      "elapsedMs": 5376
+    },
+    {
+      "name": "Publish delayed linked receipt recovery cannot overwrite a newer writer session",
+      "status": "passed",
+      "elapsedMs": 6062
+    }
+  ],
+  "projection": {
+    "adapterSha256": "10871eddb1929fd67421a45e00833908099fdba14c3930a938bbea4fb384b331",
+    "manifestSha256": "69d92de33937211bcd3da1b0e09b36968a997e8080fc13074d15d3b57a456355",
+    "full83": {
+      "path": "/data/proofofwork-health-fixes-20261111/source-work/linked-growth-mail-incb-qa-20261113/browser-609d5a10a07a-20261113T140303243Z/results.json",
+      "sha256": "043a43c81a99bda908559fb2217a33399c50c16a238dcd57147496ac58188a50",
+      "count": 83,
+      "allPassed": true
+    },
+    "manifest": {
+      "path": "/data/proofofwork-health-fixes-20261111/source-work/linked-growth-mail-incb-qa-20261113/browser-projection-609d5a1/approved-input-manifest.json",
+      "sha256": "69d92de33937211bcd3da1b0e09b36968a997e8080fc13074d15d3b57a456355"
+    },
+    "buildReceipt": {
+      "path": "/data/proofofwork-ui-builds/combined-609d5a1-20261113/build-receipt.json",
+      "sha256": "b40579eaf8076bf5f36fbebf78410fa1d6ffe5b3cda1315c854b70415a8bd8d6"
+    },
+    "independentReview": {
+      "path": "/data/proofofwork-health-fixes-20261111/source-work/linked-growth-mail-incb-qa-20261113/browser-projection-609d5a1/independent-review-609d5a1.json",
+      "sha256": "68c2cea1d55a77c785c9b9a4e8dc370404b417d89439447755954ece76395445"
+    },
+    "rootAcceptance": {
+      "path": "/data/proofofwork-health-fixes-20261111/source-work/linked-growth-mail-incb-qa-20261113/browser-projection-609d5a1/root-acceptance-609d5a1.json",
+      "sha256": "d2d76362dbd4039e77365fca7f061f802b0f8365164d127242a8ba8b2b0cdaf5"
+    },
+    "semanticAlias": {
+      "from": "noRealWalletSigning",
+      "to": "noWalletSigning",
+      "meaning": "No real wallet signing was performed. Synthetic mocks may exercise signature/broadcast code paths; this is not a claim of zero mock signing calls."
+    },
+    "core52Names": [
+      "4 MB linked draft persists across reload without changing transaction limits",
+      "Computer Publish restores the selected ID and draft when mounted and reopened with an already connected wallet",
+      "Computer Publish: an ID transfer after publication review prevents wallet signing and preserves the draft",
+      "Computer Publish: selected confirmed PowID opens exact publication review while new-ID availability is unavailable",
+      "Computer Publish: transferred confirmed ownership blocks publication review and preserves the draft",
+      "Computer Publish: unavailable confirmed ownership blocks publication review and preserves the draft",
+      "Computer linkifies only DNS names in verified article bodies",
+      "IndexedDB quota failure preserves unsaved text and blocks Back until saving succeeds",
+      "Publish blocks exit during a mocked signature and closes with an empty draft after mocked broadcast",
+      "Publish delayed linked receipt recovery cannot overwrite a newer writer session",
+      "Publish does not expose DNS links when the article body commitment fails",
+      "Publish failed draft read allows explicit Back without changing saved drafts",
+      "Publish shares Boost navigation geometry at 1280px in Computer",
+      "Publish shares Boost navigation geometry at 1440px",
+      "Publish shares Boost navigation geometry at 390px",
+      "Publish shares Boost navigation geometry at 768px",
+      "Publish shares Boost navigation geometry at 960px",
+      "Publish waits for the save completion before allowing Back",
+      "a dropped publication restores into the writer without reviving stale recovery text on Forward",
+      "article reader refuses text that does not match its exact on-chain commitment",
+      "articles share Boost engagement and fit 1440px",
+      "articles share Boost engagement and fit 390px",
+      "composer alignment: Publish Computer dark 1440x900",
+      "composer alignment: Publish Computer dark 320x640",
+      "composer alignment: Publish Computer dark 768x900",
+      "composer alignment: Publish Computer dark 844x390",
+      "composer alignment: Publish Computer light 1440x900",
+      "composer alignment: Publish Computer light 320x640",
+      "composer alignment: Publish Computer light 768x900",
+      "composer alignment: Publish Computer light 844x390",
+      "composer alignment: Publish standalone dark 1440x900",
+      "composer alignment: Publish standalone dark 320x640",
+      "composer alignment: Publish standalone dark 768x900",
+      "composer alignment: Publish standalone dark 844x390",
+      "composer alignment: Publish standalone light 1440x900",
+      "composer alignment: Publish standalone light 320x640",
+      "composer alignment: Publish standalone light 768x900",
+      "composer alignment: Publish standalone light 844x390",
+      "connecting preserves the active guest article over an existing empty wallet draft",
+      "direct writer path restores the scoped draft and has a safe Articles fallback",
+      "full text drafts autosave, preview, and enforce the complete carrier budget",
+      "publication review contains exact transaction evidence and wallet rejection preserves the draft",
+      "standalone Publish linkifies only DNS names in verified article bodies",
+      "standalone Publish: an ID transfer after publication review prevents wallet signing and preserves the draft",
+      "standalone Publish: selected confirmed PowID opens exact publication review while new-ID availability is unavailable",
+      "standalone Publish: transferred confirmed ownership blocks publication review and preserves the draft",
+      "standalone Publish: unavailable confirmed ownership blocks publication review and preserves the draft",
+      "storage failure preserves unsaved article text through manual, browser, and workspace Back",
+      "unknown signed publication blocks another article signature",
+      "verified linked Boost preview is removed when parent evidence is reorganized",
+      "writer is a normal page with draft-preserving history at 1440px",
+      "writer is a normal page with draft-preserving history at 390px"
+    ],
+    "supplement31Names": [
+      "Boost details and assumptions fit a narrow Growth viewport",
+      "Bounded published reader exact4MB: link-dense at 1440",
+      "Bounded published reader exact4MB: link-dense at 390",
+      "Bounded published reader exact4MB: multiline at 1440",
+      "Bounded published reader exact4MB: multiline at 390",
+      "Bounded published reader exact4MB: single-token at 1440",
+      "Bounded published reader exact4MB: single-token at 390",
+      "Bounded published reader exact4MB: unicode at 1440",
+      "Bounded published reader exact4MB: unicode at 390",
+      "Computer links to current Growth and preserves fee sensitivity without wallet signing",
+      "Current Growth assumptions and selectors fit 320px short viewport in dark",
+      "Current Growth assumptions and selectors fit 320px short viewport in light",
+      "Current product scenario exposes scope and keeps October comparison unchanged",
+      "Growth keeps every exact large-value digit readable and copyable on mobile",
+      "Growth keeps missing or mismatched Boost metrics unavailable: legacy",
+      "Growth keeps missing or mismatched Boost metrics unavailable: mismatch",
+      "Growth overview and full surface directory fit 1440px",
+      "Growth overview and full surface directory fit 320px",
+      "Growth overview and full surface directory fit 768px",
+      "Growth versions change the forecast and preserve canonical real value",
+      "Mail bond routing: INCB WORK review survives ordinary batch paused without signing",
+      "Mail bond routing: INCB WORK review survives ordinary batch ready without signing",
+      "Mail bond routing: INCB WORK review survives ordinary batch unavailable without signing",
+      "Paged editor nontext clipboard and IME composition preserve draft",
+      "Paged editor real clipboard CRLF and CR bytes are preserved",
+      "Paged editor real paste, suffix, preview and reload: multiline",
+      "Paged editor real paste, suffix, preview and reload: single-token",
+      "Paged editor real paste, suffix, preview and reload: unicode",
+      "Paged editor upload scope drift preserves draft, explains cancellation and allows stable retry",
+      "Supplement: Boost prepares exact 4 MB in 42 parts and one linker, resumes and rejects pending/reorg evidence without real signing",
+      "Supplement: Publish prepares exact 4 MB in 42 parts and one linker, resumes and rejects pending/reorg evidence without real signing"
+    ],
+    "supplement31NamesSha256": "b707bd84b836554aad51273d4ed73fbcb0b400d2ec540ae808e0fe56ab9b3ee3",
+    "supplement31Passed": true,
+    "rowsCopiedWithoutModification": true,
+    "full83RequiredBeyondSealedValidator": true
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "passed": true,
+  "syntheticOnly": true,
+  "maxClusterBytes": 268435456,
+  "test": {
+    "passed": true,
+    "checks": 17,
+    "bodyBytes": 4000000,
+    "timings": [
+      {
+        "name": "complete-backfill-invocation",
+        "elapsedMs": 1188
+      },
+      {
+        "name": "complete-search-read",
+        "elapsedMs": 153
+      },
+      {
+        "name": "complete-search-read",
+        "elapsedMs": 155
+      },
+      {
+        "name": "complete-search-read",
+        "elapsedMs": 147
+      },
+      {
+        "name": "complete-backfill-invocation",
+        "elapsedMs": 2776
+      },
+      {
+        "name": "complete-search-read",
+        "elapsedMs": 189
+      },
+      {
+        "name": "full-source-witness",
+        "elapsedMs": 178
+      },
+      {
+        "name": "complete-search-writer-readiness",
+        "elapsedMs": 143
+      },
+      {
+        "name": "complete-backfill-invocation",
+        "elapsedMs": 169
+      },
+      {
+        "name": "complete-search-read",
+        "elapsedMs": 185
+      },
+      {
+        "name": "complete-backfill-invocation",
+        "elapsedMs": 312
+      },
+      {
+        "name": "complete-search-read",
+        "elapsedMs": 184
+      },
+      {
+        "name": "complete-search-writer-readiness",
+        "elapsedMs": 155
+      },
+      {
+        "name": "complete-backfill-invocation",
+        "elapsedMs": 474
+      },
+      {
+        "name": "complete-search-read",
+        "elapsedMs": 178
+      },
+      {
+        "name": "complete-search-read",
+        "elapsedMs": 151
+      },
+      {
+        "name": "complete-search-writer-readiness",
+        "elapsedMs": 136
+      },
+      {
+        "name": "complete-backfill-invocation",
+        "elapsedMs": 192
+      },
+      {
+        "name": "complete-backfill-invocation",
+        "elapsedMs": 287
+      },
+      {
+        "name": "complete-search-read",
+        "elapsedMs": 193
+      }
+    ],
+    "sourceWitnessStubbed": false,
+    "sharedConfirmedGenerationVerified": true,
+    "syntheticCore": true,
+    "indexedSourceFixture": true,
+    "productionMutation": false,
+    "protocolReplayCertified": false,
+    "scope": "real source SQL/witness, pending to confirmed, dependency orphan rejection, canonical restoration and rebuild; exact body; one article event and unchanged source payment attribution"
+  },
+  "shutdownReturnCode": 0,
+  "diskMonitorErrors": [],
+  "diskLimitExceeded": false,
+  "clusterBytes": 77504512,
+  "cgroupMemoryPeak": 755138560,
+  "memoryEvents": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\n",
+  "postmasterPidAbsent": true,
+  "privateSocketAbsent": true,
+  "cleanShutdown": true
+}

@@ -6,6 +6,7 @@ import { readFileSync, lstatSync, realpathSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { requireIdentityProof, publicIdentityProof } from "./release-identity-proof.mjs";
 
 export const publishCheckerFiles = Object.freeze([
   "scripts/check-publish-linked-live.mjs", "src/shared/protocol/publishLinkedCapability.mjs",
@@ -113,27 +114,38 @@ print(json.dumps({"format":"publish-linked-remote-preactivation-v1","ok":True,"c
 `;
 export function runRemotePublishPreactivation({
   env = process.env, root = fileURLToPath(new URL("../", import.meta.url)),
-  collect = localPublishSource, run = spawnSync, nonce = () => randomUUID().replaceAll("-", "").slice(0, 12),
+  identityProof, collect = localPublishSource, run = spawnSync, nonce = () => randomUUID().replaceAll("-", "").slice(0, 12),
 } = {}) {
   assert.equal(env.POW_PUBLISH_CHECK_MODE, "preactivation");
   assert.ok(!env.POW_INTERNAL_VERIFIER_TOKEN && !env.POW_PUBLISH_CHECK_ORIGIN,
     "Remote preactivation uses only the protected node environment, not local token/origin overrides.");
   const source = validateNodeBuildSource(env.POW_PUBLISH_CHECK_NODE_SOURCE);
-  const binding = collect(root, env);
+  const proof = identityProof === undefined ? undefined : requireIdentityProof(identityProof);
+  if (proof) assert.equal(realpathSync(root), proof.repository, "Identity proof repository differs from local verification source.");
+  // Typed collection cannot inherit Git redirection, replacements or executable status hooks.
+  const collectionEnv = proof ? { PATH: "/usr/bin:/bin", GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_CONFIG_SYSTEM: "/dev/null", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_KEY_0: "core.fsmonitor", GIT_CONFIG_VALUE_0: "false",
+    GIT_CONFIG_KEY_1: "core.untrackedCache", GIT_CONFIG_VALUE_1: "false" } : env;
+  const binding = collect(root, collectionEnv);
+  if (proof) assert.deepEqual({ commit: binding.commit, tree: binding.tree }, proof.operator,
+    "Local verification source differs from proof operator.");
+  // Keep the sealed artifact receipt honest; only the outer wrapper names newer tooling.
+  const remoteBinding = proof ? { ...binding, commit: proof.artifact.commit, tree: proof.artifact.tree } : binding;
   const unit = "pow-linked-verify-" + binding.commit.slice(0, 12) + "-" + nonce() + ".service";
   assert.match(unit, /^pow-linked-verify-[a-f0-9]{12}-[a-f0-9]{12}\.service$/u);
-  const request = { source, ...binding, unit };
+  const request = { source, ...remoteBinding, unit };
   const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
   const args = ["-i", "/home/sixer/.ssh/proofofwork_node_ed25519", "-o", "BatchMode=yes",
     "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=15",
     "powadmin@65.108.122.87", "sudo -n /usr/bin/python3 -I -B -c " + quote(remotePreactivationProgram)];
   const result = run("ssh", args, { input: JSON.stringify(request), encoding: "utf8",
-    env: publicVerificationEnvironment(env), timeout: 360_000, maxBuffer: 2 * 1024 ** 2 });
+    env: proof ? { PATH: "/usr/bin:/bin", GIT_OPTIONAL_LOCKS: "0" } : publicVerificationEnvironment(env), timeout: 360_000, maxBuffer: 2 * 1024 ** 2 });
   if (result.error || result.signal || result.status !== 0)
     throw new Error("Remote preactivation failed or is uncertain; reconcile " + unit + " before retrying.");
   const value = JSON.parse(result.stdout);
   assert.equal(value.format, "publish-linked-remote-preactivation-v1"); assert.equal(value.ok, true);
-  assert.equal(value.commit, binding.commit); assert.equal(value.tree, binding.tree); assert.equal(value.source, source);
+  assert.equal(value.commit, remoteBinding.commit); assert.equal(value.tree, remoteBinding.tree); assert.equal(value.source, source);
   assert.deepEqual(value.checkerHashes, binding.hashes); assert.equal(value.unit, unit);
   assert.equal(value.exitCode, 0); assert.equal(value.cgroupAbsent, true);
   assert.equal(value.noTokenTransferred, true); assert.equal(value.productionMutation, false);
@@ -142,7 +154,12 @@ export function runRemotePublishPreactivation({
   assert.equal(raw.mode, "preactivation"); assert.equal(raw.newLinkedWriteVerified, false); assert.ok(!raw.error);
   for (const name of ["disabled-writer reader/indexer/Search/capacity readiness", "public writer remains disabled", "complete article feed"])
     assert.equal(raw.checks?.find(check => check.name === name)?.pass, true, name);
-  assert.deepEqual(collect(root, env), binding, "Local source changed during remote verification.");
+  assert.deepEqual(collect(root, collectionEnv), binding, "Local source changed during remote verification.");
+  if (proof) {
+    requireIdentityProof(proof);
+    const { baselineOperator, artifact, operator } = publicIdentityProof(proof);
+    return { format: "publish-linked-dual-preactivation-v1", baselineOperator, artifact, operator, remoteReceipt: value };
+  }
   return value;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -183,3 +183,71 @@ test("actual fixed checker closure validates without resolving node_modules",()=
  const changed=new Map(files);changed.set(publishCheckerFiles[0],Buffer.from(files.get(publishCheckerFiles[0]).toString().replace('from "node:crypto"','from "untracked-package"')));
  assert.throws(()=>assertPublishCheckerClosure(changed),/Reviewed checker closure bytes differ/);
 });
+
+
+for (const identityProof of [null, {}, Object.freeze({artifact:binding,operator:binding}),
+  {format:"release-identity-proof-v1",repository:"/tmp",artifact:binding,operator:binding}])
+ test("dual mode refuses unbranded proof "+JSON.stringify(identityProof),()=>{
+  let ran=false;
+  assert.throws(()=>execute(()=>{},{identityProof,run:()=>{ran=true;}}));
+  assert.equal(ran,false);
+ });
+// Positive proof branding must come from the exact committed qualification source.
+// This opt-in suite never invokes SSH; the actual proof and local byte collection run.
+test("committed dual identity proof preserves artifact receipts and every remote fence", {
+ skip: !process.env.POW_IDENTITY_TEST_REPOSITORY && "requires final committed qualification repository",
+}, async t=>{
+ const {createIdentityProof,publicIdentityProof}=await import("./release-identity-proof.mjs");
+ const root=process.env.POW_IDENTITY_TEST_REPOSITORY;
+ const identityProof=createIdentityProof({repository:root});
+ const local=localPublishSource(root,env);
+ const invoke=(mutate=()=>{},options={})=>runRemotePublishPreactivation({root,env,identityProof,
+  nonce:()=>"d".repeat(12),run:(_exe,_args,opts)=>{
+   const request=JSON.parse(opts.input);
+   assert.equal(request.commit,identityProof.artifact.commit);
+   assert.equal(request.tree,identityProof.artifact.tree);
+   assert.deepEqual(request.hashes,local.hashes);
+   assert.deepEqual(opts.env,{PATH:"/usr/bin:/bin",GIT_OPTIONAL_LOCKS:"0"});
+   const response={...reply(opts.input),commit:request.commit,tree:request.tree,checkerHashes:request.hashes};
+   mutate(response);return {status:0,stdout:JSON.stringify(response)};
+  },...options});
+ await t.test("honest dual wrapper retains original artifact identity",()=>{
+  const value=invoke();
+  assert.equal(value.format,"publish-linked-dual-preactivation-v1");
+  assert.deepEqual(value.baselineOperator,identityProof.baselineOperator);
+  assert.deepEqual(value.artifact,identityProof.artifact);
+  assert.deepEqual(value.operator,identityProof.operator);
+  assert.equal(value.remoteReceipt.format,"publish-linked-remote-preactivation-v1");
+  assert.equal(value.remoteReceipt.commit,identityProof.artifact.commit);
+  assert.equal(value.remoteReceipt.tree,identityProof.artifact.tree);
+ });
+ for(const [name,mutate] of [
+  ["wrong artifact commit",v=>v.commit="f".repeat(40)],
+  ["operator mislabeled as artifact",v=>v.commit=identityProof.operator.commit],
+  ["wrong artifact tree",v=>v.tree="f".repeat(40)],
+  ["changed remote closure",v=>v.checkerHashes={}],
+  ["token transfer",v=>v.noTokenTransferred=false],
+ ]) await t.test(name,()=>assert.throws(()=>invoke(mutate)));
+ await t.test("public clone cannot authorize identity mode",()=>assert.throws(()=>invoke(()=>{},{identityProof:publicIdentityProof(identityProof)})));
+ await t.test("wrong repository refuses before transport",()=>{
+  let ran=false;assert.throws(()=>invoke(()=>{},{root:"/tmp",run:()=>{ran=true;}}));assert.equal(ran,false);
+ });
+ await t.test("wrong operator refuses before transport",()=>{
+  let ran=false;assert.throws(()=>invoke(()=>{},{collect:()=>({...local,commit:"f".repeat(40)}),run:()=>{ran=true;}}));assert.equal(ran,false);
+ });
+ await t.test("typed local collection discards Git and PATH injection",()=>{
+  let calls=0;
+  invoke(()=>{},{env:{...env,PATH:"/untrusted",GIT_DIR:"/wrong",GIT_WORK_TREE:"/wrong",GIT_CONFIG_COUNT:"99",GIT_CONFIG_KEY_0:"alias.status"},collect:(_root,received)=>{
+   calls++;assert.equal(received.PATH,"/usr/bin:/bin");assert.equal(received.GIT_DIR,undefined);assert.equal(received.GIT_WORK_TREE,undefined);
+   assert.equal(received.GIT_NO_REPLACE_OBJECTS,"1");assert.equal(received.GIT_CONFIG_COUNT,"2");assert.equal(received.GIT_CONFIG_KEY_0,"core.fsmonitor");
+   return local;
+  },run:(_exe,_args,opts)=>{const request=JSON.parse(opts.input);return {status:0,stdout:JSON.stringify({...reply(opts.input),commit:request.commit,tree:request.tree,checkerHashes:request.hashes})};}});
+  assert.equal(calls,2);
+ });
+ await t.test("local changes after transport refuse",()=>{
+  let calls=0;assert.throws(()=>invoke(()=>{},{collect:()=>++calls===1?local:{...local,hashes:{}}}),/Local source changed/);
+ });
+ await t.test("protected environment override refuses before transport",()=>{
+  let ran=false;assert.throws(()=>invoke(()=>{},{env:{...env,POW_INTERNAL_VERIFIER_TOKEN:"synthetic"},run:()=>{ran=true;}}));assert.equal(ran,false);
+ });
+});

@@ -3,10 +3,26 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
+import {fileURLToPath,pathToFileURL} from "node:url";
+import {resolve} from "node:path";
+import {requireIdentityProof,createIdentityProof} from "./release-identity-proof.mjs";
+
+const identityGit=(...args)=>execFileSync("/usr/bin/git",["--no-replace-objects","-c","core.fsmonitor=false",...args],{encoding:"utf8",timeout:15000,env:{PATH:"/usr/bin:/bin",HOME:"/nonexistent",LC_ALL:"C",GIT_CONFIG_NOSYSTEM:"1",GIT_CONFIG_GLOBAL:"/dev/null",GIT_OPTIONAL_LOCKS:"0"}}).trim();
+export function validateActivityIdentity(identityProof) {
+ const proof=requireIdentityProof(identityProof);
+ assert.equal(resolve(proof.repository),fileURLToPath(new URL("../",import.meta.url)).replace(/\/$/u,""));
+ assert.equal(resolve(process.cwd()),proof.repository);
+ assert.equal(identityGit("rev-parse","HEAD"),proof.operator.commit);
+ return proof;
+}
+export async function runActivityFeeFactorLive({identityProof}={}) {
+if(identityProof!==undefined) validateActivityIdentity(identityProof);
+const activityExec=(command,args,options)=>execFileSync(identityProof===undefined?command:"/usr/bin/"+command,args,
+ {...options,...(identityProof===undefined?{}:{env:{PATH:"/usr/bin:/bin",HOME:"/nonexistent"}})});
 // Public on-chain holder only. This check neither signs nor broadcasts.
 const address = "1447TsdXtFSnVrWawSamyyQKPDNW4ALtBT";
 const tokenId = "d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8";
-const base = process.env.POW_API_BASE || "https://computer.proofofwork.me";
+const base = identityProof===undefined ? (process.env.POW_API_BASE || "https://computer.proofofwork.me") : "https://computer.proofofwork.me";
 async function read(path) {
   const started = performance.now();
   const response = await fetch(new URL(path, base), {
@@ -56,7 +72,7 @@ assert.equal(after.ready, true);
 assert.equal(after.checks.node.tipHeight, height, "Core advanced; repeat the complete probe at a stable tip");
 assert.equal(after.checks.node.bestBlockHash, hash, "Core changed; repeat the complete probe at a stable tip");
 
-const expectedRuntime = JSON.parse(execFileSync("python3", ["-I", "-B", "-c", `import ast,json,pathlib,re
+const expectedRuntime = JSON.parse(activityExec("python3", ["-I", "-B", "-c", `import ast,json,pathlib,re
 values={}
 for path in ('deploy/audit-remediation/profile.py','deploy/activity-fee-factor/profile.py'):
  module=ast.parse(pathlib.Path(path).read_text())
@@ -93,13 +109,20 @@ assert result.returncode==0,result.stdout+result.stderr
 print(json.dumps({'runtimeFiles':len(r['runtime']),'monitorExit':result.returncode}))
 `;
 const command = "sudo -n python3 -I -B -c '" + program.replaceAll("'", "'\\''") + "'";
-const installed = JSON.parse(execFileSync("ssh", ["-i", "/home/sixer/.ssh/proofofwork_node_ed25519", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=15", "powadmin@65.108.122.87", command], {
+const installed = JSON.parse(activityExec("ssh", ["-i", "/home/sixer/.ssh/proofofwork_node_ed25519", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=15", "powadmin@65.108.122.87", command], {
   input: JSON.stringify({ runtime: expectedRuntime, monitor: monitorHash }), encoding: "utf8", timeout: 90_000,
 }));
-const lifecycle = JSON.parse(execFileSync("python3", [
+const lifecycle = JSON.parse(activityExec("python3", [
   "-I", "-B", "deploy/ui-retention/lifecycle.py", "status", "--require-complete",
 ], { encoding: "utf8", timeout: 480_000, maxBuffer: 8 * 1024 ** 2 }));
-const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", timeout: 15_000 }).trim();
+const implementationCommit = identityGit("rev-parse","HEAD");
+let commit=implementationCommit;
+if(identityProof!==undefined) {
+ const proof=requireIdentityProof(identityProof);
+ assert.equal(resolve(proof.repository),fileURLToPath(new URL("../",import.meta.url)).replace(/\/$/u,""));
+ assert.equal(proof.operator.commit,implementationCommit);
+ commit=proof.artifact.commit;
+}
 assert.equal(lifecycle.publicationHealthy, true);
 assert.equal(lifecycle.retentionComplete, true);
 assert(lifecycle.pair.current.startsWith(commit.slice(0, 12) + "-"));
@@ -109,6 +132,18 @@ assert.deepEqual(lifecycle.unfinishedIntents, []);
 assert.equal(lifecycle.verifiedPreservedFallback?.releaseId, "c3969c39c2b2-20261101T051206Z");
 assert.equal(lifecycle.verifiedCapacityFloor.rootReserveBytes, 8 * 1024 ** 3);
 assert.equal(lifecycle.verifiedCapacityFloor.growthReserveBytes, 64 * 1024 ** 2);
-console.log(JSON.stringify({ ok: true, height, hash, registryElapsedMs: registry.elapsedMs,
+// console.log(JSON.stringify({ ok: true: legacy assertion-block test boundary.
+const result = { ok: true, height, hash, registryElapsedMs: registry.elapsedMs,
   walletElapsedMs: wallet.elapsedMs, ...installed, retentionComplete: true, pair: lifecycle.pair,
-  scope: "stable-checkpoint reads, exact combined activity-reader runtime and completed UI lifecycle; transition measurements remain separate" }));
+  scope: "stable-checkpoint reads, exact combined activity-reader runtime and completed UI lifecycle; transition measurements remain separate" };
+if(identityProof!==undefined) {
+ assert.equal(identityGit("rev-parse","HEAD"),implementationCommit,"Implementation changed during live check");
+ const after=createIdentityProof({repository:identityProof.repository});
+ assert.deepEqual(after.operator,identityProof.operator);
+ result.qualificationSubject={...identityProof.artifact};
+}
+return result;
+}
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href) {
+ console.log(JSON.stringify(await runActivityFeeFactorLive()));
+}
