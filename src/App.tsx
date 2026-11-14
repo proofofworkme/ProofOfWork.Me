@@ -124,12 +124,14 @@ import {
   PUBLISH_APP_URL,
   CODE_APP_URL,
   JOBS_APP_URL,
+  PAY_APP_URL,
   LOCAL_BROWSER_APP_URL,
   LOCAL_PAGES_APP_URL,
   LOCAL_BOOST_APP_URL,
   LOCAL_PUBLISH_APP_URL,
   LOCAL_CODE_APP_URL,
   LOCAL_JOBS_APP_URL,
+  LOCAL_PAY_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
   LOCAL_DNS_APP_URL,
@@ -332,6 +334,8 @@ const BoostRoot = lazy(() => import("./features/boost/BoostRoot"));
 const PublishRoot = lazy(() => import("./features/publish/PublishRoot"));
 const SearchRoot = lazy(() => import("./features/search/SearchRoot"));
 const CodeRoot = lazy(() => import("./features/code/CodeRoot"));
+const PayRoot = lazy(() => import("./features/pay/PayRoot"));
+const PayActivitySummary = lazy(() => import("./features/growth/PayActivitySummary"));
 const JobsRoot = lazy(() => import("./features/jobs/JobsRoot"));
 const PermissionRoot = lazy(() => import("./features/permission/PermissionRoot"));
 const LinkedFilesActivity = lazy(() => import("./features/growth/LinkedFilesActivity"));
@@ -452,6 +456,7 @@ type Folder =
   | "search"
   | "code"
   | "jobs"
+  | "pay"
   | "permission"
   | "ids"
   | "dns"
@@ -482,6 +487,7 @@ const COMPUTER_ROUTE_FOLDERS: Folder[] = [
   "search",
   "code",
   "jobs",
+  "pay",
   "permission",
   "ids",
   "dns",
@@ -505,6 +511,7 @@ const STANDALONE_ROUTE_PARAMS = [
   "search-app",
   "code",
   "jobs",
+  "pay",
   "permission-app",
   "pages",
   "marketplace",
@@ -1456,6 +1463,7 @@ type PowActivityItem = {
   attachment?: MailAttachment;
   powcat?: { fileHash: string; index?: number; count: number; size: number; name?: string };
   listingId?: string;
+  pay?: { ready: boolean; action?: string; invoiceTxid?: string; applied?: boolean; valid?: boolean; validationErrors?: string[] };
   jobs?: { ready: boolean; action?: string; jobTxid?: string; applied?: boolean; valid?: boolean; validationErrors?: string[] };
   liveNetworkValueSats?: number;
   marketplaceMutationFeeSats?: number;
@@ -4336,6 +4344,7 @@ function folderLabel(folder: Folder) {
   if (folder === "search") return "Search";
   if (folder === "code") return "Code";
   if (folder === "jobs") return "Jobs";
+  if (folder === "pay") return "Pay";
   if (folder === "permission") return "Permission";
 
   if (folder === "contacts") {
@@ -4426,6 +4435,7 @@ function folderSubtitle(folder: Folder) {
   if (folder === "search") return "Search Computer protocols and public data";
   if (folder === "code") return "On-chain source repositories and revision history";
   if (folder === "jobs") return "Commission work, inspect delivery, and pay in proofs or WORK";
+  if (folder === "pay") return "On-chain invoices and confirmed receipts in proofs or WORK";
   if (folder === "permission") return "Wallet-bound agent grants and verified permission history";
 
   if (folder === "contacts") {
@@ -22604,7 +22614,7 @@ export default function App() {
     ].includes(activeFolder);
   // Account restoration must not depend on a mainnet-only product. These
   // workspaces share Computer's session, including when entered directly.
-  const independentWalletWorkspace = ["pages", "code", "jobs", "permission"].includes(activeFolder);
+  const independentWalletWorkspace = ["pages", "code", "jobs", "pay", "permission"].includes(activeFolder);
   const activeTokenStateScopeKey = tokenStateScopeKey({
     address,
     network,
@@ -26788,7 +26798,7 @@ export default function App() {
   const refreshDisabled =
     ["browser", "pages", "boost", "publish", "search"].includes(activeFolder)
       ? true
-    : activeFolder === "code" || activeFolder === "jobs" || activeFolder === "permission"
+    : activeFolder === "code" || activeFolder === "jobs" || activeFolder === "pay" || activeFolder === "permission"
       ? busy || refreshInProgress
     : activeFolder === "contacts"
       ? busy || refreshInProgress || !registryAddress
@@ -28510,6 +28520,9 @@ export default function App() {
     if (!destination && !retained) {
       STANDALONE_ROUTE_PARAMS.forEach((param) => url.searchParams.delete(param));
       ["write", "article", "profile", "profileTab"].forEach(param => url.searchParams.delete(param));
+      if (activeFolder === "pay" && folder !== "pay") {
+        ["invoice", "mode", "q", "status", "cursor"].forEach(param => url.searchParams.delete(param));
+      }
       if (activeFolder === "jobs" && folder !== "jobs") {
         ["job", "mode", "q", "status", "cursor"].forEach(param => url.searchParams.delete(param));
       }
@@ -28824,6 +28837,9 @@ export default function App() {
     );
     if (activeFolder === "permission") return window.dispatchEvent(
       new Event("proofofwork:before-permission-writer-leave", { cancelable: true }),
+    );
+    if (activeFolder === "pay") return window.dispatchEvent(
+      new Event("proofofwork:before-pay-writer-leave", { cancelable: true }),
     );
     if (activeFolder === "jobs") return window.dispatchEvent(
       new Event("proofofwork:before-jobs-writer-leave", { cancelable: true }),
@@ -38540,6 +38556,7 @@ export default function App() {
     activeFolder === "search" ? "is-search-workspace" : "",
     activeFolder === "code" ? "is-code-workspace" : "",
     activeFolder === "jobs" ? "is-jobs-workspace" : "",
+    activeFolder === "pay" ? "is-pay-workspace" : "",
     activeFolder === "permission" ? "is-permission-workspace" : "",
     activeFolder === "boost" || activeFolder === "publish" ? "is-boost-workspace" : "",
     activeFolder === "pages" ? "is-browser-workspace is-pages-workspace" : "",
@@ -38665,6 +38682,11 @@ export default function App() {
                     includeWorkFloor: true,
                     label: "AMO data",
                   });
+                  return;
+                }
+
+                if (activeFolder === "pay") {
+                  window.dispatchEvent(new Event("proofofwork:pay-refresh"));
                   return;
                 }
 
@@ -38975,6 +38997,9 @@ export default function App() {
               type="button"
             >
               <span className="folder-label"><APP_ICONS.Jobs size={18} strokeWidth={1.75} aria-hidden="true" /><span>Jobs</span></span>
+            </button>
+            <button aria-current={activeFolder === "pay"} onClick={() => openFolder("pay")} type="button">
+              <span className="folder-label"><APP_ICONS.Pay size={18} strokeWidth={1.75} aria-hidden="true" /><span>Pay</span></span>
             </button>
             <button aria-current={activeFolder === "permission"} onClick={() => openFolder("permission")} type="button">
               <span className="folder-label"><APP_ICONS.Permission size={18} strokeWidth={1.75} aria-hidden="true" /><span>Permission</span></span>
@@ -39694,6 +39719,11 @@ export default function App() {
         ) : activeFolder === "search" ? (
           <Suspense fallback={<div role="status" aria-busy="true">Loading Search…</div>}>
             <SearchRoot embedded initialNetwork={network} />
+          </Suspense>
+        ) : activeFolder === "pay" ? (
+          <Suspense fallback={<div role="status" aria-busy="true">Loading Pay…</div>}>
+            <PayRoot embedded initialAddress={address} initialNetwork={network}
+              walletSession={{ address, network, busy: busy || mailSendBusy, connect: connectWallet, disconnect: disconnectWallet, getRevision: () => mailWalletRevisionRef.current }} />
           </Suspense>
         ) : activeFolder === "jobs" ? (
           <Suspense fallback={<div role="status" aria-busy="true">Loading Jobs…</div>}>
@@ -41508,6 +41538,8 @@ function ActivityFeed({
                   network={item.network} pointer={item.linkedFile} /> : null}
                 {item.kind === "powcat-linker" && item.confirmed && !invalid && item.powcat && /^[0-9a-f]{64}$/u.test(item.powcat.fileHash) ?
                   <PowcatLink key={item.txid} network={item.network} pointer={{ txid: item.txid, fileHash: item.powcat.fileHash }} /> : null}
+                {item.pay ? <p className="field-note">{item.pay.ready ? `Pay ${activityKindDisplay(item.pay.action ?? "record")} · ${item.pay.applied ? "Applied confirmed record" : "Unapplied record"}` : "Pay lifecycle evidence unavailable"}</p> : null}
+                {item.pay?.ready && !item.pay.applied && item.pay.validationErrors?.length ? <p className="field-note">{item.pay.validationErrors.join(" · ")}</p> : null}
                 {item.jobs ? <p className="field-note">{item.jobs.ready ? `Jobs ${activityKindDisplay(item.jobs.action ?? "record")} · ${item.jobs.applied ? "Applied confirmed record" : "Unapplied record"}` : "Jobs lifecycle evidence unavailable"}</p> : null}
                 {item.jobs?.ready && !item.jobs.applied && item.jobs.validationErrors?.length ? <p className="field-note">{item.jobs.validationErrors.join(" · ")}</p> : null}
                 {item.detail ? (
@@ -41571,6 +41603,9 @@ function ActivityFeed({
                   <span>View TX</span>
                 </span>
               </a>
+              {item.pay?.ready && /^[a-f0-9]{64}$/u.test(item.pay.invoiceTxid ?? "") ? (
+                <a className="secondary small" href={`${appHref(PAY_APP_URL, LOCAL_PAY_APP_URL)}${appHref(PAY_APP_URL, LOCAL_PAY_APP_URL).includes("?") ? "&" : "?"}invoice=${item.pay.invoiceTxid}&network=${item.network}`}>Open Pay invoice</a>
+              ) : null}
               {item.jobs?.ready && /^[a-f0-9]{64}$/u.test(item.jobs.jobTxid ?? "") ? (
                 <a className="secondary small" href={`${appHref(JOBS_APP_URL, LOCAL_JOBS_APP_URL)}${appHref(JOBS_APP_URL, LOCAL_JOBS_APP_URL).includes("?") ? "&" : "?"}job=${item.jobs.jobTxid}&network=${item.network}`}>Open Jobs receipt</a>
               ) : null}
@@ -49582,6 +49617,10 @@ function GrowthWorkspace({
               <CodeActivitySummary network={activeNetwork} refreshing={busy} />
             </Suspense>
             <a className="secondary small growth-boost-link" href={appHref(CODE_APP_URL, LOCAL_CODE_APP_URL)}>Open Code</a>
+          </GrowthProductCard>
+          <GrowthProductCard actual="Confirmed activity" actualLabel="Pay checkpoint observations" icon={<APP_ICONS.Pay size={24} />} name="Pay" modelOneYear="Included in Mail / WORK" modelFiveYear="Included in Mail / WORK" modelOneYearLabel="shared payments" modelFiveYearLabel="shared payments" modelLabel="shared activity" note="Invoice records use Mail and settlement uses existing proof or WORK payments. Requested amounts and receipts add no separate network value.">
+            <Suspense fallback={<p className="field-note" role="status">Loading Pay observations…</p>}><PayActivitySummary network={activeNetwork} refreshing={busy} /></Suspense>
+            <a className="secondary small growth-boost-link" href={appHref(PAY_APP_URL, LOCAL_PAY_APP_URL)}>Open Pay</a>
           </GrowthProductCard>
           <GrowthProductCard
             actual="Confirmed activity" actualLabel="Jobs checkpoint observations"

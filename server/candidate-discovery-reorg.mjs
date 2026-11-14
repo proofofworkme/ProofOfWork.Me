@@ -5,6 +5,8 @@ import { CODE_DISCOVERY_META_KEY, CODE_DISCOVERY_MODEL, CODE_DISCOVERY_EMPTY_SHA
 import { JOBS_DISCOVERY_META_KEY, JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_EMPTY_SHA256,
   advanceJobsCandidateDigest, isJobsCandidatePart } from './jobs.mjs';
 import { JOBS_ACTIVATION_HEIGHT } from '../src/shared/protocol/jobs.mjs';
+import { PAY_ACTIVATION_HEIGHT } from '../src/shared/protocol/pay.mjs';
+import { PAY_DISCOVERY_META_KEY, PAY_DISCOVERY_MODEL, PAY_DISCOVERY_EMPTY_SHA256, advancePayCandidateDigest, isPayCandidatePart } from './pay.mjs';
 
 const HASH = /^[0-9a-f]{64}$/u;
 const MAX_ORPHAN_BLOCKS = 12;
@@ -14,6 +16,8 @@ const PRODUCTS = {
     digest: advanceCodeCandidateDigest, predicate: decoded => decoded.prefix === 'pwc1:' },
   [JOBS_DISCOVERY_META_KEY]: { model: JOBS_DISCOVERY_MODEL, from: JOBS_ACTIVATION_HEIGHT, empty: JOBS_DISCOVERY_EMPTY_SHA256,
     digest: advanceJobsCandidateDigest, predicate: isJobsCandidatePart },
+  [PAY_DISCOVERY_META_KEY]: { model: PAY_DISCOVERY_MODEL, from: PAY_ACTIVATION_HEIGHT, empty: PAY_DISCOVERY_EMPTY_SHA256,
+    digest: advancePayCandidateDigest, predicate: isPayCandidatePart },
 };
 function need(value, reason) { if (!value) throw new Error('Candidate discovery recovery: ' + reason); }
 
@@ -50,8 +54,8 @@ async function prefixRows(client, network, key, product, ancestor) {
       AND b.block_hash=t.block_hash AND b.height=t.block_height AND b.canonical=true
     WHERE t.network=$1 AND t.status='confirmed' AND t.block_height BETWEEN $2 AND $3 AND EXISTS (
       SELECT 1 FROM proof_indexer.op_returns o WHERE o.network=t.network AND o.txid=t.txid
-      AND (CASE WHEN $4::boolean THEN o.protocol='pwc1' ELSE o.protocol='pwm1' AND o.payload_hex LIKE '70776d313a6d3a70776a313a%' END))
-    ORDER BY t.block_height,t.block_index,t.txid LIMIT $5`, [network, product.from, ancestor.height, key === CODE_DISCOVERY_META_KEY, MAX_PREFIX_CANDIDATES + 1]);
+      AND (CASE WHEN $4::boolean THEN o.protocol='pwc1' ELSE o.protocol='pwm1' AND o.payload_hex LIKE $6 END))
+    ORDER BY t.block_height,t.block_index,t.txid LIMIT $5`, [network, product.from, ancestor.height, key === CODE_DISCOVERY_META_KEY, MAX_PREFIX_CANDIDATES + 1, key === PAY_DISCOVERY_META_KEY ? '70776d313a6d3a7077706179313a%' : '70776d313a6d3a70776a313a%']);
   need(rows.rows.length <= MAX_PREFIX_CANDIDATES, 'prefix candidate budget exceeded');
   return rows.rows.map(row => codeTransactionFromRow(row, network));
 }

@@ -89,10 +89,15 @@ for(const [name,mutate] of [
 test("real native/browser validators cannot be replaced by passed wrapper",()=>assert.throws(()=>check(fixture(),()=>{throw new Error("actual test failed");}),/actual test failed/));
 test("JSON identity proof cannot mint offline qualification",()=>assert.throws(()=>validatePinnedDualEvidence({proof:{},rawBundle:"{}",expectedSha256:sha("{}"),now})));
 test("bad activity proof rejects before any network call",async()=>assert.rejects(runActivityFeeFactorLive({identityProof:{}})));
-test("default exact-head release gate remains byte unchanged",()=>{
+test("exact-head release gate changes only for additive Pay V6 coverage",()=>{
  const p=new URL("./check-release-sync.mjs",import.meta.url),actual=readFileSync(p);
  const baseline=execFileSync("git",["show","c7cfa32ae01ae70042bac0539ddf74d816ae474a:scripts/check-release-sync.mjs"],{cwd:new URL("../",import.meta.url)});
- assert.deepEqual(actual,baseline);
+ const expected=baseline.toString("utf8")
+  .replace('"proofofwork-ui-release-v5", "Production requires the complete Permission release contract"','"proofofwork-ui-release-v6", "Production requires the complete Pay release contract"')
+  .replace('length, 22, "Production must preserve all 22 managed products"','length, 23, "Production must preserve all 23 managed products"')
+  .replace("'https://permission.proofofwork.me/source-provenance.json'","'https://pay.proofofwork.me/source-provenance.json', 'https://permission.proofofwork.me/source-provenance.json'");
+ assert.notEqual(expected,baseline.toString("utf8"));
+ assert.deepEqual(actual,Buffer.from(expected));
 });
 test("manifest rejects duplicates",()=>assert.throws(()=>parseReleaseManifest("commit=a\ncommit=b\n")));
 

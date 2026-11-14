@@ -14,6 +14,8 @@ import { verifiedWorkBatchEventIds } from "../server/db/work-batch-reader.mjs";
 import { notificationAddressKey } from "../server/notification-query.mjs";
 import { measurePrivatePhase as measureMarketplaceReadPhase, measurePrivatePhase, measurePrivateRegistryPhase, withPrivatePhaseTimings } from "../server/wallet-read-observation.mjs";
 import { JOBS_ACTIVATION_HEIGHT } from "../src/shared/protocol/jobs.mjs";
+import { PAY_ACTIVATION_HEIGHT } from "../src/shared/protocol/pay.mjs";
+import { PAY_DISCOVERY_MODEL, PAY_DISCOVERY_META_KEY, advancePayCandidateDigest, payCandidateParts } from "../server/pay.mjs";
 import { JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_META_KEY, advanceJobsCandidateDigest, jobsCandidateParts } from "../server/jobs.mjs";
 import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, advanceCodeCandidateDigest } from "../server/code-repositories.mjs";
 import { REVIEWED_INCB_REPLAY_BASELINE, reviewedIncbReplayBaselineEvidence, reviewedIncbReplayBaselineFromEvidence } from "../server/incb-replay-baseline.mjs";
@@ -1330,6 +1332,8 @@ function isolatedFunction(path, name, globals = {}) {
     AUDIT_WORK_ATOMS_ONLY: false,
     BOOTSTRAP_CODE_CANDIDATES_ONLY: false,
     BOOTSTRAP_JOBS_CANDIDATES_ONLY: false,
+    BOOTSTRAP_PAY_CANDIDATES_ONLY: false,
+    PAY_ACTIVATION_HEIGHT, PAY_DISCOVERY_MODEL, PAY_DISCOVERY_META_KEY, advancePayCandidateDigest, payCandidateParts,
     CODE_DISCOVERY_MODEL,
     CODE_DISCOVERY_META_KEY,
     JOBS_ACTIVATION_HEIGHT,
@@ -2014,6 +2018,7 @@ function isolatedFunction(path, name, globals = {}) {
           backfillBlockScanSource: [
             "advanceCodeDiscoveryCheckpoint",
             "advanceJobsDiscoveryCheckpoint",
+            "advancePayDiscoveryCheckpoint",
           ],
           assertCanonicalWorkProjection: [
             "currentWorkProjectionState",
@@ -35147,6 +35152,7 @@ check("block verification completes before the atomic block transaction", async 
     "BEGIN",
     "lock:" + CODE_DISCOVERY_META_KEY,
     "lock:" + JOBS_DISCOVERY_META_KEY,
+    "lock:" + PAY_DISCOVERY_META_KEY,
     "block",
     "raw",
     "volatile-cleanup",
@@ -35156,6 +35162,7 @@ check("block verification completes before the atomic block transaction", async 
     "balances",
     "checkpoint",
     "lock:" + JOBS_DISCOVERY_META_KEY,
+    "lock:" + PAY_DISCOVERY_META_KEY,
     "linked-capability",
     "COMMIT",
   ]);
@@ -35171,6 +35178,7 @@ check("block verification completes before the atomic block transaction", async 
     "BEGIN",
     "lock:" + CODE_DISCOVERY_META_KEY,
     "lock:" + JOBS_DISCOVERY_META_KEY,
+    "lock:" + PAY_DISCOVERY_META_KEY,
     "block",
     "raw",
     "volatile-cleanup",

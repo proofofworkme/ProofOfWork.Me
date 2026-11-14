@@ -122,10 +122,13 @@ test("invalid or incomplete scenario inputs fail instead of rendering NaN", () =
 });
 
 test("complete product coverage distinguishes new demand, shared and read-only roles", () => {
-  assert.equal(CURRENT_GROWTH_PRODUCT_COVERAGE.length,23);
-  assert.equal(new Set(CURRENT_GROWTH_PRODUCT_COVERAGE.map(x=>x.product)).size,23);
+  assert.equal(CURRENT_GROWTH_PRODUCT_COVERAGE.length,24);
+  assert.equal(new Set(CURRENT_GROWTH_PRODUCT_COVERAGE.map(x=>x.product)).size,24);
   for(const product of ["dns","permission","jobs","publish","pages","files"]) assert.doesNotMatch(CURRENT_GROWTH_PRODUCT_COVERAGE.find(x=>x.product===product).modeledLane,/No standalone|no separate forecast/);
   for(const product of ["home","search","growth","log"]) assert.equal(CURRENT_GROWTH_PRODUCT_COVERAGE.find(x=>x.product===product).modeledLane,"No incremental lane");
+  const pay = CURRENT_GROWTH_PRODUCT_COVERAGE.find(item => item.product === "pay");
+  assert.equal(pay.role, "shared"); assert.equal(pay.modeledLane, "Existing Mail / WORK");
+  assert.match(pay.assumption, /No independent Pay usage or payment forecast/);
   const app=readFileSync(new URL("../src/App.tsx",import.meta.url),"utf8");
   assert.match(app,/option value="october"/);
   assert.match(app,/Current products ·/);

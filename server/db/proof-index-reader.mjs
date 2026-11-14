@@ -25,6 +25,8 @@ import { readCodeSnapshot, readCodePageSource } from "./code-reader.mjs";
 import { powcatPointerFromAttachment } from "../../src/shared/protocol/powcatMail.mjs";
 import { readPowcatActivity } from "./powcat-activity.mjs";
 import { readJobsSnapshot } from "./jobs-reader.mjs";
+import { readPaySnapshot } from "./pay-reader.mjs";
+import { payReadError, payInvoicesPayload, payInvoicePayload } from "../pay.mjs";
 import { createPermissionIndexDiscovery } from "./permission-reader.mjs";
 import { jobsReadError, jobsPayload, jobPayload } from "../jobs.mjs";
 import { codeReadError, codeRepositoriesPayload, codeRepositoryPayload } from "../code-repositories.mjs";
@@ -46288,6 +46290,24 @@ export async function proofIndexJobsPayload(network, searchParams, options = {})
     const state = await readJobsSnapshot(client, network, searchParams, options);
     const result = options.events ? { events: state.events, pendingEvents: state.pendingEvents, snapshot: state.snapshot }
       : options.detail ? jobPayload(state, searchParams) : jobsPayload(state, searchParams);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally { client.release(); }
+}
+
+export async function proofIndexPayPayload(network, searchParams, options = {}) {
+  const pool = proofIndexPool();
+  if (!pool) throw payReadError("Pay requires the canonical database index.");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    await client.query("SET LOCAL statement_timeout = '30s'");
+    const state = await readPaySnapshot(client, network, searchParams, options);
+    const result = options.state ? state : options.events ? { events: state.events, pendingEvents: state.pendingEvents, snapshot: state.snapshot }
+      : options.detail ? payInvoicePayload(state, searchParams) : payInvoicesPayload(state, searchParams);
     await client.query("COMMIT");
     return result;
   } catch (error) {

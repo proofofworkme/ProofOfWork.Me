@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 export const surfaceHosts = {
   activity: "log", boost: "boost", browser: "browser", code: "code", computer: "computer", desktop: "desktop",
   dns: "dns", growth: "growth", id: "id", inception: "inception", infinity: "infinity", jobs: "jobs",
-  landing: "www", marketplace: "amo", nft: "computer", pages: "pages", permission: "permission",
+  landing: "www", marketplace: "amo", nft: "computer", pages: "pages", pay: "pay", permission: "permission",
   publish: "publish", search: "search", token: "credit", wallet: "wallet", work: "work",
 };
 const lanes = ["wire", "indexer", "api", "backfill-reorg", "accounting", "local-signing", "files", "mail", "notifications", "compatibility"];

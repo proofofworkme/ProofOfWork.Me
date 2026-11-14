@@ -179,4 +179,9 @@ const updates = {
   files: { modeledLane: "driveSats; linkedExtraWrites", assumption: "General Files and Boost media include an illustrative 1% 4 MB linked-publication tail. Parts and linker add transactions/bytes, not another file payment. Code and Jobs retain their carrier-size assumptions." },
   amo: { modeledLane: "marketplaceSats (including DNS); Boost sales in boostSats", assumption: "Explicit DNS sale/cancellation basket joins IDs, credits, WORK, POWB and INCB. Seller price and registry fees count once; ticket principal/refunds do not." },
 };
-export const CURRENT_GROWTH_PRODUCT_COVERAGE = GROWTH_PRODUCT_COVERAGE.map(item => ({ ...item, ...updates[item.product] }));
+export const CURRENT_GROWTH_PRODUCT_COVERAGE = [...GROWTH_PRODUCT_COVERAGE.map(item => ({ ...item, ...updates[item.product] })), {
+  product: "pay", name: "Pay", role: "shared", owner: "Mail / WORK", modeledLane: "Existing Mail / WORK",
+  activity: "Public invoices, exact confirmed payments and receipts use ordinary Mail, with WORK transfers when requested.",
+  assumption: "No independent Pay usage or payment forecast is assumed. Requested amounts are not economic activity; confirmed underlying transaction value and fees remain in existing accounting once.",
+  source: "PAY.md; exact canonical Pay replay; existing Mail / WORK accounting",
+}];

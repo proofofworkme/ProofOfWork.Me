@@ -22,6 +22,8 @@ const RootApp =
     ? lazy(() => import("./features/identity/SocialIdentityBridge"))
     : appSurface === "publish"
       ? lazy(() => import("./features/publish/PublishRoot"))
+      : appSurface === "pay"
+        ? lazy(() => import("./features/pay/PayRoot"))
       : appSurface === "jobs"
         ? lazy(() => import("./features/jobs/JobsRoot"))
       : appSurface === "permission"

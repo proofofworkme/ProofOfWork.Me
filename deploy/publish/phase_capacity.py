@@ -21,6 +21,7 @@ import zlib
 SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split()
 PAGES_SURFACES = [*SURFACES, 'pages']
 PERMISSION_SURFACES = [*PAGES_SURFACES, 'permission']
+PAY_SURFACES = [*PERMISSION_SURFACES, 'pay']
 EXPECTED_STAGER_SHA256 = None
 
 
@@ -35,7 +36,8 @@ def tree_budget(root, *, owner=0, managed=False):
         raise ValueError('Capacity root is not canonical')
     pages = root / ('proofofwork-pages' if managed else 'pages')
     permission = root / ('proofofwork-permission' if managed else 'permission')
-    surfaces = PERMISSION_SURFACES if os.path.lexists(permission) else PAGES_SURFACES if os.path.lexists(pages) else SURFACES
+    pay = root / ('proofofwork-pay' if managed else 'pay')
+    surfaces = PAY_SURFACES if os.path.lexists(pay) else PERMISSION_SURFACES if os.path.lexists(permission) else PAGES_SURFACES if os.path.lexists(pages) else SURFACES
     names = [('proofofwork-' if managed else '') + name for name in surfaces]
     if not managed and sorted(p.name for p in root.iterdir()) != sorted(names):
         raise ValueError('Incoming surface set differs from the complete managed set')
@@ -104,7 +106,7 @@ def closed_managed_archive_budget(incoming, compatibility, order):
     reduces a file's logical tar contribution.
     """
     order = list(order)
-    if len(order) != len(set(order)) or set(order) not in (set(SURFACES), set(PAGES_SURFACES), set(PERMISSION_SURFACES)):
+    if len(order) != len(set(order)) or set(order) not in (set(SURFACES), set(PAGES_SURFACES), set(PERMISSION_SURFACES), set(PAY_SURFACES)):
         raise ValueError('Closed archive requires the exact managed surface set')
     if set(incoming) != set(order) or not set(compatibility) <= set(order):
         raise ValueError('Closed archive row surface set differs')
@@ -404,7 +406,12 @@ def assess_closed_input(request, helpers, live, stager, packed, live_root):
     rows = json.loads(raw)
     if not isinstance(rows, list) or not 1 <= len(rows) <= 30000:
         raise ValueError('Invalid candidate inventory length')
-    order = sorted(PERMISSION_SURFACES)
+    declared = {row[0].split('/')[1] for row in rows
+                if isinstance(row, list) and row and isinstance(row[0], str)
+                and row[0].startswith('surfaces/') and len(row[0].split('/')) >= 2}
+    if declared not in (set(PERMISSION_SURFACES), set(PAY_SURFACES)):
+        raise ValueError('Streaming admission requires an exact V5 or V6 candidate surface family')
+    order = sorted(declared)
     incoming = {name: [] for name in order}
     seen = set()
     total = 0
@@ -437,8 +444,8 @@ def assess_closed_input(request, helpers, live, stager, packed, live_root):
     if not {'.', 'surfaces'} <= seen or total > 512*1024**2 or request['payloadFingerprint'] != fingerprint:
         raise ValueError('Candidate payload fingerprint differs')
     live_surfaces = stager.live_surface_names(live_root)
-    if set(live_surfaces) != set(order):
-        raise ValueError('Streaming admission requires the complete live V5 surface family')
+    if set(live_surfaces) not in (set(PERMISSION_SURFACES), set(PAY_SURFACES)) or not set(live_surfaces) <= set(order):
+        raise ValueError('Streaming admission requires the complete live V5 or V6 surface family without downgrade')
     compatibility, _, counters, prior_sha = prior_compatibility(live_root, live_surfaces, stager, incoming)
     archive = closed_managed_archive_budget(incoming, compatibility, order)
     evidence = {'request': request, 'archive': archive, 'priorDependenciesSha256': prior_sha,

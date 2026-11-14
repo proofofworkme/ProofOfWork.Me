@@ -31,6 +31,8 @@ import { POWCAT_SCAN_ANCHOR, powcatCarrierKind, powcatObservations,
   persistPowcatObservations, reconcilePowcatPending, scanPowcatCoverage } from "../server/powcat-index.mjs";
 import { recoverCandidateDiscoveryReorg } from "../server/candidate-discovery-reorg.mjs";
 import { JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_META_KEY, JOBS_DISCOVERY_EMPTY_SHA256, advanceJobsCandidateDigest, jobsCandidateParts, isJobsCandidatePart, jobsCandidateEventClosure } from "../server/jobs.mjs";
+import { PAY_DISCOVERY_MODEL, PAY_DISCOVERY_META_KEY, PAY_DISCOVERY_EMPTY_SHA256, advancePayCandidateDigest, payCandidateParts, isPayCandidatePart, payCandidateEventClosure } from "../server/pay.mjs";
+import { PAY_ACTIVATION_HEIGHT, PAY_ACTIVATION_PREVIOUS_BLOCK_HASH } from "../src/shared/protocol/pay.mjs";
 import { CODE_DISCOVERY_MODEL, CODE_DISCOVERY_META_KEY, CODE_DISCOVERY_EMPTY_SHA256, advanceCodeCandidateDigest, exactCodeOutputProofs, codeCandidateEventClosure, prefilterCodeRawBlock, assertCodeRawBlockCandidatesMatch } from "../server/code-repositories.mjs";
 import {
   normalizePublishArticleMetadata, publishArticleBodyFromRecords,
@@ -997,10 +999,11 @@ const PROTOCOL_PREFIXES = ["pwm1:", "pwa1:", "pwid1:", "pwdns1:", "pwb1:", "pwt1
 const BOOTSTRAP_CODE_CANDIDATES_ONLY = process.argv.includes("--bootstrap-code-candidates");
 const BOOTSTRAP_POWCAT_ONLY = process.argv.includes("--bootstrap-powcat");
 const BOOTSTRAP_JOBS_CANDIDATES_ONLY = process.argv.includes("--bootstrap-jobs-candidates");
+const BOOTSTRAP_PAY_CANDIDATES_ONLY = process.argv.includes("--bootstrap-pay-candidates");
 const QUALIFY_DISCOVERY_REORG = process.argv.includes("--qualify-discovery-reorg");
 const RECOVER_DISCOVERY_REORG = process.argv.includes("--recover-discovery-reorg");
 if ((QUALIFY_DISCOVERY_REORG || RECOVER_DISCOVERY_REORG) &&
-    (BOOTSTRAP_CODE_CANDIDATES_ONLY === BOOTSTRAP_JOBS_CANDIDATES_ONLY || (QUALIFY_DISCOVERY_REORG && RECOVER_DISCOVERY_REORG))) {
+    ([BOOTSTRAP_CODE_CANDIDATES_ONLY, BOOTSTRAP_JOBS_CANDIDATES_ONLY, BOOTSTRAP_PAY_CANDIDATES_ONLY].filter(Boolean).length !== 1 || (QUALIFY_DISCOVERY_REORG && RECOVER_DISCOVERY_REORG))) {
   throw new Error("Choose one discovery bootstrap with one reorg qualification or recovery operation.");
 }
 const MAIL_ATTACHMENT_MAX_BYTES = 60_000;
@@ -1183,6 +1186,7 @@ function assertCanonicalRebuildConfiguration() {
   const exclusiveMaintenanceModes = [
     BOOTSTRAP_CODE_CANDIDATES_ONLY,
     BOOTSTRAP_JOBS_CANDIDATES_ONLY,
+    typeof BOOTSTRAP_PAY_CANDIDATES_ONLY !== "undefined" && BOOTSTRAP_PAY_CANDIDATES_ONLY,
     typeof BOOTSTRAP_POWCAT_ONLY !== "undefined" && BOOTSTRAP_POWCAT_ONLY,
     HYDRATE_TRANSACTION_DETAILS_ONLY,
     PREPARE_CANONICAL_REBUILD_ONLY,
@@ -1208,8 +1212,8 @@ function assertCanonicalRebuildConfiguration() {
       "Indexer audit, migration, rebuild, bootstrap, hydration, and repair modes are mutually exclusive.",
     );
   }
-  if ((BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY) && ((!DRY_RUN && !BITCOIN_RPC_URL) || CANONICAL_REBUILD || /^(?:1|true|yes)$/iu.test(String(process.env.POW_INDEX_DB_SUMMARY_REPAIR ?? "")))) {
-    throw new Error("Code/Jobs discovery bootstrap requires Core RPC and is exclusive with canonical rebuild or summary repair.");
+  if ((BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY || BOOTSTRAP_PAY_CANDIDATES_ONLY) && ((!DRY_RUN && !BITCOIN_RPC_URL) || CANONICAL_REBUILD || /^(?:1|true|yes)$/iu.test(String(process.env.POW_INDEX_DB_SUMMARY_REPAIR ?? "")))) {
+    throw new Error("Code/Jobs/Pay discovery bootstrap requires Core RPC and is exclusive with canonical rebuild or summary repair.");
   }
   if (typeof BOOTSTRAP_POWCAT_ONLY !== "undefined" && BOOTSTRAP_POWCAT_ONLY &&
       (NETWORK !== "livenet" || (!DRY_RUN && !BITCOIN_RPC_URL) || CANONICAL_REBUILD ||
@@ -1666,7 +1670,7 @@ function pendingOnlyBackfillMaintenanceMode() {
     typeof REPAIR_MARKETPLACE_PROJECTIONS_ONLY !== "undefined" &&
     REPAIR_MARKETPLACE_PROJECTIONS_ONLY;
   return (
-    BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY ||
+    BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY || BOOTSTRAP_PAY_CANDIDATES_ONLY ||
     (typeof BOOTSTRAP_POWCAT_ONLY !== "undefined" && BOOTSTRAP_POWCAT_ONLY) ||
     HYDRATE_TRANSACTION_DETAILS_ONLY ||
     PREPARE_CANONICAL_REBUILD_ONLY ||
@@ -26427,6 +26431,143 @@ async function bootstrapJobsCandidates(client, { automatic = false } = {}) {
   } finally { await client.query("SELECT pg_advisory_unlock(hashtext($1),hashtext($2))", [JOBS_DISCOVERY_META_KEY, NETWORK]); }
 }
 
+async function advancePayDiscoveryCheckpoint(client, { height, blockHash, previousBlockHash, candidates }) {
+  // Bootstrap holds this same session lock. Read only after acquiring it so a
+  // live block cannot overwrite a concurrently completed discovery commitment.
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))", [PAY_DISCOVERY_META_KEY, NETWORK]);
+  const marker = await proofIndexerMetaValue(client, PAY_DISCOVERY_META_KEY);
+  if (marker?.model !== PAY_DISCOVERY_MODEL || marker?.network !== NETWORK || marker?.complete !== true ||
+      marker.fromHeight !== PAY_ACTIVATION_HEIGHT || !Number.isSafeInteger(marker.candidateCount) || marker.candidateCount < 0 ||
+      !/^[0-9a-f]{64}$/u.test(marker.candidateSha256) || height < PAY_ACTIVATION_HEIGHT ||
+      marker.indexedThroughBlock !== height - 1 || marker.indexedThroughBlockHash !== previousBlockHash) return;
+  for (const tx of candidates) {
+    if (!await storedPayCandidateEventClosure(client, tx, { blockHeight: height, blockHash,
+      blockTransactionIndex: tx.blockTransactionIndex ?? tx._powBlockIndex })) return;
+  }
+  await storeProofIndexerMeta(client, PAY_DISCOVERY_META_KEY, { ...marker,
+    indexedThroughBlock: height, indexedThroughBlockHash: blockHash,
+    candidateCount: marker.candidateCount + candidates.length,
+    candidateSha256: candidates.reduce(advancePayCandidateDigest, marker.candidateSha256), generatedAt: new Date().toISOString() });
+}
+
+/** Cold discovery from the first-admission boundary; it never resets sealed AMO. */
+async function storedPayCandidateEventClosure(client, tx, position) {
+  const [events, transition] = await Promise.all([
+    client.query("SELECT * FROM proof_indexer.events WHERE network=$1 AND txid=$2 AND protocol='pwm1'", [NETWORK, tx.txid]),
+    client.query("SELECT block_height,block_hash,payload FROM proof_indexer.work_amo_block_transitions WHERE network=$1 AND block_height=$2 AND block_hash=$3", [NETWORK, position.blockHeight, position.blockHash]),
+  ]);
+  return transition.rows.length === 1 && payCandidateEventClosure(tx, events.rows, position,
+    await hydrateDiscoveryTransition(client, position, transition.rows[0]));
+}
+
+async function bootstrapPayCandidates(client, { automatic = false } = {}) {
+  if (NETWORK !== "livenet" || PAY_ACTIVATION_HEIGHT < 1 || !/^[0-9a-f]{64}$/u.test(PAY_ACTIVATION_PREVIOUS_BLOCK_HASH)) throw new Error("Pay activation is not configured.");
+  const locked = await client.query("SELECT pg_try_advisory_lock(hashtext($1),hashtext($2)) AS locked", [PAY_DISCOVERY_META_KEY, NETWORK]);
+  if (locked.rows[0]?.locked !== true) throw new Error("Another Pay discovery bootstrap is active.");
+  try {
+    if (String(await bitcoinRpc("getblockhash", [PAY_ACTIVATION_HEIGHT - 1])) !== PAY_ACTIVATION_PREVIOUS_BLOCK_HASH) throw new Error("Pay activation parent is not canonical; preserve evidence for operator review.");
+    const target = await latestBlockScanCheckpoint(client, { useStoredCheckpoint: true });
+    if (target.height < PAY_ACTIVATION_HEIGHT - 1 || (target.height === PAY_ACTIVATION_HEIGHT - 1 && target.blockHash !== PAY_ACTIVATION_PREVIOUS_BLOCK_HASH)) throw new Error("Pay discovery target precedes or differs from its canonical activation parent.");
+    const targetBlock = await client.query("SELECT height,block_hash FROM proof_indexer.blocks WHERE network=$1 AND height=$2 AND block_hash=$3 AND canonical=true", [NETWORK, target.height, target.blockHash]);
+    if (targetBlock.rows.length !== 1 || String(await bitcoinRpc("getblockhash", [target.height])) !== target.blockHash) throw new Error("Pay discovery target lacks the exact canonical database/Core checkpoint.");
+    let marker = await proofIndexerMetaValue(client, PAY_DISCOVERY_META_KEY);
+    const hadMarker = Boolean(marker);
+    if (marker && (marker.model !== PAY_DISCOVERY_MODEL || marker.network !== NETWORK || marker.fromHeight !== PAY_ACTIVATION_HEIGHT ||
+        !Number.isSafeInteger(marker.indexedThroughBlock) || marker.indexedThroughBlock < PAY_ACTIVATION_HEIGHT - 1 ||
+        !/^[0-9a-f]{64}$/u.test(marker.indexedThroughBlockHash) || !Number.isSafeInteger(marker.candidateCount) || marker.candidateCount < 0 ||
+        !/^[0-9a-f]{64}$/u.test(marker.candidateSha256))) throw new Error("Unknown Pay discovery metadata; preserve it for operator review.");
+    if (!marker) marker = { model: PAY_DISCOVERY_MODEL, network: NETWORK, fromHeight: PAY_ACTIVATION_HEIGHT,
+      indexedThroughBlock: PAY_ACTIVATION_HEIGHT - 1, indexedThroughBlockHash: PAY_ACTIVATION_PREVIOUS_BLOCK_HASH,
+      candidateCount: 0, candidateSha256: PAY_DISCOVERY_EMPTY_SHA256, complete: target.height === PAY_ACTIVATION_HEIGHT - 1, blockedCandidates: [],
+      generatedAt: new Date().toISOString() };
+    const orphan = String(await bitcoinRpc("getblockhash", [marker.indexedThroughBlock])) !== marker.indexedThroughBlockHash;
+    if (orphan) {
+      if (!automatic && !RECOVER_DISCOVERY_REORG && !QUALIFY_DISCOVERY_REORG) throw new Error("Pay discovery checkpoint was reorganized; qualify the orphaned discovery marker.");
+      const recovery = await recoverCandidateDiscoveryReorg({ client, rpc: bitcoinRpc, network: NETWORK, key: PAY_DISCOVERY_META_KEY, marker,
+        dryRun: !automatic && QUALIFY_DISCOVERY_REORG });
+      if (!automatic && QUALIFY_DISCOVERY_REORG) return recovery;
+      marker = recovery.next;
+    } else if (!automatic && QUALIFY_DISCOVERY_REORG) {
+      return { alreadyCanonical: true, indexedThroughBlock: marker.indexedThroughBlock, indexedThroughBlockHash: marker.indexedThroughBlockHash };
+    }
+    if (!hadMarker && marker.complete) {
+      // The exact pinned parent proves the complete empty admission interval.
+      // Earlier Pay-shaped Mail remains raw history and receives no authority.
+      await storeProofIndexerMeta(client, PAY_DISCOVERY_META_KEY, marker);
+    }
+    if (marker.complete === true && marker.indexedThroughBlock === target.height && marker.indexedThroughBlockHash === target.blockHash) return marker;
+    const lastGood = marker.complete === true ? marker : marker.lastGood;
+    const maxBlocks = automatic ? 2 : Math.max(1, Math.min(10_000, Math.floor(Number(process.env.POW_INDEX_PAY_BOOTSTRAP_MAX_BLOCKS ?? 1000))));
+    if (!Number.isSafeInteger(maxBlocks)) throw new Error("Invalid Pay bootstrap block budget.");
+    let scanned = 0;
+    while (marker.indexedThroughBlock < target.height && scanned < maxBlocks) {
+      const height = marker.indexedThroughBlock + 1;
+      const hash = String(await bitcoinRpc("getblockhash", [height])).toLowerCase();
+      const prefilter = prefilterCodeRawBlock(await bitcoinRpc("getblock", [hash, 0]), {
+        blockHash: hash, previousBlockHash: marker.indexedThroughBlockHash, candidatePredicate: isPayCandidatePart,
+      });
+      // Negatives have complete Core byte coverage. Positives keep the original
+      // decoded transaction, prevout and sealed-event path, with exact parity.
+      const block = prefilter.noCodeCandidates ? { hash, previousblockhash: prefilter.previousBlockHash,
+        time: prefilter.time, tx: [] } : await bitcoinRpc("getblock", [hash, 2]);
+      if (!prefilter.noCodeCandidates) {
+        assertCanonicalBlockEnvelope(block, height, hash);
+        assertCodeRawBlockCandidatesMatch(prefilter, block, isPayCandidatePart);
+      }
+      if (String(block.previousblockhash) !== marker.indexedThroughBlockHash) throw new Error("Pay discovery encountered a chain discontinuity.");
+      const candidates = [];
+      const blockedCandidates = [...(marker.blockedCandidates ?? [])];
+      for (const [index, tx] of (block.tx ?? []).entries()) {
+        const messages = protocolMessagesFromTx(tx).filter(message => isPayCandidatePart({ payloadHex: message.payloadHex ?? Buffer.from(message.text ?? "").toString("hex") }));
+        if (!messages.length) continue;
+        const raw = await transactionWithInputPrevouts({ ...tx, height, _powBlockIndex: index, _powBlockHash: hash, blocktime: block.time });
+        candidates.push({ raw, messages: protocolMessagesFromTx(raw).filter(message => message.prefix === "pwm1:") });
+        if (height >= WORK_AMO_V5_ACTIVATION_HEIGHT) {
+          const closed = await storedPayCandidateEventClosure(client, raw, { blockHeight: height, blockHash: hash, blockTransactionIndex: index });
+          if (!closed && !blockedCandidates.includes(tx.txid)) blockedCandidates.push(tx.txid);
+        }
+      }
+      if (String(await bitcoinRpc("getblockhash", [height])) !== hash) throw new Error("Pay discovery block changed before witness persistence.");
+      if (height === target.height && hash !== target.blockHash) throw new Error("Pay discovery target checkpoint changed; preserve witnesses and restart supervised discovery.");
+      await client.query("BEGIN");
+      try {
+        // Existing blocks/transactions remain canonical evidence. Only newly
+        // discovered candidate details are hydrated; post-V5 event seals are
+        // admitted exclusively by the ordinary canonical block sequencer.
+        for (const { raw, messages } of candidates) {
+          await persistCanonicalBlock(client, block, height, hash);
+          await persistCanonicalRawTransaction(client, raw, { blockHash: hash, blockTime: block.time, height });
+          if (height < WORK_AMO_V5_ACTIVATION_HEIGHT) {
+            await persistPreparedProtocolItems(client, rawProtocolItemsForTx(raw, messages).map(item => ({ item, sourceLabel: "log" })));
+          }
+        }
+        marker = { ...marker, ...(lastGood ? { lastGood } : {}), indexedThroughBlock: height, indexedThroughBlockHash: hash,
+          candidateCount: marker.candidateCount + candidates.length,
+          candidateSha256: candidates.map(candidate => candidate.raw).reduce(advancePayCandidateDigest, marker.candidateSha256),
+          blockedCandidates, complete: height === target.height && blockedCandidates.length === 0,
+          targetHeight: target.height, targetHash: target.blockHash, generatedAt: new Date().toISOString(),
+          reason: blockedCandidates.length ? "historical-pay-amo-closure-requires-supervised-canonical-replay" : height < target.height ? "pay-discovery-in-progress" : "" };
+        await storeProofIndexerMeta(client, PAY_DISCOVERY_META_KEY, marker);
+        await client.query("COMMIT");
+      } catch (error) { await client.query("ROLLBACK"); throw error; }
+      scanned++;
+    }
+    // A resumed supervised replay can close previously discovered records
+    // without rescanning or erasing the historical discovery evidence.
+    if (marker.indexedThroughBlock === target.height && marker.blockedCandidates?.length) {
+      const rows = await client.query("SELECT txid,raw_tx,block_height,block_hash,block_index FROM proof_indexer.transactions WHERE network=$1 AND txid=ANY($2::text[])", [NETWORK, marker.blockedCandidates]);
+      let closed = rows.rows.length === marker.blockedCandidates.length;
+      for (const row of rows.rows) closed = await storedPayCandidateEventClosure(client, row.raw_tx,
+        { blockHeight: Number(row.block_height), blockHash: row.block_hash, blockTransactionIndex: Number(row.block_index) }) && closed;
+      if (closed) {
+        marker = { ...marker, complete: true, blockedCandidates: [], reason: "", generatedAt: new Date().toISOString() };
+        await storeProofIndexerMeta(client, PAY_DISCOVERY_META_KEY, marker);
+      }
+    }
+    return { ...marker, scannedBlocks: scanned };
+  } finally { await client.query("SELECT pg_advisory_unlock(hashtext($1),hashtext($2))", [PAY_DISCOVERY_META_KEY, NETWORK]); }
+}
+
 async function latestBlockScanCheckpoint(client, options = {}) {
   if (
     options.useStoredCheckpoint !== true &&
@@ -26633,13 +26774,13 @@ async function resumeOrphanedProductDiscovery(client) {
       !/^[0-9a-f]{64}$/u.test(checkpoint.blockHash) || await bitcoinRpc("getblockhash", [checkpoint.height]) !== checkpoint.blockHash) return;
   const pending = await client.query(`SELECT m.key, m.value, b.canonical FROM proof_indexer.meta m
     LEFT JOIN proof_indexer.blocks b ON b.network=$1 AND b.block_hash=m.value->>'indexedThroughBlockHash'
-    WHERE m.key=ANY($2::text[]) AND m.value->>'network'=$1`, [NETWORK, [CODE_DISCOVERY_META_KEY, JOBS_DISCOVERY_META_KEY]]);
+    WHERE m.key=ANY($2::text[]) AND m.value->>'network'=$1`, [NETWORK, [CODE_DISCOVERY_META_KEY, JOBS_DISCOVERY_META_KEY, PAY_DISCOVERY_META_KEY]]);
   const rows = pending.rows.filter(({ value, canonical }) => canonical === false ||
     (value?.recoveryEvidenceKey && Number.isSafeInteger(value.indexedThroughBlock) && value.indexedThroughBlock <= checkpoint.height &&
      (value.indexedThroughBlock < checkpoint.height || value.complete === false)));
   for (const { key } of rows) {
     try {
-      const bootstrap = key === CODE_DISCOVERY_META_KEY ? bootstrapCodeCandidates : bootstrapJobsCandidates;
+      const bootstrap = key === CODE_DISCOVERY_META_KEY ? bootstrapCodeCandidates : key === PAY_DISCOVERY_META_KEY ? bootstrapPayCandidates : bootstrapJobsCandidates;
       await bootstrap(client, { automatic: true });
     } catch (error) {
       // Preserve the refused product marker without stalling unrelated canonical indexing.
@@ -27062,6 +27203,7 @@ async function backfillBlockScanSource(client, source) {
       // session lock before hydration, avoiding inverted row/advisory locks.
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))", [CODE_DISCOVERY_META_KEY, NETWORK]);
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))", [JOBS_DISCOVERY_META_KEY, NETWORK]);
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1),hashtext($2))", [PAY_DISCOVERY_META_KEY, NETWORK]);
       await persistCanonicalBlock(client, block, height, blockHash);
       for (const prepared of preparedTransactions) {
         currentTxid = prepared.txid;
@@ -27174,6 +27316,9 @@ async function backfillBlockScanSource(client, source) {
       await advanceJobsDiscoveryCheckpoint(client, { height, blockHash: nextIndexedThroughBlockHash,
         previousBlockHash: String(block.previousblockhash).toLowerCase(),
         candidates: preparedTransactions.filter(prepared => jobsCandidateParts(prepared.rawTx).length > 0).map(prepared => prepared.rawTx) });
+      await advancePayDiscoveryCheckpoint(client, { height, blockHash: nextIndexedThroughBlockHash,
+        previousBlockHash: String(block.previousblockhash).toLowerCase(),
+        candidates: preparedTransactions.filter(prepared => payCandidateParts(prepared.rawTx).length > 0).map(prepared => prepared.rawTx) });
       if (nextComplete) await recordPublishLinkedCapability(client, {
         network: NETWORK, height, blockHash: nextIndexedThroughBlockHash,
       });
@@ -39172,6 +39317,7 @@ if (DRY_RUN) {
         dryRun: true,
         bootstrapCodeCandidatesOnly: BOOTSTRAP_CODE_CANDIDATES_ONLY,
         bootstrapJobsCandidatesOnly: BOOTSTRAP_JOBS_CANDIDATES_ONLY,
+        bootstrapPayCandidatesOnly: BOOTSTRAP_PAY_CANDIDATES_ONLY,
         bootstrapPowcatOnly: BOOTSTRAP_POWCAT_ONLY,
         hydrateTransactionDetailsOnly: HYDRATE_TRANSACTION_DETAILS_ONLY,
         maxPages: MAX_PAGES,
@@ -39184,7 +39330,7 @@ if (DRY_RUN) {
         pendingOnlyPersistenceHeadroomMs:
           PENDING_ONLY_PERSISTENCE_HEADROOM_MS,
         pendingOnlyVerifierMaxMs: PENDING_ONLY_VERIFIER_MAX_MS,
-        postSourceMaintenance: !PENDING_ONLY_BACKFILL && !(BOOTSTRAP_POWCAT_ONLY || BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY),
+        postSourceMaintenance: !PENDING_ONLY_BACKFILL && !(BOOTSTRAP_POWCAT_ONLY || BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY || BOOTSTRAP_PAY_CANDIDATES_ONLY),
         verifyWorkAtomsPostBootstrapOnly:
           VERIFY_WORK_ATOMS_POST_BOOTSTRAP_ONLY,
         network: NETWORK,
@@ -39218,9 +39364,9 @@ if (DRY_RUN) {
         prepareCanonicalRebuildOnly: PREPARE_CANONICAL_REBUILD_ONLY,
         prepareCanonicalPwtRangeReplayOnly:
           PREPARE_CANONICAL_PWT_RANGE_REPLAY_ONLY,
-        sources: BOOTSTRAP_POWCAT_ONLY ? ["powcat1-discovery"] : BOOTSTRAP_JOBS_CANDIDATES_ONLY ? ["jobs-core-candidate-discovery"] : BOOTSTRAP_CODE_CANDIDATES_ONLY ? ["code-core-candidate-discovery"] : SOURCES.map((source) => source.label),
-        storeCanonicalSummarySnapshot: !(BOOTSTRAP_POWCAT_ONLY || BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY) && STORE_CANONICAL_SUMMARY_SNAPSHOT,
-        storeLedgerSnapshot: !(BOOTSTRAP_POWCAT_ONLY || BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY) && STORE_LEDGER_SNAPSHOT,
+        sources: BOOTSTRAP_POWCAT_ONLY ? ["powcat1-discovery"] : BOOTSTRAP_PAY_CANDIDATES_ONLY ? ["pay-core-candidate-discovery"] : BOOTSTRAP_JOBS_CANDIDATES_ONLY ? ["jobs-core-candidate-discovery"] : BOOTSTRAP_CODE_CANDIDATES_ONLY ? ["code-core-candidate-discovery"] : SOURCES.map((source) => source.label),
+        storeCanonicalSummarySnapshot: !(BOOTSTRAP_POWCAT_ONLY || BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY || BOOTSTRAP_PAY_CANDIDATES_ONLY) && STORE_CANONICAL_SUMMARY_SNAPSHOT,
+        storeLedgerSnapshot: !(BOOTSTRAP_POWCAT_ONLY || BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY || BOOTSTRAP_PAY_CANDIDATES_ONLY) && STORE_LEDGER_SNAPSHOT,
         transactionDetailHydration: {
           afterBlockIndex: TX_DETAIL_HYDRATION_AFTER_BLOCK_INDEX,
           afterHeight: TX_DETAIL_HYDRATION_AFTER_HEIGHT,
@@ -39247,11 +39393,13 @@ const pool = createProofIndexPool({
 try {
   const client = await pool.connect();
   try {
-    const pwtRangeReplayRuntime = (BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY || BOOTSTRAP_POWCAT_ONLY) ? { active: false } :
+    const pwtRangeReplayRuntime = (BOOTSTRAP_CODE_CANDIDATES_ONLY || BOOTSTRAP_JOBS_CANDIDATES_ONLY || BOOTSTRAP_PAY_CANDIDATES_ONLY || BOOTSTRAP_POWCAT_ONLY) ? { active: false } :
       await canonicalPwtRangeReplayRuntime(client);
     if (BOOTSTRAP_POWCAT_ONLY) {
       console.log(JSON.stringify({ ok: true, network: NETWORK, powcat: await advancePowcatWorker(client,
         Number(process.env.POW_INDEX_POWCAT_MAX_BLOCKS ?? 128)) }, null, 2));
+    } else if (BOOTSTRAP_PAY_CANDIDATES_ONLY) {
+      console.log(JSON.stringify({ ok: true, network: NETWORK, payDiscovery: await bootstrapPayCandidates(client) }, null, 2));
     } else if (BOOTSTRAP_JOBS_CANDIDATES_ONLY) {
       console.log(JSON.stringify({ ok: true, network: NETWORK, jobsDiscovery: await bootstrapJobsCandidates(client) }, null, 2));
     } else if (BOOTSTRAP_CODE_CANDIDATES_ONLY) {

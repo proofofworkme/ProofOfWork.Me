@@ -1,0 +1,18 @@
+export type PayRecordAction = 'invoice' | 'pay' | 'cancel';
+export type PayAmount = { asset: 'proofs'; amountSats: string } | { asset: 'WORK'; token: string; amountSubatoms: string };
+export const PAY_BODY_PREFIX: string;
+export const PAY_VERSION: number;
+export const PAY_ACTIONS: readonly PayRecordAction[];
+export const PAY_ACTIVATION_HEIGHT: number;
+export const PAY_ACTIVATION_PREVIOUS_BLOCK_HASH: string;
+export const PAY_MAX_METADATA_BYTES: number;
+export const PAY_WORK_TOKEN_ID: string;
+export const PAY_WORK_REGISTRY_ADDRESS: string;
+export const PAY_WORK_SUBATOMS_PER_WORK: string;
+export const PAY_WORK_MAX_SUBATOMS: string;
+export function normalizePayAmount(value: unknown): PayAmount | null;
+export function parsePayWorkDecimal(value: string): string | null;
+export function formatPayWorkSubatoms(value: string): string;
+export function formatPayAmount(value: PayAmount): string;
+export function encodePayRecord(action: PayRecordAction, value: Record<string, unknown>): string;
+export function parsePayBody(body: string): { action: PayRecordAction; metadata: Record<string, unknown> } | null;

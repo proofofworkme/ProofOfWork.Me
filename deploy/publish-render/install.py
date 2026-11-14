@@ -38,6 +38,7 @@ PREDECESSOR_SOURCE_FILES = (
 PREDECESSOR_MANIFEST_SHA256 = '5bb727cd7dcf97443775405f60da4cbe887ac627abf48d3db7453a69c0b980db'
 
 SURFACES = set('activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft pages permission publish search token wallet work'.split())
+PAY_SURFACES = SURFACES | {'pay'}
 UNIT_NAME = 'proofofwork-publish-render.service'
 UNIT_TEMPLATE = 'deploy/publish-render/' + UNIT_NAME
 NODE_NAME = 'node-v24.18.0-linux-x64'
@@ -455,11 +456,11 @@ def install(package, plan_sha):
         fields = dict(line.split('=',1) for line in lines)
         surfaces = {k.split('.')[1] for k in fields if re.fullmatch(r'surface\.[^.]+\.sha256', k)}
         require(fields.get('commit') == manifest['commit'] and fields.get('source_tree') == manifest['tree']
-            and fields.get('format') == 'proofofwork-ui-release-v5' and surfaces == SURFACES and
+            and (fields.get('format'), surfaces) in (('proofofwork-ui-release-v5', SURFACES), ('proofofwork-ui-release-v6', PAY_SURFACES)) and
             all(HEX64.fullmatch(fields.get('surface.'+name+'.sha256', '')) and
                 re.fullmatch('[1-9][0-9]*', fields.get('surface.'+name+'.file_count', '')) for name in SURFACES) and
             all(fields['surface.nft.'+key] == fields['surface.computer.'+key] for key in ('sha256','file_count')),
-            'Renderer requires complete exact 22-root publication')
+            'Renderer requires complete exact 22-root or 23-root publication')
         before = {'unit': read_safe(UNIT) if current['renderer']['unit'] is not None else None,
                   'active': read_safe(ACTIVE) if current['renderer']['active'] is not None else None,
                   'wanted': current['renderer']['wanted'], 'state': current['renderer']['state']}

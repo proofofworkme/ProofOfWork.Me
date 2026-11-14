@@ -19,7 +19,7 @@ const fixture = async () => {
   return root;
 };
 
-test("the focused Vite build emits complete SEO artifacts for all 21 production surfaces", async () => {
+test("the focused Vite build emits complete SEO artifacts for all 22 production surfaces", async () => {
   const root = await fixture();
   try {
     const builder = await readFile(new URL("../deploy/publish/build.py", import.meta.url), "utf8");

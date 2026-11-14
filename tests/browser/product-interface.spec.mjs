@@ -18,7 +18,7 @@ const PUBLIC_ROOTS = {
   Home: ".landing-app", IDs: ".id-launch-app", DNS: ".id-launch-app", Computer: ".computer-shell",
   Desktop: ".desktop-public-app", Browser: ".browser-public-app", Pages: ".pages-public-app",
   Boost: ".boost-public-app", Publish: ".publish-public-app", Search: ".search-standalone-app",
-  Code: ".code-app", Jobs: ".jobs-app", Permission: ".permission-app", AMO: ".marketplace-app",
+  Code: ".code-app", Jobs: ".jobs-app", Pay: ".pay-app", Permission: ".permission-app", AMO: ".marketplace-app",
   Credit: ".token-public-app", Wallet: ".token-wallet-public-app", WORK: ".token-public-app",
   Infinity: ".token-wallet-public-app", Inception: ".token-wallet-public-app",
   Log: ".activity-public-app", Growth: ".growth-public-app",
@@ -26,7 +26,7 @@ const PUBLIC_ROOTS = {
 const WORKSPACE_ROOTS = {
   Mail: ".mail-layout", Files: ".files-workspace", Desktop: ".desktop-workspace", Browser: ".browser-window",
   Pages: ".pages-workspace", Boost: ".boost-embedded-app", Publish: ".publish-public-app", Search: ".search-embedded-app",
-  Code: ".code-workspace", Jobs: ".jobs-workspace", Permission: ".permission-workspace",
+  Code: ".code-workspace", Jobs: ".jobs-workspace", Pay: ".pay-workspace", Permission: ".permission-workspace",
   IDs: ".ids-workspace", DNS: ".dns-workspace", AMO: ".marketplace-workspace",
   Credit: ".token-workspace", Wallet: ".token-wallet-workspace", WORK: ".token-workspace",
   Infinity: ".token-wallet-workspace", Inception: ".token-wallet-workspace", Log: ".activity-workspace", Contacts: ".contacts-workspace",

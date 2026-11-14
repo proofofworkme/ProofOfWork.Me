@@ -1,5 +1,5 @@
 const WORKSPACE_OWNED_STATUS = new Set([
-  "browser", "pages", "boost", "publish", "search", "code", "jobs", "permission",
+  "browser", "pages", "boost", "publish", "search", "code", "jobs", "pay", "permission",
 ]);
 
 /** Presentation only: never changes stored status, read state, or wallet authority. */

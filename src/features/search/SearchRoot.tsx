@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUpRight, Check, ChevronRight, CircleAlert, Code2, Copy,
 import { AppHeader } from "../../shared/components/AppHeader";
 import { SocialFooter } from "../../shared/components/SocialFooter";
 import { explorerTxUrl, type BitcoinNetwork } from "../../shared/bitcoin/networks";
-import { BROWSER_APP_URL, LOCAL_BROWSER_APP_URL, CODE_APP_URL, LOCAL_CODE_APP_URL } from "../../app/appLinks";
+import { BROWSER_APP_URL, LOCAL_BROWSER_APP_URL, CODE_APP_URL, LOCAL_CODE_APP_URL, PAY_APP_URL, LOCAL_PAY_APP_URL } from "../../app/appLinks";
 import { appHref } from "../../app/routeRegistry";
 import { DEFAULT_SEARCH_QUERY, exactProofs, fetchSearch, fetchSearchDetail, searchApiHref, searchQueryFromLocation,
   type SearchDetail, type SearchQuery, type SearchRecord, type SearchResponse } from "./searchApi";
@@ -12,7 +12,7 @@ import { PowcatLink } from "../powcat/PowcatLink";
 
 const PROTOCOLS: Record<string, string> = {
   powcat1: "Linked files",
-  pwid1: "IDs", pwdns1: "DNS", pwm1: "Mail, Files & Bonds", pwb1: "Boost & Publish", pwc1: "Code", pwt1: "Credits & AMO", pwa1: "Applications", unknown: "Other carriers",
+  pwid1: "IDs", pwdns1: "DNS", pwm1: "Mail, Files, Bonds & Pay", pwb1: "Boost & Publish", pwc1: "Code", pwt1: "Credits & AMO", pwa1: "Applications", unknown: "Other carriers",
 };
 const NETWORK_LABELS: Record<BitcoinNetwork, string> = { livenet: "Mainnet", testnet: "Testnet3", testnet4: "Testnet4" };
 
@@ -83,6 +83,7 @@ function SearchInspector({ network, id, close, searchValue }: {
   const record = loaded?.record;
   const repositoryTxid = record?.kind === "code-repository" ? record.txid
     : record?.refs.find(ref => ref.type === "repository-txid" && /^[a-f0-9]{64}$/u.test(ref.value))?.value;
+  const invoiceTxid = record?.refs.find(ref => ref.type === "invoice-txid" && /^[a-f0-9]{64}$/u.test(ref.value))?.value;
   return <dialog ref={dialogRef} className="search-inspector" aria-labelledby={titleId}
     onCancel={event => { event.preventDefault(); close(); }}>
     <div className="search-inspector-head">
@@ -97,6 +98,7 @@ function SearchInspector({ network, id, close, searchValue }: {
         <a href={explorerTxUrl(record.txid, network)} target="_blank" rel="noreferrer">View transaction <ArrowUpRight size={15} /></a>
         <button type="button" onClick={() => void copyCurrentLink(setCopied)}><Copy size={15} /> {copied ? "Link copied" : "Copy record link"}</button>
         {record.protocol === "pwc1" && repositoryTxid && <a href={`${appHref(CODE_APP_URL, LOCAL_CODE_APP_URL)}${appHref(CODE_APP_URL, LOCAL_CODE_APP_URL).includes("?") ? "&" : "?"}repo=${repositoryTxid}&network=${network}`}>Open repository in Code <ArrowUpRight size={15} /></a>}
+        {invoiceTxid && <a href={`${appHref(PAY_APP_URL, LOCAL_PAY_APP_URL)}${appHref(PAY_APP_URL, LOCAL_PAY_APP_URL).includes("?") ? "&" : "?"}invoice=${invoiceTxid}`}>Open invoice in Pay <ArrowUpRight size={15} /></a>}
         {(record.file?.mimeType === "text/html" || record.kind === "html") && <a href={`${appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL)}${appHref(BROWSER_APP_URL, LOCAL_BROWSER_APP_URL).includes("?") ? "&" : "?"}txid=${encodeURIComponent(record.txid)}&network=${network}`}>Open in Browser <ArrowUpRight size={15} /></a>}
       </div>
       <div className="search-inspector-tabs" aria-label="Source sections">
@@ -105,6 +107,7 @@ function SearchInspector({ network, id, close, searchValue }: {
       <div className="search-inspector-content">
         {tab === "overview" ? <>
           {record.protocol === "pwc1" && <p className="search-notice">This search record describes transaction evidence. Open Code to verify the repository owner, parent references, and accepted main history.</p>}
+          {invoiceTxid && <p className="search-notice">This record contains Pay transaction evidence. Open Pay to verify the complete confirmed invoice, exact settlement and receipt. A pending payment does not mark an invoice paid.</p>}
           {record.valid === false && <div className="search-notice is-error"><CircleAlert size={18} /><div><strong>Invalid history</strong><p>This record does not establish canonical protocol state.</p>{record.validationErrors?.map((reason, index) => <p key={index}>{reason}</p>)}</div></div>}
           {record.status !== "confirmed" && <p className="search-history-warning">{record.status === "pending" ? "Pending visibility is best effort. This record is not confirmed history." : "This record is historical visibility and is not part of the current confirmed chain."}</p>}
           {record.status === "confirmed" && record.canonical === false && <p className="search-history-warning">The indexed chain position of this source is unverified. It does not establish current canonical state.</p>}

@@ -59,6 +59,16 @@ The project turns attention, communication, identity, and application distributi
 
 ## Product Beliefs
 
+Pay turns an immutable invoice into an exact, invoice-linked payment and a
+reconstructible receipt. Bind the issuer, currency, amount and destination to
+the original transaction; transferable names never rewrite those terms. Paid
+requires confirmed proof outputs or accepted canonical same-transaction WORK
+evidence. Duplicate and rejected settlement attempts remain inspectable, and
+the existing underlying Mail/WORK economics count once. Private customer
+details and unsigned drafts remain local. [PAY.md](PAY.md) defines the new
+version-one product; production writes stay closed until its complete
+discovery, readers, signer and whole-Computer release are verified together.
+
 Jobs connects work briefs, proposed scope and reward, assignment, delivery,
 client acceptance and direct payment in proofs or canonical WORK credit.
 Assignment freezes currency and exact amount; a WORK Paid receipt requires
@@ -406,8 +416,10 @@ Future agents must preserve these unless the user explicitly asks for a migratio
   Independently complete raw discovery is required for writes and routing.
   Verified contiguous catch-up can resume after a bounded read without making
   partial progress namespace authority. Local UI and fixtures never establish
-  real-chain authority. The Browser/DNS release must verify the hostname and all
-  22 managed surfaces under the V5 contract documented in `PAGES.md`.
+  real-chain authority. The original Browser/DNS release requires the hostname
+  and all 22 managed surfaces under the V5 contract in `PAGES.md`. Pay extends
+  the current release family to V6/23 roots while preserving that historical
+  verification contract.
 - Computer notifications encompass complete address transactions and indexed actions
   across every protocol workspace. Keep one notification per transaction with
   each compound action inspectable, including carrierless transfers. ID history
@@ -589,7 +601,7 @@ orientation benefits from it.
 
 Standalone headers and shared footers use the approved menu order: Utility
 (Computer, Desktop, Browser, Pages, Code, Jobs, Permission), Identity & social
-(ID, DNS, Boost, Publish), Finance (Wallet, AMO, Credit, WORK, Infinity,
+(ID, DNS, Boost, Publish), Finance (Wallet, Pay, AMO, Credit, WORK, Infinity,
 Inception), and Insights (Log, Growth, Search). Use sentence case while preserving
 product names and acronyms. Computer's header uses its Apps launcher and
 workspace/layout controls instead of repeating these grouped menus. Keep every

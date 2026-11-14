@@ -172,7 +172,12 @@
     "check:work-mail-batch": "node --test src/shared/protocol/workMailBatch.test.mjs server/work-mail-batch-*.test.mjs server/db/work-mail-batch-*.test.mjs scripts/check-work-mail-batch-*.test.mjs scripts/check-work-batch-summary-projection.test.mjs src/features/mail-work-batch/*.test.mjs",
     "check:work-mail-batch:deploy": "python3 -I -B deploy/mail-work-batch/check-scoped-node.test.py && python3 -I -B deploy/mail-work-batch/check-release.test.py && python3 -I -B deploy/mail-work-batch/check-activation.test.py && node --test deploy/mail-work-batch/check-activation-probe.test.mjs && python3 -I -B deploy/mail-work-batch/runtime-archive.test.py",
     "check:publish:deploy": "node --test scripts/check-publish-linked-deployment.test.mjs",
-    "model:growth:current": "node scripts/generate-current-growth.mjs"
+    "model:growth:current": "node scripts/generate-current-growth.mjs",
+    "check:pay": "node --test server/pay*.test.mjs server/db/pay*.test.mjs scripts/check-pay*.test.mjs",
+    "check:pay:browser": "playwright test --config playwright.ui.config.mjs pay-ui.spec.mjs",
+    "check:pay:live": "node scripts/check-pay-live.mjs",
+    "indexer:bootstrap-pay": "node scripts/backfill-proof-indexer.mjs --bootstrap-pay-candidates",
+    "check:pay-release": "python3 -I -B deploy/pay/check-scoped-node.test.py && python3 -I -B deploy/pay/check-release.test.py && python3 -I -B scripts/check-ui-pay-release.py && python3 -I -B deploy/pay/check-write-gate.test.py && node --test deploy/pay/write-gate-probe.test.mjs"
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",
@@ -182,14 +187,17 @@
     "buffer": "^6.0.3",
     "lucide-react": "^1.14.0",
     "pg": "^8.21.0",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^6.0.3",
+    "pngjs": "^5.0.0",
     "typescript": "^5.7.2",
     "vite": "^8.1.4"
   }

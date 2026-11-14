@@ -155,7 +155,7 @@ function descriptionExcerpt(text: string | undefined) {
 
 /** Only committed public records may supply detail text; never pass drafts here. */
 export function useVerifiedDocumentMetadata({ parameter, id, network, metadata, privateView = false }: {
-  parameter: "article" | "repo" | "job";
+  parameter: "article" | "repo" | "job" | "invoice";
   id?: string;
   network: string;
   metadata?: VerifiedMetadata;

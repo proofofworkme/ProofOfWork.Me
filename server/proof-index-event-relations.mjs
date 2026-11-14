@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { parseJobBody } from "../src/shared/protocol/jobs.mjs";
+import { parsePayBody, formatPayAmount } from "../src/shared/protocol/pay.mjs";
 
 import {
   PROOF_INDEX_RENDERED_MAIL_KINDS,
@@ -275,6 +276,17 @@ export function proofIndexEventRefsForItem(item) {
   add("repository-txid", source.repoTxid);
   if (source.protocol === "pwm1") {
     const body = typeof source.memo === "string" ? source.memo : typeof source.body === "string" ? source.body : "";
+    if (body.startsWith("pwpay1:")) {
+      const pay = parsePayBody(body);
+      // These are decoded search references, never settlement or recipient authority.
+      add("app", "Pay"); add("pay-action", pay?.action ?? "invalid");
+      add("invoice-txid", pay?.action === "invoice" ? source.txid : pay?.metadata?.invoice);
+      if (pay?.action === "invoice") {
+        add("invoice-title", pay.metadata.title); add("invoice-description", pay.metadata.description);
+        add("invoice-recipient", pay.metadata.recipient); add("invoice-amount", formatPayAmount(pay.metadata.amount));
+        add("invoice-reference-txid", pay.metadata.reference);
+      }
+    }
     if (body.startsWith("pwj1:")) {
       const jobs = parseJobBody(body);
       add("app", "Jobs");

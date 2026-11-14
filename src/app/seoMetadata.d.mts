@@ -1,4 +1,4 @@
-export type SeoSurface = "landing" | "computer" | "id-launch" | "dns-launch" | "desktop" | "browser" | "pages" | "boost" | "publish" | "search" | "code" | "jobs" | "permission" | "marketplace" | "token" | "wallet" | "work" | "infinity" | "inception" | "log" | "growth";
+export type SeoSurface = "landing" | "computer" | "id-launch" | "dns-launch" | "desktop" | "browser" | "pages" | "boost" | "publish" | "search" | "code" | "jobs" | "pay" | "permission" | "marketplace" | "token" | "wallet" | "work" | "infinity" | "inception" | "log" | "growth";
 export type SeoSurfaceMetadata = { surface: SeoSurface; label: string; origin: string; title: string; description: string; heading: string; intro: string };
 export type SeoRoute = { kind: "root" | "public-detail" | "private" | "not-found"; canonicalUrl: string | null; robots: string };
 export type SeoDocumentVariant = "root" | "app" | "noindex" | "not-found";

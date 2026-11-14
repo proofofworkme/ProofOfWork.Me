@@ -19,6 +19,7 @@ export const BOOST_APP_URL = "https://boost.proofofwork.me";
 export const PUBLISH_APP_URL = "https://publish.proofofwork.me";
 export const SEARCH_APP_URL = "https://search.proofofwork.me";
 export const CODE_APP_URL = "https://code.proofofwork.me";
+export const PAY_APP_URL = "https://pay.proofofwork.me";
 export const JOBS_APP_URL = "https://jobs.proofofwork.me";
 export const PERMISSION_APP_URL = "https://permission.proofofwork.me";
 export const MARKETPLACE_APP_URL = "https://amo.proofofwork.me";
@@ -41,6 +42,7 @@ export const LOCAL_BOOST_APP_URL = "/?boost=1";
 export const LOCAL_PUBLISH_APP_URL = "/?publish=1";
 export const LOCAL_SEARCH_APP_URL = "/?search-app=1";
 export const LOCAL_CODE_APP_URL = "/?code=1";
+export const LOCAL_PAY_APP_URL = "/?pay=1";
 export const LOCAL_JOBS_APP_URL = "/?jobs=1";
 export const LOCAL_PERMISSION_APP_URL = "/?permission-app=1";
 export const LOCAL_MARKETPLACE_APP_URL = "/?marketplace=1";
@@ -68,6 +70,7 @@ export const APP_LINKS: AppLink[] = [
   { href: PUBLISH_APP_URL, label: "Publish", localHref: LOCAL_PUBLISH_APP_URL },
   { href: SEARCH_APP_URL, label: "Search", localHref: LOCAL_SEARCH_APP_URL },
   { href: CODE_APP_URL, label: "Code", localHref: LOCAL_CODE_APP_URL },
+  { href: PAY_APP_URL, label: "Pay", localHref: LOCAL_PAY_APP_URL },
   { href: JOBS_APP_URL, label: "Jobs", localHref: LOCAL_JOBS_APP_URL },
   { href: PERMISSION_APP_URL, label: "Permission", localHref: LOCAL_PERMISSION_APP_URL },
   {
@@ -144,6 +147,7 @@ export const APP_MENU_GROUPS: AppMenuGroup[] = [
   {
     label: "Finance",
     links: [
+      appMenuLink("Pay", "Pay", "Invoices and confirmed payment receipts"),
       appMenuLink("Wallet", "Wallet", "Balances, transfers and history"),
       appMenuLink("AMO", "AMO", "Listings, seals and markets"),
       appMenuLink("Credit", "Credit", "Create and mint credits"),

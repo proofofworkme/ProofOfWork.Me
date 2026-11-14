@@ -12,6 +12,7 @@ import {
   SEARCH_APP_URL,
   CODE_APP_URL,
   JOBS_APP_URL,
+  PAY_APP_URL,
   PERMISSION_APP_URL,
   BROWSER_APP_URL,
   COMPUTER_APP_URL,
@@ -27,6 +28,7 @@ import {
   LOCAL_SEARCH_APP_URL,
   LOCAL_CODE_APP_URL,
   LOCAL_JOBS_APP_URL,
+  LOCAL_PAY_APP_URL,
   LOCAL_PERMISSION_APP_URL,
   LOCAL_COMPUTER_APP_URL,
   LOCAL_DESKTOP_APP_URL,
@@ -194,6 +196,13 @@ const LANDING_APP_GROUPS = [
         icon: APP_ICONS.Credit,
         label: "Credits",
         localHref: LOCAL_TOKEN_APP_URL,
+      },
+      {
+        description: "Publish an on-chain invoice, share its link, and verify payment in proofs or WORK.",
+        href: PAY_APP_URL,
+        icon: APP_ICONS.Pay,
+        label: "Pay",
+        localHref: LOCAL_PAY_APP_URL,
       },
       {
         description:

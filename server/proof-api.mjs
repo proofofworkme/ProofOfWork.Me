@@ -389,12 +389,15 @@ import { SEARCH_INDEX_VERSION } from "./search-projection.mjs";
 import { CODE_SNAPSHOT_MODEL, qualifyCodeLogPayload } from "./code-repositories.mjs";
 import { codeLinkedSourceFromCore, codeReferenceSourceFromCore } from "./db/code-reader.mjs";
 import { JOBS_SNAPSHOT_MODEL, jobsLogPayloadHasCandidates, qualifyJobsLogPayload } from "./jobs.mjs";
+import { PAY_SNAPSHOT_MODEL, payLogPayloadHasCandidates, qualifyPayLogPayload, payReferenceFromCore, payAdmission,
+  assertPayBroadcastAllowed, paySearchPayloadHasCandidates, qualifyPaySearchPayload } from "./pay.mjs";
 import {
   compareProofIndexHistoryPayloads,
   proofIndexActivityPayload,
   proofIndexCodePayload,
   proofIndexPowcatActivity,
   proofIndexJobsPayload,
+  proofIndexPayPayload,
   proofIndexAddressMailPayload,
   verifiedMailArticleFields,
   revalidateMailArticleMessage,
@@ -14507,6 +14510,17 @@ function noteAcceptedBroadcast(result, txHex, network) {
     .catch(error => console.error("Could not record accepted broadcast hint:", errorSummary(error)));
 }
 
+async function guardPayBroadcast(txHex, network) {
+  return assertPayBroadcastAllowed(txHex, network, {
+    rpc: bitcoinRpc, enabled: () => process.env.POW_PAY_WRITES_ENABLED === "1",
+    readGate: () => canonicalPublicReadGate(network, { force: true }),
+    readState: () => proofIndexPayPayload(network, new URLSearchParams(), { state: true,
+      verifyReference: request => payReferenceFromCore(request, bitcoinRpc),
+      verifyCheckpoint: async height => { const response = await bitcoinRpc("getblockhash", [height]); return response?.ok ? response.result : null; },
+    }),
+  });
+}
+
 async function broadcastSlipstreamPayload(request, options = {}) {
   const payload = await readJsonRequestBody(request, 1_000_000, {
     label: "Broadcast request body",
@@ -14517,6 +14531,7 @@ async function broadcastSlipstreamPayload(request, options = {}) {
     throw new Error("Invalid transaction hex.");
   }
 
+  await guardPayBroadcast(txHex, "livenet");
   await assertWorkMarketplaceBroadcastAllowed(txHex, "livenet", {
     beforeSubmit: options.beforeSubmit,
   });
@@ -14607,6 +14622,7 @@ async function broadcastNodePayload(request, network, options = {}) {
     throw new Error("Invalid transaction hex.");
   }
 
+  await guardPayBroadcast(txHex, network);
   await assertWorkMarketplaceBroadcastAllowed(txHex, network, {
     beforeSubmit: options.beforeSubmit,
   });
@@ -36992,6 +37008,20 @@ async function logPayloadWithDnsSubdomainAuthority(payload, network, options = {
       } });
       payload = qualifyJobsLogPayload(payload, [...state.events, ...state.pendingEvents], state.snapshot);
     } catch (error) { payload = qualifyJobsLogPayload(payload, [], null, "jobs-discovery-unavailable"); }
+  }
+  if (payLogPayloadHasCandidates(payload)) {
+    const params = new URLSearchParams();
+    const checkpointHeight = Number(payload.indexedThroughBlock);
+    const checkpointHash = payload.indexedThroughBlockHash ?? payload.checkpointHash;
+    if (Number.isSafeInteger(checkpointHeight) && checkpointHeight > 0 && /^[0-9a-f]{64}$/u.test(checkpointHash ?? "")) {
+      params.set("snapshot", Buffer.from(JSON.stringify({ model: PAY_SNAPSHOT_MODEL, network, checkpointHeight, checkpointHash })).toString("base64url"));
+    }
+    try {
+      const state = await proofIndexPayPayload(network, params, { events: true, verifyReference: request => payReferenceFromCore(request, bitcoinRpc), verifyCheckpoint: async height => {
+        const result = await bitcoinRpc("getblockhash", [height]); return result?.ok ? result.result : null;
+      } });
+      payload = qualifyPayLogPayload(payload, [...state.events, ...state.pendingEvents], state.snapshot);
+    } catch (error) { payload = qualifyPayLogPayload(payload, [], null, "pay-discovery-unavailable"); }
   }
   const hasCode = [payload?.items, payload?.events, payload?.activity].some(items => Array.isArray(items) && items.some(item => item?.protocol === "pwc1"));
   if (hasCode) {
@@ -83986,6 +84016,29 @@ async function handleRequest(request, response) {
       return;
     }
 
+    if (url.pathname === "/api/v1/pay-invoices" || url.pathname === "/api/v1/pay-invoice") {
+      const payload = await proofIndexPayPayload(network, url.searchParams, {
+        detail: url.pathname === "/api/v1/pay-invoice",
+        verifyReference: request => payReferenceFromCore(request, bitcoinRpc),
+        verifyCheckpoint: async height => {
+          const result = await bitcoinRpc("getblockhash", [height]);
+          return result?.ok ? result.result : null;
+        },
+      });
+      if (freshRead && !url.searchParams.has("snapshot") && !url.searchParams.has("cursor")) {
+        const payReadGate = canonicalReadGate ?? await canonicalPublicReadGate(network, { force: true });
+        if (payReadGate?.available !== true || payReadGate?.atTip !== true ||
+            payload.indexedThroughBlock !== Number(payReadGate.indexedThroughBlock) ||
+            payload.indexedThroughBlockHash !== payReadGate.canonicalHash) {
+          throw freshDataUnavailableError("Pay discovery has not reached the exact canonical checkpoint.");
+        }
+      }
+      const payGate = await canonicalPublicReadGate(network, { force: true });
+      payload.admission = payAdmission(payload, payGate, process.env.POW_PAY_WRITES_ENABLED === "1");
+      jsonResponse(response, 200, payload, "no-store");
+      return;
+    }
+
     if (url.pathname === "/api/v1/code-repositories" || url.pathname === "/api/v1/code-repository" || url.pathname === "/api/v1/code-page-source") {
       const payload = await proofIndexCodePayload(network, url.searchParams, {
         detail: url.pathname === "/api/v1/code-repository",
@@ -84017,9 +84070,19 @@ async function handleRequest(request, response) {
           return result?.ok ? result.result : null;
         },
       };
-      const payload = url.pathname === "/api/v1/search/detail"
+      let payload = url.pathname === "/api/v1/search/detail"
         ? await searchDetailPayload(network, url.searchParams.get("id"), url.searchParams, options)
         : await searchPayload(network, url.searchParams, options);
+      if (paySearchPayloadHasCandidates(payload)) {
+        const checkpointHeight = Number(payload.coverage?.checkpointHeight), checkpointHash = payload.coverage?.checkpointHash;
+        try {
+          const params = new URLSearchParams({ snapshot: Buffer.from(JSON.stringify({ model: PAY_SNAPSHOT_MODEL,
+            network, checkpointHeight, checkpointHash })).toString("base64url") });
+          const state = await proofIndexPayPayload(network, params, { events: true,
+            verifyReference: request => payReferenceFromCore(request, bitcoinRpc), verifyCheckpoint: options.verifyCheckpoint });
+          payload = qualifyPaySearchPayload(payload, [...state.events, ...state.pendingEvents], state.snapshot);
+        } catch { payload = qualifyPaySearchPayload(payload, [], null, "pay-discovery-unavailable"); }
+      }
       jsonResponse(response, 200, payload, "no-store");
       return;
     }

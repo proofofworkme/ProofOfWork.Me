@@ -181,11 +181,12 @@
 		({http.request.host} == "boost.proofofwork.me" && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|profile=[^&]{1,1000})(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|profile=[^&]{1,1000}))*$")) ||
 		({http.request.host} == "code.proofofwork.me" && {http.request.uri.query}.matches("(^|&)repo=[0-9a-fA-F]{64}(&|$)") && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|(?:repo|version)=[0-9a-fA-F]{64}|path=[^&]+)(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|(?:repo|version)=[0-9a-fA-F]{64}|path=[^&]+))*$")) ||
 		({http.request.host} == "jobs.proofofwork.me" && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|job=[0-9a-fA-F]{64})(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|job=[0-9a-fA-F]{64}))*$")) ||
+		({http.request.host} == "pay.proofofwork.me" && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|invoice=[0-9a-fA-F]{64})(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|invoice=[0-9a-fA-F]{64}))*$")) ||
 		({http.request.host} == "browser.proofofwork.me" && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|(?:txid|tx)=[0-9a-fA-F]{64}|name=[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:[.][a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)?[.](?i:pow))(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|(?:txid|tx)=[0-9a-fA-F]{64}|name=[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:[.][a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)?[.](?i:pow)))*$")) ||
 		({http.request.host} == "credit.proofofwork.me" && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|asset=[0-9a-fA-F]{64})(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|asset=[0-9a-fA-F]{64}))*$")))
 		&& !({http.request.host} == "publish.proofofwork.me" && {http.request.uri.query}.matches("(^|&)(?:article|profile)=[^&]*(?:&[^&]*)*&(?:article|profile)="))
 		&& !({http.request.host} == "browser.proofofwork.me" && {http.request.uri.query}.matches("(^|&)(?:txid|tx|name)=[^&]*(?:&[^&]*)*&(?:txid|tx|name)="))
-		&& !{http.request.uri.query}.matches("(^|&)(?:network=[^&]*(?:&[^&]*)*&network=|article=[^&]*(?:&[^&]*)*&article=|profile=[^&]*(?:&[^&]*)*&profile=|repo=[^&]*(?:&[^&]*)*&repo=|version=[^&]*(?:&[^&]*)*&version=|path=[^&]*(?:&[^&]*)*&path=|job=[^&]*(?:&[^&]*)*&job=|txid=[^&]*(?:&[^&]*)*&txid=|tx=[^&]*(?:&[^&]*)*&tx=|name=[^&]*(?:&[^&]*)*&name=|asset=[^&]*(?:&[^&]*)*&asset=)")`
+		&& !{http.request.uri.query}.matches("(^|&)(?:network=[^&]*(?:&[^&]*)*&network=|article=[^&]*(?:&[^&]*)*&article=|profile=[^&]*(?:&[^&]*)*&profile=|repo=[^&]*(?:&[^&]*)*&repo=|version=[^&]*(?:&[^&]*)*&version=|path=[^&]*(?:&[^&]*)*&path=|job=[^&]*(?:&[^&]*)*&job=|invoice=[^&]*(?:&[^&]*)*&invoice=|txid=[^&]*(?:&[^&]*)*&txid=|tx=[^&]*(?:&[^&]*)*&tx=|name=[^&]*(?:&[^&]*)*&name=|asset=[^&]*(?:&[^&]*)*&asset=)")`
 	@seo_any_query expression `{http.request.uri.query} != ""`
 	@seo_publish_article {
 		host publish.proofofwork.me
@@ -335,6 +336,14 @@
 	}
 }
 
+(common_pay_app) {
+	import common_static_policy
+	handle {
+		root * /var/www/proofofwork-pay
+		import seo_static_routes
+	}
+}
+
 (common_search_app) {
 	import common_static_policy
 	handle {
@@ -388,6 +397,7 @@ http://publish.proofofwork.me,
 http://search.proofofwork.me,
 http://code.proofofwork.me,
 http://jobs.proofofwork.me,
+http://pay.proofofwork.me,
 http://amo.proofofwork.me,
 http://marketplace.proofofwork.me,
 http://growth.proofofwork.me,
@@ -468,6 +478,10 @@ code.proofofwork.me {
 
 jobs.proofofwork.me {
 	import common_jobs_app
+}
+
+pay.proofofwork.me {
+	import common_pay_app
 }
 
 amo.proofofwork.me {

@@ -403,6 +403,11 @@ fi
 v3_surfaces=("${surfaces[@]}")
 pages_surfaces=("${surfaces[@]}" pages)
 permission_surfaces=("${pages_surfaces[@]}" permission)
+pay_surfaces=("${permission_surfaces[@]}" pay)
+if ((${#pay_surfaces[@]} != 23)); then
+  echo "UI V6 publisher surface set must contain exactly 23 entries." >&2
+  exit 70
+fi
 if ((${#permission_surfaces[@]} != 22)); then
   echo "UI V5 publisher surface set must contain exactly 22 entries." >&2
   exit 70
@@ -493,7 +498,12 @@ for surface in "${surfaces[@]}"; do
   surface_seen["${surface}"]=1
 done
 unset surface_seen surface
-if [[ -e "${stage_root}/proofofwork-permission" || -L "${stage_root}/proofofwork-permission" ]]; then
+if [[ -e "${stage_root}/proofofwork-pay" || -L "${stage_root}/proofofwork-pay" ]]; then
+  surfaces=("${pay_surfaces[@]}")
+elif [[ -e "${www_root}/proofofwork-pay" || -L "${www_root}/proofofwork-pay" ]]; then
+  echo "A candidate cannot drop the live Pay product; use verified rollback." >&2
+  exit 1
+elif [[ -e "${stage_root}/proofofwork-permission" || -L "${stage_root}/proofofwork-permission" ]]; then
   surfaces=("${permission_surfaces[@]}")
 elif [[ -e "${www_root}/proofofwork-permission" || -L "${www_root}/proofofwork-permission" ]]; then
   echo "A candidate cannot drop the live Permission product; use verified rollback." >&2
@@ -508,7 +518,10 @@ fi
 verify_prior_asset_compatibility() {
   local -a prior_surfaces=("${surfaces[@]}")
   local -a prior_format=()
-  if [[ -e "${www_root}/proofofwork-permission" || -L "${www_root}/proofofwork-permission" ]]; then
+  if [[ -e "${www_root}/proofofwork-pay" || -L "${www_root}/proofofwork-pay" ]]; then
+    prior_surfaces=("${pay_surfaces[@]}")
+    prior_format=(--pay-v6)
+  elif [[ -e "${www_root}/proofofwork-permission" || -L "${www_root}/proofofwork-permission" ]]; then
     prior_surfaces=("${permission_surfaces[@]}")
     prior_format=(--permission-v5)
   elif [[ -e "${www_root}/proofofwork-pages" || -L "${www_root}/proofofwork-pages" ]]; then
@@ -566,12 +579,15 @@ maximum_dependencies = 1600
 # edges. Align the finite 5,632 ceiling with the stager; served-path, candidate
 # and byte limits remain independent.
 maximum_reference_edges = 5632
-if surfaces[:1] == ["--permission-v5"]:
+if surfaces[:1] in (["--permission-v5"], ["--pay-v6"]):
     # The caller supplies the exact canonical V5 vector, based on the live
     # roots, independently of which release is being staged.
+    pay = surfaces[0] == "--pay-v6"
     surfaces = surfaces[1:]
-    if len(surfaces) != 22 or len(set(surfaces)) != 22 or "permission" not in surfaces:
-        raise SystemExit("Invalid prior Permission V5 graph.")
+    expected_count = 23 if pay else 22
+    if (len(surfaces) != expected_count or len(set(surfaces)) != expected_count
+            or "permission" not in surfaces or ("pay" in surfaces) != pay):
+        raise SystemExit("Invalid prior Permission V5 / Pay V6 graph.")
     maximum_dependencies = 1664
     maximum_reference_edges = 6272
 # The prior 7afc0f95 graph has 1,311,044 raw candidates; the 75948039 article

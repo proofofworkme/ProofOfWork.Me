@@ -2,10 +2,10 @@
 // https://github.com/unisat-wallet/dev-support/issues/97#issuecomment-5307723509
 const PUBLIC_ROUTE_PARAMS = new Set([
   "landing", "id-launch", "dns-launch", "desktop", "browser", "pages", "boost",
-  "publish", "search", "code", "jobs", "permission", "marketplace", "amo",
+  "publish", "search", "code", "jobs", "pay", "permission", "marketplace", "amo",
   "token", "wallet", "work", "infinity", "inception", "log", "growth",
   "folder", "network", "tab", "tx", "txid", "article", "profile", "asset",
-  "ticker", "name", "repo", "path", "version", "job", "mode", "write",
+  "ticker", "name", "repo", "path", "version", "job", "invoice", "mode", "write",
   "q", "kind", "protocol", "sort", "status", "valid", "start", "activity",
   "record", "listingId", "t", "v",
 ]);

@@ -16,6 +16,7 @@ const model=canonical({version:CURRENT_GROWTH_MODEL_VERSION,generatedOn:CURRENT_
     "Linked-publication envelopes, size mix and all new usage rates are assumptions, not measured costs or wallet quotes.",
     "A model row does not enable capability, prove transaction admission or change any confirmed balance or record.",
     "Jobs offered rewards add nothing; accepted payment behavior is covered only by existing shared carrier assumptions.",
+    "Pay invoices and derived receipts add no separate forecast or payment value; confirmed transfers remain in existing Mail and WORK accounting once.",
     "DNS owner self-payments and linked parts/linkers have no added scenario payment value. DNS trades appear only in AMO.",
     "Standalone social payment estimates use direct owner payments; historical Boost registry wording is not current policy."],
   inheritedInputs:GROWTH_MODEL_INPUTS,scenarioInputs:CURRENT_GROWTH_INPUTS,
@@ -41,5 +42,5 @@ writeFileSync(root+".md",[
   "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   ...model.chartRows.slice(1).map(r=>`| ${r.label} | ${number(r.totalSats)} | ${number(r.totalWrites)} | ${number(r.dnsRegistrations)} | ${number(r.permissionWrites)} | ${number(r.jobsWrites)} | ${number(r.publishWrites)} | ${number(r.linkedPublications)} | ${number(r.blockspaceUsageRatio*100)}% |`), "",
   "## Scope and limits", "", ...model.limitations.map(s=>`- ${s}`), "",
-  "The JSON contains complete inherited/new assumptions, 23 product allocations, baseline and rows, plus 0%, 1%, 10% and 100% large-content sensitivity cases. The shared pure model source is `src/features/growth/currentGrowthModel.mjs`; run `npm run model:growth:current` to reproduce both files.", ""
+  `The JSON contains complete inherited/new assumptions, ${model.productCoverage.length} product allocations, baseline and rows, plus 0%, 1%, 10% and 100% large-content sensitivity cases. The shared pure model source is \`src/features/growth/currentGrowthModel.mjs\`; run \`npm run model:growth:current\` to reproduce both files.`, ""
 ].join("\n"));

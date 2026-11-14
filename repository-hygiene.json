@@ -107,6 +107,7 @@
       "SEARCH.md",
       "CODE.md",
       "JOBS.md",
+      "PAY.md",
       "PAGES.md",
       "PERMISSION.md",
       "REPOSITORY_HYGIENE.md"
@@ -289,7 +290,8 @@
       "deploy/linked-publish/REMOTE_VERIFICATION.md",
       "deploy/ui-retention/fixtures/README.md",
       "deploy/linked-publish/DUAL_QUALIFICATION.md",
-      "deploy/ui-retention/EXACT_PAYLOAD_RETIREMENT.md"
+      "deploy/ui-retention/EXACT_PAYLOAD_RETIREMENT.md",
+      "deploy/pay/README.md"
     ]
   },
   "protectedTrackedPaths": [

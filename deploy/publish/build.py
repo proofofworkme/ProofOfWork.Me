@@ -30,6 +30,7 @@ SURFACES = {
 }
 PAGES_SURFACES = {**SURFACES, 'pages': ('pages', 'VITE_PAGES_ONLY')}
 PERMISSION_SURFACES = {**PAGES_SURFACES, 'permission': ('permission', 'VITE_PERMISSION_ONLY')}
+PAY_SURFACES = {**PERMISSION_SURFACES, 'pay': ('pay', 'VITE_PAY_ONLY')}
 
 
 # Admission is not a filesystem quota. Keep failed runs for inspection; refuse
@@ -93,9 +94,9 @@ def main():
     parser.add_argument('--release-id')
     parser.add_argument('--node-executable', type=Path, default=Path('/usr/bin/node'),
                         help='Supported Node runtime on the build VPS')
-    parser.add_argument('--release-format', choices=['v3', 'v4', 'v5'], default='v5')
+    parser.add_argument('--release-format', choices=['v3', 'v4', 'v5', 'v6'], default='v6')
     args = parser.parse_args()
-    surfaces = PERMISSION_SURFACES if args.release_format == 'v5' else PAGES_SURFACES if args.release_format == 'v4' else SURFACES
+    surfaces = PAY_SURFACES if args.release_format == 'v6' else PERMISSION_SURFACES if args.release_format == 'v5' else PAGES_SURFACES if args.release_format == 'v4' else SURFACES
     os.umask(0o077)
     repo = args.repository.resolve(strict=True)
     assert re.fullmatch('[0-9a-f]{40}', args.commit)

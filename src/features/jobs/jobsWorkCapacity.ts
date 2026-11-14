@@ -71,7 +71,7 @@ function assertPayload(value: unknown): asserts value is WalletPayload {
 /** The existing Computer WORK spending rule, scoped to one fresh wallet response.
  * Canonical reservations cannot be released by a pending spend. Pending incoming
  * credit is never funding, and a V8 intent uses only its receipt's existing hold. */
-export function jobsWorkCapacityFromPayload(value: unknown, walletAddress: string, nowMs = Date.now()) {
+export function jobsWorkCapacityFromPayload(value: unknown, walletAddress: string, nowMs = Date.now(), ownSignedTxid?: string) {
   assertPayload(value);
   const owner = address(walletAddress);
   if (!owner) unavailable("missing wallet address");
@@ -82,7 +82,7 @@ export function jobsWorkCapacityFromPayload(value: unknown, walletAddress: strin
   const capacity = requireCanonicalWorkCapacity(value.canonicalWorkCapacities, {
     address: walletAddress, network: "livenet", tokenId: JOBS_WORK_TOKEN_ID,
     indexedThroughBlock: value.indexedThroughBlock as number, indexedThroughBlockHash: value.indexedThroughBlockHash as string,
-    confirmedBalanceSubatoms: balance!,
+    confirmedBalanceSubatoms: balance!, ownSignedTxid,
   });
   const closed = new Map<string, Row>();
   for (const row of value.closedListings) {
@@ -183,5 +183,5 @@ export async function fetchJobsWorkCapacity(walletAddress: string, { ownSignedTx
   const params = new URLSearchParams({ address: walletAddress, asset: JOBS_WORK_TOKEN_ID, wallet: "1", fresh: "1" });
   const payload = await fetchProofApiJson<unknown>(`/api/v1/token?${params}`, "livenet");
   assertNoUnresolvedJobsWorkAcceptance(localStorage, walletAddress, ownSignedTxid);
-  return jobsWorkCapacityFromPayload(payload, walletAddress);
+  return jobsWorkCapacityFromPayload(payload, walletAddress, Date.now(), ownSignedTxid);
 }

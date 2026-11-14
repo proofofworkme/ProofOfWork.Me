@@ -85,11 +85,11 @@ def require_ui_host(repo):
         if os.fstat(stream.fileno()) != info or manifest.lstat() != info:
             raise ValueError('UI release manifest changed during validation')
     commit, release = fields.get('commit', ''), fields.get('release_id', '')
-    if (fields.get('format') != 'proofofwork-ui-release-v5' or
+    if (fields.get('format') not in ('proofofwork-ui-release-v5', 'proofofwork-ui-release-v6') or
             not re.fullmatch('[0-9a-f]{40}', commit) or
             not re.fullmatch('[0-9a-f]{40}', fields.get('source_tree', '')) or
             not re.fullmatch(commit[:12] + '-[0-9]{8}T[0-9]{6}Z', release)):
-        raise ValueError('UI host lacks an authenticated V5 release marker')
+        raise ValueError('UI host lacks an authenticated V5 or V6 release marker')
     git = ['/usr/bin/git', '-C', str(repo)]
     env = {'PATH': '/usr/bin:/bin', 'LC_ALL': 'C', 'GIT_OPTIONAL_LOCKS': '0'}
     if (repo.resolve(strict=True) != repo or

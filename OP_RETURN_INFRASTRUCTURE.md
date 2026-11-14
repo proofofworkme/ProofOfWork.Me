@@ -1,5 +1,40 @@
 # ProofOfWork OP_RETURN Infrastructure
 
+## Pay version-one release contract
+
+The additive [Pay protocol](PAY.md) uses `pwpay1:` metadata within ordinary
+Mail. New invoice and payment reads require complete independently discovered
+raw candidates, canonical Mail closure, supported output-committing author
+signatures and exact accepted WORK-transfer evidence where applicable.
+The Pay worker/bootstrap witness is separate from Jobs and Permission and
+must include malformed candidates. Historical Mail before Pay's pinned
+activation is not retroactively an invoice. No schema or reader may introduce
+an extra network-value contribution for an invoice face amount or receipt.
+
+`POW_PAY_WRITES_ENABLED` is independently default-closed. Keep it closed until
+complete discovery and replay at the exact checkpoint, APIs, Search, Log,
+notifications, Wallet/Growth, local recovery/signing and standalone/embedded
+surfaces pass the upgrade-coherence gate. Missing evidence remains unavailable.
+Any scoped runtime installation preserves accepted overlays and requalifies
+the linked-publishing source envelope after adding Pay dependencies. The Pay
+UI extends the existing managed family through an additive V6/23-root contract;
+prior V3/V4/V5 release artifacts retain their original verification rules.
+Source staging, tests, builds and receipts follow the VPS-only policy below.
+An unqualified source or blocked storage admission does not authorize writes
+or a partial production announcement.
+
+The [Pay release controller](deploy/pay/README.md) separates reader installation,
+candidate bootstrap and its one-variable API write gate. The gate adapter binds
+the successful scoped runtime receipt, exact source and preactivation checks;
+failure disables its owned gate while retaining readers. A changed recursive
+linked-publishing source envelope needs a fresh marker from an actually new
+block scanned by the ordinary worker. A same-tip restart or Pay bootstrap cannot
+refresh that marker. Preserve existing worker configuration and verify the new
+marker and Search before opening Pay; never relabel historical qualification.
+Rollback retains the new helper files as recovery evidence, so its recursive
+source envelope also differs from the pre-Pay runtime. Verify a fresh marker
+for the actual rolled-back source before claiming linked admission restored.
+
 ## Storage policy — 2026-10-24
 
 The user requires only the most recent verified backup on the VPS. Live runtime

@@ -2,7 +2,7 @@ import {
   AtSign, BookOpen, BriefcaseBusiness, ChartNoAxesCombined, Code2, Coins,
   FilePenLine, FolderOpen, Globe, House, Infinity, ListTree, Mail,
   MessageSquareQuote, Monitor, Network, PanelsTopLeft, Search, ShieldCheck,
-  Sprout, Store, TrendingUp, Users, Wallet, type LucideIcon,
+  Sprout, Store, TrendingUp, Users, Wallet, ReceiptText, type LucideIcon,
 } from "lucide-react";
 
 // One visual identity for each app across public navigation and Computer.
@@ -19,6 +19,7 @@ export const APP_ICONS: Readonly<Record<string, LucideIcon>> = {
   Search,
   Code: Code2,
   Jobs: BriefcaseBusiness,
+  Pay: ReceiptText,
   Permission: ShieldCheck,
   IDs: AtSign,
   DNS: Network,

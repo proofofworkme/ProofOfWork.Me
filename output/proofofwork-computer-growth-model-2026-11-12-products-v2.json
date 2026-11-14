@@ -11,6 +11,7 @@
     "Linked-publication envelopes, size mix and all new usage rates are assumptions, not measured costs or wallet quotes.",
     "A model row does not enable capability, prove transaction admission or change any confirmed balance or record.",
     "Jobs offered rewards add nothing; accepted payment behavior is covered only by existing shared carrier assumptions.",
+    "Pay invoices and derived receipts add no separate forecast or payment value; confirmed transfers remain in existing Mail and WORK accounting once.",
     "DNS owner self-payments and linked parts/linkers have no added scenario payment value. DNS trades appear only in AMO.",
     "Standalone social payment estimates use direct owner payments; historical Boost registry wording is not current policy."
   ],
@@ -419,6 +420,16 @@
       "activity": "Confirmed metrics and forward scenarios",
       "assumption": "A dashboard, metric, or forecast creates no new chain value.",
       "source": "README.md Growth; shared confirmed summary snapshot"
+    },
+    {
+      "product": "pay",
+      "name": "Pay",
+      "role": "shared",
+      "owner": "Mail / WORK",
+      "modeledLane": "Existing Mail / WORK",
+      "activity": "Public invoices, exact confirmed payments and receipts use ordinary Mail, with WORK transfers when requested.",
+      "assumption": "No independent Pay usage or payment forecast is assumed. Requested amounts are not economic activity; confirmed underlying transaction value and fees remain in existing accounting once.",
+      "source": "PAY.md; exact canonical Pay replay; existing Mail / WORK accounting"
     }
   ],
   "chartRows": [

@@ -36,6 +36,7 @@ V3_SURFACE_FAMILIES = {V3_SURFACES, PRE_JOBS_SURFACES, PRE_JOBS_SURFACES - {'cod
                        PRE_JOBS_SURFACES - {'code', 'search', 'publish', 'dns', 'boost'}}
 V4_SURFACES = V3_SURFACES | {'pages'}
 V5_SURFACES = V4_SURFACES | {'permission'}
+V6_SURFACES = V5_SURFACES | {'pay'}
 ROOT_IDS = '04927c291bf4-20261001T150448Z 527e4cbaa66f-20261001T062733Z 53b5b428e864-20261001T201028Z 835e30258d23-20261002T052338Z d2636f6fb3c5-20261002T023421Z d4d888757a1c-20261002T013828Z dbfa88b95819-20261001T134456Z df4d56da93ce-20261002T042258Z ed838d5c8691-20261001T210406Z f81ae55bf4b0-20261002T031600Z'.split()
 ARCHIVE_IDS = '04927c291bf4-20261001T150448Z 527e4cbaa66f-20261001T062733Z 53b5b428e864-20261001T201028Z 9d46289661d5-20261001T023414Z d2636f6fb3c5-20261002T023421Z d4d888757a1c-20261002T013828Z dbfa88b95819-20261001T134456Z df4d56da93ce-20261002T042258Z ed838d5c8691-20261001T210406Z f81ae55bf4b0-20261002T031600Z'.split()
 SOURCE_IDS = 'ed838d5c8691-20261001T210406Z d2636f6fb3c5-20261002T023421Z f81ae55bf4b0-20261002T031600Z'.split()
@@ -360,7 +361,8 @@ class Layout:
 
 def declared_surfaces(fields):
     families = {'proofofwork-ui-release-v3': V3_SURFACE_FAMILIES,
-                'proofofwork-ui-release-v4': {V4_SURFACES}, 'proofofwork-ui-release-v5': {V5_SURFACES}}
+                'proofofwork-ui-release-v4': {V4_SURFACES}, 'proofofwork-ui-release-v5': {V5_SURFACES},
+                'proofofwork-ui-release-v6': {V6_SURFACES}}
     hashes = {k.split('.')[1] for k in fields if re.fullmatch(r'surface\.[a-z]+\.sha256', k)}
     counts = {k.split('.')[1] for k in fields if re.fullmatch(r'surface\.[a-z]+\.file_count', k)}
     expected = {'surface.' + name + suffix for name in hashes for suffix in ('.sha256', '.file_count')}
@@ -391,7 +393,7 @@ def manifest(root):
 def verify_surface_rows(rows, fields):
     surfaces = declared_surfaces(fields)
     top = {r['path'].split('/')[0] for r in rows}
-    if any('proofofwork-' + name in top for name in V5_SURFACES - surfaces):
+    if any('proofofwork-' + name in top for name in V6_SURFACES - surfaces):
         raise ValueError('Undeclared release surface directory')
     directories = {r['path'] for r in rows if r['kind'] == 'directory'}
     if not {'proofofwork-' + name for name in surfaces} <= directories:

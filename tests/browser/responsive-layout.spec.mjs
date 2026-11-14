@@ -40,7 +40,7 @@ const MOBILE_VIEWPORT_WIDTHS = VIEWPORT_WIDTHS.filter((width) => width <= 620);
 const PUBLIC_APP_MENUS = [
   { label: "Utility", products: ["Computer", "Desktop", "Browser", "Pages", "Code", "Jobs", "Permission"] },
   { label: "Identity & social", products: ["ID", "DNS", "Boost", "Publish"] },
-  { label: "Finance", products: ["Wallet", "AMO", "Credit", "WORK", "Infinity", "Inception"] },
+  { label: "Finance", products: ["Pay", "Wallet", "AMO", "Credit", "WORK", "Infinity", "Inception"] },
   { label: "Insights", products: ["Log", "Growth", "Search"] },
 ];
 const PUBLIC_APP_COUNT = PUBLIC_APP_MENUS.reduce((sum, group) => sum + group.products.length, 0);

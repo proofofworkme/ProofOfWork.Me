@@ -70,6 +70,7 @@ search.proofofwork.me
 code.proofofwork.me
 jobs.proofofwork.me         public work briefs, delivery and payment receipts
 permission.proofofwork.me   wallet-bound on-chain agent permissions
+pay.proofofwork.me          on-chain invoices and exact settlement receipts
 amo.proofofwork.me
 marketplace.proofofwork.me -> https://amo.proofofwork.me/
 credit.proofofwork.me
@@ -110,6 +111,7 @@ Production app roles:
 - `credit.proofofwork.me` is the standalone mainnet credit creation and mint app.
 - `token.proofofwork.me` and `tokens.proofofwork.me` redirect permanently to `https://credit.proofofwork.me/`.
 - `wallet.proofofwork.me` is the standalone credit wallet for confirmed balances, transfers, listings, delistings, and sale history touching the connected address.
+- `pay.proofofwork.me` and Computer `/?folder=pay` provide on-chain invoices, invoice-linked proof or WORK payments, cancellation and verifiable receipts. Version-one production writes remain gated until complete discovery and release qualification. See [PAY.md](PAY.md).
 - `work.proofofwork.me` is the standalone WORK credit dashboard and mint page.
 - `infinity.proofofwork.me` is the standalone Infinity Bond / POWB market and bond composer.
 - `inception.proofofwork.me` is the standalone Inception Bond / INCB market and bond composer.
@@ -125,7 +127,7 @@ Standalone app headers and shared footers expose these product menus, in order:
 | --- | --- |
 | Utility | Computer, Desktop, Browser, Pages, Code, Jobs, Permission |
 | Identity & social | ID, DNS, Boost, Publish |
-| Finance | Wallet, AMO, Credit, WORK, Infinity, Inception |
+| Finance | Wallet, Pay, AMO, Credit, WORK, Infinity, Inception |
 | Insights | Log, Growth, Search |
 
 The brand links to Home. Menu labels use sentence case while preserving product
@@ -1226,9 +1228,19 @@ VITE_PAGES_ONLY=1 VITE_POW_API_BASE=https://pages.proofofwork.me npm run build
 ```
 
 A focused build alone does not provision a hostname or deploy the app. The
-current v5 release builder includes Pages and Permission with the other public
-apps and the byte-identical NFT Computer alias: 22 managed roots from one source
-commit. See [`PAGES.md`](PAGES.md) and the scoped release controller.
+V6 release builder adds Pay to Pages, Permission and the other public apps,
+including the byte-identical NFT Computer alias: 23 managed roots from one source
+commit. Historical V5 releases retain their original 22-root verification.
+See [`PAY.md`](PAY.md), [`PAGES.md`](PAGES.md) and the scoped release controller.
+
+To build the standalone Pay app for production:
+
+```bash
+VITE_PAY_ONLY=1 VITE_POW_API_BASE=https://pay.proofofwork.me npm run build
+```
+
+Run heavy release builds on the VPS under the storage policy; these focused
+commands describe the build target, not authorization to bypass release checks.
 
 To build the public Boost app for production:
 

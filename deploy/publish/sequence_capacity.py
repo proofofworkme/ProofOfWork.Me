@@ -55,7 +55,7 @@ def capture(native):
 def bound_stream_verification(plan):
     """A smaller charge applies only to the proven pair of installed streaming helpers."""
     evidence = plan['closedArchive']; request = evidence['request']; archive = evidence['archive']
-    if (plan['inputStorage'] != 'deploy-scratch-v1' or plan.get('releaseFormat') != 'proofofwork-ui-release-v5' or
+    if (plan['inputStorage'] != 'deploy-scratch-v1' or plan.get('releaseFormat') not in ('proofofwork-ui-release-v5', 'proofofwork-ui-release-v6') or
             request.get('model') != 'proof-ui-closed-input-v1' or
             any(request.get(k) != plan[k] for k in ('releaseId', 'commit', 'tree')) or
             request['surfacesSha256'] != plan['surfaces']['sha256'] or

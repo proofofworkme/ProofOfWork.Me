@@ -7,7 +7,7 @@ const required = { tone: "bad", text: "Connect UniSat first.", presentation: "co
 const resolve = (status, extra = {}) => computerShellStatus({ workspace: "boost", status, connected: false, ...extra });
 
 test("self-contained workspace owns passive loading/settled state, while Mail keeps its entry status", () => {
-  for (const workspace of ["browser", "pages", "boost", "publish", "search", "code", "jobs", "permission"]) {
+  for (const workspace of ["browser", "pages", "boost", "publish", "search", "code", "jobs", "pay", "permission"]) {
     assert.equal(resolve(entry, { workspace }), undefined);
   }
   for (const workspace of ["inbox", "desktop", "ids", "dns", "wallet", "marketplace", "log"]) {

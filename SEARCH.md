@@ -7,6 +7,13 @@ remains available to earlier Log/Boost routes. Search requires no wallet.
 
 ## Searchable records
 
+Pay invoices and invoice-linked payment/cancellation records reuse canonical
+Mail discovery. Their searchable text and exact invoice/reference TXIDs remain
+public evidence. A Search match cannot establish that an invoice is current or
+paid; the Pay reader separately proves complete history, output-committing
+author signatures and exact confirmed settlement. Derived receipt and invoice
+face values introduce no additional economic event. See [PAY.md](PAY.md).
+
 The derived corpus contains current and historical validator events, decoded
 OP_RETURN carriers, undecodable OP_RETURN scripts, source transactions and
 verified file records. Protocol prefixes include `pwid1`, `pwdns1`, `pwm1`,

@@ -5,12 +5,15 @@ import { recoverCandidateDiscoveryReorg } from './candidate-discovery-reorg.mjs'
 import { CODE_DISCOVERY_META_KEY, CODE_DISCOVERY_MODEL, CODE_DISCOVERY_EMPTY_SHA256, advanceCodeCandidateDigest } from './code-repositories.mjs';
 import { JOBS_DISCOVERY_META_KEY, JOBS_DISCOVERY_MODEL, JOBS_DISCOVERY_EMPTY_SHA256, advanceJobsCandidateDigest } from './jobs.mjs';
 import { JOBS_ACTIVATION_HEIGHT } from '../src/shared/protocol/jobs.mjs';
+import { PAY_ACTIVATION_HEIGHT } from '../src/shared/protocol/pay.mjs';
+import { PAY_DISCOVERY_META_KEY, PAY_DISCOVERY_MODEL, PAY_DISCOVERY_EMPTY_SHA256, advancePayCandidateDigest } from './pay.mjs';
 
 const products = [
   { key: CODE_DISCOVERY_META_KEY, model: CODE_DISCOVERY_MODEL, from: 1, empty: CODE_DISCOVERY_EMPTY_SHA256, digest: advanceCodeCandidateDigest, text: 'pwc1:broken' },
   { key: JOBS_DISCOVERY_META_KEY, model: JOBS_DISCOVERY_MODEL, from: JOBS_ACTIVATION_HEIGHT, empty: JOBS_DISCOVERY_EMPTY_SHA256, digest: advanceJobsCandidateDigest, text: 'pwm1:m:pwj1:broken' },
+  { key: PAY_DISCOVERY_META_KEY, model: PAY_DISCOVERY_MODEL, from: PAY_ACTIVATION_HEIGHT, empty: PAY_DISCOVERY_EMPTY_SHA256, digest: advancePayCandidateDigest, text: 'pwm1:m:pwpay1:broken' },
 ];
-const height = 974399, grandparent = '42'.repeat(32);
+const height = PAY_ACTIVATION_HEIGHT + 1, grandparent = '42'.repeat(32);
 function makeBlock(parent, height, payload, nonce) {
   const coinbase = new bitcoin.Transaction();
   coinbase.addInput(Buffer.alloc(32), 0xffffffff, undefined, Buffer.from([1, 1]));

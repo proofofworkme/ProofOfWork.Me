@@ -1,4 +1,5 @@
 import { readActionReceipts } from "../wallet/actionRecovery";
+import { normalizePayAmount } from "../protocol/pay.mjs";
 
 export const WORK_BATCH_RECEIPT_MARKER = "WORK batch v1";
 export const WORK_MAIL_BATCH_RECEIPT_MARKER = "Mail WORK batch v1";
@@ -9,6 +10,19 @@ export function assertNoUnresolvedWorkBatch(storage: Storage, walletAddress: str
   for (const receipt of readActionReceipts(storage)) {
     if (receipt.txid === ownSignedTxid || receipt.network !== "livenet" || canonical(receipt.address.trim()) !== owner ||
         !["unknown", "pending"].includes(receipt.status)) continue;
+    if (receipt.key.startsWith("pay:")) {
+      const fields = Object.fromEntries(receipt.fields);
+      let draft: { action?: string; asset?: string } | null, reviewed: { asset?: string } | null;
+      try {
+        draft = JSON.parse(fields["Pay draft"] ?? "null");
+        reviewed = JSON.parse(fields["Pay reviewed amount"] ?? "null");
+        if (!draft || typeof draft !== "object" || !["invoice", "pay", "cancel"].includes(draft.action ?? "") ||
+          (draft.action === "pay" && !normalizePayAmount(reviewed))) throw new Error();
+      } catch { throw new Error("Unresolved Pay recovery evidence is unreadable. Check Transaction recovery before spending WORK."); }
+      if (draft.action === "pay" && (draft.asset === "WORK" || reviewed?.asset === "WORK")) {
+        throw new Error("An earlier WORK invoice payment is unknown or pending. Check Transaction recovery before spending more WORK.");
+      }
+    }
     if (receipt.fields.some(([name, value]) => name === "Transfer mode" &&
       (value === WORK_BATCH_RECEIPT_MARKER || value === WORK_MAIL_BATCH_RECEIPT_MARKER))) {
       throw new Error("An earlier WORK batch is unknown or pending. Check Transaction recovery before spending more WORK. The full batch remains protected.");

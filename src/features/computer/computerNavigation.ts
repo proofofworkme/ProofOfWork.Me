@@ -9,7 +9,7 @@ export const COMPUTER_LAYOUT_STORAGE_KEY = "proofofwork-me-computer-layout-v1";
 export type ComputerWorkspace =
   | "inbox" | "incoming" | "sent" | "outbox" | "drafts" | "favorites" | "archive"
   | "files" | "desktop" | "browser" | "pages" | "boost" | "publish" | "search"
-  | "code" | "jobs" | "permission" | "ids" | "dns" | "marketplace" | "token"
+  | "code" | "jobs" | "pay" | "permission" | "ids" | "dns" | "marketplace" | "token"
   | "wallet" | "work" | "infinity" | "inception" | "log" | "contacts" | "custom";
 
 export type ComputerApp = {
@@ -31,6 +31,7 @@ export const COMPUTER_APPS: readonly ComputerApp[] = [
   { workspace: "publish", label: "Publish", description: "Write and read articles", icon: APP_ICONS.Publish },
   { workspace: "search", label: "Search", description: "Discover public chain records", icon: APP_ICONS.Search, keywords: "transactions evidence" },
   { workspace: "code", label: "Code", description: "Public source repositories", icon: APP_ICONS.Code },
+  { workspace: "pay", label: "Pay", description: "Invoices and confirmed payment receipts", icon: APP_ICONS.Pay, keywords: "invoice payment request receipt" },
   { workspace: "jobs", label: "Jobs", description: "Briefs, delivery and direct payments", icon: APP_ICONS.Jobs },
   { workspace: "permission", label: "Permission", description: "Wallet-bound agent permissions", icon: APP_ICONS.Permission, keywords: "grants" },
   { workspace: "ids", label: "IDs", description: "Registration, receivers and direct transfers", icon: APP_ICONS.IDs, keywords: "identity names" },

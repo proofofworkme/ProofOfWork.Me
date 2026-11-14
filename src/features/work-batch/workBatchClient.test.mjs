@@ -1,3 +1,4 @@
+import * as payProtocol from "../../shared/protocol/pay.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -87,7 +88,7 @@ function tsModule(path, dependencies) {
   return module.exports;
 }
 const recovery = tsModule("../../shared/wallet/actionRecovery.ts", {});
-const batchRecovery = tsModule("../../shared/work/workBatchRecovery.ts", { "../wallet/actionRecovery": recovery });
+const batchRecovery = tsModule("../../shared/work/workBatchRecovery.ts", { "../wallet/actionRecovery": recovery, "../protocol/pay.mjs": payProtocol });
 const storage = rows => ({ getItem: key => key === recovery.ACTION_RECEIPTS_KEY ? JSON.stringify(rows) : null });
 const receipt = status => ({ txid: hash(7), address: wallet(1), network: "livenet", title: "WORK batch", key: "credit-transfer:work", createdAt: "2026-10-24T00:00:00Z", status,
   fields: [["Transfer mode", batchRecovery.WORK_BATCH_RECEIPT_MARKER], ["Total subatoms", "780000000000000000"]] });

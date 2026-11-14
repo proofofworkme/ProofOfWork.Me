@@ -83,8 +83,9 @@ test("current operator main and product-artifact preview remain distinct",()=>{
 
 test("owner-aware sealed Git rejects ownership, symlink, config, operation and concurrent substitutions",()=>{
  const suite=String.raw`
-import base64,tempfile,types,unittest
+import base64,os,tempfile,types,unittest
 from unittest.mock import patch
+os.umask(0o077)
 CONFIG=base64.b64decode("W2NvcmVdCglyZXBvc2l0b3J5Zm9ybWF0dmVyc2lvbiA9IDAKCWZpbGVtb2RlID0gdHJ1ZQoJYmFyZSA9IGZhbHNlCglsb2dhbGxyZWZ1cGRhdGVzID0gdHJ1ZQpbcmVtb3RlICJvcmlnaW4iXQoJdXJsID0gL2RhdGEvcHJvb2ZvZndvcmstaGVhbHRoLWZpeGVzLTIwMjYxMTExL3NvdXJjZS13b3JrL2xpbmtlZC1zdG9jay1pbnZlbnRvcnktcmV1c2UtMjAyNjExMTMKCWZldGNoID0gK3JlZnMvaGVhZHMvKjpyZWZzL3JlbW90ZXMvb3JpZ2luLyoKW2JyYW5jaCAicmVsZWFzZS9zdG9jay1pbnZlbnRvcnktcmV1c2UtMjAyNjExMTMiXQoJcmVtb3RlID0gb3JpZ2luCgltZXJnZSA9IHJlZnMvaGVhZHMvcmVsZWFzZS9zdG9jay1pbnZlbnRvcnktcmV1c2UtMjAyNjExMTMK")
 class OwnerGit(unittest.TestCase):
  def test_owner_selection(self):

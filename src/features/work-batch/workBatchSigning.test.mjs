@@ -1,3 +1,4 @@
+import * as payProtocol from "../../shared/protocol/pay.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -16,7 +17,7 @@ function loadTs(path, imports = {}) {
   return exports;
 }
 const recovery = loadTs("src/shared/wallet/actionRecovery.ts");
-const batchRecovery = loadTs("src/shared/work/workBatchRecovery.ts", { "../wallet/actionRecovery": recovery });
+const batchRecovery = loadTs("src/shared/work/workBatchRecovery.ts", { "../wallet/actionRecovery": recovery, "../protocol/pay.mjs": payProtocol });
 const paymentReview = loadTs("src/shared/wallet/paymentReview.ts", { "bitcoinjs-lib": bitcoin, buffer: { Buffer } });
 const app = readFileSync(new URL("src/App.tsx", root), "utf8");
 const ast = ts.createSourceFile("App.tsx", app, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

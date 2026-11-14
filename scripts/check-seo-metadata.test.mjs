@@ -15,9 +15,9 @@ test("every public product and focused release build has one unique SEO definiti
   const links = readFileSync(new URL("../src/app/appLinks.ts", import.meta.url), "utf8");
   const publicOrigins = [...links.matchAll(/export const [A-Z_]+_APP_URL = "(https:\/\/[^"/]+)\/?";/gu)].map(match => match[1]);
   assert.deepEqual(new Set(publicOrigins), new Set(PUBLIC_SEO_SURFACES.map(item => item.origin)));
-  assert.equal(PUBLIC_SEO_SURFACES.length, 21);
-  assert.equal(new Set(PUBLIC_SEO_SURFACES.map(item => item.title)).size, 21);
-  assert.equal(new Set(PUBLIC_SEO_SURFACES.map(item => item.description)).size, 21);
+  assert.equal(PUBLIC_SEO_SURFACES.length, 22);
+  assert.equal(new Set(PUBLIC_SEO_SURFACES.map(item => item.title)).size, 22);
+  assert.equal(new Set(PUBLIC_SEO_SURFACES.map(item => item.description)).size, 22);
   for (const item of PUBLIC_SEO_SURFACES) {
     assert.ok(item.title.length > 15 && item.title.length <= 80);
     assert.ok(item.description.length >= 80 && item.description.length <= 220);
@@ -34,7 +34,7 @@ test("aliases and focused build flags resolve to the canonical public product", 
   }
   const builder = readFileSync(new URL("../deploy/publish/build.py", import.meta.url), "utf8");
   const builds = [...builder.matchAll(/'([a-z]+)': \('([a-z]+)', (?:'([^']+)'|(None))\)/gu)];
-  assert.equal(builds.length, 21);
+  assert.equal(builds.length, 22);
   for (const [, , hostname, flag] of builds) {
     const surface = resolveSeoSurface({ hostname: `${hostname}.proofofwork.me` });
     assert.equal(resolveSeoSurface({ env: flag ? { [flag]: "1" } : {} }), surface);
@@ -74,6 +74,8 @@ test("initial query documents never incorrectly canonicalize to a product root",
 test("public article/job/credit/source references preserve distinct canonical identities", () => {
   assert.equal(route("publish", `/?article=${TX}&network=livenet&utm_campaign=read`).canonicalUrl, `https://publish.proofofwork.me/?article=${TX}`);
   assert.equal(route("jobs", `/?job=${TX}`).canonicalUrl, `https://jobs.proofofwork.me/?job=${TX}`);
+  assert.equal(route("pay", `/?invoice=${TX}`).canonicalUrl, `https://pay.proofofwork.me/?invoice=${TX}`);
+  assert.equal(route("pay", `/?invoice=${TX}&mode=my`).kind, "private");
   assert.equal(route("token", `/?asset=${TX}`).canonicalUrl, `https://credit.proofofwork.me/?asset=${TX}`);
   const path = "src/a & b.ts";
   const code = route("code", `/?repo=${TX}&path=${encodeURIComponent(path)}&version=${VERSION}`);

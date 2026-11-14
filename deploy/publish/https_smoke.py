@@ -35,6 +35,7 @@ HOSTS = {
 }
 PAGES_HOSTS = {**HOSTS, 'pages': 'pages.proofofwork.me'}
 PERMISSION_HOSTS = {**PAGES_HOSTS, 'permission': 'permission.proofofwork.me'}
+PAY_HOSTS = {**PERMISSION_HOSTS, 'pay': 'pay.proofofwork.me'}
 MAX_FILE_BYTES = 64*1024**2
 MAX_ARCHIVE_BYTES = 2*1024**3
 MAX_ENTRIES = 10000
@@ -133,9 +134,9 @@ def check(args,receipt):
         if key in fields: raise ValueError('Duplicate active manifest key')
         fields[key] = value
     release_format = fields.get('format')
-    if release_format not in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5'):
+    if release_format not in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5', 'proofofwork-ui-release-v6'):
         raise ValueError('Unsupported manifest format')
-    hosts = PERMISSION_HOSTS if release_format == 'proofofwork-ui-release-v5' else PAGES_HOSTS if release_format == 'proofofwork-ui-release-v4' else HOSTS
+    hosts = PAY_HOSTS if release_format == 'proofofwork-ui-release-v6' else PERMISSION_HOSTS if release_format == 'proofofwork-ui-release-v5' else PAGES_HOSTS if release_format == 'proofofwork-ui-release-v4' else HOSTS
     expected = {'format':release_format,'release_id':args.release_id,
                 'commit':args.commit,'source_tree':args.tree,'archive_name':archive_path.name,
                 'archive_sha256':args.archive_sha256}
@@ -173,7 +174,7 @@ def check(args,receipt):
             total_declared += member.size
             if total_declared>MAX_ARCHIVE_BYTES: raise ValueError('Uncompressed archive byte bound exceeded')
             if surface=='nft': continue
-            if release_format in ('proofofwork-ui-release-v4', 'proofofwork-ui-release-v5') and parts[2:] == ('source-provenance.json',):
+            if release_format in ('proofofwork-ui-release-v4', 'proofofwork-ui-release-v5', 'proofofwork-ui-release-v6') and parts[2:] == ('source-provenance.json',):
                 if member.size > 65536: raise ValueError('Source provenance exceeds 64 KiB')
                 with archive.extractfile(member) as source: provenance_raw = source.read(member.size + 1)
                 if len(provenance_raw) != member.size: raise ValueError('Source provenance size differs')
@@ -185,7 +186,7 @@ def check(args,receipt):
                 source_provenance.add(surface)
             files.append((member,surface,'/'.join(parts[2:])))
         if surface_set != set(hosts)|{'nft'}: raise ValueError('Archive surface set differs from the complete managed roots')
-        if release_format in ('proofofwork-ui-release-v4', 'proofofwork-ui-release-v5'):
+        if release_format in ('proofofwork-ui-release-v4', 'proofofwork-ui-release-v5', 'proofofwork-ui-release-v6'):
             if source_provenance != set(hosts): raise ValueError('Release source provenance is missing for one or more public surfaces')
             receipt['sourceProvenanceVerified'] = True
             receipt['sourceProvenanceSurfaces'] = len(source_provenance)

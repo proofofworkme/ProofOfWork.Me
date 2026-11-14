@@ -275,6 +275,11 @@ if ((${#surfaces[@]} != 20)); then
 fi
 pages_surfaces=("${surfaces[@]}" pages)
 permission_surfaces=("${pages_surfaces[@]}" permission)
+pay_surfaces=("${permission_surfaces[@]}" pay)
+if ((${#pay_surfaces[@]} != 23)); then
+  echo "UI V6 provenance surface set must contain exactly 23 entries." >&2
+  exit 70
+fi
 if ((${#permission_surfaces[@]} != 22)); then
   echo "UI V5 provenance surface set must contain exactly 22 entries." >&2
   exit 70
@@ -365,7 +370,7 @@ for surface in "${surfaces[@]}"; do
   surface_seen["${surface}"]=1
 done
 unset surface_seen surface
-surface_pattern='activity|browser|boost|code|computer|desktop|dns|growth|id|inception|infinity|jobs|landing|marketplace|nft|pages|permission|publish|search|token|wallet|work'
+surface_pattern='activity|browser|boost|code|computer|desktop|dns|growth|id|inception|infinity|jobs|landing|marketplace|nft|pages|pay|permission|publish|search|token|wallet|work'
 
 surface_directory() {
   printf '%s/proofofwork-%s\n' "${ui_root}" "$1"
@@ -1042,6 +1047,9 @@ verify_archive_payload() {
   if [[ -n "${expected_counts[permission]:-}" || -n "${expected_digests[permission]:-}" ]]; then
     archive_surfaces=("${permission_surfaces[@]}")
   fi
+  if [[ -n "${expected_counts[pay]:-}" || -n "${expected_digests[pay]:-}" ]]; then
+    archive_surfaces=("${pay_surfaces[@]}")
+  fi
 
   if [[ -z "${expected_counts[jobs]:-}" && -z "${expected_digests[jobs]:-}" ]]; then
     archive_surfaces=("${pre_jobs_surfaces[@]}")
@@ -1194,6 +1202,10 @@ def verify(src):
         require(len(name) <= 4096 and parts[0] == 'surfaces' and
                 all(re.fullmatch(r'[A-Za-z0-9._-]+', part) and part not in ('.','..') for part in parts),
                 'Archive contains a non-allowlisted path.')
+        require(len(parts) == 1 or parts[1] != 'pay' or 'pay' in expected,
+                'Archive contains an unexpected Pay payload without V6 evidence.')
+        require(len(parts) == 1 or parts[1] != 'permission' or 'permission' in expected,
+                'Archive contains an unexpected Permission payload without V5 evidence.')
         require(len(parts) == 1 or parts[1] in expected, 'Archive contains an unexpected surface for this release.')
         require(name not in explicit and (name not in kinds or directory and kinds[name] == 'directory'),
                 'Duplicate or conflicting archive member.')
@@ -1299,6 +1311,10 @@ PY_ARCHIVE
 }
 
 record_rollback_evidence() {
+  if [[ -e "$(surface_directory pay)" || -L "$(surface_directory pay)" ]]; then
+    echo "Pay rollback roots require attributed V6 release provenance." >&2
+    return 1
+  fi
   if [[ -e "$(surface_directory permission)" || -L "$(surface_directory permission)" ]]; then
     echo "Permission rollback roots require attributed V5 release provenance." >&2
     return 1
@@ -1461,6 +1477,10 @@ process_release_manifest() {
   if [[ -e "$(surface_directory permission)" || -L "$(surface_directory permission)" ]]; then
     record_surfaces=("${permission_surfaces[@]}")
     release_format=proofofwork-ui-release-v5
+  fi
+  if [[ -e "$(surface_directory pay)" || -L "$(surface_directory pay)" ]]; then
+    record_surfaces=("${pay_surfaces[@]}")
+    release_format=proofofwork-ui-release-v6
   fi
   declare -A counts=()
   declare -A digests=()
@@ -1704,7 +1724,7 @@ verify_manifest() {
       format | release_id | commit | source_tree | source_attestation | source_dependency_model | source_dependency_entry_count | source_dependency_bytes | source_dependency_sha256 | deployed_at | archive_name | archive_sha256 | archive_payload_model) ;;
       *)
         allowed_key=false
-        for surface in "${permission_surfaces[@]}"; do
+        for surface in "${pay_surfaces[@]}"; do
           if [[ "${key}" == "surface.${surface}.file_count" ||
             "${key}" == "surface.${surface}.sha256" ]]; then
             allowed_key=true
@@ -1721,7 +1741,7 @@ verify_manifest() {
     values["${key}"]="${value}"
   done <"${manifest}"
 
-  if [[ "${values[format]:-}" != "proofofwork-ui-release-v3" && "${values[format]:-}" != "proofofwork-ui-release-v4" && "${values[format]:-}" != "proofofwork-ui-release-v5" ]] ||
+  if [[ "${values[format]:-}" != "proofofwork-ui-release-v3" && "${values[format]:-}" != "proofofwork-ui-release-v4" && "${values[format]:-}" != "proofofwork-ui-release-v5" && "${values[format]:-}" != "proofofwork-ui-release-v6" ]] ||
     [[ ! "${values[release_id]:-}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] ||
     [[ ! "${values[commit]:-}" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] ||
     [[ ! "${values[source_tree]:-}" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] ||
@@ -1742,20 +1762,31 @@ verify_manifest() {
     echo "Active UI release manifest does not preserve the NFT compatibility alias." >&2
     exit 1
   fi
-  if [[ "${values[format]}" != proofofwork-ui-release-v5 ]] &&
+  if [[ "${values[format]}" != proofofwork-ui-release-v6 ]] &&
+    [[ -n "${seen[surface.pay.file_count]:-}" || -n "${seen[surface.pay.sha256]:-}" ||
+    -e "$(surface_directory pay)" || -L "$(surface_directory pay)" ]]; then
+    echo "Pre-V6 UI release manifest cannot contain Pay surface evidence or payload." >&2
+    return 1
+  fi
+  if [[ "${values[format]}" != proofofwork-ui-release-v5 && "${values[format]}" != proofofwork-ui-release-v6 ]] &&
     [[ -n "${seen[surface.permission.file_count]:-}" || -n "${seen[surface.permission.sha256]:-}" ||
     -e "$(surface_directory permission)" || -L "$(surface_directory permission)" ]]; then
     echo "Pre-V5 UI release manifest cannot contain Permission surface evidence or payload." >&2
     return 1
   fi
-  if [[ "${values[format]}" == proofofwork-ui-release-v4 || "${values[format]}" == proofofwork-ui-release-v5 ]]; then
+  if [[ "${values[format]}" == proofofwork-ui-release-v4 || "${values[format]}" == proofofwork-ui-release-v5 || "${values[format]}" == proofofwork-ui-release-v6 ]]; then
     manifest_surfaces=("${pages_surfaces[@]}")
     if [[ "${values[format]}" == proofofwork-ui-release-v5 ]]; then
       manifest_surfaces=("${permission_surfaces[@]}")
     fi
+    if [[ "${values[format]}" == proofofwork-ui-release-v6 ]]; then
+      manifest_surfaces=("${pay_surfaces[@]}")
+    fi
     for surface in "${manifest_surfaces[@]}"; do
       if [[ -z "${values[surface.${surface}.file_count]:-}" || -z "${values[surface.${surface}.sha256]:-}" ]]; then
-        if [[ "${values[format]}" == proofofwork-ui-release-v5 ]]; then
+        if [[ "${values[format]}" == proofofwork-ui-release-v6 ]]; then
+          echo "V6 UI release manifest is missing surface evidence: ${surface}" >&2
+        elif [[ "${values[format]}" == proofofwork-ui-release-v5 ]]; then
           echo "V5 UI release manifest is missing surface evidence: ${surface}" >&2
         else
           echo "V4 UI release manifest is missing surface evidence: ${surface}" >&2
@@ -2043,7 +2074,7 @@ verify_rollback_capability() {
     exit 1
   fi
   case "${format_value}" in
-    proofofwork-ui-release-v3 | proofofwork-ui-release-v4 | proofofwork-ui-release-v5)
+    proofofwork-ui-release-v3 | proofofwork-ui-release-v4 | proofofwork-ui-release-v5 | proofofwork-ui-release-v6)
       verify_manifest
       ;;
     proofofwork-ui-rollback-evidence-v1)

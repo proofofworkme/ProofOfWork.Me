@@ -26,6 +26,7 @@ ARCHIVES = Path('/var/backups/proofofwork-ui/releases')
 SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split()
 PAGES_SURFACES = [*SURFACES, 'pages']
 PERMISSION_SURFACES = [*PAGES_SURFACES, 'permission']
+PAY_SURFACES = [*PERMISSION_SURFACES, 'pay']
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C', 'GIT_OPTIONAL_LOCKS': '0'}
 EVIDENCE_RESERVE = 32*1024**2
 TOTAL_LOG_CEILING = 16*1024**2
@@ -538,11 +539,14 @@ plan_path, plan_sha, phase = sys.argv[1:]
 assert phase in ('surfaces-stage', 'surfaces-stage-resume', 'preserved-stage-resume', 'preserved-capacity-resume', 'source')
 p = json.loads(bound(plan_path, plan_sha, 65536)); release = p['releaseId']
 release_format = p.get('releaseFormat', 'proofofwork-ui-release-v3')
-assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5')
+assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5', 'proofofwork-ui-release-v6')
 if 'managedSurfaces' in p:
-    expected_surfaces = PERMISSION_SURFACES if release_format == 'proofofwork-ui-release-v5' else PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
+    expected_surfaces = PAY_SURFACES if release_format == 'proofofwork-ui-release-v6' else PERMISSION_SURFACES if release_format == 'proofofwork-ui-release-v5' else PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
     assert set(p['managedSurfaces']) == set(expected_surfaces) and len(p['managedSurfaces']) == len(expected_surfaces)
-if release_format == 'proofofwork-ui-release-v5':
+if release_format == 'proofofwork-ui-release-v6':
+    assert set(p['managedSurfaces']) == set(PAY_SURFACES) and len(p['managedSurfaces']) == 23
+    SURFACES = PAY_SURFACES
+elif release_format == 'proofofwork-ui-release-v5':
     assert set(p['managedSurfaces']) == set(PERMISSION_SURFACES) and len(p['managedSurfaces']) == 22
     SURFACES = PERMISSION_SURFACES
 elif release_format == 'proofofwork-ui-release-v4':

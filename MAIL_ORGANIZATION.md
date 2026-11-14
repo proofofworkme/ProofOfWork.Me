@@ -1,5 +1,18 @@
 # Mail Organization
 
+## Pay workspace
+
+Computer `/?folder=pay` and `pay.proofofwork.me` share on-chain invoices and
+invoice-linked direct payments. Public invoice and receipt inspection requires
+no wallet. Drafts, transaction review and signed-TXID recovery are scoped to
+the connected wallet and network. Returning to a task never signs or retries.
+The confirmed original invoice fixes its issuer, recipient and exact proofs or
+WORK quantity; current ID routing cannot rewrite it. Open, Paid, Cancelled,
+pending and unavailable evidence remain distinct. Additional payments remain
+inspectable without counting another settlement. See [PAY.md](PAY.md) for the
+version-one admission and complete-replay contract. Mail remains the carrier,
+and existing Mail/WORK economics are counted once.
+
 ## Permission workspace
 
 Computer `/?folder=permission` and `permission.proofofwork.me` share the Permission

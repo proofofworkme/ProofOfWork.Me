@@ -1,6 +1,7 @@
 import { proofIndexEventParticipantsForItem, proofIndexEventRefsForItem } from "./proof-index-event-relations.mjs";
 import { notificationAddressKey } from "./notification-query.mjs";
 import { parseJobBody } from "../src/shared/protocol/jobs.mjs";
+import { parsePayBody } from "../src/shared/protocol/pay.mjs";
 import { parsePermissionBody } from "../src/shared/protocol/permissions.mjs";
 import { notificationIdDirection } from "./notification-id-scope.mjs";
 
@@ -63,6 +64,8 @@ function isPagePublication(item, body) {
 
 function classification(item) {
   const kind = text(item.kind), protocol = text(item.protocol), body = bodyOf(item);
+  const pay = protocol === "pwm1" && body.startsWith("pwpay1:") ? parsePayBody(body) : null;
+  if (pay || (protocol === "pwm1" && body.startsWith("pwpay1:"))) return { app: "Pay", workspace: "pay", label: ({ invoice: "Invoice published", pay: "Invoice payment", cancel: "Invoice cancellation" })[pay?.action] ?? "Pay record", priority: 100, pay };
   const job = protocol === "pwm1" && body.startsWith("pwj1:") ? parseJobBody(body) : null;
   const permission = notificationPermissionCandidate(item) ? parsePermissionBody(body) : null;
   if (job || (protocol === "pwm1" && body.startsWith("pwj1:"))) return { app: "Jobs", workspace: "jobs", label: jobLabels[job?.action] ?? "Job record", priority: 100, job };
@@ -84,7 +87,7 @@ function classification(item) {
 }
 
 function qualification(item, classification) {
-  const lifecycle = classification.app === "Jobs" ? item.jobs
+  const lifecycle = classification.app === "Pay" ? item.pay : classification.app === "Jobs" ? item.jobs
     : classification.app === "Permission" ? item.permission
     : classification.app === "Code" ? item.codeAuthority
     : ["Boost", "Publish"].includes(classification.app) ? item.boostAuthority
@@ -96,7 +99,7 @@ function qualification(item, classification) {
   if (["dropped", "orphaned"].includes(chainStatus)) return { status: chainStatus, valid, lifecycle };
   if (!valid || /invalid/u.test(text(item.kind))) return { status: "invalid", valid: false, lifecycle };
   if (chainStatus !== "confirmed") return { status: chainStatus === "pending" ? "pending" : "unavailable", valid, lifecycle };
-  if ((["Jobs", "Permission", "Code"].includes(classification.app) || (["Boost", "Publish"].includes(classification.app) && item.boostAuthority) || (classification.app === "DNS" && item.dnsAuthority)) && lifecycle?.ready !== true) return { status: "unavailable", valid, lifecycle };
+  if ((["Pay", "Jobs", "Permission", "Code"].includes(classification.app) || (["Boost", "Publish"].includes(classification.app) && item.boostAuthority) || (classification.app === "DNS" && item.dnsAuthority)) && lifecycle?.ready !== true) return { status: "unavailable", valid, lifecycle };
   if (item.applied === false || lifecycle?.applied === false) return { status: "invalid", valid: false, lifecycle };
   return { status: "confirmed", valid, lifecycle };
 }
@@ -124,6 +127,7 @@ export function notificationAction(item, address, network = item?.network) {
   const refs = [...proofIndexEventRefsForItem(item), ...(item.notificationRefs ?? [])];
   const relatedTxids = unique([...refs.map(ref => ref.refValue ?? ref.ref_value), item.quoteTxid, item.pageTxid, item.metadata?.sourceTxid].filter(value => TXID.test(value ?? "") && value !== item.txid));
   let targetTxid = item.txid;
+  if (info.app === "Pay") targetTxid = item.pay?.invoiceTxid || info.pay?.metadata?.invoice || item.txid;
   if (info.app === "Jobs") targetTxid = item.jobs?.jobTxid || info.job?.metadata?.job || item.txid;
   if (info.app === "Code") targetTxid = item.repoTxid || item.metadata?.repo || item.txid;
   if (info.app === "Permission") targetTxid = item.permission?.rootTxid || info.permission?.metadata?.grant || item.txid;

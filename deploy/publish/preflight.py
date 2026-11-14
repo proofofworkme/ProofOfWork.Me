@@ -79,19 +79,23 @@ retained = [fingerprint(p) for p in roots]
 manifest_path = Path('/var/www/.proofofwork-ui-release')
 assert manifest_path.stat().st_size <= 65536
 active_manifest = dict(line.split('=',1) for line in manifest_path.read_text().splitlines())
-assert active_manifest['format'] in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5')
+assert active_manifest['format'] in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5', 'proofofwork-ui-release-v6')
 hold = Path('/etc/proofofwork-retention/audit28.hold')
 assert hold.is_file() and not hold.is_symlink() and hold.stat().st_uid == 0
 old_managed = {'entries':0, 'logicalBytes':0, 'regularFiles':0}
 managed_surfaces = 'activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split()
-if active_manifest['format'] in ('proofofwork-ui-release-v4', 'proofofwork-ui-release-v5'):
+if active_manifest['format'] in ('proofofwork-ui-release-v4', 'proofofwork-ui-release-v5', 'proofofwork-ui-release-v6'):
     managed_surfaces.append('pages')
 else:
     assert not os.path.lexists(Path('/var/www/proofofwork-pages')) and 'surface.pages.sha256' not in active_manifest
-if active_manifest['format'] == 'proofofwork-ui-release-v5':
+if active_manifest['format'] in ('proofofwork-ui-release-v5', 'proofofwork-ui-release-v6'):
     managed_surfaces.append('permission')
 else:
     assert not os.path.lexists(Path('/var/www/proofofwork-permission')) and 'surface.permission.sha256' not in active_manifest
+if active_manifest['format'] == 'proofofwork-ui-release-v6':
+    managed_surfaces.append('pay')
+else:
+    assert not os.path.lexists(Path('/var/www/proofofwork-pay')) and 'surface.pay.sha256' not in active_manifest
 for name in managed_surfaces:
     root = Path('/var/www/proofofwork-'+name)
     if name in ('publish', 'search', 'code', 'jobs') and not os.path.lexists(root):
@@ -115,7 +119,7 @@ assert isinstance(SEQUENCE_SOURCE, bytes) and len(SEQUENCE_SOURCE) <= 16384
 exec(compile(SEQUENCE_SOURCE, 'sequence_capacity.py', 'exec'), sequence_namespace)
 result['wholeSequenceCensus'] = sequence_namespace['capture'](types.SimpleNamespace(**capacity_namespace))
 if globals().get('CLOSED_REQUEST') is not None:
-    assert active_manifest['format'] == 'proofofwork-ui-release-v5'
+    assert active_manifest['format'] in ('proofofwork-ui-release-v5', 'proofofwork-ui-release-v6')
     assert isinstance(PHASE_SOURCE, bytes) and 0 < len(PHASE_SOURCE) <= 65536
     assert hashlib.sha256(PHASE_SOURCE).hexdigest() == CLOSED_REQUEST['phaseSourceSha256']
     phase = {'__name__': '_closed_release_preflight'}

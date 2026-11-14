@@ -1,3 +1,4 @@
+import * as payProtocol from "../../shared/protocol/pay.mjs";
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
@@ -13,7 +14,7 @@ import {createOwnerOutputCommitmentFixture,signOwnerOutputCommitmentPsbt} from '
 const root=new URL('../../../',import.meta.url);
 function loadTs(path,imports={}){const exports={};vm.runInNewContext(ts.transpileModule(readFileSync(new URL(path,root),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,Buffer,require:name=>{assert.ok(Object.hasOwn(imports,name),name);return imports[name];}});return exports;}
 const recovery=loadTs('src/shared/wallet/actionRecovery.ts');
-const hold=loadTs('src/shared/work/workBatchRecovery.ts',{'../wallet/actionRecovery':recovery});
+const hold=loadTs('src/shared/work/workBatchRecovery.ts',{'../wallet/actionRecovery':recovery,'../protocol/pay.mjs':payProtocol});
 const payment=loadTs('src/shared/wallet/paymentReview.ts',{'bitcoinjs-lib':bitcoin,buffer:{Buffer}});
 const app=readFileSync(new URL('src/App.tsx',root),'utf8'),ast=ts.createSourceFile('App.tsx',app,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),functions=new Map();
 function visit(node){if(ts.isFunctionDeclaration(node)&&node.name)functions.set(node.name.text,node.getText(ast));ts.forEachChild(node,visit);}visit(ast);

@@ -89,7 +89,7 @@ Standalone headers and shared footers use these groups in order:
 | --- | --- |
 | Utility | Computer, Desktop, Browser, Pages, Code, Jobs, Permission |
 | Identity & social | ID, DNS, Boost, Publish |
-| Finance | Wallet, AMO, Credit, WORK, Infinity, Inception |
+| Finance | Wallet, Pay, AMO, Credit, WORK, Infinity, Inception |
 | Insights | Log, Growth, Search |
 
 Standalone headers use the compact Applications menu at 1180 CSS pixels and

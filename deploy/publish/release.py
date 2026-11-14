@@ -40,6 +40,7 @@ RELEASE = re.compile('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z')
 SURFACES = 'activity boost browser code computer desktop dns growth id inception infinity jobs landing marketplace nft publish search token wallet work'.split()
 PAGES_SURFACES = [*SURFACES, 'pages']
 PERMISSION_SURFACES = [*PAGES_SURFACES, 'permission']
+PAY_SURFACES = [*PERMISSION_SURFACES, 'pay']
 DEPLOYMENT_ONLY_PATHS = frozenset({
     'deploy/proofofwork-ui-release-stage.py',
     'deploy/proofofwork-ui-release-provenance.sh',
@@ -363,19 +364,20 @@ def load_plan(path):
     assert p['releaseId'].startswith(p['commit'][:12] + '-')
     assert re.fullmatch('[a-z0-9][a-z0-9-]{0,30}', p['publicationAttempt'])
     release_format = p.get('releaseFormat', 'proofofwork-ui-release-v3')
-    assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5')
-    if release_format in ('proofofwork-ui-release-v4', 'proofofwork-ui-release-v5') or 'managedSurfaces' in p:
-        surfaces = PERMISSION_SURFACES if release_format == 'proofofwork-ui-release-v5' else PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
+    assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5', 'proofofwork-ui-release-v6')
+    if release_format in ('proofofwork-ui-release-v4', 'proofofwork-ui-release-v5', 'proofofwork-ui-release-v6') or 'managedSurfaces' in p:
+        surfaces = PAY_SURFACES if release_format == 'proofofwork-ui-release-v6' else PERMISSION_SURFACES if release_format == 'proofofwork-ui-release-v5' else PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
         assert set(p['managedSurfaces']) == set(surfaces) and len(p['managedSurfaces']) == len(surfaces)
     return p, hashlib.sha256(raw).hexdigest(), raw
 
 def closed_input(build, *, private_staging=False):
     """Build a bounded, metadata-only proof from the actual pinned surface archive."""
-    if (build.get('releaseFormat') != 'proofofwork-ui-release-v5' or
-            sorted(build['surfaces']) != sorted(PERMISSION_SURFACES) or
+    surfaces = PAY_SURFACES if build.get('releaseFormat') == 'proofofwork-ui-release-v6' else PERMISSION_SURFACES
+    if (build.get('releaseFormat') not in ('proofofwork-ui-release-v5', 'proofofwork-ui-release-v6') or
+            sorted(build['surfaces']) != sorted(surfaces) or
             not RELEASE.fullmatch(build['releaseId']) or not HEX40.fullmatch(build['commit']) or
             not HEX40.fullmatch(build['tree']) or not build['releaseId'].startswith(build['commit'][:12]+'-')):
-        raise ValueError('Closed archive input requires an exact full V5 build')
+        raise ValueError('Closed archive input requires an exact full V5 or V6 build')
     proof = {}
     for key, path in {'publisher': 'deploy/proofofwork-ui-release-publish.sh',
                       'provenance': 'deploy/proofofwork-ui-release-provenance.sh',
@@ -388,7 +390,7 @@ def closed_input(build, *, private_staging=False):
     if path.is_symlink() or not path.is_file() or digest(path) != bundle['sha256'] or path.stat().st_size != bundle['bytes']:
         raise ValueError('Candidate surface archive differs from build receipt')
     packed = bytearray()
-    value = bundle_payload_fingerprint(path, build['releaseId'], PERMISSION_SURFACES, packed)
+    value = bundle_payload_fingerprint(path, build['releaseId'], surfaces, packed)
     compact = {}
     if private_staging:
         helper = subprocess.check_output(['git', '-C', str(REPO), 'show', build['commit'] + ':deploy/publish/input_compaction.py'])
@@ -527,9 +529,9 @@ def make_plan(args):
     if 'privateStageRetention' in p and p['privateStageRetention'].get('preservedFallback') != p['verifiedPreservedFallback']:
         raise ValueError('Private preflight witness differs from installed fallback')
     release_format = b.get('releaseFormat', 'proofofwork-ui-release-v3')
-    assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5')
-    surfaces = PERMISSION_SURFACES if release_format == 'proofofwork-ui-release-v5' else PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
-    if release_format in ('proofofwork-ui-release-v4', 'proofofwork-ui-release-v5') or 'surfaces' in b:
+    assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5', 'proofofwork-ui-release-v6')
+    surfaces = PAY_SURFACES if release_format == 'proofofwork-ui-release-v6' else PERMISSION_SURFACES if release_format == 'proofofwork-ui-release-v5' else PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
+    if release_format in ('proofofwork-ui-release-v4', 'proofofwork-ui-release-v5', 'proofofwork-ui-release-v6') or 'surfaces' in b:
         assert set(b['surfaces']) == set(surfaces) and len(b['surfaces']) == len(surfaces)
     assert HEX40.fullmatch(b['commit']) and HEX40.fullmatch(b['tree']) and RELEASE.fullmatch(b['releaseId'])
     assert b['releaseId'].startswith(b['commit'][:12] + '-') and p['retentionDeferred'] is True

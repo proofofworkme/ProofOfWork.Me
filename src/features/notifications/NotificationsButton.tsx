@@ -18,7 +18,7 @@ export type NotificationsButtonProps = {
   onOpenRecord?: (target: NotificationTarget, notification: ComputerNotification) => boolean | void;
 };
 const NETWORK_LABELS = { livenet: "Mainnet", testnet: "Testnet3", testnet4: "Testnet4" };
-const APP_LABELS: Record<string, string> = { mail: "Mail", files: "Files", boost: "Boost", publish: "Publish", wallet: "Wallet", ids: "IDs", id: "IDs", dns: "DNS", amo: "AMO", marketplace: "AMO", jobs: "Jobs", code: "Code", pages: "Pages", permission: "Permission", credit: "Credit", work: "WORK", infinity: "Infinity", inception: "Inception", applications: "Applications", computer: "Computer", browser: "Browser" };
+const APP_LABELS: Record<string, string> = { mail: "Mail", files: "Files", boost: "Boost", publish: "Publish", wallet: "Wallet", ids: "IDs", id: "IDs", dns: "DNS", amo: "AMO", marketplace: "AMO", jobs: "Jobs", pay: "Pay", code: "Code", pages: "Pages", permission: "Permission", credit: "Credit", work: "WORK", infinity: "Infinity", inception: "Inception", applications: "Applications", computer: "Computer", browser: "Browser" };
 function appLabel(app: string) { return APP_LABELS[app.toLowerCase()] ?? app; }
 function displayTime(value: string | number | null) {
   if (value == null) return "Time unavailable";
