@@ -103,7 +103,8 @@ const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", ti
 assert.equal(lifecycle.publicationHealthy, true);
 assert.equal(lifecycle.retentionComplete, true);
 assert(lifecycle.pair.current.startsWith(commit.slice(0, 12) + "-"));
-assert.equal(lifecycle.pair.previous, "1042efea2aa1-20261112T074918Z");
+// The rolling previous release may advance; the historical hold must remain verified.
+assert.equal(lifecycle.verifiedPreservedRelease1042?.releaseId, "1042efea2aa1-20261112T074918Z");
 assert.deepEqual(lifecycle.unfinishedIntents, []);
 assert.equal(lifecycle.verifiedPreservedFallback?.releaseId, "c3969c39c2b2-20261101T051206Z");
 assert.equal(lifecycle.verifiedCapacityFloor.rootReserveBytes, 8 * 1024 ** 3);

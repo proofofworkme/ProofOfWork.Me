@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { cleanCandidate } from './repository-hygiene.mjs';
+import { cleanCandidate, policyConfigurationErrors } from './repository-hygiene.mjs';
 
 const CLI_PATH = fileURLToPath(
   new URL('./repository-hygiene.mjs', import.meta.url),
@@ -1389,4 +1389,25 @@ test('check detects current-product scenario artifact drift', (t) => {
   expectSuccess(cli(root, 'check', '--ci'), 'unchanged current scenario');
   write(root, group.outputs[0], 'stale current model\n');
   expectFailure(cli(root, 'check', '--ci'), 'current scenario drift');
+});
+
+test('legacy generated-artifact policy is confined to reviewed immutable commit states', () => {
+  const legacy = { ...FIXTURE_CONFIG, generatedArtifacts: FIXTURE_CONFIG.generatedArtifacts.slice(0, 3) };
+  const ids = [
+    '17bab4cfb65d454e3747bbd0ed522d2f2623afc7',
+    'cde0e677ae3d6b3ecdaa732a9bd05f3c72777bb6',
+  ];
+  for (const revision of ids) {
+    assert.deepEqual(policyConfigurationErrors(legacy, { mode: 'commit', revision }), []);
+    for (const mode of ['index', 'worktree', undefined])
+      assert.ok(policyConfigurationErrors(legacy, { mode, revision }).some(e => e.includes('generatedArtifacts')));
+    const altered = { ...legacy, generatedArtifacts: legacy.generatedArtifacts.slice(0, 2) };
+    assert.ok(policyConfigurationErrors(altered, { mode: 'commit', revision }).some(e => e.includes('generatedArtifacts')));
+    const weakened = { ...legacy, protectedTrackedPaths: [] };
+    assert.ok(policyConfigurationErrors(weakened, { mode: 'commit', revision }).some(e => e.includes('protectedTrackedPaths')));
+  }
+  for (const revision of [undefined, '17bab4', ids[0].slice(0, -1) + '0', '064b6991ae2a48e2069baedc767cd918d28ba052', 'f'.repeat(40)]) {
+    assert.ok(policyConfigurationErrors(legacy, { mode: 'commit', revision }).some(e => e.includes('generatedArtifacts')));
+    assert.deepEqual(policyConfigurationErrors(FIXTURE_CONFIG, { mode: 'commit', revision }), []);
+  }
 });

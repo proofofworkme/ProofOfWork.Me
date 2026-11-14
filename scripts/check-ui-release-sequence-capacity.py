@@ -260,6 +260,7 @@ class TransportPhaseOrder(unittest.TestCase):
                       and ast.unparse(nodes[i].test) == "phase != 'source'")
         definitions = [node for node in nodes if isinstance(node, (ast.Import, ast.ImportFrom))
                        or assignment(node, 'RECEIVE_TIMEOUT_SECONDS')
+                       or assignment(node, 'STAGE_TIMEOUT_SECONDS')
                        or isinstance(node, ast.FunctionDef) and node.name in
                        ('sync', 'durable_json', 'rename_new')]
         scope = {'__name__': '_transport_order_fixture'}
@@ -313,6 +314,7 @@ class TransportPhaseOrder(unittest.TestCase):
                         events.append('modeled')
                     else:
                         self.assertIn(str(stage), argv)
+                        self.assertEqual(kwargs['timeout'], scope['STAGE_TIMEOUT_SECONDS'])
                         events.append('stager')
                         raise ReachedStager()
                 else:

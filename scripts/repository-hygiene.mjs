@@ -98,6 +98,19 @@ const REQUIRED_GENERATED_ARTIFACTS = new Set([
   "scripts/generate-proofofwork-computer-model.mjs||output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md,output/historical/2026-05-13/proofofwork-computer-growth-model.json,output/historical/2026-05-13/proofofwork-computer-model-blockspace.svg,output/historical/2026-05-13/proofofwork-computer-model-compounding.svg,output/historical/2026-05-13/proofofwork-computer-model-dollar-growth.svg,output/historical/2026-05-13/proofofwork-computer-model-product-split.svg,output/historical/2026-05-13/proofofwork-computer-model-volatility.svg",
   "scripts/generate-growth-forecast.mjs|src/features/growth/growthForecast.mjs|output/proofofwork-computer-agent-adoption-model.md,output/proofofwork-computer-growth-model-2026-09-05-boost-v1.json,output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md,output/proofofwork-computer-growth-model.json,output/proofofwork-computer-model-blockspace.svg,output/proofofwork-computer-model-compounding.svg,output/proofofwork-computer-model-dollar-growth.svg,output/proofofwork-computer-model-product-split.svg,output/proofofwork-computer-model-volatility.svg"
 ]);
+// Reviewed pre-current-Growth policy for two immutable side-branch commits.
+// A config digest alone would permit future commits to roll the policy back.
+// These identities select policy data only: every normal state, artifact-byte,
+// hook and commit-contract check still runs. Never execute historical validators.
+const LEGACY_GENERATED_ARTIFACT_COMMITS = new Set([
+  "17bab4cfb65d454e3747bbd0ed522d2f2623afc7",
+  "cde0e677ae3d6b3ecdaa732a9bd05f3c72777bb6",
+]);
+const LEGACY_GENERATED_ARTIFACTS = new Set([
+  "scripts/build-general-deck.mjs|PROOFOFWORK_GENERAL_DECK.md|output/proofofwork-general-deck.pptx,public/proofofwork-general-deck.pptx",
+  "scripts/generate-proofofwork-computer-model.mjs||output/historical/2026-05-13/proofofwork-computer-agent-adoption-model.md,output/historical/2026-05-13/proofofwork-computer-growth-model.json,output/historical/2026-05-13/proofofwork-computer-model-blockspace.svg,output/historical/2026-05-13/proofofwork-computer-model-compounding.svg,output/historical/2026-05-13/proofofwork-computer-model-dollar-growth.svg,output/historical/2026-05-13/proofofwork-computer-model-product-split.svg,output/historical/2026-05-13/proofofwork-computer-model-volatility.svg",
+  "scripts/generate-growth-forecast.mjs|src/features/growth/growthForecast.mjs|output/proofofwork-computer-agent-adoption-model.md,output/proofofwork-computer-growth-model-2026-09-05-boost-v1.json,output/proofofwork-computer-growth-model-2026-09-05-boost-v1.md,output/proofofwork-computer-growth-model.json,output/proofofwork-computer-model-blockspace.svg,output/proofofwork-computer-model-compounding.svg,output/proofofwork-computer-model-dollar-growth.svg,output/proofofwork-computer-model-product-split.svg,output/proofofwork-computer-model-volatility.svg"
+]);
 const REQUIRED_HOOK_CONTENT = new Map([
   [
     ".githooks/pre-commit",
@@ -562,7 +575,7 @@ function normalizeGeneratedArtifactPolicy(group) {
   ].join("|");
 }
 
-function policyConfigurationErrors(config) {
+function policyConfigurationErrors(config, { mode, revision } = {}) {
   return [
     ...exactConfiguredSetErrors(
       "requiredDocuments",
@@ -636,7 +649,8 @@ function policyConfigurationErrors(config) {
     ...exactConfiguredSetErrors(
       "generatedArtifacts",
       config.generatedArtifacts,
-      REQUIRED_GENERATED_ARTIFACTS,
+      mode === "commit" && LEGACY_GENERATED_ARTIFACT_COMMITS.has(revision)
+        ? LEGACY_GENERATED_ARTIFACTS : REQUIRED_GENERATED_ARTIFACTS,
       normalizeGeneratedArtifactPolicy,
     ),
   ];
@@ -814,7 +828,7 @@ function validateRepositoryState(
   validateAgentInstructions(config, state, errors);
   validateMarkdownLinks(state, errors);
   validateTrackedTransientFiles(config, state, errors);
-  errors.push(...policyConfigurationErrors(config));
+  errors.push(...policyConfigurationErrors(config, { mode, revision }));
   validateHookFiles(state, errors);
   validateControlPlaneSyntax(state, errors);
   validateGeneratedArtifacts(root, mode, config, state, errors);
@@ -1498,4 +1512,4 @@ if (
   }
 }
 
-export { cleanCandidate, inspectTree };
+export { cleanCandidate, inspectTree, policyConfigurationErrors };

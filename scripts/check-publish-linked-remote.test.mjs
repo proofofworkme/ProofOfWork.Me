@@ -2,12 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, symlinkSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, dirname, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { publishCheckerFiles, validateNodeBuildSource, localPublishSource, publicVerificationEnvironment,
-  remotePreactivationProgram, runRemotePublishPreactivation } from "./check-publish-linked-remote.mjs";
+  remotePreactivationProgram, runRemotePublishPreactivation, assertPublishCheckerClosure } from "./check-publish-linked-remote.mjs";
 const sha=raw=>createHash("sha256").update(raw).digest("hex");
 const source="/data/proofofwork-ui-builds/candidate/proofofwork-ui-source-123456789abc-20261113T160000Z";
 const env={PATH:"/bin",POW_PUBLISH_CHECK_MODE:"preactivation",POW_PUBLISH_CHECK_NODE_SOURCE:source};
@@ -82,7 +82,7 @@ test("real local git collection rejects dirty tracked source",()=>{
  try {
   const git=(...args)=>execFileSync("git",args,{cwd:root,env:{...process.env,GIT_OPTIONAL_LOCKS:"0"},stdio:"pipe"});
   git("init","-q");git("config","user.name","Fixture");git("config","user.email","fixture@example.invalid");
-  for(const name of publishCheckerFiles){mkdirSync(dirname(resolve(root,name)),{recursive:true});writeFileSync(resolve(root,name),"fixture");}
+  for(const name of publishCheckerFiles){mkdirSync(dirname(resolve(root,name)),{recursive:true});writeFileSync(resolve(root,name),readFileSync(new URL("../"+name,import.meta.url)));}
   git("add",".");git("commit","-qm","fixture");
   const captured=localPublishSource(root,{});assert.equal(Object.keys(captured.hashes).length,publishCheckerFiles.length);
   writeFileSync(resolve(root,publishCheckerFiles[0]),"changed");assert.throws(()=>localPublishSource(root,{}),/must be clean/);
@@ -128,4 +128,58 @@ test("token-bearing transient service clears executable preloads and checks owne
  assert.ok(remotePreactivationProgram.includes("--untracked-files=all"));
  assert.equal(publishCheckerFiles.filter(name=>name.endsWith(".mjs")).length,4);
  assert.ok(!publishCheckerFiles.some(name=>name.endsWith("powcat1.mjs")||name.endsWith("publishArticle.mjs")));
+});
+
+function withSourceFixture(check) {
+ const root=mkdtempSync(resolve(tmpdir(),"pow-local-closure-"));
+ try {
+  const git=(...args)=>execFileSync("git",args,{cwd:root,env:{...process.env,GIT_OPTIONAL_LOCKS:"0"},stdio:"pipe"});
+  git("init","-q");git("config","user.name","Fixture");git("config","user.email","fixture@example.invalid");
+  for(const name of publishCheckerFiles){mkdirSync(dirname(resolve(root,name)),{recursive:true});writeFileSync(resolve(root,name),readFileSync(new URL("../"+name,import.meta.url)));}
+  git("add",".");git("commit","-qm","fixture");
+  check(root,git);
+ } finally {rmSync(root,{recursive:true,force:true});rmSync(root+"-alias",{force:true});}
+}
+test("unrelated untracked evidence and modules remain untouched and cannot execute",()=>withSourceFixture(root=>{
+ const before=localPublishSource(root,{}),marker=resolve(root,"executed");
+ const files=["audits/old-receipt.json","scripts/untracked.mjs","node_modules/untracked/index.js"];
+ for(const name of files){mkdirSync(dirname(resolve(root,name)),{recursive:true});writeFileSync(resolve(root,name),`throw new Error("must never execute"); /* ${marker} */`);}
+ const contents=files.map(name=>readFileSync(resolve(root,name)));
+ assert.deepEqual(localPublishSource(root,{}),before);assert.equal(existsSync(marker),false);
+ files.forEach((name,index)=>assert.deepEqual(readFileSync(resolve(root,name)),contents[index]));
+}));
+for(const name of publishCheckerFiles) test("committed-byte fence rejects hidden change to "+name,()=>withSourceFixture((root,git)=>{
+ git("update-index","--assume-unchanged",name);writeFileSync(resolve(root,name),readFileSync(resolve(root,name))+"\nchanged");
+ assert.throws(()=>localPublishSource(root,{}),/differs from commit/);
+}));
+for(const [label,addition] of [
+ ["static",'\nimport "./untracked.mjs";'],
+ ["dynamic",'\nawait import("./untracked.mjs");'],
+ ["comment-split dynamic",'\nawait import/* split */("./untracked.mjs");'],
+ ["re-export",'\nexport/**/{x} from "./untracked.mjs";'],
+ ["loader",'\nconst loader = createRequire(import.meta.url);'],
+ ["computed loader","\n"+String.raw`globalThis["ev"+"al"]("im"+"port(\"./untracked.mjs\")");`],
+]) test("committed unexpected "+label+" loading is outside the fixed closure",()=>withSourceFixture((root,git)=>{
+ execFileSync(process.execPath,["--check","--input-type=module"],{input:addition,stdio:["pipe","pipe","pipe"]});
+ const name=publishCheckerFiles[0];writeFileSync(resolve(root,name),readFileSync(resolve(root,name))+addition);
+ git("add",name);git("commit","-qm","changed checker fixture");
+ assert.throws(()=>localPublishSource(root,{}),/Reviewed checker closure bytes differ/);
+}));
+test("canonical local fence rejects a byte-identical checker symlink",()=>withSourceFixture((root,git)=>{
+ const name=publishCheckerFiles[0],target=resolve(root,"copy.mjs");writeFileSync(target,readFileSync(resolve(root,name)));
+ git("update-index","--assume-unchanged",name);rmSync(resolve(root,name));symlinkSync(target,resolve(root,name));
+ assert.throws(()=>localPublishSource(root,{}),/symlinks/);
+}));
+test("canonical local fence rejects a symlinked checker ancestor",()=>withSourceFixture((root,git)=>{
+ git("update-index","--assume-unchanged",publishCheckerFiles[0]);renameSync(resolve(root,"scripts"),resolve(root,"scripts-copy"));symlinkSync(resolve(root,"scripts-copy"),resolve(root,"scripts"));
+ assert.throws(()=>localPublishSource(root,{}),/symlinks/);
+}));
+test("canonical local fence rejects a symlinked repository root",()=>withSourceFixture(root=>{
+ symlinkSync(root,root+"-alias");assert.throws(()=>localPublishSource(root+"-alias",{}),/canonical/);
+}));
+test("actual fixed checker closure validates without resolving node_modules",()=>{
+ const files=new Map(publishCheckerFiles.map(name=>[name,readFileSync(new URL("../"+name,import.meta.url))]));
+ assert.doesNotThrow(()=>assertPublishCheckerClosure(files));
+ const changed=new Map(files);changed.set(publishCheckerFiles[0],Buffer.from(files.get(publishCheckerFiles[0]).toString().replace('from "node:crypto"','from "untracked-package"')));
+ assert.throws(()=>assertPublishCheckerClosure(changed),/Reviewed checker closure bytes differ/);
 });

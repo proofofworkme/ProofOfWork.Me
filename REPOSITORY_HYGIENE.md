@@ -160,3 +160,15 @@ npm run hooks:install
 `npm install` installs it automatically only when the checkout has no custom
 `core.hooksPath`. An existing custom hook path is never overwritten silently.
 The CI check remains the clone-independent backstop.
+
+### Historical generated-artifact policy
+
+Range validation evaluates the two immutable pre-current-Growth side-branch
+commits `17bab4cfb65d454e3747bbd0ed522d2f2623afc7` and
+`cde0e677ae3d6b3ecdaa732a9bd05f3c72777bb6` against their reviewed three-group
+generated-artifact policy. All commit attestations, source and output byte
+verification, document checks, hooks, syntax and protected-path rules still apply.
+No historical validator is executed and no commit is skipped. Every other commit,
+including future commits reusing an old configuration, and every index/worktree
+check requires the current four-group policy. The exception is bound to immutable
+commit identity rather than configuration contents to prevent policy rollback.

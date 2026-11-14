@@ -20,14 +20,23 @@ orchestrator, copied to the connected computer, or placed in a command line or
 verification output. No application or protocol data is written.
 
 The first combined-live child runs the unchanged Publish checker against node
-loopback in preactivation mode. Local and remote commit/tree/cleanliness,
+loopback in preactivation mode. Local and remote commit/tree identity, tracked-local cleanliness, fully clean
+remote source,
 dependency-free four-code-file checker import closure, package manifest/lockfile and the node build receipt
 are checked before execution; source is fenced again afterward. The three metadata
 functions are imported directly from their canonical defining module instead of
 the identical re-export through a module that imports Bitcoin signing packages.
 All capability/article assertions are unchanged. No node_modules code executes
 in the protected probe. NODE_OPTIONS and NODE_PATH are unset in the transient
-service to prevent executable preloads. Cleanliness includes untracked files;
+service to prevent executable preloads. The primary local checkout may retain
+unrelated untracked audit/working evidence.
+It is not loaded, moved, ignored or deleted. Every tracked change still refuses;
+the exact committed checker/package/lock bytes and canonical regular paths are
+checked before and after the probe. The versioned reviewed closure additionally
+pins all four dependency-free modules to exact SHA-256 values; changed static,
+dynamic or computed loader code cannot be admitted by merely committing it.
+A future module change requires explicit review and update of that contract.
+The protected remote build still requires cleanliness including all untracked files;
 source ancestors/files must belong to root or the established powadmin account
 and must not be group/world writable.
 `GIT_OPTIONAL_LOCKS=0` prevents optional Git index writes. The probe has a

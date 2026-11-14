@@ -2,7 +2,7 @@
 // Read-only remote loopback verification. The protected token never leaves the node.
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, lstatSync, realpathSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -13,6 +13,27 @@ export const publishCheckerFiles = Object.freeze([
   "src/shared/protocol/powcatLimits.mjs", "package.json", "package-lock.json",
 ]);
 const sha = raw => createHash("sha256").update(raw).digest("hex");
+// publish-linked-checker-closure-v1: exact reviewed dependency-free module bytes.
+// Untracked local evidence is not an input. A future checker/module edit must
+// explicitly review and update this contract, not expand runtime module resolution.
+const reviewedCheckerModuleHashes = Object.freeze({
+  "scripts/check-publish-linked-live.mjs": "6ee77c9cd9a7ea8467cf20f9930a18560f92a49fa9d4b2ad7e7c8968c48b5cd3",
+  "src/shared/protocol/publishLinkedCapability.mjs": "317b5a053700b0b3a957a746f29ce4106cbce1d98beb7a3bd6d021fa0a88dcd5",
+  "src/shared/protocol/publishArticleMetadata.mjs": "dfa44b1612c8ae6058b514067b891dbcc43dac0141369bd3041f4de7d49eddbc",
+  "src/shared/protocol/powcatLimits.mjs": "d8c8d1b262961562a74ac50760a0ac0f66a68081cd82f98f9514c0419159562e",
+});
+export function assertPublishCheckerClosure(files) {
+  assert.deepEqual([...files.keys()].filter(name => name.endsWith(".mjs")).sort(),
+    Object.keys(reviewedCheckerModuleHashes).sort(), "Reviewed checker closure scope differs.");
+  for (const [name, expected] of Object.entries(reviewedCheckerModuleHashes))
+    assert.equal(sha(files.get(name)), expected, "Reviewed checker closure bytes differ: " + name);
+}
+function canonicalLocalFile(root, name) {
+  const path = resolve(root, name);
+  assert.equal(realpathSync(path), path, "Local checker path must not contain symlinks.");
+  assert.ok(lstatSync(path).isFile(), "Local checker must be a regular file.");
+  return readFileSync(path);
+}
 export function publicVerificationEnvironment(env) {
   const result = { ...env, GIT_OPTIONAL_LOCKS: "0" };
   for (const key of ["POW_INTERNAL_VERIFIER_TOKEN", "POW_PUBLISH_CHECK_ORIGIN",
@@ -31,12 +52,18 @@ export function localPublishSource(root, env = process.env) {
   const git = (...args) => execFileSync("git", args, options).trim();
   const commit = git("rev-parse", "HEAD"), tree = git("rev-parse", "HEAD^{tree}");
   assert.match(commit, /^[a-f0-9]{40}$/u); assert.match(tree, /^[a-f0-9]{40}$/u);
-  assert.equal(git("status", "--porcelain", "--untracked-files=all"), "", "Local verification source must be clean.");
+  assert.equal(realpathSync(root), resolve(root), "Local verification root must be canonical.");
+  // Historical audit/working artifacts are not executable verification inputs.
+  // Match release-sync's tracked-clean contract; bind the actual input closure below.
+  assert.equal(git("status", "--porcelain", "--untracked-files=no"), "", "Local verification source must be clean.");
+  const files = new Map();
   const hashes = Object.fromEntries(publishCheckerFiles.map(name => {
-    const bytes = readFileSync(resolve(root, name));
+    const bytes = canonicalLocalFile(resolve(root), name);
+    files.set(name, bytes);
     assert.deepEqual(bytes, execFileSync("git", ["show", commit + ":" + name], { ...options, encoding: undefined }), "Local checker file differs from commit.");
     return [name, sha(bytes)];
   }));
+  assertPublishCheckerClosure(files);
   return { commit, tree, hashes };
 }
 export const remotePreactivationProgram = String.raw`

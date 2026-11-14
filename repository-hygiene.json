@@ -286,7 +286,8 @@
       "deploy/work-batch-pending-summary-fix/README.md",
       "deploy/mail-work-batch/README.md",
       "deploy/linked-publish/README.md",
-      "deploy/linked-publish/REMOTE_VERIFICATION.md"
+      "deploy/linked-publish/REMOTE_VERIFICATION.md",
+      "deploy/ui-retention/fixtures/README.md"
     ]
   },
   "protectedTrackedPaths": [
