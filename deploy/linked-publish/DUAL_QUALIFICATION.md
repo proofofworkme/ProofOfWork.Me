@@ -126,3 +126,21 @@ a new collection is required, not an automatic probe retry.
 Tests use isolated synthetic transports and identity brands, including the real
 activity control flow. They do not establish production qualification, retirement,
 deployment, or writer activation.
+
+
+## Capability scheduler test observation correction
+
+The HTTP workflow regression observes each probe at its first marker callback,
+not at the later source fence after awaited health, Search and chain work. A slow
+first health read can legitimately place consecutive source fences less than one
+second apart even when probe entries remain one second apart. The real HTTP
+entry-spacing assertion keeps its existing 999 ms threshold, four fresh reads,
+source-drift rejection and signed-receipt preservation checks. An isolated mocked
+clock regression proves a 250 ms first health delay yields 1,000 ms entry spacing
+but only 750 ms between source observations, and refuses a new entry at 999 ms.
+
+This is a test-observation correction, not a scheduler change or proof that wall
+clock changes cannot affect production timing. Production scheduler/product
+bytes, package/lock, pinned probe closure, writer state and live data are unchanged.
+
+The edited server test is included in the recursive operational source envelope if deployed: the operator envelope therefore must not be equated to artifact064/backend609. This candidate is operator-only; never copy its server tree into live runtime or relabel original source receipts. Dual qualification continues reading the original sealed064 source and accepted609 runtime independently.

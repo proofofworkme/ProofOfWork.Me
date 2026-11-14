@@ -368,6 +368,7 @@ const baselineDelta = [
   }
 ];
 const operatorPaths = new Set([
+ "server/publish-linked-capability.test.mjs",
  "scripts/lifecycle-status-witness.mjs", "scripts/lifecycle-status-witness.test.mjs",
  "scripts/fixtures/dual-release/native609.json", "scripts/fixtures/dual-release/browser609.json",
  "scripts/collect-dual-release-evidence.mjs", "scripts/collect-dual-release-evidence.test.mjs",

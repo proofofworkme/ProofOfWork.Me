@@ -140,9 +140,10 @@ import {createLinkedWriterCapabilityEndpoint} from "./publish-linked.mjs";
 test("actual endpoint adapter supports rapid HTTP wallet phases and preserves a signed receipt on drift",async()=>{
  const source={model:"fixture",sha256:"a".repeat(64)},starts=[];let changed=false;
  const value=ready();value.marker.sourceIdentity=source;
- const endpoint=createLinkedWriterCapabilityEndpoint({readSearch:async checkpoint=>readySearch(checkpoint),searchContract,readMarker:async()=>value.marker,readHealth:async()=>value.health,
+ const endpoint=createLinkedWriterCapabilityEndpoint({readSearch:async checkpoint=>readySearch(checkpoint),searchContract,readMarker:async()=>{starts.push(Date.now());return value.marker;},readHealth:async()=>value.health,
   blockHashAtHeight:async()=>hash,enabled:()=>true,loadedSource:()=>source,
-  readSource:async()=>{starts.push(Date.now());return changed?{...source,sha256:"b".repeat(64)}:source;}});
+  // Measure probe entry, not the source fence after variable awaited work.
+  readSource:async()=>changed?{...source,sha256:"b".repeat(64)}:source});
  const server=createServer(async(request,response)=>{
   const url=new URL(request.url,"http://localhost");
   assert.equal(url.pathname,"/api/v1/boost");assert.equal(url.searchParams.get("capabilities"),"linked-articles-v2");
@@ -158,6 +159,32 @@ test("actual endpoint adapter supports rapid HTTP wallet phases and preserves a 
   const disabled=await response.json();assert.equal(disabled.enabled,false);assert.throws(()=>assertLinkedPublishCapability(disabled,"livenet"));
   assert.deepEqual(actions,["upload","prepare","sign"]);assert.equal(receipt.hex,"signed-and-preserved");assert.equal(starts.length,4);for(let i=1;i<starts.length;i++)assert.ok(starts[i]-starts[i-1]>=999);
  }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+test("scheduler spacing binds probe entry, not a late source fence after variable health latency",async(t)=>{
+ t.mock.timers.enable({apis:["Date","setTimeout"],now:1_800_000_000_000});
+ const starts=[],fences=[],source={model:"fixture",sha256:"a".repeat(64)},value=ready();
+ value.marker.sourceIdentity=source;
+ let releaseHealth,changed=false;
+ const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
+ const endpoint=createLinkedWriterCapabilityEndpoint({searchContract,enabled:()=>true,loadedSource:()=>source,
+  readMarker:async()=>{starts.push(Date.now());return value.marker;},
+  readHealth:async()=>{if(starts.length===1)await new Promise(resolve=>releaseHealth=resolve);return value.health;},
+  readSearch:async checkpoint=>readySearch(checkpoint),blockHashAtHeight:async()=>hash,
+  readSource:async()=>{fences.push(Date.now());return changed?{...source,sha256:"b".repeat(64)}:source;}});
+ const first=endpoint({network:"livenet",fresh:true});await flush();assert.equal(starts.length,1);
+ t.mock.timers.tick(250);releaseHealth();assert.equal((await first).enabled,true);
+ const second=endpoint({network:"livenet",fresh:true});await flush();
+ t.mock.timers.tick(749);await flush();assert.equal(starts.length,1,"must not start before the full production interval");
+ t.mock.timers.tick(1);assert.equal((await second).enabled,true);
+ assert.equal(starts[1]-starts[0],1000,"actual probe starts retain the full production interval");
+ assert.equal(fences[1]-fences[0],750,"late source observations are not scheduler start times");
+ const receipt={hex:"signed-and-preserved"};changed=true;
+ const third=endpoint({network:"livenet",fresh:true});await flush();t.mock.timers.tick(999);await flush();
+ assert.equal(starts.length,2,"source drift does not bypass scheduler admission");
+ t.mock.timers.tick(1);const disabled=await third;assert.equal(disabled.enabled,false);
+ assert.throws(()=>assertLinkedPublishCapability(disabled,"livenet"));assert.equal(receipt.hex,"signed-and-preserved");
+ assert.equal(starts[2]-starts[1],1000);
 });
 
 const searchContract={model:"linked-publish-content-search-v1",indexVersion:"proof-search-v6-linked-publish-content"};
