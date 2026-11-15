@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Pure storage guard regression tests; no production path writes."""
 import importlib.util
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -39,6 +42,41 @@ class CapacityTests(unittest.TestCase):
         for path in ['/tmp/build', '/data/proofofwork-ui-builds/nested/build', '/data/proofofwork-ui-builds/../bad', '/data/proofofwork-ui-builds/.hidden']:
             with self.subTest(path=path), self.assertRaises(ValueError):
                 b.validate_build_root(Path(path))
+
+
+class HistoryTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='pay-build-history-')
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.repository = self.root / 'full'
+        self.environment = {**os.environ, 'GIT_CONFIG_NOSYSTEM': '1',
+                            'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_SYSTEM': '/dev/null'}
+        self.git('init', '--quiet', str(self.repository))
+        (self.repository / 'record.txt').write_text('retained source\\n')
+        self.git('-C', str(self.repository), 'add', 'record.txt')
+        self.git('-C', str(self.repository), '-c', 'user.name=Build fixture',
+                 '-c', 'user.email=build-fixture@example.invalid', '-c', 'commit.gpgsign=false',
+                 'commit', '--quiet', '-m', 'Fixture history')
+
+    def git(self, *args):
+        return subprocess.check_output(['git', *args], env=self.environment, stderr=subprocess.PIPE)
+
+    def test_complete_local_history_accepted(self):
+        b.require_complete_history(self.repository, self.environment)
+
+    def test_shallow_history_refused(self):
+        shallow = self.root / 'shallow'
+        self.git('clone', '--quiet', '--depth=1', self.repository.as_uri(), str(shallow))
+        with self.assertRaisesRegex(ValueError, 'complete Git history'):
+            b.require_complete_history(shallow, self.environment)
+
+    def test_nonshallow_missing_object_refused(self):
+        blob = self.git('-C', str(self.repository), 'rev-parse', 'HEAD:record.txt').decode().strip()
+        (self.repository / '.git' / 'objects' / blob[:2] / blob[2:]).unlink()
+        with self.assertRaises(subprocess.CalledProcessError):
+            b.require_complete_history(self.repository, self.environment)
+
 
 if __name__ == '__main__':
     unittest.main()

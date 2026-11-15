@@ -82,6 +82,24 @@ verified before and after migration and through later status checks. Original
 completion receipts stay unchanged; other eligible bulk still refuses, and this
 preservation proof authorizes neither deletion nor a local archive export.
 
+Portable UI source archives require complete local Git history. The builder
+refuses shallow or disconnected donor history before allocating a build tree,
+and verifies the cloned source again before compilation and archiving. Complete
+missing history through authenticated Git operations with bounded VPS resources;
+never remove a shallow marker manually or relabel an original archive. Historical
+source completion keeps its own evidence and preserves application/dependency bytes.
+
+Ordinary backup rotations remain exact predecessor-pair admissions. The next
+release after `a2a7be66bf49-20261115T031513Z` admits only the outgoing
+`064b6991ae2a-20261114T020148Z` archive, its checksum/provenance sidecars and
+`proofofwork-www-pre-a2a7be66bf49-20261115T031513Z` rollback root. Execution
+requires separate exact owner approval and verified new-current/a2 rollback
+evidence. The historical 064/e266 retirement pair and original 1042/c396
+authority, receipts, indexes and source-config anchor remain unchanged.
+After the previous cycle is sealed complete, install the committed lifecycle
+package through `plan-upgrade-complete` and `upgrade` before fresh publication
+preflight; later unreviewed pairs still refuse.
+
 Run full release builds on the node VPS with bounded resources. The transport
 helper's `--bundle-host node-vps` mode streams the exact hash-bound source and
 surface artifacts to the UI VPS without storing another local copy. API

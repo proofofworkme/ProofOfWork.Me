@@ -69,6 +69,18 @@ def check_build_capacity(root):
         raise ValueError('Build storage admission refused; preserve evidence and review retained runs')
 
 
+
+def require_complete_history(repository, environment=None):
+    """Portable retained source must contain complete local Git history."""
+    git = ['git', '-C', str(repository)]
+    shallow = subprocess.check_output(
+        [*git, 'rev-parse', '--is-shallow-repository'], env=environment,
+        text=True, timeout=30).strip()
+    if shallow != 'false':
+        raise ValueError('Build source requires complete Git history; complete it before building')
+    subprocess.run([*git, 'fsck', '--connectivity-only', '--no-reflogs', '--no-dangling'],
+                   env=environment, stdout=subprocess.DEVNULL, check=True, timeout=120)
+
 def build_focused_surfaces(source, payload, surfaces, environment, log):
     """TypeScript source is shared; each focused Vite bundle has its own flags."""
     node = environment.get('POW_UI_BUILD_NODE', '/usr/bin/node')
@@ -109,6 +121,7 @@ def main():
     release = args.release_id or args.commit[:12] + '-' + datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     assert re.fullmatch('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z', release) and release.startswith(args.commit[:12] + '-')
     subprocess.run(['git', '-C', str(repo), 'cat-file', '-e', args.commit + '^{commit}'], check=True)
+    require_complete_history(repo)
     root.mkdir(mode=0o700)
     source = root / ('proofofwork-ui-source-' + release)
     payload = root / ('proofofwork-ui-surfaces-' + release)
@@ -128,6 +141,7 @@ def main():
     subprocess.run(['git', '-C', str(source), 'checkout', '--quiet', '--detach', args.commit], check=True, env=env)
     def git(*arguments):
         return subprocess.check_output(['git', '-C', str(source), *arguments], env=env, text=True).strip()
+    require_complete_history(source, env)
     assert git('rev-parse', 'HEAD') == args.commit
     tree = git('rev-parse', 'HEAD^{tree}')
     check_build_capacity(root)
@@ -144,6 +158,7 @@ def main():
     subprocess.run(['chmod', '--recursive', 'go-w', str(source)], check=True)
     assert git('rev-parse', 'HEAD') == args.commit and git('rev-parse', 'HEAD^{tree}') == tree
     assert not git('status', '--porcelain', '--untracked-files=all')
+    require_complete_history(source, env)
     allocated = int(subprocess.check_output(['du', '--summarize', '--block-size=1', str(source)], text=True).split()[0])
     assert 0 < allocated <= 1024**3
     bundles = {}

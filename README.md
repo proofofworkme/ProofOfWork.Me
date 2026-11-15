@@ -312,9 +312,11 @@ Product roots contain a JavaScript-free introduction and real product links.
 The same public explanation and directory remain available through the footer's
 About disclosure, with a visible introduction on Home. Interactive application
 data still uses the existing verified readers. Confirmed mainnet Publish articles
-also arrive as complete server-rendered text, with article-specific metadata and
-the same exact body verification used by the API. Other public detail views
-continue to use their browser readers.
+also arrive as verified server-rendered text, with article-specific metadata and
+the same exact body verification used by the API. Longer articles use an explicitly
+partial bounded view and a link to download the complete verified text; shorter
+articles include the complete body. Other public detail views continue to use
+their browser readers.
 
 Each canonical host serves its own `robots.txt` and `sitemap.xml`. Publish adds
 a JavaScript-free `/articles` directory and `/articles-sitemap.xml`, containing

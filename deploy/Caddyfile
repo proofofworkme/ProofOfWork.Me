@@ -177,6 +177,7 @@
 (seo_static_routes) {
 	@seo_private_query not expression `({http.request.uri.query} == "" ||
 		{http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*)(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*))*$") ||
+		({http.request.host} == "publish.proofofwork.me" && {http.request.uri.query}.matches("^article=[0-9a-f]{64}&download=text$")) ||
 		({http.request.host} == "publish.proofofwork.me" && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|article=[0-9a-fA-F]{64}|profile=[^&]{1,1000})(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|article=[0-9a-fA-F]{64}|profile=[^&]{1,1000}))*$")) ||
 		({http.request.host} == "boost.proofofwork.me" && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|profile=[^&]{1,1000})(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|profile=[^&]{1,1000}))*$")) ||
 		({http.request.host} == "code.proofofwork.me" && {http.request.uri.query}.matches("(^|&)repo=[0-9a-fA-F]{64}(&|$)") && {http.request.uri.query}.matches("^(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|(?:repo|version)=[0-9a-fA-F]{64}|path=[^&]+)(?:&(?:network=livenet|(?i:utm_[a-z0-9_]+|gclid|fbclid|msclkid)=[^&]*|(?:repo|version)=[0-9a-fA-F]{64}|path=[^&]+))*$")) ||

@@ -12,6 +12,12 @@ PACKAGE = '/var/backups/proofofwork-ui/cleanup-evidence/ui-lifecycle-tools-'
 MODEL = 'private-stage-zero-retirement-v1'
 RETIRED_PAIR = {'current': '064b6991ae2a-20261114T020148Z',
                 'previous': 'e2669bc1fd32-20261112T163804Z'}
+# Ordinary rotations are separate from the immutable historical retirement pair.
+# Adding one exact predecessor pair grants no authority to later pairs.
+REVIEWED_RETIRED_PAIRS = (
+    (RETIRED_PAIR['current'], RETIRED_PAIR['previous']),
+    ('a2a7be66bf49-20261115T031513Z', '064b6991ae2a-20261114T020148Z'),
+)
 RETIREMENT_BASE = '/var/backups/proofofwork-ui'
 RETIREMENT_EVIDENCE = RETIREMENT_BASE + '/cleanup-evidence/older-backup-retirement-6fd05dc1e04e'
 RETIREMENT_FIELDS = ('verifiedRetiredPayloads', 'verifiedRetirementCurrentPair',
@@ -76,11 +82,17 @@ def reviewed_forecast(rule):
     if rule.get('model') == 'private-stage-zero-retirement-v1':
         return rule.get('wouldRetire') == []
     if 'verifiedRetiredPayloads' in rule:
-        archive = RETIREMENT_BASE + '/releases/proofofwork-ui-release-' + RETIRED_PAIR['previous'] + '.tgz'
+        pair = rule.get('previousPair')
+        approved = next(({'current': current, 'previous': previous}
+                         for current, previous in REVIEWED_RETIRED_PAIRS
+                         if pair == {'current': current, 'previous': previous}), None)
+        if approved is None:
+            return False
+        archive = RETIREMENT_BASE + '/releases/proofofwork-ui-release-' + approved['previous'] + '.tgz'
         paths = sorted([archive + suffix for suffix in ('', '.sha256', '.provenance')] +
-                       [RETIREMENT_BASE + '/rollback-roots/proofofwork-www-pre-' + RETIRED_PAIR['current']])
+                       [RETIREMENT_BASE + '/rollback-roots/proofofwork-www-pre-' + approved['current']])
         return (rule.get('model') == 'private-stage-reviewed-retirement-v1'
-                and rule.get('previousPair') == RETIRED_PAIR and rule.get('wouldRetire') == paths
+                and rule.get('wouldRetire') == paths
                 and retired_payload_proof(rule['verifiedRetiredPayloads'])
                 and rule.get('preservedFallback') is None and rule.get('preservedRelease1042') is None)
     # Exact user-reviewed transitions only; never infer authority for the next pair.

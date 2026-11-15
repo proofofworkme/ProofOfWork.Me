@@ -61,10 +61,17 @@ Invalid or unavailable body evidence never becomes rendered article text.
 
 ### Public article HTML and discovery
 
-Canonical mainnet `/?article=<txid>` reads return the complete verified article
-in the initial HTML, with its exact title, original author, description,
-canonical URL, social metadata and `Article` structured data. Humans and
-crawlers receive the same document. A separate read-only renderer consumes the
+Canonical mainnet `/?article=<txid>` reads return a verified reading view in the
+initial HTML, with the exact title, original author, description, canonical URL,
+social metadata and `Article` structured data. Articles that fit within 16,384
+UTF-16 units include their complete text. Longer articles show an explicitly
+partial first page, bounded at a safe Unicode, CRLF and `.pow` link boundary,
+with its source range, total length and a full verified text download link.
+`/?article=<txid>&download=text` returns the complete UTF-8 bytes as a no-store,
+noindex text attachment after checking their size and SHA-256. The live checker
+verifies the bounded source slice and the full download independently; a partial
+view is never accepted as the complete article. Humans and crawlers receive the
+same document. A separate read-only renderer consumes the
 existing fresh confirmed Boost detail API; it does not establish a second chain
 authority. It requires the complete hash-bound checkpoint and article-verification
 marker, then independently checks the UTF-8 body size and SHA-256. It never uses

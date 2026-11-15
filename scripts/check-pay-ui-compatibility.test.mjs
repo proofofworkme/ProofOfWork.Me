@@ -7,6 +7,7 @@ const repository = fileURLToPath(new URL("..", import.meta.url));
 for (const [command, args] of [
   ["/usr/bin/python3", ["-I", "-B", "scripts/check-ui-compatibility-boundaries.py"]],
   ["/usr/bin/python3", ["-I", "-B", "scripts/check-ui-pay-release.py"]],
+  ["/usr/bin/python3", ["-I", "-B", "deploy/publish/check-build-capacity.test.py"]],
   [process.execPath, ["scripts/check-ui-ops-contract.mjs"]],
 ]) {
   test(args.at(-1), () => {

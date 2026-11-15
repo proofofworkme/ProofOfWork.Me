@@ -140,9 +140,12 @@ Search metadata and JavaScript-free introductions use the same public product
 catalog, never local drafts, wallet state, invented statistics or hidden text
 written only for crawlers.
 
-Publish's server-rendered article is a complete readable document before
-JavaScript loads. Preserve exact source text and original authorship, with one
-primary title, ordinary discovery links and inspectable proof details. Keep the
+Publish's server-rendered article provides a verified readable view before
+JavaScript loads. Include the complete text when it fits the bounded reading
+page; label longer views as partial with their source range, total length and
+an ordinary link to the complete verified text download. Never present a
+partial view as the complete article. Preserve exact source text and original
+authorship, with one primary title, discovery links and inspectable proof details. Keep the
 initial document visible through client loading; remove it when the verified
 client reader takes over, navigation changes the article, or verification fails.
 The JavaScript-free directory uses the same quiet typography and accessible

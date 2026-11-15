@@ -54,6 +54,20 @@ def retired_observation():
             'privateStageRetention': rule}
 
 
+def successor_retired_observation():
+    observed = retired_observation()
+    pair = {'current': 'a2a7be66bf49-20261115T031513Z',
+            'previous': '064b6991ae2a-20261114T020148Z'}
+    observed['binding'] = {**observed['binding'], 'pair': pair}
+    observed['verifiedRetirementCurrentPair'] = pair
+    archive = A['RETIREMENT_BASE'] + '/releases/proofofwork-ui-release-' + pair['previous'] + '.tgz'
+    observed['privateStageRetention'] = {**observed['privateStageRetention'],
+        'releaseId': 'abcdefabcdef-20261116T010000Z', 'previousPair': pair,
+        'wouldRetire': sorted([archive+s for s in ('', '.sha256', '.provenance')] +
+            [A['RETIREMENT_BASE'] + '/rollback-roots/proofofwork-www-pre-' + pair['current']])}
+    return observed
+
+
 class PublicationAdmission(unittest.TestCase):
     def test_retired_obligation_requires_private_bound_current_package_and_original_proof(self):
         observed = retired_observation(); release = observed['privateStageRetention']['releaseId']
@@ -94,16 +108,64 @@ class PublicationAdmission(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'retired-payload proof'):
             A['check_observation'](observed, True, release=rule['releaseId'])
 
-    def test_storage_retired_scope_cannot_skip_the_exact_forecast_gate(self):
+    def test_a2_064_forecast_preserves_origin_and_refuses_unreviewed_pairs_or_paths(self):
+        observed = successor_retired_observation(); rule = observed['privateStageRetention']
+        original = retired_observation()['verifiedRetiredPayloads']
+        self.assertEqual(observed['verifiedRetiredPayloads'], original)
         storage = runpy.run_path(str(HERE.parent/'audit30/ui-storage.py'))
-        layout = storage['Layout'](); observed = retired_observation(); rule = observed['privateStageRetention']
+        A['check_observation'](observed, True, release=rule['releaseId'])
+        for check in (A['reviewed_forecast'], storage['reviewed_forecast']):
+            self.assertTrue(check(rule))
+            future = {'current': rule['releaseId'], 'previous': rule['previousPair']['current']}
+            archive = A['RETIREMENT_BASE'] + '/releases/proofofwork-ui-release-' + future['previous'] + '.tgz'
+            future_paths = sorted([archive+s for s in ('', '.sha256', '.provenance')] +
+                [A['RETIREMENT_BASE'] + '/rollback-roots/proofofwork-www-pre-' + future['current']])
+            changes = [
+                {'wouldRetire': rule['wouldRetire'][:-1]},
+                {'wouldRetire': list(reversed(rule['wouldRetire']))},
+                {'wouldRetire': rule['wouldRetire'] + ['/extra']},
+                {'wouldRetire': rule['wouldRetire'] + [rule['wouldRetire'][0]]},
+                {'wouldRetire': retired_observation()['privateStageRetention']['wouldRetire']},
+                {'previousPair': future, 'wouldRetire': future_paths},
+                {'previousPair': {**rule['previousPair'], 'unreviewed': True}},
+                {'verifiedRetiredPayloads': {**original, 'retirementRetainedPair': rule['previousPair']}},
+                {'verifiedRetiredPayloads': {**original, 'sourceIndex': INDEX}},
+                {'verifiedRetiredPayloads': None},
+                {'preservedFallback': HOLD}, {'preservedRelease1042': HOLD},
+            ]
+            for change in changes:
+                with self.subTest(change=change):
+                    self.assertFalse(check({**rule, **change}))
+        for key in A['RETIREMENT_FIELDS']:
+            with self.subTest(field=key), self.assertRaises(ValueError):
+                A['check_observation']({**observed, key: None}, True, release=rule['releaseId'])
+
+    def test_current_storage_writer_has_explicit_policy_admission(self):
+        storage = HERE.parent/'audit30/ui-storage.py'
+        policy = ast.parse((HERE.parent/'audit30/ui-release-policy.py').read_bytes())
+        assignments = [node for node in policy.body if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == 'KNOWN_RETIREMENT_CONTROLLERS'
+                    for target in node.targets)]
+        self.assertEqual(len(assignments), 1)
+        reviewed = ast.literal_eval(assignments[0].value)
+        self.assertIn(hashlib.sha256(storage.read_bytes()).hexdigest(), reviewed)
+        self.assertIn('60fe272a4bb45848dd67e745302e4c02b909447fca8f3e11d319f8f02cb61325', reviewed)
+
+    def test_storage_retired_scope_cannot_skip_the_exact_forecast_gate(self):
+        for observed in (retired_observation(), successor_retired_observation()):
+            with self.subTest(pair=observed['binding']['pair']):
+                self.assert_storage_retired_scope(observed)
+
+    def assert_storage_retired_scope(self, observed):
+        storage = runpy.run_path(str(HERE.parent/'audit30/ui-storage.py'))
+        layout = storage['Layout'](); rule = observed['privateStageRetention']
         def row(path, release=None):
             return {'path':str(path), 'snapshot':{'path':str(path), 'entries':[], 'sha256':storage['digest']([])},
                     **({'fields':{'release_id':release}} if release else {})}
         current = row(layout.live, rule['releaseId'])
-        previous = row(layout.roots/('proofofwork-www-pre-'+rule['releaseId']), A['RETIRED_PAIR']['current'])
+        previous = row(layout.roots/('proofofwork-www-pre-'+rule['releaseId']), rule['previousPair']['current'])
         sources = [row(storage['source_locations'](layout, release)[0])
-                   for release in (rule['releaseId'], A['RETIRED_PAIR']['current'])]
+                   for release in (rule['releaseId'], rule['previousPair']['current'])]
         targets = [{**row(path), 'kind':'rollback-root' if '/rollback-roots/' in path else
                     'managed-release-archive' if path.endswith('.tgz') else 'archive-sidecar'} for path in rule['wouldRetire']]
         scope = {'verifiedRetiredPayloads':observed['verifiedRetiredPayloads'],

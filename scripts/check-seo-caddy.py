@@ -22,7 +22,7 @@ HOSTS = {
     'www': 'landing', 'id': 'id', 'dns': 'dns', 'computer': 'computer',
     'desktop': 'desktop', 'browser': 'browser', 'pages': 'pages',
     'permission': 'permission', 'boost': 'boost', 'publish': 'publish',
-    'search': 'search', 'code': 'code', 'jobs': 'jobs', 'amo': 'marketplace',
+    'search': 'search', 'code': 'code', 'jobs': 'jobs', 'pay': 'pay', 'amo': 'marketplace',
     'growth': 'growth', 'log': 'activity', 'credit': 'token', 'wallet': 'wallet',
     'work': 'work', 'infinity': 'infinity', 'inception': 'inception',
 }
@@ -47,6 +47,22 @@ def rewrite_fixture(value, base, renderer_port):
 
 class RendererFixture(BaseHTTPRequestHandler):
     def do_GET(self):
+        # Distinguish a verified text response from an HTML shell. Unknown
+        # canonical article IDs must reach the renderer's honest 404 response.
+        if 'download=' in self.path:
+            known = self.path in (
+                '/?article='+TXID+'&download=text',
+                '/index.html?article='+TXID+'&download=text',
+            )
+            self.send_response(200 if known else 404)
+            self.send_header('Content-Type', 'text/plain; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Robots-Tag', 'noindex, nofollow')
+            if known:
+                self.send_header('Content-Disposition', 'attachment; filename="proofofwork-article-'+TXID+'.txt"')
+            self.end_headers()
+            self.wfile.write(b'VERIFIED ARTICLE TEXT' if known else b'ARTICLE NOT FOUND')
+            return
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.send_header('Cache-Control', 'no-store')
@@ -188,6 +204,38 @@ def main():
                         assert headers['Cache-Control'] == 'no-store'
                     check(host, '/?'+query+'&mode=edit', body='PRIVATE '+HOSTS[host], robots='noindex, nofollow')
                 check('publish', '/?article='+TXID+'&article='+TXID, body='PRIVATE publish', robots='noindex, nofollow')
+                # The generated full-text link has one canonical query form.
+                # It stays unindexed, but must reach the renderer instead of the
+                # private HTML shell; other query states retain their old route.
+                for path in ('/', '/index.html'):
+                    headers = check('publish', path+'?article='+TXID+'&download=text',
+                        body='VERIFIED ARTICLE TEXT', robots='noindex, nofollow', content_type='text/plain')
+                    assert headers['Cache-Control'] == 'no-store', headers
+                    assert headers['Content-Disposition'] == 'attachment; filename="proofofwork-article-'+TXID+'.txt"', headers
+                    check('publish', path+'?article='+'0'*64+'&download=text', status=404,
+                        body='ARTICLE NOT FOUND', robots='noindex, nofollow', content_type='text/plain')
+                for host, surface in HOSTS.items():
+                    if host != 'publish':
+                        check(host, '/?article='+TXID+'&download=text',
+                            body='PRIVATE '+surface, robots='noindex, nofollow')
+                for query in (
+                    'download=text', 'download=text&article='+TXID,
+                    'article='+TXID+'&download=html', 'article='+TXID+'&download=Text',
+                    'article='+TXID+'&download=%74ext', '%61rticle='+TXID+'&download=text',
+                    'article='+TXID.upper()+'&download=text',
+                    'article='+TXID[:-1]+'&download=text', 'article='+TXID+'0&download=text',
+                    'article='+'g'*64+'&download=text',
+                    'article='+TXID+'&download=text&download=text',
+                    'article='+TXID+'&download=text&article='+TXID,
+                    'article='+TXID+'&download=text&profile=alice',
+                    'article='+TXID+'&download=text&mode=edit',
+                    'article='+TXID+'&download=text&draft=private',
+                    'article='+TXID+'&download=text&wallet=private',
+                    'article='+TXID+'&download=text&network=livenet',
+                    'article='+TXID+'&download=text&utm_source=share',
+                    'article='+TXID+'&download=text&', '&article='+TXID+'&download=text',
+                ):
+                    check('publish', '/?'+query, body='PRIVATE publish', robots='noindex, nofollow')
                 for path in ['/articles', '/articles/', '/articles-sitemap.xml', '/publish-render-provenance.json']:
                     check('publish', path, body='SSR publish')
                     check('www', path, status=404)
