@@ -8594,6 +8594,33 @@ Status reports `verifiedRetirementPolicyCodeSha256` for the historical authority
 must authenticate the successor context separately from frozen historical
 qualification. This package migration does not authorize another deletion.
 
+The Pay publication successor carries that authenticated retired-payload
+obligation through preflight, the closed-input private plan, installed admission
+and the final native exchange fence. Each boundary binds the original proof,
+current retained pair, installed package and source-config anchor. The native
+fence rechecks sealed ancestry, terminal evidence, sidecars and the physical
+retained pair under the inherited deployment lock, then rereads the plan,
+intent, config and state. Bare absence, caller-provided status fields or a
+missing private forecast cannot authorize publication. Historical pre-fallback
+and physical-hold publication paths retain their original rules.
+
+The separately owner-approved Pay ordinary transition is restricted to current
+`064b6991ae2a-20261114T020148Z` and previous
+`e2669bc1fd32-20261112T163804Z`. Its proposal names only the e266 release
+`.tgz`, `.tgz.sha256`, `.tgz.provenance`, and rollback root
+`proofofwork-www-pre-064b6991ae2a-20261114T020148Z`. The owner approved the
+narrow admission update and those exact four paths after review of VPS proposal
+`pay-ordinary-four-retirement-proposal-v1.json`, SHA-256
+`e275be467e84232f0da9f24e71114070e7583947c62a372e4dcd21be470e6c8a`.
+The proposal verifies outgoing tree/archive bytes and the sealed retained pair;
+it is not an executable plan or a new isolated restore. Its placeholder release
+identity must be replaced by fresh qualification of the final source. Execution
+requires verified replacement publication and its retained current/prior
+pair; 064 then becomes the immediate rollback. The original retired 1042/c3969
+proof and retained sidecars remain unchanged. Future predecessor pairs and
+additional paths refuse; source, audit evidence and capacity limits remain
+outside this deletion scope.
+
 The initial backlog cycle completed on 2026-10-18. Its
 [execution record](audits/2026-10-18-ui-retention-repair-execution.json) binds
 retirement of four obsolete rollback trees and 16 complete archive groups

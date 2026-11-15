@@ -1029,11 +1029,52 @@ def preserved_1042_paths(layout):
     return [str(root), *(str(archive) + suffix for suffix in ('', '.sha256', '.provenance'))]
 
 
+RETIRED_PAIR = {'current': '064b6991ae2a-20261114T020148Z',
+                'previous': 'e2669bc1fd32-20261112T163804Z'}
+RETIREMENT_BASE = '/var/backups/proofofwork-ui'
+RETIREMENT_EVIDENCE = RETIREMENT_BASE + '/cleanup-evidence/older-backup-retirement-6fd05dc1e04e'
+
+
+def retired_payload_proof(proof):
+    """Check the exact historical scope; installed Runtime authenticates its bytes."""
+    if not isinstance(proof, dict):
+        return False
+    paths = [RETIREMENT_BASE + '/' + path for path in (
+        'releases/proofofwork-ui-release-1042efea2aa1-20261112T074918Z.tgz',
+        'rollback-roots/proofofwork-www-pre-e2669bc1fd32-20261112T163804Z',
+        'releases/proofofwork-ui-release-c3969c39c2b2-20261101T051206Z.tgz',
+        'rollback-roots/proofofwork-www-pre-54088ca155bc-20261103T032112Z')]
+    receipt = proof.get('receipt')
+    return (set(proof) == {'model', 'proposalSha256', 'receipt', 'receiptSha256',
+                          'journalHeadSha256', 'policyCodeSha256', 'retiredPayloadPaths',
+                          'retirementRetainedPair', 'sourceIndex', 'recoveryVerification'}
+            and proof['model'] == 'intentionally-retired-payloads-retained-evidence-v1'
+            and proof['proposalSha256'] == '6fd05dc1e04e6fbcab293683c5a0d10d184ff0bd83039a66d7f2c7ec53161004'
+            and proof['retiredPayloadPaths'] == paths and proof['retirementRetainedPair'] == RETIRED_PAIR
+            and proof['sourceIndex'] == {
+                'path': RETIREMENT_BASE + '/cleanup-evidence/audit30-policy-admission-index-ordinary-064b6991ae2a-20261114T020148Z.json',
+                'sha256': '5a7b025d95cd55a2b40f2a69b0189b74d75484ff237bac327f920a6b2a231c54'}
+            and proof['recoveryVerification'] == 'isolated-static-only'
+            and isinstance(receipt, dict) and set(receipt) == {'path', 'sha256'}
+            and receipt['path'] == RETIREMENT_EVIDENCE + '/completed.json'
+            and receipt['sha256'] == proof['receiptSha256']
+            and all(isinstance(proof[k], str) and re.fullmatch('[a-f0-9]{64}', proof[k])
+                    for k in ('receiptSha256', 'journalHeadSha256', 'policyCodeSha256')))
+
+
 def reviewed_forecast(rule):
     if not isinstance(rule, dict):
         return False
     if rule.get('model') == 'private-stage-zero-retirement-v1':
         return rule.get('wouldRetire') == []
+    if 'verifiedRetiredPayloads' in rule:
+        archive = RETIREMENT_BASE + '/releases/proofofwork-ui-release-' + RETIRED_PAIR['previous'] + '.tgz'
+        paths = sorted([archive + suffix for suffix in ('', '.sha256', '.provenance')] +
+                       [RETIREMENT_BASE + '/rollback-roots/proofofwork-www-pre-' + RETIRED_PAIR['current']])
+        return (rule.get('model') == 'private-stage-reviewed-retirement-v1'
+                and rule.get('previousPair') == RETIRED_PAIR and rule.get('wouldRetire') == paths
+                and retired_payload_proof(rule['verifiedRetiredPayloads'])
+                and rule.get('preservedFallback') is None and rule.get('preservedRelease1042') is None)
     # Exact user-reviewed transitions only; never infer authority for the next pair.
     pair = rule.get('previousPair')
     approved = (
@@ -1099,6 +1140,16 @@ def validate_plan(plan,layout,kind,approval_sha):
                 or rule['previousPair']['current'] != previous['fields']['release_id']
                 or rule['preservedFallback'] != plan['policyScope']['preservedFallback']):
             raise ValueError('Preserved fallback lifecycle permits only reviewed retirement')
+    if kind == 'future-retention' and (plan['policyScope'] or {}).get('verifiedRetiredPayloads') is not None:
+        scope = plan['policyScope']
+        rule = plan.get('privateStageRetention', {}).get('forecast', {})
+        if (not reviewed_forecast(rule) or not retired_payload_proof(scope['verifiedRetiredPayloads'])
+                or rule.get('verifiedRetiredPayloads') != scope['verifiedRetiredPayloads']
+                or scope.get('preservedFallback') is not None or scope.get('preservedRelease1042') is not None
+                or sorted(str(p) for p in targets) != rule.get('wouldRetire') or plan['moves']
+                or rule.get('releaseId') != current['fields']['release_id']
+                or rule.get('previousPair', {}).get('current') != previous['fields']['release_id']):
+            raise ValueError('Retired-payload lifecycle permits only its exact reviewed ordinary retirement')
     if len({r['path'] for r in plan['delete']})!=len(plan['delete']):raise ValueError('Duplicate deletion path')
     citation=plan.get('citationReview')
     if citation is not None and (kind not in ('cleanup','future-retention') or not isinstance(citation,dict) or set(citation)!= {'path','sha256'} or not SHA.fullmatch(citation['sha256'])):raise ValueError('Invalid citation-review plan binding')

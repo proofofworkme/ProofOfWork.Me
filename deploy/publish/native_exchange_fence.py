@@ -10,6 +10,9 @@ import subprocess
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 RID = re.compile(r'[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z\Z')
 ATTEMPT = re.compile(r'[a-z0-9][a-z0-9-]{0,30}\Z')
+RETIREMENT_FIELDS = ('verifiedRetiredPayloads', 'verifiedRetirementCurrentPair',
+                     'verifiedRetirementPolicyCodeSha256', 'verifiedCurrentPackageSha256',
+                     'verifiedRetirementSourceConfig')
 
 
 def require(ok, reason):
@@ -167,6 +170,48 @@ def require_pre_fallback_index(observed,state,scope,prefix,release):
     require(last==pair,'last sealed admission does not bind the claimed pair')
 
 
+def retirement_context(runtime, observed, plan, forecast, scope, private):
+    """Require the installed branded authority, not caller-supplied absence."""
+    supplied = any(key in value for value in (observed, plan) for key in RETIREMENT_FIELDS)
+    retirement = getattr(runtime, 'retirement', None)
+    if not supplied and retirement is None:
+        return None
+    require(private and retirement is not None, 'retired-payload authority requires private publication')
+    receipt = runtime.P.retirement_module()
+    receipt.require_verified_retirement(retirement)
+    config = runtime.config
+    anchor = receipt.source_config(config)
+    expected = {'verifiedRetiredPayloads': retirement.proof,
+                'verifiedRetirementCurrentPair': scope['pair'],
+                'verifiedRetirementPolicyCodeSha256': retirement.proof['policyCodeSha256'],
+                'verifiedCurrentPackageSha256': config['package']['sha256'],
+                'verifiedRetirementSourceConfig': anchor}
+    require(anchor is not None and config['controller'] == scope['controller']
+            and all(key in observed and key in plan and observed[key] == plan[key] == value
+                    for key, value in expected.items())
+            and retirement.verified_current_pair == scope['pair']
+            and forecast.get('verifiedRetiredPayloads') == retirement.proof,
+            'retired-payload proof, package, source anchor or current pair differs')
+    require(all(value.get(key) is None for value in (observed, plan, forecast)
+                for key in ('verifiedPreservedFallback', 'verifiedPreservedRelease1042',
+                            'verifiedPreFallbackIndex', 'preservedFallback', 'preservedRelease1042')),
+            'retired-payload authority mixed with physical-hold or pre-fallback evidence')
+    return retirement
+
+
+def final_retirement_fence(runtime, retirement, state, scope):
+    # Recheck the sealed original transition/current package chain and the real
+    # terminal, sidecars, historical equivalents and fresh protected pair after
+    # all plan/intent reads. These use the installed verifier's stable descriptor
+    # reads and run under the same inherited publication lock.
+    retirement.verify_lifecycle_state(state, runtime.config_sha, config=runtime.config)
+    require(retirement.verify_scope(runtime.layout) == retirement.proof
+            and retirement.verified_current_pair == scope['pair'],
+            'retired-payload authority changed before rename')
+    require(all(not os.path.lexists(path) for path in retirement.proof['retiredPayloadPaths']),
+            'retired payload reappeared before rename')
+
+
 def verify(received, source, publisher, live, scratch, archive_dir, rollback, lock_path, fd, release, commit, attempt, pin, test):
     source,publisher,live,scratch,archive_dir,rollback,lock_path=map(Path,(source,publisher,live,scratch,archive_dir,rollback,lock_path))
     require(RID.fullmatch(release) and release.startswith(commit[:12]+'-') and re.fullmatch('[0-9a-f]{40}',commit)
@@ -224,7 +269,10 @@ def verify(received, source, publisher, live, scratch, archive_dir, rollback, lo
     require(controller==scope['controller'] and controller['path']==str(pkg/relative)
             and manifest['files'][relative]['sha256']==controller['sha256'],'unexpected lifecycle controller')
     code=read(pkg/relative,controller['sha256'],2*1024**2)
-    for name in (relative,'deploy/audit30/ui-storage.py','deploy/audit30/ui-release-policy.py'):
+    authority_files = [relative,'deploy/audit30/ui-storage.py','deploy/audit30/ui-release-policy.py']
+    if config.get('payloadRetirement') is not None:
+        authority_files.append('deploy/ui-retention/retirement_receipt.py')
+    for name in authority_files:
         authority=manifest['files'][name]
         member=read(pkg/name,authority['sha256'],2*1024**2)
         require(len(member)==authority['bytes'] and member==committed_file(source,commit,name,authority['sha256']),
@@ -266,7 +314,8 @@ def verify(received, source, publisher, live, scratch, archive_dir, rollback, lo
     require(forecast['releaseId']==release and forecast['stateSha256']==state_ref['sha256']
             and forecast['index']==state['index'] and forecast['previousPair']==scope['pair'],
             'forecast did not bind the current state, index and proposed release')
-    if observed['verifiedPreservedFallback'] is None:
+    retired = retirement_context(runtime, observed, plan, forecast, scope, private)
+    if observed['verifiedPreservedFallback'] is None and retired is None:
         require_pre_fallback_index(observed,state,scope,prefix,release)
     rows=[]
     if private:
@@ -284,3 +333,10 @@ def verify(received, source, publisher, live, scratch, archive_dir, rollback, lo
     read(config_ref['path'],config_ref['sha256'])
     read(state_ref['path'],state_ref['sha256'],64*1024**2)
     final_inode_fence(rows)
+    if retired is not None:
+        final_retirement_fence(runtime, retired, state, scope)
+        require(read(intent_path)==received_intent and inherited_lock(lock_path,fd,intent)==lock,
+                'intent or lock changed during final retirement fence')
+        read(plan_path,pin)
+        read(config_ref['path'],config_ref['sha256'])
+        read(state_ref['path'],state_ref['sha256'],64*1024**2)

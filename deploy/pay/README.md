@@ -92,8 +92,17 @@ separate lifecycle upgrade.
 Full builds use the node data-volume build pool; source and surface archives
 stream to the UI host via `--bundle-host node-vps`. Use the closed-input/private
 staging flow, fresh whole-sequence capacity admission and completed retention
-lifecycle. Preserve the separately held 1042 and c3969 fallback objects and all
-their admissions. V6 changes no storage ceiling, root reserve, retention
+lifecycle. Authenticate the completed 1042/c3969 payload retirement through its
+original terminal receipt, journal, sidecars and admission history; their
+absence alone is never publication authority. Bind that historical proof,
+the current retained pair, installed package and original config anchor through
+preflight, the private plan, installed admission and the final native exchange
+fence. A missing private forecast or ordinary publication request must refuse.
+The owner separately approved only the e266 archive, its two sidecars and the
+pre-064 rollback root for the next ordinary rotation. It can run only after
+the replacement and its current/prior pair are verified; refresh the proposal's
+placeholder forecast against the final release source before execution.
+V6 changes no storage ceiling, root reserve, retention
 permission, compatibility-path/edge ceiling or held-object authority. A capacity
 refusal requires its own concrete reviewed cleanup; it cannot be bypassed.
 

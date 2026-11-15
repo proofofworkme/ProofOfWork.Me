@@ -25,7 +25,144 @@ BINDING = {'config':{'path':A['CONFIG'],'sha256':'b'*64},'state':{'path':A['STAT
 RULE = {'model':A['MODEL'],'wouldRetire':[],'preservedFallback':HOLD,'releaseId':NEXT}
 
 
+def retired_observation():
+    base = A['RETIREMENT_BASE']; pair = A['RETIRED_PAIR'].copy()
+    proof = {'model': 'intentionally-retired-payloads-retained-evidence-v1',
+             'proposalSha256': '6fd05dc1e04e6fbcab293683c5a0d10d184ff0bd83039a66d7f2c7ec53161004',
+             'receipt': {'path': A['RETIREMENT_EVIDENCE'] + '/completed.json', 'sha256': '1'*64},
+             'receiptSha256': '1'*64, 'journalHeadSha256': '2'*64, 'policyCodeSha256': '3'*64,
+             'retiredPayloadPaths': [base + '/' + path for path in (
+                 'releases/proofofwork-ui-release-1042efea2aa1-20261112T074918Z.tgz',
+                 'rollback-roots/proofofwork-www-pre-e2669bc1fd32-20261112T163804Z',
+                 'releases/proofofwork-ui-release-c3969c39c2b2-20261101T051206Z.tgz',
+                 'rollback-roots/proofofwork-www-pre-54088ca155bc-20261103T032112Z')],
+             'retirementRetainedPair': pair,
+             'sourceIndex': {'path': base + '/cleanup-evidence/audit30-policy-admission-index-ordinary-064b6991ae2a-20261114T020148Z.json',
+                             'sha256': '5a7b025d95cd55a2b40f2a69b0189b74d75484ff237bac327f920a6b2a231c54'},
+             'recoveryVerification': 'isolated-static-only'}
+    archive = base + '/releases/proofofwork-ui-release-' + pair['previous'] + '.tgz'
+    rule = {'model': 'private-stage-reviewed-retirement-v1', 'releaseId': 'abcdefabcdef-20261115T010000Z',
+            'previousPair': pair, 'index': INDEX, 'stateSha256': BINDING['state']['sha256'],
+            'verifiedRetiredPayloads': proof,
+            'wouldRetire': sorted([archive+s for s in ('', '.sha256', '.provenance')] +
+                [base + '/rollback-roots/proofofwork-www-pre-' + pair['current']])}
+    return {'binding': {**BINDING, 'pair': pair}, 'index': INDEX, 'verifiedPreservedFallback': None,
+            'verifiedPreservedRelease1042': None, 'verifiedRetiredPayloads': proof,
+            'verifiedRetirementCurrentPair': pair, 'verifiedRetirementPolicyCodeSha256': '3'*64,
+            'verifiedCurrentPackageSha256': 'd'*64,
+            'verifiedRetirementSourceConfig': {'path': A['RETIREMENT_EVIDENCE'] + '/successor-config.json', 'sha256': '4'*64},
+            'privateStageRetention': rule}
+
+
 class PublicationAdmission(unittest.TestCase):
+    def test_retired_obligation_requires_private_bound_current_package_and_original_proof(self):
+        observed = retired_observation(); release = observed['privateStageRetention']['releaseId']
+        A['check_observation'](observed, True, release=release)
+        with self.assertRaisesRegex(ValueError, 'requires private'):
+            A['check_observation'](observed, False, release=release)
+        mutations = [{key: None} for key in A['RETIREMENT_FIELDS']]
+        mutations += [{'verifiedPreservedFallback': HOLD}, {'verifiedPreFallbackIndex': INDEX},
+                      {'verifiedCurrentPackageSha256': '5'*64},
+                      {'verifiedRetirementCurrentPair': BINDING['pair']},
+                      {'verifiedRetirementPolicyCodeSha256': '5'*64},
+                      {'verifiedRetirementSourceConfig': {'path': '/foreign', 'sha256': '4'*64}}]
+        for change in mutations:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                A['check_observation']({**observed, **change}, True, release=release)
+        for key in ('proposalSha256', 'sourceIndex', 'retiredPayloadPaths', 'receipt', 'policyCodeSha256'):
+            tampered = copy.deepcopy(observed); tampered['verifiedRetiredPayloads'][key] = None
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                A['check_observation'](tampered, True, release=release)
+        stripped = {k:v for k,v in observed.items() if k not in A['RETIREMENT_FIELDS']}
+        with self.assertRaisesRegex(ValueError, 'pre-fallback'):
+            A['check_observation'](stripped, True, release=release)
+
+    def test_retired_forecast_authorizes_only_exact_064_e266_four_paths(self):
+        rule = retired_observation()['privateStageRetention']
+        storage = runpy.run_path(str(HERE.parent/'audit30/ui-storage.py'))
+        for check in (A['reviewed_forecast'], storage['reviewed_forecast']):
+            self.assertTrue(check(rule))
+            changes = [{'wouldRetire':rule['wouldRetire'][:-1]}, {'wouldRetire':list(reversed(rule['wouldRetire']))},
+                       {'wouldRetire':rule['wouldRetire']+['/extra']}, {'verifiedRetiredPayloads':None},
+                       {'preservedFallback':HOLD}, {'preservedRelease1042':HOLD},
+                       {'previousPair':{'current':rule['releaseId'], 'previous':A['RETIRED_PAIR']['current']}}]
+            for change in changes:
+                with self.subTest(change=change):
+                    self.assertFalse(check({**rule, **change}))
+        observed = retired_observation()
+        observed['privateStageRetention'] = {**rule, 'verifiedRetiredPayloads':{**rule['verifiedRetiredPayloads'], 'journalHeadSha256':'7'*64}}
+        with self.assertRaisesRegex(ValueError, 'retired-payload proof'):
+            A['check_observation'](observed, True, release=rule['releaseId'])
+
+    def test_storage_retired_scope_cannot_skip_the_exact_forecast_gate(self):
+        storage = runpy.run_path(str(HERE.parent/'audit30/ui-storage.py'))
+        layout = storage['Layout'](); observed = retired_observation(); rule = observed['privateStageRetention']
+        def row(path, release=None):
+            return {'path':str(path), 'snapshot':{'path':str(path), 'entries':[], 'sha256':storage['digest']([])},
+                    **({'fields':{'release_id':release}} if release else {})}
+        current = row(layout.live, rule['releaseId'])
+        previous = row(layout.roots/('proofofwork-www-pre-'+rule['releaseId']), A['RETIRED_PAIR']['current'])
+        sources = [row(storage['source_locations'](layout, release)[0])
+                   for release in (rule['releaseId'], A['RETIRED_PAIR']['current'])]
+        targets = [{**row(path), 'kind':'rollback-root' if '/rollback-roots/' in path else
+                    'managed-release-archive' if path.endswith('.tgz') else 'archive-sidecar'} for path in rule['wouldRetire']]
+        scope = {'verifiedRetiredPayloads':observed['verifiedRetiredPayloads'],
+                 'eligible':[{k:r[k] for k in ('path','kind')} for r in targets]}
+        plan = {'schema':'pow-audit30-exact-ui-storage-plan-v1','host':'77.42.91.106',
+                'kind':'future-retention','scopeApprovalSha256':'a'*64,'safeguards':{},
+                'protected':{'current':current,'previous':previous,'sources':sources},
+                'delete':targets,'moves':[],'policyScope':scope,'privateStageRetention':{'forecast':rule}}
+        validate = storage['validate_plan']
+        validate(plan,layout,'future-retention','a'*64)
+        for change in ({'privateStageRetention':{}}, {'delete':[]},
+                       {'privateStageRetention':{'forecast':{**rule,'wouldRetire':[]}}},
+                       {'policyScope':{**scope,'verifiedRetiredPayloads':{**scope['verifiedRetiredPayloads'],'journalHeadSha256':'9'*64}}}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate({**plan,**change},layout,'future-retention','a'*64)
+
+    def test_retired_private_make_plan_refuses_missing_forecast_before_artifact_io(self):
+        observed=retired_observation(); release=observed['privateStageRetention']['releaseId']
+        preflight={**observed, 'retentionLifecycle':observed['binding'], 'retentionIndex':observed['index'],
+                   'closedArchive':{'request':{'inputCompactorSha256':'6'*64}}}
+        del preflight['privateStageRetention']
+        with tempfile.TemporaryDirectory() as tmp:
+            build=Path(tmp)/'build'; before=Path(tmp)/'preflight'
+            build.write_text(json.dumps({'releaseId':release})); before.write_text(json.dumps(preflight))
+            call=R['make_plan']
+            with patch.dict(call.__globals__,admission_source=lambda:(HERE/'publication_admission.py').read_bytes()):
+                with self.assertRaisesRegex(ValueError,'exact retention forecast'):
+                    call(type('Args',(),{'build_receipt':build,'preflight':before})())
+
+    def test_zero_retirement_model_does_not_authenticate_forged_retirement(self):
+        observed=retired_observation()
+        rule={**observed['privateStageRetention'], 'model':A['MODEL'], 'wouldRetire':[]}
+        storage=runpy.run_path(str(HERE.parent/'audit30/ui-storage.py'))
+        for check in (A['reviewed_forecast'],storage['reviewed_forecast']):
+            self.assertTrue(check(rule))
+            self.assertFalse(check({**rule,'wouldRetire':['/extra']}))
+        for proof in (None, {}, {**rule['verifiedRetiredPayloads'],'journalHeadSha256':'8'*64}):
+            changed={**observed,'privateStageRetention':{**rule,'verifiedRetiredPayloads':proof}}
+            with self.subTest(proof=proof), self.assertRaisesRegex(ValueError,'retired-payload proof'):
+                A['check_observation'](changed,True,release=rule['releaseId'])
+
+    def test_installed_retired_admission_authenticates_config_and_propagates_evidence(self):
+        observed = retired_observation(); binding = observed['binding']; rule = observed['privateStageRetention']
+        config = {'package':{'path':A['PACKAGE']+'d'*64, 'sha256':'d'*64}, 'controller':binding['controller'],
+                  'payloadRetirementSourceConfig':observed['verifiedRetirementSourceConfig']}
+        runtime=Mock(); runtime.layout=object(); runtime.status.return_value=observed
+        runtime.retirement.proof=observed['verifiedRetiredPayloads']
+        controller=b'def installed_runtime(*args): return runtime_for_admission_test\n'
+        def read(path, digest, limit):
+            return json.dumps(config).encode() if path==A['CONFIG'] else controller
+        func=A['installed_admission']
+        with patch.dict(func.__globals__,pinned_file=read), patch('builtins.runtime_for_admission_test',runtime,create=True):
+            result=func(binding,rule['releaseId'],True,rule,9)
+            self.assertNotIn('verifiedPreFallbackIndex',result)
+            for key in A['RETIREMENT_FIELDS']:self.assertEqual(result[key],observed[key])
+            config['payloadRetirementSourceConfig']={'path':'/foreign','sha256':'5'*64}
+            with self.assertRaisesRegex(ValueError,'installed package authority'):
+                func(binding,rule['releaseId'],True,rule,9)
+
     def test_november_11_retirement_is_exact_and_does_not_authorize_future_pairs(self):
         current = 'd9fa69d9e1e4-20261110T210615Z'
         previous = 'd4eeffaf28f1-20261109T160000Z'

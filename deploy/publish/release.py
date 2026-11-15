@@ -478,8 +478,11 @@ def preflight(args):
     assert p['retentionDeferred'] is True
     assert lifecycle['pair']['current'] == p['activeManifest']['release_id']
     if (p['verifiedPreservedFallback'] != hold or p['retentionIndex'] != lifecycle['index']
-            or p.get('verifiedPreFallbackIndex') != lifecycle.get('verifiedPreFallbackIndex')):
-        raise ValueError('Verified fallback changed during preflight')
+            or p.get('verifiedPreFallbackIndex') != lifecycle.get('verifiedPreFallbackIndex')
+            or p.get('verifiedPreservedRelease1042') != lifecycle.get('verifiedPreservedRelease1042')
+            or any(p.get(key) != lifecycle.get(key)
+                   for key in admission_tools(guard)['RETIREMENT_FIELDS'])):
+        raise ValueError('Verified retention obligation changed during preflight')
     p['retentionLifecycle'] = lifecycle['binding']
     if 'inputCompactorSha256' in request:
         p['privateStageRetention'] = forecast
@@ -522,12 +525,15 @@ def make_plan(args):
     request = p.get('closedArchive', {}).get('request', {})
     if 'verifiedPreservedFallback' not in p:
         raise ValueError('A fresh preflight with verified preservation evidence is required')
-    admission_tools(admission_source())['require_obligation'](
-        {'verifiedPreservedFallback':p['verifiedPreservedFallback'], 'binding':p['retentionLifecycle'],
-         'verifiedPreFallbackIndex':p.get('verifiedPreFallbackIndex'), 'index':p.get('retentionIndex')},
-        'inputCompactorSha256' in request, b.get('releaseId'))
-    if 'privateStageRetention' in p and p['privateStageRetention'].get('preservedFallback') != p['verifiedPreservedFallback']:
-        raise ValueError('Private preflight witness differs from installed fallback')
+    admission = admission_tools(admission_source())
+    observation = {**p, 'binding': p['retentionLifecycle'], 'index': p.get('retentionIndex')}
+    private = 'inputCompactorSha256' in request
+    admission['require_obligation'](observation, private, b.get('releaseId'))
+    if ('privateStageRetention' in p) != private:
+        raise ValueError('Private preflight requires its exact retention forecast')
+    if 'privateStageRetention' in p:
+        admission['check_observation'](observation, True, p['privateStageRetention'],
+                                       release=b.get('releaseId'), compare=True)
     release_format = b.get('releaseFormat', 'proofofwork-ui-release-v3')
     assert release_format in ('proofofwork-ui-release-v3', 'proofofwork-ui-release-v4', 'proofofwork-ui-release-v5', 'proofofwork-ui-release-v6')
     surfaces = PAY_SURFACES if release_format == 'proofofwork-ui-release-v6' else PERMISSION_SURFACES if release_format == 'proofofwork-ui-release-v5' else PAGES_SURFACES if release_format == 'proofofwork-ui-release-v4' else SURFACES
@@ -567,6 +573,7 @@ def make_plan(args):
                            'source': (ROOT / 'phase_capacity.py').read_text()},
          'retentionDeferred': True, 'frontendOnly': True,
          'retentionLifecycle': p['retentionLifecycle'],
+         **{key: p[key] for key in admission['RETIREMENT_FIELDS'] if key in p},
          'retentionLocalSources': retention_sources,
          **tooling_binding,
          'inputStorage': input_storage,

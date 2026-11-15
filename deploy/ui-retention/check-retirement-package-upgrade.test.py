@@ -40,6 +40,8 @@ class Ancestry:
             'sourceCommit': '1' * 40, 'sourceTree': '2' * 40,
             'package': {'path': R.BASE + '/cleanup-evidence/ui-lifecycle-tools-' + F.H,
                         'sha256': F.H},
+            'controller': {'path': R.BASE + '/cleanup-evidence/ui-lifecycle-tools-' + F.H
+                                   + '/deploy/ui-retention/lifecycle_remote.py', 'sha256': 'b' * 64},
             'statePath': STATE, 'retentionPolicy': 'vps-only-verified-latest',
             'payloadRetirement': copy.deepcopy(self.fixture.binding),
         }
@@ -84,6 +86,8 @@ class Ancestry:
                    'sourceTree': format(number + 30, '040x'),
                    'package': {'path': R.BASE + '/cleanup-evidence/ui-lifecycle-tools-' + package_sha,
                                'sha256': package_sha},
+                   'controller': {'path': R.BASE + '/cleanup-evidence/ui-lifecycle-tools-' + package_sha
+                                          + '/deploy/ui-retention/lifecycle_remote.py', 'sha256': 'b' * 64},
                    'payloadRetirementSourceConfig': copy.deepcopy(self.anchor)}
         current_sha = R.digest(R.encoded(current))
         prior_config_binding = self.put(directory + '/prior-config.json', prior_config)
