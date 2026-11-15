@@ -12,6 +12,7 @@ exec(compile(Path(namespace['__file__']).read_bytes(), namespace['__file__'], 'e
 PermissionRelease = namespace['PermissionRelease']
 stage, builder, write, module = (namespace[name] for name in ('stage', 'builder', 'write', 'module'))
 retention = namespace['retention']
+retained_root = namespace['retained_root']
 installer = module('pay_ui_installer', ROOT / 'deploy/search/install-ui.py')
 closed = module('pay_closed_input_tests', ROOT / 'deploy/publish/check-closed-input.test.py')
 storage = module('pay_retention_storage', ROOT / 'deploy/audit30/ui-storage.py')
@@ -29,8 +30,9 @@ class PayRelease(unittest.TestCase):
         self.assertEqual(set(stage.PAY_SURFACES), set(stage.PERMISSION_SURFACES) | {'pay'})
         self.assertEqual(set(builder.PAY_SURFACES) | {'nft'}, set(stage.PAY_SURFACES))
         self.assertEqual(builder.PAY_SURFACES['pay'], ('pay', 'VITE_PAY_ONLY'))
-        self.assertEqual(stage.prior_asset_parser(stage.PAY_SURFACES)[0], stage.V5_MAXIMUM_DEPENDENCIES)
-        self.assertEqual(stage.prior_asset_parser(stage.PERMISSION_SURFACES)[0], stage.V5_MAXIMUM_DEPENDENCIES)
+        self.assertEqual(stage.prior_asset_parser(stage.PAY_SURFACES)[0], 1856)
+        self.assertEqual(stage.prior_asset_parser(stage.PERMISSION_SURFACES)[0], 1664)
+        self.assertEqual(stage.prior_asset_parser(stage.PAGES_SURFACES)[0], 1600)
 
     def test_v6_publication_rollback_and_no_product_downgrade(self):
         self.populate(self.www, stage.PERMISSION_SURFACES, managed=True)
@@ -60,6 +62,29 @@ class PayRelease(unittest.TestCase):
         self.assertEqual(retention.verified_release(rollback, self.archives)['format'], 'proofofwork-ui-release-v5')
         _, refused = self.stage(self.commit[:12] + '-20261114T010003Z', stage.PERMISSION_SURFACES, success=False)
         self.assertIn('drop a live Pay', refused.stderr)
+
+        # The new product must also remain a usable prior family on the next
+        # release. Exercise the real stager and publisher, retaining the exact
+        # classified V5 recovery root while the V6 root becomes the new rollback.
+        current = stage.tree_fingerprint(self.www)
+        preserved = retained_root.fingerprint(rollback)
+        classification = rollback.name + ':' + preserved['manifestSha256'] + ':' + preserved['treeSha256']
+        future_id = self.commit[:12] + '-20261114T010004Z'
+        future, _ = self.stage(future_id, stage.PAY_SURFACES, tag='future')
+        self.assertEqual(stage.tree_fingerprint(self.www), current)
+        for surface in stage.PAY_SURFACES:
+            relative = Path('proofofwork-' + surface) / 'assets/new.js'
+            self.assertEqual((future / relative).read_bytes(), (self.www / relative).read_bytes())
+        future_archive = self.archive(future, stage.PAY_SURFACES, future_id)
+        self.run_command(self.publish_args(future_id, future_archive) +
+                         ['--retain-rollback-root', classification])
+        self.run_command([self.provenance, 'verify'])
+        self.assertEqual(self.manifest_fields()['release_id'], future_id)
+        self.assertEqual(retention.verified_release(self.www, self.archives)['format'], 'proofofwork-ui-release-v6')
+        future_rollback = self.rollbacks / ('proofofwork-www-pre-' + future_id)
+        self.assertEqual(stage.tree_fingerprint(future_rollback), current)
+        self.assertEqual(retention.verified_release(future_rollback, self.archives)['format'], 'proofofwork-ui-release-v6')
+        self.assertEqual(retained_root.fingerprint(rollback), preserved)
 
     def test_caddy_requires_exact_complete_pay_publication(self):
         fields = {'format': 'proofofwork-ui-release-v6', 'release_id': self.release_id,

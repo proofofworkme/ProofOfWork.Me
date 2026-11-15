@@ -16,16 +16,18 @@ def load(name, path):
 stage = load('bounded_stage', ROOT / 'deploy/proofofwork-ui-release-stage.py')
 phase = load('bounded_phase', ROOT / 'deploy/publish/phase_capacity.py')
 
-def verify_with_publisher(live, candidate):
+def verify_with_publisher(live, candidate, incoming_surfaces=None):
     publisher = (ROOT / 'deploy/proofofwork-ui-release-publish.sh').read_text()
     function = 'verify_prior_asset_compatibility() {' + publisher.split(
         'verify_prior_asset_compatibility() {', 1)[1].split(
         '\n}\n\npassthrough_digest()', 1)[0] + '\n}\n'
     script = ('set -euo pipefail\nwww_root=' + shlex.quote(str(live)) +
               '\nstage_root=' + shlex.quote(str(candidate)) + '\nsurfaces=(' +
-              ' '.join(stage.SURFACES) + ')\nv3_surfaces=("${surfaces[@]}")\n' +
-              'pages_surfaces=("${surfaces[@]}" pages)\n' +
+              ' '.join(incoming_surfaces or stage.SURFACES) + ')\nv3_surfaces=(' +
+              ' '.join(stage.SURFACES) + ')\n' +
+              'pages_surfaces=("${v3_surfaces[@]}" pages)\n' +
               'permission_surfaces=("${pages_surfaces[@]}" permission)\n' +
+              'pay_surfaces=("${permission_surfaces[@]}" pay)\n' +
               function + '\nverify_prior_asset_compatibility\n')
     return subprocess.run(['/usr/bin/bash'], input=script, text=True, capture_output=True, timeout=125)
 
@@ -84,18 +86,26 @@ class CompatibilityBoundaries(unittest.TestCase):
         with patch.object(stage, 'MAXIMUM_DEPENDENCIES', 1536):
             with self.assertRaisesRegex(ValueError, 'dependency bound'): self.budget()
 
-class PermissionGraphBoundary(unittest.TestCase):
-    def test_copy_plan_and_publication_enforce_the_same_v5_graph(self):
-        surfaces = stage.PERMISSION_SURFACES
+class FamilyGraphBoundaries(unittest.TestCase):
+    # These are independently reviewed finite ceilings, not values copied from
+    # the implementation. Older families retain their separate limits above.
+    FAMILIES = (
+        ('v5', stage.PERMISSION_SURFACES, 1664, 6400, 1507328),
+        ('v6', stage.PAY_SURFACES, 1856, 7424, 1638400),
+    )
+
+    def graph_boundary(self, surfaces, dependencies, edges):
         with tempfile.TemporaryDirectory() as temp:
             live, candidate = Path(temp) / 'live', Path(temp) / 'stage'
-            incoming = {s: [{'path': '.', 'kind': 'directory'}] for s in surfaces}
-            remaining_imports = 6272 - 1664
+            # An incoming V6 must not lend its larger allowance to a V5 prior.
+            incoming = {s: [{'path': '.', 'kind': 'directory'}] for s in stage.PAY_SURFACES}
+            for surface in incoming:
+                (candidate / ('proofofwork-' + surface)).mkdir(parents=True)
+            remaining_imports = edges - dependencies
             for index, surface in enumerate(surfaces):
-                count = 1664 // len(surfaces) + (index < 1664 % len(surfaces))
+                count = dependencies // len(surfaces) + (index < dependencies % len(surfaces))
                 root = live / ('proofofwork-' + surface)
                 (root / 'assets').mkdir(parents=True)
-                (candidate / root.name).mkdir(parents=True)
                 (root / 'index.html').write_text(''.join(f'<script src="/assets/{n}.js"></script>' for n in range(count)))
                 for n in range(count):
                     imports = min(3, remaining_imports)
@@ -106,14 +116,16 @@ class PermissionGraphBoundary(unittest.TestCase):
             def plan(): return phase.prior_compatibility(live, surfaces, stage, incoming)[2]
             def copy(): return stage.copy_prior_asset_compatibility(live, candidate, surfaces)
             counters = plan()
-            self.assertEqual((counters['dependencies'], counters['reference_edges']), (1664, 6272))
-            self.assertEqual(copy(), (1664, counters['total_bytes']))
-            published = verify_with_publisher(live, candidate)
+            self.assertEqual((counters['dependencies'], counters['reference_edges']), (dependencies, edges))
+            self.assertEqual(copy(), (dependencies, counters['total_bytes']))
+            for path in live.rglob('*.js'):
+                self.assertEqual(path.read_bytes(), (candidate / path.relative_to(live)).read_bytes())
+            published = verify_with_publisher(live, candidate, stage.PAY_SURFACES)
             self.assertEqual(published.returncode, 0, published.stderr)
             def refused(reason):
                 with self.assertRaisesRegex((ValueError, stage.StageError), reason): plan()
                 with self.assertRaisesRegex(stage.StageError, reason): copy()
-                result = verify_with_publisher(live, candidate)
+                result = verify_with_publisher(live, candidate, stage.PAY_SURFACES)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(reason, result.stderr)
             # One extra edge between already admitted files must still refuse.
@@ -128,5 +140,95 @@ class PermissionGraphBoundary(unittest.TestCase):
                 (tree / referrer).write_text(original.replace('"./1.js"', '"./extra.js"'))
                 (tree / surface_dir / 'assets/extra.js').write_text('void 0;')
             refused('dependency bound')
+
+    def test_v5_prior_to_v6_uses_v5_path_and_edge_boundaries(self):
+        self.graph_boundary(stage.PERMISSION_SURFACES, 1664, 6400)
+
+    def test_v6_prior_to_v6_uses_v6_path_and_edge_boundaries(self):
+        self.graph_boundary(stage.PAY_SURFACES, 1856, 7424)
+
+    def test_raw_occurrences_enforced_by_model_copy_and_publisher(self):
+        for family, surfaces, _, _, raw_limit in self.FAMILIES:
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as temp:
+                live, candidate = Path(temp) / 'live', Path(temp) / 'stage'
+                incoming = {s: [{'path': '.', 'kind': 'directory'}] for s in stage.PAY_SURFACES}
+                for surface in incoming:
+                    (candidate / ('proofofwork-' + surface)).mkdir(parents=True)
+                for surface in surfaces:
+                    root = live / ('proofofwork-' + surface)
+                    (root / 'assets').mkdir(parents=True)
+                    # A space after the closing quote leaves exactly one raw
+                    # match; the parser also charges unquoted tag-tail tokens.
+                    (root / 'index.html').write_text('<script src="/assets/one.js" ></script>')
+                    (root / 'assets/one.js').write_bytes(b'void 0;')
+                repeated = Path('proofofwork-' + surfaces[0]) / 'assets/one.js'
+                # Each unresolved URL literal still consumes one raw candidate.
+                # Keep the real file below the unchanged 64 MiB per-asset cap.
+                content = b'"x:" ' * (raw_limit - len(surfaces))
+                (live / repeated).write_bytes(content)
+                def plan(): return phase.prior_compatibility(live, surfaces, stage, incoming)[2]
+                counts = plan()
+                self.assertEqual(counts['reference_candidates'], raw_limit)
+                self.assertEqual((counts['dependencies'], counts['reference_edges']),
+                                 (len(surfaces), len(surfaces)))
+                self.assertEqual(stage.copy_prior_asset_compatibility(live, candidate, surfaces),
+                                 (len(surfaces), counts['total_bytes']))
+                accepted = verify_with_publisher(live, candidate, stage.PAY_SURFACES)
+                self.assertEqual(accepted.returncode, 0, accepted.stderr)
+                for tree in (live, candidate):
+                    (tree / repeated).write_bytes(content + b'"x:" ')
+                with self.assertRaisesRegex(stage.StageError, 'reference-candidate bound'):
+                    plan()
+                with self.assertRaisesRegex(stage.StageError, 'reference-candidate bound'):
+                    stage.copy_prior_asset_compatibility(live, candidate, surfaces)
+                refused = verify_with_publisher(live, candidate, stage.PAY_SURFACES)
+                self.assertNotEqual(refused.returncode, 0)
+                self.assertIn('reference-candidate bound', refused.stderr)
+
+    def test_family_selection_preserves_legacy_and_does_not_grant_unknown_vectors(self):
+        self.assertEqual((stage.MAXIMUM_DEPENDENCIES, stage.MAXIMUM_REFERENCE_EDGES,
+                          stage.MAXIMUM_REFERENCE_CANDIDATES, stage.MAXIMUM_INDEX_BYTES,
+                          stage.MAXIMUM_ASSET_BYTES, stage.MAXIMUM_TOTAL_BYTES),
+                         (1600, 5632, 1441792, 2 * 1024**2, 64 * 1024**2, 512 * 1024**2))
+        for _, surfaces, dependencies, edges, candidates in self.FAMILIES:
+            limit, parser = stage.prior_asset_parser(tuple(reversed(surfaces)))
+            self.assertEqual(limit, dependencies)
+            self.assertEqual(parser.keywords, {'edge_limit': edges, 'candidate_limit': candidates})
+            malformed = tuple(name if name != 'activity' else 'unknown' for name in surfaces)
+            self.assertEqual(stage.prior_asset_parser(malformed),
+                             (1600, stage.dependency_references))
+
+    def test_repeated_resolved_literals_and_css_overlap_still_charge_raw_candidates(self):
+        publisher = (ROOT / 'deploy/proofofwork-ui-release-publish.sh').read_text()
+        function = publisher.split('verify_prior_asset_compatibility() {', 1)[1]
+        code = function.split("<<'PY'\n", 1)[1].split('\nPY\n', 1)[0]
+        prefix = code.split('\nfor surface in surfaces:\n', 1)[0]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'assets').mkdir()
+            (root / 'assets/shared.css').write_bytes(b'body{}')
+            for family, surfaces, _, edge_limit, candidate_limit in self.FAMILIES:
+                with self.subTest(family=family):
+                    namespace = {}
+                    with patch('sys.argv', ['verify', str(root), str(root),
+                                            '--permission-v5' if family == 'v5' else '--pay-v6', *surfaces]):
+                        exec(compile(prefix, '<shipped-publisher-parser>', 'exec'), namespace)
+                    self.assertEqual(namespace['maximum_reference_candidates'], candidate_limit)
+                    self.assertEqual(namespace['maximum_reference_edges'], edge_limit)
+                    _, parser = stage.prior_asset_parser(surfaces)
+                    content = b'@import "shared.css";body{background:url("shared.css")}'
+                    counts = {'reference_candidates': candidate_limit - 6, 'reference_edges': 0}
+                    namespace['reference_candidate_count'] = candidate_limit - 6
+                    self.assertEqual(parser(root, root / 'assets/one.css', content, counts),
+                                     ['assets/shared.css'])
+                    self.assertEqual(namespace['dependency_references'](str(root), str(root / 'assets/one.css'), content),
+                                     ['assets/shared.css'])
+                    self.assertEqual((counts['reference_candidates'], counts['reference_edges']), (candidate_limit, 1))
+                    self.assertEqual((namespace['reference_candidate_count'], namespace['reference_edge_count']),
+                                     (candidate_limit, 1))
+                    with self.assertRaisesRegex(stage.StageError, 'reference-candidate bound'):
+                        parser(root, root / 'assets/two.js', b'"shared.css"', counts)
+                    with self.assertRaisesRegex(SystemExit, 'reference-candidate bound'):
+                        namespace['dependency_references'](str(root), str(root / 'assets/two.js'), b'"shared.css"')
 
 if __name__ == '__main__': unittest.main()

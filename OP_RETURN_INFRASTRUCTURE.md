@@ -191,16 +191,25 @@ guarded tooling installer verifies both the current and fallback archive on the
 UI VPS before promoting the two helpers. None of these checks permits removal
 of active source, archived upload evidence or a previous release hold.
 
-The proposed V5 publisher counts every prior served path and every distinct
-referrer/target edge. On November 3 the 22-root production release
-`54088ca155bc` had 1,650 paths, 6,182 edges, 1,417,130 raw reference
-matches and 93,483,071 dependency bytes. Only that 22-root release format
-uses the new finite limits of 1,664 paths and 6,272 edges. Planning, copying
-and pre-exchange validation enforce the same bounds. Earlier release formats
-retain the 1,600-path and 5,632-edge limits; the raw-match, byte and storage
-limits apply independently. Run `python3 -B scripts/check-ui-compatibility-boundaries.py`
-in an owner-controlled checkout to check acceptance at the limits and refusal
-one path or edge above them.
+The publisher counts every prior served path, every distinct referrer/target
+edge and every raw reference match. Limits follow the exact **prior live
+family**, independently of the incoming release:
+
+| Prior family | Served paths | Distinct edges | Raw matches |
+| --- | ---: | ---: | ---: |
+| Earlier families | 1,600 | 5,632 | 1,441,792 |
+| V5, 22 roots | 1,664 | 6,400 | 1,507,328 |
+| V6, 23 roots | 1,856 | 7,424 | 1,638,400 |
+
+Planning, copying and pre-exchange validation enforce the same family limits.
+The November 15 measurements and retained failure evidence are recorded below.
+The earlier November 3 `54088ca155bc` measurement remains historical evidence:
+1,650 paths, 6,182 edges, 1,417,130 raw matches and 93,483,071 dependency bytes;
+its V5 calibration used 1,664 paths and 6,272 edges. All byte, path, ownership,
+collision, storage and timeout guards remain independent. Run
+`node --test scripts/check-pay-ui-compatibility.test.mjs` to exercise both
+shipped parsers, copying and the capacity model at the family boundaries and
+one over, including V5-to-V6 and future V6-to-V6 transitions.
 
 For a new V5 build, `release.py prepare-closed-input BUILD_RECEIPT REQUEST --private-staging`
 prepares the opt-in request. Preflight with `--closed-request REQUEST` and plan
@@ -8876,7 +8885,7 @@ Its 2,090 files and all 22 indexes were compared against live files: only the
 22 source-provenance JSON files differ. All script, stylesheet and asset bytes
 match; that incoming dependency graph cannot exceed the measured live graph.
 
-Both current parsers use a finite 1,441,792-candidate ceiling, leaving 64,768
+That calibration set both parsers to a finite 1,441,792-candidate ceiling, leaving 64,768
 candidates above the measured closure. Every raw occurrence still counts;
 parser, path-resolution and graph-closure behavior are unchanged. The 5,632-edge,
 1,600-path, 2 MiB index, 64 MiB per-file and 512 MiB total-byte limits,
@@ -8884,7 +8893,7 @@ provenance and ownership checks remain unchanged. Tests
 exercise both actual parsers at 1,377,024, exactly 1,441,792 and one over, while
 retaining the historical 1,376,256/1,376,257 boundary and earlier fixtures.
 
-The current native allocation guard and whole-release sequence model use a
+The October 26 native allocation guard and whole-release sequence model used a
 9 GiB + 64 MiB (9,730,785,280-byte) transport ceiling. The locked census measured
 8,008,511,488 retained transport bytes; the prior plan's 1,667,156,555 prospective
 bytes exceeded 9 GiB by 11,991,627 bytes. The finite increment leaves 55,117,237
@@ -8901,6 +8910,50 @@ capacity admission with those retained bytes charged and no cleanup credit;
 helper installation must bind the exact accepted predecessor hashes. The
 separate UI calibration source does not change the committed `874bdc4a226b`
 runtime/replay source or its activation provenance.
+
+### UI compatibility family calibration (2026-11-15)
+
+Pay's real `d086f4239355-20261115T011500Z` preflight refused before transfer or
+publication because the current `064b6991ae2a` V5 graph exceeded its distinct-edge
+ceiling. The first wrapper retained only the outer subprocess failure. A fresh
+diagnostic preflight used the unchanged committed CLI, authenticated the existing
+inventory and retained the native error: `Prior UI compatibility reference-edge
+bound exceeded`. Its private UI-host output is
+`/var/tmp/proofofwork-deploy/pay-d086-preflight-v2-native-stdout.log`, SHA-256
+`fa7ceaed087609cf1fbb9a60eb4bba1b222cacb773afd7e20889b6a20ab711a4`.
+Both failed attempts and their inputs remain evidence; neither establishes
+publication admission.
+
+Separate read-only censuses measured all reachable assets with finite inspection
+ceilings, exact native patterns and resolvers, and unchanged file/path checks.
+The V5 graph has 1,628 served paths, 6,314 distinct edges, 1,442,958 raw matches
+and 94,565,955 dependency bytes. Its UI-host receipt is
+`/var/tmp/proofofwork-deploy/pay-prior-graph-census-v2.json`, SHA-256
+`a016215482e70b4d1d8ac83a0dca1869065ffe29904ac043ca57f3b561e03fc0`.
+The built Pay V6 graph has 1,794 paths, 7,245 edges, 1,558,551 raw matches and
+100,897,640 dependency bytes. Its node-host receipt is
+`/data/proofofwork-pay-development-20261114/results/pay-v6-asset-census-d086f42-v2.json`,
+SHA-256 `7ddcdf69ee0b4db9c0962eaa0ae2b6c37fcd5d281eb66c45762eb75493c12fc0`.
+Original native-limit refusals are retained separately. Diagnostic completion
+does not mean that the original native limits admitted either graph.
+
+The paired stager and publisher now retain the V5 1,664-path ceiling and use
+6,400 edges and 1,507,328 raw matches, leaving 36 paths, 86 edges and 64,370
+raw matches above the measured V5 graph. Exact V6 uses 1,856 paths, 7,424 edges
+and 1,638,400 raw matches, leaving 62 paths, 179 edges and 79,849 raw matches.
+Earlier families retain 1,600 paths, 5,632 edges and 1,441,792 raw matches.
+Every raw occurrence still counts; only duplicate targets within one referrer
+share an edge. The 2 MiB index, 64 MiB asset, 512 MiB total-byte, filesystem,
+collision, capacity and timeout guards are unchanged.
+
+Every functional UI release must measure both the current prior graph and the
+actual built candidate against their own family limits before helper promotion.
+The candidate must also qualify as a future prior release; inheriting the old
+family's limits is insufficient. Promote both exact helper hashes through the
+guarded installer, retain original failure evidence, rebuild all managed roots
+from the successor source and run fresh native preflight and publication.
+Retain subprocess diagnostics on the VPS when a wrapper captures their output;
+an opaque wrapper exception is not a reason to weaken or skip admission.
 
 ### Pending ID registration recovery
 

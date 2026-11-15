@@ -579,8 +579,11 @@ maximum_dependencies = 1600
 # edges. Align the finite 5,632 ceiling with the stager; served-path, candidate
 # and byte limits remain independent.
 maximum_reference_edges = 5632
+# Earlier families retain the October 26 raw-candidate calibration. Every
+# occurrence still counts, independently of bytes, paths and distinct edges.
+maximum_reference_candidates = 1441792
 if surfaces[:1] in (["--permission-v5"], ["--pay-v6"]):
-    # The caller supplies the exact canonical V5 vector, based on the live
+    # The caller supplies the exact canonical prior family from the live
     # roots, independently of which release is being staged.
     pay = surfaces[0] == "--pay-v6"
     surfaces = surfaces[1:]
@@ -588,15 +591,11 @@ if surfaces[:1] in (["--permission-v5"], ["--pay-v6"]):
     if (len(surfaces) != expected_count or len(set(surfaces)) != expected_count
             or "permission" not in surfaces or ("pay" in surfaces) != pay):
         raise SystemExit("Invalid prior Permission V5 / Pay V6 graph.")
-    maximum_dependencies = 1664
-    maximum_reference_edges = 6272
-# The prior 7afc0f95 graph has 1,311,044 raw candidates; the 75948039 article
-# candidate has 1,313,796. The October 15 calibration aligned 1,376,256
-# with the stager; every raw occurrence and all independent guards remained.
-# October 26 live A3 closure: 1,377,024 raw candidates across 22 roots.
-# The 1,441,792 ceiling leaves 64,768 headroom; every occurrence still
-# counts and all independent byte, edge, path and filesystem guards remain.
-maximum_reference_candidates = 1441792
+    # November 15 measured V5: 1,628 paths / 6,314 edges / 1,442,958 raw.
+    # Measured Pay V6: 1,794 paths / 7,245 edges / 1,558,551 raw.
+    maximum_dependencies = 1856 if pay else 1664
+    maximum_reference_edges = 7424 if pay else 6400
+    maximum_reference_candidates = 1638400 if pay else 1507328
 dependency_count = 0
 reference_edge_count = 0
 reference_candidate_count = 0

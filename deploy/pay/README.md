@@ -74,6 +74,18 @@ historical families. `deploy/publish/build.py --release-format v6` builds with
 atomically with prior referenced assets, full archive/provenance verification,
 and matching standalone and Computer `/?folder=pay` behavior.
 
+Measure the actual current and built asset graphs before helper promotion.
+Compatibility follows the prior live family, not the incoming release:
+V5 permits 1,664 served paths, 6,400 distinct edges and 1,507,328 raw matches;
+V6 permits 1,856 paths, 7,424 edges and 1,638,400 raw matches. The November 15
+current V5 and built V6 measurements and original native refusals are retained
+in `OP_RETURN_INFRASTRUCTURE.md`. Both stager and publisher must enforce the
+same finite bounds, including when Pay becomes the prior release of a later
+upgrade. Earlier families and all byte, path, collision and timeout guards
+remain unchanged. Run the CI-required
+`node --test scripts/check-pay-ui-compatibility.test.mjs` family regressions;
+diagnostic censuses do not replace fresh native admission.
+
 The guarded `deploy/search/install-ui.py` schema
 `proof-of-work-pay-ui-install-v1` installs hash-bound helper candidates first.
 Its Caddy phase requires the complete exact V6 publication before activating
@@ -103,7 +115,8 @@ pre-064 rollback root for the next ordinary rotation. It can run only after
 the replacement and its current/prior pair are verified; refresh the proposal's
 placeholder forecast against the final release source before execution.
 V6 changes no storage ceiling, root reserve, retention
-permission, compatibility-path/edge ceiling or held-object authority. A capacity
+permission or held-object authority. Its measured compatibility-family ceilings
+are independent of storage admission. A capacity
 refusal requires its own concrete reviewed cleanup; it cannot be bypassed.
 
 The development verification workspace is

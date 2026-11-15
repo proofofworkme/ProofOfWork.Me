@@ -75,10 +75,18 @@ MAXIMUM_DEPENDENCIES = 1600
 # edges. The finite 5,632 ceiling leaves 286 edges of headroom; independent
 # served-path, raw-candidate and byte limits remain enforced.
 MAXIMUM_REFERENCE_EDGES = 5632
-# The November 3 Permission V5 graph has 1,650 served paths and 6,182
-# distinct edges. Older surface families keep their original ceilings.
+# The November 15 current 064 V5 census has 1,628 served paths, 6,314
+# distinct edges and 1,442,958 raw candidates. Keep its path ceiling and
+# finite measured headroom; older surface families retain their limits.
 V5_MAXIMUM_DEPENDENCIES = 1664
-V5_MAXIMUM_REFERENCE_EDGES = 6272
+V5_MAXIMUM_REFERENCE_EDGES = 6400
+V5_MAXIMUM_REFERENCE_CANDIDATES = 1507328
+# The Pay V6 census has 1,794 served paths, 7,245 distinct edges and
+# 1,558,551 raw candidates. Select these bounds only for the exact live V6
+# family, including when V6 later becomes the prior release.
+V6_MAXIMUM_DEPENDENCIES = 1856
+V6_MAXIMUM_REFERENCE_EDGES = 7424
+V6_MAXIMUM_REFERENCE_CANDIDATES = 1638400
 # The prior 7afc0f95 graph has 1,311,044 raw candidates; the 75948039 article
 # candidate has 1,313,796. The October 15 calibration used 1,376,256
 # (62,460 headroom above that graph); every raw occurrence still counted.
@@ -1018,9 +1026,12 @@ def dependency_references(
     counters: dict[str, int],
     *,
     edge_limit: int | None = None,
+    candidate_limit: int | None = None,
 ) -> list[str]:
     if edge_limit is None:
         edge_limit = MAXIMUM_REFERENCE_EDGES
+    if candidate_limit is None:
+        candidate_limit = MAXIMUM_REFERENCE_CANDIDATES
     references: list[str] = []
     # Repeated literals and overlapping CSS patterns describe the same directed
     # edge from this referrer. Every raw match still consumes the candidate cap.
@@ -1031,7 +1042,7 @@ def dependency_references(
     for pattern in patterns:
         for match in pattern.finditer(content):
             counters["reference_candidates"] += 1
-            if counters["reference_candidates"] > MAXIMUM_REFERENCE_CANDIDATES:
+            if counters["reference_candidates"] > candidate_limit:
                 fail("Prior UI compatibility reference-candidate bound exceeded.")
             relative = resolve_reference(surface_root, current_path, match.group("reference"))
             if relative is not None and relative not in seen_targets:
@@ -1044,8 +1055,19 @@ def dependency_references(
 
 
 def prior_asset_parser(surfaces):
-    if tuple(sorted(surfaces)) in (PERMISSION_SURFACES, PAY_SURFACES):
-        return V5_MAXIMUM_DEPENDENCIES, partial(dependency_references, edge_limit=V5_MAXIMUM_REFERENCE_EDGES)
+    family = tuple(sorted(surfaces))
+    if family == PAY_SURFACES:
+        return V6_MAXIMUM_DEPENDENCIES, partial(
+            dependency_references,
+            edge_limit=V6_MAXIMUM_REFERENCE_EDGES,
+            candidate_limit=V6_MAXIMUM_REFERENCE_CANDIDATES,
+        )
+    if family == PERMISSION_SURFACES:
+        return V5_MAXIMUM_DEPENDENCIES, partial(
+            dependency_references,
+            edge_limit=V5_MAXIMUM_REFERENCE_EDGES,
+            candidate_limit=V5_MAXIMUM_REFERENCE_CANDIDATES,
+        )
     return MAXIMUM_DEPENDENCIES, dependency_references
 
 
