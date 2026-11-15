@@ -4,7 +4,7 @@ import {fileURLToPath} from "node:url";
 
 // These are isolated component tests, not a completed production retirement or
 // the separate full installed-runtime authority integration fixture.
-for(const name of ["receipt","context","controller","policy","transition","operator"]) {
+for(const name of ["receipt","context","controller","policy","transition","operator","package-upgrade"]) {
  const rootOnly=["controller","policy","transition"].includes(name);
  test("isolated exact-payload retirement component: "+name,{skip:rootOnly&&process.getuid?.()!==0?"Root-owned protected-filesystem fixture requires isolated root qualification":false},()=>{
   const path=fileURLToPath(new URL("../deploy/ui-retention/check-retirement-"+name+".test.py",import.meta.url));

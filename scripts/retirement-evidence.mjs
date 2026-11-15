@@ -3,10 +3,13 @@ import {createHash} from "node:crypto";
 import {requireIdentityProof,createIdentityProof,retentionOperatorPackagePaths} from "./release-identity-proof.mjs";
 import {execFileSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
+import {realpathSync} from "node:fs";
+import {resolve} from "node:path";
 const env={PATH:"/usr/bin:/bin",HOME:"/nonexistent"};
 const SHA=/^[a-f0-9]{64}$/u;
 const configPath="/etc/proofofwork-retention/ui-lifecycle.json";
 const statePath="/var/lib/proofofwork-ui-retention/state.json";
+const retirementSourceConfigPath="/var/backups/proofofwork-ui/cleanup-evidence/older-backup-retirement-6fd05dc1e04e/successor-config.json";
 export function retirementTrust(lifecycle) {
  assert.equal(lifecycle.publicationHealthy,true);assert.equal(lifecycle.retentionComplete,true);
  assert.deepEqual(lifecycle.unfinishedIntents,[]);assert.equal(lifecycle.pending,null);
@@ -194,7 +197,22 @@ assert manifestRaw.decode()==expected['manifestRaw']
 assert hashlib.sha256(manifestRaw).hexdigest()==expected['sha256']
 manifest=parse(manifestRaw);assert manifest==expected['manifest']
 assert config['controller']=={'path':str(root/'deploy/ui-retention/lifecycle_remote.py'),'sha256':manifest['files']['deploy/ui-retention/lifecycle_remote.py']['sha256']}
-assert config['payloadRetirement']['policyCodeSha256']==expected['sha256']
+historicalPolicy=config['payloadRetirement']['policyCodeSha256']
+assert isinstance(historicalPolicy,str) and len(historicalPolicy)==64 and all(c in '0123456789abcdef' for c in historicalPolicy)
+sourceConfig=config.get('payloadRetirementSourceConfig')
+if sourceConfig is None:
+ assert historicalPolicy==expected['sha256'],'Original retirement policy differs from installed package'
+else:
+ assert isinstance(sourceConfig,dict) and set(sourceConfig)=={'path','sha256'}
+ assert sourceConfig['path']=='/var/backups/proofofwork-ui/cleanup-evidence/older-backup-retirement-6fd05dc1e04e/successor-config.json'
+ originalRaw=read(sourceConfig['path'],65536)
+ assert hashlib.sha256(originalRaw).hexdigest()==sourceConfig['sha256']
+ original=parse(originalRaw)
+ assert original.get('payloadRetirement')==config['payloadRetirement'] and original.get('payloadRetirementSourceConfig') is None
+ assert original['package']['sha256']==historicalPolicy,'Historical retirement policy identity changed'
+ transition=parse(read('/var/backups/proofofwork-ui/cleanup-evidence/older-backup-retirement-6fd05dc1e04e/transition-completed.json',65536))
+ assert transition.get('schema')=='pow-exact-payload-retirement-state-transition-v1' and transition.get('successorConfigSha256')==sourceConfig['sha256']
+ assert transition.get('terminalReceipt')==config['payloadRetirement']['receipt'],'Retirement origin transition differs'
 wanted=set(manifest['files'])|{'package.json'};actual=set();directory_states={}
 for directory,dirs,files in os.walk(root,followlinks=False):
  directory_states[directory]=pathlib.Path(directory).lstat()
@@ -209,7 +227,7 @@ for path,item in manifest['files'].items():
  assert len(raw)==item['bytes'] and hashlib.sha256(raw).hexdigest()==item['sha256']
 for directory,before in directory_states.items():assert pathlib.Path(directory).lstat()==before,'Package directory changed'
 finish()
-print(json.dumps({'mode':'operator-retirement-package','configSha256':configSha,'policyCodeSha256':expected['sha256'],'operator':{'commit':manifest['sourceCommit'],'tree':manifest['sourceTree']}}))
+print(json.dumps({'mode':'operator-retirement-package','configSha256':configSha,'currentPackageSha256':expected['sha256'],'policyCodeSha256':historicalPolicy,'retirementSourceConfig':sourceConfig,'operator':{'commit':manifest['sourceCommit'],'tree':manifest['sourceTree']}}))
 `;
 
 export function attestInstalledRetentionPackage(identityProof) {
@@ -232,8 +250,14 @@ export function attestInstalledRetentionPackage(identityProof) {
  for(const key of ["artifact","baselineOperator","backend","operator","digests"])assert.deepEqual(after[key],proof[key],"Operator source changed after package attestation");
  assert(SHA.test(value.configSha256));
  if(value.mode==="operator-retirement-package") {
-  assert.deepEqual(Object.keys(value).sort(),["configSha256","mode","operator","policyCodeSha256"]);
-  assert.deepEqual(value.operator,proof.operator);assert.equal(value.policyCodeSha256,expected.sha256);
+  assert.deepEqual(Object.keys(value).sort(),["configSha256","currentPackageSha256","mode","operator","policyCodeSha256","retirementSourceConfig"]);
+  assert.deepEqual(value.operator,proof.operator);assert.equal(value.currentPackageSha256,expected.sha256);
+  assert(SHA.test(value.policyCodeSha256));
+  if(value.retirementSourceConfig===null)assert.equal(value.policyCodeSha256,value.currentPackageSha256);
+  else {
+   assert.deepEqual(Object.keys(value.retirementSourceConfig).sort(),["path","sha256"]);
+   assert.equal(value.retirementSourceConfig.path,retirementSourceConfigPath);assert(SHA.test(value.retirementSourceConfig.sha256));
+  }
  } else {assert.equal(value.mode,"legacy-in-place");assert.deepEqual(Object.keys(value).sort(),["configSha256","mode"]);}
  return Object.freeze(value);
 }
@@ -241,6 +265,107 @@ export function bindInstalledRetentionPackage(lifecycle,attestation) {
  assert.equal(lifecycle.configSha256,attestation.configSha256,"Installed configuration changed");
  if(attestation.mode==="operator-retirement-package") {
   assert.equal(lifecycle.verifiedRetirementPolicyCodeSha256,attestation.policyCodeSha256,"Untrusted retirement policy code");
+  if(attestation.retirementSourceConfig!==null)assert(SHA.test(lifecycle.verifiedCurrentPackageSha256),"Successor lifecycle package attestation missing");
+  assert.equal(lifecycle.verifiedCurrentPackageSha256??lifecycle.verifiedRetirementPolicyCodeSha256,attestation.currentPackageSha256,"Untrusted current lifecycle package");
+  assert.deepEqual(lifecycle.verifiedRetirementSourceConfig??null,attestation.retirementSourceConfig,"Retirement source config changed");
+  assert.equal(lifecycle.verifiedRetiredPayloads?.policyCodeSha256,attestation.policyCodeSha256,"Historical retirement proof changed");
   assert(lifecycle.verifiedRetiredPayloads,"Operator package lacks completed retirement proof");
  } else assert(lifecycle.verifiedRetiredPayloads==null,"Legacy package cannot authorize retirement");
+}
+
+// Current-release authority is separate from the fixed historical dual identity.
+// Callers cannot turn a plain object or a historical artifact proof into it.
+const currentPackages=new WeakMap();
+const gitEnv={PATH:"/usr/bin:/bin",HOME:"/nonexistent",GIT_CONFIG_NOSYSTEM:"1",GIT_CONFIG_GLOBAL:"/dev/null",GIT_NO_REPLACE_OBJECTS:"1",GIT_GRAFT_FILE:"/dev/null",GIT_OPTIONAL_LOCKS:"0"};
+function currentSource({repository,commit,tree}) {
+ const root=realpathSync(repository);
+ assert.equal(root,resolve(fileURLToPath(new URL("../",import.meta.url))),"Current consumer must run from its exact source checkout");
+ const git=(...args)=>execFileSync("/usr/bin/git",["--no-replace-objects","-c","core.fsmonitor=false","-C",root,...args],{env:gitEnv,encoding:"utf8",timeout:15000,maxBuffer:2*1024**2}).trim();
+ assert(/^[a-f0-9]{40}$/u.test(commit)&&/^[a-f0-9]{40}$/u.test(tree));
+ assert.equal(git("rev-parse","HEAD"),commit);assert.equal(git("rev-parse","HEAD^{tree}"),tree);
+ assert.equal(git("status","--porcelain","--untracked-files=no"),"","Current consumer requires clean tracked source");
+ assert.equal(git("rev-parse","--is-shallow-repository"),"false");
+ for(const path of ["scripts/retirement-evidence.mjs","scripts/retirement-current-evidence.py","deploy/ui-retention/retirement_receipt.py","deploy/linked-publish/qualification.py"])assert(/^(100644|100755) blob [a-f0-9]{40}\t/u.test(git("ls-tree",commit,"--",path)),"Current validator is not a committed regular blob");
+ return {root,git};
+}
+export function attestCurrentRetentionPackage({repository,commit,tree}) {
+ const identity={repository:realpathSync(repository),commit,tree},source=currentSource(identity),blobs={};
+ for(const path of retentionPackageFiles) {
+  const entry=source.git("ls-tree",commit,"--",path),match=/^(100644|100755) blob ([0-9a-f]{40})\t([^\n]+)$/u.exec(entry);
+  assert(match&&match[3]===path,"Current package path is not a committed regular blob");
+  blobs[path]=execFileSync("/usr/bin/git",["--no-replace-objects","-c","core.fsmonitor=false","-C",source.root,"show",commit+":"+path],{env:gitEnv,timeout:15000,maxBuffer:2*1024**2});
+ }
+ const expected=expectedRetentionPackage({commit,tree},blobs),quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
+ const raw=execFileSync("/usr/bin/ssh",["-i","/home/sixer/.ssh/proofofwork_me_ed25519","-o","BatchMode=yes","-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=yes","-o","ConnectTimeout=15","root@77.42.91.106","/usr/bin/python3 -I -B -c "+quote(installedRetentionProgram)],{input:JSON.stringify({expected}),encoding:"utf8",env,timeout:90000,maxBuffer:65536});
+ const value=JSON.parse(raw);currentSource(identity);
+ assert.equal(value.mode,"operator-retirement-package");
+ assert.deepEqual(Object.keys(value).sort(),["configSha256","currentPackageSha256","mode","operator","policyCodeSha256","retirementSourceConfig"]);
+ assert.deepEqual(value.operator,{commit,tree});assert.equal(value.currentPackageSha256,expected.sha256);
+ for(const key of ["configSha256","policyCodeSha256"])assert(SHA.test(value[key]));
+ if(value.retirementSourceConfig===null)assert.equal(value.policyCodeSha256,expected.sha256);
+ else {
+  assert.deepEqual(Object.keys(value.retirementSourceConfig).sort(),["path","sha256"]);
+  assert.equal(value.retirementSourceConfig.path,retirementSourceConfigPath);assert(SHA.test(value.retirementSourceConfig.sha256));
+  Object.freeze(value.retirementSourceConfig);
+ }
+ Object.freeze(value.operator);Object.freeze(value);currentPackages.set(value,identity);return value;
+}
+function currentRetirementTrust(lifecycle,attestation) {
+ const identity=currentPackages.get(attestation);assert(identity,"Authenticated current package attestation required");
+ currentSource(identity);bindInstalledRetentionPackage(lifecycle,attestation);
+ return {...retirementTrust(lifecycle),currentPackageSha256:attestation.currentPackageSha256,retirementSourceConfig:attestation.retirementSourceConfig};
+}
+function replaceOnce(source,from,to) {
+ assert.equal(source.split(from).length,2,"Current reader adaptation boundary changed");return source.replace(from,to);
+}
+let currentReader=replaceOnce(retirementReadProgram,
+ "digest=hashlib.sha256(raw).hexdigest();assert digest==expected",
+ "digest=hashlib.sha256(raw).hexdigest();assert expected is None or digest==expected");
+currentReader=replaceOnce(currentReader,
+ "binding=config['payloadRetirement'];assert binding['mode']=='complete' and binding['policyCodeSha256']==config['package']['sha256']==trusted['policyCodeSha256']",
+ "binding=config['payloadRetirement'];assert binding['mode']=='complete' and binding['policyCodeSha256']==trusted['policyCodeSha256']\nassert config['package']['sha256']==trusted['currentPackageSha256'] and config.get('payloadRetirementSourceConfig')==trusted['retirementSourceConfig']");
+currentReader=replaceOnce(currentReader,"for path,before in seen.items():",String.raw`result['lifecycleEvidence']=[];lifecycle_rows={}
+def add(path,expected=None):
+ if path in lifecycle_rows:
+  row,obj=lifecycle_rows[path];assert expected is None or row['sha256']==expected;return obj
+ row,obj=read(path,expected);lifecycle_rows[path]=(row,obj);result['lifecycleEvidence'].append(row)
+ assert len(lifecycle_rows)<=100,'Lifecycle evidence count exceeds bound'
+ return obj
+transition_binding=state['lastPayloadRetirement'];assert transition_binding['path']==base+'transition-completed.json'
+transition=add(transition_binding['path'],transition_binding['sha256'])
+assert transition['priorConfig']['path']==base+'prior-config.json' and transition['priorState']['path']==base+'prior-state.json'
+add(transition['priorConfig']['path'],transition['priorConfig']['sha256']);add(transition['priorState']['path'],transition['priorState']['sha256'])
+initial=transition['successorIndex'];assert initial['path']==root+'audit30-policy-admission-index-payload-retirement-6fd05dc1e04e.json'
+if initial!=current:add(initial['path'],initial['sha256'])
+anchor=config.get('payloadRetirementSourceConfig')
+if anchor is not None:
+ assert set(anchor)=={'path','sha256'} and anchor['path']==base+'successor-config.json' and anchor['sha256']==transition['successorConfigSha256']
+ add(anchor['path'],anchor['sha256'])
+ cfg,st,config_sha=config,state,trusted['configSha256'];visited=set()
+ for depth in range(16):
+  assert config_sha not in visited;visited.add(config_sha)
+  if config_sha==anchor['sha256']:break
+  package_sha=cfg['package']['sha256'];assert re.fullmatch(r'[a-f0-9]{64}',package_sha)
+  directory=root+'ui-lifecycle-upgrade-'+package_sha+'/'
+  upgrade=st['lastUpgrade']
+  assert upgrade['intentPath']==directory+'intent.json' and upgrade['completionPath']==directory+'completed.json' and upgrade['statusVerificationPath']==directory+'verified.json'
+  add(upgrade['intentPath'],upgrade['intentSha256']);add(upgrade['completionPath']);add(upgrade['statusVerificationPath'])
+  cfg=add(directory+'prior-config.json',upgrade['priorConfigSha256']);st=add(directory+'prior-state.json',upgrade['priorStateSha256']);config_sha=upgrade['priorConfigSha256']
+ else:raise AssertionError('Lifecycle upgrade chain exceeds bound')
+for path,before in seen.items():`);
+export const retirementCurrentReadProgram=currentReader;
+export function validateCurrentRetainedHolds(lifecycle,bundle,attestation) {
+ const trusted=currentRetirementTrust(lifecycle,attestation),raw=JSON.stringify({bundle,trusted});
+ assert(Buffer.byteLength(raw)<=16*1024**2,"Current retirement evidence exceeds bound");
+ assert(lifecycle.verifiedPreservedRelease1042==null&&lifecycle.verifiedPreservedFallback==null,"Conflicting historical holds");
+ const validator=fileURLToPath(new URL("./retirement-current-evidence.py",import.meta.url));
+ const result=JSON.parse(execFileSync("/usr/bin/python3",["-I","-B",validator],{input:raw,encoding:"utf8",env,timeout:30000,maxBuffer:1024**2}));
+ assert.deepEqual(result.proof,lifecycle.verifiedRetiredPayloads);assert.deepEqual(result.verifiedCurrentPair,lifecycle.pair);
+ assert.deepEqual(result.verifiedCurrentPair,lifecycle.verifiedRetirementCurrentPair);
+ currentSource(currentPackages.get(attestation));return result;
+}
+export function collectCurrentRetirementEvidence(lifecycle,attestation) {
+ const trusted=currentRetirementTrust(lifecycle,attestation),quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
+ const raw=execFileSync("/usr/bin/ssh",["-i","/home/sixer/.ssh/proofofwork_me_ed25519","-o","BatchMode=yes","-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=yes","-o","ConnectTimeout=15","root@77.42.91.106","/usr/bin/python3 -I -B -c "+quote(retirementCurrentReadProgram)],{input:JSON.stringify({trusted,index:lifecycle.index}),encoding:"utf8",env,timeout:90000,maxBuffer:16*1024**2});
+ const bundle=JSON.parse(raw);validateCurrentRetainedHolds(lifecycle,bundle,attestation);return bundle;
 }

@@ -242,6 +242,30 @@ SOURCE_INDEX = {'path': BASE + '/cleanup-evidence/audit30-policy-admission-index
 PRIOR_CONFIG_SHA = '58660f364d39f2cd0a5b94e2cb8e33b496e7686e2473c622dc9ec6e268f42798'
 TOKEN = object()
 
+def source_config(config):
+    """Authenticate the original retirement config without relabeling its policy."""
+    binding = config.get('payloadRetirement')
+    anchor = config.get('payloadRetirementSourceConfig')
+    if anchor is None:
+        require(binding is None or binding.get('policyCodeSha256') == config['package']['sha256'],
+                'Retirement policy identity differs from original package')
+        return None
+    require(isinstance(binding, dict) and binding.get('mode') == 'complete'
+            and isinstance(anchor, dict) and set(anchor) == {'path', 'sha256'}
+            and anchor['path'] == EVIDENCE_DIR + '/successor-config.json',
+            'Retirement source config anchor differs')
+    original = _json(read_bound(anchor['path'], anchor['sha256']))
+    require(original.get('payloadRetirement') == binding
+            and original.get('payloadRetirementSourceConfig') is None
+            and original['package']['sha256'] == binding['policyCodeSha256'],
+            'Original retirement config authority differs')
+    transition = _json(read_raw_bound(EVIDENCE_DIR + '/transition-completed.json'))
+    require(transition.get('schema') == 'pow-exact-payload-retirement-state-transition-v1'
+            and transition.get('successorConfigSha256') == anchor['sha256']
+            and transition.get('terminalReceipt') == binding['receipt'],
+            'Retirement source config transition differs')
+    return anchor
+
 def _json(raw):
     def pairs(items):
         out = {}
@@ -381,7 +405,98 @@ class VerifiedRetirement:
                 'sourceIndex': SOURCE_INDEX.copy(),
                 'recoveryVerification': 'isolated-static-only'}
 
-    def verify_lifecycle_state(self, state, config_sha):
+    def verify_package_upgrades(self, state, config_sha, config, origin_sha, *, verify_current_seal=True):
+        """Follow sealed config upgrades independently of later ordinary cycles."""
+        anchor = source_config(config)
+        require(anchor is not None and anchor['sha256'] == origin_sha,
+                'Retirement package upgrade lacks original config anchor')
+        seen = set()
+        for depth in range(16):
+            require(config_sha not in seen and digest(encoded(config)) == config_sha
+                    and config.get('payloadRetirement') == self._binding,
+                    'Retirement package config chain differs')
+            seen.add(config_sha)
+            if config_sha == origin_sha:
+                require(config.get('payloadRetirementSourceConfig') is None,
+                        'Original retirement config acquired an upgrade marker')
+                self.verify_lifecycle_state(state, config_sha, config=config)
+                return
+            require(source_config(config) == anchor,
+                    'Retirement package chain changed original anchor')
+            upgrade = state.get('lastUpgrade', {})
+            directory = Path(BASE + '/cleanup-evidence') / ('ui-lifecycle-upgrade-' + config['package']['sha256'])
+            require(upgrade.get('intentPath') == str(directory / 'intent.json')
+                    and upgrade.get('completionPath') == str(directory / 'completed.json')
+                    and upgrade.get('statusVerificationPath') == str(directory / 'verified.json')
+                    and upgrade.get('preservedCompletedCycleId')
+                    and upgrade.get('supersededCycleId') is None,
+                    'Retirement package upgrade namespace or completion differs')
+            intent = _json(read_bound(upgrade['intentPath'], upgrade['intentSha256']))
+            done_raw = read_raw_bound(upgrade['completionPath']); done = _json(done_raw)
+            prior_config_binding = {'path': str(directory / 'prior-config.json'),
+                                    'sha256': upgrade['priorConfigSha256']}
+            prior_state_binding = {'path': str(directory / 'prior-state.json'),
+                                   'sha256': upgrade['priorStateSha256']}
+            prior_config_raw = read_bound(prior_config_binding['path'], prior_config_binding['sha256'])
+            prior_state_raw = read_bound(prior_state_binding['path'], prior_state_binding['sha256'])
+            prior_config, prior_state = _json(prior_config_raw), _json(prior_state_raw)
+            template = intent['stateTemplate']
+            reconciled = dict(template, lastUpgrade=dict(template['lastUpgrade'],
+                              intentSha256=upgrade['intentSha256']))
+            expected = dict(prior_state, configSha256=config_sha, revision=prior_state['revision'] + 2,
+                            status='complete', pending=None, activePhase=None,
+                            completedContext=prior_state['completedContext'],
+                            lastUpgrade=template['lastUpgrade'])
+            proof = done.get('completionVerification', {})
+            require(intent.get('schema') == 'pow-ui-retention-upgrade-intent-v1'
+                    and intent.get('disposition') == 'completed-cycle-preserved'
+                    and intent.get('freshPreparationRequired') is False
+                    and intent['plan'].get('schema') == 'pow-ui-retention-upgrade-plan-v1'
+                    and intent['plan'].get('scopeApprovalSha256') == config['scopeApprovalSha256']
+                    and intent['plan']['request'].get('mode') == 'completed-cycle'
+                    and intent['plan']['payload']['config'] == config
+                    and intent['plan']['payload']['configSha256'] == config_sha
+                    and intent['plan']['request']['configSha256'] == prior_config_binding['sha256']
+                    and intent['plan']['request']['stateSha256'] == prior_state_binding['sha256']
+                    and template == expected and reconciled['lastUpgrade'] == upgrade
+                    and template['lastPayloadRetirement'] == state['lastPayloadRetirement']
+                    and template['lastCompleted']['cycleId'] == upgrade['preservedCompletedCycleId']
+                    and prior_state['status'] == 'complete' and prior_state.get('pending') is None
+                    and prior_state.get('activePhase') is None
+                    and prior_state['configSha256'] == prior_config_binding['sha256']
+                    and intent['stateTemplateSha256'] == digest(encoded(template))
+                    and done.get('schema') == 'pow-ui-retention-upgrade-completed-v1'
+                    and done.get('ok') is True and done.get('retentionComplete') is True
+                    and done.get('freshPreparationRequired') is False
+                    and done.get('preservedCompletedCycleId') == upgrade['preservedCompletedCycleId']
+                    and done.get('supersededCycleId') is None
+                    and done['config'] == {'path': '/etc/proofofwork-retention/ui-lifecycle.json', 'sha256': config_sha}
+                    and done['intent'] == {'path': upgrade['intentPath'], 'sha256': upgrade['intentSha256']}
+                    and done['priorConfig'] == prior_config_binding and done['priorState'] == prior_state_binding
+                    and done['state'] == {'path': config['statePath'], 'sha256': digest(encoded(reconciled))}
+                    and done['stateRevision'] == template['revision'] <= state['revision']
+                    and proof.get('fullCompletionVerified') is True
+                    and proof.get('verifiedRetiredPayloads') == self.proof
+                    and proof.get('index') == template['index']
+                    and proof.get('context') == template['completedContext']
+                    and proof.get('lastCompleted') == template['lastCompleted'],
+                    'Retirement package upgrade edge is not authenticated')
+            if state['revision'] == template['revision']:
+                require(state == reconciled, 'Initial retirement package successor state differs')
+            # Only Runtime's existing installer verification window may defer
+            # the current seal. Every ancestor must always be sealed.
+            if depth or verify_current_seal:
+                verified = _json(read_raw_bound(upgrade['statusVerificationPath']))
+                require(verified == {'schema': 'pow-ui-retention-upgrade-status-verified-v1', 'ok': True,
+                    'config': done['config'], 'state': done['state'],
+                    'upgradeReceipt': {'path': upgrade['completionPath'], 'sha256': digest(done_raw)},
+                    'preservedCompletedCycleId': upgrade['preservedCompletedCycleId'],
+                    'contextSha256': digest(encoded(template['completedContext']))},
+                    'Ancestor retirement package upgrade lacks exact status seal')
+            config, config_sha, state = prior_config, prior_config_binding['sha256'], prior_state
+        raise ValueError('Retirement package upgrade chain exceeds bound')
+
+    def verify_lifecycle_state(self, state, config_sha, *, config=None, verify_current_seal=True):
         """Authenticate the append-only transition; never rewrite old upgrade proof."""
         binding = state.get('lastPayloadRetirement')
         expected_path = EVIDENCE_DIR + '/transition-completed.json'
@@ -392,9 +507,13 @@ class VerifiedRetirement:
             'successorConfigSha256', 'terminalReceipt', 'successorIndex',
             'statePatch', 'preservedLastUpgrade'},
             'Lifecycle retirement transition fields differ')
+        origin_sha = transition['successorConfigSha256']
+        if origin_sha != config_sha:
+            require(config is not None, 'Retirement config changed without authenticated package chain')
+            self.verify_package_upgrades(state, config_sha, config, origin_sha,
+                                         verify_current_seal=verify_current_seal)
         require(transition['schema'] == 'pow-exact-payload-retirement-state-transition-v1'
-                and transition['terminalReceipt'] == self._binding['receipt']
-                and transition['successorConfigSha256'] == config_sha,
+                and transition['terminalReceipt'] == self._binding['receipt'],
                 'Lifecycle retirement transition authority differs')
         require(transition['priorState'] == {
             'path': EVIDENCE_DIR + '/prior-state.json',
@@ -408,7 +527,7 @@ class VerifiedRetirement:
         patch = transition['statePatch']
         require(set(patch) == {'configSha256', 'index', 'revision',
             'lastUpgrade', 'completedContext'}, 'Expanded lifecycle state patch')
-        require(patch['configSha256'] == config_sha and patch['lastUpgrade'] == {}
+        require(patch['configSha256'] == origin_sha and patch['lastUpgrade'] == {}
                 and patch['index'] == transition['successorIndex']
                 and type(patch['revision']) is int and patch['revision'] == prior['revision'] + 2
                 and patch['completedContext'] == prior['completedContext']
@@ -442,6 +561,8 @@ class VerifiedRetirement:
                     == self.source_admissions
                     and raw.get('completedRetirements', [])[:len(self.source_retirements)]
                     == self.source_retirements, 'Descendant lifecycle lineage lost')
+        return {'transition': transition, 'binding': dict(binding), 'state': expected,
+                'configSha256': origin_sha}
 
     @property
     def verified_current_pair(self):

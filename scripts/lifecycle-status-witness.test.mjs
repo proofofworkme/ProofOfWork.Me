@@ -20,7 +20,7 @@ globalThis.__stockWitnessTest={
 };
 const hook=registerHooks({load(url,context,next){
  if(url===identityURL)return {format:"module",shortCircuit:true,source:"export const requireIdentityProof=p=>globalThis.__stockWitnessTest.require(p); export const createIdentityProof=()=>globalThis.__stockWitnessTest.create(); export const publicIdentityProof=p=>globalThis.__stockWitnessTest.public(p);"};
- if(url===retirementURL)return {format:"module",shortCircuit:true,source:"export const attestInstalledRetentionPackage=p=>globalThis.__stockRetentionTest.attest(p); export const bindInstalledRetentionPackage=(s,a)=>globalThis.__stockRetentionTest.bind(s,a); export const collectRetirementEvidence=s=>globalThis.__stockRetentionTest.collect(s); export const validateRetainedHolds=(s,b)=>globalThis.__stockRetentionTest.validate(s,b);"};
+ if(url===retirementURL)return {format:"module",shortCircuit:true,source:"export const attestInstalledRetentionPackage=p=>globalThis.__stockRetentionTest.attest(p); export const bindInstalledRetentionPackage=(s,a)=>globalThis.__stockRetentionTest.bind(s,a); export const collectRetirementEvidence=s=>globalThis.__stockRetentionTest.collect(s); export const validateRetainedHolds=(s,b)=>globalThis.__stockRetentionTest.validate(s,b); export const attestCurrentRetentionPackage=p=>globalThis.__stockRetentionTest.currentAttest(p); export const collectCurrentRetirementEvidence=(s,a)=>globalThis.__stockRetentionTest.currentCollect(s,a); export const validateCurrentRetainedHolds=(s,b,a)=>globalThis.__stockRetentionTest.currentValidate(s,b,a);"};
  return next(url,context);
 }});
 const realExec=childProcess.execFileSync;
@@ -28,6 +28,9 @@ const realFetch=globalThis.fetch;
 let statusCalls=0,finalMutation,failStatus=false,standalone=false;
 let events=[],retired=false,missingEvidence=false,badProof=false,attestationFailure=false,bindFailure=false,packageVersion="original";
 globalThis.__stockRetentionTest={
+ currentAttest:p=>{assert.deepEqual(p,{repository,commit:fixed.artifact.commit,tree:fixed.artifact.tree});events.push("current-attest");if(attestationFailure)throw Error("untrusted current package");return {current:true};},
+ currentCollect:(s,a)=>{assert.equal(a.current,true);events.push("current-read");if(missingEvidence)throw Error("missing current evidence");return retired?{synthetic:true,receipt:s.verifiedRetiredPayloads.receiptSha256}:undefined;},
+ currentValidate:(s,b,a)=>{assert.equal(a.current,true);events.push("current-validate");globalThis.__stockRetentionTest.validate(s,b);},
  attest:p=>{assert(brands.has(p));events.push("attest");if(attestationFailure)throw Error("untrusted installed package");return {mode:retired?"operator-retirement-package":"legacy-in-place",configSha256:"1".repeat(64),version:packageVersion};},
  bind:(s,a)=>{events.push("bind");if(bindFailure)throw Error("package lifecycle mismatch");assert.equal(s.configSha256,a.configSha256);},
  collect:s=>{events.push("retirement-read");assert(s.verifiedRetiredPayloads);if(missingEvidence)throw Error("missing terminal evidence");return {synthetic:true,receipt:s.verifiedRetiredPayloads.receiptSha256};},
@@ -56,8 +59,8 @@ childProcess.execFileSync=(command,args,options)=>{
   const value=status();if(retired){value.verifiedPreservedRelease1042=null;value.verifiedPreservedFallback=null;value.verifiedRetiredPayloads={model:badProof?"fake":"intentionally-retired-payloads-retained-evidence-v1",receiptSha256:"9".repeat(64)};}
   if(finalMutation)finalMutation(value);return JSON.stringify(value);
  }
- if(command==="/usr/bin/git")return standalone?fixed.artifact.commit:fixed.operator.commit;
- if(command==="python3"||command==="/usr/bin/python3")return JSON.stringify(Object.fromEntries(["a","b","c","d","e","f"].map(k=>[k,"0".repeat(64)])));
+ if(command==="/usr/bin/git")return args.includes("HEAD^{tree}")?fixed.artifact.tree:standalone?fixed.artifact.commit:fixed.operator.commit;
+ if(command==="python3"||command==="/usr/bin/python3")return JSON.stringify(Object.fromEntries(Array.from({length:standalone?16:6},(_,i)=>[String(i),"0".repeat(64)])));
  if(command==="ssh"||command==="/usr/bin/ssh")return JSON.stringify({runtimeFiles:6,monitorExit:0});
  throw new Error("Unexpected command in isolated fixture: "+command);
 };
@@ -111,6 +114,13 @@ test("two full scans with actual activity in between; no synthetic production qu
  });
  await t.test("default activity performs own full status",async()=>{
   reset();standalone=true;await activity.runActivityFeeFactorLive();assert.equal(statusCalls,1);
+  assert.deepEqual(events,["current-attest","status","current-read","current-validate","validate-holds"]);
+ });
+ await t.test("default current activity authenticates retired evidence without historical identity",async()=>{
+  reset();standalone=true;retired=true;await activity.runActivityFeeFactorLive();assert.equal(statusCalls,1);
+  assert.deepEqual(events,["current-attest","status","current-read","current-validate","validate-holds"]);
+  reset();standalone=true;attestationFailure=true;await assert.rejects(activity.runActivityFeeFactorLive(),/untrusted current/);assert.equal(statusCalls,0);
+  reset();standalone=true;retired=true;missingEvidence=true;await assert.rejects(activity.runActivityFeeFactorLive(),/missing current/);assert.equal(statusCalls,1);
  });
  await t.test("JSON, copied handle, different proof object and different collection refuse",()=>{
   reset();const p=proof(),pass=witness.beginLifecycleCollection(p),other=witness.beginLifecycleCollection(p);

@@ -15,7 +15,7 @@ import { join } from "node:path";
 test("activity live checker derives only the three accepted linked runtime pins", () => {
   const source = readFileSync("scripts/check-activity-fee-factor-live.mjs", "utf8");
   const start = source.indexOf("`import ast,json,pathlib");
-  const end = source.indexOf("`], { encoding:", start);
+  const end = source.indexOf("`, identityProof===undefined?", start);
   assert.ok(start >= 0 && end > start);
   const program = source.slice(start + 1, end);
   const keys = [
@@ -55,4 +55,48 @@ test("activity live checker derives only the three accepted linked runtime pins"
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("current activity pins the reviewed Pay overlay while retaining historical Activity files", () => {
+  const source = readFileSync("scripts/check-activity-fee-factor-live.mjs", "utf8");
+  const start = source.indexOf("`import ast,json,pathlib");
+  const end = source.indexOf("`, identityProof===undefined?", start);
+  assert.ok(start >= 0 && end > start);
+  const program = source.slice(start + 1, end);
+  const profile = JSON.parse(readFileSync("deploy/pay/runtime-profile.json", "utf8"));
+  const root = mkdtempSync(join(tmpdir(), "pow-pay-runtime-pins-"));
+  const copy = path => {
+    mkdirSync(join(root, path, ".."), {recursive:true});
+    writeFileSync(join(root, path), readFileSync(path));
+  };
+  try {
+    for (const path of ["deploy/audit-remediation/profile.py", "deploy/activity-fee-factor/profile.py",
+      "deploy/linked-publish/profile.py", ...Object.keys(profile.sources)]) copy(path);
+    mkdirSync(join(root, "deploy/pay"), {recursive:true});
+    const run = (value=profile, mode="current") => {
+      writeFileSync(join(root, "deploy/pay/runtime-profile.json"), JSON.stringify(value));
+      return JSON.parse(execFileSync("python3", ["-I", "-B", "-c", program, mode], {
+        cwd:root, encoding:"utf8", timeout:15000, stdio:["ignore","pipe","pipe"],
+      }));
+    };
+    const historical=run(profile,"historical"),current=run();
+    assert.equal(Object.keys(historical).length,6);
+    assert.equal(Object.keys(current).length,16);
+    for(const [path,row] of Object.entries(profile.sources)) assert.equal(current[path],row.after);
+    for(const path of Object.keys(historical).filter(path=>!profile.sources[path])) assert.equal(current[path],historical[path]);
+    for(const mutate of [
+      p=>delete p.sources["server/pay.mjs"],
+      p=>p.sources["../../foreign"]={before:null,after:"0".repeat(64)},
+      p=>p.sources["server/proof-api.mjs"].before="0".repeat(64),
+      p=>p.sources["server/pay.mjs"].after="0".repeat(64),
+      p=>p.sources["server/pay.mjs"].before="0".repeat(64),
+      p=>p.sources["server/jobs.mjs"].source=p.sources["server/jobs.mjs"].after,
+      p=>p.overlayReceiptSha256="missing",
+    ]) {const changed=structuredClone(profile);mutate(changed);assert.throws(()=>run(changed));}
+    writeFileSync(join(root,"server/proof-api.mjs"),"changed canonical source");
+    assert.throws(()=>run());
+    // A current Pay candidate never silently replaces the historical artifact's six pins.
+    assert.deepEqual(run(profile,"historical"),historical);
+    assert.throws(()=>run(profile,"unknown"));
+  } finally {rmSync(root,{recursive:true,force:true});}
 });

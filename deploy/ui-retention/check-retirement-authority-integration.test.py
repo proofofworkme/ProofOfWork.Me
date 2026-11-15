@@ -2,7 +2,8 @@
 """Genuine stock authority fixture foundation. No production paths/actions.
 
 Executes stock history, authentic package/fixture state seed, pending admission,
-real four-payload removal, receipt/state transition and fresh Runtime.status.
+real four-payload removal, receipt/state transition, completion-preserving package
+upgrade and fresh Runtime.status.
 Explicit test namespaces/pins and initial-condition seed are recorded.
 """
 import contextlib
@@ -145,6 +146,13 @@ class AuthorityIntegration(unittest.TestCase):
                     for old in ('/etc/proofofwork-retention','/var/lib/proofofwork-ui-retention',
                                 '/var/backups/proofofwork-ui','/var/tmp/proofofwork-deploy'):
                         value=value.replace(old,str(self.fixture.base/old.lstrip('/')))
+                elif name=='deploy/ui-retention/install_lifecycle.py':
+                    # Fixed paths and the lock are rooted in the same protected
+                    # fixture namespace. No installer acceptance rule changes.
+                    for old in ('/etc/', '/usr/local/', '/var/', '/run/'):
+                        value=value.replace(old,str(self.fixture.base/old.lstrip('/'))+'/')
+                    value=value.replace("prefix / 'run/proofofwork-ui/deploy.lock'",
+                                        'Path('+repr(str(self.layout.lock))+')')
                 raw=value.encode()
             members[name]=raw
         if overrides:members.update(overrides)
@@ -428,6 +436,7 @@ class AuthorityIntegration(unittest.TestCase):
             'PATHS':tuple(selected),'SOURCE_INDEX':baseline['seedDerivation']['index'],
             'PRIOR_CONFIG_SHA':self.initial_config_sha})
         receipt=receipt.replace("str(layout.live) == '/var/www'","str(layout.live) == "+repr(str(self.layout.live)))
+        receipt=receipt.replace('/etc/proofofwork-retention/ui-lifecycle.json',str(L.CONFIG_PATH))
         receipt=receipt.replace("r['restoredEntries'] == 2839","r['restoredEntries'] == "+str(len(entries)))
         receipt=receipt.replace("for parent in (p.parent, *p.parents):",
              "for parent in (x for x in (p.parent, *p.parents) if x.is_relative_to(Path("+repr(str(base))+"))):")
@@ -538,10 +547,75 @@ class AuthorityIntegration(unittest.TestCase):
             if control is not None:control.journal.close()
             os.close(fd)
 
+    def upgrade_retired_fixture(self, terminal):
+        """Exercise the real installer and normal status, without success mocks."""
+        def load(name,path):
+            spec=importlib.util.spec_from_file_location(name,path)
+            module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
+        base=self.fixture.base
+        old_package=Path(terminal['package']['path'])
+        old_manifest=json.loads((old_package/'package.json').read_bytes())
+        origin_config=Path(terminal['status']['binding']['config']['path'])
+        origin_state=Path(terminal['status']['binding']['state']['path'])
+        original_config=json.loads(origin_config.read_bytes())
+        original_state=json.loads(origin_state.read_bytes())
+        # New immutable Git package, differing only by an inert fixture comment.
+        # Its actual current installer and all acceptance code execute below.
+        operator_source=base/('operator-source-'+str(len(list(base.glob('operator-source-*')))))
+        operator_source.mkdir(mode=0o700)
+        for name in old_manifest['files']:
+            raw=(old_package/name).read_bytes()
+            if name=='deploy/ui-retention/install_lifecycle.py':
+                raw+=b'\n# Synthetic completed-retirement package successor.\n'
+            path=operator_source/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(raw)
+        git=['/usr/bin/git','-c','core.hooksPath=/dev/null','-C',str(operator_source)]
+        env={'PATH':'/usr/bin:/bin','GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null',
+             'GIT_AUTHOR_NAME':'Fixture','GIT_AUTHOR_EMAIL':'fixture@example.invalid',
+             'GIT_COMMITTER_NAME':'Fixture','GIT_COMMITTER_EMAIL':'fixture@example.invalid'}
+        for command in (['init','-q'],['add','.'],['commit','-qm','Exact successor retirement authority package']):
+            subprocess.run(git+command,env=env,check=True,capture_output=True)
+        installer=load('authority_actual_successor_installer',operator_source/'deploy/ui-retention/install_lifecycle.py')
+        payload=installer.committed_payload(operator_source)
+        request={'mode':'completed-cycle','configSha256':terminal['status']['configSha256'],
+                 'stateSha256':terminal['status']['stateSha256']}
+        before=installer.upgrade_inventory(request)
+        payload=installer.preserve_retirement(payload,before)
+        self.assertEqual(payload['config']['payloadRetirement'],original_config['payloadRetirement'])
+        self.assertEqual(payload['config']['payloadRetirementSourceConfig'],{
+            'path':str(self.layout.evidence/'older-backup-retirement-6fd05dc1e04e/successor-config.json'),
+            'sha256':request['configSha256']})
+        plan={'schema':'pow-ui-retention-upgrade-plan-v1','scopeApprovalSha256':installer.APPROVAL,
+              'payload':payload,'request':request,'before':before}
+        evidence={str(p):hashlib.sha256(p.read_bytes()).hexdigest()
+                  for p in self.layout.evidence.rglob('*') if p.is_file() and not p.is_symlink()}
+        result=installer.upgrade_remote(plan)
+        active=installer.existing_runtime(result['config']['sha256'])
+        fd=active.S.lock(active.layout);active.lock_fd=fd
+        try:status=active.status({'requireComplete':True})
+        finally:active.lock_fd=None;os.close(fd)
+        self.assertTrue(status['retentionComplete'])
+        self.assertEqual(status['verifiedRetiredPayloads'],terminal['status']['verifiedRetiredPayloads'])
+        self.assertEqual(status['verifiedRetirementPolicyCodeSha256'],terminal['package']['sha256'])
+        self.assertEqual(status['verifiedCurrentPackageSha256'],payload['config']['package']['sha256'])
+        current_state=json.loads(origin_state.read_bytes())
+        for key in ('index','lastCompleted','lastIntent','completedContext','lastPayloadRetirement'):
+            self.assertEqual(current_state[key],original_state[key],key)
+        for path,digest in evidence.items():
+            self.assertEqual(hashlib.sha256(Path(path).read_bytes()).hexdigest(),digest,path)
+        self.assertTrue(all(not Path(p).exists() for p in status['verifiedRetiredPayloads']['retiredPayloadPaths']))
+        return dict(terminal,status=status,package=payload['config']['package'],
+                    operator={'commit':payload['manifest']['sourceCommit'],'tree':payload['manifest']['sourceTree']},
+                    packageUpgrade={'completed':True,'result':result,'originalPackage':terminal['package'],
+                       'originalOperator':terminal['operator'],'originalStatus':terminal['status'],
+                       'originalConfigSha256':request['configSha256'],'historicalEvidenceFilesPreserved':len(evidence),
+                       'sourceConfig':payload['config']['payloadRetirementSourceConfig'],
+                       'realInstallerAndNormalRuntime':True})
+
     def test_real_stock_foundation_has_two_holds_and_completed_current_prior(self):
         proof=self.authority_foundation()
         terminal=self.retire_fixture(proof)
         self.assertTrue(terminal['qualifiedTerminalRetirement'])
+        terminal=self.upgrade_retired_fixture(terminal)
         report=dict(terminal,baseline=proof,harnessSha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                     boundaries=['synthetic namespaces and exact authority pins',
                                 'fixture initial state derived from real stock completion, not importer API',

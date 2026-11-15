@@ -30,7 +30,7 @@ def main(report_path,expected_sha):
  state=base/'var/lib/proofofwork-ui-retention/state.json'
  assert cfg.is_file() and state.is_file()
  exports=json.loads(subprocess.check_output([NODE,'--input-type=module','-e',
-  'import {retirementReadProgram,installedRetentionProgram,retentionPackageFiles} from "./scripts/retirement-evidence.mjs";console.log(JSON.stringify({retirementReadProgram,installedRetentionProgram,retentionPackageFiles}));'],
+  'import {retirementReadProgram,retirementCurrentReadProgram,installedRetentionProgram,retentionPackageFiles} from "./scripts/retirement-evidence.mjs";console.log(JSON.stringify({retirementReadProgram,retirementCurrentReadProgram,installedRetentionProgram,retentionPackageFiles}));'],
   cwd=ROOT,timeout=30))
  package=Path(report['package']['path']);manifest=json.loads((package/'package.json').read_bytes())
  assert set(manifest['files'])==set(exports['retentionPackageFiles'])
@@ -58,7 +58,7 @@ def main(report_path,expected_sha):
   return program
  installed=namespace(exports['installedRetentionProgram'])
  attestation=run(installed,{'expected':expected})
- assert attestation['mode']=='operator-retirement-package' and attestation['policyCodeSha256']==expected['sha256']
+ assert attestation['mode']=='operator-retirement-package' and attestation['currentPackageSha256']==expected['sha256']
  bad=copy.deepcopy(expected);bad['sha256']='f'*64;fail(installed,{'expected':bad})
  # Execute actual installed policy only after authenticating package bytes.
  L=load('consumer_actual_installed_lifecycle',package/'deploy/ui-retention/lifecycle_remote.py')
@@ -68,10 +68,14 @@ def main(report_path,expected_sha):
  finally:runtime.lock_fd=None;os.close(fd)
  assert status==report['status'],'Actual lifecycle changed from retained terminal report'
  assert status['verifiedRetirementPolicyCodeSha256']==attestation['policyCodeSha256']
+ assert status.get('verifiedCurrentPackageSha256',status['verifiedRetirementPolicyCodeSha256'])==attestation['currentPackageSha256']
+ assert status.get('verifiedRetirementSourceConfig')==attestation['retirementSourceConfig']
  trusted={'configSha256':status['configSha256'],'stateSha256':status['stateSha256'],
   'currentIndexSha256':status['index']['sha256'],'policyCodeSha256':attestation['policyCodeSha256'],'verifiedCurrentPair':status['pair']}
  R=load('consumer_fixture_authority',package/'deploy/ui-retention/retirement_receipt.py')
- program=namespace(exports['retirementReadProgram'])
+ current=attestation['retirementSourceConfig'] is not None
+ if current:trusted.update(currentPackageSha256=attestation['currentPackageSha256'],retirementSourceConfig=attestation['retirementSourceConfig'])
+ program=namespace(exports['retirementCurrentReadProgram' if current else 'retirementReadProgram'])
  replacements={
  '6fd05dc1e04e6fbcab293683c5a0d10d184ff0bd83039a66d7f2c7ec53161004':R.PROPOSAL_SHA,
  'dcf09bd3ec9453230ece39ce67ccf9f39716388ad26bc609ad09d1fe5c308107':R.INVENTORY_SHA,
@@ -94,9 +98,37 @@ def main(report_path,expected_sha):
  pins={'RET_'+name:getattr(R,name) for name in ('PROPOSAL_SHA','INVENTORY_SHA','RESTORE_SHA','PAIR','BASE','PATHS','SOURCE_INDEX','PRIOR_CONFIG_SHA','EVIDENCE_DIR','TERMINAL_PATH')}
  pins.update(RET_CONFIG_PATH=str(cfg),RET_STATE_PATH=str(state))
  module.update(pins)
- result=module['validate_dual_retirement_evidence'](bundle,trusted)
+ validate=module['validate_dual_retirement_evidence']
+ if current:
+  successor=load('consumer_current_release_validator',ROOT/'scripts/retirement-current-evidence.py')
+  # Only the fixture namespace/authority pins and fixture cardinality differ.
+  # The production successor validator and real package ancestry checks execute.
+  successor.__dict__.update({key:value for key,value in module.items() if key.startswith('RET_')})
+  successor.load_receipt_module=lambda:R
+  validate=successor.validate_current_retirement_evidence
+ result=validate(bundle,trusted)
  assert result['proof']==status['verifiedRetiredPayloads'] and result['verifiedCurrentPair']==status['pair']
  assert result['filesystemVerified'] is False and result['activationAllowed'] is False
+ current_rejections=0
+ if current:
+  assert result['currentPackageSha256']==attestation['currentPackageSha256']
+  assert result['policyCodeSha256']!=result['currentPackageSha256']
+  upgrade_path=json.loads(base64.b64decode(bundle['state']['base64']))['lastUpgrade']['statusVerificationPath']
+  for mutation in ('missing-current-seal','altered-current-seal','missing-origin','extra-evidence','wrong-current-package','retargeted-policy','altered-origin'):
+   bad=copy.deepcopy(bundle);bad_trusted=copy.deepcopy(trusted)
+   if mutation=='missing-current-seal':bad['lifecycleEvidence']=[r for r in bad['lifecycleEvidence'] if r['path']!=upgrade_path]
+   elif mutation=='altered-current-seal':
+    row=next(r for r in bad['lifecycleEvidence'] if r['path']==upgrade_path)
+    data=json.loads(base64.b64decode(row['base64']));data['ok']=False;raw=encoded(data)
+    row.update(base64=base64.b64encode(raw).decode(),sha256=sha(raw))
+   elif mutation=='missing-origin':bad['lifecycleEvidence']=[r for r in bad['lifecycleEvidence'] if r['path']!=attestation['retirementSourceConfig']['path']]
+   elif mutation=='extra-evidence':bad['lifecycleEvidence'].append(copy.deepcopy(bad['lifecycleEvidence'][0]))
+   elif mutation=='wrong-current-package':bad_trusted['currentPackageSha256']=trusted['policyCodeSha256']
+   elif mutation=='retargeted-policy':bad_trusted['policyCodeSha256']=trusted['currentPackageSha256']
+   else:bad_trusted['retirementSourceConfig']['sha256']='f'*64
+   try:validate(bad,bad_trusted)
+   except (ValueError,AssertionError,KeyError):current_rejections+=1
+   else:raise AssertionError('Accepted current '+mutation+' tamper')
  for mutation in ('terminal','sidecars','finalProofs','state','currentIndex'):
   bad=copy.deepcopy(bundle)
   if mutation=='terminal':bad['terminal']['base64']='e30='
@@ -104,7 +136,7 @@ def main(report_path,expected_sha):
   elif mutation=='finalProofs':bad['finalProofs']={}
   elif mutation=='state':bad['state']['sha256']='f'*64
   else:bad['currentIndex']['path']='/tmp/forged.json'
-  try:module['validate_dual_retirement_evidence'](bad,trusted)
+  try:validate(bad,trusted)
   except (ValueError,AssertionError):pass
   else:raise AssertionError('Accepted '+mutation+' tamper')
  untouched=load('consumer_untouched_production_validator',validator_path)
@@ -113,11 +145,11 @@ def main(report_path,expected_sha):
  else:raise AssertionError('Untouched production pins accepted synthetic fixture')
  print(json.dumps({'ok':True,'reportSha256':expected_sha,'report':str(p),'realInstalledStatus':True,
   'packageGitBlobAttestation':True,'rawReaderValidated':True,'pureConsumerValidated':True,
-  'tamperCasesRejected':6,'productionPinsRejectFixture':True,'productionActions':False,
+  'tamperCasesRejected':6+current_rejections,'currentReleaseSuccessor':current,'productionPinsRejectFixture':True,'productionActions':False,
   'brandedGitAndSshTransportExercised':False,'boundaries':['synthetic namespace and exact authority pins',
    'ancestor trust anchored at protected fixture root rather than writable /tmp',
    'restored-entry cardinality is fixture-specific','no production authorization or activation proof'],
-  'programHashes':{k:sha(exports[k].encode()) for k in ('retirementReadProgram','installedRetentionProgram')},
+  'programHashes':{k:sha(exports[k].encode()) for k in ('retirementReadProgram','retirementCurrentReadProgram','installedRetentionProgram')},
   'substitutions':{'namespace':str(base),'pins':{k:(list(v) if isinstance(v,tuple) else v) for k,v in pins.items()},'restoredEntries':restored}},sort_keys=True))
 if __name__=='__main__':
  assert len(sys.argv)==3,'Supply retained SYNTHETIC report path and exact SHA'

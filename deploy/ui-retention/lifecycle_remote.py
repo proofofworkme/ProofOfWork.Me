@@ -246,9 +246,12 @@ def validate_config(path, expected):
     read(config['approval']['path'], APPROVAL_SHA)
     if config.get('payloadRetirement') is not None:
         retirement = config['payloadRetirement']
-        require(isinstance(retirement, dict)
-                and retirement.get('policyCodeSha256') == binding['sha256'],
-                'Retirement policy identity differs from verified installed package')
+        require(isinstance(retirement, dict), 'Invalid retirement config')
+        receipt_module = load_module('config_retirement_receipt', package / 'deploy/ui-retention/retirement_receipt.py')
+        receipt_module.source_config(config)
+    else:
+        require(config.get('payloadRetirementSourceConfig') is None,
+                'Retirement source anchor without retirement authority')
     return config, digest, package
 
 
@@ -318,8 +321,9 @@ class Runtime:
                     and self.retirement is not None,
                     'Payload retirement is pending or unauthenticated; publication blocked')
         if self.retirement is not None:
+            self.P.retirement_module().source_config(self.config)
             require(isinstance(binding, dict)
-                    and binding.get('policyCodeSha256') == self.config['package']['sha256']
+                    and binding.get('policyCodeSha256') == self.retirement.proof['policyCodeSha256']
                     and binding.get('receipt') == self.retirement.proof['receipt']
                     and binding.get('proposalSha256') == self.retirement.proof['proposalSha256'],
                     'Runtime retirement context differs from authenticated config')
@@ -342,7 +346,8 @@ class Runtime:
                 and value.get('configSha256') == self.config_sha
                 and type(value.get('revision')) is int, 'State authority differs')
         if self.retirement is not None:
-            self.retirement.verify_lifecycle_state(value, self.config_sha)
+            self.retirement.verify_lifecycle_state(value, self.config_sha, config=self.config,
+                                                   verify_current_seal=not self.verify_upgrade)
         else:
             require(value.get('lastPayloadRetirement') is None,
                     'Retirement lifecycle state requires authenticated successor')
@@ -740,7 +745,9 @@ class Runtime:
                 **({'verifiedPreservedRelease1042': verified_1042} if complete and state and state.get('index') else {}),
                 **({'verifiedRetiredPayloads': verified_retired,
                     'verifiedRetirementCurrentPair': self.retirement.verified_current_pair,
-                    'verifiedRetirementPolicyCodeSha256': self.config['package']['sha256']}
+                    'verifiedRetirementPolicyCodeSha256': self.retirement.proof['policyCodeSha256'],
+                    'verifiedCurrentPackageSha256': self.config['package']['sha256'],
+                    'verifiedRetirementSourceConfig': self.config.get('payloadRetirementSourceConfig')}
                    if verified_retired else {}),
                 **({'verifiedPreFallbackIndex': no_fallback_index} if no_fallback_index else {}),
                 **({'verifiedAccessTimeReconciliation': completion_verification['verifiedAccessTimeReconciliation']}

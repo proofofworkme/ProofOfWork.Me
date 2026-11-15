@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
 import {readFileSync} from "node:fs";
-import {retirementTrust,validateRetainedHolds,validateRetirementEvidence,retirementReadProgram,retentionPackageFiles,expectedRetentionPackage,installedRetentionProgram,attestInstalledRetentionPackage,bindInstalledRetentionPackage} from "./retirement-evidence.mjs";
+import {retirementTrust,validateRetainedHolds,validateRetirementEvidence,retirementReadProgram,retirementCurrentReadProgram,retentionPackageFiles,expectedRetentionPackage,installedRetentionProgram,attestInstalledRetentionPackage,bindInstalledRetentionPackage,collectCurrentRetirementEvidence,validateCurrentRetainedHolds} from "./retirement-evidence.mjs";
 const pair={current:"064b6991ae2a-20261114T020148Z",previous:"e2669bc1fd32-20261112T163804Z"};
 const trusted=()=>({publicationHealthy:true,retentionComplete:true,pending:null,unfinishedIntents:[],pair,
  configSha256:"a".repeat(64),stateSha256:"b".repeat(64),index:{path:"/var/backups/proofofwork-ui/cleanup-evidence/index.json",sha256:"c".repeat(64)},
@@ -37,6 +37,15 @@ test("fixed reader is syntactically valid and has no write or injected destinati
  const source=readFileSync(new URL("./retirement-evidence.mjs",import.meta.url),"utf8");
  assert(source.includes('"root@77.42.91.106"'));assert(source.includes('"StrictHostKeyChecking=yes"'));
 });
+test("current reader adds bounded raw upgrade evidence without changing the historical reader",()=>{
+ execFileSync("/usr/bin/python3",["-I","-B","-c","import ast,sys; ast.parse(sys.stdin.read())"],{input:retirementCurrentReadProgram,env:{PATH:"/usr/bin:/bin",HOME:"/nonexistent"}});
+ assert(retirementReadProgram.includes("binding['policyCodeSha256']==config['package']['sha256']==trusted['policyCodeSha256']"));
+ assert(!retirementReadProgram.includes("result['lifecycleEvidence']"));
+ for(const required of ["trusted['currentPackageSha256']","trusted['retirementSourceConfig']","range(16)","len(lifecycle_rows)<=100","verified.json","prior-state.json"])assert(retirementCurrentReadProgram.includes(required));
+ assert(!/\b(?:unlink|rmtree|chmod|chown|rename|write_text|write_bytes)\s*\(/u.test(retirementCurrentReadProgram));
+ assert.throws(()=>collectCurrentRetirementEvidence(trusted(),{}),/Authenticated current package/);
+ assert.throws(()=>validateCurrentRetainedHolds(trusted(),{},{}),/Authenticated current package/);
+});
 
 test("exact operator package scope rejects foreign entries and fake capabilities",()=>{
  const operator={commit:"a".repeat(40),tree:"b".repeat(40)};
@@ -48,11 +57,20 @@ test("exact operator package scope rejects foreign entries and fake capabilities
   const copy={...blobs};change(copy);assert.throws(()=>expectedRetentionPackage(operator,copy));
  }
  assert.throws(()=>attestInstalledRetentionPackage({operator,repository:"/tmp"}));
- const life={configSha256:"a".repeat(64),verifiedRetirementPolicyCodeSha256:expected.sha256,verifiedRetiredPayloads:{},pair:{current:"064b6991ae2a-20261114T020148Z"}};
- const att={mode:"operator-retirement-package",configSha256:life.configSha256,policyCodeSha256:expected.sha256};
+ const life={configSha256:"a".repeat(64),verifiedRetirementPolicyCodeSha256:expected.sha256,verifiedRetiredPayloads:{policyCodeSha256:expected.sha256},pair:{current:"064b6991ae2a-20261114T020148Z"}};
+ const att={mode:"operator-retirement-package",configSha256:life.configSha256,policyCodeSha256:expected.sha256,currentPackageSha256:expected.sha256,retirementSourceConfig:null};
  bindInstalledRetentionPackage(life,att);assert.equal(life.pair.current,"064b6991ae2a-20261114T020148Z");
  assert.throws(()=>bindInstalledRetentionPackage({...life,verifiedRetirementPolicyCodeSha256:"f".repeat(64)},att));
  assert.throws(()=>bindInstalledRetentionPackage(life,{...att,mode:"legacy-in-place"}));
+});
+test("current package attestation preserves the original retirement policy and requires its own status binding",()=>{
+ const original="d".repeat(64),current="e".repeat(64),anchor={path:"/var/backups/proofofwork-ui/cleanup-evidence/older-backup-retirement-6fd05dc1e04e/successor-config.json",sha256:"c".repeat(64)};
+ const life={configSha256:"a".repeat(64),verifiedRetirementPolicyCodeSha256:original,verifiedCurrentPackageSha256:current,verifiedRetirementSourceConfig:anchor,verifiedRetiredPayloads:{policyCodeSha256:original}};
+ const att={mode:"operator-retirement-package",configSha256:life.configSha256,policyCodeSha256:original,currentPackageSha256:current,retirementSourceConfig:anchor};
+ bindInstalledRetentionPackage(life,att);
+ for(const change of [v=>delete v.verifiedCurrentPackageSha256,v=>v.verifiedCurrentPackageSha256=original,v=>v.verifiedRetirementPolicyCodeSha256=current,v=>v.verifiedRetiredPayloads.policyCodeSha256=current,v=>v.verifiedRetirementSourceConfig.sha256="f".repeat(64),v=>delete v.verifiedRetirementSourceConfig]) {
+  const copy=structuredClone(life);change(copy);assert.throws(()=>bindInstalledRetentionPackage(copy,att));
+ }
 });
 function runProtectedPackageFixture(nonRootRejection = false) {
  const operator={commit:"a".repeat(40),tree:"b".repeat(40)};
@@ -60,7 +78,7 @@ function runProtectedPackageFixture(nonRootRejection = false) {
  const program=String.raw`
 import contextlib,io,json,os,pathlib,sys,tempfile
 r=json.load(sys.stdin)
-for case in (('valid',) if r['nonRootRejection'] else ('valid','commit','tree','hash','extra','bytes','path','pending','symlink','duplicate','legacy')):
+for case in (('valid',) if r['nonRootRejection'] else ('valid','commit','tree','hash','extra','bytes','path','pending','symlink','duplicate','legacy','successor','source-path','source-hash','source-policy','source-binding','source-transition','source-missing','missing-anchor')):
  with tempfile.TemporaryDirectory(prefix='pow-package-fixture-') as tmp:
   root=pathlib.Path(tmp);root.chmod(0o700);package=root/'package';package.mkdir()
   expected={**r['expected'],'path':str(package)};manifest=expected['manifest'];cp=root/'config.json'
@@ -72,6 +90,20 @@ for case in (('valid',) if r['nonRootRejection'] else ('valid','commit','tree','
    if directory.is_dir():directory.chmod(0o700)
   (package/'package.json').write_text(expected['manifestRaw']);(package/'package.json').chmod(0o600)
   config={'schema':'pow-ui-retention-lifecycle-config-v1','sourceCommit':manifest['sourceCommit'],'sourceTree':manifest['sourceTree'],'package':{'path':str(package),'sha256':expected['sha256']},'controller':{'path':str(package/'deploy/ui-retention/lifecycle_remote.py'),'sha256':manifest['files']['deploy/ui-retention/lifecycle_remote.py']['sha256']},'payloadRetirement':{'mode':'complete','policyCodeSha256':expected['sha256']}}
+  anchor=root/'successor-config.json';transition=root/'transition-completed.json'
+  if case=='successor' or case.startswith('source-') or case=='missing-anchor':
+   config['payloadRetirement'].update(policyCodeSha256='d'*64,receipt={'path':'/fixture/completed.json','sha256':'e'*64})
+   original={'package':{'sha256':'d'*64},'payloadRetirement':dict(config['payloadRetirement'])}
+   if case=='source-policy':original['package']['sha256']='f'*64
+   if case=='source-binding':original['payloadRetirement']['receipt']={'path':'/fixture/foreign.json','sha256':'f'*64}
+   anchor.write_text(json.dumps(original));anchor.chmod(0o600)
+   config['payloadRetirementSourceConfig']={'path':str(anchor),'sha256':__import__('hashlib').sha256(anchor.read_bytes()).hexdigest()}
+   transition.write_text(json.dumps({'schema':'pow-exact-payload-retirement-state-transition-v1','successorConfigSha256':config['payloadRetirementSourceConfig']['sha256'],'terminalReceipt':config['payloadRetirement']['receipt']}));transition.chmod(0o600)
+   if case=='source-path':config['payloadRetirementSourceConfig']['path']=str(root/'foreign.json')
+   if case=='source-hash':config['payloadRetirementSourceConfig']['sha256']='f'*64
+   if case=='source-transition':transition.write_text('{}')
+   if case=='source-missing':anchor.unlink()
+   if case=='missing-anchor':del config['payloadRetirementSourceConfig']
   if case=='commit':config['sourceCommit']='c'*40
   if case=='tree':config['sourceTree']='c'*40
   if case=='hash':config['package']['sha256']='c'*64
@@ -86,6 +118,7 @@ for case in (('valid',) if r['nonRootRejection'] else ('valid','commit','tree','
   if case=='duplicate':raw=raw.replace('"sourceCommit":','"sourceCommit":"c", "sourceCommit":')
   cp.write_text(raw);cp.chmod(0o600)
   code=r['program'].replace("'/etc/proofofwork-retention/ui-lifecycle.json'",repr(str(cp)))
+  code=code.replace('/var/backups/proofofwork-ui/cleanup-evidence/older-backup-retirement-6fd05dc1e04e/successor-config.json',str(anchor)).replace('/var/backups/proofofwork-ui/cleanup-evidence/older-backup-retirement-6fd05dc1e04e/transition-completed.json',str(transition))
   # Fixture-only filesystem boundary: /tmp itself is intentionally writable.
   code=code.replace('for parent in p.parents:', 'for parent in [x for x in p.parents if x == pathlib.Path('+repr(str(root))+') or pathlib.Path('+repr(str(root))+') in x.parents]:')
   if not r['nonRootRejection']:
@@ -104,13 +137,18 @@ for case in (('valid',) if r['nonRootRejection'] else ('valid','commit','tree','
   except (AssertionError,FileNotFoundError):failed=True
   finally:sys.stdin=old
   # The separate unprivileged case must fail the unmodified root-only ownership guard.
-  assert failed==(r['nonRootRejection'] or case not in ('valid','legacy')),case
-  if not failed:assert json.loads(output.getvalue())['mode']==('legacy-in-place' if case=='legacy' else 'operator-retirement-package')
+  assert failed==(r['nonRootRejection'] or case not in ('valid','legacy','successor')),case
+  if not failed:
+   result=json.loads(output.getvalue());assert result['mode']==('legacy-in-place' if case=='legacy' else 'operator-retirement-package')
+   if case!='legacy':
+    assert result['currentPackageSha256']==expected['sha256']
+    assert result['policyCodeSha256']==('d'*64 if case=='successor' else expected['sha256'])
+    assert result['retirementSourceConfig']==config.get('payloadRetirementSourceConfig')
 `;
  execFileSync("/usr/bin/python3",["-I","-B","-c",program],{input:JSON.stringify({program:installedRetentionProgram,expected,nonRootRejection}),timeout:15000});
 }
 const protectedFixtureIsRoot = process.getuid?.() === 0 && process.getgid?.() === 0;
-test("fixture UID/GID namespace validates valid/legacy packages and rejects nine mutations", () => runProtectedPackageFixture());
+test("fixture UID/GID namespace validates original/successor/legacy packages and rejects package and retirement-origin mutations", () => runProtectedPackageFixture());
 test("unprivileged installed package fixture is rejected by the unchanged root-ownership guard", {
  skip: protectedFixtureIsRoot ? "Run as an unprivileged user to exercise actual ownership rejection" : false,
 }, () => runProtectedPackageFixture(true));

@@ -7,7 +7,7 @@ const source=readFileSync(new URL("./check-activity-fee-factor-live.mjs",import.
 const start=source.indexOf("assert.equal(lifecycle.publicationHealthy, true);");
 const end=source.indexOf("console.log(JSON.stringify({ ok: true",start);
 assert(start>=0&&end>start);
-const block=new Function("assert","lifecycle","commit","validateRetainedHolds","retirementEvidence",source.slice(start,end));
+const block=new Function("assert","lifecycle","commit","validateRetainedHolds","retirementEvidence","currentPackageAttestation","validateCurrentRetainedHolds",source.slice(start,end));
 const verify=(assert,lifecycle,commit)=>block(assert,lifecycle,commit,validateRetainedHolds,undefined);
 const commit="064b6991ae2a48e2069baedc767cd918d28ba052";
 const fixture=()=>({publicationHealthy:true,retentionComplete:true,

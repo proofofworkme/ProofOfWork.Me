@@ -111,6 +111,23 @@ points to executable evidence. A compatibility decision explains why historicall
 data still reads correctly. The staged hook and CI reject functional changes without an
 updated, complete record. Adding a managed surface requires a corresponding inventory entry.
 
+Every update, upgrade and new product explicitly reviews the homepage and product
+catalog, shared navigation/icons/SEO metadata, the current Growth model and its
+generated reports, and all standalone and embedded Computer surfaces. This is the
+standing workflow confirmed by the user on 2026-11-14. New products must appear in
+homepage discovery, the Computer launcher/workspace and Growth product coverage.
+Review Growth's workload allocation, assumptions, fee elasticity and blockspace
+accounting against the actual protocol; derived invoice values, receipts or
+read-only views must not add a second demand or accounting lane. Preserve dated
+historical model artifacts and regenerate current reports when their source changes.
+
+Record each affected or unchanged decision in the release impact evidence. Ship
+the homepage, navigation, model/report and affected product changes together.
+Rendered local and production checks must include the homepage, Growth and each
+affected standalone and embedded interface, in addition to exact source provenance
+and the record-level checks below. A working new hostname does not complete this
+workflow, and an unchanged decision requires evidence rather than a placeholder edit.
+
 Trace at least one representative action through the writer and local signer, relay,
 parser/indexer, historical backfill and mempool, checkpointed APIs, Search, Log, Growth,
 wallet, and standalone and embedded interfaces. Use exact record IDs to compare the
@@ -8554,6 +8571,28 @@ the first verification while holding the deployment lock, seals that receipt,
 then checks the normal public status path. Completed-cycle upgrade execution has
 a bounded 60-minute transport timeout for these full proof checks; read-only
 upgrade planning retains its 30-minute bound and storage limits are unchanged.
+
+After the exact November 14 payload retirement, a completed-cycle package upgrade
+must preserve `payloadRetirement` byte for byte. Its `policyCodeSha256` identifies
+the historical retirement verifier and remains bound to the original terminal
+receipt, journal and admission index; it is not the current installed package.
+The successor config adds `payloadRetirementSourceConfig`, bound only to the
+original retirement directory's `successor-config.json` and its authenticated
+transition digest. Both old and new package verifiers load the retirement
+context when checking completion, policy scope and preserved holds.
+
+The successor runtime authenticates a bounded chain of at most 16 package states
+through exact prior config/state bytes, upgrade intents, state templates,
+completion receipts and status seals back to that original config. This chain
+is independent of later ordinary release-cycle IDs. Pending retirement, a
+stripped anchor, altered original authority or an unsealed ancestor refuses.
+Only the installer's existing locked first-verification window may defer the
+current seal; normal status requires it. Historical evidence is never rewritten.
+Status reports `verifiedRetirementPolicyCodeSha256` for the historical authority,
+`verifiedCurrentPackageSha256` for the installed package, and
+`verifiedRetirementSourceConfig` for the original config anchor. Current consumers
+must authenticate the successor context separately from frozen historical
+qualification. This package migration does not authorize another deletion.
 
 The initial backlog cycle completed on 2026-10-18. Its
 [execution record](audits/2026-10-18-ui-retention-repair-execution.json) binds

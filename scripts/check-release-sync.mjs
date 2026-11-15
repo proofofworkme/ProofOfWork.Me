@@ -31,7 +31,7 @@ validateImpact(impact, name => git('cat-file','-t',commit+':'+name) === 'blob',
   Object.keys(fields).flatMap(key => /^surface\.([^.]+)\.sha256$/u.exec(key)?.slice(1) ?? []));
 const affectedHosts = impact.reviews.filter(row => row.disposition === 'affected').flatMap(row => row.targets.map(name => surfaceHosts[name]).filter(Boolean));
 const results = [];
-for (const url of new Set([...affectedHosts.map(host => `https://${host}.proofofwork.me/source-provenance.json`),'http://127.0.0.1:4175/source-provenance.json', 'https://pay.proofofwork.me/source-provenance.json', 'https://permission.proofofwork.me/source-provenance.json', 'https://pages.proofofwork.me/source-provenance.json', 'https://computer.proofofwork.me/source-provenance.json'])) {
+for (const url of new Set([...affectedHosts.map(host => `https://${host}.proofofwork.me/source-provenance.json`),'http://127.0.0.1:4175/source-provenance.json', 'https://www.proofofwork.me/source-provenance.json', 'https://growth.proofofwork.me/source-provenance.json', 'https://pay.proofofwork.me/source-provenance.json', 'https://permission.proofofwork.me/source-provenance.json', 'https://pages.proofofwork.me/source-provenance.json', 'https://computer.proofofwork.me/source-provenance.json'])) {
   const response = await fetch(url, { cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(30_000) });
   assert(response.ok, `Unavailable source provenance: ${url}`);
   const source = await response.json();

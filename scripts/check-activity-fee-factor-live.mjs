@@ -7,7 +7,8 @@ import {fileURLToPath,pathToFileURL} from "node:url";
 import {resolve} from "node:path";
 import {requireIdentityProof,createIdentityProof} from "./release-identity-proof.mjs";
 
-import {collectRetirementEvidence,validateRetainedHolds,attestInstalledRetentionPackage,bindInstalledRetentionPackage} from "./retirement-evidence.mjs";
+import {collectRetirementEvidence,validateRetainedHolds,attestInstalledRetentionPackage,bindInstalledRetentionPackage,
+ attestCurrentRetentionPackage,collectCurrentRetirementEvidence,validateCurrentRetainedHolds} from "./retirement-evidence.mjs";
 import {consumeActivityLifecycle} from "./lifecycle-status-witness.mjs";
 const identityGit=(...args)=>execFileSync("/usr/bin/git",["--no-replace-objects","-c","core.fsmonitor=false",...args],{encoding:"utf8",timeout:15000,env:{PATH:"/usr/bin:/bin",HOME:"/nonexistent",LC_ALL:"C",GIT_CONFIG_NOSYSTEM:"1",GIT_CONFIG_GLOBAL:"/dev/null",GIT_OPTIONAL_LOCKS:"0"}}).trim();
 export function validateActivityIdentity(identityProof) {
@@ -19,6 +20,7 @@ export function validateActivityIdentity(identityProof) {
 }
 export async function runActivityFeeFactorLive({identityProof,lifecycleWitness}={}) {
 if(identityProof!==undefined) validateActivityIdentity(identityProof);
+else assert.equal(resolve(process.cwd()),fileURLToPath(new URL("../",import.meta.url)).replace(/\/$/u,""));
 const witnessedLifecycle=lifecycleWitness===undefined?undefined:consumeActivityLifecycle(lifecycleWitness,identityProof);
 const activityExec=(command,args,options)=>execFileSync(identityProof===undefined?command:"/usr/bin/"+command,args,
  {...options,...(identityProof===undefined?{}:{env:{PATH:"/usr/bin:/bin",HOME:"/nonexistent"}})});
@@ -75,7 +77,7 @@ assert.equal(after.ready, true);
 assert.equal(after.checks.node.tipHeight, height, "Core advanced; repeat the complete probe at a stable tip");
 assert.equal(after.checks.node.bestBlockHash, hash, "Core changed; repeat the complete probe at a stable tip");
 
-const expectedRuntime = JSON.parse(activityExec("python3", ["-I", "-B", "-c", `import ast,json,pathlib,re
+const expectedRuntime = JSON.parse(activityExec("python3", ["-I", "-B", "-c", `import ast,json,pathlib,re,hashlib,sys
 values={}
 for path in ('deploy/audit-remediation/profile.py','deploy/activity-fee-factor/profile.py'):
  module=ast.parse(pathlib.Path(path).read_text())
@@ -97,13 +99,37 @@ linked=ast.literal_eval(assignments[0].value)
 assert isinstance(linked,dict) and set(linked)&expected==replaced
 values.update({path:linked[path] for path in replaced})
 assert set(values)==expected and all(isinstance(value,str) and re.fullmatch('[0-9a-f]{64}',value) for value in values.values())
-print(json.dumps(values))`], { encoding: "utf8", timeout: 15_000 }));
-assert.equal(Object.keys(expectedRuntime).length, 6);
+mode=sys.argv[1] if len(sys.argv)>1 else 'historical'
+assert mode in ('historical','current')
+if mode=='current':
+ profile=json.loads(pathlib.Path('deploy/pay/runtime-profile.json').read_text())
+ assert profile['format']=='pay-reviewed-runtime-profile-v1'
+ assert re.fullmatch('[0-9a-f]{40}',profile['sourceCommit'])
+ for key in ('planSha256','mergedRuntimeTestReceiptSha256','overlayReceiptSha256'):
+  assert re.fullmatch('[0-9a-f]{64}',profile[key])
+ pay={'scripts/backfill-proof-indexer.mjs','server/candidate-discovery-reorg.mjs','server/db/jobs-reader.mjs',
+      'server/db/mail-work-settlement-reader.mjs','server/db/pay-reader.mjs','server/db/proof-index-reader.mjs',
+      'server/jobs.mjs','server/mail-work-settlement.mjs','server/notifications.mjs','server/pay.mjs',
+      'server/proof-api.mjs','server/proof-index-event-relations.mjs','src/shared/protocol/pay.mjs'}
+ added={'server/db/mail-work-settlement-reader.mjs','server/db/pay-reader.mjs',
+        'server/mail-work-settlement.mjs','server/pay.mjs','src/shared/protocol/pay.mjs'}
+ assert set(profile['sources'])==pay and pay&expected==replaced
+ for path,row in profile['sources'].items():
+  assert set(row)==({'before','after','source'} if path in replaced else {'before','after'})
+  assert row['before'] is None if path in added else isinstance(row['before'],str) and re.fullmatch('[0-9a-f]{64}',row['before'])
+  assert re.fullmatch('[0-9a-f]{64}',row['after'])
+  if path in replaced: assert row['before']==values[path] and re.fullmatch('[0-9a-f]{64}',row['source'])
+  # Preserve native-overlay bytes as reviewed; all canonical inputs must still match.
+  assert hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()==row.get('source',row['after']),path+' source differs'
+  values[path]=row['after']
+ assert len(values)==16
+print(json.dumps(values))`, identityProof===undefined?"current":"historical"], { encoding: "utf8", timeout: 15_000 }));
+assert.equal(Object.keys(expectedRuntime).length, identityProof===undefined?16:6);
 const monitorHash = createHash("sha256").update(readFileSync("deploy/proofofwork-postgres-query-health.sh")).digest("hex");
 const program = `import hashlib,json,pathlib,subprocess,sys
 r=json.load(sys.stdin)
 for path,digest in r['runtime'].items():
- assert path in ('server/proof-api.mjs','server/db/proof-index-reader.mjs','server/db/read-only-snapshot.mjs','server/wallet-read-observation.mjs','scripts/backfill-proof-indexer.mjs','server/pwid-rejection-projection.mjs')
+ assert path in ('server/proof-api.mjs','server/db/proof-index-reader.mjs','server/db/read-only-snapshot.mjs','server/wallet-read-observation.mjs','scripts/backfill-proof-indexer.mjs','server/pwid-rejection-projection.mjs','server/candidate-discovery-reorg.mjs','server/db/jobs-reader.mjs','server/db/mail-work-settlement-reader.mjs','server/db/pay-reader.mjs','server/jobs.mjs','server/mail-work-settlement.mjs','server/notifications.mjs','server/pay.mjs','server/proof-index-event-relations.mjs','src/shared/protocol/pay.mjs')
  assert hashlib.sha256((pathlib.Path('/opt/proofofwork-api')/path).read_bytes()).hexdigest()==digest,path+' differs'
 monitor=pathlib.Path('/usr/local/sbin/proofofwork-postgres-query-health')
 assert hashlib.sha256(monitor.read_bytes()).hexdigest()==r['monitor'],'Monitor differs'
@@ -115,19 +141,22 @@ const command = "sudo -n python3 -I -B -c '" + program.replaceAll("'", "'\\''") 
 const installed = JSON.parse(activityExec("ssh", ["-i", "/home/sixer/.ssh/proofofwork_node_ed25519", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=15", "powadmin@65.108.122.87", command], {
   input: JSON.stringify({ runtime: expectedRuntime, monitor: monitorHash }), encoding: "utf8", timeout: 90_000,
 }));
-let lifecycle,retirementEvidence;
+const implementationCommit = identityGit("rev-parse","HEAD");
+let lifecycle,retirementEvidence,currentPackageAttestation;
 if(witnessedLifecycle) {
  lifecycle=witnessedLifecycle;retirementEvidence=witnessedLifecycle.retirementEvidence;
 } else {
 const packageAttestation=identityProof===undefined?undefined:attestInstalledRetentionPackage(identityProof);
+if(identityProof===undefined) currentPackageAttestation=attestCurrentRetentionPackage({
+ repository:fileURLToPath(new URL("../",import.meta.url)).replace(/\/$/u,""),
+ commit:implementationCommit,tree:identityGit("rev-parse","HEAD^{tree}")});
 lifecycle = JSON.parse(activityExec("python3", [
   "-I", "-B", "deploy/ui-retention/lifecycle.py", "status", "--require-complete",
 ], { encoding: "utf8", timeout: 480_000, maxBuffer: 8 * 1024 ** 2 }));
 if(packageAttestation)bindInstalledRetentionPackage(lifecycle,packageAttestation);
-else assert(lifecycle.verifiedRetiredPayloads==null,"Retirement requires explicit qualified dual mode");
-retirementEvidence=lifecycle.verifiedRetiredPayloads ? collectRetirementEvidence(lifecycle) : undefined;
+retirementEvidence=currentPackageAttestation?collectCurrentRetirementEvidence(lifecycle,currentPackageAttestation):
+ lifecycle.verifiedRetiredPayloads ? collectRetirementEvidence(lifecycle) : undefined;
 }
-const implementationCommit = identityGit("rev-parse","HEAD");
 let commit=implementationCommit;
 if(identityProof!==undefined) {
  const proof=requireIdentityProof(identityProof);
@@ -139,7 +168,8 @@ assert.equal(lifecycle.publicationHealthy, true);
 assert.equal(lifecycle.retentionComplete, true);
 assert(lifecycle.pair.current.startsWith(commit.slice(0, 12) + "-"));
 // The rolling previous release may advance; the historical hold must remain verified.
-validateRetainedHolds(lifecycle,retirementEvidence);
+if(currentPackageAttestation)validateCurrentRetainedHolds(lifecycle,retirementEvidence,currentPackageAttestation);
+else validateRetainedHolds(lifecycle,retirementEvidence);
 assert.deepEqual(lifecycle.unfinishedIntents, []);
 
 assert.equal(lifecycle.verifiedCapacityFloor.rootReserveBytes, 8 * 1024 ** 3);

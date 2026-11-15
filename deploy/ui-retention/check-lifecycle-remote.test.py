@@ -945,6 +945,43 @@ class RemoteTests(unittest.TestCase):
 
 
 class PackagingTests(unittest.TestCase):
+    def test_completed_retirement_payload_preserves_original_authority_and_anchor(self):
+        old = self.fixture_payload()
+        binding = {'mode': 'complete', 'proposalSha256': 'a' * 64,
+                   'receipt': {'path': '/original/completed.json', 'sha256': 'b' * 64},
+                   'priorConfigSha256': 'c' * 64, 'sourceIndex': {'path': '/original/index', 'sha256': 'd' * 64},
+                   'policyCodeSha256': old['config']['package']['sha256']}
+        old['config']['payloadRetirement'] = binding
+        old['configSha256'] = I.sha(I.encoded(old['config']))
+        I.validate_payload(old)
+        before = {'configBase64': base64.b64encode(I.encoded(old['config'])).decode(),
+                  'completedReview': {'fullCompletionVerified': True,
+                                      'verifiedRetiredPayloads': {'receipt': binding['receipt']}}}
+        candidate = self.fixture_payload('3' * 40, '4' * 40)
+        result = I.preserve_retirement(candidate, before)
+        self.assertEqual(result['manifest'], candidate['manifest'])
+        self.assertEqual(result['files'], candidate['files'])
+        self.assertEqual(result['config']['payloadRetirement'], binding)
+        self.assertNotEqual(result['config']['package']['sha256'], binding['policyCodeSha256'])
+        anchor = {'path': I.EVIDENCE + '/older-backup-retirement-6fd05dc1e04e/successor-config.json',
+                  'sha256': old['configSha256']}
+        self.assertEqual(result['config']['payloadRetirementSourceConfig'], anchor)
+        I.validate_payload(result)
+        next_before = dict(before, configBase64=base64.b64encode(I.encoded(result['config'])).decode())
+        later = I.preserve_retirement(self.fixture_payload('5' * 40, '6' * 40), next_before)
+        self.assertEqual(later['config']['payloadRetirementSourceConfig'], anchor)
+        self.assertEqual(later['config']['payloadRetirement'], binding)
+        with self.assertRaisesRegex(ValueError, 'fully verified'):
+            I.preserve_retirement(candidate, dict(before, completedReview={}))
+        for key, value in [('payloadRetirementSourceConfig', {'path': '/alternate', 'sha256': 'e' * 64}),
+                           ('payloadRetirement', dict(binding, mode='pending'))]:
+            invalid = json.loads(json.dumps(result)); invalid['config'][key] = value
+            invalid['configSha256'] = I.sha(I.encoded(invalid['config']))
+            with self.assertRaises(ValueError): I.validate_payload(invalid)
+        no_retirement = {'configBase64': base64.b64encode(I.encoded(candidate['config'])).decode()}
+        with self.assertRaisesRegex(ValueError, 'cannot introduce'):
+            I.preserve_retirement(result, no_retirement)
+
     def test_prepared_guard_rotation_is_limited_to_exact_regular_log_inode_fields(self):
         layout = types.SimpleNamespace(prefix=Path('/'))
         rows = [{'path': '/var/log/' + family + suffix, 'exists': True, 'device': 2049,

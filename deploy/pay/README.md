@@ -164,6 +164,26 @@ node --test deploy/pay/write-gate-probe.test.mjs
 
 ## Completion
 
+Current Activity verification uses `runtime-profile.json`, the reviewed thirteen
+Pay runtime hashes from the completed `a3cf496` overlay and its exact merged
+runtime test receipt. Three native overlay files retain separate canonical source
+hashes; the other ten must match committed source directly. The original six-file
+historical Activity check remains tied to its original dual-identity mode. The
+current check verifies all thirteen Pay files plus the three unchanged Activity
+dependencies, and refuses stale canonical source or changed predecessor pins.
+
+After an authenticated payload retirement, the current release verifies the
+installed successor lifecycle package independently from the historical policy
+that authorized retirement. It reads the original sealed evidence and every
+bounded package-upgrade predecessor; it never relabels historical qualification
+as current release authority. The default release check uses this current mode.
+
+A tooling-only successor still requires its own exact source build and completed
+runtime deployment receipt before write activation. A fresh Pay runtime plan may
+prove all thirteen before/after hashes equal, but applying that plan still drains
+and restarts the app services through the existing scoped controller. Keep the
+earlier plan and receipt unchanged; a plan alone is not deployment evidence.
+
 Run the Pay protocol/runtime, historical Jobs, whole-Computer and V6 publication
 checks; record any real signing path not exercised. Keep writes closed until
 paired readers, full discovery and all required surfaces are verified. Complete

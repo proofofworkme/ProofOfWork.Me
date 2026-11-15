@@ -1,0 +1,64 @@
+{
+  "format": "pay-reviewed-runtime-profile-v1",
+  "sourceCommit": "a3cf4963bc045c52b93505e631662cab283ac7a3",
+  "planSha256": "58ce421bd9cf2a2f4e2a5dd79cd64171e6971bf9e4c962a9e0f43e660aaaa74b",
+  "mergedRuntimeTestReceiptSha256": "9fe84b7edc7607e0b90d0fed4055e3c92b5805e4bd076241398c9881eaee05c7",
+  "overlayReceiptSha256": "2026651a3809beff7967e4863dacad9b9f8e2344ee6cb1abf9171eb5d1c7db82",
+  "sources": {
+    "scripts/backfill-proof-indexer.mjs": {
+      "before": "630740132798f1080a3724353fd45f079af403ecca2f4286ffbb4d70d13c4058",
+      "after": "c2f02f38be27df3c68438f55f2b3e87dee45d8ec891587be5b7cb87c8d4a02bb",
+      "source": "93b78b54e54c74dc2e705f65cbd06d0ed9e8b44d411cc4327423ad15542bcb6f"
+    },
+    "server/candidate-discovery-reorg.mjs": {
+      "before": "9fc3ba373d312f983baa03b0925bf156aa11771fee90615ff7deb5feee6eb17e",
+      "after": "5cadaf165395ec1f120d30a0719729aadd3443622d3fca61f6cd398ba4847a29"
+    },
+    "server/db/jobs-reader.mjs": {
+      "before": "5fe17823eaf0b50e39ab1a2ac759ed189eaef7efb03afdd9497eb4bb6c1a9461",
+      "after": "2d49d16155d5230e5a398304c75f59c3105c0b51ceffced063e948e4ed413694"
+    },
+    "server/db/mail-work-settlement-reader.mjs": {
+      "before": null,
+      "after": "fe87b170de60060d24ecd4c97ce2c5ac9580f06302df69bb37b78fdae896a9cd"
+    },
+    "server/db/pay-reader.mjs": {
+      "before": null,
+      "after": "7960a09a4daaf15c04e5ceadeb76864003aa0724d9ae0012becf69afc7a6b349"
+    },
+    "server/db/proof-index-reader.mjs": {
+      "before": "82089797a76b63c4f913ee7152bea4b8f05f80da1914a9d504b88820462355a8",
+      "after": "6f2818ca9c55d1b4f5780cac8c51efb209b911823c2e337b9b9874b3170b485b",
+      "source": "d8e8ff5baad0180b0cc71d9e5d081d9906481ba7da9087f28d1608f4d4c2c937"
+    },
+    "server/jobs.mjs": {
+      "before": "75799118b5b5885b98d0381f2ecbdf6a44768210494bab356a0533477ea03644",
+      "after": "9f42afc7bb6fe7e71dc8e17db129e1762e858131980b19921e30bba3e1ab0f48"
+    },
+    "server/mail-work-settlement.mjs": {
+      "before": null,
+      "after": "75c6648f9f0a25e36e590c48a35459315710cc901bf868d399bad0d6c7e678e8"
+    },
+    "server/notifications.mjs": {
+      "before": "e4443a20350084103bde076c153a52ef4618216acec59504d31491ad24cdec8f",
+      "after": "c14dab046321e71a3ceb9f7dfcb298f08687482e72a85c5ce5d0baa4b7add9f8"
+    },
+    "server/pay.mjs": {
+      "before": null,
+      "after": "4127d5e8c6323728d60fe2cb769707a359cdfc70435268ac42c97dfbbac529d9"
+    },
+    "server/proof-api.mjs": {
+      "before": "895f0861b2f0380f0a4ed5b7ee7bec315699ef0e4cae4fd5257982034508f8ec",
+      "after": "a12e201a5829f65ee95004ee3d2a30472237ee0ac9985d1ddd23a7eea73e2dba",
+      "source": "439ec6fa772f583f80d6d2387ac10b5f9db11ccf73d7325f7f04c21194f70463"
+    },
+    "server/proof-index-event-relations.mjs": {
+      "before": "966ce624ae661a9e45a080a183a646d354bb9e9d58005f6d9522d3594e8e8349",
+      "after": "3b64946be83f1fe4a681d1c5b661df95595777570c5b57232d06384c23157a2d"
+    },
+    "src/shared/protocol/pay.mjs": {
+      "before": null,
+      "after": "3505ecdd9f91bcc21f2bd9fce8acb17fabe8f4e163b80f9149c65096b19037fd"
+    }
+  }
+}

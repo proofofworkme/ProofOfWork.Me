@@ -204,8 +204,49 @@ def validate_payload(payload):
     # upgrade. Every newly committed payload selects the explicit VPS policy.
     if 'retentionPolicy' in config:
         expected.update(offHostCustodyRoot=None, retentionPolicy=VPS_POLICY)
+    if 'payloadRetirement' in config:
+        retirement = config['payloadRetirement']
+        require(isinstance(retirement, dict) and set(retirement) == {
+            'mode', 'proposalSha256', 'receipt', 'priorConfigSha256', 'sourceIndex', 'policyCodeSha256'}
+            and retirement['mode'] == 'complete' and SHA.fullmatch(retirement['policyCodeSha256']),
+            'Only completed authenticated retirement can be preserved')
+        expected['payloadRetirement'] = retirement
+        anchor = config.get('payloadRetirementSourceConfig')
+        if anchor is not None:
+            require(set(anchor) == {'path', 'sha256'} and SHA.fullmatch(anchor['sha256'])
+                    and anchor['path'] == EVIDENCE + '/older-backup-retirement-6fd05dc1e04e/successor-config.json',
+                    'Retirement source config anchor differs')
+            expected['payloadRetirementSourceConfig'] = anchor
+        else:
+            require(retirement['policyCodeSha256'] == package_sha,
+                    'Changed retirement package requires authenticated source config')
     require(config == expected and sha(encoded(config)) == payload['configSha256']
             and payload['files'][FILES[0]]['sha256'] == APPROVAL, 'Expanded or unbound lifecycle configuration')
+
+
+def preserve_retirement(payload, before):
+    """Carry historical retirement authority into one reviewed package upgrade."""
+    old_config = json.loads(base64.b64decode(before['configBase64']))
+    binding = old_config.get('payloadRetirement')
+    if binding is None:
+        require(old_config.get('payloadRetirementSourceConfig') is None,
+                'Unbound retirement source config')
+        require(payload['config'].get('payloadRetirement') is None
+                and payload['config'].get('payloadRetirementSourceConfig') is None,
+                'Upgrade cannot introduce retirement authority')
+        return payload
+    review = before.get('completedReview', {})
+    require(review.get('fullCompletionVerified') is True
+            and review.get('verifiedRetiredPayloads', {}).get('receipt') == binding['receipt'],
+            'Retirement upgrade requires fully verified completed context')
+    value = json.loads(json.dumps(payload))
+    value['config']['payloadRetirement'] = binding
+    value['config']['payloadRetirementSourceConfig'] = old_config.get('payloadRetirementSourceConfig') or {
+        'path': EVIDENCE + '/older-backup-retirement-6fd05dc1e04e/successor-config.json',
+        'sha256': sha(base64.b64decode(before['configBase64']))}
+    value['configSha256'] = sha(encoded(value['config']))
+    validate_payload(value)
+    return value
 
 
 def read_bound(path, expected=None):
@@ -272,10 +313,17 @@ def existing_runtime(config_sha, prefix=Path('/')):
     spec.loader.exec_module(module)
     config, digest, package = module.validate_config(CONFIG, config_sha)
     storage = module.load_module('upgrade_old_storage', package / 'deploy/audit30/ui-storage.py')
-    policy = module.load_module('upgrade_old_policy', package / 'deploy/audit30/ui-release-policy.py', _BOUND_STORAGE=storage)
+    retirement_module = module.load_module('upgrade_old_retirement', package / 'deploy/ui-retention/retirement_receipt.py')
+    policy = module.load_module('upgrade_old_policy', package / 'deploy/audit30/ui-release-policy.py',
+                                _BOUND_STORAGE=storage, _BOUND_RETIREMENT=retirement_module)
     custody = module.load_module('upgrade_old_custody', package / 'deploy/ui-retention/custody.py')
     custody.load_helpers()
-    return module.Runtime(config, digest, storage, policy, custody)
+    retirement = None
+    if config.get('payloadRetirement') is not None:
+        retirement = retirement_module.load_verified_retirement(config['payloadRetirement'], storage.Layout(),
+                        lambda layout: storage.protected_pair(layout, {}))
+    return module.Runtime(config, digest, storage, policy, custody,
+                          **({'retirement': retirement} if retirement is not None else {}))
 
 
 def local_interruption(binding):
@@ -481,6 +529,22 @@ def completed_review(runtime, request):
         checkpoint, checkpoint_sha = prior, upgrade['priorStateSha256']
     else:
         raise ValueError('Completed upgrade chain exceeds bound')
+    retired = status.get('verifiedRetiredPayloads')
+    if retired:
+        # Retirement is its own sealed state transition. The original completion
+        # remains immutable and predates its config/index/revision patch.
+        binding = checkpoint.get('lastPayloadRetirement')
+        require(binding and runtime.retirement is not None, 'Missing retirement checkpoint')
+        transition = json.loads(read_bound(binding['path'], binding['sha256']))
+        prior = json.loads(read_bound(transition['priorState']['path'], transition['priorState']['sha256']))
+        origin = dict(prior, **transition['statePatch'], lastPayloadRetirement=binding)
+        if checkpoint == origin:
+            require(transition['terminalReceipt'] == retired['receipt']
+                    and checkpoint_sha == sha(encoded(origin)), 'Retirement checkpoint authority differs')
+            return {'state': state, 'stateSha256': state_sha, 'context': status['context'],
+                    'completionIntent': binding, 'completionReceipt': retired['receipt'],
+                    'lastCompleted': state['lastCompleted'], 'fullCompletionVerified': True,
+                    'verifiedRetiredPayloads': retired, 'retirementCheckpoint': binding}
     # A storage adoption is an explicit new terminal proof, not the missing
     # original apply completion. Its sealed state is a valid upgrade checkpoint.
     adoption = runtime.storage_adoption(checkpoint) if hasattr(runtime, 'storage_adoption') else None
@@ -506,6 +570,7 @@ def completed_review(runtime, request):
             'completionIntent': intent_binding,
             'completionReceipt': {'path': str(receipt_path), 'sha256': sha(receipt_raw)},
             'lastCompleted': state['lastCompleted'], 'fullCompletionVerified': True,
+            **({'verifiedRetiredPayloads': retired} if retired else {}),
             **({'bootLogRotation': status['verifiedBootLogRotation']} if 'verifiedBootLogRotation' in status else {}),
             **({'preservedFallback': status['verifiedPreservedFallback']} if 'verifiedBootLogRotation' in status
                and status.get('verifiedPreservedFallback') is not None else {}),
@@ -676,17 +741,26 @@ def completed_package_review(payload, package, old_runtime, review):
     spec = importlib.util.spec_from_file_location('upgrade_new_lifecycle', package / 'deploy/ui-retention/lifecycle_remote.py')
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
     storage = module.load_module('upgrade_new_storage', package / 'deploy/audit30/ui-storage.py')
-    policy = module.load_module('upgrade_new_policy', package / 'deploy/audit30/ui-release-policy.py', _BOUND_STORAGE=storage)
+    retirement_module = module.load_module('upgrade_new_retirement', package / 'deploy/ui-retention/retirement_receipt.py')
+    policy = module.load_module('upgrade_new_policy', package / 'deploy/audit30/ui-release-policy.py',
+                                _BOUND_STORAGE=storage, _BOUND_RETIREMENT=retirement_module)
     custody = module.load_module('upgrade_new_custody', package / 'deploy/ui-retention/custody.py'); custody.load_helpers()
+    retirement = None
+    if payload['config'].get('payloadRetirement') is not None:
+        retirement_module.source_config(payload['config'])
+        retirement = retirement_module.load_verified_retirement(payload['config']['payloadRetirement'], old_runtime.layout,
+                        lambda layout: storage.protected_pair(layout, {}))
+        require(retirement.proof == review.get('verifiedRetiredPayloads') == old_runtime.retirement.proof,
+                'New package changed authenticated retirement proof')
     runtime = module.Runtime(payload['config'], payload['configSha256'], storage, policy, custody,
-                             layout=old_runtime.layout)
+                             layout=old_runtime.layout, **({'retirement': retirement} if retirement is not None else {}))
     _, context = runtime.current()
     state = review['state']; index = state['index']
-    scope = policy.policy_scope(index, runtime.layout, APPROVAL)
+    scope = runtime.policy_scope(index)
     require(not scope['eligible'], 'New package finds eligible ordinary assets')
     extra = scope.get('preservedRelease1042')
     if extra is not None:
-        old_scope = old_runtime.P.policy_scope(index, old_runtime.layout, APPROVAL)
+        old_scope = old_runtime.policy_scope(index)
         prior_extra = old_scope.get('preservedRelease1042')
         require(old_scope.get('preservedFallback') == scope.get('preservedFallback'),
                 'Additive hold changed existing fallback proof')
@@ -705,9 +779,13 @@ def completed_package_review(payload, package, old_runtime, review):
             policy.verify_1042_hold(extra, runtime.layout, pair, cache)
         else:
             require(prior_extra == extra, 'Upgrade removed or changed existing 1042 hold')
-    elif old_runtime.P.policy_scope(index, old_runtime.layout, APPROVAL).get('preservedRelease1042') is not None:
+    elif old_runtime.policy_scope(index).get('preservedRelease1042') is not None:
         raise ValueError('Upgrade cannot remove the exact 1042 hold')
     boot_proofs = {'preservedRelease1042':extra} if extra is not None else {}
+    if retirement is not None:
+        require(scope.get('verifiedRetiredPayloads') == retirement.proof,
+                'New package lost retirement-aware index authority')
+        boot_proofs['verifiedRetiredPayloads'] = retirement.proof
     if 'journalEvidenceMigration' in review:
         attestation = storage.verify_expired_boot_journal(storage.EXPIRED_BOOT_JOURNAL['invocation'])
         require(attestation == review['journalEvidenceMigration'], 'Journal migration attestation changed')
@@ -847,6 +925,11 @@ def upgrade_remote(plan, prefix=Path('/')):
     with deploy_lock(prefix):
         before = upgrade_inventory_locked(plan['request'], prefix)
         require(before == plan['before'], 'Upgrade config/state/guards/evidence changed after review')
+        require(preserve_retirement(payload, before) == payload,
+                'Upgrade changed or stripped completed retirement authority')
+        if payload['config'].get('payloadRetirement') is not None:
+            require(plan['request'].get('mode') == 'completed-cycle',
+                    'Retirement package upgrade requires exact completed-cycle mode')
         completed_mode = plan['request'].get('mode') in ('completed-cycle', 'completed-config-repair', 'completed-boot-log-rotation', 'completed-expired-boot-journal')
         if plan['request'].get('mode') in ('completed-config-repair', 'completed-boot-log-rotation', 'completed-expired-boot-journal'):
             require(plan['request']['verificationPayload'] == payload, 'Repair verifier differs from install payload')
@@ -1085,8 +1168,13 @@ def main():
         if args.operation == 'plan-upgrade-config-repair':
             refusal = local_guard_refusal({'path': str(args.guard_refusal.resolve()), 'sha256': args.guard_refusal_sha256}, payload)
             request.update(mode='completed-config-repair', verificationPayload=payload, guardRefusal=refusal)
+        before = remote('upgrade-inventory', request)
+        payload = preserve_retirement(payload, before)
+        if payload['config'].get('payloadRetirement') is not None:
+            require(request['mode'] == 'completed-cycle',
+                    'Retirement package upgrade requires exact completed-cycle mode')
         plan = {'schema': 'pow-ui-retention-upgrade-plan-v1', 'scopeApprovalSha256': APPROVAL,
-                'payload': payload, 'request': request, 'before': remote('upgrade-inventory', request)}
+                'payload': payload, 'request': request, 'before': before}
         output = args.output.absolute(); save(output, encoded(plan))
         print(json.dumps({'plan': str(output), 'sha256': sha(encoded(plan)),
                           'config': {'path': CONFIG, 'sha256': payload['configSha256']},
@@ -1113,7 +1201,8 @@ def main():
         raw = read_bound(args.plan, args.plan_sha256); plan = json.loads(raw)
         require(plan.get('schema') == 'pow-ui-retention-upgrade-plan-v1'
                 and plan.get('scopeApprovalSha256') == APPROVAL, 'Upgrade plan authority differs')
-        require(committed_payload() == plan['payload'], 'Committed package changed after review')
+        require(preserve_retirement(committed_payload(), plan['before']) == plan['payload'],
+                'Committed package or retirement authority changed after review')
         if plan['request'].get('mode') == 'completed-config-repair':
             require(local_guard_refusal(plan['request']['guardRefusal']['binding'], plan['payload']) == plan['request']['guardRefusal'],
                     'Guard refusal evidence changed after review')
