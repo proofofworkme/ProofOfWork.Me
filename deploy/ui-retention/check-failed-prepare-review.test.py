@@ -6,6 +6,7 @@ import importlib.util
 import json
 from pathlib import Path
 import unittest
+import types
 
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('failed_prepare_review_tested', HERE / 'failed_prepare_review.py')
@@ -105,6 +106,56 @@ class PhaseTests(unittest.TestCase):
     def test_wrong_intent_namespace_refuses(self):
         self.bind['path']='/evidence/another-intent.json'
         with self.assertRaises(ValueError):self.call()
+    def qualify_receipt(self, original, saved=None, envelope_sha=None):
+        spec=importlib.util.spec_from_file_location('native_receipt_embedding',HERE/'lifecycle_remote.py')
+        native=importlib.util.module_from_spec(spec);spec.loader.exec_module(native)
+        envelope={'base64':base64.b64encode(original).decode(),
+                  'sha256':envelope_sha or R.sha(original)}
+        publication={'path':'/publication/receipt.json','sha256':'e'*64}
+        self.intent['request'].update(httpsReceipt=envelope,publicationReceipt=publication)
+        self.reseal()
+        state_raw=R.encoded(self.state);state_sha=R.sha(state_raw)
+        admission={'retainedPair':self.context['pair']}
+        admission_path='/evidence/audit30-policy-admission-release-candidate.json'
+        admission_binding={'path':admission_path,'sha256':R.sha(R.encoded(admission))}
+        index_path='/evidence/audit30-policy-admission-index-release-candidate.json'
+        records={'/state':state_raw,self.bind['path']:R.encoded(self.intent),
+            '/evidence/ui-lifecycle-release-candidate-https.json':original if saved is None else saved,
+            admission_path:R.encoded(admission),index_path:R.encoded({'admissions':[admission_binding]})}
+        def read(path, expected=None):
+            raw=records[str(path)];digest=R.sha(raw)
+            if expected is not None and digest!=expected:raise ValueError('Exact raw receipt digest differs')
+            return raw,digest
+        def publication_check(value,*args):
+            self.assertEqual(value,json.loads(original))
+            return publication
+        runtime=types.SimpleNamespace(lock_fd=123,state=lambda:(self.state,state_sha),
+            state_path=Path('/state'),config_sha='a'*64,layout=types.SimpleNamespace(evidence=Path('/evidence')),
+            current=lambda:({},self.context),unfinished_intents=lambda:[self.bind['path']],
+            S=types.SimpleNamespace(require_execution_lock=lambda *args:None,compare_guards=lambda *args:None),
+            verify_publication=publication_check,
+            private_stage_rule=lambda p:{'forecast':{'stateSha256':self.intent['priorStateSha256'],
+                'index':self.prior['index'],'previousPair':{'current':'B'},'wouldRetire':['/retire']}},
+            load_index=lambda path,digest:({'index':{'admissions':[]}} if path==self.prior['index']['path']
+                else {'admissions':[admission]}),
+            policy_scope=lambda index:{'eligible':[{'path':'/retire'}]})
+        return R.qualify(runtime,types.SimpleNamespace(read=read,embedded=native.embedded),
+                         state_sha,self.bind,lambda:self.services)
+    def test_original_pretty_https_receipt_is_preserved_byte_exact(self):
+        raw=b'{\n  "ok": true,\n  "releaseId": "C"\n}\n'
+        self.assertNotEqual(raw,R.encoded(json.loads(raw)))
+        proof=self.qualify_receipt(raw)
+        self.assertTrue(proof['noOrdinaryPlanObserved'])
+    def test_original_https_without_final_newline_is_preserved(self):
+        self.qualify_receipt(b'{"releaseId":"C", "ok":true}')
+    def test_same_json_value_reformatted_saved_receipt_refuses(self):
+        raw=b'{\n  "ok": true,\n  "releaseId": "C"\n}\n'
+        with self.assertRaisesRegex(ValueError,'raw receipt digest'):
+            self.qualify_receipt(raw,R.encoded(json.loads(raw)))
+    def test_https_envelope_raw_digest_remains_mandatory(self):
+        with self.assertRaises(ValueError):
+            self.qualify_receipt(b'{"ok":true}',envelope_sha='0'*64)
+
     def test_normal_prepare_does_not_accept_caller_citation(self):
         import ast
         tree=ast.parse((HERE/'lifecycle_remote.py').read_text())

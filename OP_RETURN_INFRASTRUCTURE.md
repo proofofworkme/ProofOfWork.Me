@@ -8,6 +8,8 @@ failed on historical path citations in its immutable impact review. Pay writes
 remain closed. Preserve that successful HTTPS evidence, the failed intent and
 partial admission evidence; never rerun the combined collector or clear state.
 
+Preserve the original embedded HTTPS receipt bytes and envelope SHA exactly, including noncanonical JSON formatting. Parsing that receipt does not authorize JSON reserialization, a replacement HTTPS probe, or a claim of completed recovery.
+
 The proposed repair authenticates the exact failed revision 285 and transitions
 only to a sealed prepared revision 287 under a source-bound successor operator
 package. It performs no publication or payload deletion. Reviewed citations must

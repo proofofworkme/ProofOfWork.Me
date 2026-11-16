@@ -100,7 +100,7 @@ frame. It must inspect the two original systemd units, not replacement jobs.
                            context, runtime.unfinished_intents(), terminal_observer())
     intent = parse(intent_raw)
     request = intent['request']
-    https, _ = module.embedded(request['httpsReceipt'])
+    https, https_raw = module.embedded(request['httpsReceipt'])
     publication = runtime.verify_publication(https, request['publicationReceipt'], pair, context)
     rule = runtime.private_stage_rule(publication)
     require(rule and rule['forecast']['stateSha256'] == proof['priorStateSha256']
@@ -111,8 +111,8 @@ frame. It must inspect the two original systemd units, not replacement jobs.
     for suffix in ('-ordinary-plan.json', '-completed.json'):
         require(not __import__('os').path.lexists(str(prefix) + suffix),
                 'Preparation advanced beyond reviewed failure point')
-    saved_https, _ = module.read(str(prefix) + '-https.json')
-    require(saved_https == encoded(https), 'Saved HTTPS evidence differs')
+    saved_https, _ = module.read(str(prefix) + '-https.json', request['httpsReceipt']['sha256'])
+    require(saved_https == https_raw, 'Saved HTTPS evidence differs from original raw receipt')
     admission = runtime.layout.evidence / ('audit30-policy-admission-' + proof['operationId'] + '.json')
     index_path = runtime.layout.evidence / ('audit30-policy-admission-index-' + proof['operationId'] + '.json')
     admission_raw, admission_sha = module.read(admission)
