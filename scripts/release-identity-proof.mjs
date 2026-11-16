@@ -367,7 +367,7 @@ const baselineDelta = [
     }
   }
 ];
-export const retentionOperatorPackagePaths=Object.freeze([
+export const historicalRetentionOperatorPackagePaths=Object.freeze([
  "audits/2026-10-16-ui-retention-repair-approval.json",
  "audits/2026-10-16-ui-retention-repair-proposal.json",
  "deploy/audit30/ui-storage.py","deploy/audit30/ui-release-policy.py",
@@ -377,6 +377,13 @@ export const retentionOperatorPackagePaths=Object.freeze([
  "deploy/ui-retention/install_lifecycle.py","deploy/ui-retention/lifecycle.py",
  "deploy/ui-retention/retirement_receipt.py","deploy/ui-retention/retirement_transition.py",
  "deploy/ui-retention/retirement_controller.py",
+]);
+// Current packages extend, but never redefine, the historical proof closure.
+export const retentionOperatorPackagePaths=Object.freeze([
+ ...historicalRetentionOperatorPackagePaths,
+ "deploy/ui-retention/failed_prepare_repair.py",
+ "deploy/ui-retention/failed_prepare_review.py",
+ "deploy/ui-retention/reconcile_failed_prepare.py",
 ]);
 const operatorPaths = new Set([
  "deploy/ui-retention/check-retirement-consumer-authority.test.py",
@@ -401,7 +408,7 @@ const operatorPaths = new Set([
   "release-impact.json",
   "repository-hygiene.json"
 ]);
-const closurePaths = [...retentionOperatorPackagePaths,
+const closurePaths = [...historicalRetentionOperatorPackagePaths,
  "scripts/lifecycle-status-witness.mjs",
  "scripts/retirement-evidence.mjs",
  "deploy/proofofwork-postgres-query-health.sh",

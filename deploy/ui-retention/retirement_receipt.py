@@ -8,6 +8,7 @@ preserve sidecars and audit evidence, and install the successor policy verifier.
 """
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -423,6 +424,18 @@ class VerifiedRetirement:
                 return
             require(source_config(config) == anchor,
                     'Retirement package chain changed original anchor')
+            if state.get('lastFailedPreparationRepair') is not None:
+                repair_path = Path(__file__).with_name('failed_prepare_repair.py')
+                spec = importlib.util.spec_from_file_location('retirement_failed_prepare_repair', repair_path)
+                repair = importlib.util.module_from_spec(spec); spec.loader.exec_module(repair)
+                def repair_read(path, expected=None):
+                    raw = read_bound(path, expected) if expected is not None else read_raw_bound(path)
+                    return _json(raw), digest(raw)
+                edge = repair.verify_edge(state, config_sha, config, repair_read,
+                                          verify_seal=bool(depth) or verify_current_seal)
+                if edge is not None:
+                    config, config_sha, state = edge['priorConfig'], edge['priorConfigSha256'], edge['priorState']
+                    continue
             upgrade = state.get('lastUpgrade', {})
             directory = Path(BASE + '/cleanup-evidence') / ('ui-lifecycle-upgrade-' + config['package']['sha256'])
             require(upgrade.get('intentPath') == str(directory / 'intent.json')

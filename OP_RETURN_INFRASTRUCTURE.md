@@ -1,5 +1,42 @@
 # ProofOfWork OP_RETURN Infrastructure
 
+## Planned Pay retention recovery and coherent successor
+
+This is a preparation contract, not a completion receipt or deletion approval.
+The C Pay UI passed HTTPS publication verification, but its retention preparation
+failed on historical path citations in its immutable impact review. Pay writes
+remain closed. Preserve that successful HTTPS evidence, the failed intent and
+partial admission evidence; never rerun the combined collector or clear state.
+
+The proposed repair authenticates the exact failed revision 285 and transitions
+only to a sealed prepared revision 287 under a source-bound successor operator
+package. It performs no publication or payload deletion. Reviewed citations must
+match exact Git/source bytes, occurrence offsets and reason-only JSON fields;
+operational references remain refusals. A separate native continuation retires
+only the original a2 release archive, its two sidecars and the pre-d507 rollback
+root, retaining active C and rollback d507. Stop on drift, uncertain operations,
+missing evidence or interrupted repair; do not infer a successful retry.
+
+A successor UI rotation is a separate scope: it would retire the d507 archive,
+its two sidecars and the pre-C rollback root, retaining the new current release
+and C as the verified prior rollback. These are four additional objects, not
+covered by the original retirement scope. No equivalent retained copies have
+been verified; current and prior versions are not equivalent backups of an
+outgoing version. Obtain exact action-time approval for any permanent deletion,
+with package/plan identity and consequences, before the applicable transition.
+Do not make extra backup copies or widen holds to evade the storage policy.
+
+Use one reviewed, clean committed successor source for the operator package,
+UI, scoped runtime and verification consumers. During interim C recovery a
+successor operator cannot satisfy the unchanged C current-package attestation;
+report that release synchronization is incomplete. Do not weaken or replace
+that gate with historical reduced-coverage mode. Final qualification requires
+the native full Pay gates, fresh scoped runtime receipts, exact checkpoint and
+Search/Log evidence, current/proposed rollback verification, all managed public
+and embedded surfaces, and synchronized GitHub main, primary main, preview and
+production source identities. Tests or source support do not establish owner
+approval, successful recovery, publication, activation or wallet completion.
+
 ## Pay version-one release contract
 
 The additive [Pay protocol](PAY.md) uses `pwpay1:` metadata within ordinary

@@ -126,7 +126,7 @@ test("Git identity reads ignore inherited executable, object and config override
 
 test("unchanged lifecycle executor is bound and a hidden mode substitution refuses",async t=>{
  const code=readFileSync(new URL("./release-identity-proof.mjs",import.meta.url),"utf8");
- assert(code.slice(code.indexOf("const closurePaths ="),code.indexOf("const proofs")).includes("...retentionOperatorPackagePaths"));
+ assert(code.slice(code.indexOf("const closurePaths ="),code.indexOf("const proofs")).includes("...historicalRetentionOperatorPackagePaths"));
  assert((await import("./release-identity-proof.mjs")).retentionOperatorPackagePaths.includes("deploy/ui-retention/lifecycle.py"));
  const f=fixture(t),name="deploy/ui-retention/lifecycle.py";
  mkdirSync(dirname(resolve(f.root,name)),{recursive:true});writeFileSync(resolve(f.root,name),"# fixture");
@@ -147,7 +147,8 @@ test("operator package closure exactly matches installed runtime and installer a
  const {retentionPackageFiles}=await import("./retirement-evidence.mjs");
  assert.equal(retentionPackageFiles,retentionOperatorPackagePaths);
  assert(Object.isFrozen(retentionOperatorPackagePaths));
- assert.equal(new Set(retentionOperatorPackagePaths).size,14);
+ assert.equal(retentionOperatorPackagePaths.length,17);
+ assert.equal(new Set(retentionOperatorPackagePaths).size,17);
  const root=resolve(dirname(fileURLToPath(import.meta.url)),"..");
  const py="import ast,json,pathlib; root=pathlib.Path(__import__('sys').argv[1]); out=[];\nfor rel,name in [('deploy/ui-retention/lifecycle_remote.py','PACKAGE_FILES'),('deploy/ui-retention/install_lifecycle.py','FILES')]:\n tree=ast.parse((root/rel).read_text()); value=next(ast.literal_eval(n.value) for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id==name for t in n.targets)); out.append(value)\nprint(json.dumps(out))";
  const values=JSON.parse(execFileSync("/usr/bin/python3",["-I","-B","-c",py,root],{encoding:"utf8"}));

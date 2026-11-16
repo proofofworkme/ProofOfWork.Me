@@ -49,6 +49,9 @@ PACKAGE_FILES = (
     'deploy/ui-retention/retirement_receipt.py',
     'deploy/ui-retention/retirement_transition.py',
     'deploy/ui-retention/retirement_controller.py',
+    'deploy/ui-retention/failed_prepare_repair.py',
+    'deploy/ui-retention/failed_prepare_review.py',
+    'deploy/ui-retention/reconcile_failed_prepare.py',
 )
 
 
@@ -297,6 +300,7 @@ class Runtime:
         # deployment lock. The public dispatcher never accepts a bypass frame.
         self.verify_upgrade = verify_upgrade
         self.verify_adoption = False
+        self.verify_prepare_repair = False
         # Only an authenticated completed-config repair supplies this exact proof.
         # Normal status and every public mutation frame remain strict.
         self.completion_access_time_reconciliation = completion_access_time_reconciliation
@@ -347,7 +351,7 @@ class Runtime:
                 and type(value.get('revision')) is int, 'State authority differs')
         if self.retirement is not None:
             self.retirement.verify_lifecycle_state(value, self.config_sha, config=self.config,
-                                                   verify_current_seal=not self.verify_upgrade)
+                                                   verify_current_seal=not (self.verify_upgrade or self.verify_prepare_repair))
         else:
             require(value.get('lastPayloadRetirement') is None,
                     'Retirement lifecycle state requires authenticated successor')
@@ -394,7 +398,15 @@ class Runtime:
             self.verify_status_seal(upgrade, completed, template,
                                     skip=self.verify_upgrade)
         self.storage_adoption(value)
+        self.failed_prepare_repair(value)
         return value, digest
+
+    def failed_prepare_repair(self, state):
+        if state.get('lastFailedPreparationRepair') is None:
+            return None
+        helper = load_module('lifecycle_failed_prepare_repair',
+                             Path(__file__).with_name('failed_prepare_repair.py'))
+        return helper.verify_marker(state, read_json, verify_seal=not self.verify_prepare_repair)
 
     def storage_adoption(self, state, *, verify_seal=True):
         """Authenticate the one approved adoption independently of later upgrades."""
@@ -533,9 +545,12 @@ class Runtime:
         require(len(paths) <= 100000, 'Lifecycle evidence enumeration exceeds bound')
         state, _ = self.state()
         adoption = self.storage_adoption(state) if state else None
-        sealed = adoption['sealedPhaseIntent']['path'] if adoption else None
+        sealed = {adoption['sealedPhaseIntent']['path']} if adoption else set()
+        repaired = self.failed_prepare_repair(state) if state else None
+        if repaired:
+            sealed.add(repaired['sealedPhaseIntent']['path'])
         return [str(path) for path in paths
-                if str(path) != sealed and
+                if str(path) not in sealed and
                 not os.path.lexists(path.with_name(path.name.removesuffix('-intent.json') + '-completed.json'))]
 
     def cas(self, before_sha, value, operation_id):

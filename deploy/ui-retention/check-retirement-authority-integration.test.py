@@ -30,6 +30,18 @@ SOURCE_AREA=tempfile.TemporaryDirectory(prefix='authority-source-')
 atexit.register(SOURCE_AREA.cleanup)
 SOURCE_ROOT=Path(SOURCE_AREA.name)
 SOURCE_SUBSTITUTIONS={}
+def root_fixture_paths(raw, base):
+    return re.sub(r'/(?:etc|usr/local|var|run)/',
+                  lambda match: str(base / match.group().lstrip('/')) + '/', raw)
+
+class NamespaceTests(unittest.TestCase):
+    def test_protected_prefix_mapping_is_single_pass(self):
+        raw='/etc/x /usr/local/y /var/z /run/a'
+        for root in ('/var/tmp/private-fixture','/tmp/private-fixture','/data/private-fixture'):
+            base=Path(root)
+            expected=' '.join(str(base/p) for p in ('etc/x','usr/local/y','var/z','run/a'))
+            self.assertEqual(root_fixture_paths(raw,base),expected)
+
 def build_git_source_copies():
     # These are test-only copies. No production module accepts override pins.
     original=ORIGINAL_HERE.parent
@@ -149,8 +161,9 @@ class AuthorityIntegration(unittest.TestCase):
                 elif name=='deploy/ui-retention/install_lifecycle.py':
                     # Fixed paths and the lock are rooted in the same protected
                     # fixture namespace. No installer acceptance rule changes.
-                    for old in ('/etc/', '/usr/local/', '/var/', '/run/'):
-                        value=value.replace(old,str(self.fixture.base/old.lstrip('/'))+'/')
+                    # One substitution pass: a /var/tmp fixture prefix must
+                    # not be remapped again by a later /var/ replacement.
+                    value=root_fixture_paths(value,self.fixture.base)
                     value=value.replace("prefix / 'run/proofofwork-ui/deploy.lock'",
                                         'Path('+repr(str(self.layout.lock))+')')
                 raw=value.encode()

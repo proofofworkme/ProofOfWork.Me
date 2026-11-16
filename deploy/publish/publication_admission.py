@@ -18,6 +18,8 @@ REVIEWED_RETIRED_PAIRS = (
     (RETIRED_PAIR['current'], RETIRED_PAIR['previous']),
     ('a2a7be66bf49-20261115T031513Z', '064b6991ae2a-20261114T020148Z'),
     ('d5075ab88cdc-20261115T185350Z', 'a2a7be66bf49-20261115T031513Z'),
+    # Proposed successor scope: live installation/rotation awaits explicit owner approval.
+    ('c22e585baa9d-20261116T013245Z', 'd5075ab88cdc-20261115T185350Z'),
 )
 RETIREMENT_BASE = '/var/backups/proofofwork-ui'
 RETIREMENT_EVIDENCE = RETIREMENT_BASE + '/cleanup-evidence/older-backup-retirement-6fd05dc1e04e'

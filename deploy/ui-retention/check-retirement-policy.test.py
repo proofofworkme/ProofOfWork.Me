@@ -14,6 +14,7 @@ def load(name, path):
     return module
 P=load('retirement_policy_test', HERE.parent/'audit30/ui-release-policy.py')
 L=load('retirement_lifecycle_test', HERE/'lifecycle_remote.py')
+R=load('retirement_source_config_test', HERE/'retirement_receipt.py')
 PAIR={'current':'064b6991ae2a-20261114T020148Z','previous':'e2669bc1fd32-20261112T163804Z'}
 BASE='/var/backups/proofofwork-ui'
 ROOT=BASE+'/rollback-roots'
@@ -104,10 +105,22 @@ class PolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Unverified'):self.run_scope(bad_context=True)
     def test_runtime_package_identity_mismatch_rejected(self):
         storage=types.SimpleNamespace(Layout=lambda:object())
-        policy=types.SimpleNamespace(retirement_module=lambda:types.SimpleNamespace(require_verified_retirement=typed))
+        policy=types.SimpleNamespace(retirement_module=lambda:types.SimpleNamespace(
+            require_verified_retirement=typed,source_config=R.source_config))
         config={'statePath':'/unused','package':{'sha256':'a'*64},
                 'payloadRetirement':{'mode':'complete','policyCodeSha256':'b'*64}}
         runtime=L.Runtime(config,'c'*64,storage,policy,retirement=Context())
+        with self.assertRaisesRegex(ValueError,'Retirement policy identity differs from original package'):
+            runtime.require_no_pending_payload_retirement()
+    def test_runtime_authenticated_context_mismatch_rejected(self):
+        storage=types.SimpleNamespace(Layout=lambda:object())
+        policy=types.SimpleNamespace(retirement_module=lambda:types.SimpleNamespace(
+            require_verified_retirement=typed,source_config=R.source_config))
+        config={'statePath':'/unused','package':{'sha256':'a'*64},
+                'payloadRetirement':{'mode':'complete','policyCodeSha256':'a'*64}}
+        context=Context()
+        context.proof=dict(context.proof,policyCodeSha256='b'*64)
+        runtime=L.Runtime(config,'c'*64,storage,policy,retirement=context)
         with self.assertRaisesRegex(ValueError,'authenticated config'):
             runtime.require_no_pending_payload_retirement()
     def test_pending_dispatch_blocks_before_lock(self):

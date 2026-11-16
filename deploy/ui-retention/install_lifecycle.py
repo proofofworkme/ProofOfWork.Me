@@ -49,6 +49,9 @@ FILES = (
     'deploy/ui-retention/retirement_receipt.py',
     'deploy/ui-retention/retirement_transition.py',
     'deploy/ui-retention/retirement_controller.py',
+    'deploy/ui-retention/failed_prepare_repair.py',
+    'deploy/ui-retention/failed_prepare_review.py',
+    'deploy/ui-retention/reconcile_failed_prepare.py',
 )
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 MAX_EVIDENCE = 64 * 1024**2
@@ -179,9 +182,15 @@ def committed_payload(root=ROOT):
     return {'manifest': manifest, 'files': files, 'config': config, 'configSha256': sha(encoded(config))}
 
 
-def validate_payload(payload):
+def validate_payload(payload, *, allow_legacy=False):
     manifest = payload['manifest']
-    require(set(payload['files']) == set(FILES) == set(manifest['files']), 'Expanded package file scope')
+    scope = set(FILES)
+    legacy = scope - {'deploy/ui-retention/failed_prepare_repair.py',
+                      'deploy/ui-retention/failed_prepare_review.py',
+                      'deploy/ui-retention/reconcile_failed_prepare.py'}
+    require(set(payload['files']) == set(manifest['files'])
+            and (set(payload['files']) == scope or allow_legacy and set(payload['files']) == legacy),
+            'Expanded package file scope')
     require(manifest['schema'] == 'pow-ui-retention-package-v1'
             and re.fullmatch('[0-9a-f]{40}', manifest['sourceCommit'])
             and re.fullmatch('[0-9a-f]{40}', manifest['sourceTree']), 'Invalid package source identity')
@@ -301,13 +310,16 @@ def existing_runtime(config_sha, prefix=Path('/')):
     package = prefix / config['package']['path'].lstrip('/')
     manifest_raw = read_bound(package / 'package.json', config['package']['sha256'])
     manifest = json.loads(manifest_raw)
-    require(set(manifest['files']) == set(FILES), 'Installed package scope differs')
+    require(set(manifest['files']) in (set(FILES), set(FILES) - {'deploy/ui-retention/failed_prepare_repair.py',
+                          'deploy/ui-retention/failed_prepare_review.py',
+                          'deploy/ui-retention/reconcile_failed_prepare.py'}),
+            'Installed package scope differs')
     files = {}
     for relative, value in manifest['files'].items():
         data = read_bound(package / relative, value['sha256'])
         require(len(data) == value['bytes'], 'Installed file size differs')
         files[relative] = dict(value, base64=base64.b64encode(data).decode())
-    validate_payload({'manifest': manifest, 'files': files, 'config': config, 'configSha256': config_sha})
+    validate_payload({'manifest': manifest, 'files': files, 'config': config, 'configSha256': config_sha}, allow_legacy=True)
     spec = importlib.util.spec_from_file_location('upgrade_old_lifecycle', package / 'deploy/ui-retention/lifecycle_remote.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

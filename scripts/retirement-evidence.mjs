@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
-import {requireIdentityProof,createIdentityProof,retentionOperatorPackagePaths} from "./release-identity-proof.mjs";
+import {requireIdentityProof,createIdentityProof,retentionOperatorPackagePaths,historicalRetentionOperatorPackagePaths} from "./release-identity-proof.mjs";
 import {execFileSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {realpathSync} from "node:fs";
@@ -135,12 +135,14 @@ export const retentionPackageFiles=retentionOperatorPackagePaths;
 const packageSha=raw=>createHash("sha256").update(raw).digest("hex");
 const canonicalPackage=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==="object"&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(k=>[k,item[k]])):item)+"\n";
 // Pure construction grants no authority. Collection requires a branded proof.
-export function expectedRetentionPackage(operator,blobs) {
+export function expectedRetentionPackage(operator,blobs,scope="current") {
+ assert(scope==="current"||scope==="historical","Unknown package scope");
+ const paths=scope==="historical"?historicalRetentionOperatorPackagePaths:retentionPackageFiles;
  assert.deepEqual(Object.keys(operator).sort(),["commit","tree"]);
  for(const value of Object.values(operator))assert(/^[0-9a-f]{40}$/u.test(value));
- assert.deepEqual(Object.keys(blobs).sort(),[...retentionPackageFiles].sort());
+ assert.deepEqual(Object.keys(blobs).sort(),[...paths].sort());
  const files={};
- for(const path of retentionPackageFiles) {
+ for(const path of paths) {
   const raw=blobs[path];assert(Buffer.isBuffer(raw)&&raw.length>0&&raw.length<=2*1024**2);
   files[path]={bytes:raw.length,sha256:packageSha(raw)};
  }
@@ -236,14 +238,14 @@ export function attestInstalledRetentionPackage(identityProof) {
  for(const key of ["artifact","baselineOperator","backend","operator","digests"])assert.deepEqual(before[key],proof[key],"Operator source changed before package attestation");
  const gitEnv={PATH:"/usr/bin:/bin",HOME:"/nonexistent",GIT_CONFIG_NOSYSTEM:"1",GIT_CONFIG_GLOBAL:"/dev/null",GIT_NO_REPLACE_OBJECTS:"1",GIT_GRAFT_FILE:"/dev/null",GIT_OPTIONAL_LOCKS:"0"};
  const blobs={};
- for(const path of retentionPackageFiles) {
+ for(const path of historicalRetentionOperatorPackagePaths) {
   const args=["--no-replace-objects","-c","core.fsmonitor=false","-C",proof.repository];
   const entry=execFileSync("/usr/bin/git",[...args,"ls-tree",proof.operator.commit,"--",path],{env:gitEnv,encoding:"utf8",timeout:15000,maxBuffer:4096});
   const match=/^(100644|100755) blob ([0-9a-f]{40})\t([^\n]+)\n$/u.exec(entry);
   assert(match&&match[3]===path,"Package path is not a committed regular blob");
   blobs[path]=execFileSync("/usr/bin/git",[...args,"show",proof.operator.commit+":"+path],{env:gitEnv,timeout:15000,maxBuffer:2*1024**2});
  }
- const expected=expectedRetentionPackage(proof.operator,blobs),quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
+ const expected=expectedRetentionPackage(proof.operator,blobs,"historical"),quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
  const raw=execFileSync("/usr/bin/ssh",["-i","/home/sixer/.ssh/proofofwork_me_ed25519","-o","BatchMode=yes","-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=yes","-o","ConnectTimeout=15","root@77.42.91.106","/usr/bin/python3 -I -B -c "+quote(installedRetentionProgram)],{input:JSON.stringify({expected}),encoding:"utf8",env,timeout:90000,maxBuffer:65536});
  const value=JSON.parse(raw);
  const after=createIdentityProof({repository:proof.repository});

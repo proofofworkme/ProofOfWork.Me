@@ -827,6 +827,36 @@ def git_document_blob(source,relative,head):
     if not separator or name!=os.fsencode(relative) or len(parts)!=3 or parts[:2]!=[b'100644',b'blob'] or not re.fullmatch(b'[0-9a-f]{40}',parts[2]):raise ValueError('Reviewed citation is not a regular committed document')
     return parts[2].decode()
 
+def release_impact_reason_mask(raw):
+    """Qualify only prose in exact, canonical release-impact review reasons.
+
+    Other fields drive checks and are never historical-citation exceptions.
+    Canonical ASCII JSON lets equal encoded-length spaces preserve byte offsets,
+    including escaped quotes and Unicode. No alternate/escaped path spelling or
+    duplicate/unknown field can turn an operational pointer into prose.
+    """
+    value=json.loads(raw,object_pairs_hook=unique_pairs)
+    strings=lambda v:isinstance(v,list) and all(isinstance(x,str) for x in v)
+    if (not isinstance(value,dict) or set(value)!= {'format','upgrade','liveCheck','ciTests','reviews'}
+            or value['format']!='pow-upgrade-impact-v1'
+            or not all(isinstance(value[k],str) and value[k] for k in ('upgrade','liveCheck'))
+            or not strings(value['ciTests']) or not isinstance(value['reviews'],list)
+            or not 1<=len(value['reviews'])<=64):
+        raise ValueError('Release impact citation document shape differs')
+    if raw!=(json.dumps(value,indent=2)+'\n').encode():
+        raise ValueError('Release impact citation document is not canonical JSON')
+    for row in value['reviews']:
+        if (not isinstance(row,dict) or set(row)!= {'targets','disposition','reason','evidence'}
+                or not strings(row['targets']) or not row['targets']
+                or row['disposition'] not in ('affected','compatible')
+                or not isinstance(row['reason'],str) or not row['reason']
+                or not strings(row['evidence'])):
+            raise ValueError('Release impact citation review shape differs')
+        row['reason']=' '*(len(json.dumps(row['reason']))-2)
+    masked=(json.dumps(value,indent=2)+'\n').encode()
+    if len(masked)!=len(raw):raise ValueError('Release impact citation byte offsets differ')
+    return masked
+
 def load_citation_review(binding,layout,protected,kind,candidates,approval_sha):
     if binding is None:return {}
     if kind not in ('cleanup','future-retention'):raise ValueError('Citation review cannot qualify source-preservation references')
@@ -849,7 +879,7 @@ def load_citation_review(binding,layout,protected,kind,candidates,approval_sha):
     out={}
     for r in files:
         source=sources.get(r.get('sourcePath'));relative=r.get('relativePath','');parts=relative.split('/')
-        allowed=relative=='OP_RETURN_INFRASTRUCTURE.md' or len(parts)==2 and parts[0]=='audits' and re.fullmatch(r'[A-Za-z0-9._-]+\.(md|json)',parts[1])
+        allowed=relative in ('OP_RETURN_INFRASTRUCTURE.md','release-impact.json') or len(parts)==2 and parts[0]=='audits' and re.fullmatch(r'[A-Za-z0-9._-]+\.(md|json)',parts[1])
         if source is None or not allowed:raise ValueError('Citation review file is not an allowed protected-source document')
         p=Path(source['path'])/relative
         if str(p) in out:raise ValueError('Duplicate reviewed citation document')
@@ -859,11 +889,14 @@ def load_citation_review(binding,layout,protected,kind,candidates,approval_sha):
         citations=r.get('citations',[])
         if not citations or len(citations)>1024:raise ValueError('Exact historical citation occurrences required')
         observed=path_occurrences(raw,candidates);declared=[]
+        prose_mask=release_impact_reason_mask(raw) if relative=='release-impact.json' else None
         for c in citations:
             target=c.get('target');offset=c.get('byteOffset')
             if target not in candidates or type(offset) is not int or offset<0 or c.get('classification')!='historical-release-evidence':raise ValueError('Unreviewed citation target/offset/classification')
             start=raw.rfind(b'\n',0,offset)+1;end=raw.find(b'\n',offset);end=len(raw) if end<0 else end+1
             if raw[offset:offset+len(os.fsencode(target))]!=os.fsencode(target) or c.get('line')!=raw.count(b'\n',0,offset)+1 or c.get('lineSha256')!=hashlib.sha256(raw[start:end]).hexdigest():raise ValueError('Citation occurrence/context differs')
+            if prose_mask is not None and prose_mask[offset:offset+len(os.fsencode(target))]!=b' '*len(os.fsencode(target)):
+                raise ValueError('Release impact citation is outside a reviewed reason')
             declared.append((target,offset))
         if len(set(declared))!=len(declared) or sorted(declared)!=observed:raise ValueError('Citation review does not cover every exact occurrence')
         out[str(p)]=dict(r,sourceHead=source['head'],sourceTree=source['tree'])
@@ -1037,6 +1070,8 @@ REVIEWED_RETIRED_PAIRS = (
     (RETIRED_PAIR['current'], RETIRED_PAIR['previous']),
     ('a2a7be66bf49-20261115T031513Z', '064b6991ae2a-20261114T020148Z'),
     ('d5075ab88cdc-20261115T185350Z', 'a2a7be66bf49-20261115T031513Z'),
+    # Proposed successor scope: live installation/rotation awaits explicit owner approval.
+    ('c22e585baa9d-20261116T013245Z', 'd5075ab88cdc-20261115T185350Z'),
 )
 RETIREMENT_BASE = '/var/backups/proofofwork-ui'
 RETIREMENT_EVIDENCE = RETIREMENT_BASE + '/cleanup-evidence/older-backup-retirement-6fd05dc1e04e'

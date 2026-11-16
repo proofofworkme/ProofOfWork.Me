@@ -29,7 +29,8 @@ BOOTSTRAP_IDS={'26500e4d2ff7-20261002T054938Z','835e30258d23-20261002T052338Z'}
 # Approved historical writer versions remain admitted after later reviewed
 # upgrades; adding another version needs an explicit source review. No future
 # retirement existed before this canonical plan-serialization contract.
-KNOWN_RETIREMENT_CONTROLLERS={'e4e37e35509030e1e9c219cdc0f42544a72f9140933f6f0eaa568a02e3674d7b',
+KNOWN_RETIREMENT_CONTROLLERS={'f204be6bbc576014f968fff4a68d3d650e75ba745c71c3de69b41402ec6c12ee',
+                            'e4e37e35509030e1e9c219cdc0f42544a72f9140933f6f0eaa568a02e3674d7b',
                             '7645c9cb11788b73db1d041d6f57f3a0e3be24d44d8e45cb7bec13b273c3485f',
                             '72729b581a6fa13c9547cf2758aafcb761bcda7d1c7019f6b08ddc38a4afc99d',
                             '3b53f6ec62de46229b64fff11e9e9a92f969bd697fb2d5dad2558c9f9e69c316',

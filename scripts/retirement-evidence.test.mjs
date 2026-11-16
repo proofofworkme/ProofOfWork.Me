@@ -47,6 +47,39 @@ test("current reader adds bounded raw upgrade evidence without changing the hist
  assert.throws(()=>validateCurrentRetainedHolds(trusted(),{},{}),/Authenticated current package/);
 });
 
+test("current JS package inventory exactly matches the committed installer scope and canonical Python manifest",()=>{
+ const installer=new URL("../deploy/ui-retention/install_lifecycle.py",import.meta.url);
+ const root=new URL("../",import.meta.url);
+ const program=String.raw`import ast,hashlib,json,pathlib,sys
+root=pathlib.Path(sys.argv[1]);tree=ast.parse(pathlib.Path(sys.argv[2]).read_text())
+assignments=[n for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='FILES' for t in n.targets)]
+assert len(assignments)==1
+paths=ast.literal_eval(assignments[0].value)
+assert len(paths)==len(set(paths))==17
+files={}
+for name in paths:
+ raw=(root/name).read_bytes()
+ files[name]={'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
+manifest={'schema':'pow-ui-retention-package-v1','sourceCommit':'a'*40,'sourceTree':'b'*40,'files':files}
+raw=(json.dumps(manifest,sort_keys=True,separators=(',',':'))+'\n').encode()
+print(json.dumps({'paths':paths,'manifest':manifest,'raw':raw.decode(),'sha256':hashlib.sha256(raw).hexdigest()}))`;
+ const observed=JSON.parse(execFileSync("/usr/bin/python3",["-I","-B","-c",program,root.pathname,installer.pathname],{encoding:"utf8",timeout:15000}));
+ assert.deepEqual(retentionPackageFiles,observed.paths);
+ const added=["failed_prepare_repair.py","failed_prepare_review.py","reconcile_failed_prepare.py"].map(name=>"deploy/ui-retention/"+name);
+ assert.deepEqual(retentionPackageFiles.slice(-3),added);
+ const operator={commit:"a".repeat(40),tree:"b".repeat(40)};
+ const blobs=Object.fromEntries(retentionPackageFiles.map(path=>[path,readFileSync(new URL(path,root))]));
+ const expected=expectedRetentionPackage(operator,blobs);
+ assert.deepEqual(expected.manifest,observed.manifest);
+ assert.equal(expected.manifestRaw,observed.raw);
+ assert.equal(expected.sha256,observed.sha256);
+ for(const path of added) {
+  const missing={...blobs};delete missing[path];assert.throws(()=>expectedRetentionPackage(operator,missing));
+  const changed={...blobs,[path]:Buffer.concat([blobs[path],Buffer.from("\n# changed fixture bytes\n")])};
+  assert.notEqual(expectedRetentionPackage(operator,changed).sha256,expected.sha256);
+ }
+});
+
 test("exact operator package scope rejects foreign entries and fake capabilities",()=>{
  const operator={commit:"a".repeat(40),tree:"b".repeat(40)};
  const blobs=Object.fromEntries(retentionPackageFiles.map(p=>[p,Buffer.from(p+"\n")]));
@@ -152,3 +185,46 @@ test("fixture UID/GID namespace validates original/successor/legacy packages and
 test("unprivileged installed package fixture is rejected by the unchanged root-ownership guard", {
  skip: protectedFixtureIsRoot ? "Run as an unprivileged user to exercise actual ownership rejection" : false,
 }, () => runProtectedPackageFixture(true));
+
+
+test("historical fourteen-file package remains exact and separate from current seventeen-file scope",async()=>{
+ const {historicalRetentionOperatorPackagePaths:historical}=await import("./release-identity-proof.mjs");
+ assert(Object.isFrozen(historical));assert.equal(historical.length,14);
+ assert.deepEqual(historical,retentionPackageFiles.slice(0,14));
+ const operator={commit:"a".repeat(40),tree:"b".repeat(40)};
+ const old=Object.fromEntries(historical.map(path=>[path,Buffer.from(path+"\n")]));
+ const current=Object.fromEntries(retentionPackageFiles.map(path=>[path,Buffer.from(path+"\n")]));
+ const expected=expectedRetentionPackage(operator,old,"historical");
+ assert.deepEqual(Object.keys(expected.manifest.files),historical);
+ assert.throws(()=>expectedRetentionPackage(operator,old));
+ assert.throws(()=>expectedRetentionPackage(operator,current,"historical"));
+ assert.throws(()=>expectedRetentionPackage(operator,old,"unknown"));
+ const source=readFileSync(new URL("./retirement-evidence.mjs",import.meta.url),"utf8");
+ const historicalAttestation=source.slice(source.indexOf("export function attestInstalledRetentionPackage("),source.indexOf("function currentSource("));
+ assert(historicalAttestation.includes("for(const path of historicalRetentionOperatorPackagePaths)"));
+ assert(historicalAttestation.includes('expectedRetentionPackage(proof.operator,blobs,"historical")'));
+ const proofSource=readFileSync(new URL("./release-identity-proof.mjs",import.meta.url),"utf8");
+ const allowlist=proofSource.slice(proofSource.indexOf("const operatorPaths ="),proofSource.indexOf("const closurePaths ="));
+ for(const path of retentionPackageFiles.slice(14))assert(!allowlist.includes(path));
+});
+
+test("historical package constructor preserves the pre-repair committed installer manifest",()=>{
+ const repository=new URL("../",import.meta.url).pathname,commit="c22e585baa9ddb60aa3ce38a8a117d04a4815fe1";
+ const program=String.raw`import ast,hashlib,json,subprocess,sys
+root,commit=sys.argv[1:]
+def git(*args): return subprocess.check_output(['/usr/bin/git','-C',root,*args])
+tree=git('rev-parse',commit+'^{tree}').decode().strip()
+source=ast.parse(git('show',commit+':deploy/ui-retention/install_lifecycle.py'))
+paths=next(ast.literal_eval(n.value) for n in source.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='FILES' for t in n.targets))
+assert len(paths)==len(set(paths))==14
+blobs={p:git('show',commit+':'+p) for p in paths}
+manifest={'schema':'pow-ui-retention-package-v1','sourceCommit':commit,'sourceTree':tree,'files':{p:{'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()} for p,raw in blobs.items()}}
+raw=json.dumps(manifest,sort_keys=True,separators=(',',':'))+'\n'
+print(json.dumps({'tree':tree,'blobs':{p:b.hex() for p,b in blobs.items()},'raw':raw,'sha256':hashlib.sha256(raw.encode()).hexdigest()}))
+`;
+ const result=JSON.parse(execFileSync("/usr/bin/python3",["-I","-B","-c",program,repository,commit],{encoding:"utf8",timeout:15000,maxBuffer:8*1024**2}));
+ const blobs=Object.fromEntries(Object.entries(result.blobs).map(([path,hex])=>[path,Buffer.from(hex,"hex")]));
+ const historical=expectedRetentionPackage({commit,tree:result.tree},blobs,"historical");
+ assert.equal(historical.manifestRaw,result.raw);assert.equal(historical.sha256,result.sha256);
+ assert.throws(()=>expectedRetentionPackage({commit,tree:result.tree},blobs));
+});
