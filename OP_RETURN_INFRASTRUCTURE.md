@@ -9694,3 +9694,30 @@ ordinary publication is not a bypass. Current root reserve (8 GiB plus 64 MiB),
 If admission fails, stop rather than relaxing a limit. Retaining 1042 does not
 authorize releasing that hold after this rollout: removal needs a separate
 owner-authorized, reviewed migration with fresh recovery and capacity evidence.
+
+
+### Prepared reader successor after an installed, unsealed repair
+
+The R3 reader-only successor supports the exact installed R2 prepared state at
+revision 287 whose post-switch verification stopped before its status seal.
+It does not replay the original repair, edit an installed package in place,
+fabricate the missing R2 seal, republish C, or authorize a new retirement scope.
+The original intent, installed receipt, ordinary plan, pending token, C/B pair,
+and historical retirement authority remain unchanged.
+
+The narrow publication reader accepts only the two hash/size-bound original
+publication records beneath root-owned private directories under sticky
+root-owned /var/tmp. General evidence readers retain their existing ancestor
+rules. A new creation-only journal authenticates the complete original repair
+proof and a separate reader-only package/config transition. State revision 288
+changes only config binding, revision and the new successor marker. Any partial
+journal or uncertain config/state switch requires explicit reconciliation,
+never automatic retry or state clearing.
+
+Only real installed state/status and ordinary-plan verification may produce the
+new prepared-status seal. The old seal remains absent. Native ordinary apply and
+completion still use the preserved cycle/token and unchanged four-object scope;
+later normal cycles require the same full native checks. Offline tests and a
+source commit are not production completion, Pay activation, or permission to
+retire a later rollback release. Keep Pay writes closed until all release gates
+and synchronization checks pass.

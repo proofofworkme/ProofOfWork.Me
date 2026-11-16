@@ -95,7 +95,7 @@ def pending_token(config_sha, ordinary_plan, context):
                         'configSha256': config_sha, 'cycleId': CYCLE, 'context': context}))
 
 
-def verify_marker(state, read_json, *, verify_seal=True):
+def _verify_original_marker(state, read_json, *, verify_seal=True):
     """Validate the permanent marker, also after subsequent package upgrades.
 
 read_json must be the caller's strict owner/type/link/bounded SHA reader. Missing
@@ -239,6 +239,126 @@ or malformed evidence fails; only an absent marker returns None.
         'repairBinding': repair_binding, 'config': config, 'configSha256': config_sha,
         'context': context, 'ordinaryPlan': ordinary, 'plan': plan}
 
+
+# One exact installed-but-unsealed prepared repair; never a general upgrade.
+READER_JOURNAL = BASE + '/ui-lifecycle-prepared-reader-repair-' + RELEASE
+READER_PRIOR = {
+    'state': '91416a72234c708aa071003a4aa41242e499322adb4b6d4e92d91cecf7d24f87',
+    'config': '09c19bbaa5d4811c363fdc8fb98fd82a1b09ac0627d912a8c0bab6841405fc67',
+    'intent': '34f9a50a8f7a3adde9e0d6d5dd26cfaec0c405982e1685529f4a2c1c1753383c',
+    'repaired': 'a4c7446409edf5eea953129cbed266d3c1f2bc8c468ec09de7100f45621a179a',
+    'ordinaryPlan': '4dcc3cb25fee4d7215dd163201939090cd1729ef9480ebfea8265b521ff7d391',
+    'package': '59d67bc40ea87239b8027912c65aa4b23e5e73ec7c6f4641218d37d9c0a30388'}
+READER_CHANGED_FILES = {
+    'deploy/ui-retention/failed_prepare_repair.py',
+    'deploy/ui-retention/retirement_receipt.py',
+    'deploy/ui-retention/reconcile_failed_prepare.py'}
+
+def verify_reader_successor(state, read_json, *, verify_seal=True):
+    """Authenticate exact R2 prepared proof plus a sealed reader-only successor.
+
+    The original unsealed repair is validated only against its immutable pinned
+    state287, never by relaxing a descendant's seal requirement. The new seal
+    certifies the R3 installed prepared state, not successful R2 verification.
+    """
+    marker = state.get('lastPreparedReaderRepair')
+    if marker is None:
+        return None
+    require(isinstance(marker, dict) and set(marker) == {'intentPath','intentSha256','completionPath'}
+            and marker['intentPath'] == READER_JOURNAL + '/intent.json'
+            and marker['completionPath'] == READER_JOURNAL + '/installed.json',
+            'Prepared reader successor namespace differs')
+    intent, intent_sha = canonical_read(read_json, marker['intentPath'], marker['intentSha256'])
+    require(intent.get('schema') == 'pow-ui-prepared-reader-repair-intent-v1'
+            and intent.get('authority') == READER_PRIOR, 'Prepared reader authority differs')
+    prior, _ = canonical_read(read_json, READER_JOURNAL + '/prior-state.json', READER_PRIOR['state'])
+    prior_config, _ = canonical_read(read_json, READER_JOURNAL + '/prior-config.json', READER_PRIOR['config'])
+    require(prior.get('revision') == 287 and type(prior['revision']) is int
+            and prior.get('configSha256') == READER_PRIOR['config']
+            and prior.get('lastPreparedReaderRepair') is None
+            and prior.get('activePhase') is None and prior['pending']['stage'] == 'prepared',
+            'Prepared reader origin differs')
+    require(prior['lastFailedPreparationRepair']['intentSha256'] == READER_PRIOR['intent'],
+            'Prepared reader original intent differs')
+    canonical_read(read_json, JOURNAL + '/repaired.json', READER_PRIOR['repaired'])
+    must_be_absent(read_json, JOURNAL + '/verified.json')
+    original = _verify_original_marker(prior, read_json, verify_seal=False)
+    require(original is not None and original['config'] == prior_config
+            and original['configSha256'] == READER_PRIOR['config']
+            and original['preparedState'] == prior
+            and prior['pending']['ordinaryPlan']['sha256'] == READER_PRIOR['ordinaryPlan']
+            and prior_config['package']['sha256'] == READER_PRIOR['package'],
+            'Prepared reader origin is not authentic installed R2')
+    payload = intent['payload']; config = payload['config']; config_sha = payload['configSha256']
+    require(sha(encoded(config)) == config_sha and config_sha != READER_PRIOR['config'],
+            'Prepared reader successor config differs')
+    mutable = {'approval','controller','package','sourceCommit','sourceTree'}
+    require(set(config) == set(prior_config)
+            and all(config[k] == prior_config[k] for k in config if k not in mutable)
+            and config['approval']['sha256'] == prior_config['approval']['sha256']
+            and config['package']['path'] == BASE + '/ui-lifecycle-tools-' + config['package']['sha256']
+            and config['controller']['path'] == config['package']['path'] + '/deploy/ui-retention/lifecycle_remote.py'
+            and config['approval']['path'] == config['package']['path'] + '/audits/2026-10-16-ui-retention-repair-approval.json',
+            'Prepared reader successor expands authority')
+    old_manifest, _ = canonical_read(read_json, prior_config['package']['path'] + '/package.json', READER_PRIOR['package'])
+    manifest = payload['manifest']
+    require(sha(encoded(manifest)) == config['package']['sha256']
+            and manifest['sourceCommit'] == config['sourceCommit']
+            and manifest['sourceTree'] == config['sourceTree']
+            and re.fullmatch('[0-9a-f]{40}', config['sourceCommit'])
+            and re.fullmatch('[0-9a-f]{40}', config['sourceTree'])
+            and set(manifest['files']) == set(old_manifest['files']) == set(payload['files']),
+            'Prepared reader package closure differs')
+    for relative, record in payload['files'].items():
+        raw = base64.b64decode(record['base64'], validate=True)
+        require(record['sha256'] == sha(raw) and record['bytes'] == len(raw)
+                and manifest['files'][relative] == {'bytes':len(raw),'sha256':sha(raw)}
+                and (relative in READER_CHANGED_FILES
+                     or manifest['files'][relative] == old_manifest['files'][relative]),
+                'Prepared reader package changes unrelated source')
+    require(intent.get('reconcilerSha256') == payload['files']['deploy/ui-retention/reconcile_failed_prepare.py']['sha256']
+            and isinstance(intent.get('reviewedPlanSha256'),str)
+            and re.fullmatch('[0-9a-f]{64}',intent['reviewedPlanSha256']),
+            'Prepared reader operator source binding differs')
+    canonical_read(read_json, config['package']['path'] + '/package.json', config['package']['sha256'])
+    require(intent['ordinaryPlan'] == prior['pending']['ordinaryPlan']
+            and intent['context'] == original['context'], 'Prepared reader scope differs')
+    base_marker = {k: marker[k] for k in ('intentPath','completionPath')}
+    template = dict(prior, configSha256=config_sha, revision=288, lastPreparedReaderRepair=base_marker)
+    require(intent['stateTemplate'] == template and intent['stateTemplateSha256'] == sha(encoded(template)),
+            'Prepared reader state transformation differs')
+    prepared = dict(template, lastPreparedReaderRepair=marker)
+    done, done_sha = canonical_read(read_json, marker['completionPath'])
+    require(done == {'schema':'pow-ui-prepared-reader-repair-installed-v1','ok':True,
+        'intent':{'path':marker['intentPath'],'sha256':intent_sha},
+        'priorState':{'path':READER_JOURNAL+'/prior-state.json','sha256':READER_PRIOR['state']},
+        'priorConfig':{'path':READER_JOURNAL+'/prior-config.json','sha256':READER_PRIOR['config']},
+        'config':{'path':CONFIG_PATH,'sha256':config_sha},
+        'state':{'path':STATE_PATH,'sha256':sha(encoded(prepared))},'stateRevision':288,
+        'prepared':True,'retentionComplete':False,'deletionPerformed':False,'publicationPerformed':False,
+        'originalRepairEvidencePreserved':True}, 'Prepared reader installed receipt differs')
+    require(type(state.get('revision')) is int and state['revision'] >= 288
+            and state.get('lastFailedPreparationRepair') == prior['lastFailedPreparationRepair']
+            and state.get('lastPayloadRetirement') == prior.get('lastPayloadRetirement'),
+            'Prepared reader descendant history differs')
+    if state['revision'] == 288:
+        require(state == prepared, 'Initial prepared reader state differs')
+    verify_seal = verify_seal or state.get('configSha256') != config_sha or state['revision'] != 288
+    if verify_seal:
+        verified, _ = canonical_read(read_json, READER_JOURNAL + '/verified.json')
+        require(verified == {'schema':'pow-ui-prepared-reader-repair-verified-v1',
+            'installedReceipt':{'path':marker['completionPath'],'sha256':done_sha},
+            'config':done['config'],'state':done['state'],
+            'contextSha256':sha(encoded(original['context'])),
+            'prepared':True,'retentionComplete':False}, 'Prepared reader post-switch seal differs')
+    # Both edges authenticated; original failure anchor stays unchanged.
+    return dict(original, config=config, configSha256=config_sha, preparedState=prepared,
+                readerSuccessor={'intent':intent,'installed':done,'originalPreparedState':prior})
+
+def verify_marker(state, read_json, *, verify_seal=True):
+    if state.get('lastPreparedReaderRepair') is not None:
+        return verify_reader_successor(state, read_json, verify_seal=verify_seal)
+    return _verify_original_marker(state, read_json, verify_seal=verify_seal)
 
 def verify_edge(state, config_sha, config, read_json, *, verify_seal=True):
     proof = verify_marker(state, read_json, verify_seal=verify_seal)

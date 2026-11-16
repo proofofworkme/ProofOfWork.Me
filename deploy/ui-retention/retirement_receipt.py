@@ -304,6 +304,61 @@ def read_bound(path, expected, limit=16*1024**2):
     require(digest(raw) == hash_value(expected), 'Evidence bytes differ')
     return raw
 
+
+# Exact original publication evidence for the one C failed-preparation repair.
+# The publisher uses a root-private anchor under the root-owned sticky /var/tmp.
+# No other path, digest, size, ancestor exception, or unbound read is admitted.
+_REPAIR_PUBLICATION_ROOT = Path('/var/tmp/proofofwork-deploy')
+_REPAIR_STICKY_PARENT = Path('/var/tmp')
+_REPAIR_PUBLICATION_FILES = {
+    '/var/tmp/proofofwork-deploy/recovery-publish-c22e585baa9d-20261116T013245Z-pay-c1/receipt.json':
+        ('abea00973596077de663de98435abb222945eadaa5a8b10c40c9a03a2616baf2', 3239),
+    '/var/tmp/proofofwork-deploy/recovery-plan-c22e585baa9d-20261116T013245Z-pay-c1.json':
+        ('71e747d17b9f56d03f1a9e9b05305cf26053e41cf610ecba8f5b7bd1d3687d60', 50534),
+}
+
+def read_repair_publication_bound(path, expected):
+    p = Path(path)
+    record = _REPAIR_PUBLICATION_FILES.get(str(p))
+    require(record is not None and expected == record[0],
+            'Unreviewed repair publication evidence')
+    require(p.is_absolute() and p.resolve(strict=True) == p
+            and _REPAIR_PUBLICATION_ROOT in p.parents,
+            'Unsafe repair publication path')
+    def ancestors():
+        result = []
+        for parent in p.parents:
+            s = parent.lstat()
+            require(stat.S_ISDIR(s.st_mode) and s.st_uid == s.st_gid == 0,
+                    'Unsafe repair publication ancestor owner/type')
+            mode = stat.S_IMODE(s.st_mode)
+            if parent == _REPAIR_STICKY_PARENT:
+                require(mode == 0o1777, 'Repair publication sticky ancestor differs')
+            elif parent == _REPAIR_PUBLICATION_ROOT or _REPAIR_PUBLICATION_ROOT in parent.parents:
+                require(mode == 0o700, 'Repair publication private ancestor differs')
+            else:
+                require(not s.st_mode & 0o022, 'Unsafe repair publication ancestor mode')
+            result.append((str(parent), s.st_dev, s.st_ino, s.st_uid, s.st_gid, s.st_mode))
+        return result
+    original_ancestors = ancestors()
+    before = p.lstat()
+    require(stat.S_ISREG(before.st_mode) and before.st_uid == before.st_gid == 0
+            and before.st_nlink == 1 and stat.S_IMODE(before.st_mode) == 0o600
+            and before.st_size == record[1], 'Unsafe repair publication metadata')
+    fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+    try:
+        require(os.fstat(fd) == before, 'Repair publication changed on open')
+        with os.fdopen(os.dup(fd), 'rb') as stream:
+            raw = stream.read(record[1] + 1)
+        require(os.fstat(fd) == before and p.lstat() == before
+                and p.resolve(strict=True) == p
+                and ancestors() == original_ancestors
+                and len(raw) == record[1], 'Repair publication changed during read')
+    finally:
+        os.close(fd)
+    require(digest(raw) == expected, 'Repair publication bytes differ')
+    return raw
+
 def require_verified_retirement(value):
     require(type(value) is VerifiedRetirement and value._token is TOKEN,
             'Authenticated retirement context required')
@@ -429,7 +484,9 @@ class VerifiedRetirement:
                 spec = importlib.util.spec_from_file_location('retirement_failed_prepare_repair', repair_path)
                 repair = importlib.util.module_from_spec(spec); spec.loader.exec_module(repair)
                 def repair_read(path, expected=None):
-                    raw = read_bound(path, expected) if expected is not None else read_raw_bound(path)
+                    raw = (read_repair_publication_bound(path, expected)
+                           if str(path) in _REPAIR_PUBLICATION_FILES else
+                           read_bound(path, expected) if expected is not None else read_raw_bound(path))
                     return _json(raw), digest(raw)
                 edge = repair.verify_edge(state, config_sha, config, repair_read,
                                           verify_seal=bool(depth) or verify_current_seal)
