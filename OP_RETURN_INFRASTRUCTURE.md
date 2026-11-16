@@ -25,8 +25,10 @@ or a partial production announcement.
 
 The [Pay release controller](deploy/pay/README.md) separates reader installation,
 candidate bootstrap and its one-variable API write gate. The gate adapter binds
-the successful scoped runtime receipt, exact source and preactivation checks;
-failure disables its owned gate while retaining readers. A changed recursive
+the successful scoped runtime receipt, exact source and preactivation checks.
+Failure attempts to disable its owned gate while retaining readers; incomplete
+recovery requires independent verification and supervised service restoration,
+and a failed receipt never becomes a successful activation. A changed recursive
 linked-publishing source envelope needs a fresh marker from an actually new
 block scanned by the ordinary worker. A same-tip restart or Pay bootstrap cannot
 refresh that marker. Preserve existing worker configuration and verify the new
@@ -34,6 +36,27 @@ marker and Search before opening Pay; never relabel historical qualification.
 Rollback retains the new helper files as recovery evidence, so its recursive
 source envelope also differs from the pre-Pay runtime. Verify a fresh marker
 for the actual rolled-back source before claiming linked admission restored.
+
+Before every Pay activation capture, use the exact pinned Search hold controller
+and installed service/timer hashes, retain its immutable held receipt and marker,
+and verify Search is stopped. Keep that hold across capture and apply. Restore
+its original timer activation and enablement only after actual gate completion or
+verified disabled recovery with restored application services; leave uncertain
+outcomes held for supervised recovery. Then verify current Search coverage.
+Holding Search does not freeze Core: a changed checkpoint requires fresh actual
+preactivation qualification rather than relabeling an earlier result.
+
+The Pay-specific configuration adapter canonicalizes only the unordered
+`Requires` and `PartOf` memberships returned for its known units. It preserves
+encoded unit names and rejects duplicate or ambiguous serialization. Ordered
+configuration, private environment values, command arguments, source/file
+identities and all other native guards stay bound; the shared Mail engine bytes
+remain unchanged. This tooling repair changes no protocol, API result, economic
+count, homepage catalog, Growth assumption/report or standalone/embedded UI
+behavior. The exact successor source still needs the normal full build, runtime
+and UI deployment evidence, rendered local/production checks and final release
+synchronization. Historical failed attempts and separate recovery evidence are
+retained in the [Pay operator procedure](deploy/pay/README.md#activation-failure-and-recovery-evidence).
 
 ## Storage policy — 2026-10-24
 
@@ -89,13 +112,18 @@ missing history through authenticated Git operations with bounded VPS resources;
 never remove a shallow marker manually or relabel an original archive. Historical
 source completion keeps its own evidence and preserves application/dependency bytes.
 
-Ordinary backup rotations remain exact predecessor-pair admissions. The next
-release after `a2a7be66bf49-20261115T031513Z` admits only the outgoing
+Ordinary backup rotations remain exact predecessor-pair admissions. The rotation
+following `a2a7be66bf49-20261115T031513Z` admits only the outgoing
 `064b6991ae2a-20261114T020148Z` archive, its checksum/provenance sidecars and
 `proofofwork-www-pre-a2a7be66bf49-20261115T031513Z` rollback root. Execution
 requires separate exact owner approval and verified new-current/a2 rollback
 evidence. The historical 064/e266 retirement pair and original 1042/c396
 authority, receipts, indexes and source-config anchor remain unchanged.
+The successor to `d5075ab88cdc-20261115T185350Z` separately admits only the
+outgoing `a2a7be66bf49-20261115T031513Z` archive and its two sidecars plus
+`proofofwork-www-pre-d5075ab88cdc-20261115T185350Z`. This admission grants no
+deletion authority: a separate exact owner approval and verified successor/B
+retained pair are required before the native ordinary rotation can execute.
 After the previous cycle is sealed complete, install the committed lifecycle
 package through `plan-upgrade-complete` and `upgrade` before fresh publication
 preflight; later unreviewed pairs still refuse.

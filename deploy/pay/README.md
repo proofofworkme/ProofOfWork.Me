@@ -128,7 +128,13 @@ before and after each test batch. No new local test/build/backup artifacts.
 ## Independent Pay write switch
 
 `write-gate.py` adapts the exact digest-pinned existing Mail batch activation
-engine. It controls only the root-owned 0644 API drop-in
+engine without changing its bytes. A Pay-only wrapper canonicalizes `Requires`
+and `PartOf` as sorted exact unit memberships for the known guarded units.
+Encoded names stay unchanged; duplicates and ambiguous serialization refuse.
+All other property reads pass through unchanged, including ordered
+`EnvironmentFiles`, `DropInPaths` and command arguments. Private environment
+values, source/file identities, owned-file guards and service-state checks remain
+bound. It controls only the root-owned 0644 API drop-in
 `/etc/systemd/system/proofofwork-api.service.d/zzzzz-pay-writes.conf`, containing
 `[Service]` and `Environment=POW_PAY_WRITES_ENABLED=0` or `1`. It supplies no
 declaration, amount, checkpoint or other protocol authority through environment
@@ -158,30 +164,95 @@ controller's original manifest and completed receipt. The planner binds their
 exact bytes, all deployed source hashes/metadata, Node and the gate tool sources;
 it creates only the reviewable approval file.
 
+Before activation capture, invoke the pinned
+`deploy/search/hold-node-timer.py` with a fresh release/attempt identity and the
+exact installed Search service and timer hashes. Review its successful `held.json`
+and exact hold marker. Verify the Search timer is inactive and the service is
+inactive or failed with PID zero. Capture only this held baseline; the activation
+controller retains its exact Search-state guard throughout apply and recovery.
+The Search controller uses its own lock. Do not hold the activation operations
+lock in a parent process while invoking the native gate, which acquires that
+lock itself. Do not change timer enablement or bypass either controller.
+
 The isolated-root `write-gate.py` reads a reviewed JSON request on stdin. Capture
 uses `mode: "capture"`, `approval`, `operation` and the prior receipt's `owned`
 record (initially null). Apply uses `mode: "apply"`, that same `approval`, the
 exact `capture`, its canonical JSON `captureSha256`, and a new private VPS
-`receiptPath`. Run and review `stage-disabled` first. Only its exact owned
-disabled file may enter a separately captured and reviewed `enable` operation.
+`receiptPath`. When no owned gate exists, run and review `stage-disabled` first.
+Only the exact owned disabled file from a completed, reviewed native operation
+may enter a separately captured and reviewed `enable` operation.
+
+If a failed attempt already created an owned false switch, preserve the exact
+switch and its ownership evidence until reviewed native atomic replacement,
+along with the failed receipt and independent disabled-service recovery. Do not
+manually delete/recreate the switch or relabel the failed stage. Authenticate its exact
+predecessor ownership and verified recovery against the successor's source,
+runtime approval and qualification. With Search held, freshly capture and apply
+native `disable` using that owned record and a new receipt path. Require actual
+completion and the exact owned disabled file; then freshly capture and review
+`enable`. The completed disable receipt establishes the successor's disabled
+state without changing the historical failure. Disable intentionally performs no
+chain probe, so its completion cannot establish fresh chain qualification for
+enable.
 The fresh probe independently verifies Core's exact tip and activation parent,
 then the loopback Pay reader and expected gate, followed by canonical tip fences.
-Any intervening block requires fresh preactivation qualification; no retry
-silently updates the approved checkpoint.
+Any intervening block requires fresh actual preactivation qualification; no retry
+silently updates the approved checkpoint. Holding Search does not stop Core or
+make an old qualification current.
+
+Restore Search with the same immutable hold bindings only after actual gate
+completion, or after independently verified disabled recovery has restored the
+application services and verified the owned false switch. Check `restored.json`,
+marker removal, original timer activation/enablement and fresh Search coverage.
+An interrupted, failed or unknown gate outcome with unverified service recovery
+keeps Search held for supervised recovery; do not restore it unconditionally in
+a `finally` block. Runtime rollout receipts use a different schema and cannot
+substitute for activation completion or disabled-recovery evidence.
 
 The controller preserves the operations lock, gateway drain, complete effective
 systemd configuration and source fences, atomic ownership journal, application
 restoration, and foreign-file race refusal from the existing activation engine.
-Enable failure recovers to an owned disabled switch, retaining Pay readers and
-canonical history. `disable` needs no chain readiness probe. Ambiguous foreign
+Enable failure attempts recovery to an owned disabled switch, retaining Pay
+readers and canonical history. Require completed recovery evidence and checks
+that the application services are restored; a failed or interrupted attempt is
+not proof of recovery. `disable` needs no chain readiness probe. Ambiguous foreign
 state remains preserved for supervised recovery. Preparation/tests do not
 authorize or claim that any of these production actions occurred.
 
-Run the added fixture checks only in the authorized VPS workspace:
+### Activation failure and recovery evidence
+
+The two 2026-11-15 UTC stage-disabled attempts remain failed. The first refused
+before draining applications when the ordinary Search timer changed its captured
+state. The second published an owned disabled switch, then failed its exact
+configuration check and left the application services drained; its automatic
+recovery did not complete. A separate supervised recovery restored the services
+with writes disabled. That recovery did not rewrite either failed stage receipt
+or establish a successful activation.
+
+Original evidence remains on the NODE VPS under
+`/tmp/pay-d5075ab-write-gate-v1/`:
+
+| Receipt | SHA-256 | Outcome |
+| --- | --- | --- |
+| `stage-disabled-receipt.json` | `71298e8a022ce8cb825c4cea23dc0edbc99244960feee7f7bb75527f16ef1421` | Failed before draining; no owned switch. |
+| `stage-disabled-receipt-v2.json` | `cf41306f7155f4a92092d25105fc0f84849183d2e3b738a8b916ff3efd323035` | Failed with an owned false switch; automatic recovery incomplete. |
+| `disabled-service-recovery-v1.json` | `a6a902da0d511a2112bb1f20adecddce173bde8807c498a62d96bd4ed2637cef` | Independent service recovery completed with writes disabled. |
+| `configuration-reload-diagnostic-v1.json` | `36e75d12cefd45eb0967fb9ac8dc750d1ebd258fec376997d8d628f9da186d5e` | Subsequent controlled reload changed only eight dependency display orders. |
+
+The controlled reload preserved every dependency member, other configuration
+property/source file, app/authority/gateway PID and owned disabled switch. This
+proves the order-sensitive hashing defect without reconstructing the uncaptured
+component map from the second attempt. Regression fixtures exercise those exact
+eight order pairs, lifecycle/recovery and refusal of changed memberships or
+ordered configuration. Fixtures do not prove a production activation, and the
+historical failures remain distinct from the successor release's fresh evidence.
+
+Run the activation regression wrapper only in the authorized VPS workspace. It
+executes the Pay gate, Search hold and read-probe fixtures with bounded child
+timeouts and output, and is included in the release impact CI test list:
 
 ```sh
-python3 -I -B deploy/pay/check-write-gate.test.py
-node --test deploy/pay/write-gate-probe.test.mjs
+node --test scripts/check-pay-activation.test.mjs
 ```
 
 ## Completion

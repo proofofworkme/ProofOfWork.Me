@@ -439,6 +439,172 @@ class ControllerTests(unittest.TestCase):
         owned=self.owned();self.h['process_environment']=lambda pid:{**c.values(PINS,False),'POW_PAY_UNKNOWN':'1'}
         with self.assertRaises(ValueError):c.process_environment(self.h,owned)
 
+
+    def dependency_reload_fixture(self,owned=None,fail_restart=False):
+        # Exact unit groups and observed dependency permutations from a real
+        # systemd reload; the systemctl backend remains this private fixture.
+        self.gate=('proofofwork-api-wg.socket','proofofwork-api-wg.service')
+        self.auth=('bitcoind.service','electrs.service','postgresql@16-main.service')
+        self.search=('proofofwork-search-index.service','proofofwork-search-index.timer')
+        self.other={unit:row() for unit in (*self.auth,*self.search)}
+        self.gateway={unit:{'ActiveState':'active','UnitFileState':'enabled','MainPID':'12'}
+            for unit in self.gate}
+        self.h.update(GATEWAY=self.gate,AUTHORITY=self.auth,SEARCH=self.search)
+        props=self.lifecycle_configuration_fixture(owned,fail_restart)
+        changes=(
+            (c.API,'Requires','-.mount sysinit.target data.mount system.slice',
+                'data.mount -.mount sysinit.target system.slice'),
+            (c.WORKER,'Requires','postgresql@16-main.service system.slice -.mount sysinit.target',
+                'system.slice postgresql@16-main.service -.mount sysinit.target'),
+            (c.WORKER,'PartOf','postgresql@16-main.service proofofwork-api.service',
+                'proofofwork-api.service postgresql@16-main.service'),
+            (self.gate[1],'Requires','proofofwork-api.service sysinit.target -.mount system.slice',
+                'proofofwork-api.service sysinit.target system.slice -.mount'),
+            (self.auth[0],'Requires','sysinit.target -.mount system.slice',
+                '-.mount sysinit.target system.slice'),
+            (self.auth[1],'Requires','sysinit.target system.slice -.mount',
+                '-.mount sysinit.target system.slice'),
+            (self.auth[2],'Requires','system-postgresql.slice sysinit.target -.mount data.mount',
+                'data.mount system-postgresql.slice sysinit.target -.mount'),
+            (self.search[0],'Requires','system.slice sysinit.target -.mount',
+                'sysinit.target system.slice -.mount'),
+        )
+        for unit,key,before,after in changes:
+            self.assertNotEqual(before,after)
+            self.assertEqual(set(before.split(' ')),set(after.split(' ')))
+            props[unit][key]=before
+        original_ctl=self.h['ctl'];reloads=[]
+        def ctl(*args):
+            value=original_ctl(*args)
+            if args==('daemon-reload',):
+                for unit,key,before,after in changes:
+                    props[unit][key]=after if len(reloads)%2==0 else before
+                reloads.append(len(changes))
+            return value
+        self.h['ctl']=ctl
+        return props,changes,reloads
+
+    def test_configuration_matches_all_observed_dependency_reorders(self):
+        props,changes,_=self.dependency_reload_fixture()
+        original_ctl=self.h['ctl'];before=c.configuration(self.h,None)
+        for unit,key,old,new in changes:props[unit][key]=new
+        self.assertEqual(c.configuration(self.h,None),before)
+        self.assertIs(self.h['ctl'],original_ctl)
+        self.assertEqual([props[unit][key] for unit,key,old,new in changes],
+            [new for unit,key,old,new in changes])
+
+    def test_configuration_dependency_membership_remains_bound(self):
+        props,changes,_=self.dependency_reload_fixture();before=c.configuration(self.h,None)
+        for unit,key,old,new in changes:
+            members=old.split(' ')
+            for changed in (old+' unexpected.service',' '.join(members[1:]),
+                    ' '.join(['replacement.service',*members[1:]])):
+                with self.subTest(unit=unit,property=key,changed=changed):
+                    props[unit][key]=changed
+                    self.assertNotEqual(c.configuration(self.h,None),before)
+                    props[unit][key]=old
+
+    def test_dependency_serialization_preserves_escapes_and_refuses_ambiguity(self):
+        props,_,_=self.dependency_reload_fixture()
+        props[c.API]['Requires']=r'data\x20files.mount -.mount'
+        before=c.configuration(self.h,None)
+        props[c.API]['Requires']=r'-.mount data\x20files.mount'
+        self.assertEqual(c.configuration(self.h,None),before)
+        props[c.API]['Requires']='-.mount datax20files.mount'
+        self.assertNotEqual(c.configuration(self.h,None),before)
+        for value in ('a.service a.service','a.service  b.service',' a.service',
+                'a.service ','a.service\tb.service','a.service\nb.service',
+                r'data\xGGfiles.mount','a'*256+'.service'):
+            with self.subTest(value=value),self.assertRaisesRegex(ValueError,
+                    'Unsupported systemd dependency serialization'):
+                props[c.API]['Requires']=value;c.configuration(self.h,None)
+        props[c.API]['Requires']=''
+        self.assertIsInstance(c.configuration(self.h,None),str)
+
+    def test_dependency_normalization_keeps_order_sensitive_configuration(self):
+        props,_,env=self.configuration_fixture()
+        extra=self.root/'second.env';extra.write_text('PRIVATE_TOKEN=second-test-value\n');extra.chmod(0o640)
+        first=self.root/'first.conf';second=self.root/'second.conf'
+        for path in (first,second):path.write_text('[Service]\n');path.chmod(0o644)
+        for key,ordered,reversed_value in (
+                ('EnvironmentFiles',f'{env} (ignore_errors=no) {extra} (ignore_errors=no)',
+                    f'{extra} (ignore_errors=no) {env} (ignore_errors=no)'),
+                ('DropInPaths',f'{first} {second}',f'{second} {first}'),
+                ('ExecStart',EXEC_START.replace('app.mjs','app.mjs --first --second'),
+                    EXEC_START.replace('app.mjs','app.mjs --second --first'))):
+            with self.subTest(property=key):
+                original=props[c.API][key];props[c.API][key]=ordered
+                before=c.configuration(self.h,None);props[c.API][key]=reversed_value
+                self.assertNotEqual(c.configuration(self.h,None),before)
+                props[c.API][key]=original
+
+    def test_actual_configuration_lifecycle_survives_dependency_reorders(self):
+        props,changes,reloads=self.dependency_reload_fixture()
+        with patch.object(c,'runtime_fence',return_value='runtime'),patch.object(c,'probe',return_value=self.evidence):
+            owned=None
+            for operation in ('stage-disabled','enable','disable'):
+                captured=c.capture(self.h,self.approval,owned,operation)
+                result=c.apply(self.h,self.approval,captured,operation,
+                    lambda record:self.records.append(copy.deepcopy(record)))
+                self.assertTrue(result['complete']);owned=result['owned']
+                self.assertEqual(c.configuration(self.h,owned),captured['configurationSha256'])
+                self.assertEqual(owned['enabled'],operation=='enable')
+                self.assertEqual(self.drop.read_bytes(),c.render(PINS,operation=='enable'))
+                self.assertTrue(all(value['ActiveState']=='active' for value in self.appstates.values()))
+                self.h['require_gateway_baseline'](self.h['gateway_states'](),c.gateway_pins(captured['states']))
+        self.assertEqual(reloads,[len(changes)]*3)
+
+    def test_postflight_recovery_survives_dependency_reorders(self):
+        owned=self.owned();_,changes,reloads=self.dependency_reload_fixture(owned);calls=0
+        def evidence(*args,**kwargs):
+            nonlocal calls;calls+=1
+            if calls==3:raise TimeoutError('postflight probe')
+            return self.evidence
+        with patch.object(c,'runtime_fence',return_value='runtime'),patch.object(c,'probe',side_effect=evidence):
+            captured=c.capture(self.h,self.approval,owned,'enable')
+            with self.assertRaisesRegex(TimeoutError,'postflight probe'):
+                c.apply(self.h,self.approval,captured,'enable',
+                    lambda record:self.records.append(copy.deepcopy(record)))
+        result=self.records[-1]
+        self.assertTrue(result['failed']);self.assertFalse(result['complete'])
+        self.assertTrue(result['recoveredDisabled']);self.assertFalse(result['owned']['enabled'])
+        self.assertEqual(result['phase'],'failed-disabled')
+        self.assertEqual(c.configuration(self.h,result['owned']),captured['configurationSha256'])
+        self.assertTrue(all(value['ActiveState']=='active' for value in self.appstates.values()))
+        self.assertEqual(reloads,[len(changes)]*2)
+
+    def test_restart_recovery_survives_dependency_reorders(self):
+        owned=self.owned();_,changes,reloads=self.dependency_reload_fixture(owned,fail_restart=True)
+        with patch.object(c,'runtime_fence',return_value='runtime'),patch.object(c,'probe',return_value=self.evidence):
+            captured=c.capture(self.h,self.approval,owned,'enable')
+            with self.assertRaisesRegex(TimeoutError,'restart'):
+                c.apply(self.h,self.approval,captured,'enable',
+                    lambda record:self.records.append(copy.deepcopy(record)))
+        result=self.records[-1]
+        self.assertTrue(result['failed']);self.assertFalse(result['complete'])
+        self.assertTrue(result['recoveredDisabled']);self.assertFalse(result['owned']['enabled'])
+        self.assertEqual(c.configuration(self.h,result['owned']),captured['configurationSha256'])
+        self.assertTrue(all(value['ActiveState']=='active' for value in self.appstates.values()))
+        self.assertEqual(reloads,[len(changes)]*2)
+
+    def test_reload_dependency_membership_tamper_prevents_restart(self):
+        props,_,_=self.dependency_reload_fixture();original_ctl=self.h['ctl']
+        def ctl(*args):
+            value=original_ctl(*args)
+            if args==('daemon-reload',):props[c.API]['Requires']+=' unexpected.service'
+            return value
+        self.h['ctl']=ctl
+        with patch.object(c,'runtime_fence',return_value='runtime'),patch.object(c,'probe',return_value=self.evidence):
+            captured=c.capture(self.h,self.approval,None,'stage-disabled')
+            with self.assertRaisesRegex(ValueError,'Source/config changed during operation'):
+                c.apply(self.h,self.approval,captured,'stage-disabled',
+                    lambda record:self.records.append(copy.deepcopy(record)))
+        result=self.records[-1]
+        self.assertTrue(result['failed']);self.assertFalse(result['complete'])
+        self.assertFalse(result['recoveredDisabled']);self.assertFalse(result['owned']['enabled'])
+        self.assertTrue(all(value['ActiveState']=='inactive' for value in self.appstates.values()))
+        self.assertFalse(any(event[0]=='start' for event in self.events))
+
 class QualificationTests(unittest.TestCase):
     def setUp(self):
         self.approval={'sourceCommit':'a'*40,'runtimeHead':'b'*40,'checkerSha256':'c'*64,

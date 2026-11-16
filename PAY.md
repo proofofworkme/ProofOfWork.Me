@@ -180,6 +180,16 @@ discovery, canonical replay, invalid/duplicate/pending/reorg behavior, signing
 and recovery, APIs, Search, Log, Wallet, notifications, Growth, standalone Pay
 and embedded Computer before opening writes. Preserve all accepted node runtime
 overlays and linked-publishing source identity through the scoped controller.
+
+Activation must hold Search through its pinned hold controller before capturing
+service state. Restore Search only after actual gate completion or independently
+verified disabled recovery with the application services restored; an uncertain
+outcome keeps the hold for supervised recovery. A stale checkpoint requires a
+new actual preactivation check, never an edited result. The Pay adapter compares
+`Requires` and `PartOf` by exact unit membership while retaining all ordered
+configuration checks. This operational correction changes no invoice, settlement,
+wallet-signing or accounting rule. See the [activation procedure](deploy/pay/README.md#independent-pay-write-switch).
+
 Extend the managed UI surface contract additively while retaining historical
 release verification. The release ends only after exact GitHub/main/preview/
 production source synchronization and the mandatory live coherence check.

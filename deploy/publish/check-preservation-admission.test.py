@@ -68,6 +68,20 @@ def successor_retired_observation():
     return observed
 
 
+def b_a2_retired_observation():
+    observed = successor_retired_observation()
+    pair = {'current': 'd5075ab88cdc-20261115T185350Z',
+            'previous': 'a2a7be66bf49-20261115T031513Z'}
+    observed['binding'] = {**observed['binding'], 'pair': pair}
+    observed['verifiedRetirementCurrentPair'] = pair
+    archive = A['RETIREMENT_BASE'] + '/releases/proofofwork-ui-release-' + pair['previous'] + '.tgz'
+    observed['privateStageRetention'] = {**observed['privateStageRetention'],
+        'previousPair': pair,
+        'wouldRetire': sorted([archive+s for s in ('', '.sha256', '.provenance')] +
+            [A['RETIREMENT_BASE'] + '/rollback-roots/proofofwork-www-pre-' + pair['current']])}
+    return observed
+
+
 class PublicationAdmission(unittest.TestCase):
     def test_retired_obligation_requires_private_bound_current_package_and_original_proof(self):
         observed = retired_observation(); release = observed['privateStageRetention']['releaseId']
@@ -109,7 +123,13 @@ class PublicationAdmission(unittest.TestCase):
             A['check_observation'](observed, True, release=rule['releaseId'])
 
     def test_a2_064_forecast_preserves_origin_and_refuses_unreviewed_pairs_or_paths(self):
-        observed = successor_retired_observation(); rule = observed['privateStageRetention']
+        self.assert_successor_forecast(successor_retired_observation())
+
+    def test_b_a2_forecast_preserves_origin_and_refuses_unreviewed_pairs_or_paths(self):
+        self.assert_successor_forecast(b_a2_retired_observation())
+
+    def assert_successor_forecast(self, observed):
+        rule = observed['privateStageRetention']
         original = retired_observation()['verifiedRetiredPayloads']
         self.assertEqual(observed['verifiedRetiredPayloads'], original)
         storage = runpy.run_path(str(HERE.parent/'audit30/ui-storage.py'))
@@ -152,7 +172,7 @@ class PublicationAdmission(unittest.TestCase):
         self.assertIn('60fe272a4bb45848dd67e745302e4c02b909447fca8f3e11d319f8f02cb61325', reviewed)
 
     def test_storage_retired_scope_cannot_skip_the_exact_forecast_gate(self):
-        for observed in (retired_observation(), successor_retired_observation()):
+        for observed in (retired_observation(), successor_retired_observation(), b_a2_retired_observation()):
             with self.subTest(pair=observed['binding']['pair']):
                 self.assert_storage_retired_scope(observed)
 

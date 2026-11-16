@@ -26,6 +26,34 @@ FIELDS = {}
 DROPIN = Path('/etc/systemd/system/proofofwork-api.service.d/zzzzz-pay-writes.conf')
 SWITCH = 'POW_PAY_WRITES_ENABLED'
 
+# systemd may reorder unit memberships on daemon-reload. Preserve every member
+# and all ordered configuration, while binding membership rather than its display order.
+_ENGINE_CONFIGURATION = configuration
+
+
+def canonical_unit_dependencies(value):
+    require(isinstance(value, str), 'Unsupported systemd dependency serialization')
+    if value == '':
+        return value
+    names = value.split(' ')
+    require(len(names) == len(set(names)) and all(
+        0 < len(name) <= 255 and
+        re.fullmatch(r'(?:[A-Za-z0-9:_.@-]|\\x[0-9A-Fa-f]{2})+', name)
+        for name in names), 'Unsupported systemd dependency serialization')
+    return ' '.join(sorted(names))
+
+
+def configuration(h, owned):
+    units = (API, WORKER, *h['GATEWAY'], *h['AUTHORITY'], *h['SEARCH'])
+    def ctl(*args):
+        value = h['ctl'](*args)
+        if (len(args) == 5 and args[0] == 'show' and args[1] in units and
+                args[2:4] == ('--value', '-p') and args[4] in ('Requires', 'PartOf')):
+            return canonical_unit_dependencies(value)
+        return value
+    return _ENGINE_CONFIGURATION({**h, 'ctl': ctl}, owned)
+
+
 
 def public_pins(pins):
     require(pins == {}, 'Pay has no environment-supplied protocol or declaration authority')
