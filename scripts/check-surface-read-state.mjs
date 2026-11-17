@@ -124,14 +124,14 @@ const logErrors = []; const logHistoryLoading = [];
 let logFailure;
 const logEnv = {
   AbortController, AbortSignal,
-  ProofApiRequestError: class extends Error {},
+  ProofApiRequestError: class extends Error {}, isLogHistoryIntegrityError: () => false,
   activityHistoryReadControllerRef: { current: undefined },
   activityLoadingOwnerRef: { current: undefined },
   activityProfileRef: { current: undefined }, activityQueryRef: { current: "tx-current" },
   activityHistoryGenerationRef: { current: 0 }, activitySearchGenerationRef: { current: 0 },
   activeWorkspaceStatusKeyRef: { current: "log" }, network: "livenet", ACTIVITY_FEED_PAGE_SIZE: 50,
   nextProofApiReadAttempt: () => 1, activityHistoryCacheKey: JSON.stringify,
-  fetchGlobalActivityHistoryPage: (_network, params) => { if (logFailure) throw logFailure; const d = deferred(); logRequests.push({ ...d, params }); return d.promise; },
+  fetchGlobalActivityHistoryRead: (_network, params) => { if (logFailure) throw logFailure; const d = deferred(); logRequests.push({ ...d, params }); return d.promise.then(page => ({ page })); },
   clearLastGoodReadWarning() {}, acceptActivityHistoryPage: (_key, page) => { logAccepted.push(page); return page; },
   activityHistoryPagesRef: { current: new Map() }, isTransientProofApiReadError: () => false,
   showLastGoodReadWarning: () => false, setActivityHistoryPage() {}, setStatusForWorkspace() {},

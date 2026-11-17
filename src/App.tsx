@@ -1860,6 +1860,7 @@ type PowTokenWalletPreflightState = PowTokenSpendabilityState & {
 };
 
 type PowActivityApiResponse = {
+  network?: BitcoinNetwork;
   consistency?: {
     ok?: boolean;
     checks?: { name?: string; ok?: boolean; details?: Record<string, unknown> }[];
@@ -16523,6 +16524,46 @@ async function fetchGlobalActivityHistoryPage(
   };
 }
 
+// A stable snapshot is immutable, but the authenticated last-good pointer moves.
+// Retry only its explicit expiry signal, once, with a new head and page zero.
+// Never suppress a count/membership mismatch or append different snapshots.
+function isLogHistoryIntegrityError(error: unknown) {
+  return error instanceof ProofApiRequestError && (
+    error.code === "CANONICAL_LOG_HISTORY_STABLE_MISMATCH" ||
+    error.code === "CANONICAL_LOG_EXACT_QUERY_OUTSIDE_SNAPSHOT" ||
+    error.code === "CANONICAL_LOG_EXACT_QUERY_NOT_IN_SNAPSHOT"
+  );
+}
+
+async function fetchGlobalActivityHistoryRead(
+  targetNetwork: BitcoinNetwork,
+  options: Parameters<typeof fetchGlobalActivityHistoryPage>[1],
+  requestIsActive: () => boolean,
+  onRecovery: () => void = () => {},
+) {
+  try {
+    return { page: await fetchGlobalActivityHistoryPage(targetNetwork, options) };
+  } catch (error) {
+    if (!(error instanceof ProofApiRequestError) || error.status !== 503 ||
+        error.code !== "CANONICAL_LOG_HISTORY_STABLE_SNAPSHOT_MISMATCH" ||
+        !options?.snapshotId || options.fresh || !requestIsActive()) throw error;
+    onRecovery();
+    const head = await fetchGlobalActivityPayload(targetNetwork, false, true, options.signal);
+    if (!requestIsActive()) throw new DOMException("Log read superseded.", "AbortError");
+    if (!head.snapshotId || head.snapshotId === options.snapshotId || head.consistency?.ok !== true || head.network !== targetNetwork) {
+      throw new Error("Log refresh has no verified matching summary. Refresh to retry.");
+    }
+    const page = await fetchGlobalActivityHistoryPage(targetNetwork, {
+      ...options, fresh: false, pageIndex: 0, snapshotId: head.snapshotId,
+    });
+    if (!requestIsActive()) throw new DOMException("Log read superseded.", "AbortError");
+    if (page.network !== targetNetwork || page.page !== 0) {
+      throw new Error("Log recovery page has the wrong network or page. Refresh to retry.");
+    }
+    return { page, recoveredHead: head };
+  }
+}
+
 function normalizeRegistryApiState(
   payload: PowRegistryApiResponse | undefined,
 ): PowRegistryState {
@@ -29385,11 +29426,12 @@ export default function App() {
     setStatus({ tone: "idle", text: "Desktop cleared." });
   }
 
-  function applyActivityPayload(payload: PowActivityApiResponse) {
+  function applyActivityPayload(payload: PowActivityApiResponse, requireAcceptance = false) {
     const activity = Array.isArray(payload.activity) ? payload.activity : [];
     const stats = { ...normalizeActivityStats(publicLogActivityStats(payload), activity), snapshotId: payload.snapshotId };
     const currentStats = acceptedActivityStatsRef.current;
     if (activity.length === 0 && activityStatsRegress(stats, currentStats)) {
+      if (requireAcceptance) throw new Error("Log recovered summary regressed; the previous snapshot remains unchanged.");
       return { activity: idActivity, stats: currentStats ?? stats };
     }
 
@@ -29401,6 +29443,12 @@ export default function App() {
         : activity,
     );
     return { activity, stats };
+  }
+
+  function applyRecoveredActivityHead(payload: PowActivityApiResponse) {
+    // A prior background head must not overwrite the recovered pair after acceptance.
+    activityHeadReadControllerRef.current?.abort();
+    return applyActivityPayload(payload, true);
   }
 
   async function loadLogHead(silent = true, fresh = false, signal?: AbortSignal) {
@@ -29494,6 +29542,7 @@ export default function App() {
       searchGeneration === activitySearchGenerationRef.current &&
       requestedInput === activityQueryRef.current;
     const readAttempt = nextProofApiReadAttempt();
+    let recoveryStarted = false;
     let cacheKey = activityHistoryCacheKey({
       kind: "history",
       pageIndex,
@@ -29512,35 +29561,21 @@ export default function App() {
     }
 
     try {
-      const readPage = (requestedPage: number, snapshotId?: string, fresh = options.fresh) =>
-        fetchGlobalActivityHistoryPage(network, {
-          pageIndex: requestedPage,
-          pageSize: ACTIVITY_FEED_PAGE_SIZE,
-          query,
-          snapshotId,
-          fresh,
-          signal,
-        });
-      let page: PowPaginatedApiResponse<PowActivityItem>;
-      try {
-        page = await readPage(pageIndex, options.snapshotId);
-      } catch (error) {
-        // An expired cursor is not a new authority: fetch a fresh authenticated
-        // head, then restart at page zero once. Never mix pages across snapshots.
-        if (!requestIsActive()) return undefined;
-        if (!(error instanceof ProofApiRequestError) ||
-            error.code !== "CANONICAL_LOG_HISTORY_STABLE_SNAPSHOT_MISMATCH" ||
-            !options.snapshotId) throw error;
-        const head = await loadLogHead(true, true, signal);
-        if (!requestIsActive()) return undefined;
-        if (!head?.snapshotId || head.snapshotId === options.snapshotId) throw error;
-        cacheKey = activityHistoryCacheKey({
-          kind: "history", pageIndex: 0, pageSize: ACTIVITY_FEED_PAGE_SIZE,
-          query, snapshotId: head.snapshotId,
-        });
-        page = await readPage(0, head.snapshotId, true);
-      }
+      const { page, recoveredHead } = await fetchGlobalActivityHistoryRead(network, {
+        pageIndex,
+        pageSize: ACTIVITY_FEED_PAGE_SIZE,
+        query,
+        snapshotId: options.snapshotId,
+        fresh: options.fresh,
+        signal,
+      }, requestIsActive, () => { recoveryStarted = true; });
       if (!requestIsActive()) return undefined;
+      if (recoveredHead) {
+        applyRecoveredActivityHead(recoveredHead);
+        setIdActivity(page.items ?? []);
+        cacheKey = activityHistoryCacheKey({ kind: "history", pageIndex: page.page ?? 0,
+          pageSize: ACTIVITY_FEED_PAGE_SIZE, query, snapshotId: page.snapshotId });
+      }
       clearLastGoodReadWarning(
         requestWorkspaceKey,
         readSource,
@@ -29550,7 +29585,7 @@ export default function App() {
       const total = page.totalCount ?? page.items?.length ?? 0;
       setStatusForWorkspace(requestWorkspaceKey, {
         tone: "good",
-        text: `Log history loaded. ${total.toLocaleString()} matching action${total === 1 ? "" : "s"}.`,
+        text: `${recoveredHead ? "Log updated; returned to the first page. " : ""}Log history loaded. ${total.toLocaleString()} matching action${total === 1 ? "" : "s"}.`,
       });
       return acceptActivityHistoryPage(cacheKey, page);
     } catch (error) {
@@ -29560,6 +29595,8 @@ export default function App() {
       setActivityHistoryReadError(historyError);
       const retainedLastGood =
         Boolean(cachedPage) &&
+        !recoveryStarted &&
+        !isLogHistoryIntegrityError(error) &&
         isTransientProofApiReadError(error) &&
         showLastGoodReadWarning(requestWorkspaceKey, readSource, readAttempt, error, {
           indexedAt: cachedPage?.indexedAt,
@@ -29652,6 +29689,7 @@ export default function App() {
     const generation = ++activitySearchGenerationRef.current;
     const readSource = "log-search";
     const readAttempt = nextProofApiReadAttempt();
+    let recoveryStarted = false;
     const requestIsActive = () =>
       !signal.aborted && activeWorkspaceStatusKeyRef.current === requestWorkspaceKey &&
       generation === activitySearchGenerationRef.current;
@@ -29689,15 +29727,21 @@ export default function App() {
           query: normalizedTxid,
           snapshotId: options.snapshotId,
         });
-        const page = await fetchGlobalActivityHistoryPage(network, {
+        const { page, recoveredHead } = await fetchGlobalActivityHistoryRead(network, {
           ...options,
           pageIndex: 0,
           pageSize: ACTIVITY_FEED_PAGE_SIZE,
           query: normalizedTxid,
           signal,
-        });
+        }, requestIsActive, () => { recoveryStarted = true; });
         if (!requestIsActive()) {
           return;
+        }
+        if (recoveredHead) {
+          applyRecoveredActivityHead(recoveredHead);
+          setIdActivity(page.items ?? []);
+          cacheKey = activityHistoryCacheKey({ kind: "search", pageIndex: 0,
+            pageSize: ACTIVITY_FEED_PAGE_SIZE, query: normalizedTxid, snapshotId: page.snapshotId });
         }
         clearLastGoodReadWarning(
           requestWorkspaceKey,
@@ -29766,15 +29810,23 @@ export default function App() {
         query,
         resolvedId: resolved.id,
       };
-      const page = await fetchGlobalActivityHistoryPage(network, {
+      const { page, recoveredHead } = await fetchGlobalActivityHistoryRead(network, {
         ...options,
         pageIndex: 0,
         pageSize: ACTIVITY_FEED_PAGE_SIZE,
         query: resolved.paymentAddress,
         signal,
-      });
+      }, requestIsActive, () => { recoveryStarted = true; });
       if (!requestIsActive()) {
         return;
+      }
+      if (recoveredHead) {
+        applyRecoveredActivityHead(recoveredHead);
+        setIdActivity(page.items ?? []);
+        cacheKey = activityHistoryCacheKey({ kind: "search", pageIndex: 0,
+          pageSize: ACTIVITY_FEED_PAGE_SIZE,
+          query: resolved.isId ? `${normalizePowId(query)}@proofofwork.me` : resolved.paymentAddress,
+          snapshotId: page.snapshotId });
       }
       clearLastGoodReadWarning(
         requestWorkspaceKey,
@@ -29799,6 +29851,8 @@ export default function App() {
         : undefined;
       const retainedLastGood =
         Boolean(cachedPage) &&
+        !recoveryStarted &&
+        !isLogHistoryIntegrityError(error) &&
         isTransientProofApiReadError(error) &&
         showLastGoodReadWarning(
           requestWorkspaceKey,
