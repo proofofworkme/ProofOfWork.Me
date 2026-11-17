@@ -19,6 +19,23 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
+// Node cpSync masks copied directory modes with the process umask. Preserve
+// the source fixture modes explicitly without changing the ambient umask.
+function copyFixtureTree(source, destination, options) {
+  cpSync(source, destination, options);
+  const preserveDirectoryModes = (from, to) => {
+    const sourceStat = statSync(from);
+    if (!sourceStat.isDirectory()) return;
+    chmodSync(to, sourceStat.mode & 0o777);
+    for (const entry of readdirSync(from, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        preserveDirectoryModes(join(from, entry.name), join(to, entry.name));
+      }
+    }
+  };
+  preserveDirectoryModes(source, destination);
+}
+
 const read = (file) => readFileSync(file, "utf8");
 const caddy = read("deploy/Caddyfile");
 const caddyService = read("deploy/caddy-hardening.conf");
@@ -1179,15 +1196,17 @@ exec /usr/bin/sort "$@"
   }
   const nftSurface = join(www, "proofofwork-nft");
   rmSync(nftSurface, { recursive: true });
-  cpSync(join(www, "proofofwork-computer"), nftSurface, {
+  copyFixtureTree(join(www, "proofofwork-computer"), nftSurface, {
     recursive: true,
     preserveTimestamps: true,
   });
   runChecked("/usr/bin/chmod", ["--recursive", "go-w", nftSurface]);
   const archivePayload = join(fixture, "archive-payload");
   mkdirSync(join(archivePayload, "surfaces"), { recursive: true });
+  // Tar records this public fixture root; do not inherit the CI umask.
+  chmodSync(join(archivePayload, "surfaces"), 0o755);
   for (const surface of surfaces) {
-    cpSync(
+    copyFixtureTree(
       join(www, `proofofwork-${surface}`),
       join(archivePayload, "surfaces", surface),
       { recursive: true },
@@ -1739,7 +1758,7 @@ exec /usr/bin/sort "$@"
       { mode: 0o644 },
     );
     rmSync(join(stagedRoot, "proofofwork-nft"), { recursive: true });
-    cpSync(
+    copyFixtureTree(
       join(stagedRoot, "proofofwork-computer"),
       join(stagedRoot, "proofofwork-nft"),
       { recursive: true, preserveTimestamps: true },
@@ -1946,7 +1965,7 @@ exec /usr/bin/sort "$@"
       chmodSync(join(directory, "assets", assetName), 0o644);
     }
     rmSync(join(surfacesRoot, "nft"), { recursive: true });
-    cpSync(join(surfacesRoot, "computer"), join(surfacesRoot, "nft"), {
+    copyFixtureTree(join(surfacesRoot, "computer"), join(surfacesRoot, "nft"), {
       recursive: true,
       preserveTimestamps: true,
     });
@@ -2278,7 +2297,7 @@ exec /usr/bin/sort "$@"
       chmodSync(join(directory, "assets", `pre-boost-${surface}.js`), 0o644);
     }
     rmSync(join(preBoostWww, "proofofwork-nft"), { recursive: true });
-    cpSync(
+    copyFixtureTree(
       join(preBoostWww, "proofofwork-computer"),
       join(preBoostWww, "proofofwork-nft"),
       { recursive: true, preserveTimestamps: true },
@@ -2390,6 +2409,7 @@ exec /usr/bin/sort "$@"
       "different candidate collision bytes\n",
       { mode: 0o644 },
     );
+    chmodSync(join(collisionPayload.surfacesRoot, surface, "assets", priorAppAssetName), 0o644);
   }
   const collisionStage = runStager(stageCollisionReleaseId);
   assert.equal(collisionStage.result.status, 1, collisionStage.result.stderr);

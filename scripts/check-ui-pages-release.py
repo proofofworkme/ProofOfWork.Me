@@ -33,6 +33,8 @@ def write(path, content):
         parent = parent.parent
     for directory in reversed(missing):
         directory.mkdir(mode=0o755)
+        # Fixture surfaces must be public even under an owner-private CI umask.
+        directory.chmod(0o755)
     path.write_text(content)
     path.chmod(0o644)
 
@@ -103,6 +105,7 @@ class PagesRelease(unittest.TestCase):
     def archive(self, root, surfaces, release):
         payload = self.base / ('archive-' + release)
         (payload / 'surfaces').mkdir(parents=True, mode=0o755)
+        (payload / 'surfaces').chmod(0o755)
         for surface in surfaces:
             shutil.copytree(root / ('proofofwork-' + surface), payload / 'surfaces' / surface)
         archive = self.archives / ('proofofwork-ui-release-' + release + '.tgz')
