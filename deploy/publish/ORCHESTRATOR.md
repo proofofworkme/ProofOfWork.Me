@@ -22,7 +22,12 @@ private journal/specification. Cross-host transfers remain separate reviewed
 operations; their exact received bytes must match the supplied pins.
 
 The source checker requires a **full clean source checkout**, exact committed
-tracked bytes and modes, and no unknown untracked entries. It intentionally does
+tracked bytes and executable semantics, and no unknown untracked entries.
+Native private builds with regular `0600` and executable `0700` files are
+accepted: permissions may be safer subsets of Git `0644`/`0755`, but owner read
+and exact owner-executable semantics remain required. Group/world write, special
+bits and execute permissions absent from the Git mode are refused. Actual mode
+still participates in before/after stability fingerprints. It intentionally does
 not infer missing sparse paths. Ignored dependencies may remain under the
 repository's own ignore rules. Do not copy archives to a laptop, relax this
 source boundary, or copy a full checkout to evade a capacity ceiling. Before

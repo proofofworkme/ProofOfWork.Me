@@ -92,6 +92,16 @@ def git_environment():
     return env
 
 
+def source_mode_allowed(actual, git_mode):
+    """Native private builds may remove permissions, never add authority."""
+    expected = int(git_mode[-3:], 8)
+    permissions = stat.S_IMODE(actual)
+    return (git_mode in (b'100644', b'100755')
+            and bool(permissions & stat.S_IRUSR)
+            and bool(permissions & stat.S_IXUSR) == bool(expected & stat.S_IXUSR)
+            and not permissions & ~expected)
+
+
 def source(spec):
     repo = Path(spec['repository'])
     require(repo.is_absolute() and repo.resolve(strict=True) == repo, 'Noncanonical repository')
@@ -113,7 +123,7 @@ def source(spec):
         require(path.resolve(strict=True) == path and not any(c in str(path) for c in ('\n', '\r')), 'Unsafe source path')
         info = path.lstat()
         require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_uid == os.geteuid() and
-                stat.S_IMODE(info.st_mode) == int(mode[-3:], 8), 'Source mode or ownership differs')
+                source_mode_allowed(info.st_mode, mode), 'Source mode or ownership differs')
         paths.append(str(path)); expected.append(blob.decode()); identities.append(file_identity(info))
     actual = subprocess.check_output(['/usr/bin/git', '--no-replace-objects', '-C', str(repo), 'hash-object', '--no-filters', '--stdin-paths'],
                                     input=('\n'.join(paths) + '\n').encode(), timeout=120, env=git_environment()).decode().splitlines()

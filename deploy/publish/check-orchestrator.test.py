@@ -229,6 +229,39 @@ class JournalTests(unittest.TestCase):
 
 
 class SourceTests(unittest.TestCase):
+    def test_native_private_source_permissions_are_safe_subsets(self):
+        for mode in (0o400, 0o600, 0o640, 0o644):
+            with self.subTest(mode=oct(mode)):
+                self.assertTrue(O.source_mode_allowed(mode, b'100644'))
+        for mode in (0o500, 0o700, 0o750, 0o755):
+            with self.subTest(mode=oct(mode)):
+                self.assertTrue(O.source_mode_allowed(mode, b'100755'))
+
+    def test_source_permissions_reject_added_authority_or_missing_owner_access(self):
+        for git_mode, modes in (
+            (b'100644', (0o000, 0o200, 0o044, 0o664, 0o646, 0o744, 0o645, 0o4644, 0o2644, 0o1644)),
+            (b'100755', (0o000, 0o300, 0o600, 0o655, 0o055, 0o775, 0o757, 0o4755, 0o2755, 0o1755)),
+        ):
+            for mode in modes:
+                with self.subTest(git_mode=git_mode, mode=oct(mode)):
+                    self.assertFalse(O.source_mode_allowed(mode, git_mode))
+
+    def test_real_git_native_private_build_modes_accepted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp)
+            def git(*args):
+                return subprocess.check_output(['git', '-C', temp, *args], stderr=subprocess.DEVNULL).decode().strip()
+            git('init'); git('config', 'user.name', 'fixture'); git('config', 'user.email', 'fixture@example.invalid')
+            regular = repo / 'source.py'; regular.write_text('private source\n'); regular.chmod(0o644)
+            executable = repo / 'entry.sh'; executable.write_text('#!/bin/sh\nexit 0\n'); executable.chmod(0o755)
+            git('add', '.'); git('commit', '-m', 'fixture')
+            spec = {'repository': temp, 'commit': git('rev-parse', 'HEAD'), 'tree': git('rev-parse', 'HEAD^{tree}')}
+            regular.chmod(0o600); executable.chmod(0o700)
+            self.assertEqual(O.source(spec), repo)
+            executable.chmod(0o600)
+            with self.assertRaises(ValueError):
+                O.source(spec)
+
     def test_real_git_bytes_modes_and_assume_unchanged(self):
         with tempfile.TemporaryDirectory() as temp:
             repo = Path(temp)
@@ -244,6 +277,8 @@ class SourceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Source bytes'):
                 O.source(spec)
             p.write_text('original\n'); p.chmod(0o600)
+            self.assertEqual(O.source(spec), repo)
+            p.chmod(0o664)
             with self.assertRaisesRegex(ValueError, 'Source mode'):
                 O.source(spec)
 
