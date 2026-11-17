@@ -1867,13 +1867,26 @@ class PreservedTransport(unittest.TestCase):
             with self.assertRaises(AssertionError): namespace['bounded_record'](path)
 
     def test_capacity_trajectory_charges_only_preserved_source_to_disk(self):
-        base, payload, candidate, peak, source = 5171429376, 236478464, 261242880, 264581120, 365621248
+        payload, candidate, peak, source = 236478464, 261242880, 264581120, 365621248
         reserve = 32*1024**2
         namespace = {'__name__': '_pinned_capacity_fixture'}
         helper = ROOT.parents[1]/'deploy/proofofwork-ui-capacity.py'
         exec(compile(helper.read_bytes(), str(helper), 'exec'), namespace)
+        limit = namespace['MAX_DEPLOY_SCRATCH_BYTES']
+        self.assertEqual(limit, 11*1024**3//2)
+        # Translate the original trajectory to the approved current ceiling,
+        # preserving its exact 197279744-byte headroom and all phase deltas.
+        # This does not change the separate historical retirement bound.
+        base = limit - 197279744
         def measured(amount):
             return patch.object(subprocess, 'run', return_value=types.SimpleNamespace(stdout=(str(amount)+'\t'+str(self.base)+'\n').encode()))
+        with measured(base):
+            exact = namespace['check_deploy_scratch'](self.base, limit-base, 'exact-limit')
+            self.assertEqual(exact['maximumBytes'], limit)
+            self.assertEqual(exact['allocatedBytes']+exact['additionalBytes'], limit)
+            self.assertFalse(exact['cleanupApproved'])
+            with self.assertRaisesRegex(namespace['CapacityError'], 'scratch review'):
+                namespace['check_deploy_scratch'](self.base, limit-base+1, 'one-byte-over')
         with measured(base), self.assertRaisesRegex(namespace['CapacityError'], 'scratch review'):
             namespace['check_deploy_scratch'](self.base, peak+reserve, 'stage')
         with measured(base-payload):
@@ -3170,6 +3183,352 @@ class ExistingInventoryNativeTests(unittest.TestCase):
             finally:
                 if 'fd' in g:os.close(g['fd'])
             self.assertEqual(events,['lock'] if conflict else ['lock','admission','check-scratch','check'])
+
+
+class BoundedNativeDispatchTests(unittest.TestCase):
+    """Real local pipes/process groups; fake native ownership, never systemd."""
+    def setUp(self):
+        self.module = safe_module('transport_preserve.py')
+        self.nonce = 'd' * 64
+        self.invocation = 'e' * 32
+        self.unit = 'proofofwork-recovery-ui-transport-' + RELEASE + '-surfaces-stage-initial.service'
+        self.events = []
+
+    def owner(self, unit, nonce, invocation, pid):
+        self.assertEqual((unit, nonce, invocation), (self.unit, self.nonce, self.invocation))
+        self.events.append(('owner', pid))
+        events = self.events
+        return types.SimpleNamespace(abort=lambda: events.append('abort') or True,
+                                     terminal=lambda: events.append('terminal') or True,
+                                     close=lambda: events.append('close'))
+
+    def run_child(self, tail, *, timeout=2, limit=4096, marker=True, factory=None):
+        code = "import os,sys,time,signal,subprocess\n"
+        if marker:
+            code += "print('systemd diagnostic',flush=True)\n"
+            code += "print('POW_TRANSPORT_OWNER "+self.nonce+" "+self.invocation+" '+str(os.getpid()),flush=True)\n"
+        code += tail
+        with tempfile.TemporaryDirectory(prefix='pow-bounded-dispatch-') as directory:
+            path = Path(directory)/'native.log'
+            with path.open('xb') as log:
+                result = self.module.bounded_dispatch(
+                    ['/usr/bin/python3','-I','-B','-c',code], subprocess.DEVNULL, log,
+                    self.unit, self.nonce, timeout=timeout, limit=limit,
+                    owner_factory=factory or self.owner, grace=0.01)
+            captured = path.read_bytes()
+        self.assertLessEqual(len(captured), limit)
+        return result, captured
+
+    def test_success_preserves_bytes_and_terminal(self):
+        result, raw = self.run_child("sys.stdout.buffer.write(b'payload\\x00bytes');sys.stdout.flush()")
+        self.assertEqual(result['nativeExitCode'], 0)
+        self.assertIsNone(result['supervisionReason'])
+        self.assertTrue(result['nativeTerminalProven'])
+        self.assertTrue(raw.endswith(b'payload\x00bytes'))
+        self.assertNotIn('abort', self.events)
+
+    def test_nonzero_preserves_native_rc(self):
+        result, _ = self.run_child("raise SystemExit(7)")
+        self.assertEqual(result['nativeExitCode'], 7)
+        self.assertIsNone(result['supervisionReason'])
+        self.assertIn('abort', self.events)
+        self.assertTrue(result['reconcileBeforeRetry'])
+
+    def test_exact_limit(self):
+        # PID digits vary; child computes the exact prefix it printed.
+        tail = ("prefix='systemd diagnostic\\nPOW_TRANSPORT_OWNER "+self.nonce+" "+self.invocation+" '+str(os.getpid())+'\\n'\n"
+                "sys.stdout.write('x'*(4096-len(prefix)));sys.stdout.flush()")
+        result, raw = self.run_child(tail)
+        self.assertEqual(len(raw),4096)
+        self.assertIsNone(result['supervisionReason'])
+
+    def test_overflow_is_capped_and_aborted(self):
+        result, raw = self.run_child("sys.stdout.write('x'*100000);sys.stdout.flush();time.sleep(10)")
+        self.assertEqual(result['supervisionReason'],'output-limit')
+        self.assertEqual(len(raw),4096)
+        self.assertIn('abort',self.events)
+
+    def test_timeout_and_descendant_pipe_cleanup(self):
+        for tail in ("time.sleep(10)", "subprocess.Popen(['/usr/bin/python3','-c','import time;time.sleep(10)'])"):
+            with self.subTest(tail=tail):
+                result,_=self.run_child(tail,timeout=0.25)
+                self.assertEqual(result['supervisionReason'],'timeout')
+                self.assertTrue(result['nativeTerminalProven'])
+
+    def test_signal_records_uncertainty_and_cleanup(self):
+        result,_=self.run_child("os.kill(os.getppid(),signal.SIGTERM);time.sleep(10)")
+        self.assertEqual(result['supervisionReason'],'signal')
+        self.assertTrue(result['reconcileBeforeRetry'])
+        self.assertIn('abort',self.events)
+
+    def test_sighup_records_cleanup(self):
+        result,_=self.run_child("os.kill(os.getppid(),signal.SIGHUP);time.sleep(10)")
+        self.assertEqual(result['supervisionReason'],'signal')
+        self.assertTrue(result['reconcileBeforeRetry'])
+        self.assertIn('abort',self.events)
+
+    def test_missing_marker_never_claims_ownership(self):
+        result,_=self.run_child("print('plain output')",marker=False)
+        self.assertEqual(result['supervisionReason'],'ownership-unproved')
+        self.assertFalse(result['nativeTerminalProven'])
+        self.assertEqual(self.events,[])
+
+    def test_duplicate_marker_refuses(self):
+        result,_=self.run_child("print('POW_TRANSPORT_OWNER "+self.nonce+" "+self.invocation+" '+str(os.getpid()),flush=True)")
+        self.assertEqual(result['supervisionReason'],'supervision-AssertionError')
+        self.assertIn('abort',self.events)
+
+    def test_bad_nonce_never_claims_ownership(self):
+        result,_=self.run_child("print('POW_TRANSPORT_OWNER "+"f"*64+" "+self.invocation+" '+str(os.getpid()),flush=True)",marker=False)
+        self.assertEqual(result['supervisionReason'],'supervision-AssertionError')
+        self.assertEqual(self.events,[])
+
+    def test_owner_probe_failure_is_uncertain(self):
+        def refuse(*args):
+            raise ValueError('identity mismatch')
+        result,_=self.run_child("time.sleep(10)",factory=refuse)
+        self.assertEqual(result['supervisionReason'],'supervision-ValueError')
+        self.assertFalse(result['nativeTerminalProven'])
+
+    def test_stop_failure_is_uncertain(self):
+        def owner(*args):
+            def refuse():
+                raise OSError('stop failed')
+            return types.SimpleNamespace(abort=refuse,terminal=refuse,close=lambda:None)
+        result,_=self.run_child("time.sleep(10)",timeout=0.25,factory=owner)
+        self.assertEqual(result['supervisionReason'],'timeout')
+        self.assertFalse(result['nativeTerminalProven'])
+
+    def test_stdin_passed_unchanged(self):
+        data=b'archive\x00'*100
+        read_fd,write_fd=os.pipe()
+        os.write(write_fd,data);os.close(write_fd)
+        code=("import os,sys\nprint('POW_TRANSPORT_OWNER "+self.nonce+" "+self.invocation+" '+str(os.getpid()),flush=True)\n"
+              "b=sys.stdin.buffer.read();assert b=="+repr(data)+"\n")
+        with tempfile.TemporaryDirectory() as directory:
+            with os.fdopen(read_fd,'rb') as source,(Path(directory)/'log').open('xb') as log:
+                result=self.module.bounded_dispatch(['/usr/bin/python3','-I','-B','-c',code],source,log,self.unit,self.nonce,owner_factory=self.owner,grace=0.01)
+        self.assertEqual(result['nativeExitCode'],0)
+        self.assertIsNone(result['supervisionReason'])
+
+
+class AnchoredNativeOwnerTests(unittest.TestCase):
+    """Use ordinary synthetic files to prove descriptor routing, not kernel kills."""
+    def setUp(self):
+        self.module=safe_module('transport_preserve.py')
+
+    def fixture(self, directory):
+        old=Path(directory)/'native';old.mkdir()
+        (old/'cgroup.events').write_text('populated 1\n')
+        (old/'cgroup.kill').write_text('')
+        owner=object.__new__(self.module.NativeUnitOwner)
+        owner.fd=os.open(old,os.O_RDONLY|os.O_DIRECTORY)
+        info=os.fstat(owner.fd);owner.identity=(info.st_dev,info.st_ino)
+        owner.unit='proofofwork-recovery-ui-transport-'+RELEASE+'-surfaces-stage-initial.service'
+        owner.nonce='d'*64;owner.invocation='e'*32;owner.pid=123
+        fields={'Description':'proofofwork-transport:'+owner.nonce,'InvocationID':owner.invocation,
+                'ExecMainPID':'123','MainPID':'123','ControlGroup':'/system.slice/'+owner.unit,
+                'KillMode':'control-group','RuntimeMaxUSec':'2h 10min','ActiveState':'active',
+                'SubState':'running','LoadState':'loaded'}
+        owner.fields=lambda:dict(fields)
+        owner.terminal=lambda:True
+        return owner,old,fields
+
+    def test_renamed_path_cannot_redirect_kill(self):
+        with tempfile.TemporaryDirectory() as directory:
+            owner,old,fields=self.fixture(directory)
+            saved=old.with_name('retained-original');old.rename(saved);old.mkdir()
+            (old/'cgroup.kill').write_text('foreign')
+            try:
+                self.assertTrue(owner.abort())
+                self.assertEqual((saved/'cgroup.kill').read_text(),'1\n')
+                self.assertEqual((old/'cgroup.kill').read_text(),'foreign')
+            finally:owner.close()
+
+    def test_replaced_invocation_or_nonce_never_killed(self):
+        for key in ('InvocationID','Description','ExecMainPID','ControlGroup','KillMode'):
+            with self.subTest(key=key),tempfile.TemporaryDirectory() as directory:
+                owner,old,fields=self.fixture(directory);fields[key]='changed'
+                try:
+                    with self.assertRaises((AssertionError,ValueError)):owner.abort()
+                    self.assertEqual((old/'cgroup.kill').read_text(),'')
+                finally:owner.close()
+
+    def test_missing_events_with_live_directory_is_not_empty(self):
+        with tempfile.TemporaryDirectory() as directory:
+            owner,old,fields=self.fixture(directory);(old/'cgroup.events').unlink()
+            try:
+                with self.assertRaises(AssertionError):owner.populated()
+                self.assertEqual((old/'cgroup.kill').read_text(),'')
+            finally:owner.close()
+
+    def test_kill_open_failure_does_not_fallback_to_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            owner,old,fields=self.fixture(directory);(old/'cgroup.kill').unlink()
+            try:
+                with self.assertRaises(FileNotFoundError):owner.abort()
+                self.assertEqual((old/'cgroup.events').read_text(),'populated 1\n')
+            finally:owner.close()
+
+
+
+class NativeOwnerAcquisitionAndTerminalTests(unittest.TestCase):
+    """Exercise real methods with a synthetic hierarchy, not a kernel unit."""
+    def setUp(self):
+        self.module=safe_module('transport_preserve.py')
+        self.unit='proofofwork-recovery-ui-transport-'+RELEASE+'-surfaces-stage-initial.service'
+        self.nonce='d'*64;self.invocation='e'*32
+        self.fields={'Description':'proofofwork-transport:'+self.nonce,
+            'InvocationID':self.invocation,'ExecMainPID':'123','MainPID':'123',
+            'ControlGroup':'/system.slice/'+self.unit,'KillMode':'control-group',
+            'RuntimeMaxUSec':'2h 10min','ActiveState':'active','SubState':'running','LoadState':'loaded'}
+
+    def acquire(self, root, fields=None):
+        slice_path=root/'system.slice';slice_path.mkdir(exist_ok=True)
+        path=slice_path/self.unit;path.mkdir(exist_ok=True)
+        (root/'cgroup.controllers').touch()
+        (path/'cgroup.events').write_text('populated 1\n')
+        (path/'cgroup.kill').touch()
+        original_lstat=Path.lstat
+        def root_lstat(value,*a,**k):
+            actual=original_lstat(value,*a,**k)
+            if value==path:
+                return types.SimpleNamespace(**{key:(0 if key=='st_uid' else getattr(actual,key))
+                    for key in ('st_mode','st_uid','st_gid','st_dev','st_ino','st_nlink','st_size','st_mtime_ns','st_ctime_ns')})
+            return actual
+        def mapped_path(value):
+            return slice_path if value=='/sys/fs/cgroup/system.slice' else Path(value)
+        cls=self.module.NativeUnitOwner
+        with patch.dict(cls.__init__.__globals__,{'Path':mapped_path}),patch.object(Path,'lstat',root_lstat),patch.object(cls,'fields',side_effect=fields or [dict(self.fields),dict(self.fields)]):
+            owner=cls(self.unit,self.nonce,self.invocation,123)
+        owner.fields=lambda:dict(self.fields)
+        return owner,path
+
+    def test_real_acquisition_binds_fd_and_identity(self):
+        with tempfile.TemporaryDirectory() as d:
+            owner,path=self.acquire(Path(d))
+            try:
+                self.assertEqual(owner.identity,(path.stat().st_dev,path.stat().st_ino))
+                self.assertTrue(owner.populated())
+            finally:owner.close()
+
+    def test_acquisition_rechecks_invocation_after_fd_open(self):
+        with tempfile.TemporaryDirectory() as d:
+            changed=dict(self.fields,InvocationID='f'*32)
+            with self.assertRaises(AssertionError):
+                self.acquire(Path(d),[dict(self.fields),changed])
+
+    def test_acquisition_refuses_foreign_nonce_or_pid(self):
+        for key,value in [('Description','foreign'),('ExecMainPID','456')]:
+            with self.subTest(key=key),tempfile.TemporaryDirectory() as d:
+                with self.assertRaises(AssertionError):
+                    self.acquire(Path(d),[dict(self.fields,**{key:value})])
+
+    def test_terminal_requires_empty_and_terminal_state(self):
+        with tempfile.TemporaryDirectory() as d:
+            owner,path=self.acquire(Path(d))
+            try:
+                self.fields.update(ActiveState='inactive',SubState='dead',MainPID='0',ControlGroup='')
+                self.assertFalse(owner.terminal(timeout=0.01))
+                (path/'cgroup.events').write_text('populated 0\n')
+                self.assertTrue(owner.terminal(timeout=0.1))
+            finally:owner.close()
+
+    def test_unloaded_unit_requires_anchored_empty_group(self):
+        with tempfile.TemporaryDirectory() as d:
+            owner,path=self.acquire(Path(d))
+            try:
+                owner.fields=lambda:{'LoadState':'not-found','MainPID':'0'}
+                self.assertFalse(owner.terminal(timeout=0.1))
+                (path/'cgroup.events').write_text('populated 0\n')
+                self.assertTrue(owner.terminal(timeout=0.1))
+            finally:owner.close()
+
+    def test_actual_removed_directory_fd_nlink_zero(self):
+        with tempfile.TemporaryDirectory() as d:
+            owner,path=self.acquire(Path(d))
+            try:
+                (path/'cgroup.events').unlink();(path/'cgroup.kill').unlink();path.rmdir()
+                self.assertEqual(os.fstat(owner.fd).st_nlink,0)
+                owner.fields=lambda:{'LoadState':'not-found','MainPID':'0'}
+                self.assertTrue(owner.terminal(timeout=0.1))
+            finally:owner.close()
+
+    def test_replacement_during_terminal_check_refuses(self):
+        with tempfile.TemporaryDirectory() as d:
+            owner,path=self.acquire(Path(d));(path/'cgroup.events').write_text('populated 0\n')
+            try:
+                self.fields['InvocationID']='f'*32
+                with self.assertRaises(AssertionError):owner.terminal(timeout=0.1)
+            finally:owner.close()
+
+    def test_terminal_read_error_is_not_empty(self):
+        with tempfile.TemporaryDirectory() as d:
+            owner,path=self.acquire(Path(d))
+            try:
+                with patch.object(os,'open',side_effect=PermissionError('synthetic refusal')):
+                    with self.assertRaises(PermissionError):owner.terminal(timeout=0.1)
+            finally:owner.close()
+
+
+class DispatchIntentBoundaryTests(unittest.TestCase):
+    """Execute the actual main tail with a fake dispatcher, real exclusive files."""
+    def tail(self,path,dispatch,save=None):
+        module=safe_module('transport_preserve.py')
+        tree=ast.parse((ROOT/'transport_preserve.py').read_text())
+        main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+        start=next(i for i,n in enumerate(main.body) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='supervision' for t in n.targets))
+        g=dict(module.main.__globals__)
+        g.update(args=types.SimpleNamespace(log=path,ui_host=True,phase='surfaces-stage'),
+                 context=contextlib.nullcontext(io.BytesIO(b'archive')),unit='fixture.service',
+                 nonce='d'*64,sha='e'*64,command=['never-run'],bounded_dispatch=dispatch)
+        if save is not None:g['save_supervision']=save
+        exec(compile(ast.Module(body=main.body[start:],type_ignores=[]),'actual-main-tail','exec'),g)
+
+    def test_success_intent_precedes_dispatch_and_terminal_is_bound(self):
+        with tempfile.TemporaryDirectory() as d:
+            log=Path(d)/'native.log'
+            def dispatch(command,source,output,unit,nonce,**kw):
+                self.assertTrue(log.with_name(log.name+'.supervision-intent.json').is_file())
+                self.assertEqual(source.read(),b'archive')
+                return {'nativeExitCode':0,'supervisionReason':None}
+            self.tail(log,dispatch)
+            intent=log.with_name(log.name+'.supervision-intent.json').read_bytes()
+            terminal=json.loads(log.with_name(log.name+'.supervision.json').read_bytes())
+            self.assertEqual(terminal['intentSha256'],hashlib.sha256(intent).hexdigest())
+
+    def test_existing_intent_refuses_without_dispatch(self):
+        with tempfile.TemporaryDirectory() as d:
+            log=Path(d)/'native.log';log.with_name(log.name+'.supervision-intent.json').touch()
+            with self.assertRaises(AssertionError):
+                self.tail(log,lambda *a,**k:self.fail('must not dispatch'))
+
+    def test_intent_failure_refuses_without_dispatch(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(OSError):
+                self.tail(Path(d)/'native.log',lambda *a,**k:self.fail('must not dispatch'),
+                          save=lambda *a:(_ for _ in ()).throw(OSError('synthetic persistence failure')))
+
+    def test_terminal_persistence_failure_preserves_intent_and_log(self):
+        module=safe_module('transport_preserve.py')
+        with tempfile.TemporaryDirectory() as d:
+            log=Path(d)/'native.log'
+            def save(path,value):
+                if path.name.endswith('.supervision.json'):raise OSError('synthetic terminal failure')
+                module.save_supervision(path,value)
+            with self.assertRaises(OSError):
+                self.tail(log,lambda *a,**k:{'nativeExitCode':0,'supervisionReason':None},save=save)
+            self.assertTrue(log.exists())
+            self.assertTrue(log.with_name(log.name+'.supervision-intent.json').exists())
+            self.assertFalse(log.with_name(log.name+'.supervision.json').exists())
+
+    def test_native_failure_receipt_written_before_refusal(self):
+        with tempfile.TemporaryDirectory() as d:
+            log=Path(d)/'native.log'
+            with self.assertRaises(RuntimeError):
+                self.tail(log,lambda *a,**k:{'nativeExitCode':7,'supervisionReason':None})
+            self.assertEqual(json.loads(log.with_name(log.name+'.supervision.json').read_bytes())['nativeExitCode'],7)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
