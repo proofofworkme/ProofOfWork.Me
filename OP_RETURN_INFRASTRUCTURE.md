@@ -1,5 +1,18 @@
 # ProofOfWork OP_RETURN Infrastructure
 
+## Current build admission preparation — 2026-11-17
+
+The owner authorized a finite 24 GiB retained build-pool admission limit for
+successor preparation. The separate 4 GiB per-run budget and 100 GiB free-data
+reserve remain unchanged. This source update changes no OS quota, runtime
+service, production rollback or backup retention policy and authorizes no
+cleanup. Native admission must still be measured before each build phase.
+Earlier dated records of the 20 GiB aggregate limit below are preserved as
+history, not the current builder constant. The limit is not unbounded and does
+not permit bypassing disk reserves, moving outputs outside the build pool, or
+deleting unique evidence. Source preparation is not a production receipt.
+
+
 ## Planned Pay retention recovery and coherent successor
 
 This is a preparation contract, not a completion receipt or deletion approval.

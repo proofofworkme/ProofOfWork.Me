@@ -20,6 +20,19 @@ class CapacityTests(unittest.TestCase):
              patch.object(Path, 'exists', return_value=exists):
             b.check_build_capacity(b.BUILD_PARENT / 'test')
 
+    def test_approved_finite_limits_and_exact_boundary(self):
+        self.assertEqual(b.RETAINED_BUDGET, 24 * 1024**3)
+        self.assertEqual(b.BUILD_BUDGET, 4 * 1024**3)
+        self.assertEqual(b.DATA_RESERVE, 100 * 1024**3)
+        self.capacity(b.DATA_RESERVE + b.BUILD_BUDGET,
+                      b.RETAINED_BUDGET - b.BUILD_BUDGET)
+        with self.assertRaises(ValueError):
+            self.capacity(b.DATA_RESERVE + b.BUILD_BUDGET,
+                          b.RETAINED_BUDGET - b.BUILD_BUDGET + 1)
+        with self.assertRaises(ValueError):
+            self.capacity(b.DATA_RESERVE + b.BUILD_BUDGET - 1,
+                          b.RETAINED_BUDGET - b.BUILD_BUDGET)
+
     def test_safe_new_build(self):
         self.capacity(b.DATA_RESERVE + b.BUILD_BUDGET, 0)
 

@@ -20,6 +20,8 @@ REVIEWED_RETIRED_PAIRS = (
     ('d5075ab88cdc-20261115T185350Z', 'a2a7be66bf49-20261115T031513Z'),
     # Proposed successor scope: live installation/rotation awaits explicit owner approval.
     ('c22e585baa9d-20261116T013245Z', 'd5075ab88cdc-20261115T185350Z'),
+    # Exact R3/C successor forecast only; no installation or deletion authority.
+    ('1996225ce530-20261116T190348Z', 'c22e585baa9d-20261116T013245Z'),
 )
 RETIREMENT_BASE = '/var/backups/proofofwork-ui'
 RETIREMENT_EVIDENCE = RETIREMENT_BASE + '/cleanup-evidence/older-backup-retirement-6fd05dc1e04e'
