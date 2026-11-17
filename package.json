@@ -177,7 +177,8 @@
     "check:pay:browser": "playwright test --config playwright.ui.config.mjs pay-ui.spec.mjs",
     "check:pay:live": "node scripts/check-pay-live.mjs",
     "indexer:bootstrap-pay": "node scripts/backfill-proof-indexer.mjs --bootstrap-pay-candidates",
-    "check:pay-release": "python3 -I -B deploy/pay/check-scoped-node.test.py && python3 -I -B deploy/pay/check-release.test.py && python3 -I -B scripts/check-ui-pay-release.py && python3 -I -B deploy/pay/check-write-gate.test.py && node --test deploy/pay/write-gate-probe.test.mjs"
+    "check:pay-release": "python3 -I -B deploy/pay/check-scoped-node.test.py && python3 -I -B deploy/pay/check-release.test.py && python3 -I -B scripts/check-ui-pay-release.py && python3 -I -B deploy/pay/check-write-gate.test.py && node --test deploy/pay/write-gate-probe.test.mjs",
+    "check:release-orchestration": "node --test scripts/check-release-orchestration.test.mjs"
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",
