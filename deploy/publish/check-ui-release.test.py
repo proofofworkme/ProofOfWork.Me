@@ -3316,12 +3316,16 @@ class AnchoredNativeOwnerTests(unittest.TestCase):
     """Use ordinary synthetic files to prove descriptor routing, not kernel kills."""
     def setUp(self):
         self.module=safe_module('transport_preserve.py')
+        # Synthetic directories are not cgroupfs; filesystem helper has separate tests.
+        self.fs_patch=patch.dict(self.module.NativeUnitOwner.populated.__globals__,{'cgroup2_fd':lambda fd:None})
+        self.fs_patch.start();self.addCleanup(self.fs_patch.stop)
 
     def fixture(self, directory):
         old=Path(directory)/'native';old.mkdir()
         (old/'cgroup.events').write_text('populated 1\n')
         (old/'cgroup.kill').write_text('')
         owner=object.__new__(self.module.NativeUnitOwner)
+        owner.path=old
         owner.fd=os.open(old,os.O_RDONLY|os.O_DIRECTORY)
         info=os.fstat(owner.fd);owner.identity=(info.st_dev,info.st_ino)
         owner.unit='proofofwork-recovery-ui-transport-'+RELEASE+'-surfaces-stage-initial.service'
@@ -3376,6 +3380,9 @@ class NativeOwnerAcquisitionAndTerminalTests(unittest.TestCase):
     """Exercise real methods with a synthetic hierarchy, not a kernel unit."""
     def setUp(self):
         self.module=safe_module('transport_preserve.py')
+        # Synthetic directories are not cgroupfs; filesystem helper has separate tests.
+        self.fs_patch=patch.dict(self.module.NativeUnitOwner.populated.__globals__,{'cgroup2_fd':lambda fd:None})
+        self.fs_patch.start();self.addCleanup(self.fs_patch.stop)
         self.unit='proofofwork-recovery-ui-transport-'+RELEASE+'-surfaces-stage-initial.service'
         self.nonce='d'*64;self.invocation='e'*32
         self.fields={'Description':'proofofwork-transport:'+self.nonce,
@@ -3444,12 +3451,12 @@ class NativeOwnerAcquisitionAndTerminalTests(unittest.TestCase):
                 self.assertTrue(owner.terminal(timeout=0.1))
             finally:owner.close()
 
-    def test_actual_removed_directory_fd_nlink_zero(self):
+    def test_deleted_synthetic_directory_has_exact_marker_not_kernel_qualification(self):
         with tempfile.TemporaryDirectory() as d:
             owner,path=self.acquire(Path(d))
             try:
                 (path/'cgroup.events').unlink();(path/'cgroup.kill').unlink();path.rmdir()
-                self.assertEqual(os.fstat(owner.fd).st_nlink,0)
+                self.assertEqual(os.readlink('/proc/self/fd/'+str(owner.fd)),str(path)+' (deleted)')
                 owner.fields=lambda:{'LoadState':'not-found','MainPID':'0'}
                 self.assertTrue(owner.terminal(timeout=0.1))
             finally:owner.close()
@@ -3469,6 +3476,72 @@ class NativeOwnerAcquisitionAndTerminalTests(unittest.TestCase):
                 with patch.object(os,'open',side_effect=PermissionError('synthetic refusal')):
                     with self.assertRaises(PermissionError):owner.terminal(timeout=0.1)
             finally:owner.close()
+
+
+    def test_kernfs_nonzero_links_with_exact_deleted_marker_and_terminal_invocation(self):
+        with tempfile.TemporaryDirectory() as d:
+            owner,path=self.acquire(Path(d));(path/'cgroup.events').unlink()
+            try:
+                self.assertGreater(os.fstat(owner.fd).st_nlink,0)
+                self.fields.update(ActiveState='failed',MainPID='0',ControlGroup='')
+                with patch.object(os,'readlink',return_value=str(path)+' (deleted)'):
+                    self.assertTrue(owner.terminal(timeout=0.1))
+                    self.fields['InvocationID']='f'*32
+                    with self.assertRaises(AssertionError):owner.terminal(timeout=0.1)
+            finally:owner.close()
+
+    def test_missing_events_requires_exact_deleted_marker(self):
+        with tempfile.TemporaryDirectory() as d:
+            owner,path=self.acquire(Path(d));(path/'cgroup.events').unlink()
+            try:
+                for value in (str(path),str(path)+'-foreign (deleted)','/foreign (deleted)'):
+                    with self.subTest(value=value),patch.object(os,'readlink',return_value=value):
+                        with self.assertRaises(AssertionError):owner.populated()
+                with patch.object(os,'readlink',side_effect=PermissionError('refused')):
+                    with self.assertRaises(PermissionError):owner.populated()
+            finally:owner.close()
+
+    def test_deleted_marker_does_not_override_changed_fd_identity(self):
+        with tempfile.TemporaryDirectory() as d:
+            owner,path=self.acquire(Path(d));(path/'cgroup.events').unlink()
+            try:
+                owner.identity=(owner.identity[0],owner.identity[1]+1)
+                with patch.object(os,'readlink',return_value=str(path)+' (deleted)'):
+                    with self.assertRaises(AssertionError):owner.populated()
+            finally:owner.close()
+
+
+class CgroupFilesystemAuthenticationTests(unittest.TestCase):
+    def setUp(self):self.module=safe_module('transport_preserve.py')
+
+    def test_regular_filesystem_is_not_cgroup2(self):
+        with tempfile.TemporaryDirectory() as d:
+            fd=os.open(d,os.O_RDONLY|os.O_DIRECTORY)
+            try:
+                with self.assertRaises(AssertionError):self.module.cgroup2_fd(fd)
+            finally:os.close(fd)
+
+    def test_fstatfs_success_error_and_wrong_magic(self):
+        import ctypes
+        for rc,magic in [(0,0x63677270),(0,0),(-1,0x63677270)]:
+            def call(fd,ptr):
+                ctypes.cast(ptr,ctypes.POINTER(ctypes.c_long))[0]=magic
+                return rc
+            with self.subTest(rc=rc,magic=magic),patch.object(ctypes,'CDLL',return_value=types.SimpleNamespace(fstatfs=call)):
+                if rc:
+                    with self.assertRaises(OSError):self.module.cgroup2_fd(5)
+                elif not magic:
+                    with self.assertRaises(AssertionError):self.module.cgroup2_fd(5)
+                else:self.module.cgroup2_fd(5)
+                self.assertEqual(call.argtypes,(ctypes.c_int,ctypes.c_void_p))
+                self.assertEqual(call.restype,ctypes.c_int)
+
+    def test_unavailable_symbol_or_unsupported_platform_refuses(self):
+        import ctypes
+        with patch.object(ctypes,'CDLL',return_value=types.SimpleNamespace()):
+            with self.assertRaises(AttributeError):self.module.cgroup2_fd(5)
+        with patch.object(sys,'platform','unsupported'):
+            with self.assertRaises(AssertionError):self.module.cgroup2_fd(5)
 
 
 class DispatchIntentBoundaryTests(unittest.TestCase):

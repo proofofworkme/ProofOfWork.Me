@@ -22,6 +22,7 @@ import selectors
 import signal
 import time
 import secrets
+import ctypes
 
 ROOT = Path(__file__).resolve().parent
 TRANSPORT_RUNTIME_SECONDS = 7800
@@ -173,6 +174,20 @@ os.execv(sys.argv[2],sys.argv[2:])
 """
 
 
+def cgroup2_fd(fd):
+    """Authenticate the retained Linux cgroup2 descriptor, never its pathname."""
+    assert sys.platform == 'linux' and ctypes.sizeof(ctypes.c_long) == 8
+    libc = ctypes.CDLL(None, use_errno=True)
+    call = libc.fstatfs
+    call.argtypes = (ctypes.c_int, ctypes.c_void_p)
+    call.restype = ctypes.c_int
+    # Aligned storage larger than Linux statfs; f_type is its first long.
+    data = (ctypes.c_long * 32)()
+    if call(fd, ctypes.byref(data)) != 0:
+        raise OSError(ctypes.get_errno(), 'Unable to authenticate cgroup filesystem')
+    assert data[0] == 0x63677270, 'Anchored descriptor is not cgroup2'
+
+
 class NativeUnitOwner:
     """Keep an authenticated cgroup directory fd; never stop a unit by name."""
     def __init__(self, unit, nonce, invocation, pid):
@@ -189,6 +204,8 @@ class NativeUnitOwner:
         try:
             self.identity = (info.st_dev, info.st_ino)
             assert self.identity == (os.fstat(self.fd).st_dev, os.fstat(self.fd).st_ino)
+            cgroup2_fd(self.fd)
+            assert os.readlink('/proc/self/fd/' + str(self.fd)) == str(self.path)
             self.check()
             assert self.path.stat().st_ino == self.identity[1]
             assert self.path.parent.parent.joinpath('cgroup.controllers').is_file()
@@ -218,11 +235,16 @@ class NativeUnitOwner:
         return fields
 
     def populated(self):
+        assert (os.fstat(self.fd).st_dev, os.fstat(self.fd).st_ino) == self.identity
+        cgroup2_fd(self.fd)
         try:
             fd = os.open('cgroup.events', os.O_RDONLY | os.O_NOFOLLOW, dir_fd=self.fd)
         except FileNotFoundError:
-            # A cgroup directory cannot be removed while it is populated.
-            assert os.fstat(self.fd).st_nlink == 0
+            # kernfs reports subdirs+2 links even after removal. Only the kernel's
+            # exact deleted-anchor marker proves this authenticated cgroup was
+            # removed (which requires no children/live processes), not ENOENT.
+            assert os.readlink('/proc/self/fd/' + str(self.fd)) == str(self.path) + ' (deleted)'
+            assert (os.fstat(self.fd).st_dev, os.fstat(self.fd).st_ino) == self.identity
             return False
         try:
             raw = os.read(fd, 4097)
