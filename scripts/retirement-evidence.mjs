@@ -3,7 +3,8 @@ import {createHash} from "node:crypto";
 import {requireIdentityProof,createIdentityProof,retentionOperatorPackagePaths,historicalRetentionOperatorPackagePaths} from "./release-identity-proof.mjs";
 import {execFileSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
-import {realpathSync} from "node:fs";
+import {realpathSync,readFileSync} from "node:fs";
+import {validateCurrentVerifierProof} from "./current-verifier-proof.mjs";
 import {resolve} from "node:path";
 const env={PATH:"/usr/bin:/bin",HOME:"/nonexistent"};
 const SHA=/^[a-f0-9]{64}$/u;
@@ -279,9 +280,14 @@ export function bindInstalledRetentionPackage(lifecycle,attestation) {
 // Callers cannot turn a plain object or a historical artifact proof into it.
 const currentPackages=new WeakMap();
 const gitEnv={PATH:"/usr/bin:/bin",HOME:"/nonexistent",GIT_CONFIG_NOSYSTEM:"1",GIT_CONFIG_GLOBAL:"/dev/null",GIT_NO_REPLACE_OBJECTS:"1",GIT_GRAFT_FILE:"/dev/null",GIT_OPTIONAL_LOCKS:"0"};
-function currentSource({repository,commit,tree}) {
- const root=realpathSync(repository);
- assert.equal(root,resolve(fileURLToPath(new URL("../",import.meta.url))),"Current consumer must run from its exact source checkout");
+function currentSource({repository,commit,tree,currentVerifierProof}) {
+ const verifierRoot=realpathSync(repository);
+ let root=verifierRoot;
+ if(currentVerifierProof) {
+  const proof=validateCurrentVerifierProof(currentVerifierProof,{repository:verifierRoot,artifactCommit:commit,artifactTree:tree});
+  root=realpathSync(proof.artifact.repository);
+ }
+ assert.equal(verifierRoot,resolve(fileURLToPath(new URL("../",import.meta.url))),"Current consumer must run from its exact source checkout");
  const git=(...args)=>execFileSync("/usr/bin/git",["--no-replace-objects","-c","core.fsmonitor=false","-C",root,...args],{env:gitEnv,encoding:"utf8",timeout:15000,maxBuffer:2*1024**2}).trim();
  assert(/^[a-f0-9]{40}$/u.test(commit)&&/^[a-f0-9]{40}$/u.test(tree));
  assert.equal(git("rev-parse","HEAD"),commit);assert.equal(git("rev-parse","HEAD^{tree}"),tree);
@@ -290,8 +296,8 @@ function currentSource({repository,commit,tree}) {
  for(const path of ["scripts/retirement-evidence.mjs","scripts/retirement-current-evidence.py","deploy/ui-retention/retirement_receipt.py","deploy/linked-publish/qualification.py"])assert(/^(100644|100755) blob [a-f0-9]{40}\t/u.test(git("ls-tree",commit,"--",path)),"Current validator is not a committed regular blob");
  return {root,git};
 }
-export function attestCurrentRetentionPackage({repository,commit,tree}) {
- const identity={repository:realpathSync(repository),commit,tree},source=currentSource(identity),blobs={};
+export function attestCurrentRetentionPackage({repository,commit,tree,currentVerifierProof}) {
+ const identity={repository:realpathSync(repository),commit,tree,currentVerifierProof},source=currentSource(identity),blobs={};
  for(const path of retentionPackageFiles) {
   const entry=source.git("ls-tree",commit,"--",path),match=/^(100644|100755) blob ([0-9a-f]{40})\t([^\n]+)$/u.exec(entry);
   assert(match&&match[3]===path,"Current package path is not a committed regular blob");
@@ -320,19 +326,65 @@ function currentRetirementTrust(lifecycle,attestation) {
 function replaceOnce(source,from,to) {
  assert.equal(source.split(from).length,2,"Current reader adaptation boundary changed");return source.replace(from,to);
 }
+const repairSource=readFileSync(new URL("../deploy/ui-retention/failed_prepare_repair.py",import.meta.url));
+const repairBootstrap="repair_source=base64.b64decode("+JSON.stringify(repairSource.toString("base64"))+")\nrepair_namespace={'__name__':'authenticated_repair_validator'}\n";
 let currentReader=replaceOnce(retirementReadProgram,
  "digest=hashlib.sha256(raw).hexdigest();assert digest==expected",
  "digest=hashlib.sha256(raw).hexdigest();assert expected is None or digest==expected");
 currentReader=replaceOnce(currentReader,
  "binding=config['payloadRetirement'];assert binding['mode']=='complete' and binding['policyCodeSha256']==config['package']['sha256']==trusted['policyCodeSha256']",
  "binding=config['payloadRetirement'];assert binding['mode']=='complete' and binding['policyCodeSha256']==trusted['policyCodeSha256']\nassert config['package']['sha256']==trusted['currentPackageSha256'] and config.get('payloadRetirementSourceConfig')==trusted['retirementSourceConfig']");
-currentReader=replaceOnce(currentReader,"for path,before in seen.items():",String.raw`result['lifecycleEvidence']=[];lifecycle_rows={}
+// Current repaired history contains 43.6MB decoded evidence. Keep all per-file
+// guards unchanged; only the measured current aggregate envelope differs.
+currentReader=replaceOnce(currentReader,"assert encoded_budget<=16*1024**2", "assert encoded_budget<=64*1024**2");
+currentReader=replaceOnce(currentReader,"assert len(raw.encode())<=16*1024**2", "assert len(raw.encode())<=64*1024**2");
+// Keep historical reader unchanged. Only the two immutable publication pins may
+// cross the sticky /var/tmp ancestor, under the native private-directory rules.
+currentReader=replaceOnce(currentReader,"def read(path,expected):",String.raw`publication_pins={
+ '/var/tmp/proofofwork-deploy/recovery-publish-c22e585baa9d-20261116T013245Z-pay-c1/receipt.json':('abea00973596077de663de98435abb222945eadaa5a8b10c40c9a03a2616baf2',3239),
+ '/var/tmp/proofofwork-deploy/recovery-plan-c22e585baa9d-20261116T013245Z-pay-c1.json':('71e747d17b9f56d03f1a9e9b05305cf26053e41cf610ecba8f5b7bd1d3687d60',50534)}
+def read(path,expected):`);
+currentReader=currentReader.replace(
+ "s=parent.lstat();assert stat.S_ISDIR(s.st_mode) and s.st_uid==s.st_gid==0 and not s.st_mode&0o022;ancestor(parent,s)",
+ String.raw`s=parent.lstat();assert stat.S_ISDIR(s.st_mode) and s.st_uid==s.st_gid==0
+  if path in publication_pins:
+   mode=stat.S_IMODE(s.st_mode)
+   if str(parent)=='/var/tmp':assert mode==0o1777
+   elif str(parent)=='/var/tmp/proofofwork-deploy' or pathlib.Path('/var/tmp/proofofwork-deploy') in parent.parents:assert mode==0o700
+   else:assert not s.st_mode&0o022
+  else:assert not s.st_mode&0o022
+  ancestor(parent,s)`);
+currentReader=currentReader.replace("charge(p,before.st_size)",String.raw`if path in publication_pins:
+  assert expected==publication_pins[path][0] and before.st_size==publication_pins[path][1] and stat.S_IMODE(before.st_mode)==0o600
+ charge(p,before.st_size)`);
+currentReader=replaceOnce(currentReader,"for path,before in seen.items():",repairBootstrap+String.raw`result['lifecycleEvidence']=[];lifecycle_rows={};result['lifecycleAbsentPaths']=[]
+assert config['package']['path']==root+'ui-lifecycle-tools-'+config['package']['sha256']
+manifest_row,manifest=read(config['package']['path']+'/package.json',config['package']['sha256'])
+repair_entry=manifest['files']['deploy/ui-retention/failed_prepare_repair.py']
+assert len(repair_source)==repair_entry['bytes'] and hashlib.sha256(repair_source).hexdigest()==repair_entry['sha256']
+exec(compile(repair_source,'<authenticated-native-repair>','exec'),repair_namespace)
+absent_allowed={root+'ui-lifecycle-release-c22e585baa9d-20261116T013245Z'+suffix for suffix in ('-ordinary-plan.json','-completed.json')}|{root+'ui-lifecycle-failed-prepare-c22e585baa9d-20261116T013245Z/verified.json'}
 def add(path,expected=None):
  if path in lifecycle_rows:
   row,obj=lifecycle_rows[path];assert expected is None or row['sha256']==expected;return obj
  row,obj=read(path,expected);lifecycle_rows[path]=(row,obj);result['lifecycleEvidence'].append(row)
  assert len(lifecycle_rows)<=100,'Lifecycle evidence count exceeds bound'
  return obj
+def repair_read(path,expected=None):
+ fixed=set(publication_pins)|{item['path'] for item in repair_namespace['PIN'].values() if isinstance(item,dict) and 'path' in item}
+ for directory,names in ((repair_namespace['JOURNAL'],('intent.json','repaired.json','verified.json','prior-config.json','prior-state.json','ordinary-plan.json')),(repair_namespace['READER_JOURNAL'],('intent.json','installed.json','verified.json','prior-config.json','prior-state.json'))):
+  fixed.update(directory+'/'+name for name in names)
+ p=pathlib.Path(path)
+ package=p.parent.parent==pathlib.Path(root) and re.fullmatch(r'ui-lifecycle-tools-[a-f0-9]{64}',p.parent.name) and p.name=='package.json'
+ index=p.parent==pathlib.Path(root) and re.fullmatch(r'audit30-policy-admission-index-[A-Za-z0-9-]{1,160}\.json',p.name)
+ assert path in fixed or path in absent_allowed or package or index,'Unapproved repair evidence path'
+ if path in absent_allowed and not os.path.lexists(path):
+  p=pathlib.Path(path)
+  for parent in p.parents:
+   info=parent.lstat();assert parent.resolve(strict=True)==parent and stat.S_ISDIR(info.st_mode) and info.st_uid==info.st_gid==0 and not info.st_mode&0o022;ancestor(parent,info)
+  if path not in result['lifecycleAbsentPaths']:result['lifecycleAbsentPaths'].append(path)
+  raise FileNotFoundError(path)
+ obj=add(path,expected);return obj,lifecycle_rows[path][0]['sha256']
 transition_binding=state['lastPayloadRetirement'];assert transition_binding['path']==base+'transition-completed.json'
 transition=add(transition_binding['path'],transition_binding['sha256'])
 assert transition['priorConfig']['path']==base+'prior-config.json' and transition['priorState']['path']==base+'prior-state.json'
@@ -347,6 +399,10 @@ if anchor is not None:
  for depth in range(16):
   assert config_sha not in visited;visited.add(config_sha)
   if config_sha==anchor['sha256']:break
+  if st.get('lastFailedPreparationRepair') is not None:
+   edge=repair_namespace['verify_edge'](st,config_sha,cfg,repair_read)
+   if edge is not None:
+    cfg,st,config_sha=edge['priorConfig'],edge['priorState'],edge['priorConfigSha256'];continue
   package_sha=cfg['package']['sha256'];assert re.fullmatch(r'[a-f0-9]{64}',package_sha)
   directory=root+'ui-lifecycle-upgrade-'+package_sha+'/'
   upgrade=st['lastUpgrade']
@@ -354,11 +410,12 @@ if anchor is not None:
   add(upgrade['intentPath'],upgrade['intentSha256']);add(upgrade['completionPath']);add(upgrade['statusVerificationPath'])
   cfg=add(directory+'prior-config.json',upgrade['priorConfigSha256']);st=add(directory+'prior-state.json',upgrade['priorStateSha256']);config_sha=upgrade['priorConfigSha256']
  else:raise AssertionError('Lifecycle upgrade chain exceeds bound')
+for path in result['lifecycleAbsentPaths']:assert not os.path.lexists(path),'Absent repair evidence appeared during collection'
 for path,before in seen.items():`);
 export const retirementCurrentReadProgram=currentReader;
 export function validateCurrentRetainedHolds(lifecycle,bundle,attestation) {
  const trusted=currentRetirementTrust(lifecycle,attestation),raw=JSON.stringify({bundle,trusted});
- assert(Buffer.byteLength(raw)<=16*1024**2,"Current retirement evidence exceeds bound");
+ assert(Buffer.byteLength(raw)<=64*1024**2,"Current retirement evidence exceeds bound");
  assert(lifecycle.verifiedPreservedRelease1042==null&&lifecycle.verifiedPreservedFallback==null,"Conflicting historical holds");
  const validator=fileURLToPath(new URL("./retirement-current-evidence.py",import.meta.url));
  const result=JSON.parse(execFileSync("/usr/bin/python3",["-I","-B",validator],{input:raw,encoding:"utf8",env,timeout:30000,maxBuffer:1024**2}));
@@ -368,6 +425,6 @@ export function validateCurrentRetainedHolds(lifecycle,bundle,attestation) {
 }
 export function collectCurrentRetirementEvidence(lifecycle,attestation) {
  const trusted=currentRetirementTrust(lifecycle,attestation),quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
- const raw=execFileSync("/usr/bin/ssh",["-i","/home/sixer/.ssh/proofofwork_me_ed25519","-o","BatchMode=yes","-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=yes","-o","ConnectTimeout=15","root@77.42.91.106","/usr/bin/python3 -I -B -c "+quote(retirementCurrentReadProgram)],{input:JSON.stringify({trusted,index:lifecycle.index}),encoding:"utf8",env,timeout:90000,maxBuffer:16*1024**2});
+ const raw=execFileSync("/usr/bin/ssh",["-i","/home/sixer/.ssh/proofofwork_me_ed25519","-o","BatchMode=yes","-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=yes","-o","ConnectTimeout=15","root@77.42.91.106","/usr/bin/python3 -I -B -c "+quote(retirementCurrentReadProgram)],{input:JSON.stringify({trusted,index:lifecycle.index}),encoding:"utf8",env,timeout:90000,maxBuffer:64*1024**2});
  const bundle=JSON.parse(raw);validateCurrentRetainedHolds(lifecycle,bundle,attestation);return bundle;
 }

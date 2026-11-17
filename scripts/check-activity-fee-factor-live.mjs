@@ -9,6 +9,7 @@ import {requireIdentityProof,createIdentityProof} from "./release-identity-proof
 
 import {collectRetirementEvidence,validateRetainedHolds,attestInstalledRetentionPackage,bindInstalledRetentionPackage,
  attestCurrentRetentionPackage,collectCurrentRetirementEvidence,validateCurrentRetainedHolds} from "./retirement-evidence.mjs";
+import {validateCurrentVerifierProof} from "./current-verifier-proof.mjs";
 import {consumeActivityLifecycle} from "./lifecycle-status-witness.mjs";
 const identityGit=(...args)=>execFileSync("/usr/bin/git",["--no-replace-objects","-c","core.fsmonitor=false",...args],{encoding:"utf8",timeout:15000,env:{PATH:"/usr/bin:/bin",HOME:"/nonexistent",LC_ALL:"C",GIT_CONFIG_NOSYSTEM:"1",GIT_CONFIG_GLOBAL:"/dev/null",GIT_OPTIONAL_LOCKS:"0"}}).trim();
 export function validateActivityIdentity(identityProof) {
@@ -18,7 +19,9 @@ export function validateActivityIdentity(identityProof) {
  assert.equal(identityGit("rev-parse","HEAD"),proof.operator.commit);
  return proof;
 }
-export async function runActivityFeeFactorLive({identityProof,lifecycleWitness}={}) {
+export async function runActivityFeeFactorLive({identityProof,lifecycleWitness,currentVerifierProof}={}) {
+assert(!(currentVerifierProof!==undefined&&(identityProof!==undefined||lifecycleWitness!==undefined)),"Current verifier proof cannot mix with historical identity/witness");
+const currentIdentity=currentVerifierProof===undefined?undefined:validateCurrentVerifierProof(currentVerifierProof,{repository:fileURLToPath(new URL("../",import.meta.url)).replace(/\/$/u,"")});
 if(identityProof!==undefined) validateActivityIdentity(identityProof);
 else assert.equal(resolve(process.cwd()),fileURLToPath(new URL("../",import.meta.url)).replace(/\/$/u,""));
 const witnessedLifecycle=lifecycleWitness===undefined?undefined:consumeActivityLifecycle(lifecycleWitness,identityProof);
@@ -149,7 +152,7 @@ if(witnessedLifecycle) {
 const packageAttestation=identityProof===undefined?undefined:attestInstalledRetentionPackage(identityProof);
 if(identityProof===undefined) currentPackageAttestation=attestCurrentRetentionPackage({
  repository:fileURLToPath(new URL("../",import.meta.url)).replace(/\/$/u,""),
- commit:implementationCommit,tree:identityGit("rev-parse","HEAD^{tree}")});
+ commit:currentIdentity?.artifact.commit??implementationCommit,tree:currentIdentity?.artifact.tree??identityGit("rev-parse","HEAD^{tree}"),...(currentVerifierProof===undefined?{}:{currentVerifierProof})});
 lifecycle = JSON.parse(activityExec("python3", [
   "-I", "-B", "deploy/ui-retention/lifecycle.py", "status", "--require-complete",
 ], { encoding: "utf8", timeout: 480_000, maxBuffer: 8 * 1024 ** 2 }));
@@ -157,7 +160,7 @@ if(packageAttestation)bindInstalledRetentionPackage(lifecycle,packageAttestation
 retirementEvidence=currentPackageAttestation?collectCurrentRetirementEvidence(lifecycle,currentPackageAttestation):
  lifecycle.verifiedRetiredPayloads ? collectRetirementEvidence(lifecycle) : undefined;
 }
-let commit=implementationCommit;
+let commit=currentIdentity?.artifact.commit??implementationCommit;
 if(identityProof!==undefined) {
  const proof=requireIdentityProof(identityProof);
  assert.equal(resolve(proof.repository),fileURLToPath(new URL("../",import.meta.url)).replace(/\/$/u,""));
@@ -186,6 +189,7 @@ if(identityProof!==undefined) {
  assert.deepEqual(after.operator,identityProof.operator);
  result.qualificationSubject={...identityProof.artifact};
 }
+if(currentVerifierProof!==undefined){validateCurrentVerifierProof(currentVerifierProof);result.compatibilityQualification=true;}
 return result;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href) {

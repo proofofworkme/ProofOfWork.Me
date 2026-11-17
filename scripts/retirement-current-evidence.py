@@ -16,6 +16,46 @@ for name in dir(H):
  if name.startswith('RET_') or name in ('need','dual_json'):globals()[name]=getattr(H,name)
 def load_receipt_module():return load_module('retirement_current_rules',ROOT/'deploy/ui-retention/retirement_receipt.py')
 
+def lifecycle_readers(R,rows,absent,external):
+ """Closed evidence readers. Missing bytes never fall back to the filesystem."""
+ repair=load_module('retirement_repair_paths',ROOT/'deploy/ui-retention/failed_prepare_repair.py')
+ allowed={RET_EVIDENCE_DIR+'/'+name for name in ('successor-config.json','transition-completed.json','prior-config.json','prior-state.json')}
+ allowed.update(ref['path'] for ref in repair.PIN.values() if isinstance(ref,dict) and set(ref)=={'path','sha256'})
+ allowed.update(R._REPAIR_PUBLICATION_FILES)
+ for directory,names in ((repair.JOURNAL,('intent.json','repaired.json','verified.json','prior-config.json','prior-state.json','ordinary-plan.json')),
+                         (repair.READER_JOURNAL,('intent.json','installed.json','verified.json','prior-config.json','prior-state.json'))):
+  allowed.update(directory+'/'+name for name in names)
+ absence_allowed={repair.BASE+'/ui-lifecycle-release-'+repair.RELEASE+suffix for suffix in ('-ordinary-plan.json','-completed.json')}
+ absence_allowed.add(repair.JOURNAL+'/verified.json')
+ need(isinstance(absent,list) and all(isinstance(p,str) for p in absent) and len(absent)==len(set(absent)) and set(absent)<=absence_allowed,'Unexpected lifecycle absence inventory')
+ need(not set(absent).intersection(rows),'Lifecycle evidence also declared absent')
+ for path in rows:
+  if path in allowed:continue
+  p=Path(path)
+  upgrade=(p.parent.parent==Path(repair.BASE) and re.fullmatch(r'ui-lifecycle-upgrade-[a-f0-9]{64}',p.parent.name) and p.name in ('intent.json','completed.json','verified.json','prior-config.json','prior-state.json'))
+  package=(p.parent.parent==Path(repair.BASE) and re.fullmatch(r'ui-lifecycle-tools-[a-f0-9]{64}',p.parent.name) and p.name=='package.json')
+  index=(p.parent==Path(repair.BASE) and re.fullmatch(r'audit30-policy-admission-index-[A-Za-z0-9-]{1,160}\.json',p.name))
+  need(upgrade or package or index,'Unexpected lifecycle evidence path')
+ used=set();used_absent=set()
+ def raw_bound(path,limit=16*1024**2):
+  path=str(path)
+  if path in absent:
+   used_absent.add(path);raise FileNotFoundError(path)
+  if path in external:raw=external[path]()
+  else:
+   need(path in rows,'Missing lifecycle evidence')
+   raw=rows[path];used.add(path)
+  need(len(raw)<=limit,'Lifecycle evidence exceeds read bound');return raw
+ def bound(path,digest,limit=16*1024**2):
+  raw=raw_bound(path,limit);need(RET_digest(raw)==digest,'Lifecycle evidence digest differs');return raw
+ def publication(path,expected):
+  pin=R._REPAIR_PUBLICATION_FILES.get(str(path))
+  need(pin is not None and pin[0]==expected,'Repair publication binding differs')
+  raw=bound(path,expected,pin[1]);need(len(raw)==pin[1],'Repair publication size differs');return raw
+ def consumed():
+  need(used==set(rows) and used_absent==set(absent),'Unconsumed lifecycle evidence or absence')
+ return raw_bound,bound,publication,consumed
+
 def validate_current_retirement_evidence(bundle,trusted):
  """Pure authenticated-byte consistency, NOT filesystem or permission validation.
 
@@ -25,7 +65,7 @@ def validate_current_retirement_evidence(bundle,trusted):
  import base64,binascii
  need(isinstance(trusted,dict) and set(trusted)=={'configSha256','stateSha256','currentIndexSha256','policyCodeSha256','verifiedCurrentPair','currentPackageSha256','retirementSourceConfig'},'Independent lifecycle retirement bindings required')
  for key in ('configSha256','stateSha256','currentIndexSha256','policyCodeSha256','currentPackageSha256'):RET_hash_value(trusted[key])
- need(isinstance(bundle,dict) and set(bundle)=={'terminal','ownerApproval','config','state','sourceIndex','currentIndex','appendedAdmissions','sidecars','finalProofs','proposal','inventory','staticRestore','lifecycleEvidence'},'Exact raw retirement inventory required')
+ need(isinstance(bundle,dict) and set(bundle)-{'lifecycleAbsentPaths'}=={'terminal','ownerApproval','config','state','sourceIndex','currentIndex','appendedAdmissions','sidecars','finalProofs','proposal','inventory','staticRestore','lifecycleEvidence'},'Exact raw retirement inventory required')
  total=0
  def read(row,path=None,digest=None):
   nonlocal total
@@ -36,7 +76,7 @@ def validate_current_retirement_evidence(bundle,trusted):
   need(isinstance(row['base64'],str) and len(row['base64'])<=24*1024**2,'Oversized retirement encoding')
   try:raw=base64.b64decode(row['base64'],validate=True)
   except (ValueError,binascii.Error) as error:raise ValueError('Malformed retirement base64') from error
-  total+=len(raw);need(0<len(raw) and total<=16*1024**2 and base64.b64encode(raw).decode()==row['base64'],'Retirement bytes limit/encoding differs')
+  total+=len(raw);need(0<len(raw)<=16*1024**2 and total<=48*1024**2 and base64.b64encode(raw).decode()==row['base64'],'Retirement bytes limit/encoding differs')
   need(RET_digest(raw)==row['sha256'],'Retirement raw digest differs')
   return raw
  def obj(row,path=None,digest=None):return dual_json(read(row,path,digest))
@@ -116,23 +156,10 @@ def validate_current_retirement_evidence(bundle,trusted):
   need(row['path'] not in rows,'Duplicate lifecycle evidence path')
   rows[row['path']]=raw
  R=load_receipt_module()
- allowed={RET_EVIDENCE_DIR+'/'+name for name in ('successor-config.json','transition-completed.json','prior-config.json','prior-state.json')}
- allowed.add(RET_BASE+'/cleanup-evidence/audit30-policy-admission-index-payload-retirement-6fd05dc1e04e.json')
- for path in rows:
-  if path in allowed:continue
-  p=Path(path)
-  need(p.parent.parent==Path(RET_BASE+'/cleanup-evidence') and re.fullmatch(r'ui-lifecycle-upgrade-[a-f0-9]{64}',p.parent.name)
-       and p.name in ('intent.json','completed.json','verified.json','prior-config.json','prior-state.json'),'Unexpected lifecycle evidence path')
- used=set()
- def raw_bound(path,limit=16*1024**2):
-  path=str(path)
-  if path==RET_SOURCE_INDEX['path']:return read(bundle['sourceIndex'],path,RET_SOURCE_INDEX['sha256'])
-  if path==bundle['currentIndex']['path']:return read(bundle['currentIndex'],path,trusted['currentIndexSha256'])
-  need(path in rows,'Missing lifecycle evidence')
-  raw=rows[path];need(len(raw)<=limit,'Lifecycle evidence exceeds read bound');used.add(path);return raw
- def bound(path,digest,limit=16*1024**2):
-  raw=raw_bound(path,limit);need(RET_digest(raw)==digest,'Lifecycle evidence digest differs');return raw
- R.read_raw_bound=raw_bound;R.read_bound=bound
+ raw_bound,bound,publication,consumed=lifecycle_readers(R,rows,bundle.get('lifecycleAbsentPaths',[]),{
+  RET_SOURCE_INDEX['path']:lambda:read(bundle['sourceIndex'],RET_SOURCE_INDEX['path'],RET_SOURCE_INDEX['sha256']),
+  bundle['currentIndex']['path']:lambda:read(bundle['currentIndex'],bundle['currentIndex']['path'],trusted['currentIndexSha256'])})
+ R.read_raw_bound=raw_bound;R.read_bound=bound;R.read_repair_publication_bound=publication
  context=R.VerifiedRetirement(R.TOKEN,binding,terminal,proposal,dual_json(inventory_raw),source,None,None)
  need(context.proof==proof,'Current retirement module disagrees with immutable proof')
  context.verify_lifecycle_state(state,trusted['configSha256'],config=config)
@@ -140,21 +167,14 @@ def validate_current_retirement_evidence(bundle,trusted):
   need(trusted['currentPackageSha256']==trusted['policyCodeSha256'],'Original package identity differs')
  else:
   need(R.source_config(config)==trusted['retirementSourceConfig'],'Original source config differs')
-  upgrade=state.get('lastUpgrade',{})
-  done_raw=raw_bound(upgrade.get('completionPath',''));done=dual_json(done_raw)
-  intent=dual_json(bound(upgrade.get('intentPath',''),upgrade.get('intentSha256','')))
-  seal=dual_json(raw_bound(upgrade.get('statusVerificationPath','')))
-  need(seal=={'schema':'pow-ui-retention-upgrade-status-verified-v1','ok':True,
-   'config':done['config'],'state':done['state'],
-   'upgradeReceipt':{'path':upgrade['completionPath'],'sha256':RET_digest(done_raw)},
-   'preservedCompletedCycleId':upgrade['preservedCompletedCycleId'],
-   'contextSha256':RET_digest(RET_encoded(intent['stateTemplate']['completedContext']))},'Current package upgrade status seal differs')
- need(used==set(rows),'Unconsumed lifecycle evidence')
+ # verify_lifecycle_state above authenticates every native upgrade/repair edge,
+ # including its current seal. Do not reinterpret repair markers as lastUpgrade.
+ consumed()
  return {'ok':True,'proof':proof,'verifiedCurrentPair':pair,'configSha256':trusted['configSha256'],'stateSha256':trusted['stateSha256'],'currentIndexSha256':trusted['currentIndexSha256'],'policyCodeSha256':trusted['policyCodeSha256'],'currentPackageSha256':trusted['currentPackageSha256'],'retirementSourceConfig':trusted['retirementSourceConfig'],'filesystemVerified':False,'activationAllowed':False}
 
 if __name__=='__main__':
- raw=sys.stdin.buffer.read(16*1024**2+1)
- need(len(raw)<=16*1024**2,'Current retirement evidence exceeds bound')
+ raw=sys.stdin.buffer.read(64*1024**2+1)
+ need(len(raw)<=64*1024**2,'Current retirement evidence exceeds bound')
  request=dual_json(raw)
  need(isinstance(request,dict) and set(request)=={'bundle','trusted'},'Exact validation request required')
  print(json.dumps(validate_current_retirement_evidence(request['bundle'],request['trusted'])))
