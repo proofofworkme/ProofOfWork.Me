@@ -29494,7 +29494,7 @@ export default function App() {
       searchGeneration === activitySearchGenerationRef.current &&
       requestedInput === activityQueryRef.current;
     const readAttempt = nextProofApiReadAttempt();
-    const cacheKey = activityHistoryCacheKey({
+    let cacheKey = activityHistoryCacheKey({
       kind: "history",
       pageIndex,
       pageSize: ACTIVITY_FEED_PAGE_SIZE,
@@ -29512,14 +29512,34 @@ export default function App() {
     }
 
     try {
-      const page = await fetchGlobalActivityHistoryPage(network, {
-        pageIndex,
-        pageSize: ACTIVITY_FEED_PAGE_SIZE,
-        query,
-        snapshotId: options.snapshotId,
-        fresh: options.fresh,
-        signal,
-      });
+      const readPage = (requestedPage: number, snapshotId?: string, fresh = options.fresh) =>
+        fetchGlobalActivityHistoryPage(network, {
+          pageIndex: requestedPage,
+          pageSize: ACTIVITY_FEED_PAGE_SIZE,
+          query,
+          snapshotId,
+          fresh,
+          signal,
+        });
+      let page: PowPaginatedApiResponse<PowActivityItem>;
+      try {
+        page = await readPage(pageIndex, options.snapshotId);
+      } catch (error) {
+        // An expired cursor is not a new authority: fetch a fresh authenticated
+        // head, then restart at page zero once. Never mix pages across snapshots.
+        if (!requestIsActive()) return undefined;
+        if (!(error instanceof ProofApiRequestError) ||
+            error.code !== "CANONICAL_LOG_HISTORY_STABLE_SNAPSHOT_MISMATCH" ||
+            !options.snapshotId) throw error;
+        const head = await loadLogHead(true, true, signal);
+        if (!requestIsActive()) return undefined;
+        if (!head?.snapshotId || head.snapshotId === options.snapshotId) throw error;
+        cacheKey = activityHistoryCacheKey({
+          kind: "history", pageIndex: 0, pageSize: ACTIVITY_FEED_PAGE_SIZE,
+          query, snapshotId: head.snapshotId,
+        });
+        page = await readPage(0, head.snapshotId, true);
+      }
       if (!requestIsActive()) return undefined;
       clearLastGoodReadWarning(
         requestWorkspaceKey,

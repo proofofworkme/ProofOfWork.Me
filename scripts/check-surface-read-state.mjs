@@ -124,6 +124,7 @@ const logErrors = []; const logHistoryLoading = [];
 let logFailure;
 const logEnv = {
   AbortController, AbortSignal,
+  ProofApiRequestError: class extends Error {},
   activityHistoryReadControllerRef: { current: undefined },
   activityLoadingOwnerRef: { current: undefined },
   activityProfileRef: { current: undefined }, activityQueryRef: { current: "tx-current" },
