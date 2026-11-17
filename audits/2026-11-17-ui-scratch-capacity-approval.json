@@ -1,0 +1,35 @@
+{
+  "schema": "pow-ui-scratch-capacity-approval-v1",
+  "migrationId": "ui-scratch-5-to-5-5-gib-20261117",
+  "host": "77.42.91.106",
+  "proposalAtUtc": "2026-11-17T17:02:38Z",
+  "proposal": "The safest path I found is to raise the UI deployment scratch limit from 5 to 5.5 GiB through a reviewed migration, while keeping the existing disk-space reserves and backup protections unchanged. It requires new tooling and fresh tests; it would not delete the current release or rollback. There is also a separate build-capacity constraint I’m investigating.\n\nDo you approve that scratch-limit migration so I can implement and qualify it?",
+  "ownerResponse": "just increase the limit and remove old backups",
+  "scope": "Scratch capacity migration only. Backup removal is a separate action and is not authorized by this grant. No publication, historical rewrite or backup/data deletion. Preserve current a4d2 and prior R3.",
+  "target": {
+    "path": "/usr/local/sbin/proofofwork-ui-capacity",
+    "source": "deploy/proofofwork-ui-capacity.py",
+    "beforeSha256": "3a7d54044cd07665cd37425ea910ad3bcc606450f5537a70d37adce11c6fb687",
+    "afterSha256": "d1325ffa9eb14900a9c344526f6f87967a9b42f339efaad0624a414b1cdde2a2"
+  },
+  "priorScratchBytes": 5368709120,
+  "scratchBytes": 5905580032,
+  "unchangedLimits": {
+    "rootReserveBytes": 8589934592,
+    "growthReserveBytes": 67108864,
+    "inodeReserve": 128,
+    "backupBudgetBytes": 19327352832,
+    "transportBudgetBytes": 9730785280
+  },
+  "preBridge": {
+    "configSha256": "3daf3bd6f02ebdbd319a6ec5a8f18c76941d622ae0a1ff8c7fc0e444e291cb87",
+    "stateSha256": "ca1bb1a7f0846b1a06a6c5e0b837eebefb242103a62ecb12ea0bca5f839e6ac7",
+    "stateRevision": 311,
+    "packageManifestSha256": "4a1d3238fc9798deebac5c1a5a91d5c3ba090efd69877bd78a1f48103e64082b",
+    "pair": {
+      "current": "a4d2d88cd0b0-20261117T045327Z",
+      "previous": "1996225ce530-20261116T190348Z"
+    }
+  },
+  "qualification": "Source preparation grant, not an installed-state or completed-qualification receipt. Exact successor package/config/state are derived and frozen only after its completed supported bridge upgrade. Receiver and historical floor journal remain unchanged."
+}

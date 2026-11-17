@@ -12,7 +12,7 @@ from pathlib import Path
 
 # Paired with the native guard: finite transport-only calibration, no cleanup credit.
 LIMITS = {'backupBudgetBytes': 18 * 1024**3, 'transportBudgetBytes': 9 * 1024**3 + 64 * 1024**2,
-          'scratchBudgetBytes': 5 * 1024**3, 'rootReserveBytes': 8 * 1024**3,
+          'scratchBudgetBytes': 11 * 1024**3 // 2, 'rootReserveBytes': 8 * 1024**3,
           'growthReserveBytes': 64 * 1024**2, 'inodeReserve': 128}
 POOLS = {'backup': '/var/backups/proofofwork-ui',
          'transport': '/var/backups/proofofwork-ui/transport-evidence',
@@ -118,7 +118,7 @@ def requirements(plan, census):
                 plan['inputCompactor']['sha256'] != plan['closedArchive']['request']['inputCompactorSha256']):
             raise ValueError('Unbound private release staging scope')
         # Only this publication can use the operator's temporary planning margin.
-        # The installed native 5 GiB guard still checks every actual allocation.
+        # The installed native scratch guard still checks every actual allocation.
         release = plan.get('releaseId', '')
         forecast = plan.get('privateStageRetention', {})
         if (release == plan.get('commit', '')[:12] + '-20261109T160000Z'

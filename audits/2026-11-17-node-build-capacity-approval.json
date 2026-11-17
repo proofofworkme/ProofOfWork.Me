@@ -1,0 +1,13 @@
+{
+  "schema": "pow-node-build-capacity-approval-v1",
+  "proposalAtUtc": "2026-11-17T17:08:24Z",
+  "proposal": "There’s a separate build-server limit preventing the new tooling from being built. I recommend increasing that pool from 26 to 26.5 GiB, keeping the 100 GiB free-space reserve and existing artifacts unchanged. This avoids deleting the generated files to make room. Do you approve that increase too?",
+  "ownerResponse": "yes",
+  "retainedBudgetBeforeBytes": 27917287424,
+  "retainedBudgetAfterBytes": 28454158336,
+  "unchangedExistingGuards": {
+    "buildBudgetBytes": 4294967296,
+    "dataReserveBytes": 107374182400
+  },
+  "scope": "Finite Node build-pool admission only; retain existing artifacts. No placement bypass, cleanup or production release authority. Fresh locked native capacity checks still apply."
+}

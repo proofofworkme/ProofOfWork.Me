@@ -42,7 +42,7 @@ class CompleteSequence(unittest.TestCase):
         self.assertEqual(M.LIMITS, {
             'backupBudgetBytes': 18 * 1024**3,
             'transportBudgetBytes': 9 * 1024**3 + 64 * 1024**2,
-            'scratchBudgetBytes': 5 * 1024**3,
+            'scratchBudgetBytes': 11 * 1024**3 // 2,
             'rootReserveBytes': 8 * 1024**3,
             'growthReserveBytes': 64 * 1024**2, 'inodeReserve': 128})
         census = self.exact_fit()
@@ -206,11 +206,17 @@ class CompleteSequence(unittest.TestCase):
         census['usage']['scratch'] = 2874064896
         required = M.requirements(plan, census)
         self.assertEqual(required['additionalBytes']['scratch'], 2130059264)
-        self.assertEqual(M.admit(required, census)['headroom']['scratch'], 364584960)
-        old_requirement = copy.deepcopy(required)
-        old_requirement['additionalBytes']['scratch'] += 391208960
-        with self.assertRaisesRegex(ValueError, '"scratch": 26624000'):
-            M.admit(old_requirement, census)
+        self.assertEqual(M.admit(required, census)['headroom']['scratch'], 901455872)
+        # Preserve the historical five-GiB arithmetic as historical evidence,
+        # rather than pretending its old deficit persists under the successor.
+        with patch.dict(M.LIMITS, scratchBudgetBytes=5 * 1024**3):
+            historical = copy.deepcopy(census)
+            historical['limits'] = dict(M.LIMITS)
+            previous = M.requirements(plan, historical)
+            self.assertEqual(M.admit(previous, historical)['headroom']['scratch'], 364584960)
+            previous['additionalBytes']['scratch'] += 391208960
+            with self.assertRaisesRegex(ValueError, '"scratch": 26624000'):
+                M.admit(previous, historical)
 
     def test_promised_cleanup_and_deduplication_never_create_headroom(self):
         for key in ('retirementCreditBytes', 'futureHardlinkCreditBytes'):

@@ -15,7 +15,7 @@ local-source/installed-package parity to reuse the prior lifecycle proof.
 Homepage/catalog, navigation, Growth assumptions/accounting, protocol, signing,
 backend state and historical records are unchanged by this tooling delta.
 
-## Current build admission preparation — 2026-11-17
+## Earlier build admission preparation — 2026-11-17
 
 At 14:32 UTC on 2026-11-17, the owner authorized increasing the finite retained
 build-pool admission limit from 24 GiB to 26 GiB for successor preparation. The separate 4 GiB per-run budget and 100 GiB free-data
@@ -23,10 +23,42 @@ reserve remain unchanged. This source update changes no OS quota, runtime
 service, production rollback or backup retention policy and authorizes no
 cleanup. Native admission must still be measured before each build phase.
 Earlier dated records of the 20 GiB and 24 GiB aggregate limits are preserved as
-history, not the current 26 GiB builder constant. The limit is not unbounded and does
+history; the later separately approved 26.5 GiB ceiling below supersedes this preparation. The limit is not unbounded and does
 not permit bypassing disk reserves, moving outputs outside the build pool, or
 deleting unique evidence. Source preparation is not a production receipt.
 
+
+## Scratch-capacity and build-pool successor preparation — 2026-11-17
+
+The owner approved a reviewed UI scratch migration from 5 to 5.5 GiB and,
+separately, the Node retained-build pool from 26 to 26.5 GiB. The UI 8 GiB
+root reserve, 64 MiB growth reserve, 128-inode reserve, 18 GiB backup budget
+and 9 GiB plus 64 MiB transport budget remain unchanged. The Node 4 GiB
+per-build reservation and 100 GiB free-data reserve also remain unchanged.
+Existing artifacts remain in place; these source changes perform no cleanup.
+The exact approvals are retained in the dated scratch and build capacity grants.
+
+UI installation requires a committed, independently reviewed bridge package
+and a separately qualified, journaled capacity-helper exchange. Only the
+capacity helper changes; the receiver and historical floor receipts remain
+unchanged. Original and exchanged helper inodes are authenticated, and pending
+migration states fail closed outside the dedicated reconciler. Rollback must
+fit the original 5 GiB scratch limit. Existing plans and old-source build
+artifacts cannot qualify the successor: fresh build, native census, publication
+qualification and separate retention approval remain required. Homepage,
+shared navigation, Growth accounting, standalone/Computer products, protocol,
+wallet authority and historical records are unchanged by these capacity deltas.
+The historical storage writer's resources() scratchMaximumBytes and
+scratchHeadroomBytes remain the fixed 5 GiB retirement-policy observation and
+admission contract. They are not the successor publisher's native scratch
+ceiling. The retirement controller still refuses negative headroom against
+that historical bound; this migration does not relax it. New publication
+preflight/native capacity receipts independently authenticate the current
+5.5 GiB publisher budget. A later retention attempt can therefore still refuse
+and requires its own qualification; do not relabel old receipts or infer
+retirement permission from publication admission.
+
+This section records preparation, not native installation or release completion.
 
 ## Planned Pay retention recovery and coherent successor
 

@@ -129,10 +129,12 @@ def floor_descriptor(path):
             info.st_mode, info.st_nlink, info.st_size, info.st_mtime_ns], 'xattrs': attrs}
 
 
-def capacity_floor_authority(layout):
+def _capacity_floor_authority_original(layout, capacity_descriptor=None):
     if getattr(layout, 'capacity', None) != FLOOR_FILES['capacity'][0]:
         return None  # Isolated fixture layouts have no production authority.
     actual = {name: floor_descriptor(path) for name, (path, _, _) in FLOOR_FILES.items()}
+    if capacity_descriptor is not None:
+        actual['capacity'] = capacity_descriptor
     before = all(actual[name]['sha256'] == values[1] for name, values in FLOOR_FILES.items())
     journal = FLOOR_DIRECTORY
     if not os.path.lexists(journal):
@@ -171,6 +173,263 @@ def capacity_floor_authority(layout):
     return {'model': 'verified-ui-capacity-floor-v1', 'approvalSha256': FLOOR_APPROVAL,
             'installedSha256': installed_sha, 'rootReserveBytes': approval['rootReserveBytes'],
             'growthReserveBytes': approval['growthReserveBytes']}
+
+
+
+# Separate successor authority. The historical floor grant and its journal are
+# immutable; only an authenticated exchanged predecessor may represent its
+# original capacity file. The receiver is never relocated or substituted.
+SCRATCH_APPROVAL = '40a60816eb09d72733f6a00e7932e075d3911fef303de4813cdab6c97a629388'
+SCRATCH_GRANT = 'audits/2026-11-17-ui-scratch-capacity-approval.json'
+SCRATCH_DIRECTORY = Path('/var/lib/proofofwork-ui-scratch-capacity') / SCRATCH_APPROVAL
+SCRATCH_CAPACITY_PATH = Path('/usr/local/sbin/proofofwork-ui-capacity')
+SCRATCH_PRIOR_SHA = '3a7d54044cd07665cd37425ea910ad3bcc606450f5537a70d37adce11c6fb687'
+SCRATCH_NEXT_SHA = 'd1325ffa9eb14900a9c344526f6f87967a9b42f339efaad0624a414b1cdde2a2'
+SCRATCH_PRIOR_BYTES = 5 * 1024**3
+SCRATCH_NEXT_BYTES = 11 * 1024**3 // 2
+SCRATCH_NAMES = {'approval.json', 'capacity', 'intent.json', 'qualified.json',
+                 'installed.json', 'verified.json', 'reversing.json', 'rolled-back.json',
+                 'verification-failed.json', 'preverified-forward.json', 'preverified-rollback.json'}
+
+
+def scratch_bridge_baseline(intent, grant):
+    """Authenticate the real completed bridge, not a caller-supplied baseline."""
+    protected = intent['protected']
+    require(set(protected) == {'configSha256', 'stateSha256', 'index', 'lastCompleted',
+            'completedContext', 'pair', 'otherGuardsSha256', 'bridgeConfig', 'bridgeState',
+            'completedUpgrade'}, 'Unexpected scratch protected scope')
+    def embedded(key):
+        record = protected[key]
+        require(set(record) == {'base64', 'sha256'}, 'Invalid bridge snapshot binding')
+        raw = base64.b64decode(record['base64'], validate=True)
+        require(0 < len(raw) <= MAX_FRAME and sha(raw) == record['sha256'], 'Bridge snapshot SHA differs')
+        return json.loads(raw, object_pairs_hook=unique), record['sha256']
+    config, config_sha = embedded('bridgeConfig')
+    state, state_sha = embedded('bridgeState')
+    require(config_sha == protected['configSha256'] and state_sha == protected['stateSha256']
+            and config['sourceCommit'] == intent['commit'] and config['sourceTree'] == intent['tree']
+            and config['schema'] == 'pow-ui-retention-lifecycle-config-v1'
+            and config['scopeApprovalSha256'] == APPROVAL_SHA
+            and config['statePath'] == str(STATE_PATH)
+            and config['retentionPolicy'] == VPS_POLICY and config['offHostCustodyRoot'] is None,
+            'Bridge configuration differs')
+    package = Path(config['package']['path'])
+    evidence = Path('/var/backups/proofofwork-ui/cleanup-evidence')
+    require(package.parent == evidence and package.name == 'ui-lifecycle-tools-' + config['package']['sha256'],
+            'Unbounded bridge package path')
+    manifest, _ = read_json(package / 'package.json', config['package']['sha256'])
+    require(manifest['schema'] == 'pow-ui-retention-package-v1'
+            and manifest['sourceCommit'] == intent['commit'] and manifest['sourceTree'] == intent['tree']
+            and set(manifest['files']) == set(PACKAGE_FILES), 'Bridge package source scope differs')
+    for relative, pin in manifest['files'].items():
+        raw, _ = read(package / relative, pin['sha256'], 2 * 1024**2)
+        require(len(raw) == pin['bytes'], 'Bridge package size differs')
+    require(config['controller'] == {'path': str(package / 'deploy/ui-retention/lifecycle_remote.py'),
+                'sha256': manifest['files']['deploy/ui-retention/lifecycle_remote.py']['sha256']},
+            'Bridge controller or approval differs')
+    prior = grant['preBridge']
+    journal = evidence / ('ui-lifecycle-upgrade-' + config['package']['sha256'])
+    completion = protected['completedUpgrade']
+    require(set(completion) == {'path', 'sha256'} and completion['path'] == str(journal / 'completed.json'),
+            'Unbounded bridge completion path')
+    done, _ = read_json(completion['path'], completion['sha256'])
+    require(done['schema'] == 'pow-ui-retention-upgrade-completed-v1'
+            and done['ok'] is True and done['retentionComplete'] is True
+            and done['publicationHealthy'] is True and done['freshPreparationRequired'] is False
+            and done['priorConfig'] == {'path': str(journal / 'prior-config.json'), 'sha256': prior['configSha256']}
+            and done['priorState'] == {'path': str(journal / 'prior-state.json'), 'sha256': prior['stateSha256']}
+            and done['config'] == {'path': str(CONFIG_PATH), 'sha256': config_sha}
+            and done['state'] == {'path': str(STATE_PATH), 'sha256': state_sha}
+            and done['stateRevision'] == prior['stateRevision'] + 2,
+            'Bridge is not the approved immediate completed successor')
+    require(done['intent']['path'] == str(journal / 'intent.json'), 'Unbounded bridge intent path')
+    upgrade_intent, _ = read_json(done['intent']['path'], done['intent']['sha256'])
+    template = upgrade_intent['stateTemplate']
+    require(upgrade_intent['schema'] == 'pow-ui-retention-upgrade-intent-v1'
+            and upgrade_intent['stateTemplateSha256'] == sha(encoded(template))
+            and 'intentSha256' not in template['lastUpgrade']
+            and upgrade_intent['disposition'] == 'completed-cycle-preserved'
+            and upgrade_intent['freshPreparationRequired'] is False,
+            'Bridge upgrade intent differs')
+    # Native upgrade seals the intent before adding its hash to the final state.
+    # This exact one-field transformation avoids a self-referential intent hash.
+    completed_state = dict(template, lastUpgrade=dict(template['lastUpgrade'],
+        intentSha256=done['intent']['sha256']))
+    require(completed_state == state, 'Bridge final state differs from authenticated intent template')
+    upgrade_plan = upgrade_intent['plan']
+    require(upgrade_plan['schema'] == 'pow-ui-retention-upgrade-plan-v1'
+            and upgrade_plan['scopeApprovalSha256'] == APPROVAL_SHA
+            and upgrade_plan['request']['configSha256'] == prior['configSha256']
+            and upgrade_plan['request']['stateSha256'] == prior['stateSha256']
+            and upgrade_plan['request']['mode'] in ('completed-cycle', 'completed-config-repair',
+                'completed-boot-log-rotation', 'completed-expired-boot-journal')
+            and upgrade_plan['payload']['config'] == config
+            and upgrade_plan['payload']['configSha256'] == config_sha
+            and upgrade_plan['payload']['manifest'] == manifest,
+            'Bridge upgrade plan/package binding differs')
+    guards = json.loads(json.dumps(upgrade_intent['plan']['before']['guards']))
+    require(str(SCRATCH_CAPACITY_PATH) in guards['files'], 'Bridge capacity guard is missing')
+    guards['files'].pop(str(SCRATCH_CAPACITY_PATH))
+    # Native upgrade compares after-inventory only after subtracting its one
+    # newly installed package. Reconstruct the actual completed inventory here.
+    packages = guards['existingPackages']
+    require(isinstance(packages, list) and all(isinstance(name, str) for name in packages)
+            and packages == sorted(set(packages)) and package.name not in packages,
+            'Bridge predecessor package inventory differs')
+    guards['existingPackages'] = sorted([*packages, package.name])
+    require(sha(encoded(guards)) == protected['otherGuardsSha256'], 'Bridge preserved guard digest differs')
+    old_config, _ = read_json(done['priorConfig']['path'], prior['configSha256'])
+    old_state, _ = read_json(done['priorState']['path'], prior['stateSha256'])
+    require(old_config['package']['sha256'] == prior['packageManifestSha256']
+            and old_state['revision'] == prior['stateRevision'], 'Bridge predecessor differs')
+    require(state['status'] == 'complete' and not state.get('pending') and not state.get('activePhase')
+            and state['configSha256'] == config_sha and state['revision'] == prior['stateRevision'] + 2
+            and protected['pair'] == prior['pair']
+            and SHA.fullmatch(protected['otherGuardsSha256']), 'Incomplete bridge state')
+    for key in ('index', 'lastCompleted', 'completedContext'):
+        require(protected[key] == state[key] == old_state[key], 'Bridge changed preserved completion: ' + key)
+    require(state['lastIntent'] == old_state['lastIntent'] and done['index'] == state['index']
+            and done['preservedCompletedCycleId'] == state['lastCompleted']['cycleId'],
+            'Bridge changed preserved intent/index/cycle')
+    require(state['lastUpgrade']['priorConfigSha256'] == prior['configSha256']
+            and state['lastUpgrade']['priorStateSha256'] == prior['stateSha256']
+            and state['lastUpgrade']['completionPath'] == completion['path']
+            and state['lastUpgrade']['statusVerificationPath'] == str(journal / 'verified.json'),
+            'Bridge upgrade state binding differs')
+    verified, _ = read_json(journal / 'verified.json')
+    require(verified['schema'] == 'pow-ui-retention-upgrade-status-verified-v1' and verified['ok'] is True
+            and verified['config'] == done['config'] and verified['state'] == done['state']
+            and verified['upgradeReceipt'] == completion
+            and verified['preservedCompletedCycleId'] == state['lastCompleted']['cycleId']
+            and verified['contextSha256'] == sha(encoded(state['completedContext'])),
+            'Bridge normal verification is missing')
+    return protected
+
+
+def scratch_capacity_position(layout, allow_pending=False):
+    """Strict journal authentication; pending access is for the locked installer only."""
+    if getattr(layout, 'capacity', None) != SCRATCH_CAPACITY_PATH:
+        return None
+    journal = SCRATCH_DIRECTORY
+    if not os.path.lexists(journal):
+        return None
+    info = journal.lstat()
+    require(journal.resolve() == journal and stat.S_ISDIR(info.st_mode)
+            and info.st_uid == info.st_gid == 0 and stat.S_IMODE(info.st_mode) == 0o700,
+            'Unsafe scratch migration journal')
+    names = set(os.listdir(journal))
+    require(names <= SCRATCH_NAMES, 'Unexpected scratch migration journal entry')
+    grant, _ = read_json(journal / 'approval.json', SCRATCH_APPROVAL)
+    require(grant['schema'] == 'pow-ui-scratch-capacity-approval-v1'
+            and grant['migrationId'] == 'ui-scratch-5-to-5-5-gib-20261117'
+            and grant['host'] == '77.42.91.106'
+            and grant['target'] == {'path': str(SCRATCH_CAPACITY_PATH),
+                'source': 'deploy/proofofwork-ui-capacity.py',
+                'beforeSha256': SCRATCH_PRIOR_SHA, 'afterSha256': SCRATCH_NEXT_SHA}
+            and grant['priorScratchBytes'] == SCRATCH_PRIOR_BYTES and grant['scratchBytes'] == SCRATCH_NEXT_BYTES,
+            'Scratch grant scope differs')
+    intent, intent_sha = read_json(journal / 'intent.json')
+    require(set(intent) == {'schema', 'approvalSha256', 'commit', 'tree', 'files', 'protected'}
+            and intent['schema'] == 'pow-ui-scratch-capacity-intent-v1'
+            and intent['approvalSha256'] == SCRATCH_APPROVAL
+            and re.fullmatch('[0-9a-f]{40}', intent['commit'])
+            and re.fullmatch('[0-9a-f]{40}', intent['tree'])
+            and set(intent['files']) == {'capacity'}, 'Scratch intent scope differs')
+    protected = scratch_bridge_baseline(intent, grant)
+    pair = intent['files']['capacity']
+    require(set(pair) == {'before', 'after'}, 'Scratch helper scope differs')
+    for side, digest in [('before', SCRATCH_PRIOR_SHA), ('after', SCRATCH_NEXT_SHA)]:
+        row = pair[side]; ident = row['identity']
+        require(set(row) == {'sha256', 'identity', 'xattrs'} and row['sha256'] == digest
+                and len(ident) == 8 and all(type(v) is int for v in ident)
+                and ident[2:4] == [0, 0] and ident[4] == stat.S_IFREG | 0o755
+                and ident[5] == 1 and 0 < ident[6] <= 1024**2 and row['xattrs'] == {},
+                'Unsafe scratch helper descriptor')
+    require(pair['before']['identity'][0] == pair['after']['identity'][0] == info.st_dev
+            and pair['before']['identity'][1] != pair['after']['identity'][1], 'Scratch exchange is not distinct same-filesystem inodes')
+    live = floor_descriptor(SCRATCH_CAPACITY_PATH); saved = floor_descriptor(journal / 'capacity')
+    if live == pair['before'] and saved == pair['after']:
+        position = 'before'
+    elif live == pair['after'] and saved == pair['before']:
+        position = 'after'
+    else:
+        raise ValueError('Unrecognized scratch helper positions')
+    qualification = {'schema': 'pow-ui-scratch-capacity-qualified-v1', 'intentSha256': intent_sha,
+                     'authoritySha256': SCRATCH_APPROVAL, 'protected': protected}
+    qualified, qualified_sha = read_json(journal / 'qualified.json')
+    require(qualified == qualification, 'Scratch qualification differs')
+    terminal = {'schema': 'pow-ui-scratch-capacity-installed-v1', 'intentSha256': intent_sha,
+                'qualificationSha256': qualified_sha, 'protected': protected}
+    installed_sha = None
+    if 'installed.json' in names:
+        installed, installed_sha = read_json(journal / 'installed.json')
+        require(installed == terminal, 'Scratch installation differs')
+    preverified = {}
+    for phase in ('forward', 'rollback'):
+        name = 'preverified-' + phase + '.json'
+        if name not in names:
+            continue
+        record, record_sha = read_json(journal / name)
+        require(set(record) == {'schema', 'intentSha256', 'protected', 'status'}
+                and record['schema'] == 'pow-ui-scratch-capacity-preverified-v1'
+                and record['intentSha256'] == intent_sha and record['protected'] == protected,
+                'Scratch pending status record differs')
+        status = record['status']
+        require(status['ok'] is True and status['publicationHealthy'] is True
+                and status['retentionComplete'] is True and not status['unfinishedIntents']
+                and status['stateSha256'] == protected['stateSha256']
+                and status['configSha256'] == protected['configSha256']
+                and status['pair'] == protected['pair'] and status['context'] == protected['completedContext']
+                and 'verifiedScratchCapacity' not in status and 'scratchCapacity' not in status['binding'],
+                'Scratch pending status did not verify the exact protected completion')
+        preverified[phase] = record_sha
+    if 'verification-failed.json' in names:
+        failure, _ = read_json(journal / 'verification-failed.json')
+        require(set(failure) == {'schema', 'intentSha256', 'phase', 'errorType'}
+                and failure['schema'] == 'pow-ui-scratch-capacity-verification-failed-v1'
+                and failure['intentSha256'] == intent_sha and failure['phase'] in ('forward', 'rollback')
+                and re.fullmatch('[A-Za-z][A-Za-z0-9_]{0,127}', failure['errorType']),
+                'Scratch failure record differs')
+    if 'verified.json' in names:
+        verified, _ = read_json(journal / 'verified.json')
+        require(installed_sha is not None and verified == {
+            'schema': 'pow-ui-scratch-capacity-verified-v1', 'intentSha256': intent_sha,
+            'installedSha256': installed_sha, 'protected': protected,
+            'pendingStatusSha256': preverified.get('forward')}, 'Scratch terminal verification differs')
+        require('forward' in preverified, 'Missing forward pending status')
+    reversal = {'schema': 'pow-ui-scratch-capacity-reversal-v1', 'intentSha256': intent_sha,
+                'qualificationSha256': qualified_sha, 'protected': protected}
+    for name in ('reversing.json', 'rolled-back.json'):
+        if name in names:
+            value, _ = read_json(journal / name)
+            expected = dict(reversal, pendingStatusSha256=preverified.get('rollback')) if name == 'rolled-back.json' else reversal
+            require(value == expected, 'Scratch reversal differs')
+            require(name != 'rolled-back.json' or 'rollback' in preverified, 'Missing rollback pending status')
+    require('rolled-back.json' not in names or 'reversing.json' in names, 'Unplanned scratch reversal')
+    if not allow_pending:
+        require((position == 'after' and {'installed.json', 'verified.json'} <= names
+                 and not {'reversing.json', 'rolled-back.json', 'verification-failed.json'} & names)
+                or (position == 'before' and {'reversing.json', 'rolled-back.json'} <= names),
+                'Scratch migration is unsealed; dedicated reconciliation required')
+    return {'position': position, 'priorCapacity': pair['before'], 'journal': str(journal),
+            'intentSha256': intent_sha, 'qualificationSha256': qualified_sha,
+            'authoritySha256': SCRATCH_APPROVAL, 'installedSha256': installed_sha,
+            'protected': protected, 'intent': intent}
+
+
+def scratch_capacity_authority(layout):
+    position = scratch_capacity_position(layout)
+    if position is None or position['position'] == 'before':
+        return None
+    return {'model': 'verified-ui-scratch-capacity-v1', 'approvalSha256': SCRATCH_APPROVAL,
+            'intentSha256': position['intentSha256'], 'installedSha256': position['installedSha256'],
+            'scratchBudgetBytes': SCRATCH_NEXT_BYTES}
+
+
+def capacity_floor_authority(layout):
+    position = scratch_capacity_position(layout)
+    return _capacity_floor_authority_original(layout,
+        position['priorCapacity'] if position is not None and position['position'] == 'after' else None)
 
 
 def sync(path):
@@ -681,9 +940,33 @@ class Runtime:
                 'priorContextSha256': pin['context'], 'currentContextSha256': sha(encoded(current)),
                 'bootId': boot, 'observedInodes': changes, 'intentSha256': pin['intent'], 'receiptSha256': pin['receipt']}
 
-    def status(self, frame):
-        floor = capacity_floor_authority(self.layout)
+    def scratch_migration_status(self, intent_sha):
+        """Installer-only pending verification under the real deployment lock.
+
+        The public dispatcher has no operation or frame field for this entry.
+        Every ordinary status assertion still runs; this cannot seal authority.
+        """
+        return self.status({'requireComplete': True}, scratch_pending_intent=intent_sha)
+
+    def status(self, frame, *, scratch_pending_intent=None):
+        pending = None
+        if scratch_pending_intent is None:
+            floor = capacity_floor_authority(self.layout)
+            scratch = scratch_capacity_authority(self.layout)
+        else:
+            self.S.require_execution_lock(self.lock_fd, self.layout)
+            require(isinstance(scratch_pending_intent, str) and SHA.fullmatch(scratch_pending_intent),
+                    'Invalid scratch pending intent')
+            pending = scratch_capacity_position(self.layout, allow_pending=True)
+            require(pending is not None and pending['intentSha256'] == scratch_pending_intent
+                    and pending['protected']['configSha256'] == self.config_sha,
+                    'Scratch pending status is not the exact bridge intent')
+            floor = _capacity_floor_authority_original(self.layout,
+                pending['priorCapacity'] if pending['position'] == 'after' else None)
+            scratch = None  # Pending verification never claims sealed scratch authority.
         state, digest = self.state()
+        if pending is not None:
+            require(digest == pending['protected']['stateSha256'], 'Scratch pending baseline state changed')
         _, context = self.current()
         unfinished = self.unfinished_intents()
         completion_verification = None
@@ -770,6 +1053,7 @@ class Runtime:
                 **({'verifiedHistoricalBulkPreservation': completion_verification['verifiedHistoricalBulkPreservation']}
                    if completion_verification and completion_verification.get('verifiedHistoricalBulkPreservation') else {}),
                 **({'verifiedCapacityFloor': floor} if floor else {}),
+                **({'verifiedScratchCapacity': scratch} if scratch else {}),
                 'publicationHealthy': True, 'configSha256': self.config_sha, 'stateSha256': digest,
                 'pair': context['pair'], 'context': state['completedContext'] if rotation else context,
                 **({'verifiedBootLogRotation': rotation} if rotation else {}),
@@ -781,6 +1065,7 @@ class Runtime:
                 'historicalBulkPreserved': self.config.get('retentionPolicy') == VPS_POLICY,
                 'offHostCustodyRoot': self.config['offHostCustodyRoot'],
                 'binding': {**({'capacityFloor': floor} if floor else {}),
+                            **({'scratchCapacity': scratch} if scratch else {}),
                             'config': {'path': str(CONFIG_PATH), 'sha256': self.config_sha},
                             'controller': self.config['controller'],
                             'state': {'path': str(self.state_path), 'sha256': digest}, 'pair': context['pair']}}

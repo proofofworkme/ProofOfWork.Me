@@ -789,7 +789,7 @@ class RemoteTests(unittest.TestCase):
         capacity_policy = load('repeated_cycle_capacity', HERE.parent / 'proofofwork-ui-capacity.py')
         limits = (capacity_policy.ROOT_RESERVE_BYTES, capacity_policy.GROWTH_RESERVE_BYTES,
                   capacity_policy.MAX_DEPLOY_SCRATCH_BYTES, capacity_policy.RETENTION_BUDGETS)
-        self.assertEqual(limits[:3], (8 * 1024**3, 64 * 1024**2, 5 * 1024**3))
+        self.assertEqual(limits[:3], (8 * 1024**3, 64 * 1024**2, 11 * 1024**3 // 2))
         self.assertEqual(json.loads(approval.read_bytes())['limits']['rootReserveBytes'], 10 * 1024**3)
         self.assertEqual([limit for _, limit in limits[3]], [18 * 1024**3, 9 * 1024**3 + 64 * 1024**2])
         original_read, original_verified = E.read_regular, custody.R.verified_release
