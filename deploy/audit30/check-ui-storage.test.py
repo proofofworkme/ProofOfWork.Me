@@ -860,6 +860,67 @@ finally:t.tearDown()
         # Never infer authority for a later release/R3 rotation.
         self.assertNotIn(('future',current),S.REVIEWED_RETIRED_PAIRS)
 
+    def test_proposed_a4d2_r3_successor_forecast_is_exact_in_both_gates(self):
+        # Source qualification is not owner authorization to install/delete.
+        publisher = __import__("runpy").run_path(str(Path(S.__file__).parents[1] / "publish/publication_admission.py"))
+        base = S.RETIREMENT_BASE
+        proof = dict(model='intentionally-retired-payloads-retained-evidence-v1',
+            proposalSha256='6fd05dc1e04e6fbcab293683c5a0d10d184ff0bd83039a66d7f2c7ec53161004',
+            receipt={'path':S.RETIREMENT_EVIDENCE+'/completed.json','sha256':'a'*64},
+            receiptSha256='a'*64,journalHeadSha256='b'*64,policyCodeSha256='c'*64,
+            retirementRetainedPair=S.RETIRED_PAIR,
+            sourceIndex={'path':base+'/cleanup-evidence/audit30-policy-admission-index-ordinary-064b6991ae2a-20261114T020148Z.json',
+                'sha256':'5a7b025d95cd55a2b40f2a69b0189b74d75484ff237bac327f920a6b2a231c54'},
+            recoveryVerification='isolated-static-only',
+            retiredPayloadPaths=[base+'/'+x for x in (
+                'releases/proofofwork-ui-release-1042efea2aa1-20261112T074918Z.tgz',
+                'rollback-roots/proofofwork-www-pre-e2669bc1fd32-20261112T163804Z',
+                'releases/proofofwork-ui-release-c3969c39c2b2-20261101T051206Z.tgz',
+                'rollback-roots/proofofwork-www-pre-54088ca155bc-20261103T032112Z')])
+        current='a4d2d88cd0b0-20261117T045327Z';previous='1996225ce530-20261116T190348Z'
+        archive=base+'/releases/proofofwork-ui-release-'+previous+'.tgz'
+        paths=sorted([archive+x for x in ('','.sha256','.provenance')]+[base+'/rollback-roots/proofofwork-www-pre-'+current])
+        rule=dict(model='private-stage-reviewed-retirement-v1',
+            previousPair={'current':current,'previous':previous},wouldRetire=paths,
+            verifiedRetiredPayloads=proof,preservedFallback=None,preservedRelease1042=None)
+        for check in (S.reviewed_forecast,publisher['reviewed_forecast']):
+            self.assertTrue(check(rule))
+            for changed in (
+                dict(rule,wouldRetire=paths[:-1]),dict(rule,wouldRetire=paths+['/extra']),
+                dict(rule,wouldRetire=list(reversed(paths))),
+                dict(rule,previousPair={'current':previous,'previous':current}),
+                dict(rule,previousPair={'current':'future','previous':current}),
+                dict(rule,verifiedRetiredPayloads=dict(proof,receiptSha256='d'*64)),
+                dict(rule,verifiedRetiredPayloads=dict(proof,proposalSha256='d'*64)),
+                dict(rule,verifiedRetiredPayloads=dict(proof,receipt=dict(proof['receipt'],path='/untrusted/completed.json'))),
+                dict(rule,verifiedRetiredPayloads=dict(proof,retiredPayloadPaths=proof['retiredPayloadPaths'][:-1])),
+                dict(rule,verifiedRetiredPayloads=dict(proof,retirementRetainedPair=rule['previousPair'])),
+                dict(rule,verifiedRetiredPayloads=dict(proof,sourceIndex=dict(proof['sourceIndex'],sha256='d'*64))),
+                dict(rule,verifiedRetiredPayloads=dict(proof,recoveryVerification='assumed')),
+                dict(rule,verifiedRetiredPayloads=dict(proof,journalHeadSha256='invalid')),
+                dict(rule,verifiedRetiredPayloads=dict(proof,policyCodeSha256='invalid')),
+                dict(rule,verifiedRetiredPayloads=dict(proof,extra=True)),
+                dict(rule,preservedFallback={'unexpected':True}),
+                dict(rule,preservedRelease1042={'unexpected':True}),
+            ):
+                self.assertFalse(check(changed))
+        # Prove pair refusal even when each unapproved pair has matching paths.
+        for blocked_current,blocked_previous in (
+            (previous,current), ('8c962e9b71bf-20261117T135216Z',current),
+        ):
+            blocked_archive=base+'/releases/proofofwork-ui-release-'+blocked_previous+'.tgz'
+            blocked_paths=sorted([blocked_archive+x for x in ('','.sha256','.provenance')]+
+                [base+'/rollback-roots/proofofwork-www-pre-'+blocked_current])
+            blocked=dict(rule,previousPair={'current':blocked_current,'previous':blocked_previous},
+                wouldRetire=blocked_paths)
+            for check in (S.reviewed_forecast,publisher['reviewed_forecast']):
+                self.assertFalse(check(blocked))
+        for check in (S.reviewed_forecast,publisher['reviewed_forecast']):
+            self.assertFalse(check(dict(rule,verifiedRetiredPayloads=None)))
+            self.assertFalse(check({key:value for key,value in rule.items() if key!='verifiedRetiredPayloads'}))
+        # Never infer authority for a later release/a4d2 rotation.
+        self.assertNotIn(('future',current),S.REVIEWED_RETIRED_PAIRS)
+
     def test_approved_037_d9fa_forecast_is_exact_in_both_gates(self):
         publisher = __import__("runpy").run_path(str(Path(S.__file__).parents[1] / "publish/publication_admission.py"))
         previous = "d9fa69d9e1e4-20261110T210615Z"

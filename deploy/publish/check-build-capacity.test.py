@@ -21,7 +21,7 @@ class CapacityTests(unittest.TestCase):
             b.check_build_capacity(b.BUILD_PARENT / 'test')
 
     def test_approved_finite_limits_and_exact_boundary(self):
-        self.assertEqual(b.RETAINED_BUDGET, 24 * 1024**3)
+        self.assertEqual(b.RETAINED_BUDGET, 26 * 1024**3)
         self.assertEqual(b.BUILD_BUDGET, 4 * 1024**3)
         self.assertEqual(b.DATA_RESERVE, 100 * 1024**3)
         self.capacity(b.DATA_RESERVE + b.BUILD_BUDGET,
@@ -32,6 +32,14 @@ class CapacityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.capacity(b.DATA_RESERVE + b.BUILD_BUDGET - 1,
                           b.RETAINED_BUDGET - b.BUILD_BUDGET)
+
+    def test_full_existing_build_at_aggregate_boundary(self):
+        # The approved aggregate increase does not relax per-run or free-space limits.
+        self.capacity(b.DATA_RESERVE, b.RETAINED_BUDGET, b.BUILD_BUDGET, True)
+        with self.assertRaises(ValueError):
+            self.capacity(b.DATA_RESERVE, b.RETAINED_BUDGET + 1, b.BUILD_BUDGET, True)
+        with self.assertRaises(ValueError):
+            self.capacity(b.DATA_RESERVE - 1, b.RETAINED_BUDGET, b.BUILD_BUDGET, True)
 
     def test_safe_new_build(self):
         self.capacity(b.DATA_RESERVE + b.BUILD_BUDGET, 0)

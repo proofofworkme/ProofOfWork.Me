@@ -22,6 +22,8 @@ REVIEWED_RETIRED_PAIRS = (
     ('c22e585baa9d-20261116T013245Z', 'd5075ab88cdc-20261115T185350Z'),
     # Exact R3/C successor forecast only; no installation or deletion authority.
     ('1996225ce530-20261116T190348Z', 'c22e585baa9d-20261116T013245Z'),
+    # Exact a4d2/R3 successor forecast only; no installation or deletion authority.
+    ('a4d2d88cd0b0-20261117T045327Z', '1996225ce530-20261116T190348Z'),
 )
 RETIREMENT_BASE = '/var/backups/proofofwork-ui'
 RETIREMENT_EVIDENCE = RETIREMENT_BASE + '/cleanup-evidence/older-backup-retirement-6fd05dc1e04e'

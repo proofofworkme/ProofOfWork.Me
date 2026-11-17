@@ -1,14 +1,29 @@
 # ProofOfWork OP_RETURN Infrastructure
 
+## Exact a4d2/R3 successor forecast preparation — 2026-11-17
+
+The isolated Log successor adds only the exact current a4d2/prior R3 pair to
+both native private-stage retirement forecast gates. It preserves all prior
+pairs, path/evidence checks, and source-bound controller digests. This is source
+preparation, not installation, publication, or permission to delete R3.
+The eventual R3 retirement requires separate action-time owner confirmation;
+current a4d2 and R3 remain protected until the native gates and that approval.
+The successor requires its own exact-source build and fresh native qualification.
+Changed controller/policy bytes also require the supported complete-lifecycle
+package upgrade with fresh bindings before successor preflight. Do not bypass
+local-source/installed-package parity to reuse the prior lifecycle proof.
+Homepage/catalog, navigation, Growth assumptions/accounting, protocol, signing,
+backend state and historical records are unchanged by this tooling delta.
+
 ## Current build admission preparation — 2026-11-17
 
-The owner authorized a finite 24 GiB retained build-pool admission limit for
-successor preparation. The separate 4 GiB per-run budget and 100 GiB free-data
+At 14:32 UTC on 2026-11-17, the owner authorized increasing the finite retained
+build-pool admission limit from 24 GiB to 26 GiB for successor preparation. The separate 4 GiB per-run budget and 100 GiB free-data
 reserve remain unchanged. This source update changes no OS quota, runtime
 service, production rollback or backup retention policy and authorizes no
 cleanup. Native admission must still be measured before each build phase.
-Earlier dated records of the 20 GiB aggregate limit below are preserved as
-history, not the current builder constant. The limit is not unbounded and does
+Earlier dated records of the 20 GiB and 24 GiB aggregate limits are preserved as
+history, not the current 26 GiB builder constant. The limit is not unbounded and does
 not permit bypassing disk reserves, moving outputs outside the build pool, or
 deleting unique evidence. Source preparation is not a production receipt.
 
