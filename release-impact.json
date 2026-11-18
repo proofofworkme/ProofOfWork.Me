@@ -1,6 +1,6 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "boost-pages-exact-publication-reconciliation",
+  "upgrade": "boost-pages-preserve-installed-retention-lineage",
   "liveCheck": "scripts/check-boost-pages-live.mjs",
   "ciTests": [
     "src/features/boost/boostWebLinks.test.mjs",
@@ -16,7 +16,7 @@
         "nft"
       ],
       "disposition": "affected",
-      "reason": "Shared BoostRoot replaces post popup with query-addressed detail page. Preserve existing independently verified detail reader, engagement actions, local signer, mounted feed draft and scroll. Browser tests cover direct links, reload, Back/Forward, invalid links and failure. Desktop/NFT share Computer entry. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged.",
+      "reason": "Shared BoostRoot replaces post popup with query-addressed detail page. Preserve existing independently verified detail reader, engagement actions, local signer, mounted feed draft and scroll. Browser tests cover direct links, reload, Back/Forward, invalid links and failure. Desktop/NFT share Computer entry. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged. Package source also preserves the already-installed f63 publication/transport lineage verifiers; no new transport removal is executed.",
       "evidence": [
         "tests/browser/boost-social-records.spec.mjs",
         "src/features/boost/BoostRoot.tsx",
@@ -30,7 +30,7 @@
         "publish"
       ],
       "disposition": "compatible",
-      "reason": "Existing article page and reader stay unchanged. Shared Boost component routes non-article Boost references to standalone Boost; signing and article wire data unchanged. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged.",
+      "reason": "Existing article page and reader stay unchanged. Shared Boost component routes non-article Boost references to standalone Boost; signing and article wire data unchanged. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged. Package source also preserves the already-installed f63 publication/transport lineage verifiers; no new transport removal is executed.",
       "evidence": [
         "src/features/boost/BoostRoot.tsx",
         "scripts/check-publish-compatibility.test.mjs",
@@ -60,7 +60,7 @@
         "work"
       ],
       "disposition": "compatible",
-      "reason": "No product addition, protocol, accounting or fee change. Homepage catalog, navigation and Growth product/model/report coverage remain accurate. Other surfaces use unchanged readers; all receive coherent source provenance in shared build. Rendered homepage/Growth checked by live verifier. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged.",
+      "reason": "No product addition, protocol, accounting or fee change. Homepage catalog, navigation and Growth product/model/report coverage remain accurate. Other surfaces use unchanged readers; all receive coherent source provenance in shared build. Rendered homepage/Growth checked by live verifier. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged. Package source also preserves the already-installed f63 publication/transport lineage verifiers; no new transport removal is executed.",
       "evidence": [
         "scripts/check-boost-pages-live.mjs",
         "scripts/check-release-sync.mjs",
@@ -82,7 +82,7 @@
         "compatibility"
       ],
       "disposition": "compatible",
-      "reason": "Navigation-only change; no writer/signing, protocol encoding, server admission/indexing, replay, historical accounting or reader API changed. Existing detail reader preserves confirmation and failure behavior; paid/reply actions retain original dialogs. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged.",
+      "reason": "Navigation-only change; no writer/signing, protocol encoding, server admission/indexing, replay, historical accounting or reader API changed. Existing detail reader preserves confirmation and failure behavior; paid/reply actions retain original dialogs. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged. Package source also preserves the already-installed f63 publication/transport lineage verifiers; no new transport removal is executed.",
       "evidence": [
         "src/features/boost/BoostRoot.tsx",
         "tests/browser/boost-social-records.spec.mjs",
@@ -96,7 +96,7 @@
         "notifications"
       ],
       "disposition": "affected",
-      "reason": "Existing detail query links now open the standalone post page in Computer as well as Boost. No notification production, counts or transaction semantics change. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged.",
+      "reason": "Existing detail query links now open the standalone post page in Computer as well as Boost. No notification production, counts or transaction semantics change. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged. Package source also preserves the already-installed f63 publication/transport lineage verifiers; no new transport removal is executed.",
       "evidence": [
         "tests/browser/notifications.spec.mjs",
         "tests/browser/boost-social-records.spec.mjs",

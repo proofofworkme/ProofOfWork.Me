@@ -52,6 +52,7 @@ FILES = (
     'deploy/ui-retention/failed_prepare_repair.py',
     'deploy/ui-retention/failed_prepare_review.py',
     'deploy/ui-retention/reconcile_failed_prepare.py',
+    'deploy/ui-retention/transport_retirement.py',
 )
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 MAX_EVIDENCE = 64 * 1024**2
@@ -185,11 +186,12 @@ def committed_payload(root=ROOT):
 def validate_payload(payload, *, allow_legacy=False):
     manifest = payload['manifest']
     scope = set(FILES)
-    legacy = scope - {'deploy/ui-retention/failed_prepare_repair.py',
+    previous = scope - {'deploy/ui-retention/transport_retirement.py'}
+    legacy = previous - {'deploy/ui-retention/failed_prepare_repair.py',
                       'deploy/ui-retention/failed_prepare_review.py',
                       'deploy/ui-retention/reconcile_failed_prepare.py'}
     require(set(payload['files']) == set(manifest['files'])
-            and (set(payload['files']) == scope or allow_legacy and set(payload['files']) == legacy),
+            and (set(payload['files']) == scope or allow_legacy and set(payload['files']) in (legacy, previous)),
             'Expanded package file scope')
     require(manifest['schema'] == 'pow-ui-retention-package-v1'
             and re.fullmatch('[0-9a-f]{40}', manifest['sourceCommit'])
@@ -244,8 +246,8 @@ def preserve_retirement(payload, before):
                 and payload['config'].get('payloadRetirementSourceConfig') is None,
                 'Upgrade cannot introduce retirement authority')
         return payload
-    review = before.get('completedReview', {})
-    require(review.get('fullCompletionVerified') is True
+    review = before.get('completedReview', before.get('publicationReview', {}))
+    require((review.get('fullCompletionVerified') is True or review.get('publicationPreserved') is True)
             and review.get('verifiedRetiredPayloads', {}).get('receipt') == binding['receipt'],
             'Retirement upgrade requires fully verified completed context')
     value = json.loads(json.dumps(payload))
@@ -310,7 +312,7 @@ def existing_runtime(config_sha, prefix=Path('/')):
     package = prefix / config['package']['path'].lstrip('/')
     manifest_raw = read_bound(package / 'package.json', config['package']['sha256'])
     manifest = json.loads(manifest_raw)
-    require(set(manifest['files']) in (set(FILES), set(FILES) - {'deploy/ui-retention/failed_prepare_repair.py',
+    require(set(manifest['files']) in (set(FILES), set(FILES) - {'deploy/ui-retention/transport_retirement.py'}, set(FILES) - {'deploy/ui-retention/transport_retirement.py', 'deploy/ui-retention/failed_prepare_repair.py',
                           'deploy/ui-retention/failed_prepare_review.py',
                           'deploy/ui-retention/reconcile_failed_prepare.py'}),
             'Installed package scope differs')
@@ -515,6 +517,47 @@ def prepared_review(runtime, request):
 def upgrade_inventory(request, prefix=Path('/')):
     with deploy_lock(prefix):
         return upgrade_inventory_locked(request, prefix)
+
+
+def publication_review(runtime, request):
+    """Qualify exactly the published 9f18 state without admitting retirement."""
+    payload = request['verificationPayload']; validate_payload(payload)
+    rules = verifier_module(payload, 'publication_upgrade_rules', 'deploy/ui-retention/retirement_receipt.py')
+    pin = rules.PUBLICATION_UPGRADE
+    require(set(request) == {'mode', 'configSha256', 'stateSha256', 'publication', 'https', 'verificationPayload'}
+            and request['mode'] == 'publication-preserved'
+            and request['configSha256'] == pin['config'] and request['stateSha256'] == pin['state'],
+            'Publication-preserving request differs')
+    state, state_sha = runtime.state()
+    require(state_sha == pin['state'] and not runtime.unfinished_intents(),
+            'Publication-preserving source state changed')
+    pair, context = runtime.current()
+    require(context['pair'] == {'current': pin['live'], 'previous': pin['previous']},
+            'Publication-preserving live pair differs')
+    evidence = {}
+    for key in ('publication', 'https'):
+        row = request[key]
+        require(set(row) == {'path', 'sha256', 'base64'} and row['sha256'] == pin[key + 'Sha256'],
+                'Publication evidence binding differs')
+        raw = read_bound(row['path'], row['sha256'])
+        require(raw == base64.b64decode(row['base64'], validate=True), 'Publication evidence bytes differ')
+        evidence[key] = json.loads(raw)
+    runtime.verify_publication(evidence['https'],
+        {k: request['publication'][k] for k in ('path', 'sha256')}, pair, context)
+    require(runtime.retirement is not None, 'Historical retirement proof is required')
+    runtime.load_index(state['index']['path'], state['index']['sha256'])
+    runtime.retirement.verify_payloads(runtime.layout)
+    third = runtime.S.release_proof(runtime.layout.roots / ('proofofwork-www-pre-' + pin['previous']), runtime.layout, {})
+    require(third['fields']['release_id'] == pin['third'], 'Third retained release differs')
+    roots = {pair[k]['fields']['release_id']: pair[k] for k in ('current', 'previous')}
+    roots[pin['third']] = third
+    proof = {'authority': pin, 'retentionComplete': False, 'deletionPerformed': False,
+             'publicationPerformed': False, 'publication': request['publication'], 'https': request['https'],
+             'context': context, 'preservedRoots': roots}
+    rules.publication_upgrade_proof(proof, state, runtime.config)
+    return {'state': state, 'stateSha256': state_sha, 'context': context,
+            'publicationPreserved': True, 'publicationVerification': proof,
+            'verifiedRetiredPayloads': runtime.retirement.proof}
 
 
 def completed_review(runtime, request):
@@ -850,6 +893,12 @@ def upgrade_inventory_locked(request, prefix):
         require(path.is_dir() and not path.is_symlink() and (path / 'completed.json').is_file(),
                 'Unsealed upgrade requires explicit reconciliation')
     runtime = existing_runtime(request['configSha256'], prefix)
+    if request.get('mode') == 'publication-preserved':
+        review = publication_review(runtime, request)
+        return {'guards': guard_inventory(prefix), 'publicationReview': review,
+                'configBase64': base64.b64encode(read_bound(prefix / CONFIG.lstrip('/'), request['configSha256'])).decode(),
+                'stateBase64': base64.b64encode(read_bound(prefix / STATE.lstrip('/'), request['stateSha256'])).decode(),
+                'evidence': evidence_inventory(prefix / EVIDENCE.lstrip('/'))}
     if request.get('mode') in ('completed-cycle', 'completed-config-repair', 'completed-boot-log-rotation', 'completed-expired-boot-journal'):
         repair = request['mode'] == 'completed-config-repair'
         boot = request['mode'] == 'completed-boot-log-rotation'
@@ -896,6 +945,33 @@ def upgrade_inventory_locked(request, prefix):
             'evidence': evidence_inventory(prefix / EVIDENCE.lstrip('/'))}
 
 
+def verify_publication_activated_upgrade(result, prefix=Path('/')):
+    runtime = existing_runtime(result['config']['sha256'], prefix)
+    runtime.verify_upgrade = True
+    state, state_sha = runtime.state()
+    require(state_sha == result['state']['sha256'] and state['revision'] == result['stateRevision'],
+            'Activated publication-preserving state differs')
+    status = runtime.status({})
+    require(status['retentionComplete'] is False
+            and status['pair'] == result['publicationVerification']['context']['pair'],
+            'Publication-preserving upgrade changed live context or claimed completion')
+    path = Path(state['lastUpgrade']['statusVerificationPath'])
+    require(path == Path(result['intent']['path']).parent / 'verified.json'
+            and not os.path.lexists(path), 'Publication-preserving verification already exists')
+    receipt = {'path': str(Path(result['intent']['path']).parent / 'completed.json'), 'sha256': sha(encoded(result))}
+    read_bound(receipt['path'], receipt['sha256'])
+    verified = {'schema': 'pow-ui-publication-upgrade-status-verified-v1', 'ok': True,
+                'config': result['config'], 'state': result['state'], 'upgradeReceipt': receipt,
+                'preservedPublication': result['preservedPublication'], 'retentionComplete': False,
+                'pair': status['pair']}
+    save(path, encoded(verified))
+    runtime.verify_upgrade = False
+    normal = runtime.status({})
+    require(normal['retentionComplete'] is False and normal['stateSha256'] == state_sha
+            and normal['pair'] == status['pair'], 'Normal publication-preserving status differs')
+    return {'path': str(path), 'sha256': sha(encoded(verified))}
+
+
 def verify_activated_upgrade(result, prefix=Path('/')):
     """Seal actual post-switch verification before normal callers may proceed."""
     runtime = existing_runtime(result['config']['sha256'], prefix)
@@ -940,12 +1016,13 @@ def upgrade_remote(plan, prefix=Path('/')):
         require(preserve_retirement(payload, before) == payload,
                 'Upgrade changed or stripped completed retirement authority')
         if payload['config'].get('payloadRetirement') is not None:
-            require(plan['request'].get('mode') == 'completed-cycle',
+            require(plan['request'].get('mode') in ('completed-cycle', 'publication-preserved'),
                     'Retirement package upgrade requires exact completed-cycle mode')
+        publication_mode = plan['request'].get('mode') == 'publication-preserved'
         completed_mode = plan['request'].get('mode') in ('completed-cycle', 'completed-config-repair', 'completed-boot-log-rotation', 'completed-expired-boot-journal')
         if plan['request'].get('mode') in ('completed-config-repair', 'completed-boot-log-rotation', 'completed-expired-boot-journal'):
             require(plan['request']['verificationPayload'] == payload, 'Repair verifier differs from install payload')
-        review = before['completedReview' if completed_mode else 'preparedReview']
+        review = before['publicationReview' if publication_mode else 'completedReview' if completed_mode else 'preparedReview']
         old_state = review['state']
         old_config = json.loads(base64.b64decode(before['configBase64']))
         require(old_config['package'] != payload['config']['package'], 'Upgrade requires a new immutable package')
@@ -954,19 +1031,25 @@ def upgrade_remote(plan, prefix=Path('/')):
         require(not os.path.lexists(package) and not os.path.lexists(journal), 'Prior upgrade/package requires explicit reconciliation')
         planned = dict(old_state, configSha256=payload['configSha256'], revision=old_state['revision'] + 2,
                        status='complete' if completed_mode else 'retention-incomplete', pending=None, activePhase=None,
-                       completedContext=old_state['completedContext'] if completed_mode else None,
+                       completedContext=old_state['completedContext'] if completed_mode or publication_mode else None,
                        lastUpgrade={'intentPath': str(journal / 'intent.json'),
                                     'completionPath': str(journal / 'completed.json'),
                                     'priorConfigSha256': plan['request']['configSha256'],
                                     'priorStateSha256': plan['request']['stateSha256'],
-                                    'supersededCycleId': None if completed_mode else old_state['pending']['cycleId']})
+                                    'supersededCycleId': None if completed_mode or publication_mode else old_state['pending']['cycleId']})
+        if publication_mode:
+            planned['lastUpgrade']['preservedPublication'] = review['publicationVerification']['authority']['live']
+            planned['lastUpgrade']['statusVerificationPath'] = str(journal / 'verified.json')
         if completed_mode:
             planned['lastUpgrade']['preservedCompletedCycleId'] = old_state['lastCompleted']['cycleId']
             planned['lastUpgrade']['statusVerificationPath'] = str(journal / 'verified.json')
         intent = {'schema': 'pow-ui-retention-upgrade-intent-v1', 'plan': plan,
                   'stateTemplate': planned, 'stateTemplateSha256': sha(encoded(planned)),
-                  'disposition': 'completed-cycle-preserved' if completed_mode else 'prepared-before-custody-superseded',
+                  'disposition': 'publication-preserved' if publication_mode else 'completed-cycle-preserved' if completed_mode else 'prepared-before-custody-superseded',
                   'freshPreparationRequired': not completed_mode}
+        if publication_mode:
+            require(len(encoded(intent)) <= 16 * 1024**2,
+                    'Publication-preserving intent exceeds independent reader bound')
         intent_sha = sha(encoded(intent))
         planned = dict(planned, lastUpgrade=dict(planned['lastUpgrade'], intentSha256=intent_sha))
         allocation = max(8 * 1024**2, len(encoded(intent)) * 2 + sum(v['bytes'] for v in payload['files'].values()) * 4)
@@ -996,6 +1079,13 @@ def upgrade_remote(plan, prefix=Path('/')):
         if completed_mode:
             old_runtime = existing_runtime(plan['request']['configSha256'], prefix)
             completion_verification = completed_package_review(payload, package, old_runtime, review)
+        if publication_mode:
+            # Never substitute a completion proof. Recheck all three actual roots
+            # after package staging; none are ordinary retirement candidates here.
+            old_runtime = existing_runtime(plan['request']['configSha256'], prefix)
+            for row in review['publicationVerification']['preservedRoots'].values():
+                require(old_runtime.S.release_proof(Path(row['path']), old_runtime.layout, {}) == row,
+                        'Protected release changed during publication-preserving upgrade')
         after = guard_inventory(prefix)
         after['existingPackages'] = [p for p in after['existingPackages'] if p != package.name]
         require(after == before['guards'], 'Existing helpers/holds/timers/pair changed during upgrade')
@@ -1023,19 +1113,22 @@ def upgrade_remote(plan, prefix=Path('/')):
                   'state': {'path': STATE, 'sha256': sha(encoded(planned))}, 'stateRevision': planned['revision'],
                   'priorConfig': {'path': str(journal / 'prior-config.json'), 'sha256': plan['request']['configSha256']},
                   'priorState': {'path': str(journal / 'prior-state.json'), 'sha256': plan['request']['stateSha256']},
-                  'supersededCycleId': None if completed_mode else old_state['pending']['cycleId'], 'index': planned['index'],
+                  'supersededCycleId': None if completed_mode or publication_mode else old_state['pending']['cycleId'], 'index': planned['index'],
                   'freshPreparationRequired': not completed_mode, 'retentionComplete': completed_mode, 'publicationHealthy': True,
                   'priorPackageAndPhaseEvidencePreserved': True, 'priorHelpersHoldsAndTimersPreserved': True}
         if completed_mode:
             result.update(preservedCompletedCycleId=old_state['lastCompleted']['cycleId'],
                           completionVerification=completion_verification)
+        elif publication_mode:
+            result.update(preservedPublication=planned['lastUpgrade']['preservedPublication'],
+                          publicationVerification=review['publicationVerification'])
         else:
             result['preparedGuardReconciliation'] = review['guardReconciliation']
         save(journal / 'completed.json', encoded(result))
         verified = None
-        if completed_mode:
+        if completed_mode or publication_mode:
             try:
-                verified = verify_activated_upgrade(result, prefix)
+                verified = verify_publication_activated_upgrade(result, prefix) if publication_mode else verify_activated_upgrade(result, prefix)
             except BaseException as error:
                 save(journal / 'verification-failed.json', encoded({'error': str(error),
                      'manualReconciliationRequired': True, 'config': result['config'], 'state': result['state']}))
@@ -1153,6 +1246,12 @@ def main():
     completed_plan.add_argument('--output', type=Path, required=True)
     completed_plan.add_argument('--reconcile-boot-logs', action='store_true')
     completed_plan.add_argument('--reconcile-expired-boot-journal', action='store_true')
+    publication_plan = sub.add_parser('plan-upgrade-publication-preserved')
+    publication_plan.add_argument('--config-sha256', required=True)
+    publication_plan.add_argument('--state-sha256', required=True)
+    publication_plan.add_argument('--publication-evidence', type=Path, required=True,
+                                  help='Compact JSON with actual publication and HTTPS path/SHA/base64 bindings')
+    publication_plan.add_argument('--output', type=Path, required=True)
     repair_plan = sub.add_parser('plan-upgrade-config-repair')
     repair_plan.add_argument('--guard-refusal', type=Path, required=True)
     repair_plan.add_argument('--guard-refusal-sha256', required=True)
@@ -1168,7 +1267,21 @@ def main():
         client = verifier_module(payload, 'ui_installer_host', 'deploy/ui-retention/lifecycle.py')
         client.require_ui_host(ROOT)
         UI_HOST = True
-    if args.operation in ('plan-upgrade-complete', 'plan-upgrade-config-repair'):
+    if args.operation == 'plan-upgrade-publication-preserved':
+        payload = committed_payload()
+        evidence = json.loads(read_bound(args.publication_evidence))
+        require(set(evidence) == {'publication', 'https'}, 'Expanded publication evidence')
+        request = dict(mode='publication-preserved', configSha256=args.config_sha256,
+                       stateSha256=args.state_sha256, verificationPayload=payload, **evidence)
+        before = remote('upgrade-inventory', request)
+        payload = preserve_retirement(payload, before)
+        plan = {'schema': 'pow-ui-retention-upgrade-plan-v1', 'scopeApprovalSha256': APPROVAL,
+                'payload': payload, 'request': request, 'before': before}
+        output = args.output.absolute(); save(output, encoded(plan))
+        print(json.dumps({'plan': str(output), 'sha256': sha(encoded(plan)),
+                          'retentionComplete': False, 'freshPreparationRequired': True,
+                          'preservedPublication': before['publicationReview']['publicationVerification']['authority']['live']}))
+    elif args.operation in ('plan-upgrade-complete', 'plan-upgrade-config-repair'):
         payload = committed_payload()
         require(SHA.fullmatch(args.config_sha256) and SHA.fullmatch(args.state_sha256), 'Invalid upgrade binding')
         request = {'mode': 'completed-cycle', 'configSha256': args.config_sha256, 'stateSha256': args.state_sha256}
@@ -1218,7 +1331,7 @@ def main():
         if plan['request'].get('mode') == 'completed-config-repair':
             require(local_guard_refusal(plan['request']['guardRefusal']['binding'], plan['payload']) == plan['request']['guardRefusal'],
                     'Guard refusal evidence changed after review')
-        elif plan['request'].get('mode') not in ('completed-cycle', 'completed-boot-log-rotation', 'completed-expired-boot-journal'):
+        elif plan['request'].get('mode') not in ('completed-cycle', 'completed-boot-log-rotation', 'completed-expired-boot-journal', 'publication-preserved'):
             require(local_interruption(plan['request']['interruption']['binding']) == plan['request']['interruption'],
                     'Interrupted local custody context changed after review')
         print(json.dumps(remote('upgrade', plan)))

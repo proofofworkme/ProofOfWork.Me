@@ -229,6 +229,8 @@ preflight; later unreviewed pairs still refuse.
 
 For the already-published 9f18 release only, `deploy/ui-retention/reconcile_publication_completion.py` authenticates the installed f63 publication-preserving upgrade and the original forecast before native preparation. Its pure verifier and native-body regression keep the four approved outgoing paths exact and preserve original records. `qualify` is read-only; `apply` requires the owner's exact cleanup confirmation and dispatches unchanged native apply/completion after creation-only reconciliation evidence. A failed phase is not automatically retried. This adapter does not grant future deletion authority or establish that cleanup has completed.
 
+The successor source retains the already-installed f63 lifecycle additions (publication-preserving upgrade verification, frozen scratch-package inventory, and completed transport-retirement evidence). These are source alignment with existing production behavior, not authorization to repeat any transport deletion. Package upgrades must preserve that historical edge; the older Git-only package cannot verify it.
+
 The Boost dedicated-page successor admits only the exact `9f18a0ce7032-20261118T004519Z` / `a4d2d88cd0b0-20261117T045327Z` predecessor pair. This source change grants no deletion authority. Complete the prior cycle and install the hash-bound package before fresh preflight; retire the outgoing a4d2 archive/sidecars and pre-9f18 rollback only after separate owner confirmation and verified successor/9f18 evidence. Historical pairs and proofs remain unchanged.
 
 Run full release builds on the node VPS with bounded resources. The transport

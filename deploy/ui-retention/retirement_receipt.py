@@ -14,6 +14,131 @@ import os
 from pathlib import Path
 import re
 import stat
+import base64
+
+# One publication-preserving tooling edge. This is not deletion authority and
+# does not admit the published release or complete its ordinary retirement.
+PUBLICATION_UPGRADE = {
+    'config': '7d03f9aebd4b4af32844b16644e00da90e4d1241e0fc4ee28a0a8e48079cc910',
+    'state': 'e5e51655c12761857aabc62c329c53451976ad83fc32f22de74a0c4cefc9a844',
+    'revision': 315,
+    'live': '9f18a0ce7032-20261118T004519Z',
+    'previous': 'a4d2d88cd0b0-20261117T045327Z',
+    'third': '1996225ce530-20261116T190348Z',
+    'publicationSha256': 'c6b08ed6b7218dcf227150beec34c72fd387ca1be79650f79cb107b237a62116',
+    'httpsSha256': 'd543bba962d5ec3997aadd468c44e66625f992f9c89fe8fc75d407a202a1c5e4',
+}
+
+
+def publication_upgrade_proof(proof, prior_state, prior_config):
+    """Authenticate actual pinned publication evidence, never a completion."""
+    pin = PUBLICATION_UPGRADE
+    require(isinstance(proof, dict) and proof.get('authority') == pin
+            and proof.get('retentionComplete') is False
+            and proof.get('deletionPerformed') is False
+            and proof.get('publicationPerformed') is False,
+            'Publication-preserving proof authority differs')
+    require(digest(encoded(prior_state)) == pin['state']
+            and digest(encoded(prior_config)) == pin['config']
+            and prior_state['revision'] == pin['revision']
+            and prior_state['status'] == 'complete'
+            and prior_state.get('pending') is None and prior_state.get('activePhase') is None
+            and prior_state['completedContext']['pair'] == {
+                'current': pin['previous'], 'previous': pin['third']},
+            'Publication-preserving original state differs')
+    values = {}
+    for key in ('publication', 'https'):
+        row = proof[key]
+        raw = base64.b64decode(row['base64'], validate=True)
+        require(len(raw) <= 2 * 1024**2 and digest(raw) == pin[key + 'Sha256'],
+                'Pinned publication evidence differs')
+        values[key] = _json(raw)
+    terminal, https = values['publication'], values['https']
+    require(terminal.get('releaseId') == pin['live'] and terminal.get('exitCode') == 0
+            and terminal.get('failure') is None and https.get('ok') is True
+            and https.get('releaseId') == pin['live']
+            and proof['context']['pair'] == {'current': pin['live'], 'previous': pin['previous']}
+            and set(proof['preservedRoots']) == {pin['live'], pin['previous'], pin['third']},
+            'Publication proof omitted a protected release')
+    roots = proof['preservedRoots']
+    expected_paths = {pin['live']: '/var/www',
+        pin['previous']: BASE + '/rollback-roots/proofofwork-www-pre-' + pin['live'],
+        pin['third']: BASE + '/rollback-roots/proofofwork-www-pre-' + pin['previous']}
+    expected_manifests = {pin['live']: https['manifestSha256'],
+        pin['previous']: prior_state['completedContext']['manifests']['current'],
+        pin['third']: prior_state['completedContext']['manifests']['previous']}
+    for release, path in expected_paths.items():
+        row = roots[release]
+        require(row['path'] == path and row['fields']['release_id'] == release
+                and row['manifestSha256'] == expected_manifests[release]
+                and row['snapshot']['path'] == path,
+                'Publication-preserving root identity differs')
+    return proof
+
+
+def verify_publication_upgrade_edge(state, config_sha, config, reader, *, verify_seal=True):
+    """Read one exact non-completing edge; old completed-edge rules stay intact."""
+    upgrade = state.get('lastUpgrade', {})
+    if upgrade.get('preservedPublication') != PUBLICATION_UPGRADE['live']:
+        return None
+    directory = Path(BASE + '/cleanup-evidence') / ('ui-lifecycle-upgrade-' + config['package']['sha256'])
+    require(upgrade.get('intentPath') == str(directory / 'intent.json')
+            and upgrade.get('completionPath') == str(directory / 'completed.json')
+            and upgrade.get('statusVerificationPath') == str(directory / 'verified.json')
+            and upgrade.get('supersededCycleId') is None,
+            'Publication upgrade namespace differs')
+    intent_raw = reader(upgrade['intentPath'], upgrade['intentSha256'])
+    intent = _json(intent_raw); done_raw = reader(upgrade['completionPath'], None); done = _json(done_raw)
+    prior_config_raw = reader(str(directory / 'prior-config.json'), PUBLICATION_UPGRADE['config'])
+    prior_state_raw = reader(str(directory / 'prior-state.json'), PUBLICATION_UPGRADE['state'])
+    prior_config, prior_state = _json(prior_config_raw), _json(prior_state_raw)
+    proof = publication_upgrade_proof(done['publicationVerification'], prior_state, prior_config)
+    plan = intent['plan']; template = intent['stateTemplate']
+    expected = dict(prior_state, configSha256=config_sha, revision=prior_state['revision'] + 2,
+                    status='retention-incomplete', pending=None, activePhase=None,
+                    lastUpgrade=template['lastUpgrade'])
+    reconstructed = dict(template, lastUpgrade=dict(template['lastUpgrade'], intentSha256=upgrade['intentSha256']))
+    mutable = {'approval', 'controller', 'package', 'sourceCommit', 'sourceTree'}
+    require(set(config) == set(prior_config) and all(config[k] == prior_config[k]
+            for k in prior_config if k not in mutable)
+            and intent.get('schema') == 'pow-ui-retention-upgrade-intent-v1'
+            and plan.get('schema') == 'pow-ui-retention-upgrade-plan-v1'
+            and plan.get('scopeApprovalSha256') == config['scopeApprovalSha256']
+            and {k: v for k, v in plan['request'].items() if k != 'verificationPayload'} == {'mode': 'publication-preserved',
+                'configSha256': PUBLICATION_UPGRADE['config'], 'stateSha256': PUBLICATION_UPGRADE['state'],
+                'publication': proof['publication'], 'https': proof['https']}
+            and plan['request']['verificationPayload']['files'] == plan['payload']['files']
+            and plan['request']['verificationPayload']['manifest'] == plan['payload']['manifest']
+            and plan['payload']['config'] == config and plan['payload']['configSha256'] == config_sha
+            and intent.get('disposition') == 'publication-preserved'
+            and intent.get('freshPreparationRequired') is True
+            and template == expected and reconstructed['lastUpgrade'] == upgrade
+            and intent['stateTemplateSha256'] == digest(encoded(template))
+            and done.get('schema') == 'pow-ui-retention-upgrade-completed-v1' and done.get('ok') is True
+            and done.get('retentionComplete') is False and done.get('freshPreparationRequired') is True
+            and done.get('preservedPublication') == PUBLICATION_UPGRADE['live']
+            and done.get('supersededCycleId') is None
+            and done['intent'] == {'path': upgrade['intentPath'], 'sha256': upgrade['intentSha256']}
+            and done['config'] == {'path': '/etc/proofofwork-retention/ui-lifecycle.json', 'sha256': config_sha}
+            and upgrade.get('priorConfigSha256') == PUBLICATION_UPGRADE['config']
+            and upgrade.get('priorStateSha256') == PUBLICATION_UPGRADE['state']
+            and done.get('priorConfig') == {'path': str(directory / 'prior-config.json'), 'sha256': PUBLICATION_UPGRADE['config']}
+            and done.get('priorState') == {'path': str(directory / 'prior-state.json'), 'sha256': PUBLICATION_UPGRADE['state']}
+            and done['state'] == {'path': config['statePath'], 'sha256': digest(encoded(reconstructed))}
+            and done['stateRevision'] == template['revision'] <= state['revision']
+            and done['index'] == prior_state['index'],
+            'Publication-preserving upgrade edge differs')
+    if state['revision'] == template['revision']:
+        require(state == reconstructed, 'Publication-preserving initial state differs')
+    if verify_seal:
+        seal = _json(reader(upgrade['statusVerificationPath'], None))
+        require(seal == {'schema': 'pow-ui-publication-upgrade-status-verified-v1', 'ok': True,
+            'config': done['config'], 'state': done['state'],
+            'upgradeReceipt': {'path': upgrade['completionPath'], 'sha256': digest(done_raw)},
+            'preservedPublication': PUBLICATION_UPGRADE['live'], 'retentionComplete': False,
+            'pair': proof['context']['pair']}, 'Publication-preserving status seal differs')
+    return {'priorConfig': prior_config, 'priorConfigSha256': PUBLICATION_UPGRADE['config'],
+            'priorState': prior_state, 'proof': proof}
 
 PROPOSAL_SHA = '6fd05dc1e04e6fbcab293683c5a0d10d184ff0bd83039a66d7f2c7ec53161004'
 INVENTORY_SHA = 'dcf09bd3ec9453230ece39ce67ccf9f39716388ad26bc609ad09d1fe5c308107'
@@ -479,6 +604,12 @@ class VerifiedRetirement:
                 return
             require(source_config(config) == anchor,
                     'Retirement package chain changed original anchor')
+            publication = verify_publication_upgrade_edge(state, config_sha, config,
+                lambda path, expected: read_bound(path, expected) if expected is not None else read_raw_bound(path),
+                verify_seal=bool(depth) or verify_current_seal)
+            if publication is not None:
+                config, config_sha, state = publication['priorConfig'], publication['priorConfigSha256'], publication['priorState']
+                continue
             if state.get('lastFailedPreparationRepair') is not None:
                 repair_path = Path(__file__).with_name('failed_prepare_repair.py')
                 spec = importlib.util.spec_from_file_location('retirement_failed_prepare_repair', repair_path)

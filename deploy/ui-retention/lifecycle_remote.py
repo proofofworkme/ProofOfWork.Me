@@ -52,6 +52,24 @@ PACKAGE_FILES = (
     'deploy/ui-retention/failed_prepare_repair.py',
     'deploy/ui-retention/failed_prepare_review.py',
     'deploy/ui-retention/reconcile_failed_prepare.py',
+    'deploy/ui-retention/transport_retirement.py',
+)
+
+# Frozen completed scratch bridge authority; never derive from the current package.
+SCRATCH_BRIDGE_PACKAGE_FILES = (
+    'audits/2026-10-16-ui-retention-repair-approval.json',
+    'audits/2026-10-16-ui-retention-repair-proposal.json',
+    'deploy/audit30/ui-storage.py', 'deploy/audit30/ui-release-policy.py',
+    'deploy/proofofwork-ui-verified-retention.py',
+    'deploy/ui-retention/custody.py', 'deploy/ui-retention/inventory.py',
+    'deploy/ui-retention/removal.py', 'deploy/ui-retention/lifecycle_remote.py',
+    'deploy/ui-retention/install_lifecycle.py', 'deploy/ui-retention/lifecycle.py',
+    'deploy/ui-retention/retirement_receipt.py',
+    'deploy/ui-retention/retirement_transition.py',
+    'deploy/ui-retention/retirement_controller.py',
+    'deploy/ui-retention/failed_prepare_repair.py',
+    'deploy/ui-retention/failed_prepare_review.py',
+    'deploy/ui-retention/reconcile_failed_prepare.py',
 )
 
 
@@ -220,7 +238,7 @@ def scratch_bridge_baseline(intent, grant):
     manifest, _ = read_json(package / 'package.json', config['package']['sha256'])
     require(manifest['schema'] == 'pow-ui-retention-package-v1'
             and manifest['sourceCommit'] == intent['commit'] and manifest['sourceTree'] == intent['tree']
-            and set(manifest['files']) == set(PACKAGE_FILES), 'Bridge package source scope differs')
+            and set(manifest['files']) == set(SCRATCH_BRIDGE_PACKAGE_FILES), 'Bridge package source scope differs')
     for relative, pin in manifest['files'].items():
         raw, _ = read(package / relative, pin['sha256'], 2 * 1024**2)
         require(len(raw) == pin['bytes'], 'Bridge package size differs')
@@ -614,7 +632,14 @@ class Runtime:
         else:
             require(value.get('lastPayloadRetirement') is None,
                     'Retirement lifecycle state requires authenticated successor')
-        if value.get('lastUpgrade'):
+        publication_upgrade = None
+        if value.get('lastUpgrade', {}).get('preservedPublication'):
+            require(self.retirement is not None, 'Publication upgrade requires historical retirement authority')
+            publication_upgrade = self.P.retirement_module().verify_publication_upgrade_edge(
+                value, self.config_sha, self.config,
+                lambda path, expected: read(path, expected)[0], verify_seal=not self.verify_upgrade)
+            require(publication_upgrade is not None, 'Unknown publication-preserving edge')
+        if value.get('lastUpgrade') and publication_upgrade is None:
             upgrade = value['lastUpgrade']
             journal = self.layout.evidence / ('ui-lifecycle-upgrade-' + self.config['package']['sha256'])
             require(upgrade['intentPath'] == str(journal / 'intent.json')
@@ -948,7 +973,15 @@ class Runtime:
         """
         return self.status({'requireComplete': True}, scratch_pending_intent=intent_sha)
 
+    def transport_retirement_status(self):
+        transport_retirement = None
+        if os.path.lexists('/var/backups/proofofwork-ui/cleanup-evidence/transport-retirement-20261118-v1'):
+            transport_retirement = load_module('lifecycle_transport_retirement',
+                Path(__file__).with_name('transport_retirement.py')).verify_terminal()
+        return transport_retirement
+
     def status(self, frame, *, scratch_pending_intent=None):
+        transport_retirement = self.transport_retirement_status()
         pending = None
         if scratch_pending_intent is None:
             floor = capacity_floor_authority(self.layout)
@@ -1062,7 +1095,8 @@ class Runtime:
                 'pending': state.get('pending') if state else None,
                 'unfinishedIntents': unfinished,
                 'retentionPolicy': self.config.get('retentionPolicy'),
-                'historicalBulkPreserved': self.config.get('retentionPolicy') == VPS_POLICY,
+                'historicalBulkPreserved': self.config.get('retentionPolicy') == VPS_POLICY and not transport_retirement,
+                **({'verifiedTransportRetirement': transport_retirement} if transport_retirement else {}),
                 'offHostCustodyRoot': self.config['offHostCustodyRoot'],
                 'binding': {**({'capacityFloor': floor} if floor else {}),
                             **({'scratchCapacity': scratch} if scratch else {}),
@@ -1140,8 +1174,10 @@ class Runtime:
             self.verify_private_retirement(plan)
             require(sorted(row['path'] for row in receipt['completed']) == plan['privateStageRetention']['forecast']['wouldRetire'], 'Private staging receipt records retirement')
         require(not scope['eligible'], 'Completed VPS state has eligible ordinary assets')
+        transport = self.transport_retirement_status()
         return {'retainedVpsPairVerified': True, 'retainedPair': context['pair'],
-                'retentionPolicy': VPS_POLICY, 'historicalBulkPreserved': True,
+                'retentionPolicy': VPS_POLICY, 'historicalBulkPreserved': not bool(transport),
+                **({'verifiedTransportRetirement': transport} if transport else {}),
                 'independentOffHostRecovery': False}
 
     def bootstrap(self, frame):
@@ -1390,7 +1426,7 @@ class Runtime:
         return self.finish(operation_id, intent, active_sha, new,
                            {'cycleId': pending['cycleId'], 'index': state['index'], 'retentionComplete': True,
                             'pair': context['pair'], 'pools': pools, 'vpsVerification': verification,
-                            'retentionPolicy': VPS_POLICY, 'historicalBulkPreserved': True,
+                            'retentionPolicy': VPS_POLICY, 'historicalBulkPreserved': verification['historicalBulkPreserved'],
                             'independentOffHostRecovery': False})
 
     def complete_cycle(self, frame):
