@@ -158,8 +158,8 @@ test('quote context and comment survive mobile dismissal', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(post.getByRole('button', { name: 'Reboost, 1 reboosts', exact: true })).toBeFocused();
   await post.press('Enter');
-  await expect(page.getByRole('dialog', { name: 'Boost detail', exact: true })).toBeVisible();
-  await page.keyboard.press('Escape');
+  await expect(page.getByRole('region', { name: 'Boost post', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to Boost', exact: true }).click();
   await fab(page).click();
   await expect(form.getByRole('textbox', { name: 'Boost text', exact: true })).toHaveValue('Keep this quote.');
   await expect(form.locator('.boost-quoted-post')).toContainText('Feed item 1.');

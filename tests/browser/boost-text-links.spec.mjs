@@ -143,17 +143,17 @@ for (const embedded of [false, true]) {
     expect(previews).toHaveLength(0);
 
     await contexts[0].press("Enter");
-    const detail = page.getByRole("dialog", { name: "Boost detail", exact: true });
+    const detail = page.getByRole("region", { name: "Boost post", exact: true });
     await expect(detail.locator(".boost-thread-reply").getByRole("link", { name: "#Reply_tag", exact: true })).toBeVisible();
     await expect(detail.locator(".boost-thread-reply .boost-dns-link")).toHaveText("app.armyofyouth.pow");
     expect(queries.some((query) => query.detail === ORIGINAL_TXID)).toBe(true);
-    await page.keyboard.press("Escape");
+    await detail.getByRole("button", { name: "Back to Boost" }).click();
     await expect(detail).toHaveCount(0);
     await cash.click();
     await expect(page.getByRole("textbox", { name: "Search Boost", exact: true })).toHaveValue(/\$mixed99/i);
     assertRoute(page.url(), embedded, { q: "$MiXeD99" });
     await expect.poll(() => queries.at(-1)?.q?.toLowerCase()).toBe("$mixed99");
-    await expect(page.getByRole("dialog", { name: "Boost detail", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Boost post", exact: true })).toHaveCount(0);
     if (embedded) await expect(page.locator(".boost-embedded-app")).toBeVisible();
   });
 
@@ -349,7 +349,7 @@ for (const embedded of [false, true]) {
       assertBrowserRoute(popup.url(), sourceUrl, "armyofyouth.pow", network);
       expect(page.url()).toBe(sourceUrl);
       expect(queries.some(query => query.detail)).toBe(false);
-      await expect(page.getByRole("dialog", { name: "Boost detail", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("region", { name: "Boost post", exact: true })).toHaveCount(0);
       await popup.close();
       const childPopupReady = page.waitForEvent("popup");
       await child.click();
@@ -440,7 +440,7 @@ test("Unicode, punctuation, and quoted PowIDs keep the complete identity in prof
   await page.getByTestId("boost-post").getByRole("link", { name: "@名.work+1", exact: true }).click();
   assertRoute(page.url(), true, { profile: "名.work+1@proofofwork.me" });
   await expect(page.locator(".boost-embedded-app")).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "Boost detail", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Boost post", exact: true })).toHaveCount(0);
 });
 
 test("raw legacy, P2SH, SegWit, and Taproot address mentions work without an ID and stay contained on mobile", async ({ page }, testInfo) => {
@@ -511,7 +511,7 @@ for (const embedded of [false, true]) {
     const popup = await popupPromise;
     await popup.waitForURL(url);
     expect(page.url()).toBe(source);
-    await expect(page.getByRole("dialog", { name: "Boost detail" })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Boost post" })).toHaveCount(0);
     await popup.close();
   });
 }

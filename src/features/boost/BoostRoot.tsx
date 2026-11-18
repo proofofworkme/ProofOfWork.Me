@@ -447,7 +447,7 @@ function boostAmoHref(boostTxid?: string) {
 function boostShareUrl(item: BoostFeedItem, network: BitcoinNetwork) {
   const sharedPost = item.reboostedPost ?? item;
   const postText = sharedPost.text.trim();
-  const txLink = sharedPost.article ? publishHref({ txid: sharedPost.txid, network }) : explorerTxUrl(sharedPost.txid, network);
+  const txLink = sharedPost.article ? publishHref({ txid: sharedPost.txid, network }) : boostRouteHref("https://boost.proofofwork.me/", { detail: sharedPost.txid, network });
   const text = [postText, txLink, "$WORK $POWB $INCB"]
     .filter(Boolean)
     .join("\n");
@@ -862,7 +862,11 @@ function BoostPost({
             )}
             {isReboost ? <span className="boost-post-action">reboosted</span> : null}
             <span>@{authorId || shortAddress(authorAddress)}</span>
-            <span>{formatDate(item.createdAt)}</span>
+            <a className="boost-post-permalink" href={boostRouteHref(boostTimelineHref(embedded, network), { detail: item.txid })}
+              aria-label="Open Boost post" onClick={event => {
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault(); onOpen(item);
+              }}>{formatDate(item.createdAt)}</a>
           </div>
           <div className="boost-post-head-actions">
             <strong>{isPaidAction ? "Action signal " : ""}<CompactSignal value={displayedSignalQ8} /></strong>
@@ -1171,8 +1175,10 @@ export default function BoostRoot({
   >();
   const [directPostOpen, setDirectPostOpen] = useState(false);
   const [composerDraftRetained, setComposerDraftRetained] = useState(false);
-  const [expandedItem, setExpandedItem] = useState<BoostFeedItem | undefined>();
-  const [notificationDetail, setNotificationDetail] = useState(() => embedded && !isPublish ? normalizeBoostTxid(initialSearchParam("detail")) : "");
+  const [postRoute, setPostRoute] = useState(() => !isPublish ? initialSearchParam("detail") : "");
+  const postTxid = normalizeBoostTxid(postRoute);
+  const postPageRef = useRef<HTMLElement>(null);
+  const feedReturnRef = useRef<{ focus: HTMLElement | null; scroll: Array<{ node: HTMLElement; top: number; left: number }> }>();
   const [postText, setPostText] = useState("");
   const [postSignalSats, setPostSignalSats] = useState(546);
   const [postWorkAmount, setPostWorkAmount] = useState("0");
@@ -1295,7 +1301,7 @@ export default function BoostRoot({
   currentTipScope.current = tipScope;
   const tipWorkSubatoms = workAtomsFromDecimal(tipWorkAmountText);
   const modalOpen = !preparedTip && Boolean(
-    directPostOpen || expandedItem || notificationDetail || pendingPaidAction || replyTarget,
+    directPostOpen || pendingPaidAction || replyTarget,
   );
   useEffect(() => {
     if (pendingPaidAction?.action !== "tip" || tipCurrency !== "WORK" || !address || network !== "livenet") {
@@ -2632,11 +2638,28 @@ export default function BoostRoot({
   }, [isPublish, embedded]);
 
   useEffect(() => {
-    if (!embedded || isPublish) return;
-    const restoreNotificationDetail = () => setNotificationDetail(normalizeBoostTxid(initialSearchParam("detail")));
-    window.addEventListener("popstate", restoreNotificationDetail);
-    return () => window.removeEventListener("popstate", restoreNotificationDetail);
-  }, [embedded, isPublish]);
+    if (isPublish) return;
+    const restorePostLocation = () => {
+      setPostRoute(initialSearchParam("detail"));
+      setReboostMenuTarget(undefined);
+    };
+    window.addEventListener("popstate", restorePostLocation);
+    return () => window.removeEventListener("popstate", restorePostLocation);
+  }, [isPublish]);
+
+  useEffect(() => {
+    if (isPublish) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (postRoute) {
+        postPageRef.current?.focus({ preventScroll: true });
+        postPageRef.current?.scrollIntoView({ block: "start", behavior: "instant" });
+      } else if (feedReturnRef.current) {
+        for (const { node, top, left } of feedReturnRef.current.scroll) node.scrollTo({ top, left, behavior: "instant" });
+        feedReturnRef.current.focus?.focus({ preventScroll: true });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isPublish, postRoute]);
 
   useEffect(() => {
     if (!listQuery || listingTarget || items.length === 0) {
@@ -2807,8 +2830,6 @@ export default function BoostRoot({
         if (directPostOpen) { closeBoostComposer(); return; }
         if (publishSigning.current) return;
         setDirectPostOpen(false);
-        setExpandedItem(undefined);
-        closeNotificationDetail();
         setPendingPaidAction(undefined);
         setReplyTarget(undefined);
         setTransferTarget(undefined);
@@ -3065,19 +3086,46 @@ export default function BoostRoot({
   function clearSocialOverlays() {
     setImageEditorOpen(false);
     setDirectPostOpen(false);
-    setExpandedItem(undefined);
-    closeNotificationDetail();
     setPendingPaidAction(undefined);
     setReplyTarget(undefined);
   }
 
-  function closeNotificationDetail() {
-    setNotificationDetail("");
-    if (embedded && !isPublish && new URLSearchParams(window.location.search).has("detail")) {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("detail");
-      window.history.replaceState(window.history.state, "", url);
+  function openBoostPost(item: BoostFeedItem) {
+    const txid = normalizeBoostTxid(item.txid);
+    if (!txid || txid === postTxid) return;
+    if (isPublish) {
+      window.location.assign(boostRouteHref(appHref("https://boost.proofofwork.me/", "/?boost=1"), { detail: txid, network }));
+      return;
     }
+    if (!postRoute) {
+      const scroll: Array<{ node: HTMLElement; top: number; left: number }> = [];
+      for (let node: HTMLElement | null = boostSurfaceRef.current; node; node = node.parentElement) {
+        scroll.push({ node, top: node.scrollTop, left: node.scrollLeft });
+      }
+      if (document.scrollingElement instanceof HTMLElement) {
+        const node = document.scrollingElement;
+        scroll.push({ node, top: node.scrollTop, left: node.scrollLeft });
+      }
+      feedReturnRef.current = { focus: document.activeElement instanceof HTMLElement ? document.activeElement : null, scroll };
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set("detail", txid);
+    url.searchParams.set("network", network);
+    window.history.pushState({ ...window.history.state, boostPostReturn: window.location.href }, "", url);
+    setReboostMenuTarget(undefined);
+    setToolsOpen(false);
+    setPostRoute(txid);
+  }
+
+  function closeBoostPost() {
+    if (window.history.state?.boostPostReturn) {
+      window.history.back();
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete("detail");
+    window.history.replaceState(window.history.state, "", url);
+    setPostRoute("");
   }
 
   function closePublishWriter() {
@@ -3152,14 +3200,8 @@ export default function BoostRoot({
           setListingTarget(boostItem);
           openToolsForCompactSurface();
         }}
-        onOpen={(boostItem) => {
-          setReboostMenuTarget(undefined);
-          setExpandedItem(boostItem);
-        }}
-        onOpenOriginal={(originalPost) => {
-          setReboostMenuTarget(undefined);
-          setExpandedItem(originalPost);
-        }}
+        onOpen={openBoostPost}
+        onOpenOriginal={openBoostPost}
         onReboost={(boostItem) => {
           setReboostMenuTarget(undefined);
           setPendingPaidAction({ action: "reboost", item: boostItem });
@@ -3250,7 +3292,7 @@ export default function BoostRoot({
           onRefresh={() => { void refresh(false, true); if (isPublish) void checkPublishReceipts(); }}
           subtitle={isPublish ? "Stories published on ProofOfWork" : "Proof-ranked social signal"}
           title={surfaceName}
-          titleAs={verifiedArticleHeading ? "span" : "h1"}
+          titleAs={verifiedArticleHeading || Boolean(postRoute) ? "span" : "h1"}
         />
       )}
       <AppStatusRow persistent status={status}
@@ -3537,6 +3579,15 @@ export default function BoostRoot({
             busy={Boolean(actionBusy)} publishStatus={status.text} onPublish={publishProfileImages} onClose={() => setImageEditorOpen(false)} /> : null}
 
         <section className="boost-feed-panel">
+          {!isPublish && postRoute ? <section className="boost-post-page" aria-label="Boost post" ref={postPageRef} tabIndex={-1}>
+            <div className="boost-post-page-head">
+              <button className="secondary small" type="button" aria-label="Back to Boost" onClick={closeBoostPost}><ArrowLeft size={20} /></button>
+              <h1>Post</h1>
+            </div>
+            {postTxid ? <BoostActivity key={`${network}:${postTxid}`} txid={postTxid} network={network} viewer={address} renderPost={renderBoostPost} /> :
+              <div role="alert"><h2>Invalid post transaction</h2><p>Open a Boost with its full 64-character transaction ID.</p></div>}
+          </section> : null}
+          <div hidden={!isPublish && Boolean(postRoute)}>
           {isSearchView ? (
             <header className="boost-search-head">
               <a className="secondary small link-button" href={timelineHref}
@@ -3790,6 +3841,7 @@ export default function BoostRoot({
             ) : null}
           </div>
           </>}
+          </div>
         </section>
 
         <aside className="boost-right-rail" aria-label="Boost discovery">
@@ -3934,8 +3986,6 @@ export default function BoostRoot({
               if (directPostOpen) { closeBoostComposer(); return; }
               if (publishSigning.current) return;
               setDirectPostOpen(false);
-              setExpandedItem(undefined);
-              closeNotificationDetail();
               setPendingPaidAction(undefined);
               setReplyTarget(undefined);
             }}
@@ -4227,46 +4277,6 @@ export default function BoostRoot({
                   </span>
                 </button>
               </div>
-            </section>
-          ) : expandedItem || notificationDetail ? (
-            <section
-              aria-labelledby="boost-detail-dialog-title"
-              aria-modal="true"
-              className="boost-modal boost-detail-modal"
-              role="dialog"
-            >
-              <div className="boost-modal-head">
-                <div>
-                  <span>Post</span>
-                  <strong id="boost-detail-dialog-title">Boost detail</strong>
-                </div>
-                <button
-                  aria-label="Close Boost detail"
-                  className="secondary small"
-                  onClick={() => { setExpandedItem(undefined); closeNotificationDetail(); }}
-                  type="button"
-                >
-                  <span className="button-content"><ArrowLeft size={16} /><span>Back</span></span>
-                </button>
-              </div>
-              <BoostActivity key={expandedItem?.txid ?? notificationDetail}
-                txid={expandedItem?.txid ?? notificationDetail}
-                network={network} viewer={address} renderPost={renderBoostPost} />
-              {expandedItem ? <button
-                className="primary"
-                onClick={() => {
-                  setReplyTarget(expandedItem);
-                  setReplyText("");
-                  setExpandedItem(undefined);
-                  closeNotificationDetail();
-                }}
-                type="button"
-              >
-                <span className="button-content">
-                  <MessageCircle size={16} />
-                  <span>Post your reply</span>
-                </span>
-              </button> : null}
             </section>
           ) : null}
         </div>

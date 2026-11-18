@@ -363,7 +363,8 @@ payments, attached WORK value, or Files bytes. Observed companion Mail/WORK
 attribution is explanatory and adds no second canonical value. A future
 economic change is only a [draft proposal](BOOST_GROWTH_ACCOUNTING_PROPOSAL.md).
 
-Boost's shared standalone/Computer detail view loads replies and engagement by
+Boost's shared standalone/Computer permalink page (`detail=<txid>`) replaces
+the former post-detail popup and loads replies and engagement by
 transaction ID rather than searching a visible feed page. Likes/reboosts and
 reply evidence remain inspectable through confirmed IDs, address fallbacks and
 TX links. Profile connection counts open Followers/Following lists with profile

@@ -90,17 +90,18 @@ test("reboost renders the original post instead of the target txid", async ({ pa
   await expect(page.locator(".boost-signal-row")).toContainText("Proof 546 proofs");
   await expect(page.locator(".boost-post")).not.toContainText("Added 546 proofs to original Boost signal");
   await page.getByRole("button", { name: "Open original Boost" }).click();
-  const originalFromFeed = page.getByRole("dialog", { name: "Boost detail" });
+  const originalFromFeed = page.getByRole("region", { name: "Boost post" });
   await expect(originalFromFeed).toContainText("Incredible feat by armyofyouth@proofofwork.me!");
   await expect(originalFromFeed.locator(".boost-post-head-actions")).toContainText("1,092 proofs");
-  await page.keyboard.press("Escape");
+  await originalFromFeed.getByRole("button", { name: "Back to Boost" }).click();
   await page.getByTestId("boost-post").first().press("Enter");
-  const expandedReboost = page.getByRole("dialog", { name: "Boost detail" });
+  const expandedReboost = page.getByRole("region", { name: "Boost post" });
   await expect(expandedReboost).toContainText("reboosted");
   await expandedReboost.getByRole("button", { name: "Open original Boost" }).click();
-  await expect(page.getByRole("dialog", { name: "Boost detail" })).toContainText("Incredible feat by armyofyouth@proofofwork.me!");
-  await expect(page.getByRole("dialog", { name: "Boost detail" }).locator(".boost-post-head-actions")).toContainText("1,092 proofs");
-  await page.keyboard.press("Escape");
+  await expect(page.getByRole("region", { name: "Boost post" })).toContainText("Incredible feat by armyofyouth@proofofwork.me!");
+  await expect(page.getByRole("region", { name: "Boost post" }).locator(".boost-post-head-actions")).toContainText("1,092 proofs");
+  await page.goBack();
+  await page.goBack();
   await expect(page.locator(".boost-post")).not.toContainText(`reboost ${ORIGINAL_TXID}`);
 
   ownerPaid = true;
@@ -154,7 +155,7 @@ test("reboost renders the original post instead of the target txid", async ({ pa
   await page.keyboard.press("Escape");
 
   await page.getByTestId("boost-post").first().press("Enter");
-  await expect(page.getByRole("dialog", { name: "Boost detail" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Boost post" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Post your reply" })).toBeVisible();
   await page.getByRole("button", { name: "Post your reply" }).click();
   await expect(page.getByRole("dialog", { name: "Replying to Boost" })).toBeVisible();

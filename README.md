@@ -966,6 +966,10 @@ wire, activation and checkpoint rules are in [PROOFOFWORK_DNS.md](PROOFOFWORK_DN
 
 ## Boost Protocol
 
+Individual Boosts open on their own permalink page (`?detail=<txid>`) in
+standalone Boost and Computer, with Back/Forward navigation and the same
+confirmed thread and engagement reader. Reply and signing forms remain dialogs.
+
 Boost text links all cashtags and hashtags to case-insensitive, whole-tag
 searches over the complete confirmed history. `$work`, `#work`, and ordinary
 `work` searches remain distinct. The same text renderer covers posts, replies,

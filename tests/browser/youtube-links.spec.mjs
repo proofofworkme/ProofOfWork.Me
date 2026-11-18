@@ -54,7 +54,7 @@ for (const { embedded, width } of [{ embedded: false, width: 320 }, { embedded: 
     await main.getByRole("button", { name: "Play YouTube video" }).click();
     await expect(main.locator("iframe")).toHaveAttribute("src", `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&playsinline=1&start=30`);
     await expect(main.locator("iframe")).toHaveAttribute("referrerpolicy", "strict-origin-when-cross-origin");
-    await expect(page.getByRole("dialog", { name: "Boost detail", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Boost post", exact: true })).toHaveCount(0);
     expect(page.url()).toBe(initialUrl);
     expect(await main.locator(".boost-post-text").textContent()).toBe(source);
     await expect(main.getByRole("link", { name: "Open on YouTube" })).toHaveAttribute("href", `https://www.youtube.com/watch?v=${id}&t=30s`);
@@ -72,7 +72,7 @@ for (const { embedded, width } of [{ embedded: false, width: 320 }, { embedded: 
       await expect(reboost.getByRole("link", { name: "Open on YouTube" })).toBeVisible();
     }
     await main.locator(".boost-post-text").click();
-    await expect(page.getByRole("dialog", { name: "Boost detail", exact: true }).locator(".boost-thread-reply .youtube-link-card")).toHaveCount(1);
+    await expect(page.getByRole("region", { name: "Boost post", exact: true }).locator(".boost-thread-reply .youtube-link-card")).toHaveCount(1);
   });
 }
 

@@ -90,9 +90,9 @@ for (const width of [320,360,390,600,601,620,621]) {
       await expect(nested.locator('iframe')).toHaveCount(0);
     }
     await main.locator('.boost-post-text').click();
-    const detail=page.getByRole('dialog',{name:'Boost detail',exact:true});
+    const detail=page.getByRole('region',{name:'Boost post',exact:true});
     await expect(detail).toBeVisible();await containedCards(detail);
-    await page.keyboard.press('Escape');
+    await detail.getByRole('button',{name:'Back to Boost'}).click();
     await author.click();
     await expect(page).toHaveURL(/profile=/);await containedCards(page);
   });

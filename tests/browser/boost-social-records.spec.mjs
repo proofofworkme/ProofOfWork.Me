@@ -35,15 +35,13 @@ for (const route of ["/?boost=1", `/?boost=1&profile=${author}`, "/?folder=boost
     const queries = await fixture(page);
     await page.goto(route);
     await page.getByTestId("boost-post").getByText(post.text, { exact: true }).click();
-    const detail = page.getByRole("dialog", { name: "Boost detail" });
+    const detail = page.getByRole("region", { name: "Boost post", exact: true });
     await expect(detail.getByText(reply.text, { exact: true })).toBeVisible();
     await expect(detail.locator(".boost-post-media")).toBeVisible();
     expect((await detail.locator(".boost-post-media").boundingBox()).height).toBeLessThanOrEqual(281);
-    await detail.evaluate(el => { el.scrollTop = el.scrollHeight; });
-    const top = (await detail.boundingBox()).y;
-    expect((await detail.locator(".boost-modal-head").boundingBox()).y).toBeGreaterThanOrEqual(top);
-    expect((await detail.locator(".boost-modal-head").boundingBox()).y).toBeLessThan(top + 24);
-    await expect(detail.getByRole("button", { name: "Close Boost detail" })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`detail=${txid}`));
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(detail.getByRole("button", { name: "Back to Boost" })).toBeVisible();
     await expect(detail.getByLabel("Reply, 1 replies").last()).toBeVisible();
     await detail.getByRole("tab", { name: "Likes 1", exact: true }).click();
     await expect(detail.getByRole("link", { name: "View TX" })).toHaveAttribute("href", new RegExp(actionTxid));
@@ -53,7 +51,7 @@ for (const route of ["/?boost=1", `/?boost=1&profile=${author}`, "/?folder=boost
     expect(queries.filter(q => q.detail).every(q => !q.profile && !q.q && !q.window)).toBeTruthy();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);
     await page.screenshot({ path: testInfo.outputPath("activity.png") });
-    await page.keyboard.press("Escape");
+    await detail.getByRole("button", { name: "Back to Boost" }).click();
     await expect(detail).toHaveCount(0);
   });
 }
@@ -77,7 +75,32 @@ test("detail failure stays unavailable with retry, never a false empty thread", 
   await fixture(page, { fail: true });
   await page.goto("/?boost=1");
   await page.getByTestId("boost-post").getByText(post.text, { exact: true }).click();
-  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Boost post", exact: true }).getByRole("alert")).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry from first page" })).toBeVisible();
   await expect(page.getByText("No confirmed replies yet.")).toHaveCount(0);
+});
+
+for (const route of ["/?boost=1", "/?folder=boost"]) {
+  test(`post permalinks survive reload, Back and Forward at ${route}`, async ({ page }) => {
+    await fixture(page);
+    await page.goto(route);
+    await page.getByTestId("boost-post").getByText(post.text, { exact: true }).click();
+    const detail = page.getByRole("region", { name: "Boost post", exact: true });
+    await expect(detail).toBeVisible();
+    await page.goBack();
+    await expect(detail).toHaveCount(0);
+    await page.goForward();
+    await expect(detail).toContainText(post.text);
+    await page.reload();
+    await expect(detail).toContainText(post.text);
+    await page.keyboard.press("Escape");
+    await expect(detail).toBeVisible();
+  });
+}
+test("invalid post permalink is an error, not an empty feed", async ({ page }) => {
+  await fixture(page);
+  await page.goto("/?boost=1&detail=invalid");
+  await expect(page.getByRole("alert")).toContainText("Invalid post transaction");
+  await page.getByRole("button", { name: "Back to Boost" }).click();
+  await expect(page).not.toHaveURL(/detail=/);
 });

@@ -40,7 +40,7 @@ for (const embedded of [false, true]) {
     await popup.waitForLoadState();
     expect(popup.url()).toBe("https://proofofwork.me/");
     expect(page.url()).toBe(initialUrl);
-    await expect(page.getByRole("dialog", { name: "Boost detail", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Boost post", exact: true })).toHaveCount(0);
     await popup.close();
   });
 }

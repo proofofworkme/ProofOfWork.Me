@@ -112,6 +112,11 @@ Dock icons and labels use consistent alignment and deliberate line height.
 Keep labels, including All apps, on one line; size items for their readable text
 instead of letting one wrapped label stretch the entire dock.
 
+Individual Boost posts open as permalink reader pages (`detail=<txid>`), not
+modal dialogs, on standalone Boost and in Computer. Back and Forward navigate
+post history; returning to the mounted feed preserves its draft and scroll.
+Reply, quote and paid-action forms remain explicit dialogs.
+
 The desktop Boost timeline composer scrolls with the posts. Keep it inside the
 feed, outside sticky timeline navigation, on standalone Boost and in Computer.
 Scrolling away and back preserves the current draft.

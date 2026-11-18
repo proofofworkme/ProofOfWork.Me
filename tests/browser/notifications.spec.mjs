@@ -260,10 +260,10 @@ test("Boost notification opens a record outside the feed and can be dismissed", 
   state.notifications = [item(0, { app: "boost", label: "Reply received", target: { workspace: "boost", txid: TX[2] } })];
   await page.goto("/?folder=inbox"); await connect(page); const dialog = await open(page);
   await dialog.getByRole("button", { name: "Open record", exact: true }).click();
-  const detail = page.getByRole("dialog", { name: "Boost detail", exact: true });
+  const detail = page.getByRole("region", { name: "Boost post", exact: true });
   await expect(detail).toContainText("Exact historical Boost");
   expect(detailRequests).toContain(TX[2]);
-  await detail.getByRole("button", { name: "Close Boost detail", exact: true }).click();
+  await detail.getByRole("button", { name: "Back to Boost", exact: true }).click();
   await expect(detail).toHaveCount(0);
   await expect(page).not.toHaveURL(/detail=/u);
   await expectNoSignature(page, state);

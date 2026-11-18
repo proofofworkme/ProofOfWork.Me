@@ -476,12 +476,12 @@
   font-size: 0.78rem;
 }
 
-.boost-detail-modal {
+.boost-post-page {
   max-width: 760px;
   width: min(100%, 760px);
 }
 
-.boost-detail-modal > .boost-post {
+.boost-post-page > .boost-post {
   box-shadow: none;
   cursor: default;
   transform: none;
@@ -1227,18 +1227,18 @@
 }
 .boost-modal-head > button { flex: 0 0 auto; min-height: 44px; }
 .boost-modal-head > button span { text-transform: none; letter-spacing: normal; font-size: .85rem; color: inherit; }
-.boost-detail-modal { width: min(100%, 640px); max-width: 640px; gap: 0; }
-.boost-detail-modal .boost-post { background: transparent; padding: 16px 0; box-shadow: none; cursor: default; }
-.boost-detail-modal .boost-post-head { flex-wrap: wrap; gap: 8px; }
-.boost-detail-modal .boost-post-head-actions { flex-wrap: wrap; gap: 8px; }
-.boost-detail-modal .boost-post-media { width: 100%; max-height: min(280px, 32dvh); object-fit: contain; margin: 12px 0; }
-.boost-detail-modal .boost-profile-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin: 0; }
-.boost-detail-modal .boost-profile-tabs button { min-width: 0; min-height: 48px; padding: 10px 4px; text-align: center; justify-content: center; }
-.boost-detail-modal .boost-profile-tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+.boost-post-page { width: min(100%, 640px); max-width: 640px; gap: 0; }
+.boost-post-page .boost-post { background: transparent; padding: 16px 0; box-shadow: none; cursor: default; }
+.boost-post-page .boost-post-head { flex-wrap: wrap; gap: 8px; }
+.boost-post-page .boost-post-head-actions { flex-wrap: wrap; gap: 8px; }
+.boost-post-page .boost-post-media { width: 100%; max-height: min(280px, 32dvh); object-fit: contain; margin: 12px 0; }
+.boost-post-page .boost-profile-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 0; }
+.boost-post-page .boost-profile-tabs button { min-width: 0; min-height: 48px; padding: 10px 4px; text-align: center; justify-content: center; }
+.boost-post-page .boost-profile-tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--text); background: var(--accent-soft); }
 .boost-detail-replies { border-top: 0; padding: 12px 0; gap: 0; }
 .boost-detail-replies > .field-note { margin: 0; padding: 8px 0; }
-.boost-detail-modal .boost-thread-reply { border-left: 0; padding: 0; }
-.boost-detail-modal > .primary { margin-top: 12px; }
+.boost-post-page .boost-thread-reply { border-left: 0; padding: 0; }
+.boost-post-page > .primary { margin-top: 12px; }
 .boost-connections .boost-profile-titlebar { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 12px; padding: 12px 16px; }
 .boost-connections .boost-profile-titlebar > div { text-align: center; }
 .boost-connections .boost-profile-titlebar > button { display: inline-flex; justify-content: center; align-items: center; padding: 0; width: 44px; height: 44px; }
@@ -1266,7 +1266,7 @@
   .boost-modal-backdrop { padding: 8px; }
   .boost-modal { padding: 16px; max-height: calc(100dvh - 16px); }
   .boost-modal-head { top: -16px; margin: -16px -16px 0; padding: 12px 16px; }
-  .boost-detail-modal .boost-post-head-actions { justify-content: flex-start; }
+  .boost-post-page .boost-post-head-actions { justify-content: flex-start; }
   .boost-person-row { padding: 14px 12px; gap: 10px; }
   .boost-person-meta { gap: 10px; }
   .boost-public-app.mail-app > .app-footer.boost-footer { grid-template-columns: minmax(0, 1fr); gap: 8px; padding-bottom: 88px; }
@@ -1346,7 +1346,7 @@
   .boost-footer .boost-footer-apps { grid-row: 3; }
 }
 @media (max-width: 480px) {
-  .boost-detail-modal .boost-actions > a .button-content > span { display: none; }
+  .boost-post-page .boost-actions > a .button-content > span { display: none; }
 }
 
 }
@@ -1464,3 +1464,13 @@
   .boost-shell-instrument .boost-author-line { align-items: center; }
   .boost-shell-instrument .boost-author-line > .boost-author { flex-basis: 100%; }
 }
+
+/* A Boost permalink is a reader page, not a scroll-locked dialog. */
+.boost-post-page { width: 100%; max-width: none; padding: 0 16px 24px; min-width: 0; }
+.boost-post-page-head { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.boost-post-page-head h1 { margin: 0; font-size: 20px; font-weight: 600; }
+.boost-post-page:focus { outline: none; }
+.boost-feed-panel > [hidden] { display: none; }
+
+.boost-post-permalink { color: var(--text-muted); text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
+.boost-post-permalink:hover { text-decoration: underline; }
