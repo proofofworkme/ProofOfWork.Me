@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Focused pure second-edge rejection tests; no production writes."""
 import copy
+import base64
 import importlib.util
 import json
 from pathlib import Path
@@ -230,5 +231,42 @@ class ChainTests(unittest.TestCase):
              patch.object(R,'_scratch_capacity_position_original') as original:
             with self.assertRaisesRegex(ValueError,'unsealed successor'):R.scratch_capacity_authority(self.layout)
             original.assert_not_called()
+
+
+
+class PredecessorScopeTests(unittest.TestCase):
+    def setUp(self):
+        self.installer=load('successor_scope_installer','install_lifecycle.py')
+    def payload(self,scope):
+        m=self.installer;files={}
+        for relative in scope:
+            raw=(ROOT/relative).read_bytes() if relative==m.FILES[0] else b'# fixture package source\n'
+            files[relative]={'base64':base64.b64encode(raw).decode(),'bytes':len(raw),'sha256':m.sha(raw)}
+        manifest={'schema':'pow-ui-retention-package-v1','sourceCommit':'a'*40,'sourceTree':'b'*40,
+                  'files':{name:{'bytes':v['bytes'],'sha256':v['sha256']} for name,v in files.items()}}
+        digest=m.sha(m.encoded(manifest));package=m.EVIDENCE+'/ui-lifecycle-tools-'+digest
+        config={'schema':'pow-ui-retention-lifecycle-config-v1','scopeApprovalSha256':m.APPROVAL,
+                'sourceCommit':manifest['sourceCommit'],'sourceTree':manifest['sourceTree'],
+                'package':{'path':package,'sha256':digest},
+                'controller':{'path':package+'/deploy/ui-retention/lifecycle_remote.py',
+                              'sha256':files['deploy/ui-retention/lifecycle_remote.py']['sha256']},
+                'approval':{'path':package+'/'+m.FILES[0],'sha256':m.APPROVAL},
+                'statePath':m.STATE,'offHostCustodyRoot':None,'retentionPolicy':m.VPS_POLICY}
+        return {'manifest':manifest,'files':files,'config':config,'configSha256':m.sha(m.encoded(config))}
+    def test_exact_predecessor_only_legacy_reader(self):
+        m=self.installer;p=self.payload(m.PRE_SIX_GIB_FILES)
+        m.validate_payload(p,allow_legacy=True)
+        with self.assertRaisesRegex(ValueError,'file scope'):m.validate_payload(p)
+        m.validate_payload(self.payload(m.FILES))
+    def test_arbitrary_missing_and_extra_scopes_refuse(self):
+        m=self.installer;old=set(m.PRE_SIX_GIB_FILES)
+        for scope in (old-{'deploy/ui-retention/custody.py'},old|{'arbitrary.py'},set(m.FILES)-{'deploy/ui-retention/scratch_successor.py'}):
+            for legacy in (False,True):
+                with self.subTest(scope=scope,legacy=legacy),self.assertRaisesRegex(ValueError,'file scope'):
+                    m.validate_payload(self.payload(scope),allow_legacy=legacy)
+    def test_legacy_still_verifies_bytes(self):
+        m=self.installer;p=self.payload(m.PRE_SIX_GIB_FILES)
+        p['files']['deploy/ui-retention/custody.py']['base64']=base64.b64encode(b'foreign').decode()
+        with self.assertRaisesRegex(ValueError,'file binding'):m.validate_payload(p,allow_legacy=True)
 
 if __name__=='__main__':unittest.main()

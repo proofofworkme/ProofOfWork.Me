@@ -59,6 +59,9 @@ FILES = (
     'audits/2026-11-18-ui-scratch-capacity-approval.json',
     'deploy/proofofwork-ui-capacity.py',
 )
+# Frozen predecessor scope for authenticated native package upgrades.
+PRE_SIX_GIB_FILES = ('audits/2026-10-16-ui-retention-repair-approval.json', 'audits/2026-10-16-ui-retention-repair-proposal.json', 'deploy/audit30/ui-storage.py', 'deploy/audit30/ui-release-policy.py', 'deploy/proofofwork-ui-verified-retention.py', 'deploy/ui-retention/custody.py', 'deploy/ui-retention/inventory.py', 'deploy/ui-retention/removal.py', 'deploy/ui-retention/lifecycle_remote.py', 'deploy/ui-retention/install_lifecycle.py', 'deploy/ui-retention/lifecycle.py', 'deploy/ui-retention/retirement_receipt.py', 'deploy/ui-retention/retirement_transition.py', 'deploy/ui-retention/retirement_controller.py', 'deploy/ui-retention/failed_prepare_repair.py', 'deploy/ui-retention/failed_prepare_review.py', 'deploy/ui-retention/reconcile_failed_prepare.py', 'deploy/ui-retention/transport_retirement.py')
+
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 MAX_EVIDENCE = 64 * 1024**2
 ROTATION_CONFIG_PINS = {
@@ -191,12 +194,13 @@ def committed_payload(root=ROOT):
 def validate_payload(payload, *, allow_legacy=False):
     manifest = payload['manifest']
     scope = set(FILES)
-    previous = scope - {'deploy/ui-retention/transport_retirement.py'}
+    prior = set(PRE_SIX_GIB_FILES)
+    previous = prior - {'deploy/ui-retention/transport_retirement.py'}
     legacy = previous - {'deploy/ui-retention/failed_prepare_repair.py',
                       'deploy/ui-retention/failed_prepare_review.py',
                       'deploy/ui-retention/reconcile_failed_prepare.py'}
     require(set(payload['files']) == set(manifest['files'])
-            and (set(payload['files']) == scope or allow_legacy and set(payload['files']) in (legacy, previous)),
+            and (set(payload['files']) == scope or allow_legacy and set(payload['files']) in (legacy, previous, prior)),
             'Expanded package file scope')
     require(manifest['schema'] == 'pow-ui-retention-package-v1'
             and re.fullmatch('[0-9a-f]{40}', manifest['sourceCommit'])
@@ -317,7 +321,7 @@ def existing_runtime(config_sha, prefix=Path('/')):
     package = prefix / config['package']['path'].lstrip('/')
     manifest_raw = read_bound(package / 'package.json', config['package']['sha256'])
     manifest = json.loads(manifest_raw)
-    require(set(manifest['files']) in (set(FILES), set(FILES) - {'deploy/ui-retention/transport_retirement.py'}, set(FILES) - {'deploy/ui-retention/transport_retirement.py', 'deploy/ui-retention/failed_prepare_repair.py',
+    require(set(manifest['files']) in (set(FILES), set(PRE_SIX_GIB_FILES), set(PRE_SIX_GIB_FILES) - {'deploy/ui-retention/transport_retirement.py'}, set(PRE_SIX_GIB_FILES) - {'deploy/ui-retention/transport_retirement.py', 'deploy/ui-retention/failed_prepare_repair.py',
                           'deploy/ui-retention/failed_prepare_review.py',
                           'deploy/ui-retention/reconcile_failed_prepare.py'}),
             'Installed package scope differs')
