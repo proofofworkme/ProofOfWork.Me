@@ -56,10 +56,12 @@ with tempfile.TemporaryDirectory(prefix='pow-ui-capacity-boundaries-') as tempor
     for directory in (www, archives, staging, rollback, scratch, runtime):
         # The real deployment lock has a private 0700 parent.
         directory.mkdir(mode=0o700 if directory == runtime else 0o755)
+        directory.chmod(0o700 if directory == runtime else 0o755)
+    # Set only disposable public fixture modes explicitly; keep ambient umask private.
     for surface in SURFACES:
         directory = www / ('proofofwork-' + surface)
-        directory.mkdir(mode=0o755)
-        (directory / 'assets').mkdir(mode=0o755)
+        directory.mkdir(mode=0o755); directory.chmod(0o755)
+        (directory / 'assets').mkdir(mode=0o755); (directory / 'assets').chmod(0o755)
         write(directory / 'index.html', '<html><script src="/assets/live.js"></script></html>\n')
         write(directory / 'assets/live.js', 'const release = "retained";\n')
     write(www / 'passthrough.txt', 'Preserved non-release evidence.\n')
@@ -117,7 +119,7 @@ except module['CapacityError'] as error:
     original_live = fingerprint(www)
     original_archives = fingerprint(archives)
     source = staging / 'proofofwork-ui-source-capacity-test'
-    source.mkdir(mode=0o755)
+    source.mkdir(mode=0o755); source.chmod(0o755)
     write(source / 'source.txt', 'A detached release fixture.\n')
     write(source / '.gitignore', 'node_modules/\n')
     run(['/usr/bin/git', '-C', source, 'init', '--quiet'])
@@ -126,7 +128,7 @@ except module['CapacityError'] as error:
          '-c', 'user.email=capacity-fixture@example.invalid', 'commit', '--quiet', '-m', 'fixture'])
     commit = run(['/usr/bin/git', '-C', source, 'rev-parse', 'HEAD']).stdout.strip()
     run(['/usr/bin/git', '-C', source, 'checkout', '--quiet', '--detach', commit])
-    (source / 'node_modules').mkdir(mode=0o755)
+    (source / 'node_modules').mkdir(mode=0o755); (source / 'node_modules').chmod(0o755)
     write(source / 'node_modules/fixture.js', 'export const fixture = true;\n')
     stage = staging / 'proofofwork-www-stage-capacity-test'
     shutil.copytree(www, stage)

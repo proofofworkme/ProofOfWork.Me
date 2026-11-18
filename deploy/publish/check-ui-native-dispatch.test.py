@@ -143,16 +143,40 @@ class NativeDispatch(unittest.TestCase):
                         patch.object(runpy, 'run_path', side_effect=tools), \
                         patch.object(os, 'fstat', return_value=SimpleNamespace(st_mode=stat.S_IFIFO)), \
                         patch.object(sys, 'argv', ['transport','--ui-host',str(path),phase,str(root/phase),'--bundle-host','stdin']), \
-                        patch.object(subprocess, 'run') as run:
+                        patch.object(subprocess, 'run') as run, \
+                        patch.object(subprocess, 'Popen') as popen, \
+                        patch.object(transport, 'bounded_dispatch', return_value={
+                            'supervisionReason':None,'nativeExitCode':0}) as dispatch:
+                    # This is argument/receipt plumbing, not kernel qualification.
                     transport.main()
                 admission.assert_called_once_with(plan,guard_source,True)
-                argv = run.call_args.args[0]
+                run.assert_not_called(); popen.assert_not_called()
+                dispatch.assert_called_once()
+                argv, archive, log, unit, nonce = dispatch.call_args.args
+                self.assertIs(archive, sys.stdin.buffer)
+                self.assertEqual(dispatch.call_args.kwargs, {
+                    'timeout':transport.TRANSPORT_REMOTE_TIMEOUT_SECONDS,
+                    'limit':transport.DISPATCH_LOG_LIMIT})
+                self.assertEqual(transport.DISPATCH_LOG_LIMIT,2*1024**2)
+                self.assertRegex(nonce,r'^[0-9a-f]{64}$')
+                self.assertIn('--unit='+unit,argv)
+                self.assertEqual(argv.count('--property=Description=proofofwork-transport:'+nonce),1)
+                owner_at=argv.index(transport.OWNER_BOOTSTRAP)
+                self.assertEqual(argv[owner_at+1],nonce)
+                self.assertEqual(argv[owner_at+2:owner_at+6],['/usr/bin/python3','-I','-B','-c'])
+                self.assertIn('--property=KillMode=control-group',argv)
+                self.assertIn('--property=RuntimeMaxSec=7800',argv)
+                intent_path=root/(phase+'.supervision-intent.json')
+                intent=json.loads(intent_path.read_bytes())
+                self.assertEqual((intent['unit'],intent['nonce'],intent['phase']),(unit,nonce,phase))
+                self.assertEqual(intent['planSha256'],hashlib.sha256(path.read_bytes()).hexdigest())
+                receipt=json.loads((root/(phase+'.supervision.json')).read_bytes())
+                self.assertEqual(receipt['intentSha256'],hashlib.sha256(intent_path.read_bytes()).hexdigest())
                 self.assertEqual(argv[:4], ['/usr/bin/python3','-I','-B','-c'])
                 self.assertIn('/usr/bin/systemd-run', argv)
                 self.assertIn('--pipe', argv)
                 self.assertTrue(argv[-4].startswith(guard_source.decode() + '\n'))
                 self.assertEqual(argv[-2:], [hashlib.sha256(path.read_bytes()).hexdigest(),phase])
-                self.assertIs(run.call_args.kwargs['stdin'], sys.stdin.buffer)
 
     def test_emitter_refuses_changed_plan_and_cross_release_archive(self):
         with tempfile.TemporaryDirectory(dir='/tmp') as d:

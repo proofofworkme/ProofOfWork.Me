@@ -2,6 +2,7 @@
 """The November 3 helper promotion is confined to the reviewed pair and its closure."""
 import base64
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,27 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 DEPLOY = HERE.parent
 
+# These tests qualify the immutable November 3/9 helper promotions, not today's
+# publisher. Exact historical blobs avoid silently widening production authority.
+HISTORICAL_COMMIT = "6f3400d03d676932db060930c64a153bd51e3204"
+HISTORICAL_SHA256 = {
+    "proofofwork-ui-release-stage.py": "0874f8689fbcd062c44a54745a049cfc44f71a54f6404fdcc65f10e80f1994ee",
+    "proofofwork-ui-release-publish.sh": "96a7445b9d58aea4daf80b5a46e24311604d0e8416cdce02e6ee614360d2c5f4",
+    "publish/phase_capacity.py": "69544e6ac32f658d342759928794e4857c2826a7b850dabdaf38b8d0ad986b85",
+}
+
+def historical_source(relative):
+    expected = HISTORICAL_SHA256[relative]
+    raw = subprocess.check_output([
+        "/usr/bin/git", "--no-replace-objects", "-c", "core.fsmonitor=false",
+        "-C", str(DEPLOY.parent), "show", HISTORICAL_COMMIT + ":deploy/" + relative,
+    ], env={**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"},
+       timeout=15)
+    if hashlib.sha256(raw).hexdigest() != expected:
+        raise AssertionError("Historical helper blob SHA differs: " + relative)
+    return raw
+
+
 def historical_publisher(candidate):
     """Reconstruct the exact e27 shell bytes by restoring its single native-helper pin."""
     old = b"9b2c7c22189c38ed35d308f514a70c2885f0497c1b9782e2906e5c7fdb2553b4"
@@ -26,17 +48,30 @@ def historical_publisher(candidate):
     return candidate.replace(current, old)
 
 
+class HistoricalSourceTests(unittest.TestCase):
+    def test_altered_blob_refuses_before_use(self):
+        with patch.object(subprocess, "check_output", return_value=b"altered historical helper"):
+            with self.assertRaisesRegex(AssertionError, "Historical helper blob SHA differs"):
+                historical_source("proofofwork-ui-release-publish.sh")
+
+    def test_unlisted_historical_path_refuses(self):
+        with patch.object(subprocess, "check_output") as command:
+            with self.assertRaises(KeyError):
+                historical_source("unreviewed.py")
+            command.assert_not_called()
+
+
 class PrivateStageInstaller(unittest.TestCase):
     def setUp(self):
         self.n = runpy.run_path(str(HERE / "installer.py"))["checked_frame"].__globals__
         self.raw = {
-            "proofofwork-ui-release-stage": (DEPLOY / "proofofwork-ui-release-stage.py").read_bytes(),
-            "proofofwork-ui-release-publish": (DEPLOY / "proofofwork-ui-release-publish.sh").read_bytes(),
+            "proofofwork-ui-release-stage": historical_source("proofofwork-ui-release-stage.py"),
+            "proofofwork-ui-release-publish": historical_source("proofofwork-ui-release-publish.sh"),
         }
         publisher = "proofofwork-ui-release-publish"
         self.raw[publisher] = historical_publisher(self.raw[publisher])
         self.assertEqual(self.n["sha"](self.raw[publisher]), self.n["PRIVATE_AFTER"][publisher])
-        self.phase = (DEPLOY / "publish/phase_capacity.py").read_bytes()
+        self.phase = historical_source("publish/phase_capacity.py")
         self.frame = {"schema": self.n["PRIVATE_SCHEMA"], "commit": "a"*40, "tree": "b"*40,
                       "retentionPins": {"state": "1"*64, "config": "2"*64},
                       "phaseSource": base64.b64encode(self.phase).decode(),
@@ -159,9 +194,9 @@ class PublisherSuccessorTests(unittest.TestCase):
             path.mkdir(parents=True)
             path.chmod(0o700)
         self.storage = (DEPLOY / "audit30/ui-storage.py").read_bytes()
-        self.raw = (DEPLOY / "proofofwork-ui-release-publish.sh").read_bytes()
-        self.stage_bytes = (DEPLOY / "proofofwork-ui-release-stage.py").read_bytes()
-        phase = (DEPLOY / "publish/phase_capacity.py").read_bytes()
+        self.raw = historical_source("proofofwork-ui-release-publish.sh")
+        self.stage_bytes = historical_source("proofofwork-ui-release-stage.py")
+        phase = historical_source("publish/phase_capacity.py")
         self.frame = dict(schema=n["SUCCESSOR_SCHEMA"], commit="e" * 40, tree="f" * 40,
                           retentionPins=dict(n["SUCCESSOR_LIFECYCLE"]),
                           phaseSource=base64.b64encode(phase).decode(),

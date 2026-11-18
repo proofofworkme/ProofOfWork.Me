@@ -218,10 +218,10 @@ class TransportTests(unittest.TestCase):
         descriptor = os.open(self.lock, os.O_RDONLY)
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         entries = [('surfaces', 'directory', b'', 0o755)]
-        live = self.parent / 'www'; live.mkdir(mode=0o755)
+        live = self.parent / 'www'; live.mkdir(mode=0o755); live.chmod(0o755)
         for surface in current_stager.PERMISSION_SURFACES:
-            old = live / ('proofofwork-' + surface); old.mkdir(mode=0o755)
-            (old / 'assets').mkdir(mode=0o755)
+            old = live / ('proofofwork-' + surface); old.mkdir(mode=0o755); old.chmod(0o755)
+            (old / 'assets').mkdir(mode=0o755); (old / 'assets').chmod(0o755)
             (old / 'index.html').write_bytes(b'<script src="/assets/old.js"></script>')
             (old / 'assets/old.js').write_bytes(b'preserved prior asset')
             (old / 'index.html').chmod(0o644); (old / 'assets/old.js').chmod(0o644)
@@ -468,12 +468,14 @@ class PhaseCapacityTests(unittest.TestCase):
 
     def fixture(self, base):
         live, incoming = base / 'live', base / 'incoming'
-        live.mkdir(mode=0o755); incoming.mkdir(mode=0o755)
+        # Public fixture descendants need exact modes even under secure umask077.
+        live.mkdir(mode=0o755); live.chmod(0o755)
+        incoming.mkdir(mode=0o755); incoming.chmod(0o755)
         for surface in stager.SURFACES:
             for directory, asset, content in ((live / ('proofofwork-' + surface), 'prior.js', b'o' * 16384),
                                                (incoming / surface, 'new.js', b'n' * 8192)):
-                directory.mkdir(mode=0o755)
-                (directory / 'assets').mkdir(mode=0o755)
+                directory.mkdir(mode=0o755); directory.chmod(0o755)
+                (directory / 'assets').mkdir(mode=0o755); (directory / 'assets').chmod(0o755)
                 (directory / 'index.html').write_text(f'<script src="/assets/{asset}"></script>')
                 (directory / 'index.html').chmod(0o644)
                 (directory / 'assets' / asset).write_bytes(content)
