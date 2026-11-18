@@ -53,6 +53,11 @@ FILES = (
     'deploy/ui-retention/failed_prepare_review.py',
     'deploy/ui-retention/reconcile_failed_prepare.py',
     'deploy/ui-retention/transport_retirement.py',
+    'deploy/ui-retention/scratch_successor.py',
+    'deploy/ui-scratch-capacity/successor_installer.py',
+    'deploy/ui-stream-tools/installer.py',
+    'audits/2026-11-18-ui-scratch-capacity-approval.json',
+    'deploy/proofofwork-ui-capacity.py',
 )
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 MAX_EVIDENCE = 64 * 1024**2

@@ -16,6 +16,7 @@ import re
 import stat
 import subprocess
 import sys
+from types import SimpleNamespace
 
 APPROVAL_SHA = 'df166edb2d9817dd4f8af24819880b6bf08b396b6aa483adaa141415fc709379'
 CONFIG_PATH = Path('/etc/proofofwork-retention/ui-lifecycle.json')
@@ -53,6 +54,11 @@ PACKAGE_FILES = (
     'deploy/ui-retention/failed_prepare_review.py',
     'deploy/ui-retention/reconcile_failed_prepare.py',
     'deploy/ui-retention/transport_retirement.py',
+    'deploy/ui-retention/scratch_successor.py',
+    'deploy/ui-scratch-capacity/successor_installer.py',
+    'deploy/ui-stream-tools/installer.py',
+    'audits/2026-11-18-ui-scratch-capacity-approval.json',
+    'deploy/proofofwork-ui-capacity.py',
 )
 
 # Frozen completed scratch bridge authority; never derive from the current package.
@@ -210,7 +216,7 @@ SCRATCH_NAMES = {'approval.json', 'capacity', 'intent.json', 'qualified.json',
                  'verification-failed.json', 'preverified-forward.json', 'preverified-rollback.json'}
 
 
-def scratch_bridge_baseline(intent, grant):
+def scratch_bridge_baseline(intent, grant, *, package_files=SCRATCH_BRIDGE_PACKAGE_FILES):
     """Authenticate the real completed bridge, not a caller-supplied baseline."""
     protected = intent['protected']
     require(set(protected) == {'configSha256', 'stateSha256', 'index', 'lastCompleted',
@@ -238,7 +244,7 @@ def scratch_bridge_baseline(intent, grant):
     manifest, _ = read_json(package / 'package.json', config['package']['sha256'])
     require(manifest['schema'] == 'pow-ui-retention-package-v1'
             and manifest['sourceCommit'] == intent['commit'] and manifest['sourceTree'] == intent['tree']
-            and set(manifest['files']) == set(SCRATCH_BRIDGE_PACKAGE_FILES), 'Bridge package source scope differs')
+            and set(manifest['files']) == set(package_files), 'Bridge package source scope differs')
     for relative, pin in manifest['files'].items():
         raw, _ = read(package / relative, pin['sha256'], 2 * 1024**2)
         require(len(raw) == pin['bytes'], 'Bridge package size differs')
@@ -324,7 +330,7 @@ def scratch_bridge_baseline(intent, grant):
     return protected
 
 
-def scratch_capacity_position(layout, allow_pending=False):
+def _scratch_capacity_position_original(layout, allow_pending=False, *, capacity_descriptor=None):
     """Strict journal authentication; pending access is for the locked installer only."""
     if getattr(layout, 'capacity', None) != SCRATCH_CAPACITY_PATH:
         return None
@@ -365,7 +371,8 @@ def scratch_capacity_position(layout, allow_pending=False):
                 'Unsafe scratch helper descriptor')
     require(pair['before']['identity'][0] == pair['after']['identity'][0] == info.st_dev
             and pair['before']['identity'][1] != pair['after']['identity'][1], 'Scratch exchange is not distinct same-filesystem inodes')
-    live = floor_descriptor(SCRATCH_CAPACITY_PATH); saved = floor_descriptor(journal / 'capacity')
+    live = capacity_descriptor if capacity_descriptor is not None else floor_descriptor(SCRATCH_CAPACITY_PATH)
+    saved = floor_descriptor(journal / 'capacity')
     if live == pair['before'] and saved == pair['after']:
         position = 'before'
     elif live == pair['after'] and saved == pair['before']:
@@ -435,7 +442,21 @@ def scratch_capacity_position(layout, allow_pending=False):
             'protected': protected, 'intent': intent}
 
 
+def scratch_successor_module():
+    return load_module('lifecycle_scratch_successor', Path(__file__).with_name('scratch_successor.py'))
+
+
+def scratch_capacity_position(layout, allow_pending=False):
+    successor = scratch_successor_module().verify_position(layout, SimpleNamespace(**globals()))
+    return _scratch_capacity_position_original(layout, allow_pending,
+        capacity_descriptor=successor['predecessorDescriptor'] if successor else None)
+
+
 def scratch_capacity_authority(layout):
+    successor = scratch_successor_module().verify_position(layout, SimpleNamespace(**globals()))
+    if successor and successor['position'] == 'after':
+        _scratch_capacity_position_original(layout, capacity_descriptor=successor['predecessorDescriptor'])
+        return successor['authority']
     position = scratch_capacity_position(layout)
     if position is None or position['position'] == 'before':
         return None
@@ -980,10 +1001,22 @@ class Runtime:
                 Path(__file__).with_name('transport_retirement.py')).verify_terminal()
         return transport_retirement
 
-    def status(self, frame, *, scratch_pending_intent=None):
+    def status(self, frame, *, scratch_pending_intent=None, scratch_successor_pending_intent=None):
         transport_retirement = self.transport_retirement_status()
         pending = None
-        if scratch_pending_intent is None:
+        if scratch_successor_pending_intent is not None:
+            self.S.require_execution_lock(self.lock_fd, self.layout)
+            require(scratch_pending_intent is None, 'Mixed scratch migration intents')
+            pending = scratch_successor_module().verify_position(self.layout, SimpleNamespace(**globals()), allow_pending=True)
+            require(pending is not None and pending['intentSha256'] == scratch_successor_pending_intent
+                    and pending['protected']['configSha256'] == self.config_sha,
+                    'Scratch successor pending status is not the exact bridge intent')
+            predecessor = _scratch_capacity_position_original(self.layout,
+                capacity_descriptor=pending['predecessorDescriptor'])
+            require(predecessor and predecessor['position'] == 'after', 'Unsealed scratch predecessor')
+            floor = _capacity_floor_authority_original(self.layout, predecessor['priorCapacity'])
+            scratch = None
+        elif scratch_pending_intent is None:
             floor = capacity_floor_authority(self.layout)
             scratch = scratch_capacity_authority(self.layout)
         else:

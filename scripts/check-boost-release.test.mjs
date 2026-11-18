@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-for (const file of ['deploy/audit30/check-ui-storage.test.py','deploy/publish/check-preservation-admission.test.py','deploy/ui-retention/check-retirement-package-upgrade.test.py','deploy/ui-retention/check-publication-completion-bridge.test.py']) {
+for (const file of ['deploy/audit30/check-ui-storage.test.py','deploy/publish/check-preservation-admission.test.py','deploy/ui-retention/check-retirement-package-upgrade.test.py','deploy/ui-retention/check-publication-completion-bridge.test.py','deploy/ui-retention/check-scratch-authority.test.py','deploy/ui-retention/check-scratch-successor.test.py','deploy/ui-scratch-capacity/check-successor-installer.test.py']) {
   test(file, () => {
     // Isolated source fixtures retain secure canonical modes without changing the checkout.
     let fixture;

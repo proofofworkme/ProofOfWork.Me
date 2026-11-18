@@ -9787,3 +9787,25 @@ later normal cycles require the same full native checks. Offline tests and a
 source commit are not production completion, Pay activation, or permission to
 retire a later rollback release. Keep Pay writes closed until all release gates
 and synchronization checks pass.
+
+
+### Approved six-GiB deployment scratch successor (2026-11-18)
+
+The owner approved increasing the UI deployment scratch ceiling from 5.5 GiB to 6 GiB
+for the Boost page release. The grant is recorded in
+`audits/2026-11-18-ui-scratch-capacity-approval.json`. The source changes the native
+capacity helper and whole-release admission together; other pool budgets,
+physical free-space reserves and current/prior release protection are unchanged.
+
+`deploy/ui-scratch-capacity/successor_installer.py` uses the native completed-cycle
+package upgrade, then exact prepare/apply/status phases. Its installed mode reads
+only the active hash-verified committed lifecycle package, avoiding a new full
+checkout just to change the scratch limit. A distinct immutable successor journal
+authenticates the exchanged 5.5 GiB helper, which remains the predecessor for the
+original scratch and capacity-floor journals. Those historical records are not
+edited. Pending or partial migrations fail normal authority checks; explicit
+reconciliation or rollback must verify the same intent and protected state.
+
+This grant authorizes no payload deletion. Source tests and a package commit are
+not proof of a completed production migration or a shipped Boost release. Use
+native terminal receipts and release synchronization for those claims.

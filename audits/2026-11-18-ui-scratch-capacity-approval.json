@@ -1,0 +1,37 @@
+{
+  "schema": "pow-ui-scratch-successor-approval-v1",
+  "migrationId": "ui-scratch-5-5-to-6-gib-20261118",
+  "host": "77.42.91.106",
+  "proposal": "May I raise the temporary deployment limit from 5.5 GiB to 6 GiB so this release can proceed? This won't delete the current release or rollback.",
+  "ownerResponse": "I approve",
+  "scope": "Only deployment scratch budget5.5 to6GiB. Preserve current and rollback, reserves, all other budgets and historical journals. No payload deletion.",
+  "target": {
+    "path": "/usr/local/sbin/proofofwork-ui-capacity",
+    "source": "deploy/proofofwork-ui-capacity.py",
+    "beforeSha256": "d1325ffa9eb14900a9c344526f6f87967a9b42f339efaad0624a414b1cdde2a2",
+    "afterSha256": "dfcee2f385e84c42aa98529dd4926fc27c5c6fb4bd0c50b3905b3a3248141df3"
+  },
+  "priorScratchBytes": 5905580032,
+  "scratchBytes": 6442450944,
+  "unchangedLimits": {
+    "rootReserveBytes": 8589934592,
+    "growthReserveBytes": 67108864,
+    "inodeReserve": 128,
+    "backupBudgetBytes": 19327352832,
+    "transportBudgetBytes": 9730785280
+  },
+  "preBridge": {
+    "configSha256": "2d58bfe260663240d842869479ff5ba5d9011f98387914c7696c9f1527444cd5",
+    "stateSha256": "db47d75216f5075a91326a96d8234e286e1663db6d6c115bf026fb4dc5725b84",
+    "stateRevision": 326,
+    "pair": {
+      "current": "9f18a0ce7032-20261118T004519Z",
+      "previous": "a4d2d88cd0b0-20261117T045327Z"
+    },
+    "packageManifestSha256": "07b938d845b711200b8e18bc7724f409fea79d36347e9fadfe3aa322d9c18b60"
+  },
+  "predecessorAuthority": {
+    "approvalSha256": "40a60816eb09d72733f6a00e7932e075d3911fef303de4813cdab6c97a629388",
+    "installedSha256": "76bf81c856b5773974c79859fd3ab81eb7af574ee85f58a9e3e694d5281b463c"
+  }
+}

@@ -67,7 +67,7 @@ class PositionTests(unittest.TestCase):
              patch.object(M, 'read_json', side_effect=self.read), \
              patch.object(M, 'scratch_bridge_baseline', return_value=self.protected), \
              patch.object(M, 'floor_descriptor', side_effect=lambda p:self.live if p==M.SCRATCH_CAPACITY_PATH else self.saved):
-            return M.scratch_capacity_position(self.layout, allow_pending=pending)
+            return M._scratch_capacity_position_original(self.layout, allow_pending=pending)
     def test_exact_sealed_successor(self):
         self.assertEqual(self.run_position()['position'], 'after')
     def test_each_missing_seal_fails_closed(self):
@@ -136,7 +136,7 @@ class BaselineTests(unittest.TestCase):
         pkgsha='c'*64
         package=Path('/var/backups/proofofwork-ui/cleanup-evidence')/('ui-lifecycle-tools-'+pkgsha)
         self.journal=package.parent/('ui-lifecycle-upgrade-'+pkgsha)
-        self.files={name:b'fixture package bytes' for name in M.PACKAGE_FILES}
+        self.files={name:b'fixture package bytes' for name in M.SCRATCH_BRIDGE_PACKAGE_FILES}
         manifest={'schema':'pow-ui-retention-package-v1','sourceCommit':self.commit,'sourceTree':self.tree,
                   'files':{name:{'sha256':M.sha(raw),'bytes':len(raw)} for name,raw in self.files.items()}}
         self.config={'schema':'pow-ui-retention-lifecycle-config-v1','scopeApprovalSha256':M.APPROVAL_SHA,
