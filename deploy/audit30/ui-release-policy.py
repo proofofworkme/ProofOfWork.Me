@@ -50,7 +50,8 @@ KNOWN_RETIREMENT_CONTROLLERS={'f204be6bbc576014f968fff4a68d3d650e75ba745c71c3de6
                             '676fab13ef0ea69ee6d3695ea2f1f0f11b4525caa3c6a8b8c38329c454e6524b',
                             '46ee93b7e283975b81914734cd40b107f6bbe501a28f67083e84d41b36f77684',
                             'd0686b18a682155e808dc87a22cd5820c9e88d85d2973e0365ed7e7b2256946d',
-                            '96027848053ae803dd04825c32753120962f0544fa8b4e4480405e63bbc3889e'}
+                            '96027848053ae803dd04825c32753120962f0544fa8b4e4480405e63bbc3889e',
+                            '0ded51e069afedef6433f44555c0953658be82b045e06e8d478021d221bca285'}
 INDEX_V1 = 'pow-audit30-ui-admission-index-v1'
 INDEX_V2 = 'pow-ui-retention-admission-index-v2'
 MIGRATION_SCHEMA = 'pow-ui-retention-lineage-migration-v1'
