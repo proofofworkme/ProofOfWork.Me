@@ -9859,23 +9859,24 @@ async function workAmoV6Metadata(
   { force = false, summaryPayload = null } = {},
 ) {
   const expectedDeclaration = configuredWorkAmoV6Declaration();
-  const networkValueBeforeQ8 =
-    canonicalWorkMarketOracleNetworkValueQ8(summaryPayload) ?? "";
-  const base = {
-    ...workAmoV6StatusFromEvidence({
-      evidence: null,
-      expectedDeclaration,
-      indexedThroughBlock: null,
-      protocolWritesEnabled: false,
-    }),
+  const networkValueBeforeQ8 = canonicalWorkMarketOracleNetworkValueQ8(summaryPayload);
+  const estimateMetadata = {
     estimates: workAmoV6Estimates(networkValueBeforeQ8),
-    indexReady: false,
     networkValueBeforeQ8,
-    pinsConfigured: WORK_AMO_V6_DECLARATION_PINS_CONFIGURED,
-    writesConfigured: WORK_AMO_V6_WRITES_CONFIGURED,
   };
   if (network !== "livenet" || !expectedDeclaration) {
-    return base;
+    return {
+      ...workAmoV6StatusFromEvidence({
+        evidence: null,
+        expectedDeclaration,
+        indexedThroughBlock: null,
+        protocolWritesEnabled: false,
+      }),
+      ...estimateMetadata,
+      indexReady: false,
+      pinsConfigured: WORK_AMO_V6_DECLARATION_PINS_CONFIGURED,
+      writesConfigured: WORK_AMO_V6_WRITES_CONFIGURED,
+    };
   }
   let evidence = null;
   let indexReady = false;
@@ -9915,7 +9916,7 @@ async function workAmoV6Metadata(
       workAmoV6StatusCache.expiresAt > Date.now() &&
       workAmoV6StatusCache.payload
     ) {
-      return workAmoV6StatusCache.payload;
+      return { ...workAmoV6StatusCache.payload, ...estimateMetadata };
     }
     const declarationBlockHash =
       transactionBlockHash(declarationTx);
@@ -9986,13 +9987,11 @@ async function workAmoV6Metadata(
   });
   const payload = {
     ...status,
-    estimates: workAmoV6Estimates(networkValueBeforeQ8),
     indexReady,
     migrationReady:
       migrationReadiness?.ready === true &&
       migrationReadiness?.evidenceComplete === true,
     pinsConfigured: WORK_AMO_V6_DECLARATION_PINS_CONFIGURED,
-    networkValueBeforeQ8,
     tipHash,
     tipHeight,
     writesConfigured: WORK_AMO_V6_WRITES_CONFIGURED,
@@ -10004,7 +10003,7 @@ async function workAmoV6Metadata(
     tipHash,
     tipHeight,
   };
-  return payload;
+  return { ...payload, ...estimateMetadata };
 }
 
 function configuredWorkAmoV8Declaration() {
@@ -12169,13 +12168,18 @@ async function workAmoV8Metadata(
 }
 
 async function withWorkMarketplaceV4Metadata(payload, network) {
+  // Work publishes its canonical floor as floor; Marketplace uses workFloor.
+  const proofUnitOracle = {
+    workNetworkValueQ8: payload?.workNetworkValueQ8,
+    workFloor: payload?.workFloor ?? payload?.floor,
+  };
   const [workMarketplaceV4, workAmoV5, workAmoV6, workAmoV8] =
     await Promise.all([
-    workMarketplaceV4Metadata(network),
-    workAmoV5Metadata(network, { summaryPayload: payload }),
-    workAmoV6Metadata(network, { summaryPayload: payload }),
-    workAmoV8Metadata(network, { summaryPayload: payload }),
-  ]);
+      workMarketplaceV4Metadata(network),
+      workAmoV5Metadata(network, { summaryPayload: payload }),
+      workAmoV6Metadata(network, { summaryPayload: proofUnitOracle }),
+      workAmoV8Metadata(network, { summaryPayload: proofUnitOracle }),
+    ]);
   return {
     ...payload,
     workAmoV5,

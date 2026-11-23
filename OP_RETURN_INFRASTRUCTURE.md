@@ -505,6 +505,19 @@ validators. Missing, duplicate, malformed or noncanonical witnesses still fail
 closed, and the complete book must still match its relational checkpoint and
 fresh Core reconciliation. Marketplace overlay enrichment awaits the live quote
 before binding a derived snapshot, preserving exact values and snapshot lineage.
+The full marketplace regression check binds Token, WORK and Growth to one
+fresh exact-tip ledger ID and checks their component IDs at that height and
+hash. Marketplace may use the ledger ID directly or a child ID reproduced
+from its immediate parent and the returned listing-authority evidence or
+reconciled ID listing IDs. Its registry, token, work floor and provenance
+must carry the same checkpoint and Marketplace ID.
+
+When attaching V6 and V8 estimates to these reads, use the canonical
+network value belonging to the response. WORK carries that value under
+`floor` and Marketplace under `workFloor`. A token response without an
+oracle has an empty estimate map. V6 can reuse tip-bound declaration and
+index readiness across these reads while estimating each response separately.
+
 Overlapping registry SQL reads coalesce without sharing mutable caller evidence.
 Summary reads project only the requested component from PostgreSQL while keeping
 the full canonical eligibility predicates. A fallback chain does not repeat the

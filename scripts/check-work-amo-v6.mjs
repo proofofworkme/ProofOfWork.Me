@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import { assertWorkAmoV6ProofEstimates, assertWorkAmoV6ResponseEstimates } from "./marketplace-work-amo-v6-estimates.mjs";
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
+import {
+  WORK_AMO_V8_ALLOWED_FACE_PROOFS,
+  workAmoV8StatusFromEvidence,
+  workAmoV8UnitTerms,
+} from "../server/work-amo-v8.mjs";
 import {
   canonicalRawProtocolRecordSetFromTransaction,
 } from "../server/canonical-op-return.mjs";
@@ -230,6 +238,67 @@ assert.equal(
   }).reasonCode,
   "work-amo-v6-network-value-before-invalid",
 );
+
+// Reproduce the public estimate shape from the protocol evaluator, then
+// exercise the independent release verifier on both sides of its bounds.
+function v6EstimateStatus(networkValue) {
+  const networkValueBeforeQ8 = String(networkValue);
+  const estimates = {};
+  for (const unitFaceProofs of WORK_AMO_V6_ALLOWED_FACE_PROOFS) {
+    const terms = calculateWorkAmoV6UnitTerms({ networkValueBeforeQ8, unitFaceProofs });
+    if (terms.valid) {
+      estimates[unitFaceProofs] = {
+        estimateOnly: true,
+        unitAmountAtoms: terms.unitAmountAtoms,
+        unitFaceProofs,
+        unitMinimumPriceSats: terms.unitMinimumPriceSats,
+        unitNetworkValueBeforeQ8: networkValueBeforeQ8,
+        unitPriceSats: terms.unitPriceSats,
+      };
+    }
+  }
+  return { estimates, networkValueBeforeQ8 };
+}
+for (const [networkValue, faces] of [
+  [20_000n * WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE - 1n, []],
+  [20_000n * WORK_AMO_V5_NETWORK_VALUE_Q8_SCALE, [20_000]],
+  [20_000n * formulaDenominator, [20_000, 50_000, 100_000]],
+  [20_000n * formulaDenominator + 1n, [50_000, 100_000]],
+  [50_000n * formulaDenominator, [50_000, 100_000]],
+  [50_000n * formulaDenominator + 1n, [100_000]],
+  [100_000n * formulaDenominator, [100_000]],
+  [100_000n * formulaDenominator + 1n, []],
+]) {
+  const status = v6EstimateStatus(networkValue);
+  assert.deepEqual(Object.keys(status.estimates), faces.map(String));
+  assertWorkAmoV6ProofEstimates(status, "V6 boundary fixture");
+}
+{
+  // Observed on both public and node reads at Bitcoin height 977238.
+  const status = v6EstimateStatus(17198369162716452535434235198n);
+  const onlyFace = status.estimates["100000"];
+  assert.deepEqual(onlyFace, {
+    estimateOnly: true, unitAmountAtoms: "1", unitFaceProofs: 100_000,
+    unitMinimumPriceSats: "81897", unitNetworkValueBeforeQ8: status.networkValueBeforeQ8,
+    unitPriceSats: "100000",
+  });
+  assertWorkAmoV6ProofEstimates(status, "V6 observed fixture");
+  const check = (estimates) => assertWorkAmoV6ProofEstimates({ ...status, estimates }, "V6 fixture");
+  assert.throws(() => check({}), /missing exact V6 terms/);
+  for (const extra of ["20000", "50000", "250000", "0100000"]) {
+    assert.throws(() => check({ ...status.estimates, [extra]: onlyFace }), /unexpected V6 estimate faces/);
+  }
+  for (const change of [
+    { estimateOnly: false }, { unitAmountAtoms: "2" }, { unitFaceProofs: "100000" },
+    { unitMinimumPriceSats: "81896" }, { unitNetworkValueBeforeQ8: String(BigInt(status.networkValueBeforeQ8) - 1n) },
+    { unitPriceSats: "100001" },
+  ]) {
+    assert.throws(() => check({ 100000: { ...onlyFace, ...change } }), /missing exact V6 terms/);
+  }
+  assertWorkAmoV6ProofEstimates({ networkValueBeforeQ8: "", estimates: {} }, "V6 unavailable");
+  assert.throws(() => assertWorkAmoV6ProofEstimates({ ...status, networkValueBeforeQ8: "" }, "V6 unavailable"), /without a network value/);
+  assert.throws(() => assertWorkAmoV6ProofEstimates({ networkValueBeforeQ8: "0", estimates: {} }, "V6 zero"), /noncanonical/);
+}
 
 const staticValidation =
   validateWorkAmoV6StaticAuthorization(authorization());
@@ -1370,6 +1439,133 @@ assert.equal(status.protocolWritesEnabled, true);
 assert.equal(status.listingWritesEnabled, true);
 assert.equal(status.settlementWritesEnabled, true);
 assert.equal(Object.hasOwn(status, "oracleReady"), false);
+
+// The HTTP module starts the server on import. Exercise its actual V6
+// metadata function with a fixed local Core tip and verified migration row.
+{
+  const source = readFileSync(new URL("../server/proof-api.mjs", import.meta.url), "utf8");
+  function section(start, end) {
+    const from = source.indexOf(start);
+    const to = source.indexOf(end, from + start.length);
+    assert.ok(from >= 0 && to > from, `Missing fixture boundary for ${start}`);
+    return source.slice(from, to);
+  }
+  let indexReads = 0;
+  const rpcValues = {
+    getbestblockhash: listingBlockHash,
+    getblockcount: listingBlockHeight,
+    getblockhash: declarationBlockHash,
+  };
+  const v5Inputs = [];
+  const api = vm.runInNewContext([
+    section("function canonicalNonNegativeIntegerText(", "function proofFlowBigInt("),
+    section("function canonicalWorkMarketOracleNetworkValueQ8(", "async function assertWorkMarketplaceV4AdmissionOracle("),
+    section("let workAmoV6StatusCache =", "function configuredWorkAmoV8Declaration("),
+    section("function workAmoV8Estimates(", "function workQ16MempoolSnapshot("),
+    section("async function workAmoV8Metadata(", "function stableTipCoreTokenListingAuthorityComplete("),
+    "({ workAmoV6Metadata, workAmoV8Metadata, withWorkMarketplaceV4Metadata })",
+  ].join("\n"), {
+    WORK_AMO_V6_ACTIVATION_HEIGHT: listingBlockHeight,
+    WORK_AMO_V6_ALLOWED_FACE_PROOFS,
+    WORK_AMO_V6_DECLARATION_BLOCK_HASH: declarationBlockHash,
+    WORK_AMO_V6_DECLARATION_BLOCK_INDEX: expectedDeclaration.blockTransactionIndex,
+    WORK_AMO_V6_DECLARATION_HEIGHT: expectedDeclaration.blockHeight,
+    WORK_AMO_V6_DECLARATION_PINS_CONFIGURED: true,
+    WORK_AMO_V6_DECLARATION_TXID: declarationTxid,
+    WORK_AMO_V6_WRITES_CONFIGURED: false,
+    bitcoinRpc: async (method) => ({ ok: true, result: rpcValues[method] }),
+    configuredWorkAmoV6Declaration: () => expectedDeclaration,
+    fetchFixedAmoDeclarationTransaction: async () => ({ blockHash: declarationBlockHash }),
+    fetchCoreBlockTxidIndex: async () => new Map([[declarationTxid, expectedDeclaration.blockTransactionIndex]]),
+    proofIndexWorkAmoReplayReadiness: async () => {
+      indexReads += 1;
+      return { indexReady: true, requestedTipReady: true,
+        requestedThroughHeight: listingBlockHeight, throughHeight: listingBlockHeight,
+        requestedThroughBlockHash: listingBlockHash };
+    },
+    proofIndexWorkAmoV6MigrationReadiness: async () => ({
+      ready: true, active: true, canonical: true, confirmed: true, evidenceComplete: true,
+      activationHeight: listingBlockHeight,
+    }),
+    transactionBlockHash: (tx) => tx.blockHash,
+    workAmoV6DeclarationEvidenceFromTransaction: () => declarationEvidence,
+    workAmoV6StatusFromEvidence,
+    workAmoV6UnitTerms: calculateWorkAmoV6UnitTerms,
+    workMarketplaceV4Metadata: async () => ({}),
+    workAmoV5Metadata: async (_network, { summaryPayload }) => { v5Inputs.push(summaryPayload); return {}; },
+    WORK_AMO_V8_ALLOWED_FACE_PROOFS,
+    WORK_AMO_V8_DECLARATION_PIN_STATE: "unconfigured",
+    WORK_AMO_V8_DECLARATION_PINS_REQUESTED: false,
+    WORK_AMO_V8_WRITES_CONFIGURED: false,
+    configuredWorkAmoV8Declaration: () => null,
+    discoverExactWorkAmoV8Declaration: async () => ({ checked: false, declaration: null }),
+    proofIndexWorkAmoV8ActivationLatch: async () => null,
+    workAmoV8DeclarationEmbargoLatch: false,
+    workAmoV8ReachedLatch: false,
+    workAmoV8StatusFromEvidence,
+    workAmoV8UnitTerms,
+  });
+  const n = "17198369162716452535434235198";
+  const nextN = String(BigInt(n) - 1n);
+  for (const [input, expectedN] of [
+    [{}, ""],
+    [{ floor: { liveNetworkValueQ8: n } }, n],
+    [{ workFloor: { actualValue: { liveNetworkValueQ8: nextN } } }, nextN],
+    [{ workNetworkValueQ8: n }, n],
+    [{}, ""],
+    [{ workFloor: { networkValueQ8: n } }, n],
+  ]) {
+    const response = await api.withWorkMarketplaceV4Metadata(input, "livenet");
+    const historical = response.workAmoV6;
+    assert.equal(historical.networkValueBeforeQ8, expectedN, "V6 must use this request's oracle on same-tip cache hits");
+    assert.equal(historical.indexReady, true);
+    assert.equal(historical.listingWritesEnabled, false);
+    assertWorkAmoV6ResponseEstimates(response, "V6 response fixture", {
+      requireFloor: Boolean(input.floor || input.workFloor),
+    });
+    const v8 = response.workAmoV8;
+    assert.equal(v8.networkValueBeforeQ8, expectedN, "V8 estimates must use this response's floor");
+    assert.equal(v8.listingWritesEnabled, false);
+    assert.equal(v8.expandedLiquidity.listingWritesEnabled, false);
+    assert.deepEqual(Object.keys(v8.estimates), expectedN ? ["25000"] : []);
+    if (expectedN) {
+      assert.deepEqual({ ...v8.estimates["25000"] }, {
+        estimateOnly: true, unitAmountSubatoms: "30526150", unitFaceProofs: 25_000,
+        unitMinimumPriceSats: "25000", unitNetworkValueBeforeQ8: expectedN, unitPriceSats: "25000",
+      });
+    }
+    if (input.floor || input.workFloor) {
+      const nested = response.floor ?? response.workFloor;
+      assert.equal(nested.workAmoV8, v8);
+      assert.equal(nested.workAmoV6, historical);
+    }
+    assert.equal(v5Inputs.at(-1), input, "V5 must receive its original summary");
+  }
+  assert.equal(indexReads, 1, "Changing the response oracle must reuse valid V6 declaration evidence");
+  const forcedV6 = await api.workAmoV6Metadata("livenet", { force: true });
+  assert.equal(indexReads, 2);
+  assert.equal(forcedV6.networkValueBeforeQ8, "");
+  assert.deepEqual(Object.keys(forcedV6.estimates), []);
+  const forcedV8 = await api.workAmoV8Metadata("livenet", { force: true });
+  assert.equal(forcedV8.networkValueBeforeQ8, "");
+  assert.deepEqual(Object.keys(forcedV8.estimates), []);
+  assert.equal(forcedV8.listingWritesEnabled, false);
+  const afterForce = await api.withWorkMarketplaceV4Metadata({ floor: { networkValueQ8: n } }, "livenet");
+  assert.equal(afterForce.workAmoV6.networkValueBeforeQ8, n);
+  assert.equal(indexReads, 2);
+  const empty = v6EstimateStatus("");
+  const positive = v6EstimateStatus(n);
+  for (const wire of [
+    { workAmoV6: positive },
+    { workFloor: { liveNetworkValueQ8: n, workAmoV6: positive }, workAmoV6: empty },
+    { floor: { networkValueQ8: n, workAmoV6: empty }, workAmoV6: positive },
+  ]) {
+    assert.throws(() => assertWorkAmoV6ResponseEstimates(wire, "stale V6"), /own network value/);
+  }
+  assert.throws(() => assertWorkAmoV6ResponseEstimates({ workAmoV6: empty }, "no floor", {
+    requireFloor: true,
+  }), /missing its canonical V6 floor input/);
+}
 
 function opReturnOutput(text) {
   const payload = Buffer.from(text, "utf8");

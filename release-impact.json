@@ -8,6 +8,7 @@
     "scripts/complete-token-history-pages.test.mjs",
     "server/work-amo-v8-metadata-readiness.test.mjs",
     "server/amo-browse-snapshot.test.mjs",
+    "server/marketplace-authority-read.test.mjs",
     "src/features/marketplace/marketplaceBrowse.test.mjs",
     "scripts/check-work-batch-growth.test.mjs",
     "scripts/check-current-growth.test.mjs",
@@ -22,8 +23,8 @@
     {
       "targets": ["marketplace", "computer", "desktop", "nft"],
       "disposition": "affected",
-      "reason": "Standalone AMO and the Computer marketplace workspace browse two WORK books at the existing endpoint. Signed face and frozen terms determine membership. Counts, continuation, exact listing lookup and the visible page follow the selected face across the complete snapshot. Desktop and NFT use the shared Computer build.",
-      "evidence": ["src/App.tsx", "server/amo-browse-snapshot.test.mjs", "src/features/marketplace/marketplaceBrowse.test.mjs", "tests/browser/amo-browse.spec.mjs"]
+      "reason": "Standalone AMO and the Computer marketplace workspace browse two WORK books at the existing endpoint. Signed face and frozen terms determine membership. Counts, continuation, exact listing lookup and the visible page follow the selected face across the complete snapshot. The live regression compares the canonical parent across Token, WORK and Growth and verifies Marketplace’s immediate child against its returned listing evidence. Desktop and NFT use the shared Computer build.",
+      "evidence": ["src/App.tsx", "scripts/check-marketplace-regressions.mjs", "scripts/ledger-audit-snapshot.mjs", "server/marketplace-authority-read.test.mjs", "server/amo-browse-snapshot.test.mjs", "src/features/marketplace/marketplaceBrowse.test.mjs", "tests/browser/amo-browse.spec.mjs"]
     },
     {
       "targets": ["wallet", "permission", "local-signing"],
@@ -34,8 +35,8 @@
     {
       "targets": ["wire", "work", "indexer", "api", "backfill-reorg"],
       "disposition": "affected",
-      "reason": "Additive declaration evidence binds its carrier, canonical block position, fee terms and eligibility boundary. The owner-selected transaction has an exact self-payment and wrapped-carrier witness bound to its txid. It contributes zero registry revenue. Fresh larger Lists require independently matching index, schema, replay and live admission at the current tip. The original V8 declaration and its global fail-closed rules continue to govern the original book and ordinary WORK transfers. The 977230 replay publisher retains the incumbent archive, proves exact native and transition commitments against raw Core blocks and accepts only a qualified empty suffix through the pinned tip. The storage monitor verifies the applicable native inventory. Storage retains signed faces and frozen terms across replay, recovery and settlement.",
-      "evidence": ["server/work-amo-expanded-liquidity.mjs", "server/work-amo-v8.mjs", "server/work-amo-v5-raw.mjs", "scripts/backfill-proof-indexer.mjs", "server/work-precision-v2-schema.mjs", "scripts/check-work-precision-v2.mjs", "scripts/check-work-amo-v5.mjs", "scripts/check-work-amo-v8.mjs", "scripts/check-work-amo-v8-gates.mjs", "server/work-amo-v8-metadata-readiness.test.mjs", "scripts/check-amo-liquidity-live.mjs", "deploy/amo-expanded-liquidity-replay/preflight.mjs", "deploy/amo-expanded-liquidity-replay/publish.mjs", "deploy/amo-expanded-liquidity-replay/storage-fixture.test.mjs", "scripts/check-amo-expanded-liquidity-replay.test.mjs", "scripts/check-postgres-query-health.py"]
+      "reason": "Additive declaration evidence binds its carrier, canonical block position, fee terms and eligibility boundary. The owner-selected transaction has an exact self-payment and wrapped-carrier witness bound to its txid. It contributes zero registry revenue. Fresh larger Lists require independently matching index, schema, replay and live admission at the current tip. The original V8 declaration and its global fail-closed rules continue to govern the original book and ordinary WORK transfers. The 977230 replay publisher retains the incumbent archive, proves exact native and transition commitments against raw Core blocks and accepts only a qualified empty suffix through the pinned tip. The storage monitor verifies the applicable native inventory. Storage retains signed faces and frozen terms across replay, recovery and settlement. Historical V6 estimates use the current response’s exact network value and exclude faces with unrepresentable atom quantities. WORK and Marketplace use the same canonical floor value for V8 read estimates at a matching checkpoint.",
+      "evidence": ["server/work-amo-expanded-liquidity.mjs", "server/work-amo-v8.mjs", "server/work-amo-v5-raw.mjs", "scripts/backfill-proof-indexer.mjs", "server/work-precision-v2-schema.mjs", "scripts/check-work-precision-v2.mjs", "scripts/check-work-amo-v5.mjs", "scripts/check-work-amo-v6.mjs", "scripts/marketplace-work-amo-v6-estimates.mjs", "scripts/check-work-amo-v8.mjs", "scripts/check-work-amo-v8-gates.mjs", "server/work-amo-v8-metadata-readiness.test.mjs", "scripts/check-amo-liquidity-live.mjs", "deploy/amo-expanded-liquidity-replay/preflight.mjs", "deploy/amo-expanded-liquidity-replay/publish.mjs", "deploy/amo-expanded-liquidity-replay/storage-fixture.test.mjs", "scripts/check-amo-expanded-liquidity-replay.test.mjs", "scripts/check-postgres-query-health.py"]
     },
     {
       "targets": ["activity", "growth", "accounting"],

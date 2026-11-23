@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import vm from "node:vm";
+import { marketplaceSummarySetAligned } from "../scripts/ledger-audit-snapshot.mjs";
 
 const source = readFileSync(new URL("./proof-api.mjs", import.meta.url), "utf8");
 function extract(name) {
@@ -48,6 +49,82 @@ test("asynchronous marketplace enrichment rebinds every immutable snapshot compo
   assert.equal(result.workFloor.totalQ8, "900719925474099312345");
   assert.equal(result.token.listingAuthority, authority);
   assert.equal((await read(payload, "livenet", { fast: true, allowSnapshotMutation: true })).snapshotId, snapshotId);
+});
+
+test("four fresh summaries accept one proven marketplace child at the same canonical checkpoint", async () => {
+  const tokenId = "ab".repeat(32);
+  const snapshotId = "11".repeat(12);
+  const checkpoint = { indexedThroughBlock: 100, indexedThroughBlockHash: "aa".repeat(32) };
+  const network = "livenet";
+  const component = () => ({ network, snapshotId, ...checkpoint });
+  const context = vm.createContext({
+    Buffer,
+    assertCanonicalCreditAggregateResponse() {},
+    payloadSnapshotId: (payload) => payload?.snapshotId ?? "",
+    sha256Hex: (value) => createHash("sha256").update(value).digest("hex"),
+    verifiedSummaryPayloadCheckpoint: async () => ({
+      ...checkpoint, exactTip: true, tipHeight: checkpoint.indexedThroughBlock, tipHash: checkpoint.indexedThroughBlockHash,
+    }),
+  });
+  const { provenance, derive } = vm.runInContext([
+    extract("summaryWithDerivedSnapshot"), extract("summaryPayloadRequiredComponents"),
+    extract("summaryPayloadWithCanonicalProvenance"),
+    "({ provenance: summaryPayloadWithCanonicalProvenance, derive: summaryWithDerivedSnapshot })",
+  ].join("\n"), context);
+  const fresh = (payload, surface) => provenance(payload, network, true, surface);
+  const authority = { checkpoint };
+  const market = {
+    ...component(), registry: { ...component(), listings: [{ listingId: "listing" }] },
+    token: { ...component(), listingAuthority: authority }, workFloor: component(),
+  };
+  const work = { ...component(), token: component(), floor: component() };
+  const growth = { ...component(), activity: component(), registry: component(), token: component(), workFloor: component() };
+  const set = {
+    marketplace: await fresh(market, "marketplace-summary"),
+    token: await fresh(component(), `token-summary:${tokenId}`),
+    work: await fresh(work, "work-summary"), growth: await fresh(growth, "growth-summary"),
+  };
+  assert.equal(marketplaceSummarySetAligned(set, tokenId), true);
+  const reconciled = derive(market, "marketplace-id-listing-reconciliation", ["listing"]);
+  assert.equal(marketplaceSummarySetAligned({
+    ...set, marketplace: await fresh(reconciled, "marketplace-summary"),
+  }, tokenId), true);
+  const enriched = derive(market, "marketplace-token-listing-authority", authority);
+  set.marketplace = await fresh(enriched, "marketplace-summary");
+  assert.notEqual(enriched.snapshotId, snapshotId);
+  assert.equal(marketplaceSummarySetAligned(set, tokenId), true);
+  const sibling = derive(market, "marketplace-token-listing-authority", { checkpoint, other: true });
+  const secondGeneration = derive(enriched, "marketplace-id-listing-reconciliation", ["listing"]);
+  assert.equal(marketplaceSummarySetAligned({
+    ...set, marketplace: await fresh(secondGeneration, "marketplace-summary"),
+  }, tokenId), false);
+  for (const corrupt of [
+    (s) => { delete s.marketplace.derivedFromSnapshotId; },
+    (s) => { s.marketplace.derivedFromSnapshotId = sibling.snapshotId; },
+    (s) => { s.marketplace.derivedFromSnapshotId = [snapshotId]; },
+    (s) => { s.marketplace.derivedFromSnapshotId = null; },
+    (s) => { s.marketplace.derivedFromSnapshotId = ""; },
+    (s) => { s.marketplace.token.listingAuthority.checkpoint.indexedThroughBlock -= 1; },
+    (s) => { s.marketplace.token.snapshotId = [s.marketplace.snapshotId]; },
+    (s) => { s.marketplace.provenance.componentSnapshotIds.registry = [s.marketplace.snapshotId]; },
+    (s) => { s.marketplace.provenance.derivedFromSnapshotId = snapshotId; delete s.marketplace.derivedFromSnapshotId; },
+    (s) => { s.marketplace.provenance.snapshotId = snapshotId; },
+    (s) => { s.marketplace.registry.snapshotId = snapshotId; },
+    (s) => { s.marketplace.token.indexedThroughBlockHash = "bb".repeat(32); },
+    (s) => { s.work.derivedFromSnapshotId = sibling.snapshotId; },
+    (s) => { s.token.snapshotId = sibling.snapshotId; },
+    (s) => { s.token.provenance.surface = "token-summary:all"; },
+    (s) => { s.token.provenance.served = "last-good"; },
+    (s) => { s.work.provenance.tipHash = "bb".repeat(32); },
+    (s) => { s.work.provenance.tipHeight += 1; },
+    (s) => { delete s.growth.provenance.componentSnapshotIds.activity; },
+    (s) => { s.growth.activity.indexedThroughBlock -= 1; },
+    (s) => { s.growth.network = "testnet"; },
+  ]) {
+    const copy = structuredClone(set);
+    corrupt(copy);
+    assert.equal(marketplaceSummarySetAligned(copy, tokenId), false);
+  }
 });
 
 function completeBookFixture({ missing = false, duplicate = false, coreHeight = 100, coreHash = "a".repeat(64) } = {}) {

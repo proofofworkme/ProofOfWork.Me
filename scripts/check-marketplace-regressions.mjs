@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import { assertWorkAmoV6ResponseEstimates } from "./marketplace-work-amo-v6-estimates.mjs";
+import { marketplaceSummarySetAligned } from "./ledger-audit-snapshot.mjs";
 import {
   assertExactWorkTransferHistory,
   checkWalletParticipantTransfer,
@@ -89,7 +91,6 @@ const WORK_AMO_V5_MODELS = {
   unitWorkOracleModel: "canonical-work-prefix-before-action-v1",
 };
 const WORK_AMO_V6_AUTH_VERSION = "pwt-sale-v6";
-const WORK_AMO_V6_ALLOWED_FACE_PROOFS = [20_000, 50_000, 100_000];
 const WORK_AMO_V8_AUTH_VERSION = "pwt-sale-v8";
 const WORK_AMO_V8_ALLOWED_FACE_PROOFS = [25_000];
 const WORK_AMO_V8_DECLARATION_TXID =
@@ -522,18 +523,10 @@ function canonicalSummarySnapshotIds(summarySet) {
   ].map((value) => String(value ?? "").trim());
 }
 
-function canonicalSummarySetHasOneSnapshot(summarySet) {
-  const snapshotIds = canonicalSummarySnapshotIds(summarySet);
-  return (
-    snapshotIds.every((snapshotId) => snapshotId !== "") &&
-    new Set(snapshotIds).size === 1
-  );
-}
-
 async function convergedFreshCanonicalSummarySet() {
   return waitForCanonicalConvergenceWithinBudget({
     budget: marketplaceCanonicalConvergenceBudget,
-    isReady: canonicalSummarySetHasOneSnapshot,
+    isReady: (summarySet) => marketplaceSummarySetAligned(summarySet, WORK_TOKEN_ID),
     isRetryableValue: (summarySet) =>
       canonicalSummarySnapshotIds(summarySet).every(
         (snapshotId) => snapshotId !== "",
@@ -1392,35 +1385,6 @@ function assertWorkAmoV5Readiness(payload, label, context = payload) {
   return status;
 }
 
-function assertWorkAmoV6ProofEstimates(status, label) {
-  const estimates =
-    status?.estimates && typeof status.estimates === "object"
-      ? status.estimates
-      : {};
-  const observedFaces = Object.keys(estimates)
-    .map(Number)
-    .sort((left, right) => left - right);
-  assert(
-    JSON.stringify(observedFaces) ===
-      JSON.stringify(WORK_AMO_V6_ALLOWED_FACE_PROOFS),
-    `${label} does not expose exactly 20,000, 50,000, and 100,000 proof faces`,
-  );
-  for (const face of WORK_AMO_V6_ALLOWED_FACE_PROOFS) {
-    const estimate = estimates[String(face)];
-    assert(
-      estimate?.estimateOnly === true &&
-        Number(estimate?.unitFaceProofs) === face &&
-        String(estimate?.unitPriceSats) === String(face) &&
-        /^[1-9][0-9]*$/u.test(String(estimate?.unitAmountAtoms ?? "")) &&
-        /^[1-9][0-9]*$/u.test(
-          String(estimate?.unitMinimumPriceSats ?? ""),
-        ) &&
-        BigInt(estimate.unitMinimumPriceSats) <= BigInt(face),
-      `${label} has invalid deterministic terms for ${face} proofs`,
-    );
-  }
-}
-
 function assertWorkAmoV6Surface(payload, label, context = payload) {
   const status = workAmoV6StatusFromPayload(payload, context);
   assert(status, `${label} is missing WORK AMO V6 status`);
@@ -1436,11 +1400,7 @@ function assertWorkAmoV6Surface(payload, label, context = payload) {
         (status.settlementWritesEnabled === true),
     `${label} does not preserve the single proof-native write-gate invariant`,
   );
-  if (
-    /^[1-9][0-9]*$/u.test(String(status.networkValueBeforeQ8 ?? ""))
-  ) {
-    assertWorkAmoV6ProofEstimates(status, label);
-  }
+  assertWorkAmoV6ResponseEstimates(payload, label);
   if (status.pinsConfigured !== true) {
     assert(
       status.ready === false &&
@@ -3443,6 +3403,8 @@ const workSummary = alignedFreshSummaries.work;
 const workTokenSummary = alignedFreshSummaries.token;
 const growthSummary = alignedFreshSummaries.growth;
 const alignedMarketplaceFreshSummary = alignedFreshSummaries.marketplace;
+assertWorkAmoV6ResponseEstimates(workSummary, "Fresh WORK summary", { requireFloor: true });
+assertWorkAmoV6ResponseEstimates(alignedMarketplaceFreshSummary, "Fresh Marketplace summary", { requireFloor: true });
 const canonicalWorkSummaryToken = (workToken.tokens ?? []).find(
   (item) => item?.tokenId === WORK_TOKEN_ID,
 );
@@ -3561,10 +3523,8 @@ assert(
   `/api/v1/marketplace-summary?fresh=1 has an inaccurate global listing continuation flag (${marketplaceSummaryListings.length} visible, ${marketplaceSummaryListingCount} total)`,
 );
 assert(
-  workSummary.snapshotId === alignedMarketplaceFreshSummary.snapshotId &&
-    workSummary.snapshotId === workTokenSummary.snapshotId &&
-    workSummary.snapshotId === growthSummary.snapshotId,
-  `summary snapshot mismatch: work=${workSummary.snapshotId ?? "none"} marketplace=${alignedMarketplaceFreshSummary.snapshotId ?? "none"} token=${workTokenSummary.snapshotId ?? "none"} growth=${growthSummary.snapshotId ?? "none"}`,
+  marketplaceSummarySetAligned(alignedFreshSummaries, WORK_TOKEN_ID),
+  `summary snapshot mismatch: work=${workSummary.snapshotId ?? "none"} marketplace=${alignedMarketplaceFreshSummary.snapshotId ?? "none"} parent=${alignedMarketplaceFreshSummary.derivedFromSnapshotId ?? "none"} token=${workTokenSummary.snapshotId ?? "none"} growth=${growthSummary.snapshotId ?? "none"}`,
 );
 assert(
   q8IntegerTextsAgree(

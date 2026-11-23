@@ -860,6 +860,14 @@ record remains invalid audit history and cannot enter the active listing set.
 Snapshots before V6 activation continue to use their historical version
 rules.
 
+The historical V6 estimate map uses the network value supplied by the
+current response. Marketplace exposes it under `workFloor`, and WORK under
+`floor`. A scoped token response without that value has an empty estimate
+map. For a positive value, include each declared face whose integer formula
+yields at least one atom and at most the total supply. Compute its minimum
+with ceiling division. The declaration and frozen records retain all three
+faces regardless of which estimates are representable today.
+
 Every table-backed V6 listing requires exactly one matching valid confirmed
 `token-listing` event, its confirmed transaction, its canonical block and the
 same full `(blockHeight, blockTransactionIndex, protocolVout, recordOrdinal)`
