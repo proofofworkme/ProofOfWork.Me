@@ -3876,10 +3876,17 @@ bytes and had 405,485,858,816 bytes available. The released builder at
 `690424eaf995d20dfd8c7dc53148108b3ed8539d9f79ef97a9f3a6723f9e5f61`.
 Reserving a new 4 GiB run required 31,041,736,704 bytes, 976,965,632
 above its 28 GiB limit. Hamza approved a 29 GiB retained-build ceiling
-for the AMO release. The candidate builder sets that limit to
+for the AMO release. The builder at `8444ec34` sets that limit to
 31,138,512,896 bytes, leaving 96,776,192 bytes of aggregate headroom at
 the observed occupancy. A fresh run still requires 111,669,149,696 free
 bytes for the 100 GiB data reserve plus the 4 GiB per-run budget.
+
+At 21:35 UTC the retained pool used 28,040,896,512 bytes. Reserving another
+4 GiB required 32,335,863,808 bytes. The 29 GiB builder refused admission
+by 1,197,350,912 bytes before creating a run. The proposed successor sets
+the Node ceiling to 31 GiB, leaving 950,132,736 bytes at that occupancy.
+It retains the 4 GiB run allowance, the 100 GiB free-space reserve and the
+independent 6 GiB UI scratch ceiling. No retirement is required.
 
 The release plan binds `deploy/publish/build.py` to the committed source
 by SHA-256. The on-host build uses that release's reviewed builder and

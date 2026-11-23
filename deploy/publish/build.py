@@ -38,7 +38,7 @@ PAY_SURFACES = {**PERMISSION_SURFACES, 'pay': ('pay', 'VITE_PAY_ONLY')}
 BUILD_PARENT = Path('/data/proofofwork-ui-builds')
 DATA_RESERVE = 100 * 1024**3
 BUILD_BUDGET = 4 * 1024**3
-RETAINED_BUDGET = 29 * 1024**3
+RETAINED_BUDGET = 31 * 1024**3
 
 
 def validate_build_root(root):

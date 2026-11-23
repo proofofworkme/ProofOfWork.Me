@@ -20,8 +20,8 @@ class CapacityTests(unittest.TestCase):
              patch.object(Path, 'exists', return_value=exists):
             b.check_build_capacity(b.BUILD_PARENT / 'test')
 
-    def test_approved_finite_limits_and_exact_boundary(self):
-        self.assertEqual(b.RETAINED_BUDGET, 31_138_512_896)
+    def test_finite_limits_and_exact_boundary(self):
+        self.assertEqual(b.RETAINED_BUDGET, 33_285_996_544)
         self.assertEqual(b.BUILD_BUDGET, 4 * 1024**3)
         self.assertEqual(b.DATA_RESERVE, 100 * 1024**3)
         self.capacity(b.DATA_RESERVE + b.BUILD_BUDGET,
@@ -34,11 +34,15 @@ class CapacityTests(unittest.TestCase):
                           b.RETAINED_BUDGET - b.BUILD_BUDGET)
 
     def test_measured_successor_reservation_has_finite_headroom(self):
-        used = 26_746_769_408
-        self.assertEqual(b.RETAINED_BUDGET - used - b.BUILD_BUDGET, 96_776_192)
-        self.capacity(b.DATA_RESERVE + b.BUILD_BUDGET, used)
+        used = 28_040_896_512
+        free = b.DATA_RESERVE + b.BUILD_BUDGET
+        with patch.object(b, 'RETAINED_BUDGET', 29 * 1024**3), self.assertRaises(ValueError):
+            self.capacity(free, used)
+        self.assertEqual(b.RETAINED_BUDGET - used - b.BUILD_BUDGET, 950_132_736)
+        self.capacity(free, used)
+        self.capacity(free, used + 950_132_736)
         with self.assertRaises(ValueError):
-            self.capacity(b.DATA_RESERVE + b.BUILD_BUDGET, used + 96_776_193)
+            self.capacity(free, used + 950_132_737)
 
     def test_full_existing_build_at_aggregate_boundary(self):
         # The approved aggregate increase does not relax per-run or free-space limits.

@@ -7,6 +7,7 @@ const repository = fileURLToPath(new URL("../", import.meta.url));
 const installedStaging = "deploy/publish/check-amo-installed-staging.test.py";
 
 for (const suite of [
+  "deploy/publish/check-build-capacity.test.py",
   "scripts/check-amo-direct-stage-design.py",
   "deploy/publish/check-amo-exchange-scratch.test.py",
   "deploy/publish/check-closed-input.test.py",
