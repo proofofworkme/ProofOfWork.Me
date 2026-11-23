@@ -58,8 +58,8 @@
     {
       "targets": ["landing", "browser", "id", "dns", "inception", "infinity", "pages", "publish", "token", "files", "mail", "notifications"],
       "disposition": "compatible",
-      "reason": "The homepage catalog, navigation, SEO and Computer launcher already identify AMO as one product. POWB, INCB, credit, ID and DNS tickets continue to use their own asset and authorization rules. Other workspaces retain their routes, signing scopes and history readers. The source-bound AMO builder reserves 4 GiB per run and 100 GiB of free space within an approved 29 GiB retained-build limit.",
-      "evidence": ["src/features/landing/LandingApp.tsx", "src/app/appLinks.ts", "src/app/seoMetadata.mjs", "src/features/computer/computerNavigation.ts", "tests/browser/amo-browse.spec.mjs", "scripts/check-amo-id-ownership.test.mjs", "deploy/publish/build.py", "deploy/publish/check-build-capacity.test.py"]
+      "reason": "The homepage catalog, navigation, SEO and Computer launcher already identify AMO as one product. POWB, INCB, credit, ID and DNS tickets continue to use their own asset and authorization rules. Other workspaces retain their routes, signing scopes and history readers. The source-bound AMO builder retains up to 29 GiB, with a separate 4 GiB allowance per run and 100 GiB free-space reserve. Publication forecasts only the exact November 18 current/rollback pair and preserves historical writer identities.",
+      "evidence": ["src/features/landing/LandingApp.tsx", "src/app/appLinks.ts", "src/app/seoMetadata.mjs", "src/features/computer/computerNavigation.ts", "tests/browser/amo-browse.spec.mjs", "scripts/check-amo-id-ownership.test.mjs", "deploy/publish/build.py", "deploy/publish/check-build-capacity.test.py", "deploy/audit30/ui-storage.py", "deploy/audit30/ui-release-policy.py", "deploy/publish/publication_admission.py", "deploy/publish/check-preservation-admission.test.py", "deploy/ui-retention/check-retirement-package-upgrade.test.py"]
     }
   ]
 }

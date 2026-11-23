@@ -1078,6 +1078,8 @@ REVIEWED_RETIRED_PAIRS = (
     ('a4d2d88cd0b0-20261117T045327Z', '1996225ce530-20261116T190348Z'),
     # Exact Boost successor forecast; installation is not deletion authority.
     ('9f18a0ce7032-20261118T004519Z', 'a4d2d88cd0b0-20261117T045327Z'),
+    # Expanded Liquidity publication forecast for this predecessor pair only.
+    ('2084747c3f8c-20261118T181547Z', '9f18a0ce7032-20261118T004519Z'),
 )
 RETIREMENT_BASE = '/var/backups/proofofwork-ui'
 RETIREMENT_EVIDENCE = RETIREMENT_BASE + '/cleanup-evidence/older-backup-retirement-6fd05dc1e04e'

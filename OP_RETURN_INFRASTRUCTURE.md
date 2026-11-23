@@ -3794,8 +3794,17 @@ declaration at 977229/591. Both identified the successor at 977230 as
 Its incumbent immutable frame had zero governed records and events and
 transition-chain SHA-256
 `16629657744445f2c5b4a9bb4370b940f8e3fc8ccab44b8b39aa4f5141bef47c`.
-That observation covers one block. Obtain a fresh tip, review its height
-and hash, and check every intervening block before using the migration.
+At 16:31:37 UTC on November 23, Core, the index checkpoint and the last
+native seal agreed on 977235,
+`00000000000000000001ef82eec51bbbf48a61d85f3a181bcfa7790cedbe4239`.
+A read-only scan of 977230–977235 verified all six header hashes, parent
+links, proof of work, transaction roots and BIP141 commitments. Its
+15,822 transactions and 44,205 outputs contained zero governed candidates.
+All six original frames matched their archives and contained zero governed
+records or events. The tip's original native digest was
+`b6e4151eb4f57ae025d2e2c7e3218faed1613ab64d8a9ce1fe29c533f78fb9c6`.
+Obtain a fresh matching tip and qualify the replacement commitments from
+the exact staged source before using the migration.
 
 The operator tools live in `deploy/amo-expanded-liquidity-replay/`.
 Use the existing approved source-staging path to expose the clean committed
@@ -3866,12 +3875,14 @@ rechecks capacity under its single-writer lock. Run
 finite limits and one-byte refusal cases.
 
 The observed current release was `2084747c3f8c-20261118T181547Z`, with
-rollback `9f18a0ce7032-20261118T004519Z`. Review that ordered pair in
-`deploy/audit30/ui-storage.py` and `deploy/publish/publication_admission.py`.
-Retain historical writer hashes and add the exact successor writer digest
-in `deploy/audit30/ui-release-policy.py`. Qualify both readers and the
-missing, extra, reversed and unapproved-future cases in
-`deploy/audit30/check-ui-storage.test.py`. The lifecycle procedure uses
+rollback `9f18a0ce7032-20261118T004519Z`. The candidate adds this ordered
+pair to the storage writer and the publication admission reader. The
+successor storage writer SHA-256 is
+`c7e0fa6aecd44b03db8028669a83571f2571614a737f50857db43735240ee981`.
+The release policy retains the 23 historical writer hashes and admits this
+exact successor. The publication fixture exercises both readers, the four
+expected paths and refusals for changed paths, reversed and future pairs.
+See `deploy/publish/check-preservation-admission.test.py`. The lifecycle procedure uses
 `plan-upgrade-complete` with fresh config and state hashes, the exact plan
 digest for `upgrade`, and `status --require-complete`.
 
@@ -3882,6 +3893,31 @@ its `.sha256`, and its `.provenance`, plus the rollback root
 `/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-2084747c3f8c-20261118T181547Z`
 remain subject to a separate action-time owner decision before the normal
 combined verification and retention step.
+
+#### Physical INCB release qualification for this candidate
+
+The earlier 217-versus-216 inventory came from running a Node 22 import
+list on Node 24.18.0. With the previous list, loading the optional
+`pg.native` property attempted a 217th file before the pin guard stopped
+it. Node 24 loads two additional files under `node_modules/pg/lib/native/`:
+
+| File | SHA-256 |
+| --- | --- |
+| `index.js` | `99fb61cb78a6d78b7a5fc0b9ac264ad58272af48be4bc50bfdb948b1342e3292` |
+| `client.js` | `d88c124d4835cc9d5b0389e2aaf63a144df8434c1b4b0d5e588691e068f49acf` |
+
+Local observation and strict verification on Node 24.18.0 agreed on 90
+first-party and 128 dependency files. Their inventory SHA-256 is
+`961586f747a8d19acfb86ca25cbbea51a76a3b838fcfbd899b108637e6c23851`.
+Hash the compact JSON array of pairs consisting of checkout-relative POSIX
+path and SHA-256 of the original bytes, sorted by path, with no trailing
+newline. Verify each path and digest as well as the aggregate. The local
+check exercised module loading. Complete the physical behavior check on
+the ordinarily staged candidate using the existing three on-host fixtures,
+the verified Node 24 runtime and `scripts/check-index-recovery-behavior.mjs`.
+Require the passing case named `actual physical transition normalization
+preserves authenticated oracle for both component consumers` and the
+post-run inventory match.
 
 ### Active WORK Q16 / AMO V8 gate
 

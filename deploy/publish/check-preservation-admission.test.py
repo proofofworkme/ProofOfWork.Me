@@ -128,6 +128,32 @@ class PublicationAdmission(unittest.TestCase):
     def test_b_a2_forecast_preserves_origin_and_refuses_unreviewed_pairs_or_paths(self):
         self.assert_successor_forecast(b_a2_retired_observation())
 
+    def test_expanded_liquidity_forecasts_only_the_exact_2084_9f18_rotation(self):
+        observed = retired_observation()
+        base = A['RETIREMENT_BASE']
+        current = '2084747c3f8c-20261118T181547Z'
+        previous = '9f18a0ce7032-20261118T004519Z'
+        pair = {'current': current, 'previous': previous}
+        archive = base + '/releases/proofofwork-ui-release-9f18a0ce7032-20261118T004519Z.tgz'
+        paths = [archive, archive + '.provenance', archive + '.sha256',
+                 base + '/rollback-roots/proofofwork-www-pre-2084747c3f8c-20261118T181547Z']
+        observed['binding']['pair'] = pair
+        observed['verifiedRetirementCurrentPair'] = pair
+        rule = observed['privateStageRetention']
+        rule.update(previousPair=pair, wouldRetire=paths, releaseId='abcdefabcdef-20261123T090000Z')
+
+        self.assert_successor_forecast(observed)
+        self.assert_storage_retired_scope(observed)
+
+        # Even a self-consistent plan for the reversed pair is outside this scope.
+        wrong_archive = base + '/releases/proofofwork-ui-release-' + current + '.tgz'
+        wrong_paths = [wrong_archive, wrong_archive + '.provenance', wrong_archive + '.sha256',
+                       base + '/rollback-roots/proofofwork-www-pre-' + previous]
+        reversed_pair = {'current': previous, 'previous': current}
+        storage = runpy.run_path(str(HERE.parent / 'audit30/ui-storage.py'))
+        for check in (A['reviewed_forecast'], storage['reviewed_forecast']):
+            self.assertFalse(check({**rule, 'previousPair': reversed_pair, 'wouldRetire': wrong_paths}))
+
     def assert_successor_forecast(self, observed):
         rule = observed['privateStageRetention']
         original = retired_observation()['verifiedRetiredPayloads']
@@ -170,6 +196,7 @@ class PublicationAdmission(unittest.TestCase):
         reviewed = ast.literal_eval(assignments[0].value)
         self.assertIn(hashlib.sha256(storage.read_bytes()).hexdigest(), reviewed)
         self.assertIn('60fe272a4bb45848dd67e745302e4c02b909447fca8f3e11d319f8f02cb61325', reviewed)
+        self.assertIn('0ded51e069afedef6433f44555c0953658be82b045e06e8d478021d221bca285', reviewed)
 
     def test_storage_retired_scope_cannot_skip_the_exact_forecast_gate(self):
         for observed in (retired_observation(), successor_retired_observation(), b_a2_retired_observation()):
