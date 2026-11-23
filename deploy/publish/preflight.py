@@ -118,6 +118,8 @@ sequence_namespace = {'__name__': '_whole_sequence_census'}
 assert isinstance(SEQUENCE_SOURCE, bytes) and len(SEQUENCE_SOURCE) <= 16384
 exec(compile(SEQUENCE_SOURCE, 'sequence_capacity.py', 'exec'), sequence_namespace)
 result['wholeSequenceCensus'] = sequence_namespace['capture'](types.SimpleNamespace(**capacity_namespace))
+if 'DIRECT_METADATA_PLAN' in globals():
+    result['amoDirectApproval'] = verify_direct_metadata(DIRECT_METADATA_PLAN)
 if globals().get('CLOSED_REQUEST') is not None:
     assert active_manifest['format'] in ('proofofwork-ui-release-v5', 'proofofwork-ui-release-v6')
     assert isinstance(PHASE_SOURCE, bytes) and 0 < len(PHASE_SOURCE) <= 65536

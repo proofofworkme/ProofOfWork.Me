@@ -109,6 +109,11 @@ def requirements(plan, census):
         'transport': (incoming + source if storage == 'release-evidence-v1' else 0) + EVIDENCE_BYTES,
         'scratch': scratch_peak + EVIDENCE_BYTES,
     }
+    direct = 'amoDirectStage' in plan
+    evidence = plan.get('closedArchive', {})
+    if (direct != ('amoDirectStage' in evidence.get('request', {})) or
+            direct != ('amoDirectCapacity' in evidence) or (direct and 'inputCompactor' not in plan)):
+        raise ValueError('Incomplete AMO direct capacity scope')
     allowance = {}
     phase_peaks = None
     if 'inputCompactor' in plan:
@@ -142,8 +147,43 @@ def requirements(plan, census):
             'source-and-publication': {'root': compact + final + archive + source + verification,
                                        'scratch': compact + final + source + verification},
         }
+        if direct:
+            selector = plan['amoDirectStage']
+            data = evidence['amoDirectCapacity']
+            forecast_pair = forecast.get('previousPair')
+            expected_pair = {'current': '2084747c3f8c-20261118T181547Z', 'previous': '9f18a0ce7032-20261118T004519Z'}
+            def digest(value):
+                return isinstance(value, str) and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
+            if (not isinstance(selector, dict) or set(selector) != {'model', 'approvalSha256'} or
+                    selector['model'] != 'amo-direct-stage-v1' or not digest(selector['approvalSha256']) or
+                    evidence['request']['amoDirectStage'] is not True or plan['releaseFormat'] != 'proofofwork-ui-release-v6' or
+                    allowance or forecast_pair != expected_pair or plan.get('retentionLifecycle', {}).get('pair') != expected_pair or
+                    forecast.get('releaseId') != release or not isinstance(data, dict) or
+                    set(data) != {'model', 'outgoingAllocatedBytes', 'outgoingUniqueInodes', 'outgoingIdentitySha256',
+                                  'transientSurfaceUpperBytes'} or data['model'] != 'amo-direct-capacity-v1' or
+                    not digest(data['outgoingIdentitySha256'])):
+                raise ValueError('AMO direct stage evidence is unbound')
+            outgoing = integer(data['outgoingAllocatedBytes'])
+            transient = integer(data['transientSurfaceUpperBytes'])
+            inode_count = integer(data['outgoingUniqueInodes'])
+            passthrough = integer(staging['passthroughUpperBytes'])
+            if min(outgoing, transient, inode_count, passthrough) == 0 or passthrough > final or inode_count > integer(census['liveTree']['additionalInodes']):
+                raise ValueError('AMO direct allocation contradicts its closed inputs')
+            # Never lower the existing physical upper bound. Incoming remains
+            # fully charged while it is received; a complete transient surface
+            # can coexist with the final candidate before deduplication.
+            full_copy_root = max(step['root'] for step in phase_peaks.values())
+            candidate = final + max(incoming, transient)
+            phase_peaks['stage'] = {'root': compact + candidate, 'scratch': compact + candidate}
+            steady = phase_peaks['source-and-publication']
+            phase_peaks['outgoing-in-scratch'] = {'root': steady['root'], 'scratch': steady['scratch'] - final + outgoing}
+            # Reverse exchange after the rollback move can place the candidate
+            # in backup temporarily. Both roots must fit each pool independently.
+            extra['backup'] += max(old, outgoing, final) - old
         for metric in ('root', 'scratch'):
             extra[metric] = max(step[metric] for step in phase_peaks.values()) + EVIDENCE_BYTES
+        if direct:
+            extra['root'] = max(extra['root'], full_copy_root + EVIDENCE_BYTES)
     inodes = (integer(plan['admissions']['source-receive']['inodes']) +
               3 * integer(plan['admissions']['surfaces-receive']['inodes']) +
               2 * integer(census['liveTree']['additionalInodes']) + 512)

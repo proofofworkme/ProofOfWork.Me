@@ -368,24 +368,30 @@ class StagerIntegrationTests(unittest.TestCase):
                 len(stage.SURFACES),
             )
             self.assertFalse(list(staging.glob(".proofofwork-ui-stage-*")))
-            # An unsafe pre-existing inode group in a fresh copy must abort
-            # before publication and remove only the unpublished candidate.
-            release = "reject-preexisting-links"
+            # Compact receiver inputs may contain aliases. Their managed copies
+            # are first materialized independently, then deduplicated inside the candidate.
+            release = "independent-input-aliases"
             payload = staging / f"proofofwork-ui-surfaces-{release}/surfaces"
             for surface in stage.SURFACES:
                 write(payload / surface / "index.html", b'<script src="/assets/new.js"></script>')
                 write(payload / surface / "assets/new.js", new)
             os.link(payload / "activity/assets/new.js", payload / "activity/assets/linked.js")
             payload_before = stage.tree_fingerprint(payload)
-            rejected = staging / f"proofofwork-www-stage-{release}"
+            admitted = staging / f"proofofwork-www-stage-{release}"
             result = subprocess.run([sys.executable, "-B", str(ROOT / "deploy/proofofwork-ui-release-stage.py"),
-                                     "--release-id", release, "--surfaces-root", str(payload), "--stage-root", str(rejected),
+                                     "--release-id", release, "--surfaces-root", str(payload), "--stage-root", str(admitted),
                                      "--deduplicate-managed-files"], text=True, capture_output=True, timeout=60,
                                     env={**os.environ, "POW_UI_ALLOW_TEST_ROOTS": "1", "POW_UI_STAGE_WWW_ROOT": str(live),
                                          "POW_UI_STAGE_STAGING_ROOT": str(staging), "POW_UI_DEPLOY_LOCK": str(lock_parent / "deploy.lock")})
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("pre-existing hardlinks", result.stderr)
-            self.assertFalse(rejected.exists())
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            original = payload / "activity/assets/new.js"
+            first = admitted / "proofofwork-activity/assets/new.js"
+            second = admitted / "proofofwork-activity/assets/linked.js"
+            self.assertEqual(inode(original), inode(payload / "activity/assets/linked.js"))
+            self.assertEqual(original.stat().st_nlink, 2)
+            self.assertEqual(inode(first), inode(second))
+            self.assertNotEqual(inode(first), inode(original))
+            self.assertEqual(first.read_bytes(), original.read_bytes())
             self.assertEqual(stage.tree_fingerprint(payload), payload_before)
             self.assertEqual(stage.tree_fingerprint(live), live_before)
             self.assertFalse(list(staging.glob(".proofofwork-ui-stage-*")))

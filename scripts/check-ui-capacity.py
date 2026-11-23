@@ -43,7 +43,7 @@ class CapacityTests(unittest.TestCase):
         ))
         self.assertEqual(capacity.ROOT_RESERVE_BYTES, 8 * 1024**3)
         self.assertEqual(capacity.GROWTH_RESERVE_BYTES, 64 * 1024**2)
-        self.assertEqual(capacity.MAX_DEPLOY_SCRATCH_BYTES, 11 * 1024**3 // 2)
+        self.assertEqual(capacity.MAX_DEPLOY_SCRATCH_BYTES, 6 * 1024**3)
         self.assertEqual(capacity.INODE_RESERVE, 128)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

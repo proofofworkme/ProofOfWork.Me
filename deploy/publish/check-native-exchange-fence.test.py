@@ -60,6 +60,45 @@ def moves(fd,mapping,targets):
             if (w in mapping and mapping[w]/name in targets):
                 items.append((str(mapping[w]/name),mask,cookie))
     return items
+class DirectExchangeCapacity(unittest.TestCase):
+    def test_both_exchange_positions_and_backup_use_actual_pool_guards(self):
+        from unittest.mock import patch
+        fence = load('fixture_direct_fence', ROOT/'deploy/publish/native_exchange_fence.py')
+        capacity = load('fixture_direct_capacity', ROOT/'deploy/proofofwork-ui-capacity.py')
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch, backup, transport = (Path(tmp)/x for x in ('scratch','backup','backup/transport'))
+            for path in (scratch, backup, transport):
+                path.mkdir(mode=0o700)
+            (scratch/'unchanged').write_bytes(b'private source')
+            used = {path: capacity.retention_budget(path, 2**60, 0, 'fixture')['allocatedBytes']
+                    for path in (scratch, backup, transport)}
+            for outgoing, candidate in ((8192, 4096), (4096, 8192)):
+                margin, verify = 16384, 8192
+                limits = {scratch: used[scratch]+margin+verify+max(0,outgoing-candidate),
+                          backup: used[backup]+margin+max(outgoing,candidate), transport: used[transport]+margin}
+                def check(scratch_limit, backup_limit, transport_limit):
+                    with patch.object(capacity, 'MAX_DEPLOY_SCRATCH_BYTES', scratch_limit), patch.object(
+                            capacity, 'RETENTION_BUDGETS', ((backup,backup_limit),(transport,transport_limit))):
+                        fence.check_exchange_pools(capacity, scratch, backup, transport, outgoing, candidate, margin, verify)
+                with self.subTest(outgoing=outgoing, candidate=candidate):
+                    check(*limits.values())
+                    for refusing in limits:
+                        short = dict(limits)
+                        short[refusing] -= 1
+                        with self.subTest(short=refusing), self.assertRaises(capacity.CapacityError):
+                            check(*short.values())
+                    free = capacity.ROOT_RESERVE_BYTES + capacity.GROWTH_RESERVE_BYTES + margin + verify
+                    inodes = capacity.INODE_RESERVE + 512
+                    for blocks, available_inodes in ((free,inodes),(free-1,inodes),(free,inodes-1)):
+                        with patch.object(capacity.os, 'statvfs', return_value=types.SimpleNamespace(
+                                f_frsize=1, f_bavail=blocks, f_favail=available_inodes)):
+                            if (blocks,available_inodes) == (free,inodes):
+                                check(*limits.values())
+                            else:
+                                with self.assertRaises(capacity.CapacityError):
+                                    check(*limits.values())
+
+
 class Native(unittest.TestCase):
     populate,archive,record,run_command=(getattr(pages.PagesRelease,n) for n in ('populate','archive','record','run_command'))
     stage=pages.PagesRelease.stage

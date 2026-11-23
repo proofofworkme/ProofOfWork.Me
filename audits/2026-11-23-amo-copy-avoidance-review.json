@@ -1,0 +1,291 @@
+{
+  "kind": "Local AMO copy-avoidance review manifest",
+  "reviewDateUtc": "2026-11-23",
+  "status": "Local AMO staging implementation and qualification. Measurements below cover the retained archive sizes. Any future dispatch requires a separately approved successor build, a post-build approval and a fresh release-specific preflight.",
+  "localConstructor": {
+    "path": "scripts/check-amo-direct-stage-design.py",
+    "sha256": "536f740a972a04bdfa699a1adb54c09cb537c01e782a395470231455ab1bd025",
+    "scope": "Original disposable V6 differential fixture. The local successor also implements the approved direct path in the native stager."
+  },
+  "retainedBaseline": {
+    "releaseId": "ace27010a8e4-20261123T181230Z",
+    "commit": "ace27010a8e44886c0c22cf9fe5c98509d28f1bb",
+    "tree": "d648c6c0b5944a11fd364b96141dee65d284d1ac",
+    "buildReceiptSha256": "b49774b72fb2539053d3c0f2266725d134d14d146fbb8a156bc33f2ec8f4b3c9",
+    "preflightSha256": "1dff1c58922a32ec832999928e5cb3bd8a73b2b176ef42bdcf1307e38d3463fe",
+    "archiveSha256": {
+      "source": "e62a79cf42dda6efdff1d39b37c67a34cab1fdf1aade0705aabc2695f253e5e9",
+      "surfaces": "92c3a4401b74f4289c0ca57509906dc12c744f4862de982ebd00dc766edc842a"
+    },
+    "inventorySha256": "e5921b4e325bc73098bb4dcbaf662323ea9996a778b147cf8ecde58cfa542f01",
+    "orderedProtectedPair": {
+      "current": "2084747c3f8c-20261118T181547Z",
+      "previous": "9f18a0ce7032-20261118T004519Z"
+    },
+    "configSha256": "bbce6be80e95047760f526550c30ba78f1515a4fd84eba3f7afb39970ebd15d6",
+    "stateSha256": "5a494c50278949e3b44efd25ac96eacfb071c437a36d47b2bb36f4367beb7a1b"
+  },
+  "sourceReview": [
+    {
+      "path": "deploy/proofofwork-ui-release-stage.py",
+      "baselineSha256": "87ab4269461a91cf89ed50d6ddb81d116a35eb78f7cbcb6b4536946b5bbeb314",
+      "reviewScope": "Installed candidate constructor. Add the separately bound AMO path and retain ordinary staging."
+    },
+    {
+      "path": "deploy/publish/phase_capacity.py",
+      "baselineSha256": "4d8e3d6856af6e7ec2813d05e8cbc97b4ad5a6fd122e4ab44a0cbfea7d205537",
+      "reviewScope": "Model peak private staging, including passthrough, old assets, incoming copies and temporary files."
+    },
+    {
+      "path": "deploy/publish/sequence_capacity.py",
+      "baselineSha256": "cab70223448059d3d35eb9e0a02591376bd1d83fe9dd17114a8500d8c6a3de23",
+      "reviewScope": "Capture outgoing allocation and bound every forward/reverse phase across all pools."
+    },
+    {
+      "path": "deploy/publish/release.py",
+      "baselineSha256": "ff920168e16b0d00a66fbb748cec248c19e2c7649e66ca72efccf4824b22f88d",
+      "reviewScope": "Bind the successor build, closed inventory, helper set and selected mode in the sealed plan."
+    },
+    {
+      "path": "deploy/publish/preflight.py",
+      "baselineSha256": "739f52d71d65507b5af9e4abb1d0f29cd7c488fe79303a05269fc31e9dfc6579",
+      "reviewScope": "Bind the live/rollback identity and fresh aggregate allocation observation to preflight."
+    },
+    {
+      "path": "deploy/publish/remote_transport.py",
+      "baselineSha256": "3149a2b2f58d17d88c45917bec00fd1210b5ed35c55e832c9d248ec4a1fe228b",
+      "reviewScope": "Require the same artifact, mode, plan, installed helpers, fresh census and exact attempt at dispatch."
+    },
+    {
+      "path": "deploy/proofofwork-ui-release-publish.sh",
+      "baselineSha256": "9aaba2b7378c1ddd38ad88a0d20322dd467d5dbd2393737ad1308349b350e22a",
+      "reviewScope": "Recheck the outgoing allocation under lock before exchange and retain verified rollback after a failure."
+    },
+    {
+      "path": "deploy/publish/native_exchange_fence.py",
+      "baselineSha256": "3e0028402c07a9f5d313a30931340e0677723a3a3484fa919dd74922a1799f0f",
+      "reviewScope": "Preserve the immediate pre-rename identity checks. Verify the bound charge at the final forward-exchange boundary."
+    },
+    {
+      "path": "deploy/proofofwork-ui-capacity.py",
+      "baselineSha256": "dfcee2f385e84c42aa98529dd4926fc27c5c6fb4bd0c50b3905b3a3248141df3",
+      "reviewScope": "Retain ordinary native pool, physical and inode guards."
+    },
+    {
+      "path": "deploy/proofofwork-ui-release-provenance.sh",
+      "baselineSha256": "d0051c10817ce057058b818b4af523eb60e38cf16780b638a6128e9e85e7047b",
+      "reviewScope": "Retain exact archive/provenance checks through private receipt and publication."
+    },
+    {
+      "path": "deploy/publish/input_compaction.py",
+      "baselineSha256": "5582a37150982b724771fcfd7a2349181481cd90885b9ec7781e9e7f0d0bb251",
+      "reviewScope": "Retain exact private input fingerprint, compaction journal and before/after checks."
+    },
+    {
+      "path": "deploy/publish/install-stager.py",
+      "baselineSha256": "086e31c7e2c1fa06ddd0eaa3d23b9ba1bca08b47d940574a996f074ad37b4467",
+      "reviewScope": "Review predecessor evidence only. Its historical guard selects a different predecessor and it lacks an explicit reversal operation."
+    }
+  ],
+  "existingStagerInstaller": {
+    "fixedPredecessorCommit": "5905da2ac47814d2b7c47d004b3598c2f312e98e",
+    "fixedPredecessorSha256": "1079170704ab699b0c1a2799d262e0b7f4041c5fb20bdb88a9f86d0eebe02b80",
+    "retainedInstalledStagerSha256": "87ab4269461a91cf89ed50d6ddb81d116a35eb78f7cbcb6b4536946b5bbeb314",
+    "qualification": "Historical predecessor-only installer. The proposed AMO successor supplies a separate creation-only guarded installer and reversal with exact helper pairs."
+  },
+  "capacityRequirements": {
+    "scratchCeilingBytes": 6442450944,
+    "rootReserveBytes": 8589934592,
+    "growthReserveBytes": 67108864,
+    "minimumRemainingInodes": 128,
+    "preserve": [
+      "retention and transport budgets",
+      "29 GiB isolated Node build cap, 4 GiB reservation and 100 GiB filesystem reserve"
+    ],
+    "admission": "Use fresh release and protected-state inputs. Bind measured outgoing allocation and inode count. Bound all construction, archive, source, exchange and failure/reversal intervals, and refuse any negative headroom. Keep recovery available after a failed forward exchange.",
+    "evidence": "The read-only aggregate census and the offline retained-input replay quantify the candidate at the measured occupancy. The actual successor must pass the same limits with its own archive bounds and current protected state."
+  },
+  "artifactReuse": {
+    "allowedForProposedScope": false,
+    "reason": "The production sequence model is outside DEPLOYMENT_ONLY_PATHS. Private closed input also requires the artifact commit to supply the stager and phase helper hashes. The successor requires a fresh V6 source and surfaces build."
+  },
+  "successorInputs": {
+    "commit": null,
+    "tree": null,
+    "releaseId": null,
+    "attempt": null,
+    "newOrUpdatedHelperSha256": {
+      "stager": "6aa442d63f7f9abcc26323c8c289f6ebfbdf921c472372dd891198b960fa893f",
+      "publisher": "2292aaa0761503cbe419024d3cf24f94d1b103b6b3f38e8ef3c46049899f269b"
+    },
+    "reviewedInstallerSha256": "2247f8f6a25c53d541e859cc6108e33a0a480eb6ad931000a35d91fca67ddb46",
+    "reviewedReverseOperationSha256": "2247f8f6a25c53d541e859cc6108e33a0a480eb6ad931000a35d91fca67ddb46",
+    "buildReceiptSha256": null,
+    "sourceArchiveSha256": null,
+    "surfacesArchiveSha256": null,
+    "closedRequestSha256": null,
+    "inventorySha256": null,
+    "freshPreflightSha256": null,
+    "sealedPlanSha256": null,
+    "terminalPrivateStageReceipts": null
+  },
+  "approvalGroups": [
+    {
+      "step": 1,
+      "when": "After a stable census and complete local production implementation, tests and review.",
+      "targets": [
+        "proofofworkme/ProofOfWork.Me refs/heads/main",
+        "pow-bitcoin-01 isolated release builder"
+      ],
+      "scope": "Approve the exact reviewed successor commit and tree, its main visibility and CI, authenticated source fetch and one isolated build. Verify actual release ID, build receipt and both archive hashes afterwards."
+    },
+    {
+      "step": 2,
+      "when": "After the successor build receipt, compressed inventory, both archive digests, guarded installer digest and replacement helper hashes are independently verified.",
+      "targets": [
+        "ubuntu-4gb-hel1-1 guarded helper installation",
+        "pow-bitcoin-01 to ubuntu-4gb-hel1-1 private release receiver"
+      ],
+      "scope": "Approve the exact successor source and surfaces archives, reviewed two-helper frame and installer bytes for the named private receiver. Bind release ID, publication attempt, commit and tree, raw build-receipt SHA-256, both archive digests, inventory digest, exact stager and publisher digests, and the retained pair and config/state. Use the native deployment lock to qualify and install the named helpers under an immutable journal, then run fresh closed preflight and staging through the two terminal private receipts."
+    }
+  ],
+  "rollback": "Record exact predecessor metadata, inode and bytes in a creation-only guarded journal. Preserve owner, permissions, xattrs and the protected pair. Verify protected state and the journal before restoring an installed helper. Reconcile an interrupted installation or staging against the actual receipts before retry. Carry the preexisting reverse-exchange path through every failure case. Preserve failed evidence.",
+  "laterDecisions": [
+    "production publication and release synchronization",
+    "production index replay and 250k admission activation",
+    "changes to retention or the verified fallback"
+  ],
+  "qualificationNote": "audits/2026-11-23-amo-scratch-qualification.md",
+  "aggregateDecisionEvidence": {
+    "kind": "Unlocked read-only census and offline projection for retained artifact sizes. A production plan requires a fresh, release-bound admission.",
+    "host": "ubuntu-4gb-hel1-1",
+    "outgoingRootObservedUtc": "2026-11-23T20:26:47Z",
+    "releasePoolsObservedUtc": "2026-11-23T20:27:53Z",
+    "pair": {
+      "current": "2084747c3f8c-20261118T181547Z",
+      "previous": "9f18a0ce7032-20261118T004519Z"
+    },
+    "protectedHashes": {
+      "config": "bbce6be80e95047760f526550c30ba78f1515a4fd84eba3f7afb39970ebd15d6",
+      "state": "5a494c50278949e3b44efd25ac96eacfb071c437a36d47b2bb36f4367beb7a1b",
+      "liveManifest": "6109f2e61afcc8fbcb9a15e68e133550194c816726f5fca9537d21973ebeb8e0",
+      "rollbackManifest": "38504f8cf4be8e277c613f84f4cb34837ae441c288125931e431b17b43882a15"
+    },
+    "method": "Two matching live-root metadata passes, stable protected pins before and after. Two separately deduplicated metadata passes for each release pool. Same filesystem, O_NOATIME, zero deployment locks acquired. Full tree contents were verified by the retained preflight. This census read filesystem metadata and the fixed identity records.",
+    "outgoingAllocatedBytes": 286646272,
+    "outgoingUniqueInodes": 1915,
+    "outgoingEntries": 3427,
+    "newestOutgoingCtimeNs": 1795036784895581744,
+    "poolUsedBytes": {
+      "scratch": 5436297216,
+      "backup": 11433332736,
+      "transport": 2955309056
+    },
+    "availableOnRootAtPoolCensus": {
+      "bytes": 16184459264,
+      "inodes": 2195296
+    },
+    "tarAdmissionInput": {
+      "sourceBytes": 427003904,
+      "sourceInodes": 15000,
+      "surfacesBytes": 416235520,
+      "surfacesInodes": 4000
+    },
+    "phaseScratchOccupancyBytes": {
+      "surfacesReceive": 5923835904,
+      "directStage": 6363422720,
+      "archive": 5955575808,
+      "source": 6382579712,
+      "outgoingAtExchange": 6325846016
+    },
+    "poolAndFloorHeadroom": {
+      "scratchBytes": 59871232,
+      "backupBytes": 6718520279,
+      "transportBytes": 6708367360,
+      "rootBytesAfterPeakAndProtectedFloor": 6153526231,
+      "inodesAfterPeakAndReserve": 2160802
+    },
+    "physicalPeakAdditionalBytes": 1373889577,
+    "prospectiveInodes": 34366,
+    "ordinaryPeakScratchBytes": 6700826624,
+    "ordinarySixGiBDeficitBytes": 258375680,
+    "stockBoostRoute": "Historical installer admits only the 5.5-to-6 GiB helper pair and its original lifecycle baseline. A new ceiling requires a successor planner, receiver binding, approval and reversal. The current release cannot inherit a new ceiling.",
+    "localProjection": {
+      "path": "deploy/publish/check-amo-exchange-scratch.test.py",
+      "sha256": "fee86875b71cacfa743a859296f145f13817370964573f016df51c1c53d78ff5",
+      "suitePassed": 4
+    }
+  },
+  "guardedHelperInstallation": {
+    "installerPath": "deploy/publish/amo_stage_installer.py",
+    "installerSha256": "2247f8f6a25c53d541e859cc6108e33a0a480eb6ad931000a35d91fca67ddb46",
+    "qualificationPath": "deploy/publish/check-amo-stage-installer.test.py",
+    "qualificationSha256": "45cdad6b1306a4940f0542fe42b2e6293c523c7d9039c255a4b7966695ca9237",
+    "testsPassed": 14,
+    "productionTargets": [
+      "/usr/local/sbin/proofofwork-ui-release-stage",
+      "/usr/local/sbin/proofofwork-ui-release-publish"
+    ],
+    "activeJournal": "/var/lib/proofofwork-ui-amo-stage/<approvalSha256>/",
+    "approvalEncoding": "UTF-8 canonical JSON with sorted keys, compact separators and one trailing LF. The approval digest is supplied independently.",
+    "frame": "Pack from a clean, hash-pinned successor Git commit descended from the retained artifact, a matching V6 build receipt and closed request plus its exact compressed inventory. The creation-only private frame contains the approval digest and the two approved helper payloads. The installer itself is supplied against a separate reviewed SHA-256.",
+    "installation": "The root-owned UI receiver verifies the approved two-helper frame, installer digest, six-GiB native capacity, accepted config/state and healthy completed lifecycle. The journal retains both exact predecessor inodes after atomic exchange. Only a qualified, sealed install activates the approved attempt.",
+    "reversal": "An explicit rollback receipt disables direct staging before the first reverse exchange. Reconcile partial helper positions under the native lock. Restore the predecessor inodes, mode, ownership, mtime and xattrs, verify the healthy protected pair, and seal the rollback. A completed reversal refuses reapplication of the same grant.",
+    "afterPublication": "The exact protected pair/state must still match for a helper reversal. A later publication has its own authorization and may require a newly reviewed helper transition."
+  },
+  "localSuccessorTooling": {
+    "scope": "SHA-256 of the reviewed local tool and fixture bytes. The release commit, tree, time-derived ID and archive digests are obtained from a separately authorized build.",
+    "sourceSha256": {
+      "deploy/proofofwork-ui-release-publish.sh": "2292aaa0761503cbe419024d3cf24f94d1b103b6b3f38e8ef3c46049899f269b",
+      "deploy/proofofwork-ui-release-stage.py": "6aa442d63f7f9abcc26323c8c289f6ebfbdf921c472372dd891198b960fa893f",
+      "deploy/publish/amo_stage_installer.py": "2247f8f6a25c53d541e859cc6108e33a0a480eb6ad931000a35d91fca67ddb46",
+      "deploy/publish/native_exchange_fence.py": "4c2526a3cb19475a307d11ac28a5e68a2aa373358b6992f9b21f079a8f0324a9",
+      "deploy/publish/orchestrator.py": "7f6e8a581bbdd95d00a8065fe510f3df5b78efa7ed08793045a6ba38c60209e0",
+      "deploy/publish/phase_capacity.py": "f230d370d3e76774fd26d8ee0309025f44c3338ccd71cad44c7fc822701b9b8c",
+      "deploy/publish/preflight.py": "7f31d42a97579d937cd5d6f881f5ef5f8f886a9a51a3b2b7f0a0ee564c7f4f90",
+      "deploy/publish/release.py": "7fb3f30a1928f1b8093851c59affbfcab49d5edc47c39cdb08321e76c3310d8f",
+      "deploy/publish/remote_transport.py": "9e9c6a3168d2c19e61f8afae55337cbdbc36cfb9106dadbf79cd3cd2b6162ca4",
+      "deploy/publish/sequence_capacity.py": "27075558ab7593bdbf6a0b87b6c984f123b36183268e7e6a0917decdd4bd8f33"
+    },
+    "fixtureSha256": {
+      "deploy/publish/check-amo-exchange-scratch.test.py": "fee86875b71cacfa743a859296f145f13817370964573f016df51c1c53d78ff5",
+      "deploy/publish/check-amo-installed-staging.test.py": "9f8c161f1c678e29ab4acefcba8af16958d67d48bea1738d193faf3483a3b734",
+      "deploy/publish/check-amo-stage-installer.test.py": "45cdad6b1306a4940f0542fe42b2e6293c523c7d9039c255a4b7966695ca9237",
+      "deploy/publish/check-closed-input.test.py": "1b626827359a3f3920323610bfdd9a926edd0ed08763a36b595900d7cfa25657",
+      "deploy/publish/check-native-exchange-fence.test.py": "e3a6e0284e4b888aee94ea276d27f632e746fe35005bf95dc263d32d8cd44cee",
+      "deploy/publish/check-private-staging.test.py": "3f1fd4e61368f06a7ebd12ac8a9cb36389a239c216c6f7d81c64db6246236707",
+      "deploy/publish/check-ui-release.test.py": "16c62d7c6322a2cfc8fcee5a28464f8072fa83e5b2a973445906baac74ae47c8",
+      "scripts/check-amo-direct-stage-design.py": "fdbca2c9587c16017980faf9f129504f784de669a6fb8a42a4e80a2dd3aeb9b3",
+      "scripts/check-amo-private-staging.test.mjs": "dd524348f0179aae9244e594a85c5f595dc8ad9ec657705bf5ced1519a78a6e8",
+      "scripts/check-ui-capacity.py": "a45469e2fed30d2ad982d132ea764f80636a7ba368d535cbc6aa95d78e81ef7f",
+      "scripts/check-ui-release-sequence-capacity.py": "597931439bb1b32e1a558d1a17557c65500d6e27c8c3ea058c42e81bba529d51",
+      "scripts/check-ui-stage-dedup.py": "79fafb3c568bd51a3dde8747d76e3a3da00522b67890eda57937b2cf00b4ee34"
+    },
+    "runbook": {
+      "path": "deploy/publish/ORCHESTRATOR.md",
+      "sha256": "f0cc8d071932d91de37e89a2136b7c162d2267436e187966e81d898f28439a34"
+    }
+  },
+  "postBuildReviewEnvelope": {
+    "scope": "One AMO successor, two installed UI helpers, one release ID and one private staging attempt.",
+    "knownBeforeBuild": "Review the exact successor Git commit and tree, the two replacement helper hashes, installer and reversal digest, public Git destination and isolated Node builder. Keep the current protected release pair, 29 GiB build cap and all reserves.",
+    "derivedAfterBuild": "The normal isolated V6 build supplies the release ID, build receipt, source and surfaces archive hashes. Prepare closed input from those exact committed helpers and archive bytes to obtain the compressed inventory digest. Choose the publication attempt and verify every value before approving its canonical grant digest.",
+    "boundInputs": [
+      "schema",
+      "commit",
+      "tree",
+      "releaseId",
+      "publicationAttempt",
+      "buildReceiptSha256",
+      "sourceSha256",
+      "surfacesSha256",
+      "inventorySha256",
+      "pair",
+      "configSha256",
+      "stateSha256",
+      "helperHashes"
+    ],
+    "authorizedDestinationAfterApproval": "Only ubuntu-4gb-hel1-1 may receive the reviewed two-helper frame and installer and the pinned source and surfaces archives for private staging. Preserve both protected roots. Terminal surfaces-stage and source receipts complete this scope.",
+    "enforcement": "The installer verifies the exact approved grant, commit-derived helper bytes and its independent SHA-256. The read-only stager verifies the installed journal and helper inode pairs. Planner, receiver and exchange fence recheck the bound identities at their respective phases. A changed input, failed capacity or incomplete installation refuses direct use."
+  }
+}

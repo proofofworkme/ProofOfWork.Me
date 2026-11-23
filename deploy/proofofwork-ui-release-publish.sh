@@ -981,7 +981,7 @@ if forward == "1" and plan_sha:
     # Load only the exact helper whose bytes were reviewed with this installed
     # publisher. Its source, installed policy and native plan are independently
     # reauthenticated. Probe and rollback must not require a forward forecast.
-    pin="3e0028402c07a9f5d313a30931340e0677723a3a3484fa919dd74922a1799f0f"
+    pin="4c2526a3cb19475a307d11ac28a5e68a2aa373358b6992f9b21f079a8f0324a9"
     helper=Path(source)/'deploy/publish/native_exchange_fence.py'
     before=helper.lstat()
     if (helper.resolve()!=helper or not stat.S_ISREG(before.st_mode) or before.st_uid!=os.geteuid()

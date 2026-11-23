@@ -119,6 +119,107 @@ class StageError(RuntimeError):
 _capacity_module = None
 
 
+AMO_AUTHORITY_ROOT = Path("/var/lib/proofofwork-ui-amo-stage")
+AMO_HELPER_ROOT = Path("/usr/local/sbin")
+AMO_PREDECESSORS = {
+    "stager": "87ab4269461a91cf89ed50d6ddb81d116a35eb78f7cbcb6b4536946b5bbeb314",
+    "publisher": "9aaba2b7378c1ddd38ad88a0d20322dd467d5dbd2393737ad1308349b350e22a",
+}
+AMO_HELPERS = {"publisher": "proofofwork-ui-release-publish", "stager": "proofofwork-ui-release-stage"}
+
+
+def direct_file(path, *, mode=None, maximum=65536):
+    """Read a single-link, owner-controlled record and bind the descriptor and attributes."""
+    owner = os.geteuid()
+    details = canonical_safe_regular_file(path, "AMO staging evidence", owner)
+    if (details.st_gid != os.getegid() or details.st_nlink != 1 or not 0 < details.st_size <= maximum
+            or (mode is not None and stat.S_IMODE(details.st_mode) != mode)):
+        fail("AMO staging evidence has unexpected metadata.")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOATIME)
+    with os.fdopen(fd, "rb") as stream:
+        if allocation_identity(os.fstat(fd)) != allocation_identity(details):
+            fail("AMO evidence changed before opening.")
+        raw = stream.read(maximum + 1)
+        attrs = {name: hashlib.sha256(os.getxattr(fd, name)).hexdigest() for name in os.listxattr(fd)}
+        if (len(raw) != details.st_size or allocation_identity(os.fstat(fd)) != allocation_identity(details)
+                or allocation_identity(path.lstat()) != allocation_identity(details)):
+            fail("AMO evidence changed during reading.")
+    identity = [details.st_dev, details.st_ino, details.st_uid, details.st_gid, details.st_mode,
+                details.st_nlink, details.st_size, details.st_mtime_ns]
+    return raw, {"sha256": hashlib.sha256(raw).hexdigest(), "identity": identity, "xattrs": attrs}
+
+
+def require_direct_approval(approval, expected):
+    digests = {"sourceSha256", "surfacesSha256", "inventorySha256", "configSha256",
+               "stateSha256", "buildReceiptSha256"}
+    fields = digests | {"schema", "releaseId", "publicationAttempt", "commit", "tree", "pair", "helperHashes"}
+    rid = r"[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z"
+    if (type(approval) is not dict or set(approval) != fields or approval != expected
+            or approval["schema"] != "pow-ui-amo-direct-stage-approval-v1"
+            or not all(isinstance(approval[k], str) and re.fullmatch("[0-9a-f]{40}", approval[k])
+                       for k in ("commit", "tree"))
+            or type(approval["releaseId"]) is not str or not re.fullmatch(rid, approval["releaseId"])
+            or not approval["releaseId"].startswith(approval["commit"][:12] + "-")
+            or type(approval["publicationAttempt"]) is not str
+            or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,30}", approval["publicationAttempt"])
+            or approval["pair"] != {"current": "2084747c3f8c-20261118T181547Z",
+                                     "previous": "9f18a0ce7032-20261118T004519Z"}
+            or type(approval["helperHashes"]) is not dict or set(approval["helperHashes"]) != set(AMO_HELPERS)
+            or not all(isinstance(v, str) and re.fullmatch("[0-9a-f]{64}", v)
+                       for v in [*(approval[k] for k in digests), *approval["helperHashes"].values()])):
+        fail("AMO direct staging authority differs from the exact approved release.")
+
+
+def verify_active(binding):
+    """Under the caller's deployment lock, check the terminal guarded install and both inode pairs."""
+    if (not isinstance(binding, dict) or set(binding) != {"model", "approvalSha256"}
+            or binding["model"] != "amo-direct-stage-v1"
+            or type(binding["approvalSha256"]) is not str or not re.fullmatch("[0-9a-f]{64}", binding["approvalSha256"])):
+        fail("Invalid AMO direct staging authority binding.")
+    digest = binding["approvalSha256"]
+    cycle = AMO_AUTHORITY_ROOT / digest
+    dirs = {}
+    for path in (AMO_AUTHORITY_ROOT, cycle, AMO_HELPER_ROOT):
+        details = canonical_safe_directory(path, "AMO controller directory", os.geteuid())
+        if details.st_gid != os.getegid() or path != AMO_HELPER_ROOT and stat.S_IMODE(details.st_mode) != 0o700:
+            fail("AMO controller directory has unexpected metadata.")
+        dirs[path] = allocation_identity(details)
+    names = {"approval.json", "intent.json", "qualified.json", "installed.json", *AMO_HELPERS}
+    if {p.name for p in cycle.iterdir()} != names:
+        fail("AMO direct staging installation is incomplete or reversing.")
+    paths = [*(cycle / name for name in names), *(AMO_HELPER_ROOT / name for name in AMO_HELPERS.values())]
+    watched = {path: allocation_identity(path.lstat()) for path in paths}
+
+    def record(name):
+        raw, descriptor = direct_file(cycle / (name + ".json"), mode=0o600)
+        return json.loads(raw), descriptor["sha256"]
+
+    approval, actual = record("approval")
+    if actual != digest:
+        fail("AMO direct staging approval digest differs.")
+    require_direct_approval(approval, approval)
+    intent, intent_sha = record("intent")
+    qualified, qualified_sha = record("qualified")
+    installed, _ = record("installed")
+    if (set(intent) != {"schema", "approvalSha256", "files"}
+            or intent["schema"] != "pow-ui-amo-stage-intent-v1" or intent["approvalSha256"] != digest
+            or set(intent["files"]) != set(AMO_HELPERS)
+            or qualified != {"schema": "pow-ui-amo-stage-qualified-v1", "approvalSha256": digest, "intentSha256": intent_sha}
+            or installed != {"schema": "pow-ui-amo-stage-installed-v1", "approvalSha256": digest,
+                             "intentSha256": intent_sha, "qualificationSha256": qualified_sha}):
+        fail("AMO direct staging qualification or installation receipt differs.")
+    for helper, filename in AMO_HELPERS.items():
+        _, before = direct_file(cycle / helper, mode=0o755, maximum=2 * 1024**2)
+        _, after = direct_file(AMO_HELPER_ROOT / filename, mode=0o755, maximum=2 * 1024**2)
+        if (before["sha256"] != AMO_PREDECESSORS[helper] or after["sha256"] != approval["helperHashes"][helper]
+                or intent["files"][helper] != {"before": before, "after": after}
+                or before["identity"][:2] == after["identity"][:2]):
+            fail("AMO direct staging helper inode pair differs from the terminal installation.")
+    if any(allocation_identity(path.lstat()) != value for path, value in {**dirs, **watched}.items()):
+        fail("AMO direct staging installation or authority changed.")
+    return approval
+
+
 def capacity_helper():
     """Load only the owner-controlled sibling shipped with this stager."""
     global _capacity_module
@@ -149,13 +250,14 @@ def capacity_guard(path: Path, additional_bytes: int, additional_inodes: int, ph
         raise StageError(str(error)) from error
 
 
-def copy_capacity_guard(source: Path, destination_parent: Path, phase: str, extra_entries: int = 0, *, scratch_budget: bool = False) -> None:
+def copy_capacity_guard(source: Path, destination_parent: Path, phase: str, extra_entries: int = 0, *,
+                        scratch_budget: bool = False, scratch_root: Path | None = None) -> None:
     helper = capacity_helper()
     try:
         bound = helper.tree_bound(source, destination_parent)
         block = helper.allocation_block(destination_parent)
-        if scratch_budget:
-            helper.check_deploy_scratch(destination_parent, bound["additionalBytes"] +
+        if scratch_budget or scratch_root is not None:
+            helper.check_deploy_scratch(scratch_root or destination_parent, bound["additionalBytes"] +
                                         extra_entries * helper.entry_bytes(0, block), phase)
     except (helper.CapacityError, OSError, subprocess.SubprocessError, UnicodeError) as error:
         raise StageError(str(error)) from error
@@ -1327,6 +1429,33 @@ def acquire_deploy_lock(lock_path: Path, allow_test_roots: bool) -> int:
     return descriptor
 
 
+def direct_plan_fields(plan):
+    """Reconstruct the complete installer approval from independently bound release inputs."""
+    request = plan['closedArchive']['request']
+    direct = request['amoDirectScope']
+    binding = plan['amoDirectStage']
+    if (binding != {'model': 'amo-direct-stage-v1', 'approvalSha256': direct['approvalSha256']}
+            or not re.fullmatch(r'[0-9a-f]{64}', binding['approvalSha256'])
+            or set(direct) != {'approvalSha256', 'attempt', 'sourceSha256', 'buildReceiptSha256'}
+            or request.get('amoDirectStage') is not True
+            or plan['inputStorage'] != 'deploy-scratch-v1' or 'inputCompactorSha256' not in request
+            or plan['releaseFormat'] != 'proofofwork-ui-release-v6'
+            or request['releaseId'] != plan['releaseId'] or request['commit'] != plan['commit']
+            or request['tree'] != plan['tree'] or request['surfacesSha256'] != plan['surfaces']['sha256']
+            or direct['attempt'] != plan['publicationAttempt'] or direct['sourceSha256'] != plan['source']['sha256']
+            or direct['buildReceiptSha256'] != plan['buildReceiptSha256']
+            or plan['commit'] == 'ace27010a8e44886c0c22cf9fe5c98509d28f1bb'):
+        raise ValueError('Direct staging requires the exact closed AMO successor and attempt')
+    lifecycle = plan['retentionLifecycle']
+    return {'schema': 'pow-ui-amo-direct-stage-approval-v1',
+            'releaseId': plan['releaseId'], 'publicationAttempt': plan['publicationAttempt'],
+            'commit': plan['commit'], 'tree': plan['tree'], 'sourceSha256': plan['source']['sha256'],
+            'surfacesSha256': plan['surfaces']['sha256'], 'inventorySha256': request['inventorySha256'],
+            'buildReceiptSha256': plan['buildReceiptSha256'], 'pair': lifecycle['pair'],
+            'configSha256': lifecycle['config']['sha256'], 'stateSha256': lifecycle['state']['sha256'],
+            'helperHashes': {key: plan['publicationHelpers'][key]['sha256'] for key in ('stager', 'publisher')}}
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Build an exact release-bound full /var/www candidate.",
@@ -1340,7 +1469,186 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--preserved-build-attempt", help="Build one completed candidate in this exact release evidence pool before scratch admission.")
     parser.add_argument("--preserved-input-receipt-sha256", help="Exact SHA256 of the immutable current-release incoming receipt.")
+    parser.add_argument("--direct-plan-sha256", help="SHA256 of the installed receiver's sealed AMO release plan.")
+    parser.add_argument("--direct-attempt", help="Exact attempt of the sealed AMO release plan.")
     return parser.parse_args()
+
+
+def direct_tree_snapshot(root):
+    """Capture same-filesystem entry identities and xattrs in canonical path order."""
+    base = root.lstat()
+    pending, rows = [root], {}
+    attribute_bytes = 0
+    while pending:
+        path = pending.pop()
+        s = path.lstat()
+        if (s.st_dev != base.st_dev or path.resolve() != path or s.st_mode & 0o7022
+                or not (stat.S_ISDIR(s.st_mode) or stat.S_ISREG(s.st_mode))):
+            fail("Unsupported AMO direct staging source.")
+        rel = path.relative_to(root)
+        attrs = tuple((name, os.getxattr(path, name, follow_symlinks=False).hex())
+                      for name in sorted(os.listxattr(path, follow_symlinks=False)))
+        attribute_bytes += sum(len(os.fsencode(name)) + len(value) // 2 for name, value in attrs)
+        if attribute_bytes > 16 * 1024**2:
+            fail("AMO staging source attribute evidence exceeds its memory bound.")
+        rows[rel] = (allocation_identity(s), attrs)
+        if stat.S_ISDIR(s.st_mode):
+            for child in path.iterdir():
+                if len(pending) + len(rows) >= 50000:
+                    fail("AMO direct staging source exceeds its entry bound.")
+                pending.append(child)
+    for rel, (identity, _) in rows.items():
+        if allocation_identity((root / rel).lstat()) != identity:
+            fail("AMO direct staging source changed during measurement.")
+    return rows
+
+
+def direct_live_census(rows):
+    unique = {i[:2]: i[7] * 512 for i, _ in rows.values()}
+    # Match phase_capacity.snapshot_identity exactly (nlink follows ctime).
+    witness = [[str(rel), [i[k] for k in (0, 1, 2, 3, 4, 6, 8, 9, 5, 7)]]
+               for rel, (i, _) in sorted(rows.items())]
+    return {"outgoingAllocatedBytes": sum(unique.values()), "outgoingUniqueInodes": len(unique),
+            "outgoingIdentitySha256": hashlib.sha256(json.dumps(witness, separators=(",", ":")).encode()).hexdigest()}
+
+
+def direct_seed(live, candidate, live_rows):
+    """Seed only independent passthrough copies, preserving metadata and internal alias groups."""
+    excluded = {MANIFEST_NAME, *("proofofwork-" + surface for surface in PAY_SURFACES)}
+    selected = {rel: row for rel, row in live_rows.items() if not rel.parts or rel.parts[0] not in excluded}
+    sources = sorted(live / rel for rel in selected if len(rel.parts) == 1)
+    candidate.mkdir(mode=0o700)
+    if sources:
+        run_checked(["/usr/bin/cp", "--archive", "--one-file-system", "--target-directory", str(candidate),
+                     "--", *map(str, sources)])
+    src = live.lstat()
+    dst = candidate.lstat()
+    if (dst.st_uid, dst.st_gid) != (src.st_uid, src.st_gid):
+        os.chown(candidate, src.st_uid, src.st_gid, follow_symlinks=False)
+    # A private parent's default ACL may create extra access or default ACL
+    # xattrs. Remove only attributes of this newly created root that are absent
+    # at the source. Verify exact root and descendant attributes after copystat.
+    for name in set(os.listxattr(candidate)) - set(os.listxattr(live)):
+        os.removexattr(candidate, name)
+    shutil.copystat(live, candidate, follow_symlinks=False)
+    copied = direct_tree_snapshot(candidate)
+    if copied.keys() != selected.keys():
+        fail("AMO direct staging passthrough path set differs.")
+    forward, reverse = {}, {}
+    for rel, (old, attrs) in selected.items():
+        new, observed = copied[rel]
+        if new[2:5] != old[2:5] or new[8] != old[8] or observed != attrs:
+            fail("AMO direct staging passthrough metadata differs.")
+        if stat.S_ISREG(old[2]):
+            if (new[6] != old[6] or old[:2] == new[:2]
+                    or forward.setdefault(old[:2], new[:2]) != new[:2]
+                    or reverse.setdefault(new[:2], old[:2]) != old[:2]):
+                fail("AMO direct staging passthrough aliases or size differ.")
+
+
+def require_direct_receiver_lock(lock):
+    """A direct stage may only inherit the receiver's existing exclusive flock."""
+    value = os.environ.get("POW_UI_DEPLOY_LOCK_FD", "")
+    if not value.isdecimal() or int(value) < 3:
+        fail("AMO direct staging requires the receiver's inherited exclusive lock.")
+    fd, owner = int(value), os.getppid()
+    s = canonical_safe_regular_file(lock, "UI deployment lock", os.geteuid())
+    if (owner <= 1 or s.st_nlink != 1 or s.st_gid != os.getegid()
+            or allocation_identity(os.fstat(fd)) != allocation_identity(s)):
+        fail("AMO direct staging receiver lock identity differs.")
+    device = [os.major(s.st_dev), os.minor(s.st_dev), s.st_ino]
+    for process in ("self", str(owner)):
+        proc = Path("/proc", process)
+        if allocation_identity((proc / "fd" / str(fd)).stat()) != allocation_identity(s):
+            fail("AMO direct staging receiver lock descriptor differs.")
+        rows = [row.split() for row in (proc / "fdinfo" / str(fd)).read_text().splitlines()
+                if row.startswith("lock:")]
+        if (len(rows) != 1 or len(rows[0]) != 9 or rows[0][2:6] != ["FLOCK", "ADVISORY", "WRITE", str(owner)]
+                or rows[0][7:] != ["0", "EOF"] or
+                [int(part, base) for part, base in zip(rows[0][6].split(":"), (16, 16, 10))] != device):
+            fail("AMO direct staging requires the receiver's inherited exclusive lock.")
+
+
+def direct_stage_context(args, live, surfaces, staging):
+    """Rebind the locked receiver's sealed plan, fresh intent and compact input before allocation."""
+    attempt = args.direct_attempt
+    if (not os.environ.get("POW_UI_DEPLOY_LOCK_FD") or not args.deduplicate_managed_files
+            or args.preserved_build_attempt or not re.fullmatch("[a-z0-9][a-z0-9-]{0,30}", attempt)
+            or not re.fullmatch("[0-9a-f]{64}", args.direct_plan_sha256)):
+        fail("AMO direct staging requires the exact locked private receiver context.")
+    release = args.release_id
+    plan_path = staging / f"recovery-plan-{release}-{attempt}.json"
+    raw, record = direct_file(plan_path)
+    if record["sha256"] != args.direct_plan_sha256:
+        fail("AMO direct staging sealed plan digest differs.")
+    plan = json.loads(raw)
+    binding = plan["amoDirectStage"]
+    approval = verify_active(binding)
+    require_direct_approval(approval, direct_plan_fields(plan))
+    closed = plan["closedArchive"]
+    if (plan["releaseId"] != release or plan["publicationAttempt"] != attempt
+            or plan["inputStorage"] != "deploy-scratch-v1" or plan["releaseFormat"] != "proofofwork-ui-release-v6"
+            or closed["request"].get("amoDirectStage") is not True or "inputCompactor" not in plan
+            or plan["publicationHelpers"]["stager"]["sha256"] != direct_file(Path(__file__).resolve(), maximum=2*1024**2)[1]["sha256"]
+            or live_surface_names(live) != PAY_SURFACES or payload_surface_names(surfaces) != PAY_SURFACES
+            or any(k in plan for k in ("resumeSurfaces", "preservedCapacityResume", "preservedStageResume"))
+            or surfaces != staging / f"proofofwork-ui-surfaces-{release}" / "surfaces"):
+        fail("AMO direct staging differs from the bound fresh V6 release.")
+    identity = {k: plan[k] for k in ("releaseId", "commit", "tree")}
+    evidence = staging / f"recovery-transport-{release}-surfaces-stage-{attempt}"
+    intent_path = evidence / "intent.json"
+    receipt_path = TRANSPORT_EVIDENCE_ROOT / release / "incoming-receipt.json"
+    intent_raw, intent_record = direct_file(intent_path)
+    receipt_raw, receipt_record = direct_file(receipt_path)
+    intent, receipt = json.loads(intent_raw), json.loads(receipt_raw)
+    if (any(value.get(k) != v for value in (receipt, intent) for k, v in identity.items())
+            or receipt["planSha256"] != record["sha256"] or intent["planSha256"] != record["sha256"]
+            or intent.get("continuousParentLock") is not True or intent.get("phase") != "surfaces-stage"
+            or intent.get("retentionDeferred") is not True or receipt["preservedPath"] != str(surfaces.parent)
+            or receipt["receiverReceipt"]["archiveSha256"] != approval["surfacesSha256"]
+            or receipt["payloadFingerprint"] != plan["surfacesPayloadFingerprint"]):
+        fail("AMO direct staging lacks the exact locked incoming receipt and intent.")
+    compact = receipt["compactInput"]
+    limits = closed["privateStaging"]
+    if (compact["contentFingerprint"] != receipt["payloadFingerprint"] or compact["chargedBytes"] +
+            compact["originalTimes"]["bytes"] > limits["compactInputUpperBytes"]):
+        fail("AMO direct staging compact input exceeds its authorization.")
+    inputs = direct_tree_snapshot(surfaces.parent)
+    compact_rows = [[str(rel), i, attrs] for rel, (i, attrs) in sorted(inputs.items())]
+    compact_sha = hashlib.sha256(json.dumps(compact_rows, separators=(",", ":")).encode()).hexdigest()
+    if compact_sha != compact["identitySha256"]:
+        fail("AMO direct staging compact input changed.")
+    live_rows = direct_tree_snapshot(live)
+    if direct_file(live / MANIFEST_NAME)[1]["sha256"] != plan["oldLiveManifestSha256"]:
+        fail("AMO direct staging outgoing manifest differs.")
+    block = os.statvfs(live).f_frsize
+    if block != limits["blockSize"] or not 512 <= block <= 65536:
+        fail("AMO direct staging allocation block differs.")
+    # Match the closed inventory's per-entry prospective-copy charge. Do not
+    # discount existing aliases, preallocation, metadata or retained root ACLs.
+    seed_upper = 0
+    excluded = {MANIFEST_NAME, *("proofofwork-" + surface for surface in PAY_SURFACES)}
+    rounded = capacity_helper().rounded
+    for rel, (i, attrs) in live_rows.items():
+        if rel.parts and rel.parts[0] in excluded:
+            continue
+        attr_bytes = sum(block + len(os.fsencode(name)) + len(value) // 2 for name, value in attrs)
+        seed_upper += max(rounded(i[6], block), i[7] * 512) + 4 * block + rounded(attr_bytes, block)
+    if seed_upper != limits["passthroughUpperBytes"]:
+        fail("AMO direct staging passthrough bound differs.")
+    measured = direct_live_census(live_rows)
+    cap = closed["amoDirectCapacity"]
+    if any(cap.get(k) != v for k, v in measured.items()):
+        fail("AMO direct staging outgoing root changed.")
+    requirements = plan["wholeSequenceAdmission"]["requirements"]
+    final = limits["finalCandidateUpperBytes"]
+    peak = final + max(cap["transientSurfaceUpperBytes"], plan["admissions"]["surfaces-receive"]["bytes"])
+    if ("scratchAllowanceBytes" in requirements or type(peak) is not int or type(final) is not int
+            or not 0 < final < peak or requirements["charges"]["candidateCopy"] != peak):
+        fail("AMO direct staging construction bound differs from the admitted sequence.")
+    return {"plan": plan, "binding": binding, "approval": approval, "live": live_rows, "input": inputs,
+            "records": {plan_path: record, intent_path: intent_record, receipt_path: receipt_record},
+            "peak": peak, "final": final, "inodes": requirements["additionalInodes"]}
 
 
 def configured_payload_limits(allow_test_roots: bool) -> tuple[int, int]:
@@ -1375,6 +1683,9 @@ def main() -> int:
         fail("UI release staging must run as root.")
     if not safe_release_id(arguments.release_id):
         fail("Release id must use 1-128 safe filename characters.")
+    direct = arguments.direct_plan_sha256 is not None
+    if direct != (arguments.direct_attempt is not None) or direct and not os.environ.get("POW_UI_DEPLOY_LOCK_FD"):
+        fail("AMO direct staging requires both sealed plan options and an inherited deployment lock.")
     preserved_build = arguments.preserved_build_attempt is not None
     if preserved_build != (arguments.preserved_input_receipt_sha256 is not None):
         fail("Preserved candidate build requires both exact attempt and incoming receipt SHA256.")
@@ -1439,6 +1750,8 @@ def main() -> int:
         maximum_payload_bytes,
     )
 
+    if direct:
+        require_direct_receiver_lock(deploy_lock)
     lock_descriptor = acquire_deploy_lock(deploy_lock, allow_test_roots)
     temporary_parent: Path | None = None
     private_identity = None
@@ -1475,6 +1788,7 @@ def main() -> int:
             incoming_surfaces,
         )
 
+        direct_context = direct_stage_context(arguments, www_root, surfaces_root, staging_root) if direct else None
         # Guard before creating private scratch, then refresh immediately before
         # every real copy. Do not assume future deduplication or removals reclaim
         # any bytes; only a new statvfs measurement can observe released space.
@@ -1495,6 +1809,16 @@ def main() -> int:
             private = temporary_parent.lstat()
             private_identity = (private.st_dev, private.st_ino, private.st_uid, private.st_gid, stat.S_IMODE(private.st_mode))
             fsync_directory(evidence_parent)
+        elif direct:
+            # The receiver holds the deployment lock continuously. A failed
+            # construction retains this attempt-specific namespace for reconciliation.
+            peak = direct_context["peak"]
+            helper = capacity_helper()
+            helper.check_deploy_scratch(staging_root, peak, "stage-direct-construction")
+            capacity_guard(staging_root, peak, direct_context["inodes"], "stage-direct-construction")
+            temporary_parent = staging_root / f".proofofwork-ui-stage-{arguments.release_id}.{arguments.direct_attempt}"
+            temporary_parent.mkdir(mode=0o700)
+            fsync_directory(staging_root)
         else:
             copy_capacity_guard(www_root, staging_root, "stage-private-root", extra_entries=2, scratch_budget=True)
             temporary_parent = Path(
@@ -1504,17 +1828,11 @@ def main() -> int:
                 )
             )
         candidate = temporary_parent / "candidate"
-        copy_capacity_guard(www_root, temporary_parent, "stage-live-copy")
-        run_checked(
-            [
-                "/usr/bin/cp",
-                "--archive",
-                "--one-file-system",
-                "--",
-                str(www_root),
-                str(candidate),
-            ]
-        )
+        if direct:
+            direct_seed(www_root, candidate, direct_context["live"])
+        else:
+            copy_capacity_guard(www_root, temporary_parent, "stage-live-copy")
+            run_checked(["/usr/bin/cp", "--archive", "--one-file-system", "--", str(www_root), str(candidate)])
         copied_manifest = candidate / MANIFEST_NAME
         if os.path.lexists(copied_manifest):
             details = copied_manifest.lstat()
@@ -1527,13 +1845,14 @@ def main() -> int:
 
         for surface in incoming_surfaces:
             destination = candidate / f"proofofwork-{surface}"
-            if surface in live_surfaces and not path_is_canonical_directory(destination):
+            if not direct and surface in live_surfaces and not path_is_canonical_directory(destination):
                 fail(f"Copied managed UI root is not a canonical directory: {destination}")
-            if surface in live_surfaces:
+            if not direct and surface in live_surfaces:
                 shutil.rmtree(destination)
             elif os.path.lexists(destination):
                 fail(f"Copied new managed UI root unexpectedly exists: {destination}")
-            copy_capacity_guard(surfaces_root / surface, candidate, f"stage-incoming-{surface}")
+            copy_capacity_guard(surfaces_root / surface, candidate, f"stage-incoming-{surface}",
+                                scratch_root=staging_root if direct else None)
             run_checked(
                 [
                     "/usr/bin/cp",
@@ -1636,6 +1955,13 @@ def main() -> int:
         if os.path.lexists(stage_root):
             fail(f"UI stage root appeared concurrently: {stage_root}")
 
+        if direct:
+            if (direct_tree_snapshot(www_root) != direct_context["live"]
+                    or direct_tree_snapshot(surfaces_root.parent) != direct_context["input"]):
+                fail("AMO direct staging sources changed during construction.")
+            allocation, direct_snapshot = candidate_allocation(candidate, expected_owner)
+            if allocation["additionalBytes"] > direct_context["final"]:
+                fail("AMO direct staging completed candidate exceeds its approved bound.")
         if preserved_build:
             validate_preserved_surfaces_root(surfaces_root, arguments.release_id, expected_owner,
                 os.getegid() if allow_test_roots else 0, www_details.st_dev, mountinfo)
@@ -1678,6 +2004,13 @@ def main() -> int:
                            capacity_helper().entry_bytes(0, capacity_helper().allocation_block(staging_root)),
                            1, "stage-atomic-publication")
             run_checked(["/usr/bin/sync", "--file-system", str(candidate)])
+        if direct:
+            verify_candidate_allocation(direct_snapshot)
+            require_direct_receiver_lock(deploy_lock)
+            require_direct_approval(verify_active(direct_context["binding"]), direct_context["approval"])
+            for path, record in direct_context["records"].items():
+                if direct_file(path)[1] != record:
+                    fail("AMO direct staging receiver evidence changed before rename.")
         rename_directory_noreplace(candidate, stage_root)
         if preserved_build:
             translated = {}
@@ -1722,13 +2055,14 @@ def main() -> int:
             f"deduplicated_bytes={deduplicator.saved_bytes if deduplicator else 0} "
             f"candidate_storage={'release-evidence-v1' if preserved_build else 'deploy-scratch'} "
             f"stage_root={stage_root}"
+            + (f" constructor=amo-direct-stage-v1 direct_plan_sha256={arguments.direct_plan_sha256}" if direct else "")
         )
         return 0
     finally:
         try:
             if deduplicator is not None:
                 deduplicator.close()
-            if not preserved_build and temporary_parent is not None and temporary_parent.exists():
+            if not preserved_build and not direct and temporary_parent is not None and temporary_parent.exists():
                 shutil.rmtree(temporary_parent)
             # An opted-in current-release candidate and its report are retained
             # after every failure; no previous evidence namespace is cleaned.

@@ -144,8 +144,14 @@ ROLES = {'node': {'prepare-closed-input', 'make-plan'},
 
 
 def validate_spec(spec):
-    require(set(spec) == {'schema', 'repository', 'commit', 'tree', 'role', 'phase', 'inputs',
-                          'attempt', 'privateStaging', 'existingInventory'}, 'Unknown or missing specification field')
+    fields = {'schema', 'repository', 'commit', 'tree', 'role', 'phase', 'inputs',
+              'attempt', 'privateStaging', 'existingInventory'}
+    if 'amoDirectApprovalSha256' in spec:
+        require(spec['phase'] == 'prepare-closed-input' and spec['privateStaging'] is True and
+                isinstance(spec['amoDirectApprovalSha256'], str) and
+                re.fullmatch('[a-f0-9]{64}', spec['amoDirectApprovalSha256']), 'Invalid direct-construction scope')
+        fields.add('amoDirectApprovalSha256')
+    require(set(spec) == fields, 'Unknown or missing specification field')
     require(spec['schema'] == FORMAT and all(re.fullmatch('[0-9a-f]{40}', spec[k]) for k in ('commit', 'tree')), 'Bad source identity')
     require(spec['role'] in ROLES and spec['phase'] in ROLES[spec['role']], 'Phase is not permitted on this host role')
     require(re.fullmatch('[a-z0-9][a-z0-9-]{0,30}', spec['attempt']), 'Bad attempt')
@@ -184,6 +190,8 @@ def command(spec, directory, phase):
         args = [phase, inputs['buildReceipt'], str(output)]
         if spec['privateStaging']:
             args.append('--private-staging')
+        if 'amoDirectApprovalSha256' in spec:
+            args += ['--amo-direct-approval-sha256', spec['amoDirectApprovalSha256'], '--attempt', spec['attempt']]
     elif phase == 'preflight':
         args = [phase, str(output), '--closed-request', inputs['closedRequest']]
         if spec['existingInventory']:

@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import types
 
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 RID = re.compile(r'[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z\Z')
@@ -212,6 +213,69 @@ def final_retirement_fence(runtime, retirement, state, scope):
             'retired payload reappeared before rename')
 
 
+def reviewed_direct_module(plan, source, relative, key, installed=None):
+    record = (plan['publicationHelpers'][key] if installed is not None else plan[key])
+    pin = record['sha256']
+    raw = committed_file(source, plan['commit'], relative, pin)
+    filename = source / relative
+    if installed is not None:
+        require(record['path'] == str(installed) and read(installed, pin, 2*1024**2) == raw,
+                'installed direct-stage helper differs from the committed source')
+        filename = installed
+    scope = {'__name__': '_amo_exchange_' + key, '__file__': str(filename)}
+    exec(compile(raw, str(filename), 'exec'), scope)
+    return types.SimpleNamespace(**scope)
+
+
+def check_exchange_pools(capacity, scratch, backup, transport, outgoing, candidate,
+                         evidence_bytes, verification_bytes):
+    # Exact candidate blocks may be credited only after the native completed-
+    # candidate verifier proves that all candidate hardlinks are internal.
+    # No credit is taken for an old live inode already present in any pool.
+    phase = 'amo-direct-before-exchange'
+    capacity.check_deploy_scratch(scratch, evidence_bytes + verification_bytes
+                                  + max(0, outgoing - candidate), phase)
+    limits = dict(capacity.RETENTION_BUDGETS)
+    capacity.retention_budget(backup, limits[backup], evidence_bytes + max(outgoing, candidate), phase)
+    capacity.retention_budget(transport, limits[transport], evidence_bytes, phase)
+    # The roots exchange names on the same filesystem. Only verification,
+    # receipts and their metadata can add new physical blocks or inodes here.
+    capacity.check_capacity(scratch, evidence_bytes + verification_bytes, 512,
+                            phase, enforce_retention=False)
+
+
+def direct_exchange_guard(plan, stage_receipt, source, prefix, live, scratch, archive_dir):
+    closed = plan['closedArchive']
+    grant = plan['amoDirectStage']
+    sbin = prefix / 'usr/local/sbin'
+    stager = reviewed_direct_module(plan, source, 'deploy/proofofwork-ui-release-stage.py',
+                                    'stager', sbin/'proofofwork-ui-release-stage')
+    authority = stager.verify_active(grant)
+    stager.require_direct_approval(authority, stager.direct_plan_fields(plan))
+    capacity = reviewed_direct_module(plan, source, 'deploy/proofofwork-ui-capacity.py',
+                                      'capacity', sbin/'proofofwork-ui-capacity')
+    phase = reviewed_direct_module(plan, source, 'deploy/publish/phase_capacity.py', 'phaseCapacity')
+    sequence = reviewed_direct_module(plan, source, 'deploy/publish/sequence_capacity.py', 'sequenceCapacity')
+    candidate = scratch / ('proofofwork-www-stage-' + plan['releaseId'])
+    transport = archive_dir.parent / 'transport-evidence'
+    paths = (candidate, live, scratch, archive_dir, archive_dir.parent, transport)
+    require(all(capacity.canonical_directory(p).st_dev == scratch.stat().st_dev for p in paths),
+            'direct exchange requires the same verified filesystem')
+    limit = closed['privateStaging']['finalCandidateUpperBytes']
+    completed = phase.private_stage_receipt(candidate, stager, limit)
+    require(completed == stage_receipt['privateStageAllocation'], 'completed direct candidate changed')
+    old = phase.direct_outgoing_allocation(live)
+    require(all(closed['amoDirectCapacity'].get(k) == v for k, v in old.items()),
+            'outgoing root no longer matches closed admission')
+    staged = phase.direct_outgoing_allocation(candidate)
+    check_exchange_pools(capacity, scratch, archive_dir.parent, transport, old['outgoingAllocatedBytes'],
+                         staged['outgoingAllocatedBytes'], sequence.EVIDENCE_BYTES,
+                         sequence.bound_stream_verification(plan))
+    require(phase.direct_outgoing_allocation(live) == old and phase.direct_outgoing_allocation(candidate) == staged,
+            'exchange root allocation changed during the capacity check')
+    require(stager.verify_active(grant) == authority, 'direct staging authority changed before exchange')
+
+
 def verify(received, source, publisher, live, scratch, archive_dir, rollback, lock_path, fd, release, commit, attempt, pin, test):
     source,publisher,live,scratch,archive_dir,rollback,lock_path=map(Path,(source,publisher,live,scratch,archive_dir,rollback,lock_path))
     require(RID.fullmatch(release) and release.startswith(commit[:12]+'-') and re.fullmatch('[0-9a-f]{40}',commit)
@@ -325,6 +389,12 @@ def verify(received, source, publisher, live, scratch, archive_dir, rollback, lo
     else:
         require(not observed.get('verifiedPreservedFallback') and not forecast.get('preservedFallback'),
                 'ordinary plan cannot publish with an active preserved fallback')
+    direct = 'amoDirectStage' in plan
+    require(direct == ('amoDirectStage' in plan.get('closedArchive', {}).get('request', {}))
+            and direct == ('amoDirectCapacity' in plan.get('closedArchive', {})), 'partial direct exchange binding')
+    if direct:
+        require(private, 'direct exchange requires completed private staging')
+        direct_exchange_guard(plan, stage, source, prefix, live, scratch, archive_dir)
     # Final rereads fence the same immutable request and same held descriptor
     # after potentially long snapshot verification, with no release/relock.
     require(read(intent_path)==received_intent and inherited_lock(lock_path,fd,intent)==lock,

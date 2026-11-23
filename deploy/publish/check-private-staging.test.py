@@ -221,7 +221,7 @@ class NativePrivateStaging(unittest.TestCase):
                  "BASE": self.scratch, "ARCHIVES": self.archives, "EVIDENCE": evidence,
                  "EVIDENCE_RESERVE": 32*1024**2, "RECEIVE_TIMEOUT_SECONDS": 2700,
                  "release": self.rid, "p": plan, "plan_sha": plan_sha, "phase": "surfaces-stage",
-                 "private_staging": True, "helpers": helpers, "scratch_inputs": True,
+                 "private_staging": True, "direct": False, "helpers": helpers, "scratch_inputs": True,
                  "out": stage_out, "preserved": incoming, "archive": archive,
                  "archive_sha": digest(archive), "archive_work": self.archives, "model": {},
                  "input_before": fingerprint, "compact_input": compact, "measured": allocation,

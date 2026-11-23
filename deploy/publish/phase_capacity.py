@@ -319,7 +319,52 @@ def inventory_path(release, digest):
     return Path('/var/tmp/proofofwork-deploy') / ('recovery-control-' + release + '-inventory-' + digest + '.zlib')
 
 
-def private_staging_storage(incoming, compatibility, live_root, order):
+def direct_outgoing_allocation(live_root):
+    """Measure the existing root's actual allocation once per inode under the caller's lock."""
+    root = Path(live_root)
+    base = root.lstat()
+    if root.resolve() != root or not stat.S_ISDIR(base.st_mode):
+        raise ValueError('Direct staging requires a canonical outgoing root')
+    snapshot, allocations, pending = {}, {}, [root]
+    while pending:
+        path = pending.pop()
+        info = path.lstat()
+        if (info.st_dev != base.st_dev or
+                not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode))):
+            raise ValueError('Unsupported outgoing allocation entry')
+        snapshot[path] = snapshot_identity(info)
+        if len(snapshot) > 50000:
+            raise ValueError('Outgoing allocation entry bound exceeded')
+        allocations[(info.st_dev, info.st_ino)] = info.st_blocks * 512
+        if stat.S_ISDIR(info.st_mode):
+            pending.extend(path.iterdir())
+    check_snapshot(snapshot)
+    witness = [[str(path.relative_to(root)), identity] for path, identity in sorted(snapshot.items())]
+    return {'outgoingAllocatedBytes': sum(allocations.values()), 'outgoingUniqueInodes': len(allocations),
+            'outgoingIdentitySha256': hashlib.sha256(json.dumps(witness, separators=(',', ':')).encode()).hexdigest()}
+
+
+def direct_capacity_evidence(incoming, compatibility, live_root, block):
+    # A full surface can coexist with its pre-dedup copies. Count every file
+    # in both its incoming and prior dependency closure at full logical length.
+    # Directory, xattr, dedup-link and fixed parent overhead are kept even if
+    # some of the incoming paths are already present or share physical inodes.
+    largest = 0
+    for surface, incoming_rows in incoming.items():
+        rows = [*incoming_rows, *compatibility.get(surface, [])]
+        size = 32 * block
+        for row in rows:
+            size += 6 * block
+            if row['kind'] == 'file':
+                size += rounded(row['size'], block)
+                for name, value in row['xattrs']:
+                    size += block + rounded(len(os.fsencode(name)) + len(bytes.fromhex(value)), block)
+        largest = max(largest, size)
+    return {'model': 'amo-direct-capacity-v1', 'transientSurfaceUpperBytes': largest,
+            **direct_outgoing_allocation(live_root)}
+
+
+def private_staging_storage(incoming, compatibility, live_root, order, *, direct=False):
     """Bounds to recheck after the new input and candidate independently establish internal aliases."""
     block = os.statvfs(live_root).f_frsize
     if not 512 <= block <= 65536:
@@ -347,6 +392,13 @@ def private_staging_storage(incoming, compatibility, live_root, order):
     managed = {'proofofwork-' + name for name in order}
     passthrough = 0
     snapshot = {}
+    if direct:
+        # The independently seeded candidate also inherits live root attributes.
+        base = live_root.lstat()
+        root_attrs = sum(block + len(os.fsencode(name)) + len(os.getxattr(live_root, name, follow_symlinks=False))
+                         for name in os.listxattr(live_root, follow_symlinks=False))
+        passthrough += max(rounded(base.st_size, block), base.st_blocks * 512) + 4 * block + rounded(root_attrs, block)
+        snapshot[live_root] = snapshot_identity(base)
     pending = [p for p in live_root.iterdir() if p.name not in managed and p.name != '.proofofwork-ui-release']
     while pending:
         path = pending.pop()
@@ -450,11 +502,19 @@ def assess_closed_input(request, helpers, live, stager, packed, live_root):
     archive = closed_managed_archive_budget(incoming, compatibility, order)
     evidence = {'request': request, 'archive': archive, 'priorDependenciesSha256': prior_sha,
                 'dependencyCounters': counters, 'liveManifestSha256': live['manifestSha256'], 'liveTreeSha256': live['treeSha256']}
+    direct = 'amoDirectStage' in request
+    if direct and (request['amoDirectStage'] is not True or 'inputCompactorSha256' not in request or
+                   set(live_surfaces) != set(PAY_SURFACES) or set(order) != set(PAY_SURFACES)):
+        raise ValueError('Direct staging requires an explicitly bound complete Pay-family private input')
     if 'inputCompactorSha256' in request:
         digest = request['inputCompactorSha256']
         if not isinstance(digest, str) or len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest):
             raise ValueError('Invalid private input compactor identity')
-        evidence['privateStaging'] = private_staging_storage(incoming, compatibility, live_root, order)
+        evidence['privateStaging'] = private_staging_storage(incoming, compatibility, live_root, order, direct=direct)
+        if direct:
+            stager.reject_nested_mounts(live_root, Path('/proc/self/mountinfo'))
+            evidence['amoDirectCapacity'] = direct_capacity_evidence(
+                incoming, compatibility, live_root, evidence['privateStaging']['blockSize'])
     return evidence
 
 
@@ -475,7 +535,8 @@ def recheck_closed_input(request, helpers, live, lock_fd):
     return assess_closed_input(request, helpers, live, stager, packed, Path('/var/www'))
 
 
-def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent=None, private_input=False):
+def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent=None, private_input=False,
+                 direct=False):
     """Read-only collector; caller holds the deployment lock through staging."""
     incoming_root, live_root = Path(incoming_root), Path(live_root)
     stager.canonical_safe_directory(live_root, 'Live capacity root', owner)
@@ -490,6 +551,9 @@ def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent
                                        stager.MAXIMUM_PAYLOAD_ENTRIES, stager.MAXIMUM_PAYLOAD_BYTES)
     order = stager.payload_surface_names(incoming_root) if hasattr(stager, 'payload_surface_names') else stager.SURFACES
     live_surfaces = stager.live_surface_names(live_root)
+    if direct and (not private_input or allocation_parent is not None or
+                   set(order) != set(PAY_SURFACES) or set(live_surfaces) != set(PAY_SURFACES)):
+        raise ValueError('Direct copy model requires the complete private Pay family')
     snapshot, seen_inodes, incoming = {}, set(), {}
     # Private staging parent and publication directory-entry overhead. Root and
     # all old file/directory metadata remain charged even after their removal.
@@ -554,7 +618,15 @@ def stage_budget(incoming_root, live_root, stager, *, owner=0, allocation_parent
     check_snapshot(snapshot)
     stager.reject_nested_mounts(live_root, mountinfo)
     stager.reject_nested_mounts(incoming_root, mountinfo)
-    result = phase_bound(initial, incoming, old_exclusive, compatibility, order, block)
+    if direct:
+        limits = private_staging_storage(incoming, compatibility, live_root, order, direct=True)
+        evidence = direct_capacity_evidence(incoming, compatibility, live_root, block)
+        result = {'peakAdditionalBytes': limits['finalCandidateUpperBytes'] + evidence['transientSurfaceUpperBytes'],
+                  'peakPhase': 'direct-surface-copy', 'privateStaging': limits, 'amoDirectCapacity': evidence,
+                  'finalCandidateUpperBytes': limits['finalCandidateUpperBytes']}
+        check_snapshot(snapshot)
+    else:
+        result = phase_bound(initial, incoming, old_exclusive, compatibility, order, block)
     archive_model = closed_managed_archive_budget(incoming, compatibility, order)
     result['modeledManagedArchive'] = archive_model
     result['priorDependenciesSha256'] = prior_sha
@@ -624,8 +696,9 @@ if __name__ == '__main__':
         EXPECTED_STAGER_SHA256 = sys.argv[3]
         mode = sys.argv[4] if len(sys.argv) == 5 else None
         result = stage_budget(sys.argv[2], '/var/www', locked_installed_stager(),
-                              allocation_parent=None if mode == '--private-input' else mode,
-                              private_input=mode == '--private-input')
+                              allocation_parent=None if mode in ('--private-input', '--amo-direct-input') else mode,
+                              private_input=mode in ('--private-input', '--amo-direct-input'),
+                              direct=mode == '--amo-direct-input')
         result['installedStagerSha256'] = EXPECTED_STAGER_SHA256
         print(json.dumps(result))
     else:

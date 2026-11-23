@@ -34,6 +34,7 @@ PREFLIGHT_TIMEOUT_SECONDS = 1500
 SSH = ['ssh', '-i', '/home/sixer/.ssh/proofofwork_me_ed25519',
        '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=yes',
        '-o', 'ConnectTimeout=10', 'root@77.42.91.106']
+AMO_DIRECT_BASE_COMMIT = 'ace27010a8e44886c0c22cf9fe5c98509d28f1bb'
 HEX40 = re.compile('[0-9a-f]{40}')
 HEX64 = re.compile('[0-9a-f]{64}')
 RELEASE = re.compile('[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z')
@@ -402,9 +403,35 @@ def closed_input(build, *, private_staging=False):
                 ['git', '-C', str(REPO), 'show', build['commit'] + ':deploy/publish/phase_capacity.py'])).hexdigest()}, bytes(packed)
 
 
+def bind_direct_request(request, build, receipt_sha, approval, attempt):
+    if (not HEX64.fullmatch(approval) or not re.fullmatch('[a-z0-9][a-z0-9-]{0,30}', attempt)
+            or 'inputCompactorSha256' not in request or build['releaseFormat'] != 'proofofwork-ui-release-v6'
+            or build['commit'] == AMO_DIRECT_BASE_COMMIT):
+        raise ValueError('Direct construction requires a pinned private AMO successor and attempt')
+    subprocess.run(['git', '-C', str(REPO), 'merge-base', '--is-ancestor', AMO_DIRECT_BASE_COMMIT, build['commit']], check=True)
+    request['amoDirectStage'] = True
+    request['amoDirectScope'] = {'approvalSha256': approval, 'attempt': attempt,
+                                 'sourceSha256': build['bundles']['source']['sha256'],
+                                 'buildReceiptSha256': receipt_sha}
+
+
+def direct_request_plan(request, lifecycle, helpers):
+    scope = request['amoDirectScope']
+    return {'amoDirectStage': {'model': 'amo-direct-stage-v1', 'approvalSha256': scope['approvalSha256']},
+            'releaseFormat': 'proofofwork-ui-release-v6', 'inputStorage': 'deploy-scratch-v1',
+            'releaseId': request['releaseId'], 'publicationAttempt': scope['attempt'],
+            'commit': request['commit'], 'tree': request['tree'], 'buildReceiptSha256': scope['buildReceiptSha256'],
+            'source': {'sha256': scope['sourceSha256']}, 'surfaces': {'sha256': request['surfacesSha256']},
+            'closedArchive': {'request': request}, 'retentionLifecycle': lifecycle, 'publicationHelpers': helpers}
+
+
 def prepare_closed_input(args):
-    request, packed = closed_input(json.loads(Path(args.build_receipt).read_bytes()),
-                                   private_staging=getattr(args, 'private_staging', False))
+    raw = Path(args.build_receipt).read_bytes()
+    build = json.loads(raw)
+    request, packed = closed_input(build, private_staging=getattr(args, 'private_staging', False))
+    approval = getattr(args, 'amo_direct_approval_sha256', None)
+    if approval is not None:
+        bind_direct_request(request, build, hashlib.sha256(raw).hexdigest(), approval, args.attempt)
     create(args.output + '.zlib', packed)
     create(args.output, (json.dumps(request, indent=2) + '\n').encode())
     print(json.dumps({'request': args.output, 'inventorySha256': request['inventorySha256'], 'inventoryBytes': len(packed)}))
@@ -429,6 +456,33 @@ def admission_tools(source):
     return namespace
 
 
+# Included only for an explicitly selected post-build approval. The ordinary
+# publication guard supplies pinned_file and holds the existing deployment lock.
+DIRECT_METADATA_GATE = """
+def verify_direct_metadata(plan):
+    import types
+    import sys
+    location = '/usr/local/sbin/proofofwork-ui-release-stage'
+    code = pinned_file(location, plan['publicationHelpers']['stager']['sha256'], 1024**2)
+    module = types.ModuleType('_bound_direct_stage')
+    module.__file__ = location
+    sys.modules[module.__name__] = module
+    exec(compile(code, location, 'exec'), module.__dict__)
+    grant = module.verify_active(plan['amoDirectStage'])
+    module.require_direct_approval(grant, module.direct_plan_fields(plan))
+    return grant
+"""
+
+
+def direct_metadata_guard(plan):
+    context = {key: plan[key] for key in ('releaseId', 'commit', 'tree', 'publicationAttempt', 'amoDirectStage',
+                                          'buildReceiptSha256', 'source', 'surfaces', 'inputStorage', 'releaseFormat')}
+    context['closedArchive'] = {'request': plan['closedArchive']['request']}
+    context['retentionLifecycle'] = {k: plan['retentionLifecycle'][k] for k in ('config', 'state', 'pair')}
+    context['publicationHelpers'] = {k: plan['publicationHelpers'][k] for k in ('publisher', 'stager')}
+    return DIRECT_METADATA_GATE + '\nDIRECT_METADATA_PLAN=' + repr(context) + '\n'
+
+
 def preflight(args):
     closed = getattr(args, 'closed_request', None)
     existing = getattr(args, 'existing_inventory', False)
@@ -445,6 +499,15 @@ def preflight(args):
         lifecycle = lifecycle_module().status(require_complete=True)
     private = 'inputCompactorSha256' in request
     guard = admission_source()
+    direct_gate = ''
+    if ('amoDirectStage' in request) != ('amoDirectScope' in request):
+        raise ValueError('Incomplete AMO direct-stage request')
+    if 'amoDirectStage' in request:
+        if not private or request['amoDirectStage'] is not True:
+            raise ValueError('Direct construction requires a private closed request')
+        prospective = direct_request_plan(request, lifecycle['binding'], {
+            key: {'sha256': request['helperHashes'][key]} for key in ('stager', 'publisher')})
+        direct_gate = direct_metadata_guard(prospective)
     # Refuse an ordinary request even before the small inventory upload.
     hold = admission_tools(guard)['require_obligation'](lifecycle, private, request.get('releaseId'))
     gate = [lifecycle['binding'], request.get('releaseId'), private, forecast if private else None]
@@ -452,7 +515,7 @@ def preflight(args):
     sequence = (ROOT / 'sequence_capacity.py').read_bytes(); ast.parse(sequence)
     script = ('import base64\nSEQUENCE_SOURCE=base64.b64decode(' +
               repr(base64.b64encode(sequence).decode()) + ')\n').encode() + script
-    script = guard + ('\nPREFLIGHT_GATE=' + repr(gate) + '\n').encode() + script
+    script = guard + ('\nPREFLIGHT_GATE=' + repr(gate) + '\n' + direct_gate).encode() + script
     if closed:
         if not RELEASE.fullmatch(request['releaseId']) or not HEX64.fullmatch(request['inventorySha256']):
             raise ValueError('Invalid closed input request identity')
@@ -466,7 +529,7 @@ def preflight(args):
         if not 0 < len(packed) <= 65536 or hashlib.sha256(packed).hexdigest() != request['inventorySha256']:
             raise ValueError('Closed input request does not match inventory')
         target = '/var/tmp/proofofwork-deploy/recovery-control-' + request['releaseId'] + '-inventory-' + request['inventorySha256'] + '.zlib'
-        remote(['/usr/bin/python3', '-I', '-B', '-c', guard.decode() + (EXISTING_INVENTORY if existing else UPLOAD), request['inventorySha256'], target, json.dumps(gate)], data=packed,
+        remote(['/usr/bin/python3', '-I', '-B', '-c', guard.decode() + '\n' + direct_gate + (EXISTING_INVENTORY if existing else UPLOAD), request['inventorySha256'], target, json.dumps(gate)], data=packed,
                timeout=CONTROL_UPLOAD_TIMEOUT_SECONDS)
         phase = (ROOT / 'phase_capacity.py').read_bytes()
         script = ('import base64\nPHASE_SOURCE=base64.b64decode(' + repr(base64.b64encode(phase).decode()) +
@@ -520,9 +583,13 @@ def committed_wrapper_sources():
 def make_plan(args):
     input_storage = getattr(args, 'input_storage', 'release-evidence-v1')
     assert input_storage in ('release-evidence-v1', 'deploy-scratch-v1'), 'Unknown release input storage'
-    b = json.loads(Path(args.build_receipt).read_bytes())
+    build_raw = Path(args.build_receipt).read_bytes()
+    b = json.loads(build_raw)
     p = json.loads(Path(args.preflight).read_bytes())
     request = p.get('closedArchive', {}).get('request', {})
+    if (('amoDirectStage' in request) != ('amoDirectScope' in request)
+            or ('amoDirectStage' in request) != ('amoDirectApproval' in p)):
+        raise ValueError('Incomplete direct-stage preflight or unexpected installation proof')
     if 'verifiedPreservedFallback' not in p:
         raise ValueError('A fresh preflight with verified preservation evidence is required')
     admission = admission_tools(admission_source())
@@ -626,6 +693,25 @@ def make_plan(args):
         evidence = p['closedArchive']
         compact = 'inputCompactorSha256' in evidence['request']
         request, _ = closed_input(b, private_staging=compact) if compact else closed_input(b)
+        if 'amoDirectApproval' in p:
+            direct = evidence['request']['amoDirectScope']
+            build_sha = hashlib.sha256(build_raw).hexdigest()
+            bind_direct_request(request, b, build_sha, direct['approvalSha256'], args.attempt)
+            c['amoDirectStage'] = {'model': 'amo-direct-stage-v1', 'approvalSha256': direct['approvalSha256']}
+            c['buildReceiptSha256'] = build_sha
+            stager_file = REPO / 'deploy/proofofwork-ui-release-stage.py'
+            code = stager_file.read_bytes()
+            if hashlib.sha256(code).hexdigest() != request['helperHashes']['stager']:
+                raise ValueError('Local direct stager differs from the artifact')
+            stager = types.ModuleType('_amo_plan_stager')
+            stager.__file__ = str(stager_file)
+            sys.modules[stager.__name__] = stager
+            exec(compile(code, str(stager_file), 'exec'), stager.__dict__)
+            grant = p['amoDirectApproval']
+            grant_sha = hashlib.sha256((json.dumps(grant, sort_keys=True, separators=(',', ':')) + '\n').encode()).hexdigest()
+            if grant_sha != direct['approvalSha256']:
+                raise ValueError('Direct-stage approval digest differs from the build request')
+            stager.require_direct_approval(grant, stager.direct_plan_fields({**c, 'closedArchive': evidence}))
         if evidence['request'] != request or c['surfacesPayloadFingerprint'] != request['payloadFingerprint']:
             raise ValueError('Closed archive evidence differs from this exact build')
         if compact:
@@ -668,7 +754,22 @@ def make_plan(args):
     else:
         c['wholeSequenceAdmission'] = sequence.admit(
             sequence.requirements(c, p['wholeSequenceCensus']), p['wholeSequenceCensus'])
-    raw = (json.dumps(c, indent=2)+'\n').encode(); assert len(raw) <= 65536
+    raw = (json.dumps(c, indent=2)+'\n').encode()
+    if len(raw) > 65536:
+        # Keep the original helper encodings and control size limit for legacy plans.
+        raw = (json.dumps(c, separators=(',', ':'))+'\n').encode()
+    phase = c['phaseCapacity']
+    if len(raw) > 65536 and 'source' in phase and not c['wholeSequenceAdmission'].get('historicalReconciliation'):
+        # A fresh plan can use the receiver's existing hash-checked zlib encoding.
+        # Preserve the exact phase record agreed by historical resume checks.
+        phase_source = phase['source'].encode()
+        if not 0 < len(phase_source) <= 65536 or hashlib.sha256(phase_source).hexdigest() != phase['sha256']:
+            raise ValueError('Unbound phase source in large fresh plan')
+        c['phaseCapacity'] = {'sha256': phase['sha256'],
+                              'compressedSource': base64.b64encode(zlib.compress(phase_source, 9)).decode()}
+        raw = (json.dumps(c, separators=(',', ':'))+'\n').encode()
+    if len(raw) > 65536:
+        raise ValueError('Release plan exceeds the 64 KiB control limit')
     create(args.output, raw)
     print(json.dumps({'status': 'plan-created', 'output': args.output, 'sha256': digest(args.output),
                       'releaseId': c['releaseId'], 'commit': c['commit'], 'tree': c['tree'],
@@ -709,6 +810,7 @@ assert stat.S_ISREG(info.st_mode) and info.st_uid==info.st_gid==0 and info.st_nl
 fd=os.open(lock,os.O_RDONLY|os.O_NOFOLLOW); assert os.fstat(fd).st_ino==info.st_ino
 fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
 installed_admission(*json.loads(gate),fd)
+if 'DIRECT_METADATA_PLAN' in globals(): verify_direct_metadata(DIRECT_METADATA_PLAN)
 raw=sys.stdin.buffer.read(65537)
 assert 0<len(raw)<=65536 and hashlib.sha256(raw).hexdigest()==sha
 env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LC_ALL':'C','POW_UI_DEPLOY_LOCK_FD':str(fd)}
@@ -726,6 +828,7 @@ assert stat.S_ISREG(info.st_mode) and info.st_uid==info.st_gid==0 and info.st_nl
 fd=os.open(lock,os.O_RDONLY|os.O_NOFOLLOW); assert os.fstat(fd).st_ino==info.st_ino
 fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
 installed_admission(*json.loads(gate),fd)
+if 'DIRECT_METADATA_PLAN' in globals(): verify_direct_metadata(DIRECT_METADATA_PLAN)
 raw=sys.stdin.buffer.read(65537)
 assert len(raw)<=65536 and hashlib.sha256(raw).hexdigest()==sha
 env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LC_ALL':'C','POW_UI_DEPLOY_LOCK_FD':str(fd)}
@@ -745,7 +848,7 @@ def upload_plan(args):
     p, sha, raw = load_plan(args.plan)
     guard = admission_source(p['wrapperSourceSha256']['publication_admission.py'])
     gate = admission_tools(guard)['plan_gate'](p)
-    remote(['/usr/bin/python3', '-I', '-B', '-c', guard.decode()+UPLOAD, sha, remote_plan(p),
+    remote(['/usr/bin/python3', '-I', '-B', '-c', guard.decode() + '\n' + (direct_metadata_guard(p) if 'amoDirectStage' in p else '') + UPLOAD, sha, remote_plan(p),
             json.dumps(gate)], data=raw, timeout=CONTROL_UPLOAD_TIMEOUT_SECONDS)
 
 def transport(args):
@@ -774,7 +877,7 @@ def main():
     parser.add_argument('--ui-host', action='store_true', help='Run preflight/upload/publish directly on the UI VPS')
     parser.add_argument('--repo', type=Path, default=REPO, help='Exact clean committed release checkout')
     sub = parser.add_subparsers(dest='command', required=True)
-    p = sub.add_parser('prepare-closed-input'); p.add_argument('build_receipt'); p.add_argument('output'); p.add_argument('--private-staging', action='store_true'); p.set_defaults(fn=prepare_closed_input)
+    p = sub.add_parser('prepare-closed-input'); p.add_argument('build_receipt'); p.add_argument('output'); p.add_argument('--private-staging', action='store_true'); p.add_argument('--amo-direct-approval-sha256'); p.add_argument('--attempt', default='initial'); p.set_defaults(fn=prepare_closed_input)
     p = sub.add_parser('preflight'); p.add_argument('output'); p.add_argument('--closed-request'); p.add_argument('--existing-inventory', action='store_true', help='Read-verify the exact previously uploaded immutable inventory; never overwrite it'); p.set_defaults(fn=preflight)
     p = sub.add_parser('make-plan'); p.add_argument('build_receipt'); p.add_argument('preflight'); p.add_argument('output'); p.add_argument('--attempt', default='initial')
     p.add_argument('--input-storage', choices=('release-evidence-v1', 'deploy-scratch-v1'), default='release-evidence-v1')

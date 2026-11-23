@@ -42,7 +42,7 @@ class CompleteSequence(unittest.TestCase):
         self.assertEqual(M.LIMITS, {
             'backupBudgetBytes': 18 * 1024**3,
             'transportBudgetBytes': 9 * 1024**3 + 64 * 1024**2,
-            'scratchBudgetBytes': 11 * 1024**3 // 2,
+            'scratchBudgetBytes': 6 * 1024**3,
             'rootReserveBytes': 8 * 1024**3,
             'growthReserveBytes': 64 * 1024**2, 'inodeReserve': 128})
         census = self.exact_fit()
@@ -206,9 +206,17 @@ class CompleteSequence(unittest.TestCase):
         census['usage']['scratch'] = 2874064896
         required = M.requirements(plan, census)
         self.assertEqual(required['additionalBytes']['scratch'], 2130059264)
-        self.assertEqual(M.admit(required, census)['headroom']['scratch'], 901455872)
-        # Preserve the historical five-GiB arithmetic as historical evidence,
-        # rather than pretending its old deficit persists under the successor.
+        self.assertEqual(M.admit(required, census)['headroom']['scratch'], 1438326784)
+        # The same allocations left exactly this much room under the sealed Boost predecessor.
+        self.assertEqual(11 * 1024**3 // 2 - census['usage']['scratch']
+                         - required['additionalBytes']['scratch'], 901455872)
+        for different_limit in (11 * 1024**3 // 2, 13 * 1024**3 // 2):
+            with self.subTest(scratch_limit=different_limit):
+                mismatched = copy.deepcopy(census)
+                mismatched['limits']['scratchBudgetBytes'] = different_limit
+                with self.assertRaisesRegex(ValueError, 'different storage limits'):
+                    M.requirements(plan, mismatched)
+        # Retain the earlier five-GiB refusal arithmetic as well.
         with patch.dict(M.LIMITS, scratchBudgetBytes=5 * 1024**3):
             historical = copy.deepcopy(census)
             historical['limits'] = dict(M.LIMITS)

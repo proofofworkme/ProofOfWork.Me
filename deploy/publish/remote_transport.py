@@ -586,6 +586,11 @@ if scratch_inputs and phase == 'surfaces-stage':
 helpers = p['publicationHelpers']
 phase_capacity_source = planned_helper(p['phaseCapacity'])
 private_staging = 'inputCompactor' in p
+direct = 'amoDirectStage' in p
+request = p.get('closedArchive', {}).get('request', {})
+if (direct != ('amoDirectStage' in request) or direct != ('amoDirectScope' in request)
+        or direct != ('amoDirectCapacity' in p.get('closedArchive', {})) or (direct and not private_staging)):
+    raise ValueError('Incomplete AMO direct-stage transport context')
 if private_staging:
     assert scratch_inputs
     assert phase in ('surfaces-stage', 'source') and not any(k in p for k in ('resumeSurfaces','preservedStageResume','preservedCapacityResume'))
@@ -606,6 +611,10 @@ if private_staging:
 
     verifier = {'__name__': '_private_stage_verifier'}
     exec(compile(phase_capacity_source, 'phase_capacity.py', 'exec'), verifier)
+    if direct:
+        direct_stager = verifier['locked_installed_stager'](helpers['stager']['sha256'], lock_fd)
+        grant = direct_stager.verify_active(p['amoDirectStage'])
+        direct_stager.require_direct_approval(grant, direct_stager.direct_plan_fields(p))
 for record in helpers.values(): bound(record['path'], record['sha256'])
 tools = BASE / 'audit29-tools'
 for key, filename in [('controller', 'release.py'), ('receiver', 'stream-ui-bundle.py'),
@@ -621,6 +630,10 @@ assert [str(path) for path in retained] == [record['root'] for record in p['reta
 for path, record in zip(retained, p['retainedRoots']):
     value = namespace['fingerprint'](path)
     assert value['manifestSha256'] == record['manifestSha256'] and value['treeSha256'] == record['treeSha256']
+if direct and phase == 'source':
+    fresh = verifier['recheck_closed_input'](request, helpers, live, lock_fd)
+    if fresh != p['closedArchive'] or namespace['fingerprint'](Path('/var/www')) != live:
+        raise ValueError('Direct-stage evidence changed before source transfer')
 if phase == 'surfaces-stage':
     lifecycle = p['retentionLifecycle']
     assert lifecycle['config']['path'] == '/etc/proofofwork-retention/ui-lifecycle.json'
@@ -752,7 +765,9 @@ if phase != 'source':
     assert not os.path.lexists(stage)
     for target in (archive, Path(str(archive)+'.sha256'), Path(str(archive)+'.provenance')):
         assert not os.path.lexists(target)
-    model_args = [str(evidence_root)] if phase == 'preserved-stage-resume' else ['--private-input'] if private_staging else []
+    model_args = [str(evidence_root)] if phase == 'preserved-stage-resume' else []
+    if private_staging:
+        model_args = ['--amo-direct-input' if direct else '--private-input']
     run(['/usr/bin/python3', '-I', '-B', '-c', phase_capacity_source, 'stage', str(preserved / 'surfaces'), helpers['stager']['sha256'], *model_args], 'stage-model.json')
     model = json.loads((out / 'stage-model.json').read_bytes())
     assert model['inputStabilityVerified'] is True and model['installedStagerSha256'] == helpers['stager']['sha256']
@@ -762,6 +777,9 @@ if phase != 'source':
         assert model['modeledManagedArchive'] == evidence['archive']
         assert model['priorDependenciesSha256'] == evidence['priorDependenciesSha256']
         assert model['compatibilityCounters'] == evidence['dependencyCounters']
+        if direct and (model['amoDirectCapacity'] != evidence['amoDirectCapacity']
+                       or model['privateStaging'] != evidence['privateStaging']):
+            raise ValueError('Direct stage model differs from the closed release')
     # The release archive lives outside scratch. Charge it only to actual disk.
     if phase == 'preserved-stage-resume':
         # No private candidate enters scratch until the installed stager has
@@ -779,7 +797,7 @@ if phase != 'source':
             admitted = p['wholeSequenceAdmission']['requirements']['charges']['candidateCopy']
             assert model['peakAdditionalBytes'] <= admitted, 'Stage peak exceeds admitted full-copy bound'
         capacity('check', BASE, model['peakAdditionalBytes'] + (0 if private_staging else stage_archive_upper) + EVIDENCE_RESERVE, 'stage')
-        stager_args = []
+        stager_args = ['--direct-plan-sha256', plan_sha, '--direct-attempt', p['publicationAttempt']] if direct else []
     run([helpers['stager']['path'], '--release-id', release, '--surfaces-root', str(preserved / 'surfaces'),
          '--stage-root', str(stage), '--deduplicate-managed-files', *stager_args], 'stager.log', timeout=STAGE_TIMEOUT_SECONDS)
     if phase == 'preserved-stage-resume':

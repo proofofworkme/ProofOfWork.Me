@@ -4,6 +4,7 @@
   "liveCheck": "scripts/check-amo-liquidity-live.mjs",
   "ciTests": [
     "scripts/check-amo-expanded-liquidity-replay.test.mjs",
+    "scripts/check-amo-private-staging.test.mjs",
     "server/permission-verification-store.test.mjs",
     "scripts/complete-token-history-pages.test.mjs",
     "server/work-amo-v8-metadata-readiness.test.mjs",
@@ -23,8 +24,8 @@
     {
       "targets": ["marketplace", "computer", "desktop", "nft"],
       "disposition": "affected",
-      "reason": "Standalone AMO and the Computer marketplace workspace browse two WORK books at the existing endpoint. Signed face and frozen terms determine membership. Counts, continuation, exact listing lookup and the visible page follow the selected face across the complete snapshot. The live regression compares the canonical parent across Token, WORK and Growth and verifies Marketplace’s immediate child against its returned listing evidence. Desktop and NFT use the shared Computer build.",
-      "evidence": ["src/App.tsx", "scripts/check-marketplace-regressions.mjs", "scripts/ledger-audit-snapshot.mjs", "server/marketplace-authority-read.test.mjs", "server/amo-browse-snapshot.test.mjs", "src/features/marketplace/marketplaceBrowse.test.mjs", "tests/browser/amo-browse.spec.mjs"]
+      "reason": "Standalone AMO and the Computer marketplace workspace browse two WORK books at the existing endpoint. Signed face and frozen terms determine membership. Counts, continuation, exact listing lookup and the visible page follow the selected face across the complete snapshot. The live regression compares the canonical parent across Token, WORK and Growth and verifies Marketplace’s immediate child against its returned listing evidence. Desktop and NFT use the shared Computer build. Private staging must reproduce every managed surface, including the transitive compatibility assets used by Marketplace and Pay.",
+      "evidence": ["src/App.tsx", "scripts/check-marketplace-regressions.mjs", "scripts/ledger-audit-snapshot.mjs", "server/marketplace-authority-read.test.mjs", "server/amo-browse-snapshot.test.mjs", "src/features/marketplace/marketplaceBrowse.test.mjs", "tests/browser/amo-browse.spec.mjs", "scripts/check-amo-direct-stage-design.py"]
     },
     {
       "targets": ["wallet", "permission", "local-signing"],
@@ -51,16 +52,22 @@
       "evidence": ["server/search-projection.mjs", "server/search-projection.test.mjs"]
     },
     {
-      "targets": ["boost", "jobs", "code", "pay", "compatibility"],
-      "disposition": "compatible",
-      "reason": "Existing WORK send and payment encodings remain valid. Consumers of pending WORK capacity reserve the signed listing face while confirmed tickets keep their exact frozen quantity. Boost, Jobs, Code and Pay keep their existing commitment and fee rules. Historical participant transfers are checked against exact scoped history and any matching wallet summary row.",
+      "targets": ["boost", "jobs", "code", "pay"],
+      "disposition": "affected",
+      "reason": "Existing WORK send and payment encodings remain valid. Consumers of pending WORK capacity reserve the signed listing face while confirmed tickets keep their exact frozen quantity. Boost, Jobs, Code and Pay keep their existing commitment and fee rules. Historical participant transfers are checked against exact scoped history and any matching wallet summary row. Private staging constructs all four product roots and checks their compatibility assets before accepting a candidate.",
       "evidence": ["src/shared/work/canonicalWorkCapacity.ts", "server/work-wallet-capacity.test.mjs", "scripts/check-boost-tip-work-capacity.test.mjs", "scripts/check-jobs-work-capacity.test.mjs", "scripts/check-code-client.test.mjs", "scripts/check-pay-client.test.mjs", "scripts/check-marketplace-regressions.mjs", "scripts/check-work-participant-regression.mjs", "scripts/complete-token-history-pages.test.mjs"]
     },
     {
-      "targets": ["landing", "browser", "id", "dns", "inception", "infinity", "pages", "publish", "token", "files", "mail", "notifications"],
+      "targets": ["landing", "browser", "id", "dns", "inception", "infinity", "pages", "publish", "token"],
+      "disposition": "affected",
+      "reason": "The homepage catalog, navigation, SEO and Computer launcher already identify AMO as one product. POWB, INCB, credit, ID and DNS tickets continue to use their own asset and authorization rules. Other workspaces retain their routes, signing scopes and history readers. The source-bound AMO builder retains up to 29 GiB, with a separate 4 GiB allowance per run and 100 GiB free-space reserve. The AMO successor constructs the private candidate from verified passthrough entries, incoming surfaces and prior compatibility assets. The locked release plan binds the current and rollback roots, the two archives and installed helpers. Admission charges outgoing and reverse-exchange occupancy under the existing 6 GiB ceiling, while protecting the physical reserve, inodes and independent pools.",
+      "evidence": ["src/features/landing/LandingApp.tsx", "src/app/appLinks.ts", "src/app/seoMetadata.mjs", "src/features/computer/computerNavigation.ts", "tests/browser/amo-browse.spec.mjs", "scripts/check-amo-id-ownership.test.mjs", "deploy/publish/build.py", "deploy/publish/check-build-capacity.test.py", "deploy/audit30/ui-storage.py", "deploy/audit30/ui-release-policy.py", "deploy/publish/publication_admission.py", "deploy/publish/check-preservation-admission.test.py", "deploy/ui-retention/check-retirement-package-upgrade.test.py", "deploy/publish/check-amo-exchange-scratch.test.py", "deploy/publish/check-amo-stage-installer.test.py", "scripts/check-amo-private-staging.test.mjs"]
+    },
+    {
+      "targets": ["files", "mail", "notifications", "compatibility"],
       "disposition": "compatible",
-      "reason": "The homepage catalog, navigation, SEO and Computer launcher already identify AMO as one product. POWB, INCB, credit, ID and DNS tickets continue to use their own asset and authorization rules. Other workspaces retain their routes, signing scopes and history readers. The source-bound AMO builder retains up to 29 GiB, with a separate 4 GiB allowance per run and 100 GiB free-space reserve. Publication forecasts only the exact November 18 current/rollback pair and preserves historical writer identities.",
-      "evidence": ["src/features/landing/LandingApp.tsx", "src/app/appLinks.ts", "src/app/seoMetadata.mjs", "src/features/computer/computerNavigation.ts", "tests/browser/amo-browse.spec.mjs", "scripts/check-amo-id-ownership.test.mjs", "deploy/publish/build.py", "deploy/publish/check-build-capacity.test.py", "deploy/audit30/ui-storage.py", "deploy/audit30/ui-release-policy.py", "deploy/publish/publication_admission.py", "deploy/publish/check-preservation-admission.test.py", "deploy/ui-retention/check-retirement-package-upgrade.test.py"]
+      "reason": "The complete V6 candidate keeps the embedded Files and Mail workspaces, the notification views and their existing readers. Prior hashed asset dependencies and independent passthrough files survive construction and reversal. Existing 25,000-proof contracts and signed terms retain the same interpretation.",
+      "evidence": ["scripts/check-amo-private-staging.test.mjs", "scripts/check-amo-direct-stage-design.py", "server/amo-browse-snapshot.test.mjs", "src/features/marketplace/marketplaceBrowse.test.mjs"]
     }
   ]
 }

@@ -13,6 +13,7 @@ import hashlib
 import io
 import json
 import os
+import select
 import shlex
 import signal
 import shutil
@@ -385,6 +386,30 @@ class ReleaseRefusals(unittest.TestCase):
         self.assertEqual(plan['wrapperSourceSha256']['release.py'], self.release.digest(ROOT / 'release.py'))
         self.assertEqual(plan['wrapperSourceSha256']['build.py'], self.release.digest(ROOT / 'build.py'))
         self.assertEqual(plan['helperSha256']['phase-capacity'], previous['helpers']['phase-capacity']['sha256'])
+
+    def test_fresh_large_plan_preserves_helper_hash_and_absolute_control_limit(self):
+        _, previous, args = self.build_inputs()
+        previous['retained'] = [{'root': '/var/backups/proofofwork-ui/rollback-roots/retained-' + str(i),
+                                 'manifestSha256': 'a'*64, 'treeSha256': 'f'*64, 'entries': 3404,
+                                 'regularBytes': 615167779, 'classification': 'retain'} for i in range(16)]
+        Path(args.preflight).write_bytes(raw_json(previous))
+        with patch.object(subprocess, 'check_output', side_effect=self.git_output), contextlib.redirect_stdout(io.StringIO()):
+            self.release.make_plan(args)
+        raw = Path(args.output).read_bytes()
+        plan = json.loads(raw)
+        self.assertLessEqual(len(raw), 65536)
+        self.assertEqual(set(plan['phaseCapacity']), {'sha256', 'compressedSource'})
+        reader = functions_only('remote_transport.py', {'planned_helper'})
+        self.assertEqual(reader['planned_helper'](plan['phaseCapacity']), (ROOT/'phase_capacity.py').read_text())
+        self.assertEqual(plan['phaseCapacity']['sha256'], plan['wrapperSourceSha256']['phase_capacity.py'])
+        with patch.dict(plan['phaseCapacity'], sha256='0'*64), self.assertRaises(AssertionError):
+            reader['planned_helper'](plan['phaseCapacity'])
+        Path(args.output).unlink()
+        previous['retained'][0]['root'] = 'x'*65537
+        Path(args.preflight).write_bytes(raw_json(previous))
+        with patch.object(subprocess, 'check_output', side_effect=self.git_output), self.assertRaisesRegex(ValueError, '64 KiB'):
+            self.release.make_plan(args)
+        self.assertFalse(Path(args.output).exists())
 
     def test_plan_refuses_uncommitted_wrapper_before_creation(self):
         build, previous, args = self.build_inputs()
@@ -1844,7 +1869,7 @@ class PreservedTransport(unittest.TestCase):
                     phase.locked_installed_stager()
             # The stager loads the capacity helper beside the hash-verified module.
             helper = installed.capacity_helper()
-            self.assertEqual(helper.MAX_DEPLOY_SCRATCH_BYTES, 11*1024**3//2)
+            self.assertEqual(helper.MAX_DEPLOY_SCRATCH_BYTES, 6*1024**3)
             self.assertEqual(helper.ROOT_RESERVE_BYTES, 8*1024**3)
             bound = helper.tree_bound(self.base, self.base)
             self.assertGreater(bound['additionalBytes'], 0)
@@ -1873,7 +1898,7 @@ class PreservedTransport(unittest.TestCase):
         helper = ROOT.parents[1]/'deploy/proofofwork-ui-capacity.py'
         exec(compile(helper.read_bytes(), str(helper), 'exec'), namespace)
         limit = namespace['MAX_DEPLOY_SCRATCH_BYTES']
-        self.assertEqual(limit, 11*1024**3//2)
+        self.assertEqual(limit, 6*1024**3)
         # Translate the original trajectory to the approved current ceiling,
         # preserving its exact 197279744-byte headroom and all phase deltas.
         # This does not change the separate historical retirement bound.
@@ -2345,7 +2370,7 @@ class OuterCapacityResume(unittest.TestCase):
             node.test.comparators[0].value == 'preserved-stage-resume' and
             any(isinstance(child, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'stager_args' for t in child.targets) for child in node.body))
         guards = []
-        scope.update(BASE=self.base, EVIDENCE_RESERVE=32*1024**2, model={'peakAdditionalBytes': 1000}, private_staging=False,
+        scope.update(BASE=self.base, EVIDENCE_RESERVE=32*1024**2, model={'peakAdditionalBytes': 1000}, private_staging=False, direct=False,
             stage_archive_upper=2000, capacity=lambda *args: guards.append(args))
         exec(compile(ast.Module(body=[guard], type_ignores=[]), 'actual-capacity-normal-guards', 'exec'), scope)
         self.assertEqual(scope['stager_args'], [])
@@ -2403,9 +2428,28 @@ class OuterCapacityResume(unittest.TestCase):
         runner.update(out=out, env={}, lock_fd=os.open(self.base, os.O_RDONLY | os.O_DIRECTORY),
             captured_log_bytes=0, TOTAL_LOG_CEILING=16*1024**2)
         stage = self.base / ('proofofwork-www-stage-' + RELEASE)
-        child = "import os,time; from pathlib import Path; Path(" + repr(str(stage)) + ").mkdir(); print(os.getpid(),flush=True); time.sleep(30)"
+        child = ("import os,time; from pathlib import Path; time.sleep(0.15); "
+                 + "Path(" + repr(str(stage)) + ").mkdir(); print(os.getpid(),flush=True); time.sleep(30)")
+        popen = subprocess.Popen
+
+        def start_ready_child(*args, **kwargs):
+            # The real runner starts its execution clock after Popen returns. Give
+            # this fixture a partial candidate and leave the PID unread for the runner.
+            process = popen(*args, **kwargs)
+            try:
+                ready, _, _ = select.select([process.stdout], [], [], 5)
+                self.assertTrue(ready and stage.is_dir() and process.poll() is None,
+                                'Fixture child failed to establish its partial candidate')
+                return process
+            except BaseException:
+                process.kill()
+                process.wait(timeout=5)
+                process.stdout.close()
+                raise
+
         try:
-            with self.assertRaisesRegex(AssertionError, 'Child deadline exceeded'):
+            with patch.object(subprocess, 'Popen', start_ready_child), self.assertRaisesRegex(
+                    AssertionError, 'Child deadline exceeded'):
                 runner['run'](['/usr/bin/python3', '-I', '-B', '-c', child], 'stager.log', timeout=0.05)
         finally: os.close(runner['lock_fd'])
         child_pid = int((out / 'stager.log').read_text().strip())
