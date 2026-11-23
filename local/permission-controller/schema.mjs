@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { permissionFeeRateProofsQ8 } from '../../src/shared/protocol/permissions.mjs'
+import { WORK_AMO_FACE_PROOFS } from '../../src/shared/protocol/workAmoExpandedLiquidity.mjs'
 
 export class PermissionError extends Error {
   constructor(code, message = code) { super(message); this.name = 'PermissionError'; this.code = code }
@@ -68,7 +69,10 @@ export function normalizeRequest(request) {
       break
     case 'boost.post': exactKeys(p, ['text', 'proofs']); text(p.text, 560); if ([...p.text].length > 140) fail('BOOST_TOO_LONG'); integer(p.proofs, { positive: true }); break
     case 'publish.article': exactKeys(p, ['title', 'body', 'proofs']); text(p.title, 512); text(p.body, 90_000); integer(p.proofs, { positive: true }); break
-    case 'amo.listwork': exactKeys(p, ['faceProofs']); if (p.faceProofs !== '25000') fail('UNSUPPORTED_WORK_FACE'); break
+    case 'amo.listwork':
+      exactKeys(p, ['faceProofs'])
+      if (!WORK_AMO_FACE_PROOFS.some(face => p.faceProofs === String(face))) fail('UNSUPPORTED_WORK_FACE')
+      break
     case 'amo.sealwork': case 'amo.buywork': exactKeys(p, ['listingTxid']); if (!TXID.test(p.listingTxid)) fail('INVALID_LISTING_TXID'); break
   }
   return JSON.parse(canonical(request))

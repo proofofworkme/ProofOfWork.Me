@@ -1,4 +1,9 @@
 import {
+  WORK_AMO_FACE_PROOFS,
+  WORK_AMO_EXPANDED_FACE_PROOFS,
+} from "../src/shared/protocol/workAmoExpandedLiquidity.mjs";
+import { expandedLiquidityPositionEligible } from "./work-amo-expanded-liquidity.mjs";
+import {
   WORK_AMO_V4_AUTH_VERSION,
   WORK_AMO_V5_AUTH_VERSION,
   WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS,
@@ -243,7 +248,7 @@ function v6AuthorizationFromV8(authorization) {
     ...sharedAuthorization,
     ...WORK_AMO_V6_MODELS,
     // V6 validates the shared static sale-ticket shape but owns a different
-    // face set. V8 validates its singleton face independently below.
+    // face set. The current WORK denominations are validated independently.
     unitFaceProofs: 20_000,
     version: WORK_AMO_V6_AUTH_VERSION,
   };
@@ -295,7 +300,7 @@ export function validateWorkAmoV8StaticAuthorization(
     authorization.unitFaceProofs,
     { positive: true },
   );
-  if (!WORK_AMO_V8_ALLOWED_FACE_PROOFS.includes(requestedFace)) {
+  if (!WORK_AMO_FACE_PROOFS.includes(requestedFace)) {
     return invalid("work-amo-v8-face-unit-invalid");
   }
   const v6Validation = validateWorkAmoV6StaticAuthorization(
@@ -321,7 +326,7 @@ export function workAmoV8UnitTerms({
     positive: true,
   });
   const networkValue = positiveBigInt(networkValueBeforeQ8);
-  if (!WORK_AMO_V8_ALLOWED_FACE_PROOFS.includes(face)) {
+  if (!WORK_AMO_FACE_PROOFS.includes(face)) {
     return invalid("work-amo-v8-face-unit-invalid");
   }
   if (networkValue === null) {
@@ -405,6 +410,7 @@ export function deriveWorkAmoV8FrozenTerms(
   authorization,
   {
     activationHeight,
+    expandedLiquidity,
     listingBondContributionQ8,
     listingPosition,
     networkValueBeforeQ8,
@@ -430,6 +436,10 @@ export function deriveWorkAmoV8FrozenTerms(
   );
   if (!staticValidation.valid) {
     return staticValidation;
+  }
+  if (staticValidation.authorization.unitFaceProofs === WORK_AMO_EXPANDED_FACE_PROOFS &&
+      !expandedLiquidityPositionEligible(expandedLiquidity, listing)) {
+    return invalid("work-amo-expanded-liquidity-declaration-unavailable");
   }
   const networkValue = positiveBigInt(networkValueBeforeQ8);
   if (networkValue === null) {
@@ -519,7 +529,7 @@ function normalizeWorkAmoV8FrozenTerms(value) {
   const price = positiveBigInt(value.unitPriceSats);
   const minimum = positiveBigInt(value.unitMinimumPriceSats);
   if (
-    !WORK_AMO_V8_ALLOWED_FACE_PROOFS.includes(unitFaceProofs) ||
+    !WORK_AMO_FACE_PROOFS.includes(unitFaceProofs) ||
     !listingPosition ||
     networkBefore === null ||
     networkAfter === null ||
@@ -1673,6 +1683,16 @@ export function workAmoV8BroadcastDecision(
       };
     }
     if (actionName === "list5") {
+      if (Number(action.saleAuthorization?.unitFaceProofs) === WORK_AMO_EXPANDED_FACE_PROOFS) {
+        if (metadata?.expandedLiquidity?.listingWritesEnabled !== true) {
+          return { allowed: false, code: "WORK_AMO_EXPANDED_LIQUIDITY_UNAVAILABLE",
+            reasonCode: "work-amo-expanded-liquidity-admission-unavailable", statusCode: 503 };
+        }
+        if (action.expandedLiquidityFeeValid !== true) {
+          return { allowed: false, code: "WORK_AMO_V8_TRANSACTION_INVALID",
+            reasonCode: "work-amo-expanded-liquidity-fee-invalid", statusCode: 400 };
+        }
+      }
       if (metadata?.listingWritesEnabled !== true) {
         return {
           allowed: false,

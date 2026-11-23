@@ -36,6 +36,26 @@ test('every record identity, position, participant, name and exact proof quantit
   assert.throws(()=>exactProofs(-1));
   assert.throws(()=>exactProofs(Number.MAX_SAFE_INTEGER+1));
 });
+test('both AMO faces retain exact listing and settlement evidence in Search', () => {
+  for (const face of [25_000, 250_000]) {
+    const listingId = (face === 25_000 ? 'a' : 'b').repeat(64);
+    const frozenTerms = { version: 'pwt-sale-v8', unitFaceProofs: face, unitAmountSubatoms: '120000000000000003' };
+    const extra = face === 250_000 ? { liquidityFeeSats: 5460, liquidityFeeVout: 3 } : {};
+    for (const [kind, amountSats, fields] of [
+      ['token-listing', String(546 + (extra.liquidityFeeSats ?? 0)), extra],
+      ['token-listing-sealed', '546', {}],
+      ['token-sale', String(face), { salePaymentSats: face, paidSats: face + 546 + 546 }],
+    ]) {
+      const doc = buildSearchDocument(source({ protocol: 'pwt1', kind, amountSats,
+        payload: { listingId, frozenTerms, ...fields }, refs: [{ type: 'listing', value: listingId }] }), HASH);
+      assert.equal(doc.record.amountSats, amountSats);
+      for (const term of [listingId, String(face), frozenTerms.unitAmountSubatoms, kind]) assert.ok(doc.searchText.includes(term));
+      assert.deepEqual(doc.payload.frozenTerms, frozenTerms);
+      assert.equal(doc.payload.liquidityFeeSats, fields.liquidityFeeSats);
+      assert.equal(doc.payload.salePaymentSats, fields.salePaymentSats);
+    }
+  }
+});
 test('WORK tip observations retain exact token, subatoms and target references without proof conversion',()=>{
   const tokenId='d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8';
   const targetTxid='c'.repeat(64),amountSubatoms='123456789012345678901234';

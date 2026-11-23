@@ -55,6 +55,7 @@ Counts are annual executed scenario rates at horizons measured from May 11, not 
 - A model row does not enable capability, prove transaction admission or change any confirmed balance or record.
 - Jobs offered rewards add nothing; accepted payment behavior is covered only by existing shared carrier assumptions.
 - Pay invoices and derived receipts add no separate forecast or payment value; confirmed transfers remain in existing Mail and WORK accounting once.
+- The WORK basket models the 25,000-proof tier. It assumes zero demand for 250,000-proof listings and their 5,460-proof List fee. Live seller volume uses the frozen sale price and excludes fees and returned ticket principal.
 - DNS owner self-payments and linked parts/linkers have no added scenario payment value. DNS trades appear only in AMO.
 - Standalone social payment estimates use direct owner payments; historical Boost registry wording is not current policy.
 

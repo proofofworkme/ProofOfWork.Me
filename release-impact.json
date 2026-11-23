@@ -1,112 +1,62 @@
 {
   "format": "pow-upgrade-impact-v1",
-  "upgrade": "boost-pages-six-gib-preserve-predecessor-package-scope",
-  "liveCheck": "scripts/check-boost-pages-live.mjs",
+  "upgrade": "work-amo-expanded-liquidity",
+  "liveCheck": "scripts/check-amo-liquidity-live.mjs",
   "ciTests": [
-    "src/features/boost/boostWebLinks.test.mjs",
-    "scripts/check-publish-compatibility.test.mjs",
-    "scripts/check-boost-release.test.mjs"
+    "server/work-amo-v8-metadata-readiness.test.mjs",
+    "server/amo-browse-snapshot.test.mjs",
+    "src/features/marketplace/marketplaceBrowse.test.mjs",
+    "scripts/check-work-batch-growth.test.mjs",
+    "scripts/check-current-growth.test.mjs",
+    "server/search-projection.test.mjs",
+    "server/work-wallet-capacity.test.mjs",
+    "scripts/check-jobs-work-capacity.test.mjs",
+    "scripts/check-boost-tip-work-capacity.test.mjs",
+    "scripts/check-code-client.test.mjs",
+    "scripts/check-pay-client.test.mjs"
   ],
   "reviews": [
     {
-      "targets": [
-        "boost",
-        "computer",
-        "desktop",
-        "nft"
-      ],
+      "targets": ["marketplace", "computer", "desktop", "nft"],
       "disposition": "affected",
-      "reason": "Shared BoostRoot replaces post popup with query-addressed detail page. Preserve existing independently verified detail reader, engagement actions, local signer, mounted feed draft and scroll. Browser tests cover direct links, reload, Back/Forward, invalid links and failure. Desktop/NFT share Computer entry. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged. Package source also preserves the already-installed f63 publication/transport lineage verifiers; no new transport removal is executed. Owner-approved deployment scratch ceiling moves 5.5 GiB to 6 GiB through separate authenticated successor journal; current/prior releases and all other budgets/reserves stay unchanged. No protocol or product behavior changes in this capacity adjustment. Package upgrade accepts the exact frozen predecessor inventory only for authenticated legacy reads; new installations retain exact full scope. Missing/extra entries remain rejected.",
-      "evidence": [
-        "tests/browser/boost-social-records.spec.mjs",
-        "src/features/boost/BoostRoot.tsx",
-        "scripts/check-boost-pages-live.mjs",
-        "deploy/audit30/check-ui-storage.test.py",
-        "deploy/ui-retention/check-publication-completion-bridge.test.py",
-        "deploy/ui-retention/check-scratch-successor.test.py",
-        "deploy/ui-scratch-capacity/check-successor-installer.test.py"
-      ]
+      "reason": "Standalone AMO and the Computer marketplace workspace browse two WORK books at the existing endpoint. Signed face and frozen terms determine membership. Counts, continuation, exact listing lookup and the visible page follow the selected face across the complete snapshot. Desktop and NFT use the shared Computer build.",
+      "evidence": ["src/App.tsx", "server/amo-browse-snapshot.test.mjs", "src/features/marketplace/marketplaceBrowse.test.mjs", "tests/browser/amo-browse.spec.mjs"]
     },
     {
-      "targets": [
-        "publish"
-      ],
-      "disposition": "compatible",
-      "reason": "Existing article page and reader stay unchanged. Shared Boost component routes non-article Boost references to standalone Boost; signing and article wire data unchanged. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged. Package source also preserves the already-installed f63 publication/transport lineage verifiers; no new transport removal is executed. Owner-approved deployment scratch ceiling moves 5.5 GiB to 6 GiB through separate authenticated successor journal; current/prior releases and all other budgets/reserves stay unchanged. No protocol or product behavior changes in this capacity adjustment. Package upgrade accepts the exact frozen predecessor inventory only for authenticated legacy reads; new installations retain exact full scope. Missing/extra entries remain rejected.",
-      "evidence": [
-        "src/features/boost/BoostRoot.tsx",
-        "scripts/check-publish-compatibility.test.mjs",
-        "deploy/audit30/check-ui-storage.test.py",
-        "deploy/ui-retention/check-publication-completion-bridge.test.py"
-      ]
-    },
-    {
-      "targets": [
-        "activity",
-        "browser",
-        "code",
-        "dns",
-        "growth",
-        "id",
-        "inception",
-        "infinity",
-        "jobs",
-        "landing",
-        "marketplace",
-        "pages",
-        "pay",
-        "permission",
-        "search",
-        "token",
-        "wallet",
-        "work"
-      ],
-      "disposition": "compatible",
-      "reason": "No product addition, protocol, accounting or fee change. Homepage catalog, navigation and Growth product/model/report coverage remain accurate. Other surfaces use unchanged readers; all receive coherent source provenance in shared build. Rendered homepage/Growth checked by live verifier. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged. Package source also preserves the already-installed f63 publication/transport lineage verifiers; no new transport removal is executed. Owner-approved deployment scratch ceiling moves 5.5 GiB to 6 GiB through separate authenticated successor journal; current/prior releases and all other budgets/reserves stay unchanged. No protocol or product behavior changes in this capacity adjustment. Package upgrade accepts the exact frozen predecessor inventory only for authenticated legacy reads; new installations retain exact full scope. Missing/extra entries remain rejected.",
-      "evidence": [
-        "scripts/check-boost-pages-live.mjs",
-        "scripts/check-release-sync.mjs",
-        "src/features/boost/BoostRoot.tsx",
-        "deploy/audit30/check-ui-storage.test.py",
-        "deploy/ui-retention/check-publication-completion-bridge.test.py"
-      ]
-    },
-    {
-      "targets": [
-        "wire",
-        "indexer",
-        "api",
-        "backfill-reorg",
-        "accounting",
-        "local-signing",
-        "files",
-        "mail",
-        "compatibility"
-      ],
-      "disposition": "compatible",
-      "reason": "Navigation-only change; no writer/signing, protocol encoding, server admission/indexing, replay, historical accounting or reader API changed. Existing detail reader preserves confirmation and failure behavior; paid/reply actions retain original dialogs. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged. Package source also preserves the already-installed f63 publication/transport lineage verifiers; no new transport removal is executed. Owner-approved deployment scratch ceiling moves 5.5 GiB to 6 GiB through separate authenticated successor journal; current/prior releases and all other budgets/reserves stay unchanged. No protocol or product behavior changes in this capacity adjustment. Package upgrade accepts the exact frozen predecessor inventory only for authenticated legacy reads; new installations retain exact full scope. Missing/extra entries remain rejected.",
-      "evidence": [
-        "src/features/boost/BoostRoot.tsx",
-        "tests/browser/boost-social-records.spec.mjs",
-        "scripts/check-boost-regressions.mjs",
-        "deploy/audit30/check-ui-storage.test.py",
-        "deploy/ui-retention/check-publication-completion-bridge.test.py"
-      ]
-    },
-    {
-      "targets": [
-        "notifications"
-      ],
+      "targets": ["wallet", "permission", "local-signing"],
       "disposition": "affected",
-      "reason": "Existing detail query links now open the standalone post page in Computer as well as Boost. No notification production, counts or transaction semantics change. Deployment-only exact 9f18/a4d2 forecast admission preserves all guards and historical proof; it does not authorize deletion or alter product semantics. One-shot prior-release completion additionally verifies the existing sealed publication-upgrade edge before native preparation; original forecasts and generic apply/completion remain unchanged. Package source also preserves the already-installed f63 publication/transport lineage verifiers; no new transport removal is executed. Owner-approved deployment scratch ceiling moves 5.5 GiB to 6 GiB through separate authenticated successor journal; current/prior releases and all other budgets/reserves stay unchanged. No protocol or product behavior changes in this capacity adjustment. Package upgrade accepts the exact frozen predecessor inventory only for authenticated legacy reads; new installations retain exact full scope. Missing/extra entries remain rejected.",
-      "evidence": [
-        "tests/browser/notifications.spec.mjs",
-        "tests/browser/boost-social-records.spec.mjs",
-        "deploy/audit30/check-ui-storage.test.py",
-        "deploy/ui-retention/check-publication-completion-bridge.test.py",
-        "deploy/ui-retention/check-scratch-successor.test.py",
-        "deploy/ui-scratch-capacity/check-successor-installer.test.py"
-      ]
+      "reason": "Wallet and embedded Computer review 546 sats to the registry, the 546-sat ticket at output 2, the miner fee and the 5,460-sat fee for a new larger List. Permission constrains the signed face and transaction outputs. Seal keeps its seller authorization and publication reviews. The existing check:permission command exercises local/permission-controller/controller.test.mjs.",
+      "evidence": ["src/App.tsx", "scripts/check-ui-contract.mjs", "scripts/check-h19-work-capacity-client.mjs", "tests/browser/mail-compose.spec.mjs", "scripts/check-permission-wallet-commitment.test.mjs"]
+    },
+    {
+      "targets": ["wire", "work", "indexer", "api", "backfill-reorg"],
+      "disposition": "affected",
+      "reason": "Additive declaration evidence binds its carrier, canonical block position, fee terms and eligibility boundary. The owner-selected transaction has an exact self-payment and wrapped-carrier witness bound to its txid. It contributes zero registry revenue. Fresh larger Lists require independently matching index, schema, replay and live admission at the current tip. The original V8 declaration and its global fail-closed rules continue to govern the original book and ordinary WORK transfers. Storage retains signed faces and frozen terms across replay, recovery and settlement.",
+      "evidence": ["server/work-amo-expanded-liquidity.mjs", "server/work-amo-v8.mjs", "server/work-amo-v5-raw.mjs", "scripts/backfill-proof-indexer.mjs", "server/work-precision-v2-schema.mjs", "scripts/check-work-precision-v2.mjs", "scripts/check-work-amo-v5.mjs", "scripts/check-work-amo-v8.mjs", "scripts/check-work-amo-v8-gates.mjs", "server/work-amo-v8-metadata-readiness.test.mjs", "scripts/check-amo-liquidity-live.mjs"]
+    },
+    {
+      "targets": ["activity", "growth", "accounting"],
+      "disposition": "affected",
+      "reason": "Log and Growth use accepted protocol events to attribute a confirmed larger List's liquidity and registry fees once. The ticket remains locked principal, and the sale consideration comes from frozen terms. Growth retains the existing AMO product and activity assumptions.",
+      "evidence": ["server/proof-api.mjs", "server/db/proof-index-reader.mjs", "src/features/growth/currentGrowthModel.mjs", "scripts/generate-current-growth.mjs", "scripts/check-index-recovery-behavior.mjs", "scripts/check-work-batch-growth.test.mjs", "scripts/check-current-growth.test.mjs"]
+    },
+    {
+      "targets": ["search"],
+      "disposition": "affected",
+      "reason": "Search consumes the enriched canonical event payload and the existing exact txid, position, validity and confirmation evidence for WORK listing, seal and sale records.",
+      "evidence": ["server/search-projection.mjs", "server/search-projection.test.mjs"]
+    },
+    {
+      "targets": ["boost", "jobs", "code", "pay", "compatibility"],
+      "disposition": "compatible",
+      "reason": "Existing WORK send and payment encodings remain valid. Consumers of pending WORK capacity reserve the signed listing face while confirmed tickets keep their exact frozen quantity. Boost, Jobs, Code and Pay keep their existing commitment and fee rules.",
+      "evidence": ["src/shared/work/canonicalWorkCapacity.ts", "server/work-wallet-capacity.test.mjs", "scripts/check-boost-tip-work-capacity.test.mjs", "scripts/check-jobs-work-capacity.test.mjs", "scripts/check-code-client.test.mjs", "scripts/check-pay-client.test.mjs"]
+    },
+    {
+      "targets": ["landing", "browser", "id", "dns", "inception", "infinity", "pages", "publish", "token", "files", "mail", "notifications"],
+      "disposition": "compatible",
+      "reason": "The homepage catalog, navigation, SEO and Computer launcher already identify AMO as one product. POWB, INCB, credit, ID and DNS tickets continue to use their own asset and authorization rules. Other workspaces retain their routes, signing scopes and history readers.",
+      "evidence": ["src/features/landing/LandingApp.tsx", "src/app/appLinks.ts", "src/app/seoMetadata.mjs", "src/features/computer/computerNavigation.ts", "tests/browser/amo-browse.spec.mjs", "scripts/check-amo-id-ownership.test.mjs"]
     }
   ]
 }

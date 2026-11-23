@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { WORK_BATCH_TOKEN_ID as work } from '../../shared/protocol/workBatch.mjs';
+import * as workAmoLiquidity from '../../shared/protocol/workAmoExpandedLiquidity.mjs';
+import * as workAmoBookFace from '../../shared/protocol/workAmoBookFace.mjs';
 const require = createRequire(import.meta.url);
 const ts = require('typescript');
 function compile(file, dependencies = {}) {
@@ -24,6 +27,9 @@ const api = compile('./marketplaceBrowse.ts', {
   '../../shared/api/proofApiClient': { fetchProofApiJson: async (...args) => { lastRequest = args; return response; } },
   '../../shared/api/surfaceReadState': projection,
   '../../shared/api/useVisibleReadLoop': {},
+  '../../shared/protocol/workBatch.mjs': { WORK_BATCH_TOKEN_ID: work },
+  '../../shared/protocol/workAmoExpandedLiquidity.mjs': workAmoLiquidity,
+  '../../shared/protocol/workAmoBookFace.mjs': workAmoBookFace,
 });
 const hash = (digit) => digit.repeat(64);
 const asset = hash('a');
@@ -66,6 +72,46 @@ test('valid empty results require explicit complete snapshot evidence', () => {
   assert.equal(api.assertMarketplaceBrowseResponse(value, version, expected).book.totalCount, 0);
   value.provenance.completeAtObservation = false;
   assert.throws(() => api.assertMarketplaceBrowseResponse(value, version, expected));
+});
+
+test('a tier page binds query, rows, exact counts and transport to the signed WORK face', async () => {
+  const tierQuery = { ...query, asset: work, unitFaceProofs: 250000 };
+  const req = { ...expected, query: tierQuery };
+  const value = fixture();
+  const book = value.book;
+  Object.assign(book, { asset: work, unitFaceProofs: 250000,
+    workFaceCounts: { 25000: { all: 3, sealed: 2, unsealed: 1 }, 250000: { ...book.counts } },
+    assetCounts: { [work]: { all: 29, sealed: 22, unsealed: 7 } } });
+  Object.assign(book.items[0], { tokenId: work, saleAuthorization: { version: 'pwt-sale-v8', unitFaceProofs: 250000 } });
+  response = value;
+  await api.fetchMarketplaceBrowse({ query: tierQuery, version, limit: 1 });
+  assert.equal(new URL(lastRequest[0], 'https://proof.invalid').searchParams.get('unitFaceProofs'), '250000');
+  assert.notEqual(api.browseQueryKey(tierQuery), api.browseQueryKey({ ...tierQuery, unitFaceProofs: 25000 }));
+  for (const mutate of [
+    b => { b.unitFaceProofs = 25000; }, b => { delete b.unitFaceProofs; },
+    b => { b.items[0].saleAuthorization.unitFaceProofs = 25000; },
+    b => { b.items[0].listingAuthorization = { version: 'pwt-sale-v8', unitFaceProofs: 25000 }; },
+    b => { b.items[0].frozenTerms = { version: 'pwt-sale-v8', unitFaceProofs: 25000 }; },
+    b => { b.items[0].workAmoV8FrozenTerms = { version: 'pwt-sale-v8', unitFaceProofs: 25000 }; },
+    b => { b.items[0].unitFaceProofs = '250000'; },
+    b => { const terms = { version: 'pwt-sale-v8', unitFaceProofs: 250000, unitAmountSubatoms: '99' };
+      Object.assign(b.items[0], { workAmoFrozenTerms: terms, workAmoV8FrozenTerms: { ...terms, unitAmountSubatoms: '98' } }); },
+    b => { b.items[0].unitFaceProofs = 25000; }, b => { b.items[0].tokenId = asset; },
+    b => { b.items[0].saleAuthorization.version = 'pwt-sale-v6'; },
+    b => { b.counts = b.assetCounts[work]; }, b => { b.assetCounts[work] = b.counts; },
+    b => { b.bestWorkArb = { numerator: '1', denominator: '0' }; },
+  ]) {
+    const invalid = structuredClone(value); mutate(invalid.book);
+    assert.throws(() => api.assertMarketplaceBrowseResponse(invalid, version, req));
+  }
+  const exact = structuredClone(value);
+  Object.assign(exact.book, { query: id, totalCount: 1, hasMore: false, nextCursor: '' });
+  const lookup = { ...req, query: { ...tierQuery, q: id } };
+  assert.equal(api.assertMarketplaceBrowseResponse(exact, version, lookup), exact);
+  const wrong = hash('9');
+  exact.book.items[0].sealTxid = wrong;
+  exact.book.query = wrong;
+  assert.throws(() => api.assertMarketplaceBrowseResponse(exact, version, { ...req, query: { ...tierQuery, q: wrong } }));
 });
 
 test('rejects mismatched version, checkpoint, scope, query, ordering and page ranges', () => {
@@ -161,4 +207,61 @@ test('page transport pins the version, uses one bounded request, and forwards ca
   assert.equal(network, 'livenet');
   assert.equal(options.signal, controller.signal);
   assert.equal(result.book.totalCount, 26);
+});
+
+test('release verification distinguishes a closed larger List from activation at the declared checkpoint', async () => {
+  const { verifyAmoLiquidity } = await import('../../../scripts/check-amo-liquidity-live.mjs');
+  const { normalizeExpandedLiquidityPins } = await import('../../../server/work-amo-expanded-liquidity.mjs');
+  const { createAmoBrowseFixture } = await import('../../../tests/fixtures/amoBrowseFixture.mjs');
+  const height = 980000, snapshotId = 'local-amo-checkpoint';
+  const checkpoint = { indexedThroughBlock: height, indexedThroughBlockHash: blockHash, snapshotId };
+  const health = { ready: true, tipHeight: height, checks: { node: { bestBlockHash: blockHash }, index: {
+    summarySnapshot: { ok: true, blockHash, snapshotId, coverageByKey: Array(8).fill(height) },
+  } } };
+  const declaration = normalizeExpandedLiquidityPins({ txid: hash('a'), blockHeight: height - 2,
+    blockHash: hash('7'), blockTransactionIndex: 2, protocolVout: 1, registryPaymentVout: 0,
+    recordOrdinal: 0, firstEligibleBlockOffset: 0, firstEligibleTransactionIndex: 1 });
+  const v8 = { protocolReady: true, listingWritesEnabled: true, writeAdmission: true, settlementWritesEnabled: true,
+    tipHeight: height, tipHash: blockHash, activation: { tipVerified: true,
+      declaration: { txid: 'f90e1faf572ef8253ca5959731b9d9e99c74bced4397380059878936712bee7a' } },
+    estimates: { 25000: { unitFaceProofs: 25000 } }, workerReadiness: { ready: true }, pendingWitnessReady: true,
+    expandedLiquidity: { tipHeight: height, tipHash: blockHash, listingWritesEnabled: false, declaration: null,
+      replayReady: false, schemaReady: false, reasonCode: 'work-amo-expanded-liquidity-declaration-unavailable' } };
+  const source = { ...checkpoint, token: { tokens: [{ tokenId: work, ticker: 'WORK' }],
+    listings: [{ ...fixture().book.items[0], tokenId: work, saleAuthorization: { version: 'pwt-sale-v8', unitFaceProofs: 25000 } }] } };
+  const browse = createAmoBrowseFixture(() => source);
+  const read = async (_host, path) => {
+    if (path === '/health') return health;
+    if (path === `/api/v1/tx/${declaration.txid}/status?network=livenet`) return { network: 'livenet',
+      txid: declaration.txid, contract: 'proof-of-work-tx-status-v2', canonical: true, confirmed: true,
+      blockHeight: declaration.blockHeight, blockHash: declaration.blockHash };
+    const listingTxid = hash('9');
+    if (path.startsWith('/api/v1/log-history?')) return { ...checkpoint, items: [
+      { txid: listingTxid, kind: 'token-listing', confirmed: true, blockHash, unitFaceProofs: 250000,
+        amountSats: 6006, marketplaceMutationFeeSats: 6006, liquidityFeeSats: 5460 },
+    ] };
+    if (path.startsWith('/api/v1/search?')) return { coverage: { ready: true, checkpointHeight: height,
+      checkpointHash: blockHash }, results: [{ txid: listingTxid, kind: 'token-listing', source: { type: 'event' },
+      canonical: true, valid: true, amountSats: '6006', blockHash }] };
+    if (path.startsWith('/api/v1/marketplace-browse?')) return browse(new URL(path, 'https://fixture.invalid'));
+    assert.match(path, /^\/api\/v1\/(marketplace|work|growth|log)-summary\?network=livenet&fresh=1&compact=1$/u);
+    return { ...checkpoint, workAmoV8: v8 };
+  };
+  const closed = await verifyAmoLiquidity(read);
+  assert.equal(closed.expandedList, 'closed');
+  assert.equal(closed.books[250000].listingTxid, null);
+  await assert.rejects(verifyAmoLiquidity(read, declaration.txid), /List admission/);
+  Object.assign(v8.expandedLiquidity, { listingWritesEnabled: true, declaration, replayReady: true, schemaReady: true, reasonCode: '' });
+  v8.estimates[250000] = { unitFaceProofs: 250000 };
+  const expanded = { ...source.token.listings[0], listingId: hash('9'),
+    saleAuthorization: { version: 'pwt-sale-v8', unitFaceProofs: 250000 } };
+  source.token.listings.push(expanded);
+  const active = await verifyAmoLiquidity(read, declaration.txid);
+  assert.equal(active.expandedList, 'ready');
+  assert.equal(active.books[250000].listingTxid, expanded.listingId);
+  assert.equal(active.books[25000].listingTxid, id);
+  await assert.rejects(verifyAmoLiquidity(read), /List admission/);
+  await assert.rejects(verifyAmoLiquidity(read, hash('8')), /Expected values/);
+  v8.expandedLiquidity.tipHash = hash('0');
+  await assert.rejects(verifyAmoLiquidity(read, declaration.txid), /Expected values/);
 });

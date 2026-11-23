@@ -1,3 +1,8 @@
+import {
+  WORK_AMO_EXPANDED_FACE_PROOFS, WORK_AMO_LIQUIDITY_FEE_SATS, WORK_AMO_LIQUIDITY_FEE_ADDRESS,
+  workAmoExpandedListFeeOutput,
+} from "../src/shared/protocol/workAmoExpandedLiquidity.mjs";
+import { expandedLiquidityPositionEligible, normalizeExpandedLiquidityPins } from "./work-amo-expanded-liquidity.mjs";
 import { createHash } from "node:crypto";
 import * as bitcoin from "bitcoinjs-lib";
 import { verifyCodeTransaction } from "../src/shared/protocol/codeRepository.mjs";
@@ -3763,6 +3768,23 @@ function evaluateWorkPwt(record, context, parsed) {
       record,
       registry.outputs,
     );
+    let liquidityFeeVout = null;
+    if (v7Authorization && authorization.unitFaceProofs === WORK_AMO_EXPANDED_FACE_PROOFS) {
+      if (!expandedLiquidityPositionEligible(context.expandedLiquidity, record.position)) {
+        return invalidOutcome("work-amo-expanded-liquidity-declaration-unavailable", parsed, "token-listing");
+      }
+      liquidityFeeVout = workAmoExpandedListFeeOutput(rawOutputs(record), {
+        registryVout: registry.payment.registryPaymentVout, anchorVout: authorization.anchorVout,
+      });
+      if (liquidityFeeVout === null || !claimExactOutput(record, claimed, liquidityFeeVout)) {
+        return invalidOutcome("work-amo-expanded-liquidity-fee-invalid", parsed, "token-listing");
+      }
+      const liquidity = String(WORK_AMO_LIQUIDITY_FEE_SATS);
+      stateDelta.baseContributions.push({ field: "tokenMarketplaceFeeSats", value: liquidity });
+      stateDelta.creditFixedSats = (BigInt(stateDelta.creditFixedSats) + BigInt(liquidity)).toString();
+      stateDelta.economicOutputs.push({ address: WORK_AMO_LIQUIDITY_FEE_ADDRESS, vout: liquidityFeeVout,
+        attributedSats: liquidity, outputSats: liquidity, role: "pwt-liquidity-fee" });
+    }
     const hypothetical = applyEconomicDelta(
       context.economicState,
       stateDelta,
@@ -3770,6 +3792,7 @@ function evaluateWorkPwt(record, context, parsed) {
     );
     const derivedTerms = v7Authorization
       ? deriveWorkAmoV8FrozenTerms(authorization, {
+          expandedLiquidity: context.expandedLiquidity,
           activationHeight:
             context.workAmoV8.activationHeight,
           listingBondContributionQ8:
@@ -3832,6 +3855,7 @@ function evaluateWorkPwt(record, context, parsed) {
     };
     setWorkListing(workState, record.txid, listing);
     output = {
+      ...(liquidityFeeVout !== null ? { liquidityFeeVout, liquidityFeeSats: WORK_AMO_LIQUIDITY_FEE_SATS } : {}),
       frozenTerms: derivedTerms.frozenTerms,
       listing,
       workAmoPricing: derivedTerms,
@@ -5517,6 +5541,7 @@ function replayWorkAmoV5RawBlockInternal({
   referenceBlockWitnesses = [],
   workAmoV6 = null,
   workAmoV8 = null,
+  expandedLiquidity = null,
   workBatchV1 = null,
   workMailBatchV1 = null,
   inceptionHMinusOneWitness = null,
@@ -5531,6 +5556,10 @@ function replayWorkAmoV5RawBlockInternal({
     );
   }
   const requiredBlockHash = normalizedTxid(expectedBlockHash);
+  const expandedPins = normalizeExpandedLiquidityPins(expandedLiquidity);
+  const expandedContext = expandedPins && expandedLiquidityPositionEligible(expandedLiquidity, {
+    blockHeight: expectedBlockHeight, blockHash: requiredBlockHash, blockTransactionIndex: Number.MAX_SAFE_INTEGER,
+  }) ? expandedPins : null;
   const requiredPreviousBlockHash =
     normalizedTxid(expectedPreviousBlockHash);
   const requiredBlockHeight = exactSafeInteger(expectedBlockHeight, {
@@ -5763,6 +5792,7 @@ function replayWorkAmoV5RawBlockInternal({
     ...(v7Replay.commitment
       ? { workAmoV8: v7Replay.commitment }
       : {}),
+    ...(expandedContext ? { expandedLiquidity: expandedContext } : {}),
     ...(batchReplay.commitment
       ? { workBatchV1: batchReplay.commitment }
       : {}),
@@ -5795,6 +5825,7 @@ function replayWorkAmoV5RawBlockInternal({
           validPwaRecordCountsByTxid,
           workAmoV6: v6Replay.evaluation,
           workAmoV8: v7Replay.evaluation,
+          expandedLiquidity: expandedContext,
           workBatchV1: batchReplay.evaluation,
           workMailBatchV1: mailBatchReplay.evaluation,
           workAggregateRegistryGroupsByTxid,
@@ -6135,6 +6166,7 @@ function replayWorkAmoV5RawBlockInternal({
     ...(v7Replay.commitment
       ? { workAmoV8: v7Replay.commitment }
       : {}),
+    ...(expandedContext ? { expandedLiquidity: expandedContext } : {}),
     ...(batchReplay.commitment
       ? { workBatchV1: batchReplay.commitment }
       : {}),

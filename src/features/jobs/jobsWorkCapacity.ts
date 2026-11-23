@@ -1,5 +1,5 @@
 import { fetchProofApiJson } from "../../shared/api/proofApiClient";
-import { canonicalWorkCapacityAddress, requireCanonicalWorkCapacity } from "../../shared/work/canonicalWorkCapacity";
+import { canonicalWorkCapacityAddress, pendingWorkListingReserveForFace, requireCanonicalWorkCapacity } from "../../shared/work/canonicalWorkCapacity";
 import { readActionReceipts } from "../../shared/wallet/actionRecovery";
 import { JOBS_WORK_TOKEN_ID, normalizeJobReward } from "../../shared/protocol/jobs.mjs";
 import { workAtomsFromRecord, workSubatomsFromCanonicalString } from "../../workAmount";
@@ -95,6 +95,7 @@ export function jobsWorkCapacityFromPayload(value: unknown, walletAddress: strin
   const listings = [...active.values()];
   const activeIds = new Set(capacity.reservations.keys());
   let pendingReserved = 0n, unknownListingAmount = false;
+  const pendingFaces = new Map<string, unknown>();
   const anchors = new Map<string, { txid: string; vout: number }>();
   for (const row of listings) {
     if (row.tokenId !== JOBS_WORK_TOKEN_ID || address(row.sellerAddress) !== owner) continue;
@@ -111,13 +112,28 @@ export function jobsWorkCapacityFromPayload(value: unknown, walletAddress: strin
     if (capacity.reservations.has(listingId) || row.confirmed || !spendableAnchor(row) ||
         authorization.expiresAt && Date.parse(String(authorization.expiresAt)) <= nowMs) continue;
     if (authorization.version === "pwt-sale-v8") {
-      if (capacity.pendingListingReserve === undefined) unknownListingAmount = true;
-      else pendingReserved += capacity.pendingListingReserve;
+      pendingFaces.set(listingId, authorization.unitFaceProofs);
     } else {
       const amount = workAtomsFromRecord(row.amountAtoms, row.amount, row.amountSubatoms);
       if ((amount === null || amount <= 0n) && (object(row.estimate) && row.estimate.estimateOnly === true ||
           object(row.workAmoEstimate) && row.workAmoEstimate.estimateOnly === true)) unknownListingAmount = true;
       else pendingReserved += exactAmount(row);
+    }
+  }
+  if (pendingFaces.size) {
+    for (const rows of [value.listings, value.closedListings]) {
+      for (const row of rows) {
+        const id = String(row.listingId);
+        if (pendingFaces.has(id) && row.tokenId === JOBS_WORK_TOKEN_ID && !row.confirmed &&
+            address(row.sellerAddress) === owner && String(auth(row).unitFaceProofs) !== String(pendingFaces.get(id))) {
+          unknownListingAmount = true;
+        }
+      }
+    }
+    for (const face of pendingFaces.values()) {
+      const hold = pendingWorkListingReserveForFace(capacity, face);
+      if (hold === undefined) unknownListingAmount = true;
+      else pendingReserved += hold;
     }
   }
   const transfers = new Map<string, Row[]>();

@@ -1,3 +1,5 @@
+import { expandedLiquidityForReplay, expandedLiquidityPositionEligible, normalizeExpandedLiquidityPins } from "../server/work-amo-expanded-liquidity.mjs";
+import { WORK_AMO_LIQUIDITY_FEE_SATS } from "../src/shared/protocol/workAmoExpandedLiquidity.mjs";
 import * as actualWorkAmoV5 from "../server/work-amo-v5.mjs";
 import { WORK_Q16_PENDING_EVENT_PROTOCOLS } from "../server/work-q16-pending-projection.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -79,6 +81,7 @@ import {
 } from "../server/proof-index-mail-projection.mjs";
 import {
   compareProofIndexRegistryPayloads,
+  normalizeHistoryEventItem,
   rowsWithCanonicalMintPayments,
   rowsWithCanonicalTransferFees,
   workPrecisionV2CurrentPayloadIsExact,
@@ -138,6 +141,8 @@ import {
 } from "../server/work-amo-v8-worker-readiness.mjs";
 import {
   tokenListingCanProjectCloseActivity,
+  workListingFaceProofs,
+  workListingLiquidityPayment,
 } from "../server/token-listing-lifecycle.mjs";
 import {
   WORK_AMO_V4_AUTH_VERSION,
@@ -1450,6 +1455,10 @@ function isolatedFunction(path, name, globals = {}) {
     ID_MARKETPLACE_MUTATION_KINDS,
     MARKETPLACE_MUTATION_KINDS,
     TOKEN_MARKETPLACE_MUTATION_KINDS,
+    WORK_AMO_EXPANDED_FACE_PROOFS: 250_000,
+    WORK_AMO_V5_MIN_REGISTRY_PAYMENT_SATS: 546,
+    workListingFaceProofs,
+    workListingLiquidityPayment,
     addIntegerTexts,
     bondUnitsBigInt: scopedBondUnitsBigInt,
     canonicalIncbReplaySha256,
@@ -62974,6 +62983,14 @@ check("grouped proof-index deltas use one verified marketplace payment per trans
     },
   );
 
+  const expandedOpening = { ...baseRow, expanded_list: true, registry_address: registryAddress, expected_min_sats: "6006",
+    total_sats: "6006", payment_verified: true };
+  const expandedDelta = normalizeDeltaRows([expandedOpening, expandedOpening], "livenet");
+  assert.equal(expandedDelta.events.length, 1);
+  assert.equal(growthDeltaForProofIndexEvents(expandedDelta.events).tokenMarketplaceFeeSats, 6_006);
+  assert.equal(normalizeDeltaRows([{ ...expandedOpening, payment_verified: false },
+    { ...baseRow, payment_verified: true, registry_address: registryAddress, total_sats: "546" },
+  ], "livenet"), null);
   const delta = growthDeltaForProofIndexEvents(payload.events);
   assert.equal(delta.tokenMarketplaceFeeSats, 546);
   assert.equal(delta.marketplaceMutationFeeSats, 546);
@@ -71600,6 +71617,8 @@ check("AMO V5 raw replay executes ID, generic-token, and WORK buys atomically", 
     API_PATH,
     "completeWorkAmoV5BlockProjection",
     {
+      configuredExpandedLiquidityDeclaration: () => null,
+      expandedLiquidityForReplay,
       WORK_AMO_V5_ACTIVATION_HEIGHT,
       WORK_AMO_V5_BLOCK_SEQUENCER_MODEL,
       WORK_AMO_V5_RAW_BLOCK_DESCRIPTOR_MODEL,
@@ -74694,6 +74713,7 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     BACKFILL_PATH,
     "workAmoV6ReplayListingMaterialization",
     {
+      WORK_AMO_LIQUIDITY_FEE_SATS,
       WORK_AMO_V6_AUTH_VERSION,
       WORK_AMO_V8_AUTH_VERSION,
       WORK_DECIMALS,
@@ -74726,6 +74746,7 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     BACKFILL_PATH,
     "bindPreparedTransactionsToWorkAmoV5Replay",
     {
+      expandedLiquidityPositionEligible,
       invalidProtocolItem: (item, reason) => {
         const kind = String(item?.kind ?? "event").toLowerCase();
         return {
@@ -74762,6 +74783,8 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     actionPosition = position,
     actionTxid = listingId,
     buyerAddress = "",
+    expandedDeclaration = null,
+    openingFee = null,
     kind = "token-listing",
     listing = canonicalListing,
     listingField = "listing",
@@ -74803,6 +74826,7 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
         : {}),
     };
     const output = {
+      ...(openingFee ?? {}),
       ...(listingField === "closedListing"
         ? { closedListing: listing }
         : { frozenTerms: listing.frozenTerms, listing }),
@@ -74819,6 +74843,8 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
     const [boundTransaction] = bind(
       [{ items: [item], txid: actionTxid }],
       {
+        // The verified transition normalizer retains canonical evidence inside payload.
+        payload: { expandedLiquidity: expandedDeclaration },
         replayRecords: [{
           outcome: {
             kind: workAmoV5ConsensusEventKind("pwt1", true),
@@ -74862,6 +74888,27 @@ check("the first V6 listing crosses replay binding into atomic persistence witho
   assert.equal(persisted.priceSats, "20000");
   assert.equal(persisted.decimals, WORK_DECIMALS);
   assert.equal(persisted.unitScale, WORK_UNIT_SCALE_TEXT);
+  const expandedDeclaration = normalizeExpandedLiquidityPins({ txid: "aa".repeat(32),
+    blockHash: "bb".repeat(32), blockHeight: position.blockHeight - 1, blockTransactionIndex: 3,
+    protocolVout: 1, recordOrdinal: 0, registryPaymentVout: 0, firstEligibleBlockOffset: 1,
+    firstEligibleTransactionIndex: position.blockTransactionIndex });
+  const expandedAuthorization = { ...v8Authorization, unitFaceProofs: 250000 };
+  const expandedTerms = deriveWorkAmoV8FrozenTerms(expandedAuthorization, {
+    activationHeight: position.blockHeight - 1, expandedLiquidity: expandedDeclaration,
+    listingPosition: position, listingBondContributionQ8: "600600000000",
+    networkValueBeforeQ8: v8FrozenTerms.listingNetworkValueBeforeQ8, spendableAmountSubatoms: "210000000000000000000000",
+  }).frozenTerms;
+  const expandedListing = { ...v8CanonicalListing, saleAuthorization: expandedAuthorization,
+    amount: formatWorkSubatoms(expandedTerms.unitAmountSubatoms), amountAtoms: expandedTerms.unitAmountSubatoms,
+    amountSubatoms: expandedTerms.unitAmountSubatoms, frozenTerms: expandedTerms,
+    priceSats: expandedTerms.unitPriceSats, workAmoV8FrozenTerms: expandedTerms };
+  const expandedInput = { listing: expandedListing, sourceAuthorization: expandedAuthorization,
+    expandedDeclaration, openingFee: { liquidityFeeVout: 3, liquidityFeeSats: 5460 } };
+  const expandedBound = bindLifecycleItem(expandedInput);
+  assert.equal(expandedBound.marketplaceMutationFeeSats, 6006);
+  assert.equal(expandedBound.amountSats, 6006);
+  assert.equal(expandedBound.expandedLiquidityDeclaration.txid, expandedDeclaration.txid);
+  assert.throws(() => bindLifecycleItem({ ...expandedInput, expandedDeclaration: null }), /position-bound declaration/);
   const boundV8Item = bindLifecycleItem({
     listing: v8CanonicalListing,
     sourceAuthorization: v8Authorization,
@@ -82399,6 +82446,37 @@ check("token state activity preserves every event-specific canonical tuple", () 
     },
     "token-index",
   );
+  for (const face of [25_000, 250_000]) {
+    const expanded = face === 250_000;
+    const authorization = { version: "pwt-sale-v8", unitFaceProofs: face };
+    const terms = { tokenId: WORK_TOKEN_ID, ticker: "WORK", saleAuthorization: authorization, priceSats: face };
+    const fees = expanded ? { liquidityFeeSats: 5_460, liquidityFeeVout: 3 } : {};
+    const current = { ...listing, ...terms, ...fees, saleTicketValueSats: 546 };
+    const currentSale = { ...sale, ...terms, listingId: listing.listingId, paidSats: face + 2 * 546 };
+    const projected = tokenActivityItemsFromState({ listings: [current], sales: [currentSale] }, "token-index");
+    const opening = projected.find(item => item.kind === "token-listing");
+    const sealing = projected.find(item => item.kind === "token-listing-sealed");
+    const settlement = projected.find(item => item.kind === "token-sale");
+    assert.equal(opening.unitFaceProofs, face);
+    assert.equal(opening.amountSats, expanded ? 6006 : 546);
+    assert.equal(opening.marketplaceMutationFeeSats, opening.amountSats);
+    assert.equal(opening.liquidityFeeSats, fees.liquidityFeeSats);
+    assert.equal(sealing.unitFaceProofs, face);
+    assert.equal(sealing.marketplaceMutationFeeSats, 546);
+    assert.equal(sealing.liquidityFeeSats, undefined);
+    assert.equal(settlement.salePaymentSats, face);
+    const log = normalizeHistoryEventItem({ ...opening, ...terms, valid: true, status: "confirmed" }, "livenet");
+    assert.equal(log.unitFaceProofs, face);
+    assert.ok(log.tags.includes(`${face.toLocaleString("en-US")}-proof tier`));
+    assert.equal(log.tags.includes("5,460 liquidity fee proofs"), expanded);
+    assert.equal(settlement.unitFaceProofs, face);
+    assert.equal(settlement.liquidityFeeSats, undefined);
+    if (expanded) {
+      assert.equal(settlement.amountSats, face);
+      assert.throws(() => workListingLiquidityPayment({ ...current, liquidityFeeVout: 2 }), /verified liquidity fee/);
+      assert.throws(() => workListingLiquidityPayment({ ...current, liquidityFeeSats: undefined }), /verified liquidity fee/);
+    }
+  }
   const byKind = new Map(activity.map((item) => [item.kind, item]));
   const tuple = (item) => ({
     blockHash: item?.blockHash,

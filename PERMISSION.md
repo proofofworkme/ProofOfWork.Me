@@ -90,7 +90,12 @@ an empty array permits only self payments; a list permits those addresses plus
 self/change. WORK actions additionally require explicit `workLimits`:
 `maxAmountSubatoms`, `minSaleProofs`, `maxPurchaseProofs`, and `maxOpenListings`.
 A null WORK policy denies asset operations even when an action is listed.
-WORK uses its canonical asset ID; other AMO assets are outside v1.
+WORK uses its canonical asset ID. Permission v1 AMO actions cover WORK only. The 250,000-proof List uses the same
+`amo.listwork` grant checks as the original face. Its review and spending
+limits include the distinct 5,460-sat liquidity payment. Both faces retain the
+546-sat registry payment, the seller-controlled ticket and the separate Seal
+authorization and publication. The grant's amount, sale-price, purchase,
+open-listing, spending and fee limits continue to apply.
 
 Replacement metadata adds `grant` and `parent` TXIDs before `label` and `policy`.
 Revocation contains only `v`, `network`, `grant`, and `parent`. Versions 1 and 2

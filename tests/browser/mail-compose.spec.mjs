@@ -1064,6 +1064,7 @@ function workFloor(mode) {
             reached: true,
             tipVerified: true,
           },
+          ...(mode === "expanded" ? { expandedLiquidity: { listingWritesEnabled: true } } : {}),
           legacyWriteEmbargo: true,
           listingWritesEnabled: !paused,
           pinsConfigured: true,
@@ -2365,19 +2366,35 @@ test("wallet keeps remaining WORK and a second listing available while the first
   const form = page.locator("#wallet-list");
   await expect(form.getByText("75,000.0000000000000000 WORK", { exact: true })).toBeVisible();
   await expect(form.getByRole("button", { name: "Create 25,000 proofs AMO intent" })).toBeEnabled();
+  await form.getByRole("button", { name: "250,000 proofs", exact: true }).click();
+  await expect(form.getByRole("button", { name: "Create 250,000 proofs AMO intent" })).toBeDisabled();
+  await expect(form.getByText(/waiting for verified declaration/)).toBeVisible();
+  await form.getByRole("button", { name: "25,000 proofs", exact: true }).click();
+  await expect(form.getByRole("button", { name: "Create 25,000 proofs AMO intent" })).toBeEnabled();
   await expect(page.getByText(/Additional WORK spending stays paused/)).toHaveCount(0);
   expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
 });
 
 test("Computer Wallet preserves remaining WORK with a pending V8 listing", async ({ page }) => {
   await installWallet(page);
-  await installApiFixtures(page, { pendingV8Listing: true });
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.locator(".onboarding-pane").getByRole("button", { name: "Connect UniSat" }).click();
-  await page.locator(".sidebar").getByRole("button", { name: /^Wallet/u }).click();
+  await installMarketPublicKey(page);
+  await installApiFixtures(page, { pendingV8Listing: true, mode: "expanded", walletBalanceSubatoms: "10000000000000000000000" });
+  await openBatchWalletSurface(page, "computer");
   const form = page.locator("#wallet-list");
-  await expect(form.getByText("75,000.0000000000000000 WORK", { exact: true })).toBeVisible();
+  await expect(form.getByText("975,000.0000000000000000 WORK", { exact: true })).toBeVisible();
   await expect(form.getByRole("button", { name: "Create 25,000 proofs AMO intent" })).toBeEnabled();
+  await form.getByRole("button", { name: "250,000 proofs", exact: true }).click();
+  await form.getByRole("button", { name: "Create 250,000 proofs AMO intent" }).click();
+  const review = page.getByRole("dialog", { name: "Review marketplace listing intent" });
+  await expect(review).toBeVisible();
+  const payments = review.getByRole("listitem");
+  await expect(payments.filter({ hasText: "Listing registry fee" })).toContainText("546 proofs");
+  await expect(payments.filter({ hasText: "Seller-controlled ticket locked" })).toContainText("546 proofs");
+  const liquidity = payments.filter({ hasText: "Liquidity fee" });
+  await expect(liquidity).toContainText("1GrrXUmBftWhGCF7XfVUQENY8Js6vUiueR");
+  await expect(liquidity).toContainText("5460 proofs");
+  await expect(review.getByText("Miner fee", { exact: true })).toBeVisible();
+  await review.getByRole("button", { name: "Back to task" }).click();
   expect(await page.evaluate(() => window.__mailComposeFixture.signCalls)).toBe(0);
 });
 

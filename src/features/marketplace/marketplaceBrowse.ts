@@ -2,10 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { fetchProofApiJson, ProofApiRequestError } from "../../shared/api/proofApiClient";
 import { listingDisplayProjectionFingerprint } from "../../shared/api/surfaceReadState";
 import { createVisibleReadLoop, waitForDisplayRead } from "../../shared/api/useVisibleReadLoop";
+import { WORK_BATCH_TOKEN_ID } from "../../shared/protocol/workBatch.mjs";
+import { WORK_AMO_FACE_PROOFS } from "../../shared/protocol/workAmoExpandedLiquidity.mjs";
+import { workAmoBookFace, workAmoBookLookupId, type WorkBookFace } from "../../shared/protocol/workAmoBookFace.mjs";
 
 export type BrowseCounts = { all: number; sealed: number; unsealed: number };
 export type MarketplaceBrowseQuery = {
   asset: string;
+  unitFaceProofs?: WorkBookFace;
   status: "all" | "sealed" | "unsealed";
   q: string;
   sort: "price-asc" | "price-desc" | "arb-asc" | "arb-desc";
@@ -28,6 +32,9 @@ export type MarketplaceBrowseResponse<T = unknown, S = unknown> = {
     totalCount: number;
     counts: BrowseCounts;
     assetCounts: Record<string, BrowseCounts>;
+    workFaceCounts?: Record<WorkBookFace, BrowseCounts>;
+    bestWorkArb?: { numerator: string; denominator: string } | null;
+    unitFaceProofs?: WorkBookFace;
     hasMore: boolean;
     nextCursor: string | null;
     limit: number;
@@ -41,7 +48,7 @@ export type MarketplaceBrowseResponse<T = unknown, S = unknown> = {
 };
 
 export function browseQueryKey(query: MarketplaceBrowseQuery) {
-  return JSON.stringify([query.asset, query.status, query.q.trim().toLowerCase(), query.sort]);
+  return JSON.stringify([query.asset, query.unitFaceProofs, query.status, query.q.trim().toLowerCase(), query.sort]);
 }
 
 /** Display evidence is deliberately separate from current signing authority. */
@@ -54,6 +61,9 @@ export function assertMarketplaceBrowseResponse<T, S>(
   const validCounts = (counts: BrowseCounts | undefined) => counts &&
     validCount(counts.all) && validCount(counts.sealed) && validCount(counts.unsealed) &&
     counts.sealed + counts.unsealed === counts.all;
+  const face = payload?.book?.unitFaceProofs;
+  const faceCounts = payload?.book?.workFaceCounts;
+  const best = payload?.book?.bestWorkArb;
   if (payload?.contract !== "proof-amo-browse-v1" || payload.displayOnly !== true || payload.network !== "livenet" ||
       payload.provenance?.displayOnly !== true || payload.provenance.authoritative !== false ||
       payload.provenance.completeAtObservation !== true || payload.provenance.signingRequiresFreshPreflight !== true ||
@@ -65,6 +75,7 @@ export function assertMarketplaceBrowseResponse<T, S>(
       (expected?.checkpoint && (payload.checkpoint.height !== expected.checkpoint.height ||
         payload.checkpoint.blockHash !== expected.checkpoint.blockHash)) ||
       (expected?.query && (payload.book.asset !== expected.query.asset || payload.book.status !== expected.query.status ||
+        face !== expected.query.unitFaceProofs ||
         payload.book.sort !== expected.query.sort || payload.book.query !== expected.query.q.trim().toLowerCase())) ||
       !validCount(payload.book?.start) || payload.book.end !== payload.book.start + payload.book.items?.length ||
       payload.book.end > payload.book.totalCount ||
@@ -81,11 +92,29 @@ export function assertMarketplaceBrowseResponse<T, S>(
       Boolean(payload.book.nextCursor) !== payload.book.hasMore) {
     throw new Error("The AMO display snapshot could not be verified.");
   }
+  const keys = ["all", "sealed", "unsealed"] as const;
+  if ((best != null && (typeof best.numerator !== "string" || typeof best.denominator !== "string" ||
+        !/^-?(0|[1-9]\d{0,239})$/u.test(best.numerator) || !/^[1-9]\d{0,239}$/u.test(best.denominator))) ||
+      (faceCounts && (WORK_AMO_FACE_PROOFS.some((tier) => !validCounts(faceCounts[tier])) ||
+        keys.some((key) => WORK_AMO_FACE_PROOFS.reduce((sum, tier) => sum + faceCounts[tier][key], 0) >
+          (payload.book.assetCounts[WORK_BATCH_TOKEN_ID]?.[key] ?? 0)))) ||
+      (face !== undefined && (!WORK_AMO_FACE_PROOFS.includes(face) || !faceCounts ||
+        ![WORK_BATCH_TOKEN_ID, "work"].includes(payload.book.asset) ||
+        !keys.some((key) => key === payload.book.status) ||
+        keys.some((key) => faceCounts[face][key] !== payload.book.counts[key]) ||
+        (!payload.book.query && payload.book.totalCount !== payload.book.counts[payload.book.status as keyof BrowseCounts]) ||
+        payload.book.totalCount > payload.book.counts[payload.book.status as keyof BrowseCounts]))) {
+    throw new Error("The WORK book scope or counts could not be verified.");
+  }
   const items = payload.book.items as Array<{ network?: string; confirmed?: boolean; tokenId?: string; listingId?: string;
     displayEvidence?: { model?: unknown; fullRecordSha256?: unknown; omittedFields?: unknown; fullDetailPath?: unknown } }>;
-  if (new Set(items.map((item) => item.listingId)).size !== items.length || items.some((item) =>
+  const exactListingId = face !== undefined ? workAmoBookLookupId(payload.book.query) : undefined;
+  if ((exactListingId && payload.book.totalCount > 1) ||
+      new Set(items.map((item) => item.listingId)).size !== items.length || items.some((item) =>
     item.network !== "livenet" || item.confirmed !== true || !/^[0-9a-f]{64}$/u.test(item.listingId ?? "") ||
     !/^[0-9a-f]{64}$/u.test(item.tokenId ?? "") ||
+    (exactListingId !== undefined && item.listingId !== exactListingId) ||
+    (face !== undefined && (item.tokenId !== WORK_BATCH_TOKEN_ID || workAmoBookFace(item) !== face)) ||
     (/^[0-9a-f]{64}$/u.test(payload.book.asset) && item.tokenId !== payload.book.asset))) {
     throw new Error("The AMO display page contains invalid or mismatched listings.");
   }
@@ -112,6 +141,7 @@ export async function fetchMarketplaceBrowse<T = unknown, S = unknown>(options: 
     limit: String(options.limit ?? 25), includeSummary: options.includeSummary === false ? "0" : "1",
   });
   if (options.cursor) params.set("cursor", options.cursor);
+  if (query.unitFaceProofs !== undefined) params.set("unitFaceProofs", String(query.unitFaceProofs));
   if (options.version) params.set("version", options.version);
   if (options.refresh) params.set("refresh", "1");
   return assertMarketplaceBrowseResponse(await fetchProofApiJson<MarketplaceBrowseResponse<T, S>>(
@@ -195,7 +225,8 @@ export function useMarketplaceBrowse<T>(options: {
     });
     return () => { current = false; stop(); };
   }, [enabled, queryKey, version, cursor, pageIndex, refreshNonce, retry]);
-  const visiblePage = enabled && page?.asset === query.asset ? page : undefined;
+  const visiblePage = enabled && page?.asset === query.asset &&
+    page.response.book.unitFaceProofs === query.unitFaceProofs ? page : undefined;
   const matches = Boolean(visiblePage && visiblePage.queryKey === queryKey &&
     visiblePage.pageIndex === pageIndex && (!version || visiblePage.response.version === version));
   const goToPage = (nextIndex: number) => {

@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { setImmediate as yieldToIo } from "node:timers/promises";
+import { WORK_AMO_FACE_PROOFS } from "../src/shared/protocol/workAmoExpandedLiquidity.mjs";
+import { workAmoBookFace, workAmoBookLookupId } from "../src/shared/protocol/workAmoBookFace.mjs";
 
 // A display read model. Nothing in this module is transaction admission evidence.
 export const AMO_BROWSE_CONTRACT = "proof-amo-browse-v1";
@@ -52,7 +54,7 @@ function listingMetrics(item, summary, definitions, assets, sealed) {
     : decimal(definition?.lastSalePricePerToken) ?? decimal(definition?.pricePerToken) ??
       (mintPrice !== null && mintPrice > 0n && mintAmount !== null && mintAmount > 0n
         ? { numerator: mintPrice, denominator: mintAmount } : null);
-  const frozen = item.workAmoFrozenTerms ?? item.frozenTerms;
+  const frozen = item.workAmoFrozenTerms ?? item.frozenTerms ?? item.workAmoV8FrozenTerms ?? item.listingFrozenTerms;
   const frozenMatches = !work || (item.confirmed === true && frozen?.version === "pwt-sale-v8" &&
     integer(frozen.unitAmountSubatoms) === amount && integer(frozen.unitPriceSats) === price);
   const arb = sealed && frozenMatches && reference && amount !== null && amount > 0n && price !== null && price > 0n
@@ -105,6 +107,7 @@ function displayWorkStatus(value) {
     ...value, displayOnly: true, ready: false, protocolReady: false, writeAdmission: false,
     protocolWritesEnabled: false, listingWritesEnabled: false, settlementWritesEnabled: false,
     reasonCode: "amo-browse-display-requires-fresh-preflight",
+    ...(value.expandedLiquidity ? { expandedLiquidity: { ...value.expandedLiquidity, listingWritesEnabled: false } } : {}),
     ...(value.activation ? { activation: { ...value.activation, tipVerified: false } } : {}),
   };
 }
@@ -277,6 +280,7 @@ export function createAmoBrowseSnapshotStore({
     const summary = copyJson(compactAmoBrowseSummary(boundedSummary, candidate.book.items, isSealed), budget);
     const definitions = new Map((summary.token?.tokens ?? []).map((item) => [item.tokenId, item]));
     const assetCounts = Object.create(null);
+    const workFaceCounts = Object.fromEntries(WORK_AMO_FACE_PROOFS.map((face) => [face, counts()]));
     for (const id of definitions.keys()) assetCounts[id] = counts();
     const entries = [];
     let deadline = performance.now() + 4;
@@ -288,7 +292,12 @@ export function createAmoBrowseSnapshotStore({
       const searchable = JSON.stringify([item, definition?.ticker, definition?.name]).toLowerCase();
       budget.bytes += Buffer.byteLength(searchable);
       if (budget.bytes > maxBytes) throw new Error("AMO browse snapshot exceeds its search budget.");
-      entries.push({ item, sealed, searchable, ...metrics, time: Date.parse(item.createdAt) || 0 });
+      const workFace = item.tokenId === assets.work ? workAmoBookFace(item) : undefined;
+      entries.push({ item, sealed, workFace, searchable, ...metrics, time: Date.parse(item.createdAt) || 0 });
+      if (workFace !== undefined) {
+        workFaceCounts[workFace].all += 1;
+        workFaceCounts[workFace][sealed ? "sealed" : "unsealed"] += 1;
+      }
       const total = assetCounts[item.tokenId] ??= counts();
       total.all += 1;
       total[sealed ? "sealed" : "unsealed"] += 1;
@@ -317,11 +326,16 @@ export function createAmoBrowseSnapshotStore({
       protocolMembershipSha256: candidate.book.listingProjection.membershipSha256,
       checkedOutpointsSha256: candidate.book.listingAuthority.checkedOutpointsSha256,
     }, budget);
+    const bestWorkArb = ordered.get("arb-desc").find((entry) => entry.workFace && entry.arb)?.arb;
     return {
       version: jsonHash([incarnation, source, candidate.observedAt, ++generation]),
       observedMs, observedAt: new Date(observedMs).toISOString(), summary, source,
       checkpoint: copyJson(candidate.checkpoint, budget), entries, ordered,
       assetCounts: copyJson(assetCounts, budget),
+      workFaceCounts: copyJson(workFaceCounts, budget),
+      bestWorkArb: bestWorkArb ? Object.freeze({
+        numerator: bestWorkArb.numerator.toString(), denominator: bestWorkArb.denominator.toString(),
+      }) : null,
       itemProjection: copyJson(candidate.book.itemProjection, budget),
     };
   }
@@ -403,13 +417,17 @@ export function createAmoBrowseSnapshotStore({
     const status = lower(params.get("status") || "all");
     const sort = lower(params.get("sort") || "arb-desc");
     const q = lower(params.get("q"));
+    const faceText = params.get("unitFaceProofs");
+    const workFace = WORK_AMO_FACE_PROOFS.find((face) => String(face) === faceText);
     const limit = Number(params.get("limit") || 25);
     if (!(asset === "all" || asset === "credits" || Object.hasOwn(assets, asset) || HASH.test(asset)) ||
+        (faceText !== null && (!workFace || (asset !== assets.work && asset !== "work") ||
+          params.getAll("unitFaceProofs").length !== 1)) ||
         !["all", "sealed", "unsealed"].includes(status) || !SORTS.includes(sort) || q.length > 512 ||
         !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || params.has("page") || params.has("offset")) {
       throw fail(400, "AMO_BROWSE_REQUEST_INVALID", "Invalid AMO browse scope, filter, sort or page size.");
     }
-    const fingerprint = jsonHash([asset, status, sort, q, limit]);
+    const fingerprint = jsonHash([asset, status, sort, q, limit, ...(workFace ? [workFace] : [])]);
     let cursor = null;
     if (params.get("cursor")) {
       try {
@@ -433,12 +451,15 @@ export function createAmoBrowseSnapshotStore({
     }
     const scopeToken = assets[asset] ?? asset;
     const scopeMatches = (id) => asset === "all" || (asset === "credits" ? id !== assets.powb && id !== assets.incb : id === scopeToken);
-    const scopeCounts = counts();
-    for (const [id, values] of Object.entries(snapshot.assetCounts)) if (scopeMatches(id)) {
+    const scopeCounts = workFace ? snapshot.workFaceCounts[workFace] : counts();
+    for (const [id, values] of Object.entries(snapshot.assetCounts)) if (!workFace && scopeMatches(id)) {
       for (const key of Object.keys(scopeCounts)) scopeCounts[key] += values[key];
     }
+    const listingId = workFace ? workAmoBookLookupId(q) : undefined;
     const filtered = snapshot.ordered.get(sort).filter((entry) => scopeMatches(entry.item.tokenId) &&
-      (status === "all" || (status === "sealed") === entry.sealed) && (!q || entry.searchable.includes(q)));
+      (!workFace || workFace === entry.workFace) &&
+      (status === "all" || (status === "sealed") === entry.sealed) &&
+      (listingId ? entry.item.listingId === listingId : !q || entry.searchable.includes(q)));
     const offset = cursor?.offset ?? 0;
     if (cursor && (offset >= filtered.length || filtered[offset - 1]?.item.listingId !== cursor.last)) {
       throw fail(409, "AMO_BROWSE_CURSOR_CONFLICT", "AMO browse continuation has an invalid boundary.");
@@ -458,8 +479,9 @@ export function createAmoBrowseSnapshotStore({
       book: { items, totalCount: filtered.length, counts: scopeCounts, assetCounts: snapshot.assetCounts,
         itemProjection: snapshot.itemProjection,
         hasMore, nextCursor, limit, start: offset, end, page: Math.floor(offset / limit),
-        asset, status, sort, query: q },
-      query: { asset, status, q, sort },
+        workFaceCounts: snapshot.workFaceCounts, bestWorkArb: snapshot.bestWorkArb,
+        asset, status, sort, query: q, ...(workFace && { unitFaceProofs: workFace }) },
+      query: { asset, status, q, sort, ...(workFace && { unitFaceProofs: workFace }) },
       provenance: {
         displayOnly: true, authoritative: false, completeAtObservation: true,
         observedAt: snapshot.observedAt, ageMs: Math.max(0, now() - snapshot.observedMs), maxAgeMs,

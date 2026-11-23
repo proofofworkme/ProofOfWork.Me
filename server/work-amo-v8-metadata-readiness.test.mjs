@@ -148,6 +148,7 @@ function harness(options = {}) {
       return { checked: true, declaration: state.noDeclaration ? null : DECLARATION };
     },
     canonicalWorkMarketOracleNetworkValueQ8: () => "123",
+    expandedLiquidityMetadata: async () => ({ listingWritesEnabled: false }),
     workAmoV8Estimates: () => ({}),
     workAmoV8PersistentDeclarationEvidence: () => null,
     workAmoV8StatusFromEvidence: ({ evidence, indexedThroughBlock, precisionMigrationReady }) => ({

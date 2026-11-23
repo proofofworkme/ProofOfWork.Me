@@ -1,4 +1,5 @@
 import { assertNoUnresolvedWorkBatch } from "./workBatchRecovery";
+import { WORK_AMO_FACE_PROOFS } from "../protocol/workAmoExpandedLiquidity.mjs";
 
 export type CanonicalWorkCapacity = {
   model: "canonical-work-wallet-capacity-v1";
@@ -23,6 +24,20 @@ export function canonicalWorkCapacityAddress(address: string) {
     (value === value.toLowerCase() || value === value.toUpperCase())
     ? value.toLowerCase()
     : value;
+}
+
+// The closing Q8 network value is bound to the canonical receipt. Derive each
+// face before rounding, including when the historical 25k bound was clamped.
+export function pendingWorkListingReserveForFace(
+  capacity: { pendingListingNetworkValueQ8?: bigint } | undefined,
+  face: unknown,
+) {
+  const networkValue = capacity?.pendingListingNetworkValueQ8;
+  const allowedFace = WORK_AMO_FACE_PROOFS.find(value => face === value || face === String(value));
+  if (!allowedFace || !networkValue || networkValue <= 0n) return undefined;
+  const supply = 21000000n * 10000000000000000n;
+  const amount = BigInt(allowedFace) * supply * 100000000n / networkValue;
+  return amount > supply ? supply : amount > 0n ? amount : 1n;
 }
 
 export function requireCanonicalWorkCapacity(
@@ -83,17 +98,15 @@ export function requireCanonicalWorkCapacity(
   if (confirmed !== expected.confirmedBalanceSubatoms || reserved !== reservationTotal ||
       reserved > confirmed || confirmed - reserved !== transferable) return unavailable();
   let pendingListingReserve: bigint | undefined;
+  let pendingListingNetworkValueQ8: bigint | undefined;
   if (capacity.pendingListingNetworkValueQ8 !== undefined ||
       capacity.pendingListingReserveSubatoms !== undefined) {
-    const networkValue = units(capacity.pendingListingNetworkValueQ8);
-    if (networkValue <= 0n) return unavailable();
-    const supply = 21000000n * 10000000000000000n;
-    const amount = 25000n * supply * 100000000n / networkValue;
-    const bound = amount > supply ? supply : amount > 0n ? amount : 1n;
+    pendingListingNetworkValueQ8 = units(capacity.pendingListingNetworkValueQ8);
+    const bound = pendingWorkListingReserveForFace({ pendingListingNetworkValueQ8 }, 25000);
     pendingListingReserve = units(capacity.pendingListingReserveSubatoms);
     if (pendingListingReserve !== bound) return unavailable();
   }
   // The server binds this receipt to canonical replay. The client checks its
   // scope and exact arithmetic; it does not re-hash the full token-state preimage.
-  return { confirmed, reserved, transferable, reservations, pendingListingReserve };
+  return { confirmed, reserved, transferable, reservations, pendingListingReserve, pendingListingNetworkValueQ8 };
 }

@@ -10,12 +10,19 @@ import {
 import {
   WORK_AMO_V8_AUTH_VERSION,
   WORK_AMO_V8_MODELS,
-  deriveWorkAmoV8FrozenTerms,
+  deriveWorkAmoV8FrozenTerms, validateWorkAmoV8StaticAuthorization, workAmoV8UnitTerms,
   workAmoV8BroadcastDecision,
 } from "../server/work-amo-v8.mjs";
 import {
   WORK_TOKEN_ID,
 } from "../server/work-units.mjs";
+
+import {
+  WORK_AMO_EXPANDED_FACE_PROOFS, WORK_AMO_LIQUIDITY_FEE_SATS, WORK_AMO_LISTING_REGISTRY_SCRIPT,
+  WORK_AMO_LIQUIDITY_FEE_SCRIPT, workAmoExpandedListFeeOutput,
+} from "../src/shared/protocol/workAmoExpandedLiquidity.mjs";
+
+import { expandedLiquidityTransitionMatches, normalizeExpandedLiquidityPins } from "../server/work-amo-expanded-liquidity.mjs";
 
 const apiSource = readFileSync("server/proof-api.mjs", "utf8");
 const backfillSource = readFileSync(
@@ -336,6 +343,89 @@ function v8MarketplaceActionFixture(action, overrides = {}) {
     tokenProtocolMessageCount: 1,
     ...overrides,
   };
+}
+
+{
+  const auth = { ...v8SaleAuthorizationFixture(), unitFaceProofs: WORK_AMO_EXPANDED_FACE_PROOFS };
+  const list = v8MarketplaceActionFixture("list5", { saleAuthorization: auth, expandedLiquidityFeeValid: true });
+  const transact = async (actions, enabled) => {
+    const { assertWorkMarketplaceBroadcastAllowed, transaction } = broadcastAdmissionFixture({
+      actions, metadataOverrides: { expandedLiquidity: { listingWritesEnabled: enabled } },
+    });
+    return assertWorkMarketplaceBroadcastAllowed(transaction(546, ["pwt1:list5:work"]), "livenet");
+  };
+  await assert.rejects(transact([list], false), error => error.statusCode === 503);
+  await assert.rejects(transact([{ ...list, expandedLiquidityFeeValid: false }], true), error => error.statusCode === 400);
+  await assert.doesNotReject(transact([list], true));
+  await assert.doesNotReject(transact([v8MarketplaceActionFixture("list5")], false));
+
+  const pending = isolatedFunctions(apiSource, ["expandedLiquidityFeeVout", "pendingWorkMarketListingFromRecord"], {
+    WORK_AMO_EXPANDED_FACE_PROOFS, WORK_AMO_LIQUIDITY_FEE_SATS, WORK_AMO_LISTING_REGISTRY_SCRIPT,
+    WORK_TOKEN_ID, WORK_TOKEN_DEFAULT_REGISTRY_ADDRESS: auth.registryAddress, WORK_TOKEN_TICKER: "WORK",
+    TOKEN_MIN_MUTATION_PRICE_SATS: 546, TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION: WORK_AMO_V8_AUTH_VERSION,
+    parseTokenPayload: saleAuthorization => ({ kind: "list", saleAuthorization }),
+    workAmoExpandedListFeeOutput, validateWorkAmoV8StaticAuthorization,
+    canonicalNonNegativeIntegerText: String, samePaymentAddress: (a, b) => a === b,
+    pendingWorkMarketInvalidEvent: item => item,
+    tokenPaymentAmountBeforeProtocol: outputs => outputs[0].value,
+    tokenListingAnchorIsPresent: (outputs, value) => outputs[2]?.scriptpubkey === value.anchorScriptPubKey &&
+      outputs[2].value === value.anchorValueSats,
+  }).pendingWorkMarketListingFromRecord;
+  const outputs = [{ scriptpubkey: WORK_AMO_LISTING_REGISTRY_SCRIPT, value: 546 }, { value: 0 },
+    { scriptpubkey: auth.anchorScriptPubKey, value: 546 }, { scriptpubkey: WORK_AMO_LIQUIDITY_FEE_SCRIPT, value: 5460 }];
+  const project = (message, vout, verified) => pending({ message, tx: { vout }, expandedCheckpoint: { verified },
+    protocolVout: 1, recordOrdinal: 0, actorAddress: auth.sellerAddress, network: "livenet", txid: "ab".repeat(32) });
+  const pendingLarge = project(auth, outputs, true).listing;
+  assert.equal(pendingLarge.liquidityFeeVout, 3);
+  assert.equal(pendingLarge.liquidityFeeSats, 5460);
+  assert.equal(pendingLarge.frozenTerms, undefined);
+  assert.equal(project(auth, outputs, false).listing.declarationVerificationPending, true);
+  assert.equal(project(auth, outputs, false).listing.workMarketPricing.valid, null);
+  assert.equal(project(auth, outputs.slice(0, 3), true).invalidEvent.reasonCode, "work-amo-expanded-liquidity-fee-invalid");
+  assert.equal(project(v8SaleAuthorizationFixture(), outputs.slice(0, 3), false).listing.unitFaceProofs, 25000);
+  const tip = { height: 1001, blockHash: "c1".repeat(32) };
+  const pins = normalizeExpandedLiquidityPins({ txid: "11".repeat(32), blockHeight: 1000, blockHash: "aa".repeat(32),
+    blockTransactionIndex: 2, protocolVout: 1, registryPaymentVout: 0, recordOrdinal: 0,
+    firstEligibleBlockOffset: 1, firstEligibleTransactionIndex: 0 });
+  const inherited = { blockHeight: tip.height, blockHash: tip.blockHash, payload: { blockHeight: tip.height,
+    blockHash: tip.blockHash, network: "livenet", blockAtomic: true, invalidZero: true, complete: true, feeOnce: true,
+    expandedLiquidity: pins, closingNetworkValueQ8: "100000000000000000000000000000",
+    transitionChainCommitment: { model: "canonical-work-amo-raw-transition-chain-sha256-v1", sha256: "de".repeat(32) } } };
+  let canonicalTip = tip;
+  const pendingCheckpoint = isolatedFunctions(apiSource, ["pendingExpandedLiquidityCheckpoint"], {
+    normalizeExpandedLiquidityPins, expandedLiquidityTransitionMatches, configuredExpandedLiquidityDeclaration: () => null,
+    canonicalNonNegativeIntegerText: String, proofIndexWorkAmoBlockTransition: async () => inherited,
+    bitcoinRpc: async () => canonicalTip, exactCoreTipFromBlockchainInfo: value => value,
+  }).pendingExpandedLiquidityCheckpoint;
+  const proof = await pendingCheckpoint("livenet", tip);
+  assert.equal(proof.verified, true);
+  canonicalTip = { ...tip, blockHash: "ef".repeat(32) };
+  const uncertain = await pendingCheckpoint("livenet", tip);
+  assert.equal(uncertain.verified, false);
+  assert.equal(uncertain.beforeBoundary, false);
+
+  const record = { mempoolCreatedAt: "2026-01-01T00:00:00Z", txid: pendingLarge.txid,
+    records: [{ protocol: "pwt1", rawDecodeValid: true, message: "pwt1:list5:fixture", protocolVout: 1, recordOrdinal: 0 }],
+    transaction: { vin: [{}], vout: outputs } };
+  const hold = isolatedFunctions(apiSource, ["stagedExpandedLiquidityHold"], {
+    WORK_TOKEN_ID, inputAddresses: () => [auth.sellerAddress], proofProtocolDataBytesForVout: () => 10,
+    transactionMinerFeeSats: () => 20, tokenListingIsExpired: () => false, workAmoV8UnitTerms,
+    pendingWorkMarketListingFromRecord: options => pending({ ...options, message: auth }),
+    workAmountFieldsFromSubatoms: value => ({ amountSubatoms: String(value) }),
+  }).stagedExpandedLiquidityHold;
+  const balance = "1000000000000000000000";
+  const state = { holders: [{ address: auth.sellerAddress, tokenId: WORK_TOKEN_ID, balanceSubatoms: balance },
+    { address: "unrelated", tokenId: WORK_TOKEN_ID, balanceSubatoms: "99" }], listings: [] };
+  const tracked = hold(state, record, "livenet", proof);
+  assert.equal(tracked.confirmed, false);
+  assert.equal(tracked.pendingReserveSubatoms, workAmoV8UnitTerms({ networkValueBeforeQ8: proof.networkValueQ8,
+    unitFaceProofs: 250000 }).unitAmountSubatoms);
+  assert.equal(tracked.frozenTerms, undefined);
+  assert.equal(hold({ ...state, listings: [tracked] }, record, "livenet", proof), null);
+  assert.equal(hold(state, record, "livenet", uncertain).pendingReserveSubatoms, balance);
+  assert.equal(hold(state, record, "livenet", { beforeBoundary: true }), null);
+  assert.equal(state.holders[1].balanceSubatoms, "99");
+
 }
 
 {

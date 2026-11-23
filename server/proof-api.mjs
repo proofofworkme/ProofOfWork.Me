@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+import {
+  WORK_AMO_FACE_PROOFS, WORK_AMO_EXPANDED_FACE_PROOFS, WORK_AMO_LIQUIDITY_FEE_SATS,
+  WORK_AMO_LISTING_REGISTRY_SCRIPT, workAmoExpandedListFeeOutput,
+} from "../src/shared/protocol/workAmoExpandedLiquidity.mjs";
+import { expandedLiquidityTransitionMatches, expandedLiquidityForReplay, expandedLiquidityReadiness, normalizeExpandedLiquidityPins, verifyExpandedLiquidityDeclaration } from "./work-amo-expanded-liquidity.mjs";
 import { bindCanonicalIncbMintPosition } from "./incb-replay-components.mjs";
 import { verifyLinkedArticle, linkedArticleEvidenceMatches, createCoalescedLinkedFileReader, createLinkedWriterCapabilityEndpoint } from './publish-linked.mjs';
 const linkedWriterCapabilityEndpoint=createLinkedWriterCapabilityEndpoint({
@@ -367,6 +372,8 @@ import {
 } from "./work-amo-v8-worker-readiness.mjs";
 import {
   tokenListingCanProjectCloseActivity,
+  workListingFaceProofs,
+  workListingLiquidityPayment,
 } from "./token-listing-lifecycle.mjs";
 import {
   errorResponse,
@@ -430,6 +437,7 @@ import {
   proofIndexPermissionDiscovery,
   proofIndexReadinessEpochCheckpoint,
   proofIndexWorkAmoV8DeclarationCandidates,
+  proofIndexWorkAmoExpandedLiquiditySchemaReady,
   proofIndexReadFeatureEnabled,
   proofIndexReadUnconfirmedTxStatus,
   proofIndexIdRecordPayload,
@@ -11322,7 +11330,62 @@ function deepFreezeWorkAmoV8StatusSnapshot(value, seen = new WeakSet()) {
   return Object.freeze(value);
 }
 
-function workAmoV8Estimates(networkValueBeforeQ8) {
+function configuredExpandedLiquidityDeclaration() {
+  try {
+    return normalizeExpandedLiquidityPins(JSON.parse(process.env.WORK_AMO_EXPANDED_LIQUIDITY_DECLARATION ?? "null"));
+  } catch {
+    return null;
+  }
+}
+
+async function expandedLiquidityReplayContext(network, height, blockHash, context = null) {
+  const pins = configuredExpandedLiquidityDeclaration();
+  if (!pins || network !== "livenet" || height < pins.blockHeight) return null;
+  try {
+    const positions = await proofIndexCanonicalTransactionPositionsPayload(network, [pins.txid]);
+    let indexedPosition = positions?.length === 1 ? positions[0] : null;
+    if (!indexedPosition && pins.blockHeight === height && context?.canonicalCoverage === true &&
+        context.blockHash === blockHash && context.indexedThroughBlock === height) {
+      const candidate = context.transactions?.find(tx => transactionTxid(tx) === pins.txid);
+      if (candidate && transactionConfirmed(candidate)) indexedPosition = { txid: transactionTxid(candidate),
+        blockIndex: transactionBlockIndex(candidate), blockHeight: transactionBlockHeight(candidate),
+        blockHash: transactionBlockHash(candidate) };
+    }
+    if (!indexedPosition) return null;
+    const [transaction, blockResult, hashResult] = await Promise.all([
+      fetchTransactionFromBitcoinRpc(pins.txid, network, {
+        bypassCache: true, cacheResult: false, includeRawHex: true, requireCanonicalPrevouts: true,
+      }),
+      bitcoinRpc("getblock", [pins.blockHash, 1]),
+      bitcoinRpc("getblockhash", [pins.blockHeight]),
+    ]);
+    const verified = verifyExpandedLiquidityDeclaration(pins, { transaction, indexedPosition,
+      canonicalBlock: blockResult?.ok ? blockResult.result : null,
+      canonicalHash: hashResult?.ok ? hashResult.result : null });
+    const finalHash = verified && await bitcoinRpc("getblockhash", [height]);
+    return finalHash?.ok && finalHash.result === blockHash ? verified : null;
+  } catch {
+    return null;
+  }
+}
+
+async function expandedLiquidityMetadata(network, tipHeight, tipHash, baseAdmissionReady) {
+  const unavailable = { declaration: null, tipHeight, tipHash, listingWritesEnabled: false,
+    schemaReady: false, replayReady: false, reasonCode: "work-amo-expanded-liquidity-declaration-unavailable" };
+  if (!configuredExpandedLiquidityDeclaration()) return unavailable;
+  const check = async () => expandedLiquidityReadiness({
+    declaration: await expandedLiquidityReplayContext(network, tipHeight, tipHash),
+    tipHeight, tipHash, baseAdmissionReady,
+    writesEnabled: process.env.WORK_AMO_EXPANDED_LIQUIDITY_WRITES_ENABLED === "1",
+    readCanonicalHash: async height => (await bitcoinRpc("getblockhash", [height]))?.result,
+    readTransition: (height, hash) => proofIndexWorkAmoBlockTransition(network, height, hash),
+    readSchema: proofIndexWorkAmoExpandedLiquiditySchemaReady,
+    readTip: async () => exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", [])),
+  });
+  return payloadWithFallbackAfterMs(check(), unavailable, HEALTH_CHECK_TIMEOUT_MS);
+}
+
+function workAmoV8Estimates(networkValueBeforeQ8, expanded = false) {
   if (
     !canonicalNonNegativeIntegerText(networkValueBeforeQ8, {
       allowZero: false,
@@ -11331,7 +11394,7 @@ function workAmoV8Estimates(networkValueBeforeQ8) {
     return {};
   }
   return Object.fromEntries(
-    WORK_AMO_V8_ALLOWED_FACE_PROOFS.flatMap((unitFaceProofs) => {
+    (expanded ? WORK_AMO_FACE_PROOFS : WORK_AMO_V8_ALLOWED_FACE_PROOFS).flatMap((unitFaceProofs) => {
       const terms = workAmoV8UnitTerms({
         networkValueBeforeQ8,
         unitFaceProofs,
@@ -11626,6 +11689,7 @@ function workAmoV8PersistentDeclarationEvidence(
 async function workAmoV8Metadata(
   network,
   {
+    includeExpandedLiquidity = true,
     exactReadinessProbe = null,
     force = false,
     singleFlightBypass = false,
@@ -11730,6 +11794,8 @@ async function workAmoV8Metadata(
       reached: workAmoV8ReachedLatch,
       tipVerified: false,
     },
+    expandedLiquidity: { listingWritesEnabled: false, replayReady: false, schemaReady: false,
+      declaration: null, reasonCode: "work-amo-expanded-liquidity-base-unavailable" },
     estimates: workAmoV8Estimates(networkValueBeforeQ8),
     indexReady: false,
     migrationReady: false,
@@ -11878,6 +11944,7 @@ async function workAmoV8Metadata(
         readinessCacheKey,
         () =>
           workAmoV8Metadata(network, {
+            includeExpandedLiquidity,
             exactReadinessProbe: immutableProbe,
             singleFlightBypass: true,
             summaryPayload,
@@ -12052,6 +12119,10 @@ async function workAmoV8Metadata(
             : null,
       }
     : null;
+  const expandedLiquidity = includeExpandedLiquidity
+    ? await expandedLiquidityMetadata(network, tipHeight, tipHash,
+      status.listingWritesEnabled && liveEvidenceReady && pendingWitnessReady && workerReadiness?.ready === true)
+    : base.expandedLiquidity;
   const payload = {
     ...status,
     activation: {
@@ -12060,7 +12131,8 @@ async function workAmoV8Metadata(
       reached: workAmoV8ReachedLatch,
       tipVerified,
     },
-    estimates: workAmoV8Estimates(networkValueBeforeQ8),
+    expandedLiquidity,
+    estimates: workAmoV8Estimates(networkValueBeforeQ8, expandedLiquidity.listingWritesEnabled),
     declarationDiscovery,
     declarationDiscoveryReady:
       declarationDiscovery.checked === true,
@@ -12754,6 +12826,16 @@ function signedWorkAmoEconomicOutputs(outputs, network) {
   );
 }
 
+function expandedLiquidityFeeVout(outputs, protocolVout, anchorVout) {
+  const economicOutputs = outputs.map((output, vout) => ({
+    scriptPubKeyHex: output.scriptpubkey, amountSats: output.value, vout,
+  }));
+  const registryVout = economicOutputs.find(output => output.vout < protocolVout &&
+    output.scriptPubKeyHex === WORK_AMO_LISTING_REGISTRY_SCRIPT &&
+    Number.isSafeInteger(output.amountSats) && output.amountSats >= 546)?.vout;
+  return workAmoExpandedListFeeOutput(economicOutputs, { registryVout, anchorVout });
+}
+
 function signedSinglePaymentAmountBeforeTokenProtocol(
   economicOutputs,
   address,
@@ -13160,6 +13242,9 @@ async function signedWorkMarketplaceWriteActions(txHex, network) {
         { action, tokenId },
         { paysWorkRegistry },
       ),
+      ...(action === TOKEN_LIST_ACTION && parsedAuthorization?.unitFaceProofs === WORK_AMO_EXPANDED_FACE_PROOFS
+        ? { expandedLiquidityFeeValid: expandedLiquidityFeeVout(outputs, firstTokenProtocolIndex, parsedAuthorization.anchorVout) !== null }
+        : {}),
       listingId,
       paysWorkRegistry,
       registryAddress: String(authorization?.registryAddress ?? "").trim(),
@@ -14091,6 +14176,8 @@ async function assertWorkMarketplaceBroadcastAllowed(
     return;
   }
   const workAmoV8AdmissionMetadata = await workAmoV8Metadata(network, {
+    includeExpandedLiquidity: actions.some(action => action.action === TOKEN_LIST_ACTION &&
+      Number(action.saleAuthorization?.unitFaceProofs) === 250000),
     force: true,
   });
   const delistOnly =
@@ -18850,7 +18937,9 @@ function parseTokenSaleAuthorizationJson(
   const workAmoV8Authorization =
     draft.version === TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION;
   const workAmoV8Validation = workAmoV8Authorization
-    ? validateWorkAmoV8StaticAuthorization(draft)
+    ? validateWorkAmoV8StaticAuthorization(
+      draft.unitFaceProofs === WORK_AMO_EXPANDED_FACE_PROOFS ? parsed : draft,
+    )
     : null;
   const historicalWorkAmoReference =
     workAmoV5Authorization &&
@@ -21905,11 +21994,14 @@ function tokenStateWithCreditNetworkValueDetails(state, creditValue) {
       const sealMinerFeeSats = numericValue(
         listing.sealCanonicalMinerFeeSats ?? listing.sealMinerFeeSats,
       );
+      const payment = workListingLiquidityPayment(listing);
+      const openingFees = TOKEN_MIN_MUTATION_PRICE_SATS + (payment?.liquidityFeeSats ?? 0);
       return {
         ...listing,
-        frozenNetworkValueSats: TOKEN_MIN_MUTATION_PRICE_SATS + minerFeeSats,
-        liveNetworkValueSats: TOKEN_MIN_MUTATION_PRICE_SATS + minerFeeSats,
-        marketplaceMutationFeeSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+        ...payment,
+        frozenNetworkValueSats: openingFees + minerFeeSats,
+        liveNetworkValueSats: openingFees + minerFeeSats,
+        marketplaceMutationFeeSats: openingFees,
         minerFeeSats,
         sealFrozenNetworkValueSats: listing.sealTxid
           ? TOKEN_MIN_MUTATION_PRICE_SATS + sealMinerFeeSats
@@ -24747,6 +24839,10 @@ function tokenStateFromTransactions(
             continue;
           }
 
+          const expanded = authorization.version === TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION &&
+            authorization.unitFaceProofs === WORK_AMO_EXPANDED_FACE_PROOFS;
+          const liquidityFeeVout = expanded ? expandedLiquidityFeeVout(vout, protocolVout, authorization.anchorVout) : null;
+          if (expanded && liquidityFeeVout === null) continue;
           const acceptedListing = {
             ...ledgerAmountFields(listedToken.tokenId, listedAmount),
             blockHash,
@@ -24755,6 +24851,7 @@ function tokenStateFromTransactions(
             confirmed,
             createdAt,
             dataBytes: proofProtocolDataBytesForVout(vout),
+            ...(expanded ? { liquidityFeeSats: WORK_AMO_LIQUIDITY_FEE_SATS, liquidityFeeVout } : {}),
             listingId: txid,
             minerFeeSats,
             network,
@@ -25971,6 +26068,7 @@ function pendingWorkMarketInvalidEvent({
 }
 
 function pendingWorkMarketListingFromRecord({
+  expandedCheckpoint = null,
   actorAddress,
   createdAt,
   dataBytes,
@@ -26067,6 +26165,15 @@ function pendingWorkMarketListingFromRecord({
   }
 
   const faceProofs = Number(staticAuthorization.unitFaceProofs);
+  const expanded = faceProofs === WORK_AMO_EXPANDED_FACE_PROOFS;
+  const liquidityFeeVout = expanded ? expandedLiquidityFeeVout(vout, protocolVout, staticAuthorization.anchorVout) : null;
+  if (expanded && liquidityFeeVout === null) {
+    return invalid("work-amo-expanded-liquidity-fee-invalid", "Pending expanded WORK listing is missing its exact List payments.");
+  }
+  if (expanded && expandedCheckpoint?.beforeBoundary === true) {
+    return invalid("work-amo-expanded-liquidity-before-boundary", "Pending expanded WORK listing precedes the declared first eligible block.");
+  }
+  const verificationPending = expanded && expandedCheckpoint?.verified !== true;
   const priceText = canonicalNonNegativeIntegerText(faceProofs, {
     allowZero: false,
   });
@@ -26077,10 +26184,12 @@ function pendingWorkMarketListingFromRecord({
     confirmed: false,
     createdAt,
     dataBytes,
+    ...(verificationPending ? { declarationVerificationPending: true } : {}),
     estimateOnly: true,
     listingId: txid,
     minerFeeSats,
     network,
+    ...(expanded ? { liquidityFeeSats: WORK_AMO_LIQUIDITY_FEE_SATS, liquidityFeeVout } : {}),
     paidSats: TOKEN_MIN_MUTATION_PRICE_SATS,
     priceSats: faceProofs,
     protocolVout,
@@ -26101,9 +26210,9 @@ function pendingWorkMarketListingFromRecord({
     },
     workMarketPricing: {
       estimateOnly: true,
-      reasonCode: "pending-work-listing-awaiting-confirmation",
+      reasonCode: verificationPending ? "work-amo-expanded-liquidity-awaiting-evidence" : "pending-work-listing-awaiting-confirmation",
       unitFaceProofs: faceProofs,
-      valid: true,
+      valid: verificationPending ? null : true,
       version: TOKEN_SALE_AUTH_WORK_AMO_V8_VERSION,
     },
   };
@@ -26114,6 +26223,7 @@ function pendingWorkMarketPayloadFromTransactions(
   network,
   txs,
   recoveryAddresses = [],
+  expandedCheckpoint = null,
 ) {
   if (network !== "livenet") {
     return null;
@@ -26160,6 +26270,7 @@ function pendingWorkMarketPayloadFromTransactions(
         continue;
       }
       const result = pendingWorkMarketListingFromRecord({
+        expandedCheckpoint,
         actorAddress,
         createdAt,
         dataBytes,
@@ -26217,6 +26328,40 @@ function pendingWorkMarketPayloadFromTransactions(
   };
 }
 
+async function pendingExpandedLiquidityCheckpoint(network, tip) {
+  // Confirmed transition authority is inherited along its canonical branch independently
+  // of the operator's current List switch, configuration availability and pending worker.
+  const unknown = { verified: false, beforeBoundary: false, networkValueQ8: null };
+  if (!tip || network !== "livenet") return unknown;
+  try {
+    const transition = await proofIndexWorkAmoBlockTransition(network, tip.height, tip.blockHash);
+    if (!transition?.payload || transition.blockHash !== tip.blockHash || transition.blockHeight !== tip.height) return unknown;
+    const witnessed = normalizeExpandedLiquidityPins(transition.payload.expandedLiquidity);
+    const verified = expandedLiquidityTransitionMatches(transition, witnessed, tip.height, tip.blockHash);
+    const finalTip = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
+    if (finalTip?.height !== tip.height || finalTip.blockHash !== tip.blockHash) return unknown;
+    const networkValueQ8 = canonicalNonNegativeIntegerText(transition.payload.closingNetworkValueQ8, { allowZero: false }) || null;
+    const configured = configuredExpandedLiquidityDeclaration();
+    const beforeBoundary = !witnessed && configured && tip.height + 1 < configured.blockHeight + configured.firstEligibleBlockOffset &&
+      Boolean(await expandedLiquidityReplayContext(network, tip.height, tip.blockHash));
+    return { verified, beforeBoundary: beforeBoundary === true, networkValueQ8 };
+  } catch {
+    return unknown;
+  }
+}
+
+async function pendingExpandedLiquidityForTransactions(network, txs) {
+  if (!txs.some(tx => decodedProtocolMessages(tx?.vout ?? [], TOKEN_PROTOCOL_PREFIX)
+    .some(message => message.startsWith("pwt1:list5:") &&
+      rawTokenSaleAuthorization(message)?.unitFaceProofs === WORK_AMO_EXPANDED_FACE_PROOFS))) return null;
+  try {
+    const tip = exactCoreTipFromBlockchainInfo(await bitcoinRpc("getblockchaininfo", []));
+    return await pendingExpandedLiquidityCheckpoint(network, tip);
+  } catch {
+    return null;
+  }
+}
+
 async function pendingWorkMarketPayloadFromTxids(
   network,
   txids,
@@ -26231,6 +26376,7 @@ async function pendingWorkMarketPayloadFromTxids(
     network,
     txs,
     recoveryAddresses,
+    await pendingExpandedLiquidityForTransactions(network, txs),
   );
 }
 
@@ -26261,6 +26407,7 @@ async function pendingWorkMarketPayloadForAddresses(
     network,
     txGroups.flat(),
     recoveryAddresses,
+    await pendingExpandedLiquidityForTransactions(network, txGroups.flat()),
   );
 }
 
@@ -33101,13 +33248,18 @@ function tokenActivityItemsFromState(state, indexAddress) {
     .map((listing) => {
     const sealConfirmed = tokenListingHasConfirmedSaleTicketSeal(listing);
     const sealPending = tokenListingHasPendingSaleTicketSeal(listing);
+    const face = workListingFaceProofs(listing);
+    const payment = workListingLiquidityPayment(listing);
+    const openingFees = TOKEN_MIN_MUTATION_PRICE_SATS + (payment?.liquidityFeeSats ?? 0);
     return {
+      ...(face ? { unitFaceProofs: face } : {}),
+      ...payment,
       ...canonicalEventIdentityDetails(listing),
       ...tokenAmountFieldsFromRecord(listing),
       ...(canonicalSyntheticRecord(listing)
         ? { canonicalSynthetic: true }
         : {}),
-      amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+      amountSats: openingFees,
       actor: listing.sellerAddress,
       blockHash: listing.blockHash,
       blockHeight: listing.blockHeight,
@@ -33124,13 +33276,13 @@ function tokenActivityItemsFromState(state, indexAddress) {
           : "Waiting for sale-ticket seal",
       frozenNetworkValueSats:
         numericValue(listing.frozenNetworkValueSats) ||
-        TOKEN_MIN_MUTATION_PRICE_SATS + numericValue(listing.minerFeeSats),
+        openingFees + numericValue(listing.minerFeeSats),
       kind: "token-listing",
       listingId: listing.listingId,
       liveNetworkValueSats:
         numericValue(listing.liveNetworkValueSats) ||
-        TOKEN_MIN_MUTATION_PRICE_SATS + numericValue(listing.minerFeeSats),
-      marketplaceMutationFeeSats: TOKEN_MIN_MUTATION_PRICE_SATS,
+        openingFees + numericValue(listing.minerFeeSats),
+      marketplaceMutationFeeSats: openingFees,
       ...canonicalMinerFeeDetailsFromActivity(listing),
       minerFeeSats: numericValue(listing.minerFeeSats),
       network: listing.network,
@@ -33139,6 +33291,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
         listing.sellerAddress,
         listing.saleAuthorization?.buyerAddress,
         listing.registryAddress,
+        ...(payment ? [payment.liquidityFeeAddress] : []),
       ].filter(Boolean),
       protocol: "pwt1",
       tags: [
@@ -33148,6 +33301,8 @@ function tokenActivityItemsFromState(state, indexAddress) {
         "AMO",
         sealConfirmed ? "Sealed" : sealPending ? "Seal pending" : "Listing",
         listing.ticker,
+        ...(payment ? [`${TOKEN_MIN_MUTATION_PRICE_SATS} registry proofs`,
+          `${payment.liquidityFeeSats.toLocaleString()} liquidity fee proofs`] : []),
         `${activityAmountText(listing)} ${listing.ticker}`,
         `${listing.priceSats.toLocaleString()} sale proofs`,
       ],
@@ -33217,7 +33372,9 @@ function tokenActivityItemsFromState(state, indexAddress) {
       continue;
     }
     seenSealTxids.add(sealTxid);
+    const face = workListingFaceProofs(listing);
     sealedListings.push({
+      ...(face ? { unitFaceProofs: face } : {}),
       ...canonicalEventIdentityDetails({
         protocolVout: listing.sealProtocolVout,
         recordOrdinal: listing.sealRecordOrdinal,
@@ -33266,6 +33423,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
         "Credit",
         "AMO",
         "Seal",
+        ...(face ? [`${face.toLocaleString()}-proof tier`] : []),
         listing.ticker,
         `${activityAmountText(listing)} ${listing.ticker}`,
         `${TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} registry proofs`,
@@ -33371,6 +33529,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
           (height) => height >= WORK_AMO_V5_ACTIVATION_HEIGHT,
         ) ||
         (listing.closedConfirmed === true && !knownPreAmoV5Close);
+      const face = workListingFaceProofs(listing);
       const canonicalCloseMinerFeeSats =
         listing.closedMinerFeeCanonical === true
           ? presentNonNegativeNumber(listing, "closedCanonicalMinerFeeSats") ??
@@ -33406,6 +33565,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
           TOKEN_MIN_MUTATION_PRICE_SATS +
             numericValue(listing.closedMinerFeeSats),
         kind: "token-listing-closed",
+        ...(face ? { unitFaceProofs: face } : {}),
         listingId: listing.listingId,
         liveNetworkValueSats:
           numericValue(listing.closedLiveNetworkValueSats) ||
@@ -33550,6 +33710,7 @@ function tokenActivityItemsFromState(state, indexAddress) {
     (sale) => saleActivityPosition(sale).canProject,
   ).map((sale) => {
     const salePosition = saleActivityPosition(sale);
+    const face = workListingFaceProofs(sale);
     return {
     ...canonicalEventIdentityDetails({
       protocolVout: salePosition.protocolVout,
@@ -33557,7 +33718,8 @@ function tokenActivityItemsFromState(state, indexAddress) {
     }),
     ...tokenAmountFieldsFromRecord(sale),
     ...tokenCreditAmountMovedFields(sale),
-    amountSats: sale.paidSats,
+    ...(face ? { unitFaceProofs: face } : {}),
+    amountSats: face === WORK_AMO_EXPANDED_FACE_PROOFS ? sale.priceSats : sale.paidSats,
     actor: sale.buyerAddress,
     blockHash: salePosition.blockHash,
     blockHeight: salePosition.blockHeight,
@@ -38006,6 +38168,9 @@ const TOKEN_SUMMARY_MARKET_PREVIEW_KEYS = [
   "legacyAmountAtoms",
   "legacyAmountStorageModel",
   "lifecycleStatus",
+  "liquidityFeeAddress",
+  "liquidityFeeSats",
+  "liquidityFeeVout",
   "listingId",
   "liveNetworkValueBeforeEventQ8",
   "liveNetworkValueBeforeEventSats",
@@ -38101,6 +38266,9 @@ const TOKEN_SUMMARY_NESTED_LISTING_PREVIEW_KEYS = [
   "amountSubatoms",
   "decimals",
   "frozenTerms",
+  "liquidityFeeAddress",
+  "liquidityFeeSats",
+  "liquidityFeeVout",
   "listingId",
   "minimumPriceSats",
   "precisionModel",
@@ -49163,6 +49331,11 @@ function readOnlyRetainedWorkAmoV8Metadata(metadata) {
   const workerReadiness = metadata.workerReadiness;
   return {
     ...metadata,
+    ...(metadata.expandedLiquidity ? {
+      expandedLiquidity: { ...metadata.expandedLiquidity, listingWritesEnabled: false, replayReady: false,
+        reasonCode: "work-amo-expanded-liquidity-retained" },
+      estimates: Object.fromEntries(Object.entries(metadata.estimates ?? {}).filter(([face]) => face !== "250000")),
+    } : {}),
     indexReady: false,
     listingWritesEnabled: false,
     migrationReady: false,
@@ -52969,6 +53142,9 @@ async function tokenValueStateFromIndexedActivity(
         dataBytes: numericValue(item.dataBytes),
         ...canonicalMinerFeeDetailsFromActivity(item),
         listingId,
+        ...(item.liquidityFeeSats !== undefined ? {
+          liquidityFeeSats: item.liquidityFeeSats, liquidityFeeVout: item.liquidityFeeVout,
+        } : {}),
         minerFeeSats: numericValue(item.minerFeeSats),
         network,
         priceSats,
@@ -71358,6 +71534,11 @@ async function completeWorkAmoV5BlockProjection(
       context,
       requiredBlockHeight,
     );
+  const expandedLiquidity = await expandedLiquidityForReplay({
+    blockHeight: requiredBlockHeight, previousBlockHash, priorTransition: opening.priorTransition,
+    configuredPins: configuredExpandedLiquidityDeclaration(),
+    readBoundary: () => expandedLiquidityReplayContext(network, requiredBlockHeight, blockHash, context),
+  });
   const workBatchV1 = await workBatchReplayContext(network, requiredBlockHeight, blockHash);
   const workMailBatchV1 = await workMailBatchReplayContext(network, requiredBlockHeight, blockHash);
   const v7ActivationHeight = Number(
@@ -71403,6 +71584,7 @@ async function completeWorkAmoV5BlockProjection(
       v6ReplayInputs.referenceBlockWitnesses,
     records: protocolEnvelope.records,
     workAmoV6: v6ReplayInputs.workAmoV6,
+    expandedLiquidity,
     workAmoV8: v7ReplayInputs.workAmoV8,
     workBatchV1,
     workMailBatchV1,
@@ -71682,6 +71864,7 @@ async function completeWorkAmoV5BlockProjection(
     rawProtocolCandidateCount: replay.rawProtocolCandidateCount,
     replayDescriptorCommitment,
     replayRecords,
+    ...(replay.expandedLiquidity ? { expandedLiquidity: replay.expandedLiquidity } : {}),
     ...(workBatchV1 ? { workBatchV1: replay.workBatchV1 } : {}),
     ...(workMailBatchV1 ? { workMailBatchV1: replay.workMailBatchV1 } : {}),
     ...(v6ReplayInputs.workAmoV6
@@ -75757,6 +75940,7 @@ async function pendingWorkVerifierStageTransactionInvalidReason(
   tipHeight,
   workBatchV1 = null,
   workMailBatchV1 = null,
+  expandedCheckpoint = null,
 ) {
   if (record.parsedMessages.some(parsed => ["batch", "mail-batch"].includes(parsed.kind))) {
     const mailBatch = record.parsedMessages.some(parsed => parsed.kind === "mail-batch");
@@ -75786,6 +75970,9 @@ async function pendingWorkVerifierStageTransactionInvalidReason(
       actions,
       {
         metadata: {
+          // Pending observations never authorize a fresh write. The exact fee and signed
+          // shape still apply while a transient evidence failure leaves the seller's hold visible.
+          expandedLiquidity: { listingWritesEnabled: expandedCheckpoint?.beforeBoundary !== true },
           activation: {
             activationHeight: WORK_AMO_V8_ACTIVATION_HEIGHT,
           },
@@ -75991,6 +76178,32 @@ function pendingWorkVerifierStageDecisionOutcomes(decisions) {
   return outcomes;
 }
 
+function stagedExpandedLiquidityHold(state, record, network, checkpoint) {
+  const raw = record.records.find(item => item.protocol === "pwt1" && item.rawDecodeValid === true &&
+    item.message.startsWith("pwt1:list5:"));
+  if (!raw) return null;
+  const tx = record.transaction;
+  const actorAddress = inputAddresses(tx.vin ?? [])[0];
+  const { listing } = pendingWorkMarketListingFromRecord({
+    actorAddress, createdAt: record.mempoolCreatedAt, dataBytes: proofProtocolDataBytesForVout(tx.vout),
+    message: raw.message, minerFeeSats: transactionMinerFeeSats(tx), network, protocolVout: raw.protocolVout,
+    recordOrdinal: raw.recordOrdinal, expandedCheckpoint: checkpoint, tx, txid: record.txid,
+  });
+  if (!listing || state.listings.some(item => item.listingId === listing.listingId)) return null;
+  const holder = state.holders.find(item => item.address === actorAddress && item.tokenId === WORK_TOKEN_ID);
+  const reserved = state.listings.filter(item => item.sellerAddress === actorAddress &&
+    item.tokenId === WORK_TOKEN_ID && !tokenListingIsExpired(item)).reduce((sum, item) => sum + BigInt(item.amountSubatoms), 0n);
+  const available = BigInt(holder?.balanceSubatoms ?? "0") - reserved;
+  if (available <= 0n) return null;
+  const estimate = workAmoV8UnitTerms({ unitFaceProofs: listing.unitFaceProofs,
+    networkValueBeforeQ8: checkpoint?.networkValueQ8 ?? "" });
+  // Without an exact closing N the provisional hold is limited to this seller's available
+  // balance. Even a verified bound is a spending hold; confirmation alone freezes the amount.
+  const upper = estimate.valid ? BigInt(estimate.unitAmountSubatoms) : available;
+  const hold = upper < available ? upper : available;
+  return { ...listing, ...workAmountFieldsFromSubatoms(hold), pendingReserveSubatoms: hold.toString() };
+}
+
 async function pendingWorkVerifierStageDecisions(
   baseState,
   transactionRecords,
@@ -76003,6 +76216,10 @@ async function pendingWorkVerifierStageDecisions(
     ? await workBatchReplayContext(network, tipHeight, baseState.blockHash) : null;
   const workMailBatchV1 = transactionRecords.some(record => record.parsedMessages.some(parsed => parsed.kind === "mail-batch"))
     ? await workMailBatchReplayContext(network, tipHeight, baseState.blockHash) : null;
+  const hasExpandedList = transactionRecords.some(record => record.parsedMessages.some(parsed =>
+    parsed.kind === "list" && parsed.saleAuthorization?.unitFaceProofs === 250000));
+  const expandedCheckpoint = hasExpandedList
+    ? await pendingExpandedLiquidityCheckpoint(network, { height: tipHeight, blockHash: baseState.blockHash }) : null;
   const decisions = [];
   const historicalListings =
     pendingWorkVerifierStageHistoricalListingScopeMap(historicalScopes);
@@ -76023,9 +76240,14 @@ async function pendingWorkVerifierStageDecisions(
             tipHeight,
             workBatchV1,
             workMailBatchV1,
+            expandedCheckpoint,
           );
+    const expandedListing = !transactionInvalidReason && record.parsedMessages.some(parsed =>
+      parsed.kind === "list" && parsed.saleAuthorization?.unitFaceProofs === 250000)
+      ? stagedExpandedLiquidityHold(priorState, record, network, expandedCheckpoint) : null;
     const nextState = transactionInvalidReason
       ? priorState
+      : expandedListing ? { ...priorState, listings: [...priorState.listings, expandedListing] }
       : pendingWorkVerifierStageReplayState(
           priorState,
           record.transaction,

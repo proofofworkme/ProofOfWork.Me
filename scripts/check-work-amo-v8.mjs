@@ -1,3 +1,11 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { canonicalProtocolCandidateFromOutput } from "../server/canonical-op-return.mjs";
+import {
+  expandedLiquidityForReplay, expandedLiquidityDeclarationRecord, expandedLiquidityPositionEligible, expandedLiquidityReadiness,
+  normalizeExpandedLiquidityPins, verifyExpandedLiquidityDeclaration,
+} from "../server/work-amo-expanded-liquidity.mjs";
+import { WORK_AMO_LISTING_REGISTRY_SCRIPT } from "../src/shared/protocol/workAmoExpandedLiquidity.mjs";
 import assert from "node:assert/strict";
 import {
   WORK_AMO_V8_ALLOWED_FACE_PROOFS,
@@ -507,6 +515,263 @@ function opReturnOutput(text) {
       ]).toString("hex"),
     },
   };
+}
+
+// Local declaration parameters deliberately select a same-block boundary, independent of the historical V8 H+1 rule.
+const expandedPins = normalizeExpandedLiquidityPins({
+  txid: "e1".repeat(32), blockHash: "a1".repeat(32), blockHeight: 1_000_000,
+  blockTransactionIndex: 3, protocolVout: 1, recordOrdinal: 0, registryPaymentVout: 0,
+  firstEligibleBlockOffset: 0, firstEligibleTransactionIndex: 1,
+});
+const expandedRecord = expandedLiquidityDeclarationRecord(expandedPins);
+const fixturePayment = { value: 546, scriptpubkey: WORK_AMO_LISTING_REGISTRY_SCRIPT };
+const expandedEvidence = {
+  transaction: { txid: expandedPins.txid,
+    status: { confirmed: true, block_hash: expandedPins.blockHash, block_height: expandedPins.blockHeight },
+    vin: [{ prevout: { scriptpubkey: WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY } }],
+    vout: [fixturePayment, opReturnOutput(expandedRecord)] },
+  canonicalBlock: { hash: expandedPins.blockHash, height: expandedPins.blockHeight,
+    tx: [null, null, null, expandedPins.txid] },
+  canonicalHash: expandedPins.blockHash,
+  indexedPosition: { txid: expandedPins.txid, blockHash: expandedPins.blockHash,
+    blockHeight: expandedPins.blockHeight, blockIndex: 3 },
+};
+assert.deepEqual(verifyExpandedLiquidityDeclaration(expandedPins, expandedEvidence), expandedPins);
+for (const change of [
+  { canonicalHash: "de".repeat(32) },
+  { indexedPosition: null },
+  { indexedPosition: { ...expandedEvidence.indexedPosition, blockIndex: 2 } },
+  { canonicalBlock: { ...expandedEvidence.canonicalBlock, tx: [] } },
+  { transaction: { ...expandedEvidence.transaction, vin: [] } },
+  { transaction: { ...expandedEvidence.transaction, status: { confirmed: false } } },
+  { transaction: { ...expandedEvidence.transaction, vout: [fixturePayment, opReturnOutput(expandedRecord + "!")] } },
+  { transaction: { ...expandedEvidence.transaction, vout: [...expandedEvidence.transaction.vout, fixturePayment] } },
+  { transaction: { ...expandedEvidence.transaction, vout: [...expandedEvidence.transaction.vout, opReturnOutput(expandedRecord)] } },
+]) assert.equal(verifyExpandedLiquidityDeclaration(expandedPins, { ...expandedEvidence, ...change }), null);
+assert.equal(verifyExpandedLiquidityDeclaration({ ...expandedPins, firstEligibleBlockOffset: 1 }, expandedEvidence), null);
+for (const [height, index, eligible] of [[999999, 100, false], [1000000, 2, false], [1000000, 3, false],
+  [1000000, 4, true], [1000000, 5, true], [1000001, 0, true]]) {
+  assert.equal(expandedLiquidityPositionEligible(expandedPins, { blockHash: expandedPins.blockHash,
+    blockHeight: height, blockTransactionIndex: index }), eligible);
+}
+const expandedTip = { height: 1_000_001, blockHash: "a2".repeat(32) };
+const expandedReadyInputs = {
+  declaration: expandedPins, tipHeight: expandedTip.height, tipHash: expandedTip.blockHash,
+  writesEnabled: true, baseAdmissionReady: true, readTip: async () => expandedTip,
+  readSchema: async () => true, readCanonicalHash: async () => expandedPins.blockHash,
+  readTransition: async (blockHeight, blockHash) => ({ payload: { network: "livenet", blockHeight, blockHash,
+    expandedLiquidity: expandedPins, complete: true, blockAtomic: true, invalidZero: true, feeOnce: true,
+    transitionChainCommitment: { model: "canonical-work-amo-raw-transition-chain-sha256-v1", sha256: "12".repeat(32) } } }),
+};
+assert.equal((await expandedLiquidityReadiness(expandedReadyInputs)).listingWritesEnabled, true);
+const boundaryInputs = { blockHeight: expandedPins.blockHeight, previousBlockHash: "bc".repeat(32),
+  priorTransition: null, configuredPins: expandedPins, readBoundary: async () => expandedPins };
+assert.deepEqual(await expandedLiquidityForReplay(boundaryInputs), expandedPins);
+const nextReplay = { ...boundaryInputs, blockHeight: expandedPins.blockHeight + 1,
+  previousBlockHash: expandedPins.blockHash, configuredPins: null,
+  priorTransition: await expandedReadyInputs.readTransition(expandedPins.blockHeight, expandedPins.blockHash),
+  readBoundary: async () => { throw new Error("unavailable"); } };
+assert.deepEqual(await expandedLiquidityForReplay(nextReplay), expandedPins);
+assert.equal(await expandedLiquidityForReplay({ ...nextReplay, previousBlockHash: "de".repeat(32) }), null);
+assert.equal(await expandedLiquidityForReplay({ ...nextReplay, blockHeight: nextReplay.blockHeight + 1 }), null);
+assert.equal(await expandedLiquidityForReplay({ ...nextReplay, priorTransition: null, configuredPins: expandedPins,
+  readBoundary: async () => expandedPins }), null);
+for (const height of [expandedPins.blockHeight, expandedTip.height]) {
+  assert.equal((await expandedLiquidityReadiness({ ...expandedReadyInputs,
+    readTransition: async (h, hash) => h === height ? null : expandedReadyInputs.readTransition(h, hash),
+  })).listingWritesEnabled, false);
+}
+for (const change of [{ declaration: null }, { writesEnabled: false }, { baseAdmissionReady: false },
+  { readSchema: async () => false }, { readTip: async () => ({ ...expandedTip, blockHash: "de".repeat(32) }) },
+  { readTransition: async () => { throw new Error("fixture offline"); } }]) {
+  assert.equal((await expandedLiquidityReadiness({ ...expandedReadyInputs, ...change })).listingWritesEnabled, false);
+}
+
+{
+  const recordUrl = new URL("../declarations/work-amo-expanded-liquidity.txt", import.meta.url);
+  const savedBytes = readFileSync(recordUrl);
+  const boundary = { firstEligibleBlockOffset: 1, firstEligibleTransactionIndex: 0 };
+  const approvedRecord = expandedLiquidityDeclarationRecord(boundary);
+  const expectedHash = "3da8dd990f9beaafa2d1b296924e7ec0065b5ba0701bb39ee9ac0f05b4d11fd4";
+  assert.equal(savedBytes.length, 1407);
+  assert.notEqual(savedBytes.at(-1), 0x0a);
+  assert.deepEqual(savedBytes, Buffer.from(approvedRecord, "utf8"));
+  assert.equal(createHash("sha256").update(savedBytes).digest("hex"), expectedHash);
+
+  const pins = normalizeExpandedLiquidityPins({ ...expandedPins, ...boundary });
+  assert.equal(pins.recordSha256, expectedHash);
+  const carrier = opReturnOutput(savedBytes.toString("utf8"));
+  const parsed = canonicalProtocolCandidateFromOutput(carrier);
+  assert.equal(parsed.decodeValid, true);
+  assert.equal(parsed.text, approvedRecord);
+
+  const evidence = { ...expandedEvidence, transaction: {
+    ...expandedEvidence.transaction, vout: [fixturePayment, carrier],
+  } };
+  const verified = verifyExpandedLiquidityDeclaration(pins, evidence);
+  assert.deepEqual(verified, pins);
+  const declarationPosition = { blockHash: pins.blockHash, blockHeight: pins.blockHeight,
+    blockTransactionIndex: pins.blockTransactionIndex };
+  const opening = { blockHash: expandedTip.blockHash, blockHeight: pins.blockHeight + 1, blockTransactionIndex: 0 };
+  assert.equal(expandedLiquidityPositionEligible(verified, declarationPosition), false);
+  assert.equal(expandedLiquidityPositionEligible(verified, { ...declarationPosition,
+    blockTransactionIndex: declarationPosition.blockTransactionIndex + 1 }), false);
+  assert.equal(expandedLiquidityPositionEligible(verified, opening), true);
+  assert.equal(expandedLiquidityPositionEligible(verified, { ...opening, blockTransactionIndex: 1 }), true);
+  for (const unavailable of [{ ...evidence, canonicalHash: "de".repeat(32) }, { ...evidence, indexedPosition: null }]) {
+    assert.equal(expandedLiquidityPositionEligible(verifyExpandedLiquidityDeclaration(pins, unavailable), opening), false);
+  }
+}
+
+{
+  // Public transaction fields. The block vector is sparse except for the verified transaction index.
+  const txid = "57eb549372f2318bfc3ade62c62e9e1092cd42702e9ffb5e2733659acc241f33";
+  const blockHeight = 977229;
+  const blockHash = "0000000000000000000113f979011a14bdcecdb509671b763fc60a02ebaccbc9";
+  const blockTransactionIndex = 591;
+  const configured = { txid, blockHeight, blockHash, blockTransactionIndex, protocolVout: 1, recordOrdinal: 0,
+    registryPaymentVout: null, firstEligibleBlockOffset: 1, firstEligibleTransactionIndex: 0 };
+  const authority = WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY;
+  const record = readFileSync(new URL("../declarations/work-amo-expanded-liquidity.txt", import.meta.url), "utf8");
+  const mailOutput = (text) => ({ value: 0, scriptpubkey: opReturnOutput(text).scriptPubKey.hex });
+  const wrapped = "pwm1:m:" + record;
+  const carrier = mailOutput(wrapped);
+  assert.equal(createHash("sha256").update(Buffer.from(carrier.scriptpubkey, "hex")).digest("hex"),
+    "27638b9bdd1f312cf8eb68f419174b4a83b45ef42ce4072803abefbc759fc900");
+  const self = { value: 546, scriptpubkey: authority };
+  const change = { value: 2222, scriptpubkey: authority };
+  const input = { txid: "c61b5aec19fc4c66b4653a30b48a5ffc8f19b96c978e871ed661ae45479cb582",
+    vout: 0, prevout: { value: 3019, scriptpubkey: authority } };
+  const transaction = { txid, vin: [input], vout: [self, carrier, change],
+    status: { confirmed: true, block_height: blockHeight, block_hash: blockHash } };
+  const blockTransactions = Array(blockTransactionIndex + 1).fill(null);
+  blockTransactions[blockTransactionIndex] = txid;
+  const evidence = { transaction, canonicalHash: blockHash,
+    canonicalBlock: { hash: blockHash, height: blockHeight, tx: blockTransactions },
+    indexedPosition: { txid, blockHash, blockHeight, blockIndex: blockTransactionIndex } };
+  const verified = verifyExpandedLiquidityDeclaration(configured, evidence);
+  assert.ok(verified, "only the confirmed, canonical and indexed published envelope can qualify");
+  assert.deepEqual(verified, normalizeExpandedLiquidityPins(configured));
+  assert.equal(verified.recordSha256, "3da8dd990f9beaafa2d1b296924e7ec0065b5ba0701bb39ee9ac0f05b4d11fd4");
+  assert.equal(verified.carrierPayloadSha256, "d046f13915f8fd9d2422d8fd41134b2f6447649b289982cd2e27fd6321488476");
+  assert.equal(verified.recognition, "exact-declaration-txid-exception");
+  assert.equal(verified.registryPaymentVout, null);
+  assert.equal(verified.registryPaymentSats, 0);
+  assert.equal(verified.selfPaymentVout, 0);
+  assert.equal(verified.selfPaymentSats, 546);
+
+  for (const [label, outputs] of [
+    ["missing outer wrapper", [self, mailOutput(record), change]],
+    ["extra wrapper", [self, mailOutput("pwm1:m:" + wrapped), change]],
+    ["different inner bytes", [self, mailOutput(wrapped + "\n"), change]],
+    ["same text with an extra empty push", [self, { ...carrier, scriptpubkey: carrier.scriptpubkey + "00" }, change]],
+    ["carrier at a different output", [self, change, carrier]],
+    ["nonzero carrier", [self, { ...carrier, value: 1 }, change]],
+    ["self output has wrong value", [{ ...self, value: 545 }, carrier, change]],
+    ["self output has wrong script", [{ ...self, scriptpubkey: "51" }, carrier, change]],
+    ["self output at wrong index", [change, carrier, self]],
+    ["different change output", [self, carrier, { ...change, value: 2221 }]],
+    ["different change script", [self, carrier, { ...change, scriptpubkey: "51" }]],
+    ["extra registry payment", [self, carrier, change, fixturePayment]],
+    ["extra matching carrier", [self, carrier, change, carrier]],
+    ["standard declaration substituted at the pinned txid", [fixturePayment, mailOutput(record), change]],
+  ]) {
+    assert.equal(verifyExpandedLiquidityDeclaration(configured, {
+      ...evidence, transaction: { ...transaction, vout: outputs },
+    }), null, label);
+  }
+  for (const vin of [[], [{ ...input, prevout: { ...input.prevout, scriptpubkey: "51" } }],
+    [{ ...input, txid: expandedPins.txid }], [{ ...input, vout: 1 }],
+    [{ ...input, prevout: { ...input.prevout, value: 3018 } }], [input, input]]) {
+    assert.equal(verifyExpandedLiquidityDeclaration(configured, { ...evidence, transaction: { ...transaction, vin } }), null);
+  }
+  const { registryPaymentVout, ...omittedRegistryPin } = configured;
+  for (const wrongPins of [omittedRegistryPin, { ...configured, registryPaymentVout: 0 },
+    { ...configured, protocolVout: 2 }, { ...configured, recordOrdinal: 1 },
+    { ...configured, firstEligibleBlockOffset: 0, firstEligibleTransactionIndex: 1 },
+    { ...configured, blockHash: expandedPins.blockHash }, { ...configured, blockHeight: blockHeight + 1 },
+    { ...configured, blockTransactionIndex: blockTransactionIndex + 1 }]) {
+    assert.equal(verifyExpandedLiquidityDeclaration(wrongPins, evidence), null);
+  }
+  for (const patch of [{ transaction: { ...transaction, status: { confirmed: false } } },
+    { canonicalHash: expandedPins.blockHash }, { canonicalHash: null }, { canonicalBlock: null },
+    { canonicalBlock: { ...evidence.canonicalBlock, tx: [] } }, { indexedPosition: null },
+    { indexedPosition: { ...evidence.indexedPosition, blockHash: expandedPins.blockHash } },
+    { indexedPosition: { ...evidence.indexedPosition, blockIndex: blockTransactionIndex + 1 } }]) {
+    assert.equal(verifyExpandedLiquidityDeclaration(configured, { ...evidence, ...patch }), null);
+  }
+
+  // Even self-consistent chain and index evidence cannot transfer this exception to a different txid.
+  const otherTxid = expandedPins.txid;
+  const otherEvidence = { ...evidence, transaction: { ...transaction, txid: otherTxid },
+    canonicalBlock: { ...evidence.canonicalBlock, tx: blockTransactions.with(blockTransactionIndex, otherTxid) },
+    indexedPosition: { ...evidence.indexedPosition, txid: otherTxid } };
+  const otherPins = { ...configured, txid: otherTxid };
+  assert.equal(verifyExpandedLiquidityDeclaration(otherPins, otherEvidence), null);
+  const normalPins = { ...otherPins, registryPaymentVout: 0 };
+  assert.equal(verifyExpandedLiquidityDeclaration(normalPins, otherEvidence), null);
+  const standard = verifyExpandedLiquidityDeclaration(normalPins, { ...otherEvidence,
+    transaction: { ...otherEvidence.transaction, vout: [fixturePayment, mailOutput(record)] } });
+  assert.deepEqual(standard, normalizeExpandedLiquidityPins(normalPins));
+  assert.equal(standard.registryPaymentVout, 0);
+  assert.equal(verifyExpandedLiquidityDeclaration({ ...configured, registryPaymentVout: 0 }, { ...evidence,
+    transaction: { ...transaction, vout: [fixturePayment, mailOutput(record)] } }), null);
+
+  // The following descendant hashes and transition receipts are synthetic local replay fixtures.
+  const first = { blockHeight: blockHeight + 1, blockHash: expandedTip.blockHash, blockTransactionIndex: 0 };
+  assert.equal(expandedLiquidityPositionEligible(verified, { blockHeight, blockHash, blockTransactionIndex: 592 }), false);
+  assert.equal(expandedLiquidityPositionEligible(verified, first), true);
+  assert.equal(expandedLiquidityPositionEligible(verified, { ...first, blockTransactionIndex: 1 }), true);
+  const replay = { ...boundaryInputs, configuredPins: configured, previousBlockHash: blockHash,
+    readBoundary: async () => verifyExpandedLiquidityDeclaration(configured, evidence) };
+  assert.equal(await expandedLiquidityForReplay({ ...replay, blockHeight }), null);
+  assert.deepEqual(await expandedLiquidityForReplay({ ...replay, blockHeight: first.blockHeight }), verified);
+  assert.equal(await expandedLiquidityForReplay({ ...replay, blockHeight: first.blockHeight,
+    readBoundary: async () => verifyExpandedLiquidityDeclaration(configured, { ...evidence, indexedPosition: null }) }), null);
+  const nextTip = { height: first.blockHeight + 1, blockHash: "cd".repeat(32) };
+  const readTransition = async (height, hash) => {
+    if (!((height === first.blockHeight && hash === first.blockHash) ||
+          (height === nextTip.height && hash === nextTip.blockHash))) return null;
+    const transition = await expandedReadyInputs.readTransition(height, hash);
+    transition.payload.expandedLiquidity = verified;
+    return transition;
+  };
+  const priorTransition = await readTransition(first.blockHeight, first.blockHash);
+  const nextReplay = { blockHeight: nextTip.height, previousBlockHash: first.blockHash, priorTransition,
+    configuredPins: null, readBoundary: async () => { throw new Error("unexpected boundary re-read"); } };
+  assert.deepEqual(await expandedLiquidityForReplay(nextReplay), verified);
+  for (const wrong of [{ registryPaymentVout: 0 }, { selfPaymentSats: 545 }, { carrierPayloadSha256: verified.recordSha256 }]) {
+    const altered = { ...priorTransition, payload: { ...priorTransition.payload, expandedLiquidity: { ...verified, ...wrong } } };
+    assert.equal(await expandedLiquidityForReplay({ ...nextReplay, priorTransition: altered }), null);
+  }
+  assert.equal(await expandedLiquidityForReplay({ ...nextReplay, previousBlockHash: expandedPins.blockHash }), null);
+  const ready = { ...expandedReadyInputs, declaration: verified, tipHeight: nextTip.height, tipHash: nextTip.blockHash,
+    readCanonicalHash: async () => first.blockHash, readTransition, readTip: async () => nextTip };
+  assert.equal((await expandedLiquidityReadiness(ready)).listingWritesEnabled, true);
+  for (const [height, hash, enabled] of [[blockHeight, blockHash, false], [first.blockHeight, first.blockHash, true]]) {
+    assert.equal((await expandedLiquidityReadiness({ ...ready, tipHeight: height, tipHash: hash,
+      readTip: async () => ({ height, blockHash: hash }) })).listingWritesEnabled, enabled);
+  }
+  for (const missingHeight of [first.blockHeight, nextTip.height]) {
+    const missing = async (height, hash) => height === missingHeight ? null : readTransition(height, hash);
+    assert.equal((await expandedLiquidityReadiness({ ...ready, readTransition: missing })).listingWritesEnabled, false);
+    const incomplete = async (height, hash) => {
+      const transition = await readTransition(height, hash);
+      if (height === missingHeight) {
+        const { recognition, ...partial } = verified;
+        transition.payload.expandedLiquidity = partial;
+      }
+      return transition;
+    };
+    const admission = await expandedLiquidityReadiness({ ...ready, readTransition: incomplete });
+    assert.equal(admission.replayReady, false);
+    assert.equal(admission.listingWritesEnabled, false);
+  }
+  for (const patch of [{ declaration: null }, { writesEnabled: false }, { baseAdmissionReady: false },
+    { readCanonicalHash: async () => null }, { readCanonicalHash: async () => expandedPins.blockHash },
+    { readSchema: async () => false }, { readTip: async () => ({ ...nextTip, blockHash: expandedPins.blockHash }) }]) {
+    assert.equal((await expandedLiquidityReadiness({ ...ready, ...patch })).listingWritesEnabled, false);
+  }
 }
 
 const declarationMailEnvelope = {

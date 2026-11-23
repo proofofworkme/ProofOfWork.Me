@@ -1400,7 +1400,7 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v8_listing_terms (
     ),
   CONSTRAINT work_amo_v8_terms_values
     CHECK (
-      unit_face_proofs = 25000
+      unit_face_proofs IN (25000, 250000)
       AND unit_amount_subatoms::text ~ '^[1-9][0-9]*$'
       AND unit_amount_subatoms <= 210000000000000000000000
       AND unit_price_sats = unit_face_proofs
@@ -1547,6 +1547,27 @@ CREATE TABLE IF NOT EXISTS proof_indexer.work_amo_v8_listing_terms (
     REFERENCES proof_indexer.transactions (network, txid)
     ON DELETE CASCADE
 );
+
+-- CREATE TABLE IF NOT EXISTS leaves the installed V8 value check intact.
+-- Change only its historical scalar predicate. Re-applying this schema skips
+-- the ALTER (and table scan) once both faces are present.
+DO $expanded_work_face$
+DECLARE
+  previous_check text;
+BEGIN
+  SELECT pg_get_constraintdef(oid) INTO STRICT previous_check
+    FROM pg_constraint
+    WHERE conrelid = 'proof_indexer.work_amo_v8_listing_terms'::regclass
+      AND conname = 'work_amo_v8_terms_values';
+  IF position('(unit_face_proofs = 25000)' in previous_check) > 0 THEN
+    EXECUTE 'ALTER TABLE proof_indexer.work_amo_v8_listing_terms '
+      || 'DROP CONSTRAINT work_amo_v8_terms_values, '
+      || 'ADD CONSTRAINT work_amo_v8_terms_values '
+      || replace(previous_check, '(unit_face_proofs = 25000)',
+                 '(unit_face_proofs IN (25000, 250000))');
+  END IF;
+END;
+$expanded_work_face$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS work_amo_v8_listing_terms_position_uidx
   ON proof_indexer.work_amo_v8_listing_terms (

@@ -377,6 +377,14 @@ test("fresh Code reservations accept the production wallet overlay and retain an
   const anchors = await fixture.wallet.codeReservedAnchors(creatingWallet, "livenet");
   assert.deepEqual(Array.from(anchors, item => `${item.txid}:${item.vout}`).sort(),
     reservationScopes.map((_scope, index) => `${id(index + 40)}:${index}`).sort());
+  const workBook = fixture.creditResponses.get(reservationScopes[1]);
+  for (const [index, face] of [25000, 250000].entries()) {
+    workBook.listings.push({ listingId: id(90 + index), confirmed: false, sellerAddress: creatingWallet,
+      saleAuthorization: { version: "pwt-sale-v8", unitFaceProofs: face, anchorVout: 2 } });
+  }
+  workBook.totalCounts.listings = workBook.listings.length;
+  const mixed = await fixture.wallet.codeReservedAnchors(creatingWallet, "livenet");
+  for (const txid of [id(90), id(91)]) assert.ok(mixed.some(item => item.txid === txid && item.vout === 2));
 });
 
 test("repository preparation uses wallet reservation evidence and rechecks newly reserved or unconfirmed funding", async () => {

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import * as jobs from "../src/shared/protocol/jobs.mjs";
+import * as amo from "../src/shared/protocol/workAmoExpandedLiquidity.mjs";
 
 const token = jobs.JOBS_WORK_TOKEN_ID, wallet = "1KNkUBREnfno2BeV7QsBf8XCWZN6YFfxPH", recipient = "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa";
 const txid = "a".repeat(64), target = "b".repeat(64);
@@ -21,7 +22,7 @@ async function load(path, imports = {}) {
 const amounts = await load("src/workAmount.ts");
 const recovery = await load("src/shared/wallet/actionRecovery.ts");
 const batchRecovery = await load("src/shared/work/workBatchRecovery.ts", { "../wallet/actionRecovery": recovery, "../protocol/pay.mjs": { normalizePayAmount: jobs.normalizeJobReward } });
-const capacity = await load("src/shared/work/canonicalWorkCapacity.ts", { "./workBatchRecovery": batchRecovery });
+const capacity = await load("src/shared/work/canonicalWorkCapacity.ts", { "./workBatchRecovery": batchRecovery, "../protocol/workAmoExpandedLiquidity.mjs": amo });
 const existing = await load("src/features/jobs/jobsWorkCapacity.ts", {
   "../../shared/api/proofApiClient": {}, "../../shared/work/canonicalWorkCapacity": capacity,
   "../../shared/wallet/actionRecovery": recovery, "../../shared/protocol/jobs.mjs": jobs, "../../workAmount": amounts,
@@ -49,6 +50,17 @@ test("WORK tips use complete canonical capacity after pending debits and reject 
   payload.transfers = [{ txid, tokenId: token, senderAddress: wallet, recipientAddress: recipient, amountSubatoms: "30", confirmed: false }];
   const result = await helper.fetchBoostTipWorkCapacity(wallet);
   assert.equal(result.spendableSubatoms, 60n);
+  const receipt = payload.canonicalWorkCapacities[0];
+  receipt.pendingListingNetworkValueQ8 = (8000n * 21000000n * 10000000000000000n * 100000000n).toString();
+  receipt.pendingListingReserveSubatoms = "3";
+  payload.listings = [25000, 250000].map((unitFaceProofs, index) => ({
+    listingId: String(index + 1).repeat(64), network: "livenet", sellerAddress: wallet, registryAddress: jobs.JOBS_WORK_REGISTRY_ADDRESS,
+    tokenId: token, confirmed: false, saleAuthorization: { version: "pwt-sale-v8", unitFaceProofs, anchorVout: 2,
+      anchorType: "sale-ticket-v1", anchorValueSats: 546, anchorSigHashType: 131, anchorScriptPubKey: "0014abcd", sellerPublicKey: "02" + "a".repeat(64) },
+  }));
+  const mixed = await helper.fetchBoostTipWorkCapacity(wallet);
+  assert.equal(mixed.spendableSubatoms, 26n); // 60 available less 3 and 31, rounded independently.
+  assert.equal(mixed.anchorOutpoints.length, 2);
   assert.match(requests[0][0], /wallet=1/); assert.match(requests[0][0], /fresh=1/);
   assert.equal(requests[0][1], "livenet");
   payload.collectionHasMore = { transfers: true };

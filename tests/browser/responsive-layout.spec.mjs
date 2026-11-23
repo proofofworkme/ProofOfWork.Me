@@ -2328,8 +2328,8 @@ async function assertMarketplaceGeometry(page, mode, width) {
   if (mode === "AMO") {
     await expect(
       panel,
-      `${label} must describe the singleton proof-native V8 face`,
-    ).toContainText("single 25,000-proof face");
+      `${label} must describe the signed, frozen WORK terms`,
+    ).toContainText("Each listing commits its proof face");
     await expect(
       panel,
       `${label} must not describe the retired USD attestor`,

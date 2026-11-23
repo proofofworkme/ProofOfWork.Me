@@ -38,6 +38,7 @@ import { FEE_RATE_STEP } from "./shared/feeRate";
 import { createInFlightRequestPool } from "./shared/api/inFlightRequestPool";
 import { createVisibleReadLoop, waitForDisplayRead, consumeDisplayRead } from "./shared/api/useVisibleReadLoop";
 import { fetchMarketplaceBrowse, useMarketplaceBrowse, type BrowseCounts, type MarketplaceBrowseResponse } from "./features/marketplace/marketplaceBrowse";
+import { workAmoBookFace, workAmoBookLookupId, type WorkBookFace } from "./shared/protocol/workAmoBookFace.mjs";
 import { TransactionReview, type MailTransactionReview } from "./shared/components/TransactionReview";
 import { BackupPreview } from "./shared/components/BackupPreview";
 import { applyLocalRestore, isBackupStorageKey, prepareLocalRestore, type RestorePlan } from "./shared/localBackup";
@@ -45,7 +46,8 @@ import { inspectPreparedPayment } from "./shared/wallet/paymentReview";
 import { DnsSubdomains, assertDnsSubdomainAction, readDnsSubdomainSnapshot, type DnsSubdomainDraft } from "./features/dns/DnsSubdomains";
 import { buildDnsSubdomainPayload, DNS_SUBDOMAIN_SELF_PAYMENT_SATS, normalizeDnsSubdomainLabel, parseDnsSubdomainName } from "./shared/protocol/dnsSubdomains.mjs";
 import { assertFeeRatePrecision } from "./walletUtxos";
-import { canonicalWorkCapacityAddress, requireCanonicalWorkCapacity, type CanonicalWorkCapacity } from "./shared/work/canonicalWorkCapacity";
+import { WORK_AMO_FACE_PROOFS, WORK_AMO_EXPANDED_FACE_PROOFS, WORK_AMO_LIQUIDITY_FEE_ADDRESS, WORK_AMO_LIQUIDITY_FEE_SATS } from "./shared/protocol/workAmoExpandedLiquidity.mjs";
+import { canonicalWorkCapacityAddress, pendingWorkListingReserveForFace, requireCanonicalWorkCapacity, type CanonicalWorkCapacity } from "./shared/work/canonicalWorkCapacity";
 import { assertCompleteTokenDirectory, assertCompleteIdReservations, walletReservationsReady, listingDisplayProjectionFingerprint } from "./shared/api/surfaceReadState";
 import {
   ChangeEvent,
@@ -1045,6 +1047,7 @@ type PowTokenListing = {
   unitFaceProofs?: number;
   workAmoEstimate?: WorkAmoV5Estimate;
   workAmoFrozenTerms?: WorkAmoV5FrozenTerms;
+  workAmoV8FrozenTerms?: WorkAmoV5FrozenTerms;
 };
 
 type PowTokenClosedListing = PowTokenListing & {
@@ -1272,6 +1275,8 @@ type PowTokenSummaryMetadata = Pick<
   | "unitScale"
 > & {
   browseAssetCounts?: Record<string, BrowseCounts>;
+  browseWorkFaceCounts?: Record<WorkBookFace, BrowseCounts>;
+  browseBestWorkArb?: { numerator: string; denominator: string } | null;
   browseBondReferences?: Record<string, MarketplaceBrowseBondReference>;
   browseVersion?: string;
 };
@@ -2052,7 +2057,6 @@ const WORK_AMO_V8_BLOCK_SEQUENCER_MODEL =
 const WORK_AMO_V6_ATOMS_PER_WORK = 100_000_000n;
 const WORK_AMO_V8_SUBATOMS_PER_WORK = 10_000_000_000_000_000n;
 const WORK_AMO_V6_ALLOWED_FACE_PROOFS = [20_000, 50_000, 100_000] as const;
-const WORK_AMO_V8_ALLOWED_FACE_PROOFS = [25_000] as const;
 const WORK_AMO_ALLOWED_FACE_USD_CENTS = [2000, 5000, 10000] as const;
 const WORK_AMO_V1_FACE_USD_CENTS = [
   1000,
@@ -2415,7 +2419,7 @@ type WorkAmoV6Estimate = {
   estimateOnly: true;
   unitAmountAtoms?: string;
   unitAmountSubatoms?: string;
-  unitFaceProofs: 20000 | 25000 | 50000 | 100000;
+  unitFaceProofs: 20000 | 25000 | 50000 | 100000 | 250000;
   unitMinimumPriceSats: string;
   unitNetworkValueBeforeQ8?: string;
   unitPriceSats: string;
@@ -2550,6 +2554,7 @@ type WorkAmoV6Status = {
 };
 
 type WorkAmoV8Status = {
+  expandedLiquidity?: { listingWritesEnabled?: boolean };
   activation?: WorkAmoV6Activation;
   estimates?: Record<string, WorkAmoV6Estimate> | WorkAmoV6Estimate[];
   indexReady?: boolean;
@@ -7721,11 +7726,8 @@ function workAmoV6FaceProofsAllowed(
   );
 }
 
-function workAmoV8FaceProofsAllowed(value: unknown): value is 25000 {
-  const normalized = Number(value);
-  return WORK_AMO_V8_ALLOWED_FACE_PROOFS.some(
-    (allowed) => allowed === normalized,
-  );
+function workAmoV8FaceProofsAllowed(value: unknown): value is 25000 | 250000 {
+  return WORK_AMO_FACE_PROOFS.some((face) => face === value);
 }
 
 function workAmoProofFaceLabel(value: unknown) {
@@ -8250,7 +8252,12 @@ function workAmoSettlementCanRetryFreshPreflight(
 
 function workAmoListingCanAttemptFreshPreflight(
   quote: WorkFloorQuote | undefined,
+  faceProofs?: number,
 ) {
+  if (faceProofs === WORK_AMO_EXPANDED_FACE_PROOFS) {
+    return workV8WriteAdmissionReady(quote) && workAmoListingWritesReady(quote) &&
+      quote?.workAmoV8?.expandedLiquidity?.listingWritesEnabled === true;
+  }
   return (
     workAmoListingWritesReady(quote) ||
     workV8CanAttemptFreshPreflight(quote)
@@ -8286,7 +8293,11 @@ function workAmoListingWritesReady(quote: WorkFloorQuote | undefined) {
     : workAmoV6ListingWritesReady(quote);
 }
 
-function assertWorkAmoListingEnabled(quote: WorkFloorQuote | undefined) {
+function assertWorkAmoListingEnabled(quote: WorkFloorQuote | undefined, faceProofs: number) {
+  if (faceProofs === WORK_AMO_EXPANDED_FACE_PROOFS &&
+      (!workV8WriteAdmissionReady(quote) || quote?.workAmoV8?.expandedLiquidity?.listingWritesEnabled !== true)) {
+    throw new Error("250,000-proof listings require verified declaration, index and live admission.");
+  }
   if (!workV8DeclarationBoundaryObserved(quote)) {
     assertWorkAmoV6ListingEnabled(quote);
     return;
@@ -8776,7 +8787,7 @@ function workAmoV8FrozenProjection(listing: PowTokenListing) {
   ) {
     return null;
   }
-  const faceProofs = Number(frozen.unitFaceProofs);
+  const faceProofs = frozen.unitFaceProofs;
   const listingBlockHeight = Number(frozen.listingBlockHeight);
   const listingBlockIndex = Number(frozen.listingBlockIndex);
   const listingProtocolVout = Number(frozen.listingProtocolVout);
@@ -8813,7 +8824,8 @@ function workAmoV8FrozenProjection(listing: PowTokenListing) {
     authorization.unitWorkOracleModel !== WORK_AMO_WORK_ORACLE_MODEL ||
     authorization.bondTransitionModel !== WORK_AMO_BOND_TRANSITION_MODEL ||
     !workAmoV8FaceProofsAllowed(faceProofs) ||
-    Number(authorization.unitFaceProofs) !== faceProofs ||
+    authorization.unitFaceProofs !== faceProofs ||
+    (listing.unitFaceProofs !== undefined && listing.unitFaceProofs !== faceProofs) ||
     !Number.isSafeInteger(listingBlockHeight) ||
     listingBlockHeight < 1 ||
     !/^[0-9a-f]{64}$/u.test(
@@ -9764,7 +9776,7 @@ function normalizeTokenListingRecord<
     tokenId === INCB_TOKEN_ID ||
     ticker === POWB_TOKEN_TICKER ||
     ticker === INCB_TOKEN_TICKER;
-  const rawFrozenTerms = listing.workAmoFrozenTerms ?? listing.frozenTerms;
+  const rawFrozenTerms = listing.workAmoFrozenTerms ?? listing.frozenTerms ?? listing.workAmoV8FrozenTerms;
   const frozenTerms =
     rawFrozenTerms &&
     typeof rawFrozenTerms === "object" &&
@@ -10015,6 +10027,22 @@ function tokenSaleAuthorizationTermsMatch(
   return (
     JSON.stringify(comparable(left)) === JSON.stringify(comparable(right))
   );
+}
+
+function tokenListingPayments(authorization: PowTokenSaleAuthorization) {
+  const registryPayment = { address: authorization.registryAddress, amountSats: TOKEN_MIN_MUTATION_PRICE_SATS };
+  const postProtocolPayments = [{ address: authorization.sellerAddress, amountSats: TOKEN_LISTING_ANCHOR_VALUE_SATS }];
+  const labels = ["Listing registry fee", "Seller-controlled ticket locked until purchase or delisting"];
+  if (authorization.version === TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION &&
+      authorization.unitFaceProofs === WORK_AMO_EXPANDED_FACE_PROOFS) {
+    if (authorization.tokenId !== WORK_TOKEN_ID || authorization.registryAddress !== WORK_TOKEN_REGISTRY_ADDRESS) {
+      throw new Error("The 250,000-proof listing requires the canonical WORK credit and listing registry.");
+    }
+    // The committed sale ticket stays at vout 2, immediately after list5.
+    postProtocolPayments.push({ address: WORK_AMO_LIQUIDITY_FEE_ADDRESS, amountSats: WORK_AMO_LIQUIDITY_FEE_SATS });
+    labels.push("Liquidity fee");
+  }
+  return { registryPayment, postProtocolPayments, labels };
 }
 
 function buildTokenListingPayload(authorization: PowTokenSaleAuthorization) {
@@ -12357,6 +12385,7 @@ function tokenSpendabilityForWallet(
   localTransfers: PowTokenTransfer[] = [],
   localSales: PowTokenSale[] = [],
   ownSignedTxid?: string,
+  pendingListingFace?: number,
 ) {
   const canonicalWork = tokenRequiresCanonicalWorkCapacity(token, state);
   const normalizedAddress = canonicalWork
@@ -12461,6 +12490,7 @@ function tokenSpendabilityForWallet(
     // Core ticket availability does not release canonical WORK reservations.
     // Only additional pending listings need a local hold beyond this receipt.
     let localReserved = 0n;
+    const pendingFaces = new Map<string, number | undefined>();
     for (const listing of activeListings) {
       if (listing.tokenId !== token.tokenId ||
           normalizedAddress(listing.sellerAddress) !== normalizedWalletAddress ||
@@ -12468,11 +12498,7 @@ function tokenSpendabilityForWallet(
           listing.confirmed || !tokenListingHasSpendableSaleTicketAnchor(listing) ||
           tokenListingIsExpired(listing)) continue;
       if (isWorkAmoV8Authorization(listing.saleAuthorization.version)) {
-        if (canonicalCapacity.pendingListingReserve === undefined) {
-          pendingWorkListingAmountUnknown = true;
-        } else {
-          localReserved += canonicalCapacity.pendingListingReserve;
-        }
+        pendingFaces.set(listing.listingId, listing.saleAuthorization.unitFaceProofs);
         continue;
       }
       const amount = tokenRecordAmountAtoms(listing, String(listing.amount), listing.amountAtoms, listing.amountSubatoms);
@@ -12484,6 +12510,25 @@ function tokenSpendabilityForWallet(
         throw new Error("A pending WORK reservation could not be verified. Refresh the wallet before spending WORK.");
       }
       localReserved += amount;
+    }
+    if (pendingFaces.size) {
+      // The same pending txid may appear in several projections. A disagreement
+      // about its signed face cannot safely release spendable capacity.
+      for (const rows of [localListings, state.listings, localClosedListings, state.closedListings]) {
+        for (const row of rows) {
+          if (pendingFaces.has(row.listingId) && row.network === token.network &&
+              row.tokenId === token.tokenId && !row.confirmed &&
+              normalizedAddress(row.sellerAddress) === normalizedWalletAddress &&
+              String(row.saleAuthorization.unitFaceProofs) !== String(pendingFaces.get(row.listingId))) {
+            pendingWorkListingAmountUnknown = true;
+          }
+        }
+      }
+      for (const face of pendingFaces.values()) {
+        const reserve = pendingWorkListingReserveForFace(canonicalCapacity, face);
+        if (reserve === undefined) pendingWorkListingAmountUnknown = true;
+        else localReserved += reserve;
+      }
     }
     reservedBalanceAtoms = canonicalCapacity.reserved + localReserved;
     reservedBalance = workNumberFromAtoms(reservedBalanceAtoms);
@@ -12624,7 +12669,9 @@ function tokenSpendabilityForWallet(
       ? pendingOutgoingAtoms?.toString()
       : undefined,
     pendingWorkListingAmountUnknown,
-    pendingListingReserveSubatoms: canonicalCapacity?.pendingListingReserve?.toString(),
+    pendingListingReserveSubatoms: canonicalCapacity && pendingListingFace !== undefined
+      ? pendingWorkListingReserveForFace(canonicalCapacity, pendingListingFace)?.toString()
+      : undefined,
     reservedBalance:
       bond && reservedBalanceAtoms !== null
         ? reservedBalanceAtoms.toString()
@@ -14906,7 +14953,7 @@ function MarketplaceBrowseReadStatus({ browse, onRefresh }: { browse: TokenBrows
     <div>
       <p className="field-note" role={browse.error ? "alert" : "status"}>
         {snapshot
-          ? `Last verified ${formatDate(snapshot.observedAt)} at block ${snapshot.checkpoint.height.toLocaleString()}. Search and counts cover all listings at this observation. Showing up to ${snapshot.book.limit} tickets.`
+          ? `Last verified ${formatDate(snapshot.observedAt)} at block ${snapshot.checkpoint.height.toLocaleString()}. Search and counts cover ${snapshot.book.unitFaceProofs ? `the ${snapshot.book.unitFaceProofs.toLocaleString()}-proof WORK book` : "all listings"} at this observation. Showing up to ${snapshot.book.limit} tickets.`
           : browse.error ? "Sale tickets are unavailable. No empty market is being reported."
             : "Loading sale tickets from the verified market snapshot…"}
         {snapshot && browse.loading ? browse.matches ? " Refreshing this page." : " Showing the previous results while the selected view loads." : ""}
@@ -17258,15 +17305,15 @@ async function requireFreshWorkCapacityBeforeBroadcast(
   localClosedListings: PowTokenClosedListing[],
   localTransfers: PowTokenTransfer[],
   localSales: PowTokenSale[],
-  pendingListing = false,
+  pendingListingFace: number | false = false,
   ownSignedTxid?: string,
 ) {
   const state = await fetchFreshWalletTokenPreflightState(walletAddress, token.tokenId);
   const spendability = tokenSpendabilityForWallet(
-    walletAddress, token, state, localListings, localClosedListings, localTransfers, localSales, ownSignedTxid,
+    walletAddress, token, state, localListings, localClosedListings, localTransfers, localSales, ownSignedTxid, pendingListingFace || undefined,
   );
   const available = exactIntegerBigInt(spendability.spendableBalanceSubatoms);
-  const required = pendingListing
+  const required = pendingListingFace !== false
     ? exactIntegerBigInt(spendability.pendingListingReserveSubatoms)
     : amountSubatoms;
   if (available === null || required === null || required <= 0n || required > available) {
@@ -26516,7 +26563,7 @@ export default function App() {
   const workAmoV8ListingTermsSelected =
     workV8DeclarationBoundaryObserved(workFloorQuote);
   const workAmoListingFreshPreflightReady =
-    workAmoListingCanAttemptFreshPreflight(workFloorQuote);
+    workAmoListingCanAttemptFreshPreflight(workFloorQuote, tokenListFaceProofs);
   const workAmoListInputReady = Boolean(
     walletTransferToken &&
       isWorkToken(walletTransferToken) &&
@@ -30031,7 +30078,9 @@ export default function App() {
           setTokenListings((previousListings) => tokenListingsWithPreservedLocalPending(
             previousListings, applyPendingTokenListingSeals(snapshot.token.listings), snapshot.token.closedListings));
           setTokenSummary({ ...tokenSummaryMetadata(snapshot.token), listingBookComplete: false,
-            browseAssetCounts: browse.book.assetCounts, browseBondReferences: payload.browseBondReferences, browseVersion: browse.version });
+            browseAssetCounts: browse.book.assetCounts, browseWorkFaceCounts: browse.book.workFaceCounts,
+            browseBestWorkArb: browse.book.bestWorkArb,
+            browseBondReferences: payload.browseBondReferences, browseVersion: browse.version });
           const floorTransition = planWorkFloorQuoteTransition(snapshot.workFloor,
             acceptedWorkFloorQuoteRef.current ?? previous?.workFloor, workV8DeclarationBoundaryLatchRef.current);
           if (floorTransition.incomingBoundaryObserved) workV8DeclarationBoundaryLatchRef.current = true;
@@ -36461,7 +36510,7 @@ export default function App() {
         tone: "bad",
         text: workListing
           ? workV8TermsSelected
-            ? "The AMO V8 unit is exactly 25,000 proofs. Enter a valid optional buyer lock."
+            ? "Choose a 25,000- or 250,000-proof AMO face and a valid optional buyer lock."
             : "Choose a 20,000, 50,000, or 100,000-proof AMO V6 face and a valid optional buyer lock."
           : "Enter a valid listing amount, price, and optional buyer lock.",
       });
@@ -36494,7 +36543,7 @@ export default function App() {
         if (!walletAction.isCurrent()) {
           return;
         }
-        assertWorkAmoListingEnabled(freshFloor);
+        assertWorkAmoListingEnabled(freshFloor, tokenListFaceProofs);
         workV8Listing = preparedWorkListingMode === "native-q16";
         if (
           workV8Listing
@@ -36541,6 +36590,8 @@ export default function App() {
         tokenClosedListings,
         tokenTransfers,
         tokenSales,
+        undefined,
+        workV8Listing ? tokenListFaceProofs : undefined,
       );
       const spendableAmountUnits = exactIntegerBigInt(
         workListing
@@ -36656,6 +36707,7 @@ export default function App() {
         throw new Error("Credit listing OP_RETURN is over 100 KB.");
       }
 
+      const { registryPayment, postProtocolPayments, labels } = tokenListingPayments(saleAuthorization);
       const paymentPsbt = await buildPaymentPsbt({
         excludeOutpoints: activeTokenListingAnchorOutpointsForAddress(
           spendability.activeListings,
@@ -36665,18 +36717,8 @@ export default function App() {
         feeRate,
         fromAddress: actionAddress,
         network: "livenet",
-        payments: [
-          {
-            address: latestToken.registryAddress,
-            amountSats: TOKEN_MIN_MUTATION_PRICE_SATS,
-          },
-        ],
-        postProtocolPayments: [
-          {
-            address: actionAddress,
-            amountSats: TOKEN_LISTING_ANCHOR_VALUE_SATS,
-          },
-        ],
+        payments: [registryPayment],
+        postProtocolPayments,
         protocolPayloads: [payload],
         requireConfirmedUtxos: true,
       });
@@ -36690,18 +36732,36 @@ export default function App() {
         return;
       }
       const txid = await reviewAndSendMarketplace({
-        prepared: paymentPsbt, title: "Review marketplace listing intent", fields: [["Asset", latestToken.ticker], ["Seller", address], ["Buyer lock", saleAuthorization.buyerAddress || "Any eligible buyer"], ["Seller price", workListing ? "Derived and frozen only at confirmation" : String(saleAuthorization.priceSats) + " proofs"], ["Credit ID", latestToken.tokenId], ["Quantity terms", workListing ? "Derived and frozen only at confirmation; estimate " + attemptedAmountDisplay : parsedAmount!.display + " " + token.ticker], ["Proof face", workListing ? String(tokenListFaceProofs) + " proofs" : "Not a WORK AMO unit"]],
+        prepared: paymentPsbt,
+        title: "Review marketplace listing intent",
+        fields: [
+          ["Asset", latestToken.ticker],
+          ["Seller", actionAddress],
+          ["Buyer lock", saleAuthorization.buyerAddress || "Any eligible buyer"],
+          ["Seller price", workListing ? String(tokenListFaceProofs) + " proofs" : String(saleAuthorization.priceSats) + " proofs"],
+          ["Credit ID", latestToken.tokenId],
+          ["Quantity terms", workListing ? "Derived and frozen only at confirmation; estimate " + attemptedAmountDisplay : parsedAmount!.display + " " + token.ticker],
+          ["Proof face", workListing ? String(tokenListFaceProofs) + " proofs" : "Not a WORK AMO unit"],
+        ],
         payload, registry: latestToken.registryAddress, context: marketContext, kind: "credit",
-        payments: [{address: latestToken.registryAddress, amountSats: 546}, {address, amountSats: 546}], labels: ["Registry payment", "Seller-controlled ticket locked until purchase or delisting"], revalidate: async () => { await (workListing && preparedWorkListingMode
-            ? async () => {
-                await freshWorkWriteMode(preparedWorkListingMode);
-                await requireFreshWorkCapacityBeforeBroadcast(
-                  actionAddress, token, attemptedAmountUnits,
-                  tokenListings, tokenClosedListings, tokenTransfers, tokenSales,
-                  workV8Listing,
-                );
-              }
-            : undefined)?.(); if (!isWorkToken(token)) { const fresh = await fetchFreshWalletTokenPreflightState(actionAddress, token.tokenId); const spendable = tokenSpendabilityForWallet(actionAddress, token, fresh, tokenListings, tokenClosedListings, tokenTransfers, tokenSales); const available = exactIntegerBigInt(spendable.spendableBalanceAtoms); if (available === null || attemptedAmountUnits > available) throw new Error("Credit capacity changed. Refresh and review again."); } },
+        payments: [registryPayment, ...postProtocolPayments],
+        labels,
+        revalidate: async () => {
+          if (workListing && preparedWorkListingMode) {
+            const fresh = await freshWorkWriteMode(preparedWorkListingMode);
+            assertWorkAmoListingEnabled(fresh.quote, tokenListFaceProofs);
+            await requireFreshWorkCapacityBeforeBroadcast(
+              actionAddress, token, attemptedAmountUnits,
+              tokenListings, tokenClosedListings, tokenTransfers, tokenSales,
+              workV8Listing ? tokenListFaceProofs : undefined,
+            );
+          } else {
+            const fresh = await fetchFreshWalletTokenPreflightState(actionAddress, token.tokenId);
+            const spendable = tokenSpendabilityForWallet(actionAddress, token, fresh, tokenListings, tokenClosedListings, tokenTransfers, tokenSales);
+            const available = exactIntegerBigInt(spendable.spendableBalanceAtoms);
+            if (available === null || attemptedAmountUnits > available) throw new Error("Credit capacity changed. Refresh and review again.");
+          }
+        },
       });
       if (!walletAction.isCurrent()) {
         return;
@@ -43254,7 +43314,7 @@ function TokenWalletWorkspace({
   const workAmoV8TermsVisible =
     workV8DeclarationBoundaryObserved(workFloorQuote);
   const workAmoAllowedFaceProofs = workAmoV8TermsVisible
-    ? WORK_AMO_V8_ALLOWED_FACE_PROOFS
+    ? WORK_AMO_FACE_PROOFS
     : WORK_AMO_V6_ALLOWED_FACE_PROOFS;
   const workAmoProtocolVerified =
     workAmoV8Enabled || workAmoV6ActivationReady(workFloorQuote);
@@ -43264,7 +43324,7 @@ function TokenWalletWorkspace({
     workAmoSettlementEnabled ||
     workAmoSettlementCanRetryFreshPreflight(workFloorQuote);
   const workAmoListingEnabled =
-    workAmoListingCanAttemptFreshPreflight(workFloorQuote);
+    workAmoListingCanAttemptFreshPreflight(workFloorQuote, listFaceProofs);
   const selectedWorkAmoEstimate = workAmoEstimateForFace(
     workFloorQuote,
     listFaceProofs,
@@ -43968,6 +44028,10 @@ function TokenWalletWorkspace({
               WORK settlement admission will be rechecked against the live
               canonical tip before any transaction is prepared.
             </p>
+          ) : selectedListTokenIsWork && listFaceProofs === WORK_AMO_EXPANDED_FACE_PROOFS && !workAmoListingEnabled ? (
+            <p className="field-note">
+              New 250,000-proof listings are waiting for verified declaration, index and live admission.
+            </p>
           ) : selectedListTokenIsWork && !workAmoListingEnabled ? (
             <p className="field-note">
               New proof-native AMO units are temporarily read-only because
@@ -44060,7 +44124,7 @@ function TokenWalletWorkspace({
                 <p className="field-note work-amo-quote-authority-status">
                   Proof-native AMO write gate:{" "}
                   <strong>
-                    {workAmoListingWritesReady(workFloorQuote)
+                    {workAmoListingEnabled && workAmoListingWritesReady(workFloorQuote)
                       ? "ready"
                       : workAmoListingEnabled
                         ? "fresh preflight"
@@ -44165,9 +44229,15 @@ function TokenWalletWorkspace({
                 <strong>{TOKEN_MIN_MUTATION_PRICE_SATS.toLocaleString()} proofs</strong>
               </div>
               <div>
-                <span>Ticket</span>
+                <span>Locked ticket</span>
                 <strong>{TOKEN_LISTING_ANCHOR_VALUE_SATS.toLocaleString()} proofs</strong>
               </div>
+              {selectedListTokenIsWork && listFaceProofs === WORK_AMO_EXPANDED_FACE_PROOFS && (
+                <div>
+                  <span>Liquidity fee</span>
+                  <strong>{WORK_AMO_LIQUIDITY_FEE_SATS.toLocaleString()} proofs</strong>
+                </div>
+              )}
             </div>
             {selectedListTokenIsWork &&
             selectedWalletBalance?.pendingWorkListingAmountUnknown ? (
@@ -44392,7 +44462,7 @@ function TokenWalletWorkspace({
                 sale tickets became read-only relics when V4 activated. They
                 cannot be sealed or bought. The seller can still publish a
                 delist5 transaction to return the seller-controlled ticket
-                output, then create a current V8 25,000-proof AMO unit.
+                output before creating a new WORK AMO unit.
                 Registry and miner fees are final.
               </p>
               <div className="token-list compact-token-list">
@@ -47738,7 +47808,7 @@ function growthActualNetworkValue(
   ) =>
     "salePaymentSats" in event
       ? eventNumber(event.salePaymentSats)
-      : "priceSats" in event
+      : "priceSats" in event && (!("kind" in event) || event.kind === "token-sale")
         ? eventNumber(event.priceSats)
         : 0;
   const eventFrozenNetworkValueSats = (
@@ -53501,6 +53571,8 @@ function TokenMarketplacePanel({
   const [workMarketplaceVersion, setWorkMarketplaceVersion] = useState<
     "amo" | "v4-relic" | "v1-relic"
   >("amo");
+  const [workBookTab, setWorkBookTab] = useState<`${WorkBookFace}`>("25000");
+  const selectedWorkFace = workBookTab === "25000" ? WORK_AMO_FACE_PROOFS[0] : WORK_AMO_EXPANDED_FACE_PROOFS;
   const [workV1RefundSnapshot, setWorkV1RefundSnapshot] = useState<
     WorkMarketV1RefundListing[] | null
   >(null);
@@ -53544,6 +53616,7 @@ function TokenMarketplacePanel({
     tokenListingSearchQuery,
     tokenListingSortMode,
     workMarketplaceVersion,
+    selectedWorkFace,
   ]);
   useEffect(() => {
     setTokenMarketLogPageIndex(0);
@@ -53583,7 +53656,7 @@ function TokenMarketplacePanel({
     tokenMarketListingActivityItems,
     tokenMarketSealActivityItems,
     tokenMarketSaleActivityItems,
-    bestWorkAmoBuyerArb,
+    bestWorkAmoBuyerArb: localBestWorkAmoBuyerArb,
   } = useMemo(() => {
     const networkListings = listings.filter(
       (listing) => listing.network === network,
@@ -54007,10 +54080,14 @@ function TokenMarketplacePanel({
       : localTokenMarketActivityTotals;
   const remoteBrowseEnabled = network === "livenet" && Boolean(summary.browseVersion) &&
     (!selectedTokenIsWork || workMarketplaceVersion === "amo");
+  const workBookFace = selectedTokenIsWork && workMarketplaceVersion === "amo" && workV8BoundaryObserved
+    ? selectedWorkFace : undefined;
+  const workBookPanel = workBookFace ? { "aria-labelledby": `work-amo-face-tab-${workBookFace}`,
+    id: `work-amo-face-book-${workBookFace}`, role: "tabpanel" } : {};
   const browse = useMarketplaceBrowse<PowTokenListing>({
     enabled: remoteBrowseEnabled,
     query: { asset: selectedMarketToken?.tokenId ?? "credits", status: tokenListingBookFilter,
-      q: tokenListingSearchQuery, sort: tokenListingSortMode },
+      unitFaceProofs: workBookFace, q: tokenListingSearchQuery, sort: tokenListingSortMode },
     version: summary.browseVersion,
     checkpoint: { height: summary.indexedThroughBlock, blockHash: summary.indexedThroughBlockHash },
     onVersionExpired: onRetryMarketplaceSummary,
@@ -54019,9 +54096,15 @@ function TokenMarketplacePanel({
   const browsePage = marketplaceBrowsePage(browse);
   const listingReferencesCurrent = !remoteBrowseEnabled || browse.response?.version === summary.browseVersion;
   const browseCounts = browse.matches ? browse.response?.book.counts : undefined;
-  const completeScopeCounts = marketplaceBrowseCounts(summary,
+  const assetScopeCounts = marketplaceBrowseCounts(summary,
     selectedMarketToken ? [selectedMarketToken.tokenId] : tokens.filter((token) => !BOND_TOKEN_IDS.has(token.tokenId)).map((token) => token.tokenId));
-  const orderBookListings = marketListings;
+  const completeScopeCounts = workBookFace ? summary.browseWorkFaceCounts?.[workBookFace] ?? browseCounts : assetScopeCounts;
+  const bestWorkAmoBuyerArb = summary.browseVersion && workV8BoundaryObserved
+    ? summary.browseBestWorkArb && { numerator: BigInt(summary.browseBestWorkArb.numerator), denominator: BigInt(summary.browseBestWorkArb.denominator) }
+    : localBestWorkAmoBuyerArb;
+  const orderBookListings = useMemo(() => workBookFace
+    ? marketListings.filter((listing) => workAmoBookFace(listing) === workBookFace)
+    : marketListings, [marketListings, workBookFace]);
   const sealedListings = useMemo(() => orderBookListings.filter(
     tokenListingHasConfirmedSaleTicketSeal,
   ), [orderBookListings]);
@@ -54041,11 +54124,12 @@ function TokenMarketplacePanel({
     tokenReferenceById,
     workMarketFloorQ8,
   ), [visibleMarketListings, tokenListingSortMode, tokenReferenceById, workMarketFloorQ8]);
-  const locallyFilteredMarketListings = useMemo(() => tokenListingSearchQuery
-    ? sortedBookListings.filter((listing) =>
-        tokenListingMatchesSearch(listing, tokenListingSearchQuery),
-      )
-    : sortedBookListings, [sortedBookListings, tokenListingSearchQuery]);
+  const locallyFilteredMarketListings = useMemo(() => {
+    if (!tokenListingSearchQuery) return sortedBookListings;
+    const listingId = workBookFace ? workAmoBookLookupId(tokenListingSearchQuery) : undefined;
+    return sortedBookListings.filter((listing) => listingId
+      ? listing.listingId === listingId : tokenListingMatchesSearch(listing, tokenListingSearchQuery));
+  }, [sortedBookListings, tokenListingSearchQuery, workBookFace]);
   const filteredMarketListings = remoteBrowseEnabled ? browsePage.items : locallyFilteredMarketListings;
   const sortedMarketListings = filteredMarketListings;
   const walletMarketListings = address
@@ -54147,10 +54231,10 @@ function TokenMarketplacePanel({
   const workAmoProtocolWritesEnabled =
     workAmoProtocolWritesReady ||
     workAmoSettlementCanRetryFreshPreflight(workFloorQuote);
-  const workAmoListingWritesReadyNow =
-    workAmoListingWritesReady(workFloorQuote);
   const workAmoListingWritesEnabled =
-    workAmoListingCanAttemptFreshPreflight(workFloorQuote);
+    workAmoListingCanAttemptFreshPreflight(workFloorQuote, workBookFace);
+  const workAmoListingWritesReadyNow =
+    workAmoListingWritesReady(workFloorQuote) && workAmoListingWritesEnabled;
   const workAmoWriteReasonCode = String(
     (workAmoV8TermsVisible
       ? workFloorQuote?.workAmoV8?.reasonCode
@@ -54256,7 +54340,7 @@ function TokenMarketplacePanel({
                 <h3>WORK AMO State</h3>
                 <p>
                   {workAmoV8TermsVisible
-                    ? "New V8 intents commit the single 25,000-proof face. Confirmation order derives the exact 16-decimal WORK amount from canonical network value immediately before the listing."
+                    ? "WORK has separate books for 25,000-proof and 250,000-proof units. Confirmation derives the exact 16-decimal WORK amount from canonical network value immediately before each listing."
                     : "Until the V8 declaration boundary, V6 remains authoritative with 20,000, 50,000, and 100,000-proof faces at exact 8-decimal WORK precision."}{" "}
                   Once confirmed under its active protocol, those terms are
                   frozen; later value changes do not reprice seals or
@@ -54346,13 +54430,13 @@ function TokenMarketplacePanel({
                         </>
                       ):null}
                       <div>
-                        <span>Best ask</span>
+                        <span>{workV8BoundaryObserved ? "Best ask across WORK tiers" : "Best ask"}</span>
                         <strong>
                           {bestWorkAmoBuyerArb
                             ? `${formatExactRational(
                               bestWorkAmoBuyerArb,
                             )} proofs arb`
-                            : summary.browseVersion ? "See the sorted sealed book" : "No sealed asks"}
+                            : summary.browseVersion && summary.browseBestWorkArb === undefined ? "See the sorted sealed book" : "No compatible sealed asks"}
                         </strong>
                       </div>
                       {(exactIntegerBigInt(workCreditNetworkValueQ8)??0n)>0n? (
@@ -54420,7 +54504,7 @@ function TokenMarketplacePanel({
 
                   <div className="work-amo-quote-control">
                     <div>
-                      <strong>Proof-native AMO write gate</strong>
+                      <strong>{workBookFace ? `${workBookFace.toLocaleString()}-proof listing admission` : "Proof-native AMO write gate"}</strong>
                       <span>
                         {workAmoListingWritesReadyNow
                           ? "Ready · canonical proof state indexed"
@@ -54776,7 +54860,7 @@ function TokenMarketplacePanel({
             className="marketplace-tabs work-marketplace-version-tabs"
             items={[
               {
-                count: completeScopeCounts?.all.toLocaleString() ?? (summary.browseVersion ? "—" : workAmoListings.length.toLocaleString()),
+                count: assetScopeCounts?.all.toLocaleString() ?? (summary.browseVersion ? "—" : workAmoListings.length.toLocaleString()),
                 id: "amo",
                 label: "AMO",
                 panelId: "credit-market-book",
@@ -54850,7 +54934,7 @@ function TokenMarketplacePanel({
                 <p>
                   These WORK listings were disabled at activation height
                   959062. They are immutable history and cannot be sealed or
-                  purchased. A new V8 unit is exactly 25,000 proofs.
+                  purchased. V8 units retain their signed proof face.
                   Confirmation derives and freezes the exact 16-decimal WORK
                   amount.
                 </p>
@@ -55147,13 +55231,27 @@ function TokenMarketplacePanel({
                 workMarketplaceVersion === "v4-relic"
                   ? "Confirmed pre-V8 listings are immutable relic history. They are not sealable, purchasable, or delistable through governed AMO after the V8 boundary."
                   : selectedMarketTokenIsWork
-                    ? "Each pending V8 intent commits the single 25,000-proof face. Confirmation derives and freezes its exact 16-decimal WORK amount; USD equivalents are display-only."
+                    ? "Each listing commits its proof face. Confirmation freezes its exact WORK amount. The 250,000-proof book opens for new listings once its declaration and live admission checks are ready."
                   : selectedMarketToken
                   ? `${selectedMarketToken.ticker} listings only. Buyers spend the sealed ticket and pay the seller plus registry.`
                   : "Open listings reserve seller balance, then buyers spend the sealed ticket and pay the seller plus registry."}
               </p>
             </div>
           </div>
+          {workBookFace && <SegmentedTabs
+            ariaLabel="WORK AMO unit size"
+            items={WORK_AMO_FACE_PROOFS.map((face) => ({
+              id: `${face}` as const,
+              label: `${face.toLocaleString()} proofs`,
+              count: summary.browseWorkFaceCounts?.[face]?.all.toLocaleString(),
+              tabId: `work-amo-face-tab-${face}`, panelId: `work-amo-face-book-${face}`,
+            }))}
+            onChange={setWorkBookTab}
+            value={workBookTab}
+          />}
+          {workBookFace && WORK_AMO_FACE_PROOFS.filter((face) => face !== workBookFace).map((face) =>
+            <div aria-labelledby={`work-amo-face-tab-${face}`} hidden id={`work-amo-face-book-${face}`} key={face} role="tabpanel" />
+          )}
           {selectedMarketTokenIsWork && !workAmoProtocolVerified ? (
             <p className="field-note bad">
               AMO declaration or canonical index evidence is incomplete.
@@ -55321,7 +55419,7 @@ function TokenMarketplacePanel({
             </div>
           ) : null}
           {filteredMarketListings.length ? (
-            <div className="token-market-grid">
+            <div className="token-market-grid" {...workBookPanel}>
               {tokenListingPage.items.map((listing) => {
                 const listingIsWork = isWorkToken(listing);
                 const hasSeal = tokenSaleAuthorizationUsesSaleTicketAnchor(
@@ -55586,12 +55684,14 @@ function TokenMarketplacePanel({
               })}
             </div>
           ) : (
-            <div className="empty-state">
+            <div className="empty-state" {...workBookPanel}>
               <Wallet size={28} />
               <h3>
                   {remoteBrowseEnabled
                     ? !browse.response ? browse.error ? "Sale tickets unavailable" : "Loading credit sale tickets"
-                      : !browse.matches ? "Updating sale tickets" : "No matching sale tickets"
+                      : !browse.matches ? "Updating sale tickets"
+                      : workBookFace && browse.response.book.counts.all === 0
+                        ? `No confirmed ${workBookFace.toLocaleString()}-proof listings yet` : "No matching sale tickets"
                     : tokenMarketLoading
                     ? "Loading credit sale tickets"
                     : listingBookPreviewIncomplete

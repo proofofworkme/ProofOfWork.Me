@@ -60,6 +60,7 @@ import {
 } from "../server/work-amo-v8-declaration.mjs";
 import {
   WORK_PRECISION_V2_STATIC_CONSTRAINT_DEFINITIONS,
+  workAmoExpandedLiquiditySchemaReady,
 } from "../server/work-precision-v2-schema.mjs";
 import {
   WORK_AMO_V6_AUTH_VERSION,
@@ -1080,6 +1081,18 @@ assert.deepEqual(workPrecisionV2ConstraintAudit(canonicalConstraintDefinitions),
   v8TransitionReady: true,
   v8ValuesReady: true,
 });
+const expandedValues = canonicalConstraintDefinitions.v8Values.replace(
+  "unit_face_proofs = 25000", "unit_face_proofs = ANY (ARRAY[25000, 250000])",
+);
+assert.equal(workAmoExpandedLiquiditySchemaReady(canonicalConstraintDefinitions.v8Values), false);
+assert.equal(workAmoExpandedLiquiditySchemaReady(expandedValues), true);
+assert.deepEqual(workPrecisionV2ConstraintAudit({ ...canonicalConstraintDefinitions, v8Values: expandedValues }),
+  workPrecisionV2ConstraintAudit(canonicalConstraintDefinitions));
+for (const invalid of [null, expandedValues.replace("250000]", "250000, 250001]"),
+  expandedValues.replace("unit_price_sats = unit_face_proofs", "true")]) {
+  assert.equal(workAmoExpandedLiquiditySchemaReady(invalid), false);
+  assert.equal(workPrecisionV2ConstraintAudit({ ...canonicalConstraintDefinitions, v8Values: invalid }).v8ValuesReady, false);
+}
 for (const [field, key, target] of [
   ["definitionPrecisionReady", "definitionPrecision", "10000000000000000000"],
   ["v6Q8Ready", "v6Values", "100000"],

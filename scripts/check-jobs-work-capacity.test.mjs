@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import * as bitcoin from 'bitcoinjs-lib';
 import * as jobs from '../src/shared/protocol/jobs.mjs';
+import * as amo from '../src/shared/protocol/workAmoExpandedLiquidity.mjs';
 
 const id = n => n.toString(16).padStart(64, '0');
 const owner = 'bc1qfwytlzyr3ym3enz2eutwtjsf9kkf6uqkjydk3e';
@@ -29,7 +30,7 @@ async function loadClient(path, imports = {}, extras = {}) {
 const amount = await loadClient('src/workAmount.ts');
 const recovery = await loadClient("src/shared/wallet/actionRecovery.ts");
 const batchRecovery = await loadClient("src/shared/work/workBatchRecovery.ts", { "../wallet/actionRecovery": recovery, "../protocol/pay.mjs": { normalizePayAmount: jobs.normalizeJobReward } });
-const capacity = await loadClient("src/shared/work/canonicalWorkCapacity.ts", { "./workBatchRecovery": batchRecovery });
+const capacity = await loadClient("src/shared/work/canonicalWorkCapacity.ts", { "./workBatchRecovery": batchRecovery, "../protocol/workAmoExpandedLiquidity.mjs": amo });
 let response, requests, duringRead;
 const adapter = await loadClient('src/features/jobs/jobsWorkCapacity.ts', {
   '../../workAmount': amount,
@@ -163,11 +164,22 @@ test('uncovered pending sales debit once and canonical reservation IDs prevent s
   differential(payload({ reservations: [{ listingId: id(101), amountSubatoms: scale.toString() }], sales: [sale(1)] }), 9n * scale);
   differential(payload({ listings: [listing(101)], sales: [sale(1)] }), 9n * scale);
 });
-test('pending V8 listings use exactly the existing capacity bound and unknown amounts fail closed', () => {
-  const network = '10000000000000000000';
+test('pending V8 listings use the signed face at the same checkpoint and unknown amounts fail closed', () => {
+  const network = '10000000000000000013';
   const reserve = 25000n * (21000000n * scale) * 100000000n / BigInt(network);
+  const expanded = 250000n * (21000000n * scale) * 100000000n / BigInt(network);
+  assert.notEqual(expanded, reserve * 10n);
   const l = listing(1, { version: 'pwt-sale-v8', amountSubatoms: undefined, amount: '99', estimate: { estimateOnly: true } });
+  l.saleAuthorization.unitFaceProofs = 25000;
   differential(payload({ bound: { network, reserve: reserve.toString() }, listings: [l] }), 10n * scale - reserve);
+  const large = { ...l, listingId: id(2), saleAuthorization: { ...l.saleAuthorization, unitFaceProofs: 250000, anchorTxid: id(2) } };
+  const both = { confirmed: 100n * scale, bound: { network, reserve: reserve.toString() }, listings: [l, large, large] };
+  differential(payload(both), both.confirmed - reserve - expanded);
+  differential(payload({ ...both, listings: [large, { ...large, saleAuthorization: { ...large.saleAuthorization, unitFaceProofs: 25000 } }] }), 0n);
+  differential(payload({ ...both, reservations: [{ listingId: large.listingId, amountSubatoms: '123' }] }), both.confirmed - reserve - 123n);
+  for (const face of [undefined, '025000', '250000.0', 50000]) {
+    differential(payload({ ...both, listings: [{ ...large, saleAuthorization: { ...large.saleAuthorization, unitFaceProofs: face } }] }), 0n);
+  }
   differential(payload({ listings: [l] }), 0n);
   differential(payload({ listings: [listing(1, { amountSubatoms: undefined, estimate: { estimateOnly: true } })] }), 0n);
   differential(payload({ listings: [{ ...l, saleAuthorization: { ...l.saleAuthorization, expiresAt: '2026-10-08T00:00:00Z' } }] }), 10n * scale);

@@ -1,3 +1,6 @@
+import { WORK_AMO_LIQUIDITY_FEE_SATS } from "../src/shared/protocol/workAmoExpandedLiquidity.mjs";
+import { expandedLiquidityPositionEligible } from "../server/work-amo-expanded-liquidity.mjs";
+import { workListingLiquidityPayment } from "../server/token-listing-lifecycle.mjs";
 import { admitIndexedLinkedArticle, linkedArticleEvidenceForTx, linkedArticleEvidenceMatches, recordPublishLinkedCapability } from '../server/publish-linked.mjs';
 import { canonicalPwidRejectionProjection } from "../server/pwid-rejection-projection.mjs";
 import { buildWorkBatchPayload, parseWorkBatchPayload } from "../src/shared/protocol/workBatch.mjs";
@@ -7879,6 +7882,11 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
         // pre-bond live network value. The underlying PWM/PWT events
         // carry the proof value; the mint companion must stay zero-value.
         normalizedAmountSats = 0;
+      } else if (normalizedKind === "token-listing" && canonicalItem?.saleAuthorization?.unitFaceProofs === 250000 &&
+          canonicalItem.saleAuthorization.version === "pwt-sale-v8" && canonicalItem.valid !== false) {
+        const payment = workListingLiquidityPayment(canonicalItem);
+        if (!payment) throw new Error("Expanded WORK opening lacks a verified liquidity fee.");
+        normalizedAmountSats = 546 + payment.liquidityFeeSats;
       } else if (normalizedKind === "token-sale") {
         // Sale volume is the seller price only. The sale-ticket anchor refund
         // is not revenue/value, and the 546 registry mutation is projected by
@@ -7909,6 +7917,9 @@ async function canonicalRecoveryItemsForTx(tx, messages, options = {}) {
       ...(rawItem ?? {}),
       ...canonicalItem,
       amountSats: normalizedAmountSats,
+      ...(normalizedKind === "token-listing" && canonicalItem?.saleAuthorization?.version === "pwt-sale-v8" &&
+        canonicalItem.saleAuthorization.unitFaceProofs === 250000 && canonicalItem.valid !== false
+        ? { marketplaceMutationFeeSats: normalizedAmountSats } : {}),
       blockHeight:
         canonicalItem?.blockHeight ??
         canonicalItem?.closedBlockHeight ??
@@ -15800,6 +15811,12 @@ async function upsertWorkAmoV8ListingProjection(client, item, status) {
       `Canonical AMO V8 listing ${listingId || listingTxid || "unknown"} has incomplete Q16 frozen terms.`,
     );
   }
+  if (terms.unitFaceProofs === 250000 && (
+    item._workAmoV5ReplayBound !== true || item.workAmoV5ReplayOutcome?.valid !== true ||
+    item.workAmoV5ReplayOutput?.liquidityFeeSats !== WORK_AMO_LIQUIDITY_FEE_SATS ||
+    !expandedLiquidityPositionEligible(item.expandedLiquidityDeclaration, {
+      blockHeight: listingPosition.blockHeight, blockHash: listingBlockHash, blockTransactionIndex: listingPosition.blockIndex,
+    }))) throw new Error("Expanded WORK frozen terms require canonical List replay and declaration evidence.");
   const activationBinding = await client.query(
     `
       SELECT migration.value AS migration_marker,
@@ -25264,7 +25281,16 @@ function workAmoV6ReplayListingMaterialization({
     return fail();
   }
 
+  let openingFee = null;
+  if (v8 && canonicalKind === "token-listing" && frozenValidation.frozenTerms.unitFaceProofs === 250000) {
+    if (output.liquidityFeeSats !== WORK_AMO_LIQUIDITY_FEE_SATS || !Number.isSafeInteger(output.liquidityFeeVout) ||
+        output.liquidityFeeVout < 0 || output.liquidityFeeVout === replayAuthorization.anchorVout) return fail();
+    const feeSats = 546 + output.liquidityFeeSats;
+    openingFee = { liquidityFeeSats: output.liquidityFeeSats, liquidityFeeVout: output.liquidityFeeVout,
+      amountSats: feeSats, marketplaceMutationFeeSats: feeSats };
+  }
   return {
+    ...(openingFee ?? {}),
     amount: v8
       ? formatWorkSubatoms(amountAtoms)
       : formatWorkAtoms(amountAtoms),
@@ -25504,6 +25530,10 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
             valid,
         })
         : null;
+      if (governedListingMaterialization?.liquidityFeeSats &&
+          !expandedLiquidityPositionEligible(transition.payload?.expandedLiquidity, position.position)) {
+        throw new Error("Expanded WORK listing projection lacks position-bound declaration evidence.");
+      }
       const replayRawPayload = replay.rawCandidate === true
         ? workAmoV5RawPayloadForPreparedPosition(
             prepared,
@@ -25514,6 +25544,8 @@ export function bindPreparedTransactionsToWorkAmoV5Replay(
         ...item,
         ...semanticProjection,
         ...(governedListingMaterialization ?? {}),
+        ...(governedListingMaterialization?.liquidityFeeSats
+          ? { expandedLiquidityDeclaration: transition.payload.expandedLiquidity } : {}),
         ...(incbComponents ? {
           amount: item.amount,
           workAmoV5IncbReplayComponents: incbComponents.witness,

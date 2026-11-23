@@ -1,3 +1,6 @@
+import * as fixtureSecp from "@bitcoinerlab/secp256k1";
+import { normalizeExpandedLiquidityPins } from "../server/work-amo-expanded-liquidity.mjs";
+import { WORK_AMO_LIQUIDITY_FEE_SCRIPT } from "../src/shared/protocol/workAmoExpandedLiquidity.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -155,7 +158,7 @@ import {
   canonicalRawProtocolRecordSetFromTransaction,
 } from "../server/canonical-op-return.mjs";
 import {
-  workAmoV8CanonicalTokenStateCommitment,
+  WORK_AMO_V8_MODELS, workAmoV8CanonicalTokenStateCommitment,
 } from "../server/work-amo-v8.mjs";
 import {
   WORK_SUBATOM_PROJECTION_MODEL,
@@ -4385,6 +4388,7 @@ function replayRawAdversarialContext(
     openingIdState = rawAdversarialOpeningIdState,
     openingWorkState = rawAdversarialOpeningWorkState,
     workAmoV8 = null,
+    expandedLiquidity = null,
   } = {},
 ) {
   return replayWorkAmoV5RawBlock({
@@ -4399,6 +4403,7 @@ function replayRawAdversarialContext(
     openingWorkState,
     records: context.records,
     workAmoV8,
+    expandedLiquidity,
   });
 }
 
@@ -4715,6 +4720,85 @@ assert.equal(
   )?.balanceSubatoms,
   "8",
 );
+
+// In-memory, synthetic ticket signatures for the same raw replay that validates normal sale tickets.
+{
+  const fixtureSecret = Buffer.alloc(32, 17);
+  const pubkey = Buffer.from(fixtureSecp.pointFromScalar(fixtureSecret));
+  const seller = bitcoin.payments.p2pkh({ pubkey });
+  const sellerScript = Buffer.from(seller.output).toString("hex");
+  const registry = { scriptpubkey_address: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS, value: 546 };
+  const fee = { scriptpubkey: WORK_AMO_LIQUIDITY_FEE_SCRIPT, value: 5460 };
+  const fixturePins = normalizeExpandedLiquidityPins({ txid: hash("3"), blockHash: rawAdversarialPriorBlockHash,
+    blockHeight: rawAdversarialBlockHeight - 1, blockTransactionIndex: 1, protocolVout: 1,
+    registryPaymentVout: 0, recordOrdinal: 0, firstEligibleBlockOffset: 1, firstEligibleTransactionIndex: 3 });
+  const openingWorkState = normalizeWorkAmoV5RawWorkState({ amountStorageModel: WORK_SUBATOM_PROJECTION_MODEL,
+    confirmedSupplySubatoms: "210000000000000000000000", holders: [{ address: seller.address,
+      balanceSubatoms: "210000000000000000000000" }], listings: [] });
+  const openingEconomicState = buildRawAdversarialOpeningEconomicState({
+    genericState: rawAdversarialOpeningGenericState, idState: rawAdversarialOpeningIdState,
+    priorBlockHash: rawAdversarialPriorBlockHash, priorBlockHeight: rawAdversarialBlockHeight - 1, workState: openingWorkState });
+  const replay = (records, pins = fixturePins) => replayRawAdversarialContext(rawAdversarialBlockContext(records), {
+    openingEconomicState, openingWorkState, workAmoV8: { activationHeight: rawAdversarialBlockHeight - 10 },
+    expandedLiquidity: pins });
+  const encode = value => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const record = (index, message, vout, protocolVout, vin) => rawAdversarialRecord({
+    blockHash: rawAdversarialBlockHash, blockHeight: rawAdversarialBlockHeight, blockTransactionIndex: index,
+    feeSats: 41, protocol: "pwt1", message, protocolVout,
+    tx: { vin: vin ?? [{ txid: hash("d"), vout: index, prevout: { scriptpubkey_address: seller.address } }], vout } });
+  function listing(index, face, extra = [fee], registrySats = 546) {
+    const auth = { ...WORK_AMO_V8_MODELS, version: "pwt-sale-v8", tokenId: WORK_TOKEN_ID, ticker: "WORK",
+      unitFaceProofs: face, network: "livenet", nonce: "synthetic-list-" + index, buyerAddress: "", expiresAt: "",
+      registryAddress: WORK_AMO_V5_DECLARATION_REGISTRY_ADDRESS, sellerAddress: seller.address,
+      sellerPublicKey: pubkey.toString("hex"), anchorVout: 2, anchorValueSats: 546, anchorSigHashType: 0x83,
+      anchorType: "sale-ticket-v1", anchorScriptPubKey: sellerScript };
+    const message = "pwt1:list5:" + encode(auth);
+    return { auth, record: record(index, message, [{ ...registry, value: registrySats },
+      { scriptpubkey: rawAdversarialOpReturnScript(message), value: 0 }, { scriptpubkey: sellerScript, value: 546 }, ...extra], 1) };
+  }
+  function seal(index, list) {
+    const ticket = new bitcoin.Transaction();
+    ticket.version = 2;
+    ticket.addInput(Buffer.from(list.record.txid, "hex").reverse(), 2);
+    ticket.addOutput(seller.output, BigInt(list.auth.unitFaceProofs + 546));
+    const digest = ticket.hashForSignature(0, seller.output, 0x83);
+    const auth = { ...list.auth, anchorTxid: list.record.txid, anchorSignature: Buffer.from(
+      bitcoin.script.signature.encode(fixtureSecp.sign(digest, fixtureSecret), 0x83)).toString("hex") };
+    const message = "pwt1:seal5:" + list.record.txid + ":" + encode(auth);
+    return { auth, record: record(index, message, [registry, { scriptpubkey: rawAdversarialOpReturnScript(message), value: 0 }], 1) };
+  }
+  const old = listing(1, 25000, []);
+  const large = listing(3, 250000);
+  const fresh = listing(4, 25000, []);
+  const oldSeal = seal(5, old);
+  const largeSeal = seal(6, large);
+  const buyMessage = "pwt1:buy5:" + large.record.txid + ":" + rawAdversarialActor + ":" + encode(largeSeal.auth);
+  const buy = record(7, buyMessage, [registry, { scriptpubkey: sellerScript, value: 250546 },
+    { scriptpubkey: rawAdversarialOpReturnScript(buyMessage), value: 0 }], 2, [
+    { txid: hash("a"), vout: 7, prevout: { scriptpubkey_address: rawAdversarialActor } },
+    { txid: large.record.txid, vout: 2, prevout: { scriptpubkey_address: seller.address } } ]);
+  const records = [old.record, large.record, fresh.record, oldSeal.record, largeSeal.record, buy];
+  const mixed = replay(records);
+  const outcome = (result, txid) => result.events.find(item => item.txid === txid);
+  assert.deepEqual(mixed.events.map(item => item.reasonCode), records.map(() => ""));
+  assert.deepEqual(outcome(mixed, old.record.txid).output.frozenTerms, outcome(mixed, oldSeal.record.txid).output.frozenTerms);
+  assert.deepEqual(outcome(mixed, large.record.txid).output.frozenTerms, outcome(mixed, buy.txid).output.frozenTerms);
+  assert.equal(outcome(mixed, large.record.txid).output.liquidityFeeVout, 3);
+  assert.equal(outcome(mixed, largeSeal.record.txid).output.liquidityFeeSats, undefined);
+  assert.equal(mixed.economicState.baseState.tokenMarketplaceFeeSats, String(6 * 546 + 5460));
+  assert.equal(mixed.economicState.baseState.tokenSaleVolumeSats, "250000");
+  assert.equal(mixed.workState.holders.find(holder => holder.address === rawAdversarialActor).balanceSubatoms,
+    outcome(mixed, large.record.txid).output.frozenTerms.unitAmountSubatoms);
+  const withoutAuthority = replay([old.record, large.record, fresh.record, oldSeal.record], null);
+  assert.deepEqual(withoutAuthority.events.map(item => item.valid), [true, false, true, true]);
+  for (const invalid of [listing(2, 250000), listing(3, 250000, []), listing(3, 250000, [{ ...fee, value: 5459 }]),
+    listing(3, 250000, [fee, fee]), listing(3, 250000, [{ scriptpubkey: sellerScript, value: 5460 }]),
+    listing(3, 250000, [fee], 547)]) {
+    const result = replay([invalid.record]);
+    assert.equal(result.events[0].valid, false);
+    assert.equal(result.economicState.baseState.tokenMarketplaceFeeSats, "0");
+  }
+}
 
 function rawQ16MintReplay(amount) {
   const message = `pwt1:mint:${WORK_TOKEN_ID}:${amount}`;
@@ -6425,6 +6509,52 @@ assert.equal(
   )?.balance,
   "77",
 );
+
+// Replay the published transaction in the isolated fixture block. The serialized
+// input and all three outputs must reproduce its txid before evaluating fees.
+{
+  const declaration = readFileSync(new URL("../declarations/work-amo-expanded-liquidity.txt", import.meta.url), "utf8");
+  const message = `pwm1:m:${declaration}`;
+  const txid = "57eb549372f2318bfc3ade62c62e9e1092cd42702e9ffb5e2733659acc241f33";
+  const authority = bitcoin.address.fromOutputScript(
+    Buffer.from(WORK_AMO_V5_DECLARATION_AUTHORITY_SCRIPT_PUBKEY, "hex"), bitcoin.networks.bitcoin,
+  );
+  const inputScript = "483045022100d2d01beb607e526448c3c45b79a2d5f6e470579f075e5ca5041202f6527d65a8" +
+    "02205c1b3d7c1d564e13a3da9f495df22df3374a77285b80bee13094fcc4acca906701" +
+    "21024677f826d99a68ba4a6202f3bf80d926d4f7196044d569a0bbcee15766c23593";
+  const record = rawAdversarialRecord({
+    txid, blockHash: rawAdversarialBlockHash, blockHeight: rawAdversarialBlockHeight,
+    blockTransactionIndex: 1, protocol: "pwm1", protocolVout: 1, feeSats: 251, message,
+    tx: {
+      version: 2, locktime: 0,
+      vin: [{ txid: "c61b5aec19fc4c66b4653a30b48a5ffc8f19b96c978e871ed661ae45479cb582",
+        vout: 0, sequence: 0xffffffff, scriptsig: inputScript, prevout: { scriptpubkey_address: authority } }],
+      vout: [
+        { value: 546, scriptpubkey_address: authority },
+        { value: 0, scriptpubkey: rawAdversarialOpReturnScript(message) },
+        { value: 2222, scriptpubkey_address: authority },
+      ],
+    },
+  });
+  assert.equal(record.tx.vin[0].prevout.value, "3019");
+  assert.equal(createHash("sha256").update(Buffer.from(record.rawPayloadHex, "hex")).digest("hex"),
+    "d046f13915f8fd9d2422d8fd41134b2f6447649b289982cd2e27fd6321488476");
+  const replay = replayRawAdversarialRecords([record]);
+  assert.equal(replay.events.length, 1);
+  const [mail] = replay.events;
+  assert.equal(mail.valid, true);
+  assert.deepEqual(mail.stateDelta.baseContributions, [{ field: "mailFlowSats", value: "546" }]);
+  assert.deepEqual(mail.stateDelta.economicOutputs.map(output => [output.role, output.vout, output.address, output.attributedSats]),
+    [["pwm-recipient", 0, authority, "546"]]);
+  for (const field of ["tokenMarketplaceFeeSats", "tokenSaleVolumeSats", "tokenTransferFlowSats"]) {
+    assert.equal(replay.economicState.baseState[field], "0");
+  }
+  assert.equal(mail.stateDelta.creditFixedSats, "0");
+  assert.deepEqual(
+    replay.feeTransitions.map(item => [item.txid, item.valid, item.transactionMinerFeeSats]),
+    [[txid, true, "251"]],
+  );
+}
 
 const rawPwmOrderTamper = structuredClone(
   rawPwmAggregateRecord,

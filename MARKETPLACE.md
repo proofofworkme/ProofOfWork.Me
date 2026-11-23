@@ -226,9 +226,10 @@ The authoritative declaration is the earliest exact valid declaration by
 confirmed block height and transaction index. Its exact carrier must be
 unambiguous; a later duplicate cannot move activation.
 
-This is intentionally different from governed WORK AMO units. WORK V8 admits
-only the declared 25,000-proof face and derives exact Q16 WORK subatoms at the
-listing's canonical position. POWB and INCB are uncapped bond assets: they keep
+The original WORK V8 declaration admits the 25,000-proof face. The additive
+[expanded liquidity rules](#expanded-work-liquidity) govern the 250,000-proof
+face separately. Both derive exact Q16 WORK subatoms at the listing's canonical
+position. POWB and INCB are uncapped bond assets: they keep
 the seller's chosen whole-bond quantity and hard proof price, while their
 network values and floors remain read-model/accounting outputs from confirmed
 bond issuance, transfers, sales, and mutation fees.
@@ -1162,8 +1163,8 @@ cannot create a postactivation mutation. Each transfer retains the exact
 546-proof registry requirement and the already documented same-era aggregate
 payment rules.
 
-The V8 listing authorization is closed shape and commits the static listing
-identity, sale-ticket anchor, sole proof face, and exact models:
+The original V8 listing authorization is closed shape and commits the static
+listing identity, sale-ticket anchor, proof face, and exact models:
 
 ```text
 version = pwt-sale-v8
@@ -1176,7 +1177,7 @@ blockSequencerModel = canonical-work-amo-full-position-block-sequencer-v4
 unitFaceProofs = 25000
 ```
 
-No other face is valid. The signed intent cannot supply `amount`,
+The original declaration authorizes only this face. The signed intent cannot supply `amount`,
 `amountAtoms`, `amountSubatoms`, `unitAmountAtoms`, `unitAmountSubatoms`,
 `priceSats`, `minimumPriceSats`, network-value fields, canonical position, or
 client-derived frozen terms. Those values exist only after confirmation.
@@ -1215,7 +1216,7 @@ after every protocol record in that transaction and before the next
 transaction. No batch, worker schedule, or database query order may alter the
 result.
 
-Pending V8 wallet holds use the exact 25,000-proof amount derived from the
+Each pending V8 wallet hold uses its signed face and the amount derived from the
 same verified canonical closing state as the wallet capacity receipt. Along a
 canonical continuation V8 network value is nondecreasing, so this amount is an
 upper bound on the eventual confirmed reservation. Each distinct pending
@@ -1297,6 +1298,38 @@ relational-index/ledger agreement, exact Core tip height/hash, and
 Once the exact `D+1` boundary is observed or persistently latched, removing or
 malforming configuration can only pause V8; it cannot restore Q8, `send2`, V6
 listing admission, or any legacy settlement path.
+
+## Expanded WORK liquidity
+
+The November 22 upgrade adds a 250,000-proof WORK book alongside the
+25,000-proof book. A listing's signed `unitFaceProofs` selects its book.
+Listings made under the original declaration keep their identity, reservations,
+authorization, frozen Q16 terms, and pending or confirmed Seal state. A fresh
+25,000-proof listing uses the same declaration and joins the same book.
+
+| Amount in sats | 25,000-proof List | 250,000-proof List |
+| --- | ---: | ---: |
+| WORK registry fee | 546 | 546 |
+| Liquidity fee to `1GrrXUmBftWhGCF7XfVUQENY8Js6vUiueR` | 0 | 5,460 |
+| Seller-controlled sale ticket locked at output 2 | 546 | 546 |
+| Total funded before the miner fee | 1,092 | 6,552 |
+
+The registry, ticket and larger-tier liquidity payment are distinct outputs
+in the initial List transaction. The ticket keeps its existing output script.
+Confirmation freezes the amount and price from the canonical state immediately
+before the listing using its exact face as `F` in the V8 formula. The seller
+can then review the ticket authorization and separately review its publication.
+Canceling publication leaves the authorization unpublished. Publication pays
+546 sats to the WORK registry plus its own miner fee. A successful sale returns
+the 546-sat ticket principal to the seller alongside the frozen sale price.
+Seller proceeds and sale volume use only that price.
+
+The additive declaration and matching canonical replay govern the larger
+face. Fresh 250,000-proof List requires verified activation, matching index
+state and live admission. An unavailable larger tier leaves the original
+declaration in force. Global V8 admission and existing settlement checks
+continue to apply. The Q16 migration and relic cutover belong to the original
+declaration.
 
 ## Current Infinity Bond / POWB Model
 
@@ -1433,6 +1466,12 @@ Summary, selected listing page and display-only USD loading are independent.
 The summary omits mint, transfer and transfer-batch history, including batch
 recipient arrays, while retaining their totals and `collectionHasMore`
 qualification. Existing registry activity and closed-ticket previews remain.
+WORK book queries filter the canonical face before counting and paginating.
+The page, exact listing-txid search and continuation cursor share the selected
+book. Snapshot-wide asset counts still describe the complete snapshot.
+The shared Best ask above the books reports the highest exact buyer arbitrage
+among compatible confirmed, sealed WORK tickets across both tiers at that
+snapshot.
 Search, sorting, asset and seal filters run against the complete server snapshot;
 the browser downloads only the requested page. WORK buyer-arb sorting uses the
 snapshot's exact Q8 WORK floor and Q16 frozen amounts; POWB/INCB use their exact

@@ -86,7 +86,13 @@ alone cannot establish that an immutable grant remains active.
 Typed actions are `mail.send`, `boost.post`, `amo.listwork`, `amo.sealwork`,
 `amo.buywork`, and `publish.article`. The strict request schema lives in
 `schema.mjs`; amounts are canonical whole-proof/subatom decimal strings. The
-current WORK listing face is exactly `25000` proofs. Arbitrary PSBTs, raw
+WORK listing request accepts exactly `"25000"` or `"250000"` proofs. For the
+larger face, the independent action verifier supplies the current
+`work.workAmoV8` admission status at the bound checkpoint. Both the existing
+V8 listing gate and `expandedLiquidity.listingWritesEnabled` must be open. The
+controller checks the 546-proof registry payment, distinct 5,460-proof
+liquidity payment, and the 546-proof wallet ticket at output 2. The plan
+itemizes those outputs along with the independently derived miner fee. Arbitrary PSBTs, raw
 transaction hex, raw message signing, secrets, seed phrases, private keys and
 unknown request fields are rejected. Initial mail requests do not support WORK
 attachments, file attachments or arbitrary output construction.

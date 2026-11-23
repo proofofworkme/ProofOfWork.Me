@@ -62,6 +62,10 @@ async function install(page, options = {}) {
   const state = { source: source(), reads: [], pageGate: options.pageGate, priceGate: options.priceGate,
     warm: Boolean(options.warm), expired: false, pageFailure: false, refreshRequested: false };
   const respond = createAmoBrowseFixture(() => state.source);
+  await page.route("**/*", route => {
+    const url = new URL(route.request().url());
+    return ["127.0.0.1", "localhost"].includes(url.hostname) ? route.continue() : route.abort();
+  });
   await page.route("**/api/v1/**", async route => {
     const url = new URL(route.request().url());
     state.reads.push(url);
@@ -138,6 +142,69 @@ test("AMO fetches only the selected page and filters the complete server snapsho
   expect(pageReads(state).at(-1).searchParams.has("cursor")).toBe(false);
   expect(strictListingReads(state)).toHaveLength(0);
 });
+
+for (const route of ["/?marketplace=1", "/?folder=marketplace"]) {
+  test(`WORK tier tabs retain old and fresh 25k tickets and isolate the first verified 250k listing ${route}`, async ({ page }) => {
+    const compact = route.includes("marketplace=1");
+    await page.setViewportSize(compact ? { width: 320, height: 480 } : { width: 1366, height: 768 });
+    await page.emulateMedia({ colorScheme: compact ? "dark" : "light" });
+    const state = await install(page);
+    const [legacy, fresh] = state.source.token.listings;
+    Object.assign(fresh, { unitFaceProofs: 25000, listingAuthorization: { ...fresh.saleAuthorization }, sealTxid: legacy.listingId });
+    state.source.token.listings = [legacy, fresh];
+    await page.goto(`${route}&asset=${WORK}`, { waitUntil: "domcontentloaded" });
+    const book = page.locator("#credit-market-book");
+    const tiers = book.getByRole("tablist", { name: "WORK AMO unit size" });
+    const small = tiers.getByRole("tab", { name: /^25,000 proofs/u });
+    const large = tiers.getByRole("tab", { name: /^250,000 proofs/u });
+    const rows = book.locator(".token-market-grid .token-market-row");
+    const search = book.getByPlaceholder("Search sale tickets, sellers, txids");
+    await expect(small).toHaveAttribute("aria-selected", "true");
+    await expect(rows).toHaveCount(2);
+    const gate = deferred();
+    state.pageGate = gate;
+    try {
+      await small.focus();
+      await small.press("ArrowRight");
+      await expect(large).toBeFocused();
+      await expect.poll(() => pageReads(state).at(-1)?.searchParams.get("unitFaceProofs")).toBe("250000");
+      await expect(rows).toHaveCount(0);
+      await expect(book.getByRole("heading", { name: "Loading credit sale tickets" })).toBeVisible();
+      await expect(book.getByRole("heading", { name: "No confirmed 250,000-proof listings yet" })).toHaveCount(0);
+    } finally { state.pageGate = undefined; gate.resolve(); }
+    await expect(book.getByRole("heading", { name: "No confirmed 250,000-proof listings yet" })).toBeVisible();
+    const expandedId = txid(90003);
+    const expanded = { ...legacy, listingId: expandedId, txid: expandedId, priceSats: 250000,
+      amountSubatoms: "7490303660", amount: "0.0000007490303660", sealTxid: fresh.listingId,
+      saleAuthorization: { ...legacy.saleAuthorization, unitFaceProofs: 250000, anchorTxid: expandedId } };
+    state.source = { ...state.source, snapshotId: "first-expanded-work-fixture",
+      token: { ...state.source.token, listings: [legacy, expanded, fresh] } };
+    const surface = page.locator(route.includes("folder=") ? ".marketplace-workspace" : ".marketplace-app");
+    await surface.getByRole("button", { name: "Refresh", exact: true }).first().click();
+    await expect(book.getByRole("button", { name: "All 1", exact: true })).toBeVisible();
+    await expect(rows).toHaveCount(1);
+    await expect(rows.getByRole("link", { name: "Listing TX", exact: true })).toHaveAttribute("href", new RegExp(expandedId + "$", "u"));
+    await expect(book.getByRole("tabpanel", { name: /^250,000 proofs/u })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    for (const [tab, face, own, wrong] of [
+      [small, "25000", legacy.listingId, expandedId], [small, "25000", fresh.listingId, expandedId],
+      [large, "250000", expandedId, fresh.listingId],
+    ]) {
+      await tab.click();
+      await search.fill(own);
+      await expect(rows).toHaveCount(1);
+      await expect(rows.getByRole("link", { name: "Listing TX", exact: true })).toHaveAttribute("href", new RegExp(own + "$", "u"));
+      await search.fill(wrong);
+      await expect(book.getByRole("heading", { name: "No matching sale tickets" })).toBeVisible();
+      await expect(rows).toHaveCount(0);
+      const query = pageReads(state).at(-1).searchParams;
+      expect(query.get("unitFaceProofs")).toBe(face);
+      expect(query.get("q")).toBe(wrong);
+      expect(query.has("cursor")).toBe(false);
+    }
+    expect(strictListingReads(state)).toHaveLength(0);
+  });
+}
 
 test("AMO cold startup retries warming without waiting for the normal minute cycle", async ({ page }) => {
   const state = await install(page, { warm: true });

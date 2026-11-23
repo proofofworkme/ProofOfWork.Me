@@ -1,0 +1,17 @@
+pwm1:m:ProofOfWork.Me WORK AMO Expanded Liquidity Declaration
+model=work-amo-expanded-liquidity-v1
+network=livenet
+tokenId=d4e5ebf11d104d6a63fb74e42094364b25a5f7199a09e5c0e71408972466a8b8
+extends=pwt-sale-v8
+addedUnitFaceProofs=250000
+authorityInputZero=76a91499b91dd27a616a71c0a1e9db6a86ceb8cff284c588ac
+declarationRegistry=1638Vn6KtmK8p5r4oGvAXq9nmZb1emU1DV;minimumSats=546
+authority=one exact canonical confirmed carrier, one qualifying declaration registry output, and the pinned authority input
+firstEligibleBlockOffset=1
+firstEligibleTransactionIndex=0
+eligibility=height is relative to confirmed declaration block; transaction index is relative to declaration transaction when block offset is zero and absolute otherwise; eligible from that position onward
+list=pwt1:list5;version=pwt-sale-v8;registrySats=546;anchorVout=2;anchorSats=546
+liquidityFeeSats=5460;liquidityFeeAddress=1GrrXUmBftWhGCF7XfVUQENY8Js6vUiueR
+payment=one exact distinct liquidity fee output at List; registry and liquidity fees contribute once to marketplace fees after deriving terms; the locked ticket and miner fee remain separate
+terms=derive exact WORK subatoms from the signed face using the V8 position-ordered formula; freeze and settle under the same V8 authorization
+continuity=the 25000-proof declaration, pending and confirmed listings, seal, settlement, transfers, precision, and historical terms continue unchanged

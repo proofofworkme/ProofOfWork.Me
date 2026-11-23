@@ -1,3 +1,7 @@
+import {
+  WORK_AMO_EXPANDED_FACE_PROOFS, WORK_AMO_LISTING_REGISTRY_SCRIPT,
+  WORK_AMO_LIQUIDITY_FEE_SATS, WORK_AMO_LIQUIDITY_FEE_SCRIPT,
+} from "../../src/shared/protocol/workAmoExpandedLiquidity.mjs";
 import { linkedArticleCanonicalProjectionMatches, publishLinkedCapabilityKey } from '../publish-linked.mjs';
 import { measurePrivatePhase } from "../wallet-read-observation.mjs";
 import { withReadOnlySnapshot } from "./read-only-snapshot.mjs";
@@ -112,6 +116,7 @@ import {
   workQ16PendingTransactionProjectionRows,
 } from "../work-q16-pending-projection.mjs";
 import {
+  workAmoExpandedLiquiditySchemaReady,
   workPrecisionV2ConstraintAudit as sharedWorkPrecisionV2ConstraintAudit,
 } from "../work-precision-v2-schema.mjs";
 import {
@@ -138,6 +143,8 @@ import {
 } from "../work-market-v2.mjs";
 import {
   tokenListingTransactionCanProjectActive,
+  workListingFaceProofs,
+  workListingLiquidityPayment,
 } from "../token-listing-lifecycle.mjs";
 import {
   WORK_AMO_V4_UNIT_MODEL,
@@ -7683,6 +7690,18 @@ async function workPrecisionV2MigrationFullAuditWithBound({
       inFlight.delete(requestKey);
     }
   }
+}
+
+export async function proofIndexWorkAmoExpandedLiquiditySchemaReady() {
+  const pool = proofIndexPool();
+  if (!pool) return false;
+  const result = await pool.query(`
+    SELECT pg_get_constraintdef(oid) AS definition
+    FROM pg_constraint
+    WHERE conrelid = to_regclass('proof_indexer.work_amo_v8_listing_terms')
+      AND conname = 'work_amo_v8_terms_values' AND convalidated
+  `);
+  return workAmoExpandedLiquiditySchemaReady(result.rows[0]?.definition);
 }
 
 export async function proofIndexWorkPrecisionV2MigrationReadiness(
@@ -16001,6 +16020,9 @@ function tokenListingFromEventPayload(payload, row = {}) {
     listingId: String(payload?.listingId ?? payload?.txid ?? "")
       .trim()
       .toLowerCase(),
+    ...(payload?.liquidityFeeSats !== undefined ? {
+      liquidityFeeSats: payload.liquidityFeeSats, liquidityFeeVout: payload.liquidityFeeVout,
+    } : {}),
     liveNetworkValueSats: rowNumber(payload, "liveNetworkValueSats"),
     marketplaceMutationFeeSats: rowNumber(payload, "marketplaceMutationFeeSats"),
     minerFeeSats: rowNumber(payload, "minerFeeSats"),
@@ -22864,6 +22886,22 @@ export function normalizeHistoryEventItem(
     txid,
     ...(valid === undefined ? {} : { valid }),
   };
+  if (valid !== false && (kind === "token-listing" || kind === "token-listing-sealed" ||
+      kind === "token-listing-closed" || kind === "token-sale")) {
+    const face = workListingFaceProofs(item);
+    if (face) {
+      normalized.unitFaceProofs = face;
+      const tags = new Set(normalized.tags);
+      tags.add(`${face.toLocaleString("en-US")}-proof tier`);
+      if ((confirmed || (valid === true && confirmationStatus === "pending")) &&
+          kind === "token-listing" && face === WORK_AMO_EXPANDED_FACE_PROOFS) {
+        const payment = workListingLiquidityPayment(item);
+        tags.add(`${WORK_AMO_V5_MIN_REGISTRY_PAYMENT_SATS} registry proofs`);
+        tags.add(`${payment.liquidityFeeSats.toLocaleString("en-US")} liquidity fee proofs`);
+      }
+      normalized.tags = [...tags];
+    }
+  }
   return dnsHistoryDisplayItem(normalized);
 }
 
@@ -31051,6 +31089,10 @@ function tokenListingFromCreditListingRow(row, network) {
           payloadWithoutLifecyclePosition,
         )
       : payloadWithoutLifecyclePosition),
+    ...(row?.listing_event_payload?.liquidityFeeSats !== undefined ? {
+      liquidityFeeSats: row.listing_event_payload.liquidityFeeSats,
+      liquidityFeeVout: row.listing_event_payload.liquidityFeeVout,
+    } : {}),
     amount: workAmount
       ? workAmount.amount
       : isBondTokenId(tokenId)
@@ -44226,6 +44268,11 @@ function proofIndexConfirmedValueEventDeltaFromRows(rows, network) {
   };
   const registryCandidatesByPayment = new Map();
   for (const row of sourceRows) {
+    if (row?.expanded_list === true && row.payment_verified !== true) {
+      // A second projection of a registry payment cannot prove the separate
+      // liquidity output of this opening.
+      return null;
+    }
     if (row?.marketplace_payment !== true) {
       continue;
     }
@@ -44390,6 +44437,15 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
         SELECT
           e.kind,
           e.txid,
+          COALESCE(
+            e.kind = 'token-listing' AND e.protocol = 'pwt1'
+            AND e.payload->>'tokenId' = '${WORK_TOKEN_ID}'
+            AND e.payload->'saleAuthorization'->>'version' = 'pwt-sale-v8'
+            AND e.payload->'saleAuthorization'->'unitFaceProofs' = '${WORK_AMO_EXPANDED_FACE_PROOFS}'::jsonb,
+            false
+          ) AS expanded_list,
+          e.payload->>'liquidityFeeVout' AS liquidity_fee_vout,
+          e.payload->'liquidityFeeSats' AS liquidity_fee_sats,
           CASE
             WHEN e.protocol = 'pwid1' AND e.kind = 'id-register'
               THEN ${ID_REGISTRATION_PRICE_SATS}
@@ -44445,6 +44501,7 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
           max(block_height)::int AS max_event_block,
           max(event_time) AS max_event_time,
           false AS marketplace_payment,
+          false AS expanded_list,
           true AS payment_verified
         FROM filtered_events
         WHERE kind NOT IN (
@@ -44467,7 +44524,18 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
           END AS kind,
           txid,
           registry_address,
-          max(amount_sats)::bigint AS expected_min_sats,
+          bool_or(expanded_list) AS expanded_list,
+          bool_and(CASE WHEN expanded_list THEN COALESCE(
+            liquidity_fee_sats = '${WORK_AMO_LIQUIDITY_FEE_SATS}'::jsonb AND EXISTS (
+              SELECT 1 FROM proof_indexer.tx_outputs liquidity
+              WHERE liquidity.network = $1 AND liquidity.txid = filtered_events.txid
+                AND liquidity.vout::text = liquidity_fee_vout AND liquidity.vout <> 2
+                AND liquidity.scriptpubkey = '${WORK_AMO_LIQUIDITY_FEE_SCRIPT}'
+                AND liquidity.value_sats = ${WORK_AMO_LIQUIDITY_FEE_SATS}
+            ), false) ELSE true END) AS liquidity_verified,
+          max(CASE WHEN expanded_list
+            THEN ${WORK_AMO_V5_MIN_REGISTRY_PAYMENT_SATS + WORK_AMO_LIQUIDITY_FEE_SATS}
+            ELSE amount_sats END)::bigint AS expected_min_sats,
           count(*)::int AS event_count,
           max(block_height)::int AS max_event_block,
           max(event_time) AS max_event_time
@@ -44495,16 +44563,23 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
           payment.kind,
           payment.txid,
           payment.registry_address,
-          COALESCE(sum(output.value_sats), 0)::text AS total_sats,
+          CASE WHEN payment.expanded_list THEN
+            ${WORK_AMO_V5_MIN_REGISTRY_PAYMENT_SATS + WORK_AMO_LIQUIDITY_FEE_SATS}::text
+            ELSE COALESCE(sum(output.value_sats), 0)::text END AS total_sats,
           payment.expected_min_sats,
           payment.event_count,
           payment.max_event_block,
           payment.max_event_time,
           true AS marketplace_payment,
+          payment.expanded_list,
           (
             payment.registry_address <> ''
-            AND COALESCE(sum(output.value_sats), 0) >=
-              payment.expected_min_sats
+            AND CASE WHEN payment.expanded_list THEN
+              payment.liquidity_verified AND count(*) FILTER (
+                WHERE output.vout <> 2 AND output.scriptpubkey = '${WORK_AMO_LISTING_REGISTRY_SCRIPT}'
+                  AND output.value_sats = ${WORK_AMO_V5_MIN_REGISTRY_PAYMENT_SATS}
+              ) >= 1
+            ELSE COALESCE(sum(output.value_sats), 0) >= payment.expected_min_sats END
           ) AS payment_verified
         FROM marketplace_payment_keys payment
         LEFT JOIN proof_indexer.tx_outputs output
@@ -44517,6 +44592,8 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
           payment.txid,
           payment.registry_address,
           payment.expected_min_sats,
+          payment.expanded_list,
+          payment.liquidity_verified,
           payment.event_count,
           payment.max_event_block,
           payment.max_event_time
@@ -44536,6 +44613,7 @@ export async function proofIndexConfirmedValueEventsAfterBlock(
         value_events.max_event_block,
         value_events.max_event_time,
         value_events.marketplace_payment,
+        value_events.expanded_list,
         value_events.payment_verified,
         latest_scan.indexed_through_block,
         latest_scan.generated_at

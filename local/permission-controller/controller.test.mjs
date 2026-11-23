@@ -10,6 +10,7 @@ import { PermissionLedger } from './ledger.mjs'
 import { normalizeConfig, CanonicalPolicyApi, DisabledUniSatBridge, SecretServiceReferenceAdapter } from './adapters.mjs'
 import { canonical, digest, normalizePolicy, normalizeRequest, requestId } from './schema.mjs'
 import { decodeTransaction, estimatedTransactionVirtualBytes, validatePrepared, validateSigned } from './transaction.mjs'
+import { WORK_AMO_LISTING_REGISTRY_SCRIPT, WORK_AMO_LIQUIDITY_FEE_SCRIPT } from '../../src/shared/protocol/workAmoExpandedLiquidity.mjs'
 
 const timestamp = Date.parse('2026-10-08T12:00:00Z')
 const config = () => ({ version: 1, network: 'livenet', walletAddress: 'wallet-fixture', walletScriptPubKey: `5120${'bb'.repeat(32)}`, grantTxid: 'a'.repeat(64), policyApiBase: 'https://permission.proofofwork.me', stateDirectory: '/tmp/controller-fixture', agentUids: [process.getuid() + 1001], autonomousSigning: false, secretReference: { provider: 'secret-service', item: 'unisat_local' }, socketPath: '/tmp/controller-fixture/controller.sock', accessTokenFile: '/tmp/controller-fixture/access-token' })
@@ -224,6 +225,68 @@ test('closed rate planning exposes the selected rate and derived size without re
 })
 
 
+function preparedOutputs(inputs, outputs) {
+  const outpoint = input => Buffer.concat([Buffer.from(input.txid, 'hex').reverse(), u32(input.vout), compact(0), u32(input.sequence)])
+  const utxo = output => Buffer.concat([u64(output.valueProofs), field(Buffer.from(output.scriptPubKey, 'hex'))])
+  const raw = Buffer.concat([u32(2), compact(inputs.length), ...inputs.map(outpoint), compact(outputs.length), ...outputs.map(utxo), u32(0)])
+  const psbt = Buffer.concat([Buffer.from('70736274ff', 'hex'), field(Buffer.from([0])), field(raw), compact(0),
+    ...inputs.map(input => Buffer.concat([field(Buffer.from([1])), field(utxo(input)), compact(0)])), ...outputs.map(() => compact(0))])
+  return { unsignedTransactionHex: raw.toString('hex'), psbtHex: psbt.toString('hex') }
+}
+
+test('typed WORK List preserves the original face and binds expanded admission, budget and ticket separately', async () => {
+  const c = config()
+  const r = faceProofs => ({ operationId: 'listwork_fixture_0001', action: 'amo.listwork', payload: { faceProofs } })
+  for (const face of [250000, '0250000', '25000.0', '50000', '250,000']) {
+    assert.throws(() => normalizeRequest(r(face)), { code: 'UNSUPPORTED_WORK_FACE' })
+  }
+  assert.notEqual(requestId(c, normalizeRequest(r('25000'))), requestId(c, normalizeRequest(r('250000'))))
+  const admission = { tipHeight: checkpoint.height, tipHash: checkpoint.hash, protocolWritesEnabled: true,
+    listingWritesEnabled: true, expandedLiquidity: { listingWritesEnabled: true } }
+  const allowed = { ...policy(), maxTransactionProofs: '6106',
+    workLimits: { maxAmountSubatoms: '100000', minSaleProofs: '25000', maxPurchaseProofs: '25000', maxOpenListings: 1 } }
+  function listing(face, mutate = () => {}) {
+    const request = normalizeRequest(r(face))
+    const { expected } = fixture(c, request)
+    expected.outputs = [
+      { kind: 'registry', valueProofs: '546', scriptPubKey: WORK_AMO_LISTING_REGISTRY_SCRIPT },
+      { kind: 'protocol', valueProofs: '0', scriptPubKey: '6a0153' },
+      { kind: 'sale-ticket', valueProofs: '546', scriptPubKey: c.walletScriptPubKey },
+    ]
+    if (face === '250000') expected.outputs.push({ kind: 'liquidity-fee', valueProofs: '5460', scriptPubKey: WORK_AMO_LIQUIDITY_FEE_SCRIPT })
+    expected.outputs.push({ kind: 'change', valueProofs: face === '250000' ? '3348' : '8808', scriptPubKey: c.walletScriptPubKey })
+    expected.work = { canonicalVerified: true, quantityBoundVerified: true, amountSubatoms: '100000', priceProofs: face, openListings: 0 }
+    if (face === '250000') expected.work.workAmoV8 = structuredClone(admission)
+    mutate(expected)
+    return { request, expected, prepared: preparedOutputs(expected.inputs, expected.outputs), config: c, policy: allowed, checkpoint }
+  }
+  assert.equal(validatePrepared(listing('25000')).costProofs, '646')
+  const expanded = listing('250000')
+  const { ledger, controller } = setup({ read: async () => ({ ...grant(c), policy: allowed }) })
+  controller.actionAdapters['amo.listwork'] = { prepare: async () => expanded.prepared, verify: async () => expanded.expected }
+  try {
+    const plan = await controller.plan(expanded.request)
+    assert.deepEqual(plan.listingCharges, { registryFeeProofs: '546', liquidityFeeProofs: '5460', lockedTicketProofs: '546' })
+    assert.equal(plan.costProofs, '6106')
+    assert.equal(plan.minerFeeProofs, '100')
+    assert.equal(plan.executable, false)
+    assert.equal(ledger.usage(timestamp).usedProofs, '0')
+  } finally { ledger.close() }
+  for (const status of [undefined, { ...admission, tipHeight: checkpoint.height - 1 }, { ...admission, tipHash: 'f'.repeat(64) },
+    { ...admission, protocolWritesEnabled: false }, { ...admission, listingWritesEnabled: false },
+    { ...admission, expandedLiquidity: undefined }, { ...admission, expandedLiquidity: { listingWritesEnabled: false } }]) {
+    assert.throws(() => validatePrepared(listing('250000', e => { e.work.workAmoV8 = status })), { code: 'EXPANDED_WORK_LIST_UNAVAILABLE' })
+  }
+  assert.throws(() => validatePrepared(listing('250000', e => { e.work.priceProofs = '25000' })), { code: 'WORK_LISTING_FACE_MISMATCH' })
+  assert.throws(() => validatePrepared({ ...expanded, policy: { ...allowed, maxTransactionProofs: '6105' } }), { code: 'TRANSACTION_LIMIT_EXCEEDED' })
+  for (const mutate of [
+    e => { e.outputs[3].scriptPubKey = WORK_AMO_LISTING_REGISTRY_SCRIPT },
+    e => { e.outputs[3].valueProofs = '5459'; e.outputs[0].valueProofs = '547' },
+    e => { [e.outputs[2], e.outputs[3]] = [e.outputs[3], e.outputs[2]] },
+    e => { e.outputs[2].valueProofs = '545'; e.outputs[4].valueProofs = '3349' },
+  ]) assert.throws(() => validatePrepared(listing('250000', mutate)), { code: 'EXPANDED_WORK_LIST_OUTPUTS_INVALID' })
+})
+
 test('buyer-funded fee targets count both wallet and independently bound foreign ticket inputs', () => {
   const c = config(), r = { operationId: 'buyer_fixture_0001', action: 'amo.buywork', payload: { listingTxid: 'd'.repeat(64) } }
   const make = (fee, foreignScript = `76a914${'dd'.repeat(20)}88ac`) => {
@@ -235,12 +298,10 @@ test('buyer-funded fee targets count both wallet and independently bound foreign
       { valueProofs: '1000', scriptPubKey: `0014${'cc'.repeat(20)}`, kind: 'payment', recipientAddress: 'recipient-fixture' },
       { valueProofs: (10000n - BigInt(fee)).toString(), scriptPubKey: c.walletScriptPubKey, kind: 'change' },
     ]
-    const rawBytes = Buffer.concat([u32(2), compact(inputs.length), ...inputs.map(input => Buffer.concat([Buffer.from(input.txid, 'hex').reverse(), u32(input.vout), compact(0), u32(input.sequence)])), compact(outputs.length), ...outputs.map(output => Buffer.concat([u64(output.valueProofs), field(Buffer.from(output.scriptPubKey, 'hex'))])), u32(0)])
-    const psbtBytes = Buffer.concat([Buffer.from('70736274ff', 'hex'), field(Buffer.from([0])), field(rawBytes), compact(0), ...inputs.map(input => Buffer.concat([field(Buffer.from([1])), field(Buffer.concat([u64(input.valueProofs), field(Buffer.from(input.scriptPubKey, 'hex'))])), compact(0)])), ...outputs.map(() => compact(0))])
     const expected = { action: r.action, requestDigest: digest(normalizeRequest(r)), checkpoint, version: 2, locktime: 0, inputs, outputs,
       work: { canonicalVerified: true, quantityBoundVerified: true, amountSubatoms: '1', priceProofs: '1000', listingTxid: r.payload.listingTxid }, signaturePolicy: { verified: true, inputs: [{ index: 0, sighashTypes: [0, 1] }] } }
     const p = { ...ratePolicy(), allowedActions: ['amo.buywork'], workLimits: { maxAmountSubatoms: '1000', minSaleProofs: '546', maxPurchaseProofs: '5000', maxOpenListings: 1 } }
-    return validatePrepared({ prepared: { unsignedTransactionHex: rawBytes.toString('hex'), psbtHex: psbtBytes.toString('hex') }, expected, request: r, config: c, policy: p, checkpoint })
+    return validatePrepared({ prepared: preparedOutputs(inputs, outputs), expected, request: r, config: c, policy: p, checkpoint })
   }
   // Two inputs: 10 + 320 + 31 + 43 = 404 conservative vB; at 0.5 the exact target is 202.
   const checked = make('202'); assert.equal(checked.estimatedVirtualBytes, 404); assert.equal(checked.minerFeeProofs, '202')

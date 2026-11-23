@@ -539,7 +539,7 @@ const { APP_LINKS, APP_MENU_GROUPS } = await import(
 const expectedAppMenus = [
   ["Utility", ["Computer", "Desktop", "Browser", "Pages", "Code", "Jobs", "Permission"]],
   ["Identity & social", ["ID", "DNS", "Boost", "Publish"]],
-  ["Finance", ["Wallet", "AMO", "Credit", "WORK", "Infinity", "Inception"]],
+  ["Finance", ["Pay", "Wallet", "AMO", "Credit", "WORK", "Infinity", "Inception"]],
   ["Insights", ["Log", "Growth", "Search"]],
 ];
 const menuLinks = APP_MENU_GROUPS?.flatMap((group) => group.links) ?? [];
@@ -1088,7 +1088,7 @@ expect(
     /const bestWorkAmoBuyerArb = workAmoBestAskListings[\s\S]*\.filter\(tokenListingHasConfirmedSaleTicketSeal\)[\s\S]*\.reduce<ExactRational \| null>[\s\S]*tokenListingBuyerArbExact\([\s\S]*compareExactRational\(arb, best\) > 0/u.test(
     app,
   ) &&
-    /<span>Best ask<\/span>[\s\S]*bestWorkAmoBuyerArb[\s\S]*formatExactRational\([\s\S]*bestWorkAmoBuyerArb[\s\S]*proofs arb/u.test(
+    /Best ask across WORK tiers[\s\S]*bestWorkAmoBuyerArb[\s\S]*formatExactRational\([\s\S]*bestWorkAmoBuyerArb[\s\S]*proofs arb/u.test(
       workAmoStateStatsSource,
     ) &&
     !/workRow\?\.lowestAskPricePerTokenExact/u.test(workAmoStateStatsSource),
@@ -1600,7 +1600,7 @@ expect(
     /normalizedTokenListAmountUnits !== null[\s\S]*normalizedTokenListAmountUnits <= walletSpendableTokenAtoms/.test(
       canListTokenSource,
     ) &&
-    /const workAmoV8ListingTermsSelected =[\s\S]*workV8DeclarationBoundaryObserved\(workFloorQuote\)[\s\S]*const workAmoListingFreshPreflightReady =[\s\S]*workAmoListingCanAttemptFreshPreflight\(workFloorQuote\)[\s\S]*const workAmoListInputReady = Boolean\([\s\S]*workAmoV8ListingTermsSelected[\s\S]*workAmoV8FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoV6FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoListingFreshPreflightReady[\s\S]*workAmoEstimateForFace\(workFloorQuote, tokenListFaceProofs\)[\s\S]*workV8CanAttemptFreshPreflight\(workFloorQuote\)[\s\S]*walletSpendableTokenAtoms > 0n/.test(
+    /const workAmoV8ListingTermsSelected =[\s\S]*workV8DeclarationBoundaryObserved\(workFloorQuote\)[\s\S]*const workAmoListingFreshPreflightReady =[\s\S]*workAmoListingCanAttemptFreshPreflight\(workFloorQuote, tokenListFaceProofs\)[\s\S]*const workAmoListInputReady = Boolean\([\s\S]*workAmoV8ListingTermsSelected[\s\S]*workAmoV8FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoV6FaceProofsAllowed\(tokenListFaceProofs\)[\s\S]*workAmoListingFreshPreflightReady[\s\S]*workAmoEstimateForFace\(workFloorQuote, tokenListFaceProofs\)[\s\S]*workV8CanAttemptFreshPreflight\(workFloorQuote\)[\s\S]*walletSpendableTokenAtoms > 0n/.test(
       canListTokenSource,
     ) &&
     !/max=\{Math\.max\(1, listSpendableBalance\)\}/.test(app) &&
@@ -2282,7 +2282,7 @@ expect(
     /function assertWorkAmoListingEnabled[\s\S]*!workV8DeclarationBoundaryObserved\(quote\)[\s\S]*assertWorkAmoV6ListingEnabled\(quote\)[\s\S]*!workAmoListingWritesReady\(quote\)/.test(
       workAmoV6ProofUnitSource,
     ) &&
-    /assertWorkAmoListingEnabled\(freshFloor\)/.test(listTokenSource),
+    /assertWorkAmoListingEnabled\(freshFloor, tokenListFaceProofs\)/.test(listTokenSource),
 );
 expect(
   "WORK AMO V6 and V8 serialize only the proof face and label USD as display-only",
@@ -2305,10 +2305,10 @@ expect(
       app,
     ) &&
     /workAmoAllowedFaceProofs\.map/.test(tokenWalletWorkspaceBlock) &&
-    /const workAmoAllowedFaceProofs = workAmoV8TermsVisible[\s\S]*WORK_AMO_V8_ALLOWED_FACE_PROOFS[\s\S]*WORK_AMO_V6_ALLOWED_FACE_PROOFS/.test(
+    /const workAmoAllowedFaceProofs = workAmoV8TermsVisible[\s\S]*WORK_AMO_FACE_PROOFS[\s\S]*WORK_AMO_V6_ALLOWED_FACE_PROOFS/.test(
       tokenWalletWorkspaceBlock,
     ) &&
-    /WORK_AMO_V8_ALLOWED_FACE_PROOFS\s*=\s*\[25_000\]\s*as const/.test(app) &&
+    /workAmoV8\?\.expandedLiquidity\?\.listingWritesEnabled === true/.test(app) &&
     /USD is display-only/.test(tokenWalletWorkspaceBlock) &&
     /workEstimate = workAmoEstimateForFace\([\s\S]*unitFaceProofs:\s*workListing[\s\S]*TOKEN_SALE_AUTH_WORK_AMO_SUBATOM_VERSION/.test(
       listTokenSource,
@@ -2947,11 +2947,11 @@ expect(
     /relicCutover:[\s\S]*indexReady === true[\s\S]*migrationReadiness\?\.marker\?\.relicCutover/.test(
       proofApi,
     ) &&
-    /These WORK listings were disabled at activation height[\s\S]*new V8 unit is exactly 25,000 proofs[\s\S]*exact 16-decimal WORK/.test(
+    /These WORK listings were disabled at activation height[\s\S]*V8 units retain their signed proof face[\s\S]*exact 16-decimal WORK/.test(
       app,
     ) &&
     !/Sellers may create new \$20, \$50, or \$100 AMO/.test(app) &&
-    /<h3>WORK AMO State<\/h3>[\s\S]*single 25,000-proof face[\s\S]*exact 16-decimal WORK/.test(
+    /<h3>WORK AMO State<\/h3>[\s\S]*25,000-proof and 250,000-proof units[\s\S]*exact 16-decimal WORK/.test(
       app,
     ),
 );
@@ -3555,10 +3555,11 @@ expect(
     /if \(!enabled \|\| !version\)/.test(marketplaceBrowse) &&
     /query, cursor, version,[\s\S]*checkpoint: options.checkpoint, start: pageIndex \* 25, includeSummary: false/.test(marketplaceBrowse) &&
     /limit: String\(options.limit \?\? 25\)/.test(marketplaceBrowse) &&
-    /const visiblePage = enabled && page\?.asset === query.asset \? page : undefined/.test(marketplaceBrowse) &&
+    /const visiblePage = enabled && page\?.asset === query.asset &&\s*page.response.book.unitFaceProofs === query.unitFaceProofs \? page : undefined/.test(marketplaceBrowse) &&
     /failure.status === 409[\s\S]*!expiredVersionsRef.current.has\(version\)[\s\S]*onVersionExpiredRef.current\?\.\(\)/.test(marketplaceBrowse) &&
     /const browseCounts = browse.matches \? browse.response\?.book.counts : undefined/.test(tokenMarketplacePanelBlock) &&
     /allCount=\{remoteBrowseEnabled \? completeScopeCounts\?.all/.test(tokenMarketplacePanelBlock) &&
+    /const completeScopeCounts = workBookFace \? summary.browseWorkFaceCounts\?\.\[workBookFace\] \?\? browseCounts : assetScopeCounts/.test(tokenMarketplacePanelBlock) &&
     /marketplaceBrowseCounts\(listingSummary, \[bondConfig.tokenId\]\)/.test(infinityBondMarketPanelBlock) &&
     /browseBondCounts\?\.all/.test(marketplaceAppBlock),
 );
@@ -3638,7 +3639,7 @@ expect(
 );
 expect(
   "Marketplace event history cannot augment the active sale-ticket inventory",
-  /const orderBookListings = marketListings;/.test(tokenMarketplacePanelBlock) &&
+  /const orderBookListings = useMemo\(\(\) => workBookFace\s*\? marketListings\.filter\(\(listing\) => workAmoBookFace\(listing\) === workBookFace\)\s*:\s*marketListings,/.test(tokenMarketplacePanelBlock) &&
     !/const orderBookListings\s*=\s*mergeTokenListingGroups/.test(
       tokenMarketplacePanelBlock,
     ) &&

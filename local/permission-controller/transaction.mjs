@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { permissionMinerFeeProofs } from '../../src/shared/protocol/permissions.mjs'
+import { WORK_AMO_EXPANDED_FACE_PROOFS, workAmoExpandedListFeeOutput } from '../../src/shared/protocol/workAmoExpandedLiquidity.mjs'
 import { canonical, digest, exactKeys, fail, HEX, integer, normalizePolicy, object, TXID } from './schema.mjs'
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest()
@@ -85,6 +86,26 @@ export function estimatedTransactionVirtualBytes(tx, inputScripts) {
   return 8 + compactSizeBytes(tx.inputs.length) + compactSizeBytes(tx.outputs.length) + tx.inputs.length * 160 +
     tx.outputs.reduce((total, output) => { const bytes = output.scriptPubKey.length / 2; return total + 8 + compactSizeBytes(bytes) + bytes }, 0)
 }
+function expandedListingCharges(outputs, work, config, checkpoint) {
+  const status = work.workAmoV8
+  if (status?.protocolWritesEnabled !== true || status.listingWritesEnabled !== true ||
+      status.expandedLiquidity?.listingWritesEnabled !== true ||
+      status.tipHeight !== checkpoint.height || status.tipHash !== checkpoint.hash) fail('EXPANDED_WORK_LIST_UNAVAILABLE')
+  const feeIndex = workAmoExpandedListFeeOutput(
+    outputs.map((output, vout) => ({ vout, scriptPubKeyHex: output.scriptPubKey, amountSats: output.valueProofs })),
+    { registryVout: 0, anchorVout: 2 },
+  )
+  const ticket = outputs[2]
+  if (feeIndex === null || outputs[feeIndex].kind !== 'liquidity-fee' ||
+      outputs[0].kind !== 'registry' || outputs[1]?.kind !== 'protocol' ||
+      outputs[1].valueProofs !== '0' || !outputs[1].scriptPubKey.startsWith('6a') ||
+      ticket?.kind !== 'sale-ticket' || ticket.valueProofs !== '546' || ticket.scriptPubKey !== config.walletScriptPubKey ||
+      outputs.some((output, index) => index > 2 && index !== feeIndex && output.kind !== 'change')) {
+    fail('EXPANDED_WORK_LIST_OUTPUTS_INVALID')
+  }
+  return { registryFeeProofs: outputs[0].valueProofs, liquidityFeeProofs: outputs[feeIndex].valueProofs, lockedTicketProofs: ticket.valueProofs }
+}
+
 /** Expected template MUST come from the separately trusted action verifier, never the requestor or signer. */
 export function validatePrepared({ prepared, expected, request, config, policy, checkpoint }) {
   policy = normalizePolicy(policy)
@@ -95,6 +116,7 @@ export function validatePrepared({ prepared, expected, request, config, policy, 
   const psbt = unsignedTransactionFromPsbt(prepared.psbtHex), tx = decodeTransaction(prepared.unsignedTransactionHex)
   if (psbt.raw !== prepared.unsignedTransactionHex || tx.witness || tx.inputs.some(input => input.scriptSig !== '')) fail('PSBT_TEMPLATE_MISMATCH')
   if (!Array.isArray(expected.inputs) || !Array.isArray(expected.outputs) || expected.inputs.length !== tx.inputs.length || expected.outputs.length !== tx.outputs.length || expected.version !== tx.version || expected.locktime !== tx.locktime) fail('TRANSACTION_TEMPLATE_MISMATCH')
+  const expandedList = request.action === 'amo.listwork' && request.payload.faceProofs === String(WORK_AMO_EXPANDED_FACE_PROOFS)
   let totalInput = 0n, walletInput = 0n, totalOutput = 0n, walletOutput = 0n
   for (let index = 0; index < expected.inputs.length; index++) {
     const input = expected.inputs[index], actual = tx.inputs[index]
@@ -119,7 +141,9 @@ export function validatePrepared({ prepared, expected, request, config, policy, 
   for (let index = 0; index < expected.outputs.length; index++) {
     const output = expected.outputs[index], actual = tx.outputs[index]
     exactKeys(output, ['valueProofs', 'scriptPubKey', 'kind'], ['recipientAddress'])
-    if (!['change', 'payment', 'protocol', 'registry', 'sale-ticket'].includes(output.kind) || output.valueProofs !== actual.valueProofs || output.scriptPubKey !== actual.scriptPubKey) fail('OUTPUT_TEMPLATE_MISMATCH')
+    const supported = ['change', 'payment', 'protocol', 'registry', 'sale-ticket'].includes(output.kind) ||
+      (expandedList && output.kind === 'liquidity-fee')
+    if (!supported || output.valueProofs !== actual.valueProofs || output.scriptPubKey !== actual.scriptPubKey) fail('OUTPUT_TEMPLATE_MISMATCH')
     const value = integer(output.valueProofs); totalOutput += value
     if (output.kind === 'change' && output.scriptPubKey !== config.walletScriptPubKey) fail('CHANGE_SCRIPT_MISMATCH')
     if (output.scriptPubKey === config.walletScriptPubKey) walletOutput += value
@@ -137,10 +161,13 @@ export function validatePrepared({ prepared, expected, request, config, policy, 
     if (fee.toString() !== targetFee) fail('MINER_FEE_RATE_MISMATCH')
     feeRateEvidence = { minerFeeRateProofsPerVbyte: policy.minerFeeRateProofsPerVbyte, estimatedVirtualBytes }
   } else if (fee > integer(policy.maxMinerFeeProofs)) fail('TRANSACTION_LIMIT_EXCEEDED')
+  let listingCharges
   if (request.action.startsWith('amo.')) {
     const work = expected.work, limits = policy.workLimits
     if (!limits || !work || work.canonicalVerified !== true || work.quantityBoundVerified !== true) fail('WORK_EVIDENCE_REQUIRED')
     integer(work.amountSubatoms, { positive: true }); integer(work.priceProofs, { positive: true })
+    if (request.action === 'amo.listwork' && work.priceProofs !== request.payload.faceProofs) fail('WORK_LISTING_FACE_MISMATCH')
+    if (expandedList) listingCharges = expandedListingCharges(expected.outputs, work, config, checkpoint)
     if (integer(work.amountSubatoms) > integer(limits.maxAmountSubatoms)) fail('WORK_AMOUNT_EXCEEDED')
     if (request.action === 'amo.buywork' && integer(work.priceProofs) > integer(limits.maxPurchaseProofs)) fail('WORK_PURCHASE_PRICE_EXCEEDED')
     if (request.action !== 'amo.buywork' && integer(work.priceProofs) < integer(limits.minSaleProofs)) fail('WORK_SALE_PRICE_TOO_LOW')
@@ -158,7 +185,7 @@ export function validatePrepared({ prepared, expected, request, config, policy, 
     const declared = psbt.inputs[input.index].get('03')
     if (declared && (declared.length !== 4 || !input.sighashTypes.includes(declared.readUInt32LE()))) fail('PSBT_SIGHASH_DENIED')
   }
-  return { costProofs: cost.toString(), minerFeeProofs: fee.toString(), ...feeRateEvidence, templateDigest: digest(transactionShape(tx)), signaturePolicy: expected.signaturePolicy, inputScripts: expected.inputs.map(input => input.scriptPubKey), shape: transactionShape(tx) }
+  return { costProofs: cost.toString(), minerFeeProofs: fee.toString(), ...feeRateEvidence, ...(listingCharges && { listingCharges }), templateDigest: digest(transactionShape(tx)), signaturePolicy: expected.signaturePolicy, inputScripts: expected.inputs.map(input => input.scriptPubKey), shape: transactionShape(tx) }
 }
 export function validateSigned(rawHex, checked) {
   const tx = decodeTransaction(rawHex)

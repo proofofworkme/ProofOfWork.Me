@@ -138,6 +138,15 @@ export const WORK_PRECISION_V2_STATIC_CONSTRAINT_DEFINITIONS = Object.freeze({
   ),
 });
 
+const expandedLiquidityValues = WORK_PRECISION_V2_STATIC_CONSTRAINT_DEFINITIONS.v8Values.replace(
+  "(unit_face_proofs = 25000)",
+  "(unit_face_proofs = ANY (ARRAY[25000, 250000]))",
+);
+
+export function workAmoExpandedLiquiditySchemaReady(definition) {
+  return constraintText(definition) === expandedLiquidityValues;
+}
+
 function exactStaticConstraint(definition, key) {
   return (
     constraintText(definition) ===
@@ -162,7 +171,8 @@ export function workPrecisionV2ConstraintAudit(definitions = {}) {
     "transitionModels",
   );
   const v6Q8Ready = exactStaticConstraint(definitions.v6Values, "v6Values");
-  const v8ValuesReady = exactStaticConstraint(v8Values, "v8Values");
+  const v8ValuesReady = exactStaticConstraint(v8Values, "v8Values") ||
+    workAmoExpandedLiquiditySchemaReady(v8Values);
   const v8IdentityReady = exactStaticConstraint(
     definitions.v8Identity,
     "v8Identity",

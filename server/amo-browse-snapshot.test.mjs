@@ -164,6 +164,60 @@ test("scope counts and global token counts use the full book independently of qu
   assert.equal(h.store.read(params({ q: "no match" })).book.totalCount, 0);
 });
 
+test("WORK books bind the signed face before counts, exact lookup, ordering and cursor boundaries", async () => {
+  function work(n, face, amount, sealed) {
+    return listing(n, { tokenId: assets.work, sealConfirmed: sealed, amountSubatoms: amount, priceSats: face,
+      saleAuthorization: { version: "pwt-sale-v8", unitFaceProofs: face },
+      frozenTerms: { version: "pwt-sale-v8", unitFaceProofs: face, unitAmountSubatoms: amount, unitPriceSats: String(face) } });
+  }
+  const legacy = work(1, 25_000, "10000000000000000", true);
+  const fresh = work(2, 25_000, "10000000000000001", true);
+  fresh.listingAuthorization = { ...fresh.saleAuthorization };
+  fresh.sealTxid = legacy.listingId;
+  fresh.workAmoV8FrozenTerms = { ...fresh.frozenTerms };
+  const large = work(3, 250_000, "300000000000000000000", true);
+  large.workAmoV8FrozenTerms = large.frozenTerms;
+  delete large.frozenTerms;
+  const unsealed = work(4, 250_000, "900000000000000000000", false);
+  unsealed.sealTxid = fresh.listingId;
+  const mismatched = work(5, 25_000, "999999999999999999999", true);
+  mismatched.workAmoV8FrozenTerms = { ...mismatched.frozenTerms, unitFaceProofs: 250_000 };
+  const bond = listing(6, { tokenId: assets.powb });
+  const h = harness();
+  h.set(candidate([legacy, large, fresh, mismatched, bond, unsealed]));
+  assert.equal(await h.store.refresh(), true);
+  const read = (face, options = {}) => h.store.read(params({ asset: assets.work, unitFaceProofs: String(face), ...options }));
+  const smallBook = read(25_000, { limit: "1" });
+  assert.equal(smallBook.query.unitFaceProofs, 25_000);
+  assert.equal(smallBook.book.unitFaceProofs, 25_000);
+  assert.equal(smallBook.book.totalCount, 2);
+  assert.equal(smallBook.book.assetCounts[assets.work].all, 5);
+  assert.deepEqual({ ...smallBook.book.counts }, { all: 2, sealed: 2, unsealed: 0 });
+  assert.equal(smallBook.book.items[0].listingId, fresh.listingId);
+  assert.equal(read(25_000, { limit: "1", cursor: smallBook.book.nextCursor }).book.items[0].listingId, legacy.listingId);
+  const largeBook = read(250_000, { limit: "1" });
+  assert.deepEqual({ ...largeBook.book.counts }, { all: 2, sealed: 1, unsealed: 1 });
+  assert.equal(largeBook.book.items[0].listingId, large.listingId);
+  assert.equal(BigInt(largeBook.book.bestWorkArb.numerator), 50_000n * BigInt(largeBook.book.bestWorkArb.denominator));
+  assert.deepEqual(largeBook.book.bestWorkArb, smallBook.book.bestWorkArb);
+  assert.equal(read(25_000, { q: legacy.listingId.toUpperCase() }).book.totalCount, 1);
+  assert.equal(h.store.read(params({ asset: assets.work, q: legacy.listingId })).book.totalCount, 2);
+  for (const [face, own, other] of [[25_000, legacy, large], [25_000, fresh, unsealed], [250_000, large, legacy]]) {
+    assert.deepEqual(read(face, { q: own.listingId }).book.items.map((item) => item.listingId), [own.listingId]);
+    assert.equal(read(face, { q: other.listingId }).book.totalCount, 0);
+    assert.equal(read(face, { q: mismatched.listingId }).book.totalCount, 0);
+  }
+  for (const [face, cursor] of [[25_000, largeBook.book.nextCursor], [250_000, smallBook.book.nextCursor]]) {
+    assert.throws(() => read(face, { limit: "1", cursor }), code("AMO_BROWSE_CURSOR_CONFLICT"));
+  }
+  assert.equal(read(250_000, { status: "unsealed" }).book.items[0].listingId, unsealed.listingId);
+  assert.equal(h.store.read(params({ asset: assets.powb })).book.items[0].listingId, bond.listingId);
+  for (const values of [{ asset: assets.powb, unitFaceProofs: "25000" }, { asset: "all", unitFaceProofs: "250000" },
+    { asset: assets.work, unitFaceProofs: "025000" }, { asset: assets.work, unitFaceProofs: "20000" }]) {
+    assert.throws(() => h.store.read(params(values)), code("AMO_BROWSE_REQUEST_INVALID"));
+  }
+});
+
 test("old version continues after publication; eviction and cursor changes require restart", async () => {
   const h = harness();
   await h.store.refresh();

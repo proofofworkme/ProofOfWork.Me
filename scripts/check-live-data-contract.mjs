@@ -829,6 +829,24 @@ expectAll(
     /POW_INDEX_WORKER_PENDING_WITNESS_MAX_AGE_MS \?\?[\s\S]*?10 \* 60_000[\s\S]*?\|\| 10 \* 60_000/u,
   ],
 );
+const [beforeSummaryLedger, summaryLedgerAndPublication = ""] = sourceSliceBetween(
+  server,
+  /async function internalCanonicalSummaryPayloadObserved\(/u,
+  /async function buildCanonicalLedgerPayload\(/u,
+).split("buildIndexedCanonicalLedgerPayload(");
+expectAll("canonical summary samples its checkpoint before building the ledger", beforeSummaryLedger, [
+  /const before = await measurePrivatePhase\("canonical-summary-checkpoint-before", \(\) => exactCanonicalSummaryCheckpoint\(network, checkpointOptions\)\)/u,
+]);
+expectAll("canonical summary binds the ledger and rejects a changed closing checkpoint before publication", summaryLedgerAndPublication, [
+  /^\s*network,\s*"internal canonical summary",\s*\{\s*exactHash: before\.tipHash,\s*exactHeight: before\.indexedThroughBlock,/u,
+  new RegExp(
+    String.raw`const after = await measurePrivatePhase\("canonical-summary-checkpoint-after", \(\) => exactCanonicalSummaryCheckpoint\(network, checkpointOptions\)\);` +
+    String.raw`\s*if \(\s*after\.indexedThroughBlock !== before\.indexedThroughBlock \|\|\s*after\.tipHash !== before\.tipHash\s*\) \{` +
+    String.raw`\s*throw freshDataUnavailableError\([^;]*\);\s*\}\s*return \{\s*indexedThroughBlock: before\.indexedThroughBlock,` +
+    String.raw`\s*indexedThroughBlockHash: before\.tipHash,`,
+    "u",
+  ),
+]);
 // These Boolean checks use lazy spans where repeated tokens in the concatenated
 // source otherwise cause broad greedy backtracking; the accepted language is unchanged.
 expectAll("hot worker summary publication is canonical, conservative, and health-gated", proofIndexerBackfill + proofIndexReader + server, [
@@ -838,7 +856,6 @@ expectAll("hot worker summary publication is canonical, conservative, and health
   /canonicalSummaryRefreshCanDefer\(error\)[\s\S]*?reason: "canonical-summary-deferred"/,
   /unpagedEndpoint\(\s*"\/api\/v1\/internal\/canonical-summary",?\s*\)/,
   /async function internalCanonicalSummaryPayload\([\s\S]*?buildIndexedCanonicalLedgerPayload\(/,
-  /const before = await exactCanonicalSummaryCheckpoint\([\s\S]*?const after = await exactCanonicalSummaryCheckpoint\(/,
   /exactCanonicalSummaryCheckpoint\([\s\S]*?indexedThroughBlock !== tipHeight[\s\S]*?storedHash !== tipHash/,
   /buildIndexedCanonicalLedgerPayload\([\s\S]*?indexedActivityStateForCanonicalLedger\(network, \{\s*exactHash,\s*exactHeight,\s*replayBridgeEra,?\s*\}\)[\s\S]*?exactTokenTablePayloadForCanonicalLedger\(/,
   /const PROTOCOL_PREFIXES = \["pwm1:", "pwa1:", "pwid1:", "pwdns1:", "pwb1:", "pwt1:", "pwc1:"\]/,
@@ -3396,11 +3413,31 @@ expect(
   !/cachedJsonResponse\(\s*response,\s*`activity:\$\{network\}`/.test(server),
 );
 
-expectAll("frontend log search keeps server-backed tx and participant search", app, [
+expectAll("frontend Log items retain participant and token fields", app, [
   /participants\?:\s*string\[\]/,
   /tokenId\?:\s*string/,
-  /fetchGlobalActivityHistoryPage\(network,\s*\{[\s\S]*?query/,
+]);
+const logSearchTarget = sourceSliceBetween(
+  app,
+  /async function loadActivityTarget\(/u,
+  /function changeActivityQuery\(/u,
+);
+expectAll("Log searches transaction IDs and resolved participant addresses through the same history reader", logSearchTarget, [
+  /if \(txidOnly\) \{\s*const normalizedTxid = query\.toLowerCase\(\);/u,
+  /fetchGlobalActivityHistoryRead\(network,\s*\{[^}]*?query: normalizedTxid,\s*signal,\s*\}, requestIsActive/u,
+  /fetchGlobalActivityHistoryRead\(network,\s*\{[^}]*?query: resolved\.paymentAddress,\s*signal,\s*\}, requestIsActive/u,
   /Log search found/,
+]);
+const logHistoryReader = sourceSliceBetween(
+  app,
+  /async function fetchGlobalActivityHistoryPage\(/u,
+  /function normalizeRegistryApiState\(/u,
+);
+expectAll("Log history sends the submitted query to the server and preserves it during snapshot recovery", logHistoryReader, [
+  /params\.set\("q", options\.query\.trim\(\)\)/u,
+  /fetchProofApiJson<\s*PowPaginatedApiResponse<PowActivityItem>\s*>\(`\/api\/v1\/log-history\?\$\{params\.toString\(\)\}`, targetNetwork,/u,
+  /return \{ page: await fetchGlobalActivityHistoryPage\(targetNetwork, options\) \}/u,
+  /const page = await fetchGlobalActivityHistoryPage\(targetNetwork,\s*\{\s*\.\.\.options, fresh: false, pageIndex: 0, snapshotId: head\.snapshotId,\s*\}\)/u,
 ]);
 
 expect(

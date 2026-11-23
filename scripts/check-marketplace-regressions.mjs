@@ -1600,23 +1600,34 @@ function assertWorkAmoV8Surface(payload, label, context = payload) {
     `${label} changed the exact 23-listing V8 relic cutover`,
   );
   if (/^[1-9][0-9]*$/u.test(String(status.networkValueBeforeQ8 ?? ""))) {
+    const expanded = status.expandedLiquidity?.listingWritesEnabled === true;
+    assert(!expanded || writesEnabled, `${label} admits expanded listings while V8 writes are closed`);
+    const expectedFaces = expanded
+      ? [...WORK_AMO_V8_ALLOWED_FACE_PROOFS, 250_000]
+      : WORK_AMO_V8_ALLOWED_FACE_PROOFS;
     const observedFaces = Object.keys(status.estimates ?? {})
-      .map(Number)
-      .sort((left, right) => left - right);
+      .sort();
     assert(
       JSON.stringify(observedFaces) ===
-        JSON.stringify(WORK_AMO_V8_ALLOWED_FACE_PROOFS),
-      `${label} does not expose the singleton 25,000-proof V8 face`,
+        JSON.stringify(expectedFaces.map(String).sort()),
+      `${label} exposes estimates for the wrong WORK faces`,
     );
-    const estimate = status.estimates?.["25000"];
-    assert(
-      estimate?.estimateOnly === true &&
-        Number(estimate?.unitFaceProofs) === 25_000 &&
-        String(estimate?.unitPriceSats) === "25000" &&
-        /^[1-9][0-9]*$/u.test(String(estimate?.unitAmountSubatoms ?? "")) &&
-        !("unitAmountAtoms" in estimate),
-      `${label} exposes an invalid or Q8-authoritative V8 unit estimate`,
-    );
+    const scale = 21_000_000n * 10_000_000_000_000_000n * 100_000_000n;
+    const networkValue = BigInt(status.networkValueBeforeQ8);
+    for (const face of expectedFaces) {
+      const estimate = status.estimates[String(face)];
+      const subatoms = BigInt(face) * scale / networkValue;
+      const minimum = (subatoms * networkValue + scale - 1n) / scale;
+      assert(
+        estimate?.estimateOnly === true && estimate.unitFaceProofs === face &&
+          estimate.unitPriceSats === String(face) &&
+          estimate.unitAmountSubatoms === subatoms.toString() &&
+          estimate.unitMinimumPriceSats === minimum.toString() &&
+          estimate.unitNetworkValueBeforeQ8 === networkValue.toString() &&
+          !("unitAmountAtoms" in estimate),
+        `${label} exposes invalid Q16 terms for the ${face}-proof estimate`,
+      );
+    }
   }
   return status;
 }
