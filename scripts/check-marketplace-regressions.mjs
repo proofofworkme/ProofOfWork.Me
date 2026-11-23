@@ -2,7 +2,11 @@
 
 import fs from "node:fs";
 import {
-  parseWorkAmountToAtoms,
+  assertExactWorkTransferHistory,
+  checkWalletParticipantTransfer,
+  workAmountMatches,
+} from "./participant-transfer-regression.mjs";
+import {
   parseWorkAmountToSubatoms,
   WORK_SUBATOM_CONVERSION_FACTOR,
   q8IntegerTextsAgree,
@@ -324,53 +328,6 @@ function numbersAgree(left, right, tolerance = 0.01) {
   return Math.abs(numericValue(left) - numericValue(right)) <= tolerance;
 }
 
-function workAmountMatches(record, expectedAmount) {
-  try {
-    const expectedAtoms = parseWorkAmountToAtoms(expectedAmount, {
-      allowZero: true,
-    });
-    const expectedSubatoms = parseWorkAmountToSubatoms(expectedAmount, {
-      allowZero: true,
-    });
-    const amountAtoms = record?.amountAtoms;
-    const amountSubatoms = record?.amountSubatoms;
-    const hasAmountAtoms =
-      amountAtoms !== undefined && amountAtoms !== null && amountAtoms !== "";
-    const hasAmountSubatoms =
-      amountSubatoms !== undefined &&
-      amountSubatoms !== null &&
-      amountSubatoms !== "";
-    if (typeof record?.amount === "number") {
-      return (
-        !hasAmountAtoms &&
-        !hasAmountSubatoms &&
-        Number.isSafeInteger(record.amount) &&
-        parseWorkAmountToAtoms(record.amount, { allowZero: true }) ===
-          expectedAtoms
-      );
-    }
-    const q8Historical =
-      typeof record?.amount === "string" &&
-      record.amount === expectedAmount &&
-      typeof amountAtoms === "string" &&
-      amountAtoms === expectedAtoms &&
-      !hasAmountSubatoms;
-    const q16Current =
-      typeof record?.amount === "string" &&
-      record.amount === expectedAmount &&
-      !hasAmountAtoms &&
-      typeof amountSubatoms === "string" &&
-      amountSubatoms === expectedSubatoms &&
-      record?.amountStorageModel ===
-        WORK_AMO_V8_PRECISION.amountStorageModel &&
-      Number(record?.decimals) === WORK_AMO_V8_PRECISION.decimals &&
-      String(record?.unitScale ?? "") === WORK_AMO_V8_PRECISION.unitScale;
-    return q8Historical || q16Current;
-  } catch {
-    return false;
-  }
-}
-
 function elapsedMs(startedAt) {
   return `${Date.now() - startedAt}ms`;
 }
@@ -647,6 +604,22 @@ async function tokenHistoryForAsset(asset, kind, params = {}) {
 
 async function tokenHistory(kind, params = {}) {
   return tokenHistoryForAsset(WORK_TOKEN_ID, kind, params);
+}
+
+async function assertCarbonzDelayedTransferHistory() {
+  const expected = {
+    amount: "20000",
+    blockHeight: 955_792,
+    recipientAddress: CARBONZ_DELAYED_TRANSFER_RECIPIENT,
+    senderAddress: CARBONZ_DELAYED_TRANSFER_SENDER,
+    tokenId: WORK_TOKEN_ID,
+    txid: CARBONZ_DELAYED_TRANSFER_TX,
+  };
+  const fullHistory = await tokenHistory("transfers", { fresh: 1, q: expected.txid });
+  assertExactWorkTransferHistory(fullHistory, expected, "WORK transfer history");
+  for (const address of [expected.senderAddress, expected.recipientAddress]) {
+    await checkWalletParticipantTransfer(getJson, "livenet", address, expected);
+  }
 }
 
 async function completeTokenHistory(kind, params = {}, pageSize = 500) {
@@ -2582,48 +2555,7 @@ async function runFastMarketplaceRegressionGate() {
   });
 
   await step("Carbonz delayed WORK transfer wallet recovery", async () => {
-    const carbonzDelayedTransferHistory = await tokenHistory("transfers", {
-      fresh: 1,
-      q: CARBONZ_DELAYED_TRANSFER_TX,
-    });
-    const carbonzDelayedTransfer = (
-      carbonzDelayedTransferHistory.items ?? []
-    ).find(
-      (item) =>
-        String(item?.txid ?? "").toLowerCase() ===
-          CARBONZ_DELAYED_TRANSFER_TX && item?.confirmed === true,
-    );
-    assert(
-      workAmountMatches(carbonzDelayedTransfer, "20000") &&
-        carbonzDelayedTransfer?.senderAddress ===
-          CARBONZ_DELAYED_TRANSFER_SENDER &&
-        carbonzDelayedTransfer?.recipientAddress ===
-          CARBONZ_DELAYED_TRANSFER_RECIPIENT,
-      `${CARBONZ_DELAYED_TRANSFER_TX} is missing or incomplete in WORK transfer history`,
-    );
-    for (const address of [
-      CARBONZ_DELAYED_TRANSFER_SENDER,
-      CARBONZ_DELAYED_TRANSFER_RECIPIENT,
-    ]) {
-      const scopedWallet = await getJson("/api/v1/token", {
-        network: "livenet",
-        asset: WORK_TOKEN_ID,
-        address,
-        wallet: 1,
-        fresh: 1,
-      });
-      assert(
-        (scopedWallet.transfers ?? []).some(
-          (item) =>
-            String(item?.txid ?? "").toLowerCase() ===
-              CARBONZ_DELAYED_TRANSFER_TX &&
-            item?.confirmed === true &&
-            item?.senderAddress === CARBONZ_DELAYED_TRANSFER_SENDER &&
-            item?.recipientAddress === CARBONZ_DELAYED_TRANSFER_RECIPIENT,
-        ),
-        `${CARBONZ_DELAYED_TRANSFER_TX} is missing from ${address} wallet-scoped transfers`,
-      );
-    }
+    await assertCarbonzDelayedTransferHistory();
     const delayedRecipientWallet = await getJson("/api/v1/token-summary", {
       network: "livenet",
       asset: WORK_TOKEN_ID,
@@ -3325,45 +3257,7 @@ for (const address of [REPORTED_TRANSFER_SENDER, REPORTED_TRANSFER_RECIPIENT]) {
     `${REPORTED_TRANSFER_TX} is missing from ${address} wallet-scoped transfers`,
   );
 }
-const carbonzDelayedTransferHistory = await tokenHistory("transfers", {
-  fresh: 1,
-  q: CARBONZ_DELAYED_TRANSFER_TX,
-});
-const carbonzDelayedTransfer = (carbonzDelayedTransferHistory.items ?? []).find(
-  (item) =>
-    String(item?.txid ?? "").toLowerCase() === CARBONZ_DELAYED_TRANSFER_TX &&
-    item?.confirmed === true,
-);
-assert(
-  workAmountMatches(carbonzDelayedTransfer, "20000") &&
-    carbonzDelayedTransfer?.senderAddress === CARBONZ_DELAYED_TRANSFER_SENDER &&
-    carbonzDelayedTransfer?.recipientAddress ===
-      CARBONZ_DELAYED_TRANSFER_RECIPIENT,
-  `${CARBONZ_DELAYED_TRANSFER_TX} is missing or incomplete in WORK transfer history`,
-);
-for (const address of [
-  CARBONZ_DELAYED_TRANSFER_SENDER,
-  CARBONZ_DELAYED_TRANSFER_RECIPIENT,
-]) {
-  const scopedWallet = await getJson("/api/v1/token", {
-    network: "livenet",
-    asset: WORK_TOKEN_ID,
-    address,
-    wallet: 1,
-    fresh: 1,
-  });
-  assert(
-    (scopedWallet.transfers ?? []).some(
-      (item) =>
-        String(item?.txid ?? "").toLowerCase() ===
-          CARBONZ_DELAYED_TRANSFER_TX &&
-        item?.confirmed === true &&
-        item?.senderAddress === CARBONZ_DELAYED_TRANSFER_SENDER &&
-        item?.recipientAddress === CARBONZ_DELAYED_TRANSFER_RECIPIENT,
-    ),
-    `${CARBONZ_DELAYED_TRANSFER_TX} is missing from ${address} wallet-scoped transfers`,
-  );
-}
+await assertCarbonzDelayedTransferHistory();
 const delayedRecipientWallet = await getJson("/api/v1/token-summary", {
   network: "livenet",
   asset: WORK_TOKEN_ID,

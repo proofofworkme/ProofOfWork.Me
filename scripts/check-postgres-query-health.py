@@ -10,7 +10,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "deploy/proofofwork-postgres-query-health.sh"
 ACTIVITY = "8|0|0|0|8|1|2|1|0|0|0|0"
-PLACEMENT = "1|1|8|8|8|47|47|31|0|0|0|37203542016|38493395991|37203542016|8192|9771|2"
+PLACEMENT = "1|1|8|8|8|47|47|31|0|0|0|37203542016|38493395991|37203542016|8192|0|9771|2"
+EXPANDED_PLACEMENT = "1|1|9|9|9|51|51|33|0|0|0|37203546112|38493400087|37203542016|8192|1|9771|2"
 
 
 class QueryHealthTests(unittest.TestCase):
@@ -142,14 +143,36 @@ class QueryHealthTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         storage = json.loads(self.calls.read_text().splitlines()[1])
         for name, owner in (("work_batch_transition_supersessions_v1", "proof_indexer_transition_storage_owner"),
+                            ("work_amo_expanded_liquidity_supersessions_v1", "proof_indexer_transition_storage_owner"),
                             ("work_transfer_projection_pages", "postgres")):
             self.assertIn(f"('{name}'::name, '{owner}'::name)", storage)
         self.assertIn("('work_batch_transition_supersessions_v1', 'work_batch_transition_supersessions_v1_pkey', 'pg_default')", storage)
         self.assertIn("('work_batch_transition_supersessions_v1', 'work_batch_transition_supersessions_v1_network_block_height_key', 'pg_default')", storage)
         self.assertIn("('work_transfer_projection_pages', 'work_transfer_projection_pages_pkey', 'proof_indexer_large_state_v1')", storage)
+        self.assertIn("('work_amo_expanded_liquidity_supersessions_v1', 'work_amo_expanded_liquidity_supersessions_v1_pkey', 'pg_default')", storage)
+        self.assertIn("immutable_work_amo_expanded_liquidity_supersession_v1", storage)
+        self.assertIn("tgtype = 27 AND tgenabled = 'O'", storage)
+        self.assertIn("PRIMARY KEY (network, block_height, block_hash)", storage)
         self.assertIn("pg_get_userbyid(relowner) = owner_name", storage)
         self.assertIn("actual_space.spcname = named.tablespace_name", storage)
         self.assertIn("WHERE expected.oid IS NULL", storage)
+
+    def test_expanded_layout_requires_the_complete_catalog_and_storage_closure(self):
+        result = self.run_monitor(placement=EXPANDED_PLACEMENT)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("parents=9 toasts=9 indexes=33 closure=51 placed=51", result.stdout)
+        for layout in (PLACEMENT, EXPANDED_PLACEMENT):
+            fields = layout.split("|")
+            for state in {"0", "1", "2"} - {fields[15]}:
+                with self.subTest(catalog=fields[15], observed=state):
+                    changed = fields.copy()
+                    changed[15] = state
+                    self.assertEqual(self.run_monitor(placement="|".join(changed)).returncode, 2)
+        for field in (2, 3, 4, 5, 6, 7, 8, 9, 10):
+            with self.subTest(incomplete_expanded_layout=field):
+                changed = EXPANDED_PLACEMENT.split("|")
+                changed[field] = str(int(changed[field]) + (1 if field >= 8 else -1))
+                self.assertEqual(self.run_monitor(placement="|".join(changed)).returncode, 2)
 
     def test_missing_unrelated_misplaced_and_invalid_members_fail_closed(self):
         for field in (2, 3, 4, 5, 6, 7, 8, 9, 10):

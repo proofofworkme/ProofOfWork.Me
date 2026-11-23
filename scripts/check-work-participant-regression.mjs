@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 
+import {
+  assertExactWorkTransferHistory,
+  checkWalletParticipantTransfer,
+} from "./participant-transfer-regression.mjs";
+
 const API_BASE = String(
   process.env.POW_API_BASE ??
     process.env.VITE_POW_API_BASE ??
@@ -25,6 +30,15 @@ const CARBONZ_FUNDING_LISTING_ID =
   "7096eaec54fef90468dff9a8ae70c312f1d6a90fdecb6a6196f230519f699f73";
 const CARBONZ_FUNDING_SALE_HEIGHT = 956_362;
 const CARBONZ_TRANSFER_HEIGHT = 956_369;
+
+const EXPECTED_TRANSFER = {
+  amount: "300000",
+  blockHeight: CARBONZ_TRANSFER_HEIGHT,
+  senderAddress: CARBONZ_ADDRESS,
+  recipientAddress: CARBONZ_TRANSFER_RECIPIENT,
+  tokenId: WORK_TOKEN_ID,
+  txid: CARBONZ_TRANSFER_TXID,
+};
 
 function assert(condition, message) {
   if (!condition) {
@@ -76,48 +90,8 @@ function itemsForTxid(payload, txid) {
   return payloadItems(payload).filter((item) => txidOf(item) === normalized);
 }
 
-function collectionItemForTxid(items, txid) {
-  const normalized = txid.toLowerCase();
-  return (Array.isArray(items) ? items : []).find(
-    (item) => txidOf(item) === normalized,
-  );
-}
-
 function stringFields(item) {
   return JSON.stringify(item ?? {}).toLowerCase();
-}
-
-function assertCanonicalTransfer(item, surface) {
-  assert(item, `${surface} is missing the reported Carbonz WORK transfer`);
-  assert(
-    item.confirmed === true && item.valid !== false,
-    `${surface} did not preserve the transfer as confirmed and valid`,
-  );
-  assert(
-    Number(item.amount ?? 0) === 300_000,
-    `${surface} did not preserve the 300,000 WORK amount`,
-  );
-  if (item.blockHeight != null) {
-    assert(
-      Number(item.blockHeight) === CARBONZ_TRANSFER_HEIGHT,
-      `${surface} did not preserve the canonical transfer height`,
-    );
-  }
-  assert(
-    String(item.tokenId ?? WORK_TOKEN_ID).toLowerCase() === WORK_TOKEN_ID &&
-      String(item.ticker ?? "WORK").toUpperCase() === "WORK",
-    `${surface} did not preserve the WORK asset scope`,
-  );
-  assert(
-    String(item.senderAddress ?? "").toLowerCase() ===
-      CARBONZ_ADDRESS.toLowerCase(),
-    `${surface} did not preserve Carbonz as sender`,
-  );
-  assert(
-    String(item.recipientAddress ?? "").toLowerCase() ===
-      CARBONZ_TRANSFER_RECIPIENT.toLowerCase(),
-    `${surface} did not preserve the transfer recipient`,
-  );
 }
 
 function assertCanonicalSurfaceEvent(item, surface) {
@@ -208,21 +182,7 @@ async function main() {
     limit: 100,
     q: CARBONZ_TRANSFER_TXID,
   });
-  assert(
-    itemsForTxid(transferHistory, CARBONZ_TRANSFER_TXID).length === 1,
-    "WORK transfer history does not contain exactly one canonical reported transfer",
-  );
-  assertCanonicalTransfer(
-    itemForTxid(transferHistory, CARBONZ_TRANSFER_TXID),
-    "WORK transfer history",
-  );
-  assert(
-    !(Array.isArray(transferHistory.canonicalInvalidTxids)
-      ? transferHistory.canonicalInvalidTxids
-      : []
-    ).some((txid) => String(txid).toLowerCase() === CARBONZ_TRANSFER_TXID),
-    "WORK transfer history incorrectly marks the canonical transfer txid invalid",
-  );
+  assertExactWorkTransferHistory(transferHistory, EXPECTED_TRANSFER, "WORK transfer history");
 
   const transferHistoryByTxid = await readJson("/api/v1/token-history", {
     asset: WORK_TOKEN_ID,
@@ -231,21 +191,7 @@ async function main() {
     limit: 100,
     txid: CARBONZ_TRANSFER_TXID,
   });
-  assert(
-    itemsForTxid(transferHistoryByTxid, CARBONZ_TRANSFER_TXID).length === 1,
-    "exact txid transfer history does not contain exactly one canonical row",
-  );
-  assertCanonicalTransfer(
-    itemForTxid(transferHistoryByTxid, CARBONZ_TRANSFER_TXID),
-    "exact txid transfer history",
-  );
-  assert(
-    !(Array.isArray(transferHistoryByTxid.canonicalInvalidTxids)
-      ? transferHistoryByTxid.canonicalInvalidTxids
-      : []
-    ).some((txid) => String(txid).toLowerCase() === CARBONZ_TRANSFER_TXID),
-    "exact txid transfer history incorrectly marks the canonical transfer invalid",
-  );
+  assertExactWorkTransferHistory(transferHistoryByTxid, EXPECTED_TRANSFER, "exact txid transfer history");
 
   for (const exactParams of [
     { q: CARBONZ_TRANSFER_TXID },
@@ -265,43 +211,7 @@ async function main() {
   }
 
   for (const address of [CARBONZ_ADDRESS, CARBONZ_TRANSFER_RECIPIENT]) {
-    const scopedHistory = await readJson("/api/v1/token-history", {
-      asset: WORK_TOKEN_ID,
-      fresh: 1,
-      kind: "transfers",
-      limit: 100,
-      q: address,
-      txid: CARBONZ_TRANSFER_TXID,
-    });
-    assert(
-      itemsForTxid(scopedHistory, CARBONZ_TRANSFER_TXID).length === 1,
-      `${address} scoped transfer history is missing or duplicating the transfer`,
-    );
-    assertCanonicalTransfer(
-      itemForTxid(scopedHistory, CARBONZ_TRANSFER_TXID),
-      `${address} scoped transfer history`,
-    );
-
-    const wallet = await readJson("/api/v1/token", {
-      address,
-      asset: WORK_TOKEN_ID,
-      fresh: 1,
-      wallet: 1,
-    });
-    assert(
-      (Array.isArray(wallet.transfers) ? wallet.transfers : []).filter(
-        (item) => txidOf(item) === CARBONZ_TRANSFER_TXID,
-      ).length === 1,
-      `${address} Wallet is missing or duplicating the transfer`,
-    );
-    assertCanonicalTransfer(
-      collectionItemForTxid(wallet.transfers, CARBONZ_TRANSFER_TXID),
-      `${address} Wallet`,
-    );
-    assert(
-      !collectionItemForTxid(wallet.invalidEvents, CARBONZ_TRANSFER_TXID),
-      `${address} Wallet still exposes a stale invalid-event alias`,
-    );
+    await checkWalletParticipantTransfer(readJson, NETWORK, address, EXPECTED_TRANSFER);
   }
 
   for (const query of [

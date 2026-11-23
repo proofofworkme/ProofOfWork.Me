@@ -362,10 +362,13 @@ assert.match(postgresQueryHealth, /owned_sequences/u);
 assert.match(postgresQueryHealth, /unrelated_count/u);
 assert.match(postgresQueryHealth, /work_batch_transition_supersessions_v1/u);
 assert.match(postgresQueryHealth, /work_transfer_projection_pages/u);
-assert.match(postgresQueryHealth, /parent_count != 8/u);
-assert.match(postgresQueryHealth, /closure_count != 47/u);
-assert.match(postgresQueryHealth, /placed_count != 47/u);
-assert.match(postgresQueryHealth, /index_count != 31/u);
+assert.match(postgresQueryHealth, /work_amo_expanded_liquidity_supersessions_v1_pkey/u);
+assert.match(postgresQueryHealth, /immutable_work_amo_expanded_liquidity_supersession_v1/u);
+assert.match(postgresQueryHealth, /expanded_storage_state > 1/u);
+assert.match(postgresQueryHealth, /parent_count != expected_parents/u);
+assert.match(postgresQueryHealth, /closure_count != expected_closure/u);
+assert.match(postgresQueryHealth, /placed_count != expected_closure/u);
+assert.match(postgresQueryHealth, /index_count != expected_indexes/u);
 assert.match(
   postgresQueryHealth,
   /CRITICAL PostgreSQL large-state tablespace placement differs/u,

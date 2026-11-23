@@ -192,6 +192,7 @@ placement_metrics="$(/usr/bin/psql \
         ('work_transition_chunks_v1'::name, 'proof_indexer_transition_storage_owner'::name),
         ('work_transition_hot_slots_v1'::name, 'proof_indexer_transition_storage_owner'::name),
         ('work_batch_transition_supersessions_v1'::name, 'proof_indexer_transition_storage_owner'::name),
+        ('work_amo_expanded_liquidity_supersessions_v1'::name, 'proof_indexer_transition_storage_owner'::name),
         ('work_transfer_projection_pages'::name, 'postgres'::name)
     ),
     expected_indexes(parent_name, index_name, tablespace_name) AS (
@@ -218,7 +219,22 @@ placement_metrics="$(/usr/bin/psql \
         ('work_transition_hot_slots_v1', 'work_transition_hot_slots_v1_pkey', 'pg_default'),
         ('work_batch_transition_supersessions_v1', 'work_batch_transition_supersessions_v1_pkey', 'pg_default'),
         ('work_batch_transition_supersessions_v1', 'work_batch_transition_supersessions_v1_network_block_height_key', 'pg_default'),
+        ('work_amo_expanded_liquidity_supersessions_v1', 'work_amo_expanded_liquidity_supersessions_v1_pkey', 'pg_default'),
         ('work_transfer_projection_pages', 'work_transfer_projection_pages_pkey', 'proof_indexer_large_state_v1')
+    ),
+    -- The publication transaction installs the receipt and changes these three
+    -- native functions together. A partial catalog must not select either layout.
+    expanded_storage AS (
+      SELECT
+        to_regclass('proof_indexer.work_amo_expanded_liquidity_supersessions_v1') AS receipt,
+        count(*) AS functions_found,
+        count(*) FILTER (WHERE position('proof_indexer.work_amo_expanded_liquidity_supersessions_v1' IN prosrc) > 0) AS expanded_functions
+      FROM pg_proc
+      WHERE oid IN (
+        to_regprocedure('proof_indexer.encode_native_work_transition_v1()'),
+        to_regprocedure('proof_indexer.read_work_transition_payload_v1(text,integer,text,jsonb)'),
+        to_regprocedure('proof_indexer.verify_work_transition_hot_slot_v1()')
+      )
     ),
     parents AS (
       SELECT
@@ -358,6 +374,24 @@ placement_metrics="$(/usr/bin/psql \
          WHERE relname = 'ledger_snapshots'),
         0
       ),
+      (SELECT CASE
+         WHEN receipt IS NULL AND functions_found = 3 AND expanded_functions = 0 THEN 0
+         WHEN receipt IS NOT NULL AND expanded_functions = 3
+           AND EXISTS (
+             SELECT 1 FROM pg_constraint
+             WHERE conrelid = receipt AND contype = 'p' AND convalidated
+               AND pg_get_constraintdef(oid) = 'PRIMARY KEY (network, block_height, block_hash)'
+           )
+           AND (SELECT count(*) = 1 AND bool_and(
+             tgname = 'immutable_work_amo_expanded_liquidity_supersession_v1'
+             AND tgfoid = to_regprocedure('proof_indexer.reject_work_transition_archive_mutation_v1()')
+             -- ROW | BEFORE | DELETE | UPDATE, for every row and column.
+             AND tgtype = 27 AND tgenabled = 'O' AND tgattr = ''::int2vector
+             AND tgqual IS NULL AND tgnargs = 0 AND tgconstraint = 0
+           ) FROM pg_trigger WHERE tgrelid = receipt AND NOT tgisinternal)
+           THEN 1
+         ELSE 2 END
+       FROM expanded_storage),
       COALESCE(
         (SELECT reltuples::bigint FROM parents
          WHERE relname = 'work_amo_block_transitions'),
@@ -371,11 +405,11 @@ placement_metrics="$(/usr/bin/psql \
     ROLLBACK;
   ")"
 
-if [[ ! "${placement_metrics}" =~ ^([0-9]+\|){15}(-1|[0-9]+)\|(-1|[0-9]+)$ ]]; then
+if [[ ! "${placement_metrics}" =~ ^([0-9]+\|){16}(-1|[0-9]+)\|(-1|[0-9]+)$ ]]; then
   echo "PostgreSQL tablespace-health metrics must contain exactly one bounded numeric row." >&2
   exit 65
 fi
-IFS='|' read -r tablespace_count tablespace_identity_ready parent_count parent_shape_ready toast_count closure_count placed_count index_count invalid_index_count unrelated_count owned_sequence_count placed_bytes database_bytes transition_bytes snapshot_bytes transition_rows_estimated snapshot_rows_estimated <<<"${placement_metrics}"
+IFS='|' read -r tablespace_count tablespace_identity_ready parent_count parent_shape_ready toast_count closure_count placed_count index_count invalid_index_count unrelated_count owned_sequence_count placed_bytes database_bytes transition_bytes snapshot_bytes expanded_storage_state transition_rows_estimated snapshot_rows_estimated <<<"${placement_metrics}"
 for value in \
   "${tablespace_count}" \
   "${tablespace_identity_ready}" \
@@ -391,7 +425,8 @@ for value in \
   "${placed_bytes}" \
   "${database_bytes}" \
   "${transition_bytes}" \
-  "${snapshot_bytes}"; do
+  "${snapshot_bytes}" \
+  "${expanded_storage_state}"; do
   if ! is_nonnegative_bigint "${value}"; then
     echo "PostgreSQL tablespace-health metrics were not parseable." >&2
     exit 65
@@ -444,14 +479,24 @@ printf 'postgres_growth database=%s database_bytes=%s transition_total_bytes=%s 
   "${transition_rows_estimated}" \
   "${snapshot_rows_estimated}"
 
-if ((tablespace_count != 1)) ||
+# Both layout signatures include every incumbent parent, its TOAST and indexes.
+expected_parents=8
+expected_closure=47
+expected_indexes=31
+if ((expanded_storage_state == 1)); then
+  expected_parents=9
+  expected_closure=51
+  expected_indexes=33
+fi
+if ((expanded_storage_state > 1)) ||
+  ((tablespace_count != 1)) ||
   ((tablespace_identity_ready != 1)) ||
-  ((parent_count != 8)) ||
-  ((parent_shape_ready != 8)) ||
-  ((toast_count != 8)) ||
-  ((closure_count != 47)) ||
-  ((placed_count != 47)) ||
-  ((index_count != 31)) ||
+  ((parent_count != expected_parents)) ||
+  ((parent_shape_ready != expected_parents)) ||
+  ((toast_count != expected_parents)) ||
+  ((closure_count != expected_closure)) ||
+  ((placed_count != expected_closure)) ||
+  ((index_count != expected_indexes)) ||
   ((invalid_index_count != 0)) ||
   ((unrelated_count != 0)) ||
   ((owned_sequence_count != 0)) ||

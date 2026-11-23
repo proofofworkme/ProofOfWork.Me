@@ -16,12 +16,23 @@ export async function permissionSupersession(client, network, old, row) {
     throw permissionReadError('Permission journal supersession crosses a fork.');
   }
   if (isDeepStrictEqual(fields(old), fields(row))) return null;
+  // The earlier WORK batch instrument ends at 973615. The two publication
+  // tables are disjoint and each has its own immutable incident constraints.
+  const expanded = Number(row.height) >= 977230;
+  const relation = expanded ? 'proof_indexer.work_amo_expanded_liquidity_supersessions_v1'
+    : 'proof_indexer.work_batch_transition_supersessions_v1';
+  const scalars = expanded
+    ? `to_jsonb(t)-ARRAY['payload','created_at'] = d.old_main-ARRAY['payload','created_at']
+       AND t.created_at=(d.old_main->>'created_at')::timestamptz`
+    : `to_jsonb(t)-ARRAY['payload','created_at']=d.new_metadata
+       AND t.created_at=(d.old_main->>'created_at')::timestamptz
+       AND d.new_metadata-'event_set_sha256'=d.old_main-ARRAY['payload','created_at','event_set_sha256']`;
   const result = await client.query(`/* permission_native_supersession */
     WITH frames AS MATERIALIZED (
       SELECT s.*, a.payload AS original_manifest,
         proof_indexer.reconstruct_work_transition_payload_v1(a.payload) AS original,
         proof_indexer.reconstruct_work_transition_payload_v1(s.new_manifest) AS replacement
-      FROM proof_indexer.work_batch_transition_supersessions_v1 s
+      FROM ${relation} s
       JOIN proof_indexer.work_transition_archive_v1 a USING (network,block_height,block_hash)
       WHERE s.network=$1 AND s.block_height=$2 AND s.block_hash=$3
     )
@@ -35,8 +46,7 @@ export async function permissionSupersession(client, network, old, row) {
        d.replacement=d.original||d.replacement_fields AND
        t.payload->'__powNativeStorage'->>'sha256'=d.new_manifest->>'sha256' AND
        proof_indexer.read_work_transition_payload_v1(t.network,t.block_height,t.block_hash,t.payload)=d.replacement AND
-       to_jsonb(t)-ARRAY['payload','created_at']=d.new_metadata AND t.created_at=(d.old_main->>'created_at')::timestamptz AND
-       d.new_metadata-'event_set_sha256'=d.old_main-ARRAY['payload','created_at','event_set_sha256'] AND
+       (${scalars}) AND
        t.event_set_sha256=d.replacement->'eventSetCommitment'->>'sha256') IS TRUE AS verified
     FROM frames d JOIN proof_indexer.work_amo_block_transitions t USING (network,block_height,block_hash)
     JOIN proof_indexer.blocks boundary ON boundary.network=d.network AND boundary.canonical

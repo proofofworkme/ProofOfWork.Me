@@ -3,6 +3,9 @@
   "upgrade": "work-amo-expanded-liquidity",
   "liveCheck": "scripts/check-amo-liquidity-live.mjs",
   "ciTests": [
+    "scripts/check-amo-expanded-liquidity-replay.test.mjs",
+    "server/permission-verification-store.test.mjs",
+    "scripts/complete-token-history-pages.test.mjs",
     "server/work-amo-v8-metadata-readiness.test.mjs",
     "server/amo-browse-snapshot.test.mjs",
     "src/features/marketplace/marketplaceBrowse.test.mjs",
@@ -25,14 +28,14 @@
     {
       "targets": ["wallet", "permission", "local-signing"],
       "disposition": "affected",
-      "reason": "Wallet and embedded Computer review 546 sats to the registry, the 546-sat ticket at output 2, the miner fee and the 5,460-sat fee for a new larger List. Permission constrains the signed face and transaction outputs. Seal keeps its seller authorization and publication reviews. The existing check:permission command exercises local/permission-controller/controller.test.mjs.",
-      "evidence": ["src/App.tsx", "scripts/check-ui-contract.mjs", "scripts/check-h19-work-capacity-client.mjs", "tests/browser/mail-compose.spec.mjs", "scripts/check-permission-wallet-commitment.test.mjs"]
+      "reason": "Wallet and embedded Computer review 546 sats to the registry, the 546-sat ticket at output 2, the miner fee and the 5,460-sat fee for a new larger List. Permission constrains the signed face and transaction outputs. Its journal authenticates the preserved native frame and the selected replacement before accepting a replayed suffix. Seal keeps its seller authorization and publication reviews. The existing check:permission command exercises local/permission-controller/controller.test.mjs.",
+      "evidence": ["src/App.tsx", "scripts/check-ui-contract.mjs", "scripts/check-h19-work-capacity-client.mjs", "tests/browser/mail-compose.spec.mjs", "scripts/check-permission-wallet-commitment.test.mjs", "server/db/permission-supersession.mjs", "server/permission-verification-store.test.mjs"]
     },
     {
       "targets": ["wire", "work", "indexer", "api", "backfill-reorg"],
       "disposition": "affected",
-      "reason": "Additive declaration evidence binds its carrier, canonical block position, fee terms and eligibility boundary. The owner-selected transaction has an exact self-payment and wrapped-carrier witness bound to its txid. It contributes zero registry revenue. Fresh larger Lists require independently matching index, schema, replay and live admission at the current tip. The original V8 declaration and its global fail-closed rules continue to govern the original book and ordinary WORK transfers. Storage retains signed faces and frozen terms across replay, recovery and settlement.",
-      "evidence": ["server/work-amo-expanded-liquidity.mjs", "server/work-amo-v8.mjs", "server/work-amo-v5-raw.mjs", "scripts/backfill-proof-indexer.mjs", "server/work-precision-v2-schema.mjs", "scripts/check-work-precision-v2.mjs", "scripts/check-work-amo-v5.mjs", "scripts/check-work-amo-v8.mjs", "scripts/check-work-amo-v8-gates.mjs", "server/work-amo-v8-metadata-readiness.test.mjs", "scripts/check-amo-liquidity-live.mjs"]
+      "reason": "Additive declaration evidence binds its carrier, canonical block position, fee terms and eligibility boundary. The owner-selected transaction has an exact self-payment and wrapped-carrier witness bound to its txid. It contributes zero registry revenue. Fresh larger Lists require independently matching index, schema, replay and live admission at the current tip. The original V8 declaration and its global fail-closed rules continue to govern the original book and ordinary WORK transfers. The 977230 replay publisher retains the incumbent archive, proves exact native and transition commitments against raw Core blocks and accepts only a qualified empty suffix through the pinned tip. The storage monitor verifies the applicable native inventory. Storage retains signed faces and frozen terms across replay, recovery and settlement.",
+      "evidence": ["server/work-amo-expanded-liquidity.mjs", "server/work-amo-v8.mjs", "server/work-amo-v5-raw.mjs", "scripts/backfill-proof-indexer.mjs", "server/work-precision-v2-schema.mjs", "scripts/check-work-precision-v2.mjs", "scripts/check-work-amo-v5.mjs", "scripts/check-work-amo-v8.mjs", "scripts/check-work-amo-v8-gates.mjs", "server/work-amo-v8-metadata-readiness.test.mjs", "scripts/check-amo-liquidity-live.mjs", "deploy/amo-expanded-liquidity-replay/preflight.mjs", "deploy/amo-expanded-liquidity-replay/publish.mjs", "deploy/amo-expanded-liquidity-replay/storage-fixture.test.mjs", "scripts/check-amo-expanded-liquidity-replay.test.mjs", "scripts/check-postgres-query-health.py"]
     },
     {
       "targets": ["activity", "growth", "accounting"],
@@ -49,8 +52,8 @@
     {
       "targets": ["boost", "jobs", "code", "pay", "compatibility"],
       "disposition": "compatible",
-      "reason": "Existing WORK send and payment encodings remain valid. Consumers of pending WORK capacity reserve the signed listing face while confirmed tickets keep their exact frozen quantity. Boost, Jobs, Code and Pay keep their existing commitment and fee rules.",
-      "evidence": ["src/shared/work/canonicalWorkCapacity.ts", "server/work-wallet-capacity.test.mjs", "scripts/check-boost-tip-work-capacity.test.mjs", "scripts/check-jobs-work-capacity.test.mjs", "scripts/check-code-client.test.mjs", "scripts/check-pay-client.test.mjs"]
+      "reason": "Existing WORK send and payment encodings remain valid. Consumers of pending WORK capacity reserve the signed listing face while confirmed tickets keep their exact frozen quantity. Boost, Jobs, Code and Pay keep their existing commitment and fee rules. Historical participant transfers are checked against exact scoped history and any matching wallet summary row.",
+      "evidence": ["src/shared/work/canonicalWorkCapacity.ts", "server/work-wallet-capacity.test.mjs", "scripts/check-boost-tip-work-capacity.test.mjs", "scripts/check-jobs-work-capacity.test.mjs", "scripts/check-code-client.test.mjs", "scripts/check-pay-client.test.mjs", "scripts/check-marketplace-regressions.mjs", "scripts/check-work-participant-regression.mjs", "scripts/complete-token-history-pages.test.mjs"]
     },
     {
       "targets": ["landing", "browser", "id", "dns", "inception", "infinity", "pages", "publish", "token", "files", "mail", "notifications"],

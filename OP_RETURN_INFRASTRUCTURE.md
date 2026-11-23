@@ -2657,12 +2657,17 @@ entire move back. Never use `ALTER ... ALL IN TABLESPACE`, filesystem moves,
 manual `pg_tblspc` links, or payload deletion/compaction for this operation.
 
 The five-minute PostgreSQL query-health check also verifies this permanent
-placement using catalogs only. Its exact named closure covers eight parents,
+placement using catalogs only. Before the expanded AMO replay its named closure covers eight parents,
 eight TOAST relations and 31 indexes (47 objects), including the retained native rollback, native transition
 archive/chunks/hot slots, WORK batch supersession evidence and bounded WORK
 transfer projection pages. The supersession table retains its storage-owner
 role and two indexes in `pg_default`; projection pages retain `postgres`
-ownership and their primary index in the large-state tablespace. All other
+ownership and their primary index in the large-state tablespace. After the
+expanded AMO receipt table and its three native functions are installed, the
+monitor requires nine parents, nine TOAST relations and 33 indexes (51
+objects). It checks the new table's primary key and immutable trigger.
+Install this compatible monitor before publication and verify it on each
+layout. All other
 accepted Audit31 ownership and per-index placement rules remain unchanged. Every
 closure member must use its exact declared tablespace, every index must be valid and
 ready, no unrelated object may use it, no monitored parent may own a sequence, and
@@ -3780,6 +3785,96 @@ For a separately authorized cutover:
    input when checking the staged release with expanded List closed. Retain
    the first verified listing, Seal and settlement receipts as they occur.
    A stale checkpoint or a missing replay witness leaves activation unverified.
+
+#### Replaying the sealed expanded-liquidity boundary
+
+On November 23, the independent production Core and index reads placed the
+declaration at 977229/591. Both identified the successor at 977230 as
+`0000000000000000000048fb2cc6d364c74aac0818b3449a06bace9181033eb5`.
+Its incumbent immutable frame had zero governed records and events and
+transition-chain SHA-256
+`16629657744445f2c5b4a9bb4370b940f8e3fc8ccab44b8b39aa4f5141bef47c`.
+That observation covers one block. Obtain a fresh tip, review its height
+and hash, and check every intervening block before using the migration.
+
+The operator tools live in `deploy/amo-expanded-liquidity-replay/`.
+Use the existing approved source-staging path to expose the clean committed
+qualifier, the active historical raw sequencer and the reviewed candidate
+with accepted node overlays preserved. From that checkout:
+
+1. Run `node deploy/amo-expanded-liquidity-replay/preflight.mjs inspect-sources RETAINED_BASELINE_ROOT CANDIDATE_ROOT COMMIT TREE`
+   and independently review the proposed source and installed dependency
+   inventory. Pin the SHA-256 of the exact reviewed manifest bytes.
+2. Run `node deploy/amo-expanded-liquidity-replay/preflight.mjs qualify MANIFEST MANIFEST_SHA256 TIP_HEIGHT TIP_HASH NEW_QUALIFICATION`.
+   Use canonical absolute paths for on-host evidence. The read-only
+   qualifier checks Core block bodies, the indexed declaration position,
+   the original PostgreSQL native frames and both replay engines. It
+   reproduces the incumbent economic state and projection, then binds both
+   versions of each transition and frame from 977230 through the pinned tip.
+   The instrument supports up to 512 contiguous blocks with zero governed
+   records and events. Any governed record, missing block, fork, source
+   change or resource limit stops the run. An out-of-scope suffix requires
+   a separately reviewed replay change.
+3. Use `node deploy/amo-expanded-liquidity-replay/publish-cli.mjs MODE MANIFEST MANIFEST_SHA256 QUALIFICATION QUALIFICATION_SHA256 NEW_RECEIPT`
+   with `rehearse` while the reviewed baseline is installed. Under the normal
+   supervised service drain and Search hold, install the reviewed candidate
+   and run `publish`. Append the exact Search hold SHA-256 for
+   `publish`. Use a fresh receipt path per invocation. The publication exchanges
+   the current native row pointer inside one transaction. It preserves the
+   original row, immutable archived frame, chunks, timestamp and all
+   economic scalars. Only the expanded declaration witness and its
+   transition-chain commitment change. The old and replacement native
+   digests remain independently readable. Rehearsal rolls back even on success.
+   Use `verify` with the same qualification in a fresh session after publication, including
+   after an uncertain commit, before continuing with Permission or List.
+4. Keep the new List admission closed until the worker, API and Permission
+   reader agree on the fresh canonical generation. Install the compatible
+   query-health monitor before publishing and verify its exact 51-object
+   storage inventory after publication. Use the existing
+   read-only book and admission checks for both faces and run
+   `npm run check:release-sync` after the authorized release.
+
+The disposable PostgreSQL 16 fixture uses synthetic descendants of the real
+declaration. Its pinned tip is 977231,
+`86c98d61cffb08016ffbf99ea83eb95d52d63e18b06de3777db62dcec6173e8b`.
+At synthetic height 977230 the old and replacement transition-chain digests
+are `94025c822493411acadaae931cbf2fe28369a4cf46349dd182f39d4a5fd1e622`
+and `ab2c7e79575f7f86d18d349e7b534c96d81079cc9b642de578266d73bf939611`.
+The corresponding PostgreSQL native frame digests are
+`356fc5ea46e1c68287886ce1fc0161150ad2cf36ea09d15d13f74ed7a6ac893f`
+and `710391800ac3068a228ef1f274e2569288b9be09f929ac0c74adde222422b6ee`.
+Run `node --test deploy/amo-expanded-liquidity-replay/storage-fixture.test.mjs`
+with the locally available PostgreSQL 16 image to reproduce both blocks.
+
+#### Build capacity and the November 23 publication pair
+
+The release preflight observed 26,746,769,408 bytes in
+`/data/proofofwork-ui-builds`. The 4 GiB new-run reservation brings required
+retained capacity to 31,041,736,704 bytes, 976,965,632 above the existing
+28 GiB limit. At that occupancy the smallest whole-GiB successor is 29 GiB
+(31,138,512,896 bytes), leaving 96,776,192 bytes of headroom. Review the
+retained budget and its exact boundary fixture in `deploy/publish/build.py`
+and `deploy/publish/check-build-capacity.test.py`. Preserve the 100 GiB
+filesystem reserve and the 4 GiB per-run limit. Recheck occupancy before
+admitting a build.
+
+The observed current release was `2084747c3f8c-20261118T181547Z`, with
+rollback `9f18a0ce7032-20261118T004519Z`. Review that ordered pair in
+`deploy/audit30/ui-storage.py` and `deploy/publish/publication_admission.py`.
+Retain historical writer hashes and add the exact successor writer digest
+in `deploy/audit30/ui-release-policy.py`. Qualify both readers and the
+missing, extra, reversed and unapproved-future cases in
+`deploy/audit30/check-ui-storage.test.py`. The lifecycle procedure uses
+`plan-upgrade-complete` with fresh config and state hashes, the exact plan
+digest for `upgrade`, and `status --require-complete`.
+
+An owner-approved successor policy and installation are prerequisites for
+rotation. The three files under `/var/backups/proofofwork-ui/releases/`
+named `proofofwork-ui-release-9f18a0ce7032-20261118T004519Z.tgz`,
+its `.sha256`, and its `.provenance`, plus the rollback root
+`/var/backups/proofofwork-ui/rollback-roots/proofofwork-www-pre-2084747c3f8c-20261118T181547Z`
+remain subject to a separate action-time owner decision before the normal
+combined verification and retention step.
 
 ### Active WORK Q16 / AMO V8 gate
 
