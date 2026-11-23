@@ -3848,15 +3848,22 @@ with the locally available PostgreSQL 16 image to reproduce both blocks.
 
 #### Build capacity and the November 23 publication pair
 
-The release preflight observed 26,746,769,408 bytes in
-`/data/proofofwork-ui-builds`. The 4 GiB new-run reservation brings required
-retained capacity to 31,041,736,704 bytes, 976,965,632 above the existing
-28 GiB limit. At that occupancy the smallest whole-GiB successor is 29 GiB
-(31,138,512,896 bytes), leaving 96,776,192 bytes of headroom. Review the
-retained budget and its exact boundary fixture in `deploy/publish/build.py`
-and `deploy/publish/check-build-capacity.test.py`. Preserve the 100 GiB
-filesystem reserve and the 4 GiB per-run limit. Recheck occupancy before
-admitting a build.
+At 16:27 UTC on November 23 the Node build pool used 26,746,769,408
+bytes and had 405,485,858,816 bytes available. The released builder at
+`2084747c3f8c` had SHA-256
+`690424eaf995d20dfd8c7dc53148108b3ed8539d9f79ef97a9f3a6723f9e5f61`.
+Reserving a new 4 GiB run required 31,041,736,704 bytes, 976,965,632
+above its 28 GiB limit. Hamza approved a 29 GiB retained-build ceiling
+for the AMO release. The candidate builder sets that limit to
+31,138,512,896 bytes, leaving 96,776,192 bytes of aggregate headroom at
+the observed occupancy. A fresh run still requires 111,669,149,696 free
+bytes for the 100 GiB data reserve plus the 4 GiB per-run budget.
+
+The release plan binds `deploy/publish/build.py` to the committed source
+by SHA-256. The on-host build uses that release's reviewed builder and
+rechecks capacity under its single-writer lock. Run
+`python3 -I -B deploy/publish/check-build-capacity.test.py` for the exact
+finite limits and one-byte refusal cases.
 
 The observed current release was `2084747c3f8c-20261118T181547Z`, with
 rollback `9f18a0ce7032-20261118T004519Z`. Review that ordered pair in
