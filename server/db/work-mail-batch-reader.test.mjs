@@ -1,3 +1,4 @@
+import { checkExpandedBatchFamily } from "../../tests/fixtures/expandedBatchParent.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
@@ -195,4 +196,9 @@ test("address Mail reader qualifies a retained parent even when every child row 
   await assert.rejects(() => read("livenet", ACTOR), /recipient set is incomplete/u);
   assert.equal(calls, 2);
   assert.equal(renders, 0, "unqualified parent cannot become Mail without its accepted WORK set");
+});
+
+test("expanded native generations bind one complete immutable batch family", async () => {
+  const { evidence, requested } = readerFixture();
+  await checkExpandedBatchFamily(verifiedWorkMailBatchEventIds, evidence, requested);
 });

@@ -3816,8 +3816,12 @@ links, proof of work, transaction roots and BIP141 commitments. Its
 All six original frames matched their archives and contained zero governed
 records or events. The tip's original native digest was
 `b6e4151eb4f57ae025d2e2c7e3218faed1613ab64d8a9ce1fe29c533f78fb9c6`.
-Obtain a fresh matching tip and qualify the replacement commitments from
-the exact staged source before using the migration.
+The November 24 cutover preflight for `56da86069b00` subsequently found
+78 contiguous canonical blocks through 977307. Blocks 977259/68, 977260/1611
+and 977262/1719 each contained three carrier outputs forming two records,
+a Boost post and a file. All six were valid in the index. The empty-suffix
+tool stopped before switching production. Use a fresh matching tip for each
+qualification. These historical observations do not authorize skipping blocks.
 
 The operator tools live in `deploy/amo-expanded-liquidity-replay/`.
 Use the existing approved source-staging path to expose the clean committed
@@ -3833,10 +3837,18 @@ with accepted node overlays preserved. From that checkout:
    the original PostgreSQL native frames and both replay engines. It
    reproduces the incumbent economic state and projection, then binds both
    versions of each transition and frame from 977230 through the pinned tip.
-   The instrument supports up to 512 contiguous blocks with zero governed
-   records and events. Any governed record, missing block, fork, source
-   change or resource limit stops the run. An out-of-scope suffix requires
-   a separately reviewed replay change.
+   The v2 qualifier reads every transaction in up to 512 contiguous blocks,
+   including every carrier of multipart records. It authenticates governed
+   inputs against their serialized parents, recomputes exact fees, and executes
+   both canonical sequencers. The incumbent must reproduce the original native
+   records, derived events, traces, WORK projection and state. The candidate
+   must reproduce every economic outcome, transaction fee, parent/child
+   relationship and authorization with the declaration in effect. Qualify
+   against the observed relational records and events, then recheck their
+   ordered digests in a fresh database snapshot. The bounded suffix accepts up
+   to 1,024 logical records. An unexplained difference, incomplete evidence,
+   fork, resource limit or tip change stops qualification. Review any actual
+   change in historical validity or economic outcome before proceeding.
 3. Use `node deploy/amo-expanded-liquidity-replay/publish-cli.mjs MODE MANIFEST MANIFEST_SHA256 QUALIFICATION QUALIFICATION_SHA256 NEW_RECEIPT`
    with `rehearse` while the reviewed baseline is installed. Under the normal
    supervised service drain and Search hold, install the reviewed candidate
@@ -3844,9 +3856,13 @@ with accepted node overlays preserved. From that checkout:
    `publish`. Use a fresh receipt path per invocation. The publication exchanges
    the current native row pointer inside one transaction. It preserves the
    original row, immutable archived frame, chunks, timestamp and all
-   economic scalars. Only the expanded declaration witness and its
-   transition-chain commitment change. The old and replacement native
-   digests remain independently readable. Rehearsal rolls back even on success.
+   economic scalars. The new declaration changes the transition-chain
+   commitments. In occupied blocks the corresponding per-record, child and fee
+   witnesses and their descriptor commitments must be reproduced independently.
+   A changed WORK batch projection must trace to the same verified parent
+   record, including when later blocks carry it forward. Both native frames
+   remain independently readable. Publication leaves indexed events and
+   OP_RETURN rows intact. Rehearsal rolls back even on success.
    Use `verify` with the same qualification in a fresh session after publication, including
    after an uncertain commit, before continuing with Permission or List.
 4. Keep the new List admission closed until the worker, API and Permission
@@ -3926,9 +3942,21 @@ it. Node 24 loads two additional files under `node_modules/pg/lib/native/`:
 | `index.js` | `99fb61cb78a6d78b7a5fc0b9ac264ad58272af48be4bc50bfdb948b1342e3292` |
 | `client.js` | `d88c124d4835cc9d5b0389e2aaf63a144df8434c1b4b0d5e588691e068f49acf` |
 
-Local observation and strict verification on Node 24.18.0 agreed on 90
-first-party and 128 dependency files. Their inventory SHA-256 is
+On Node 24.18.0, local observation and strict per-file verification reproduced
+the original inventory of 90 first-party and 128 dependency files at SHA-256
 `961586f747a8d19acfb86ca25cbbea51a76a3b838fcfbd899b108637e6c23851`.
+The occupied-replay successor loaded 91 first-party and the same 128 dependency
+files, with inventory SHA-256
+`e41d18f114805effa52f4942b470749be1d331403ebf946326606c6f297234be`.
+All original paths remain. Four first-party pins differ from the original inventory.
+
+| Change | Checkout-relative path | Successor SHA-256 |
+| --- | --- | --- |
+| Added | `server/db/expanded-batch-parent.mjs` | `568e9b1c43e9642daa190f869c8bd5cd8252f2fd0cc1e9a7eb9f5d98b9b29bd7` |
+| Changed | `server/db/permission-supersession.mjs` | `cf7fa5a8966e3abc19b90d91bb95b121f1fbfabb8e1f2c1a2d82bd60c038936b` |
+| Changed | `server/db/work-batch-reader.mjs` | `ffd89d6c8e62ed5a48e4f4385067c52e7e13d19f07f1f506f6a2521fed025d76` |
+| Changed | `server/db/work-mail-batch-reader.mjs` | `912c14fee4928451806169fb4b65d44fdee667ff5464ca5738846010d17ff391` |
+
 Hash the compact JSON array of pairs consisting of checkout-relative POSIX
 path and SHA-256 of the original bytes, sorted by path, with no trailing
 newline. Verify each path and digest as well as the aggregate. The local

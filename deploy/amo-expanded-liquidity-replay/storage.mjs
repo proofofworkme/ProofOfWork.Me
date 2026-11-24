@@ -15,18 +15,30 @@ if (sha256(stableJson(baseline)) !== oldCatalogDigest) throw Error("Unexpected n
 
 // Preserve each historical function in full after this narrowly scoped branch.
 // Read-through matches the requested hash so a retained original remains readable.
+const witnessChecks = readFileSync(new URL("./native-witnesses.sql", import.meta.url), "utf8");
 const beforeOriginal = {
   encode_native_work_transition_v1: `
  IF NEW.network='livenet' AND NEW.block_height>=977230 THEN
   DECLARE revision proof_indexer.work_amo_expanded_liquidity_supersessions_v1%ROWTYPE;
+          original_frame jsonb;
   BEGIN
    SELECT * INTO revision FROM proof_indexer.work_amo_expanded_liquidity_supersessions_v1
     WHERE network=NEW.network AND block_height=NEW.block_height AND block_hash=NEW.block_hash;
    IF FOUND THEN
-    IF (to_jsonb(NEW)-ARRAY['payload','created_at']) IS DISTINCT FROM (revision.old_main-ARRAY['payload','created_at'])
+    IF (to_jsonb(NEW)-ARRAY['payload','created_at','event_set_sha256']) IS DISTINCT FROM (revision.old_main-ARRAY['payload','created_at','event_set_sha256'])
+     OR NEW.payload ? '__powNativeStorage'
+     OR NEW.event_set_sha256 IS DISTINCT FROM NEW.payload#>>'{eventSetCommitment,sha256}'
      OR encode(sha256(jsonb_send(NEW.payload)),'hex') IS DISTINCT FROM revision.new_manifest->>'sha256'
      OR NEW.payload IS DISTINCT FROM proof_indexer.reconstruct_work_transition_payload_v1(revision.new_manifest)
     THEN RAISE EXCEPTION 'Conflicting expanded liquidity transition'; END IF;
+    SELECT proof_indexer.reconstruct_work_transition_payload_v1(a.payload) INTO STRICT original_frame
+     FROM proof_indexer.work_transition_archive_v1 a
+     WHERE a.network=NEW.network AND a.block_height=NEW.block_height AND a.block_hash=NEW.block_hash
+       AND a.payload->>'sha256'=revision.old_archive_sha256;
+    IF original_frame ? 'expandedLiquidity' OR NEW.payload IS DISTINCT FROM (original_frame || revision.replacement_fields)
+     OR revision.old_main->>'event_set_sha256' IS DISTINCT FROM original_frame#>>'{eventSetCommitment,sha256}'
+    THEN RAISE EXCEPTION 'Expanded replay frame is not bound to its immutable original'; END IF;
+${witnessChecks}
     NEW.created_at := (revision.old_main->>'created_at')::timestamptz;
     NEW.payload := proof_indexer.work_transition_metadata_v1(NEW.payload) || jsonb_build_object('__powNativeStorage',
       jsonb_build_object('model','proof-indexer-native-transition-chunks-v1','sha256',revision.new_manifest->>'sha256'));
@@ -68,6 +80,6 @@ for (const fn of baseline.functions) {
   const addition = beforeOriginal[fn.name];
   if (!addition) continue;
   if (!fn.definition.includes("\nBEGIN\n")) throw Error("Unrecognized native function " + fn.name);
-  nativeFunctionDefinitions.push(fn.definition.replace("\nBEGIN\n", "\nBEGIN" + addition + "\n"));
+  nativeFunctionDefinitions.push(fn.definition.replace("\nBEGIN\n", () => "\nBEGIN" + addition + "\n"));
 }
 if (nativeFunctionDefinitions.length !== 3) throw Error("Incomplete native storage contract");

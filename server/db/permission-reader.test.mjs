@@ -6,7 +6,7 @@ import { createPermissionIndexDiscovery } from './permission-reader.mjs';
 import { WORK_AMO_V8_BLOCK_SEQUENCER_MODEL } from '../work-amo-v8.mjs';
 const height = 970492, hash = 'b'.repeat(64), parent = 'c'.repeat(64);
 function fixture({ native = false, changes = {}, finalChanges = {}, rows, prefixRows, anchor = parent,
-  tipHeight = height, tipHash = hash } = {}) {
+  tipHeight = height, tipHash = hash, supersession } = {}) {
   const queries = [], block = { height, block_hash: hash, previous_block_hash: parent, canonical_height_count: 1,
     complete: true, block_atomic: true, fee_once: true, invalid_zero: true, model: WORK_AMO_V8_BLOCK_SEQUENCER_MODEL,
     protocol_record_count: 0, raw_protocol_candidate_count: 0, storage_commitment: null,
@@ -14,6 +14,7 @@ function fixture({ native = false, changes = {}, finalChanges = {}, rows, prefix
   let released = false, scanCount = 0;
   const client = { async query(sql) {
     queries.push(sql);
+    if (sql.includes('permission_native_supersession')) return { rows: supersession ? [supersession] : [] };
     if (sql.includes('permission_transition_storage_accessor')) return { rows: [{ present: native }] };
     if (sql.includes('permission_verified_prefix_anchor')) return { rows: [{ block_hash: anchor }] };
     if (sql.includes('permission_verified_prefix_coverage')) return { rows: prefixRows ?? [block] };
@@ -59,9 +60,9 @@ test('gaps, forked parents, incomplete transitions and unsupported models cannot
 });
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-function prefixProof(row) {
-  const witness = digest(['permission-block-witness-chain-v1', 'livenet', height, parent]);
-  const indexWitness = digest(['permission-index-prefix-witness-chain-v1', 'livenet', height, parent]);
+function prefixProof(row, activationHeight = height) {
+  const witness = digest(['permission-block-witness-chain-v1', 'livenet', activationHeight, parent]);
+  const indexWitness = digest(['permission-index-prefix-witness-chain-v1', 'livenet', activationHeight, parent]);
   return { height: Number(row.height), blockHash: row.block_hash,
     witnessSha256: digest([witness, Number(row.height), row.block_hash,
       row.payload.blockDescriptorCommitment, row.payload.replayDescriptorCommitment]),
@@ -193,4 +194,45 @@ test('a rejected callback never returns complete coverage and leaves the read-on
   await assert.rejects(() => f.readIndex('livenet', { ...options, onBlock: async () => { throw new Error('Fixture catch-up budget'); } }), /catch-up budget/);
   assert.equal(f.released(), true); assert.ok(f.queries.includes('ROLLBACK'));
   assert.equal(f.queries.includes('COMMIT'), false);
+});
+
+test('occupied AMO journal replacement binds both native rows and preserves raw carrier authority', async () => {
+  const h = 977230;
+  const baseline = fixture().block;
+  const original = { ...baseline, height: h, protocol_record_count: 1, raw_protocol_candidate_count: 1,
+    storage_commitment: { model: 'proof-indexer-native-transition-chunks-v1', sha256: '1'.repeat(64) },
+    payload: { blockDescriptorCommitment: { sha256: '2'.repeat(64) }, replayDescriptorCommitment: { sha256: '3'.repeat(64) } } };
+  const selected = structuredClone(original);
+  selected.storage_commitment.sha256 = '4'.repeat(64);
+  selected.payload.replayDescriptorCommitment.sha256 = '5'.repeat(64);
+  const prefix = prefixProof(original, h);
+  async function reconcile(mutate = () => {}) {
+    const row = structuredClone(selected);
+    const proof = { old_main: structuredClone(original), selected_main: structuredClone(selected),
+      old_archive_sha256: original.storage_commitment.sha256, replacement_sha256: selected.storage_commitment.sha256,
+      manifest_sha256: '6'.repeat(64), qualification_sha256: '7'.repeat(64),
+      source_commit: '8'.repeat(40), source_tree: '9'.repeat(40), through_height: h, through_hash: hash, verified: true };
+    mutate(proof, row);
+    const f = fixture({ native: true, tipHeight: h, rows: [row], prefixRows: [row], anchor: hash, supersession: proof });
+    let called = false;
+    const result = await f.readIndex('livenet', { ...options, activationHeight: h, expectedHeight: h,
+      fromHeight: h + 1, verifiedPrefix: prefix, replay: { blocks: [{ row: original, indexWitnessSha256: prefix.indexWitnessSha256 }] },
+      onBlock: async (current, _progress, receipt) => {
+        called = true;
+        assert.deepEqual(current.payload.blockDescriptorCommitment, original.payload.blockDescriptorCommitment);
+        assert.deepEqual(receipt.replacement_sha256, selected.storage_commitment.sha256);
+        assert.equal(Object.hasOwn(receipt, 'old_main') || Object.hasOwn(receipt, 'selected_main'), false);
+      } });
+    assert.equal(called, true);
+    assert.equal(result.replayFrom, h);
+  }
+  await reconcile();
+  for (const change of [
+    proof => { proof.verified = false; },
+    proof => { proof.through_height--; },
+    proof => { proof.old_main.payload.replayDescriptorCommitment.sha256 = 'f'.repeat(64); },
+    proof => { proof.selected_main.payload.replayDescriptorCommitment.sha256 = 'f'.repeat(64); },
+    (proof, row) => { proof.selected_main.protocol_record_count = row.protocol_record_count = 2; },
+    (proof, row) => { proof.selected_main.payload.blockDescriptorCommitment = row.payload.blockDescriptorCommitment = { sha256: 'f'.repeat(64) }; },
+  ]) await assert.rejects(reconcile(change), /Permission.*supersession/u);
 });

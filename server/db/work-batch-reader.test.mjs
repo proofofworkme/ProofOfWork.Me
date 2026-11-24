@@ -1,3 +1,4 @@
+import { checkExpandedBatchFamily } from "../../tests/fixtures/expandedBatchParent.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
@@ -722,4 +723,9 @@ test("PostgreSQL reader qualifies partial and historical prefixes and rejects mi
     await client.query("ROLLBACK").catch(() => {});
     await client.end().catch(() => {});
   }
+});
+
+test("expanded native generations bind one complete immutable batch family", async () => {
+  const { evidence, rows } = indexedBatchFixture();
+  await checkExpandedBatchFamily(verifiedWorkBatchEventIds, evidence, rows);
 });

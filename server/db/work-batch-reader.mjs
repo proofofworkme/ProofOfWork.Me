@@ -1,3 +1,4 @@
+import { expandedBatchFamilies, expandedBatchIdentityColumns } from "./expanded-batch-parent.mjs";
 import { createHash } from "node:crypto";
 import { workBatchDeclarationCommitment, WORK_BATCH_DECLARATION_ORDER_COMPATIBILITY, WORK_BATCH_MIN_DECLARATION_BLOCK_HEIGHT, WORK_BATCH_ACTIVATION_META_KEY, validateWorkBatchActivationMarker, normalizeWorkBatchDeclarationPins } from "../work-batch-declaration.mjs";
 import { isDeepStrictEqual } from "node:util";
@@ -406,6 +407,7 @@ export async function verifiedWorkBatchEventIds(pool, rows, network) {
           AND child.kind IN ('token-transfer', 'token-transfer-batch') AND child.protocol = 'pwt1'
       )
       SELECT parent.event_id AS parent_event_id, parent.payload AS parent_payload,
+        ${expandedBatchIdentityColumns},
         tx.raw_tx->'vout'->requested.op_return_vout AS carrier_output,
         (SELECT jsonb_agg(record) FROM jsonb_array_elements(
           CASE WHEN jsonb_typeof(transition.payload->'replayRecords') = 'array'
@@ -444,7 +446,7 @@ export async function verifiedWorkBatchEventIds(pool, rows, network) {
         AND transition.complete = true AND transition.block_atomic = true
         AND transition.fee_once = true AND transition.invalid_zero = true
     `, [network, ids]) : { rows: [] };
-    for (const row of result.rows) {
+    for (const row of await expandedBatchFamilies(pool, network, result.rows)) {
       const decoded = decodeCanonicalOpReturnOutput(row.carrier_output);
       const batch = decoded?.decodeValid === true ? parseWorkBatchPayload(decoded.text) : null;
       if (!batch || !Array.isArray(row.siblings) || row.siblings.length !== batch.recipientCount) {

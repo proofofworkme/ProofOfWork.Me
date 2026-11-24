@@ -6,6 +6,9 @@
     "scripts/check-amo-expanded-liquidity-replay.test.mjs",
     "scripts/check-amo-private-staging.test.mjs",
     "server/permission-verification-store.test.mjs",
+    "server/db/permission-reader.test.mjs",
+    "server/db/work-batch-reader.test.mjs",
+    "server/db/work-mail-batch-reader.test.mjs",
     "scripts/complete-token-history-pages.test.mjs",
     "server/work-amo-v8-metadata-readiness.test.mjs",
     "server/amo-browse-snapshot.test.mjs",
@@ -30,14 +33,14 @@
     {
       "targets": ["wallet", "permission", "local-signing"],
       "disposition": "affected",
-      "reason": "Wallet and embedded Computer review 546 sats to the registry, the 546-sat ticket at output 2, the miner fee and the 5,460-sat fee for a new larger List. Permission constrains the signed face and transaction outputs. Its journal authenticates the preserved native frame and the selected replacement before accepting a replayed suffix. Seal keeps its seller authorization and publication reviews. The existing check:permission command exercises local/permission-controller/controller.test.mjs.",
+      "reason": "Wallet and embedded Computer review 546 sats to the registry, the 546-sat ticket at output 2, the miner fee and the 5,460-sat fee for a new larger List. Permission constrains the signed face and transaction outputs. Its journal authenticates the original native frame, the selected replacement and their permitted provenance changes before accepting a replayed suffix. Seal keeps its seller authorization and publication reviews. The existing check:permission command exercises local/permission-controller/controller.test.mjs.",
       "evidence": ["src/App.tsx", "scripts/check-ui-contract.mjs", "scripts/check-h19-work-capacity-client.mjs", "tests/browser/mail-compose.spec.mjs", "scripts/check-permission-wallet-commitment.test.mjs", "server/db/permission-supersession.mjs", "server/permission-verification-store.test.mjs"]
     },
     {
       "targets": ["wire", "work", "indexer", "api", "backfill-reorg"],
       "disposition": "affected",
-      "reason": "Additive declaration evidence binds its carrier, canonical block position, fee terms and eligibility boundary. The owner-selected transaction has an exact self-payment and wrapped-carrier witness bound to its txid. It contributes zero registry revenue. Fresh larger Lists require independently matching index, schema, replay and live admission at the current tip. The original V8 declaration and its global fail-closed rules continue to govern the original book and ordinary WORK transfers. The 977230 replay publisher retains the incumbent archive, proves exact native and transition commitments against raw Core blocks and accepts only a qualified empty suffix through the pinned tip. The storage monitor verifies the applicable native inventory. Storage retains signed faces and frozen terms across replay, recovery and settlement. Historical V6 estimates use the current response’s exact network value and exclude faces with unrepresentable atom quantities. WORK and Marketplace use the same canonical floor value for V8 read estimates at a matching checkpoint.",
-      "evidence": ["server/work-amo-expanded-liquidity.mjs", "server/work-amo-v8.mjs", "server/work-amo-v5-raw.mjs", "scripts/backfill-proof-indexer.mjs", "server/work-precision-v2-schema.mjs", "scripts/check-work-precision-v2.mjs", "scripts/check-work-amo-v5.mjs", "scripts/check-work-amo-v6.mjs", "scripts/marketplace-work-amo-v6-estimates.mjs", "scripts/check-work-amo-v8.mjs", "scripts/check-work-amo-v8-gates.mjs", "server/work-amo-v8-metadata-readiness.test.mjs", "scripts/check-amo-liquidity-live.mjs", "deploy/amo-expanded-liquidity-replay/preflight.mjs", "deploy/amo-expanded-liquidity-replay/publish.mjs", "deploy/amo-expanded-liquidity-replay/storage-fixture.test.mjs", "scripts/check-amo-expanded-liquidity-replay.test.mjs", "scripts/check-postgres-query-health.py"]
+      "reason": "Additive declaration evidence binds its carrier, canonical block position, fee terms and eligibility boundary. The owner-selected transaction has an exact self-payment and wrapped-carrier witness bound to its txid. It contributes zero registry revenue. Fresh larger Lists require independently matching index, schema, replay and live admission at the current tip. The original V8 declaration and its global fail-closed rules continue to govern the original book and ordinary WORK transfers. The 977230 replay publisher retains the incumbent archive, proves exact native and transition commitments against raw Core blocks and qualifies occupied and empty blocks through the pinned tip. Both raw engines reproduce every ordered record, derived child, fee and economic effect. The publisher rechecks the original rows and canonical indexed evidence before selecting each proved replacement. The storage monitor verifies the applicable native inventory. Storage retains signed faces and frozen terms across replay, recovery and settlement. Historical V6 estimates use the current response’s exact network value and exclude faces with unrepresentable atom quantities. WORK and Marketplace use the same canonical floor value for V8 read estimates at a matching checkpoint.",
+      "evidence": ["server/work-amo-expanded-liquidity.mjs", "server/work-amo-v8.mjs", "server/work-amo-v5-raw.mjs", "scripts/backfill-proof-indexer.mjs", "server/work-precision-v2-schema.mjs", "scripts/check-work-precision-v2.mjs", "scripts/check-work-amo-v5.mjs", "scripts/check-work-amo-v6.mjs", "scripts/marketplace-work-amo-v6-estimates.mjs", "scripts/check-work-amo-v8.mjs", "scripts/check-work-amo-v8-gates.mjs", "server/work-amo-v8-metadata-readiness.test.mjs", "scripts/check-amo-liquidity-live.mjs", "deploy/amo-expanded-liquidity-replay/preflight.mjs", "deploy/amo-expanded-liquidity-replay/relations.mjs", "deploy/amo-expanded-liquidity-replay/records.mjs", "deploy/amo-expanded-liquidity-replay/publish.mjs", "deploy/amo-expanded-liquidity-replay/storage-fixture.test.mjs", "scripts/check-amo-expanded-liquidity-replay.test.mjs", "scripts/check-postgres-query-health.py"]
     },
     {
       "targets": ["activity", "growth", "accounting"],
@@ -66,8 +69,8 @@
     {
       "targets": ["files", "mail", "notifications", "compatibility"],
       "disposition": "compatible",
-      "reason": "The complete V6 candidate keeps the embedded Files and Mail workspaces, the notification views and their existing readers. Prior hashed asset dependencies and independent passthrough files survive construction and reversal. Existing 25,000-proof contracts and signed terms retain the same interpretation.",
-      "evidence": ["scripts/check-amo-private-staging.test.mjs", "scripts/check-amo-direct-stage-design.py", "server/amo-browse-snapshot.test.mjs", "src/features/marketplace/marketplaceBrowse.test.mjs"]
+      "reason": "The complete V6 candidate keeps the embedded Files and Mail workspaces, the notification views and their existing readers. Prior hashed asset dependencies and independent passthrough files survive construction and reversal. Existing 25,000-proof contracts and signed terms retain the same interpretation. WORK batch and Mail batch history authenticate preserved relational recipient rows against the exact original and selected native parent after replay.",
+      "evidence": ["scripts/check-amo-private-staging.test.mjs", "scripts/check-amo-direct-stage-design.py", "server/amo-browse-snapshot.test.mjs", "src/features/marketplace/marketplaceBrowse.test.mjs", "server/db/work-batch-reader.test.mjs", "server/db/work-mail-batch-reader.test.mjs"]
     }
   ]
 }

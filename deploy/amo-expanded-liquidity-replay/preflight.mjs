@@ -9,14 +9,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Transaction } from "bitcoinjs-lib";
 import pg from "pg";
 import { exactTip, hydrateRawTransaction } from "../work-batch-activation/probe.mjs";
-import { boundedJsonResponse, readDatabaseIdentity as bindPeerSession, RELATIONAL_BINDINGS_SQL, RESOURCE_LIMITS } from "../work-batch-replay/preflight.mjs";
+import { boundedJsonResponse, readDatabaseIdentity as bindPeerSession, RESOURCE_LIMITS } from "../work-batch-replay/preflight.mjs";
 import { assertNativeTransitionStorageContract } from "../../server/db/native-transition-storage.mjs";
+import { MAX_GOVERNED_ROWS_PER_BLOCK, GOVERNED_RELATIONAL_BINDINGS_SQL, readRelationalEvidence } from "./relations.mjs";
 import { DECLARATION_PINS, qualifyExpandedLiquidityReplay, verifyReplayDeclaration } from "./qualify.mjs";
 
 const repository = fileURLToPath(new URL("../../", import.meta.url)).replace(/\/$/, "");
 const baselineCommit = "2084747c3f8c2a9928b0698254641b312edf1d1d";
 const firstCandidate = "9c77adea1bc3860828b0c2556b717803df1811c7";
 const rawReplay = "server/work-amo-v5-raw.mjs";
+// These consumers authenticate the selected and original native generations.
+const runtimeEntries = [rawReplay, "server/db/native-transition-storage.mjs", "server/db/permission-reader.mjs",
+  "server/db/work-batch-reader.mjs", "server/db/work-mail-batch-reader.mjs"];
 const activeRoot = "/opt/proofofwork-api";
 const format = "work-amo-expanded-liquidity-replay-sources-v1";
 const sha = data => createHash("sha256").update(data).digest("hex");
@@ -63,7 +67,7 @@ function staticSpecifiers(bytes, id) {
   return dependencyCache.get(id);
 }
 export function sourceClosure(root, entry) {
-  const files = new Map(), imports = new Map(), pending = [entry];
+  const files = new Map(), imports = new Map(), pending = Array.isArray(entry) ? [...entry] : [entry];
   while (pending.length) {
     const name = pending.pop();
     if (files.has(name)) continue;
@@ -169,8 +173,8 @@ export function inspectSources(baselineRoot, candidateRoot, sourceCommit, source
     check(path.isAbsolute(root) && fs.realpathSync(root) === root && fs.statSync(root).isDirectory(), "canonical module root required");
   }
   check(new Set([baselineRoot, candidateRoot, activeRoot]).size === 3, "retained stages must be distinct from live root");
-  const active = sourceClosure(baselineRoot, rawReplay), composed = sourceClosure(candidateRoot, rawReplay);
-  const verifierClosure = sourceClosure(repository, rawReplay);
+  const active = sourceClosure(baselineRoot, runtimeEntries), composed = sourceClosure(candidateRoot, runtimeEntries);
+  const verifierClosure = sourceClosure(repository, runtimeEntries);
   const paths = [...new Set([...active.files.keys(), ...composed.files.keys(), "package.json"])].sort();
   const files = {};
   for (const name of paths) {
@@ -198,7 +202,8 @@ export function inspectSources(baselineRoot, candidateRoot, sourceCommit, source
   const verifierFiles = ["deploy/amo-expanded-liquidity-replay/preflight.mjs", "deploy/amo-expanded-liquidity-replay/qualify.mjs",
     "deploy/work-batch-activation/probe.mjs", "deploy/work-batch-replay/preflight.mjs", "server/db/native-transition-storage.mjs",
     "deploy/amo-expanded-liquidity-replay/publish-cli.mjs", "deploy/amo-expanded-liquidity-replay/publish.mjs",
-    "deploy/amo-expanded-liquidity-replay/storage.mjs", "deploy/amo-expanded-liquidity-replay/extension.sql",
+    "deploy/amo-expanded-liquidity-replay/records.mjs", "deploy/amo-expanded-liquidity-replay/relations.mjs",
+    "deploy/amo-expanded-liquidity-replay/native-witnesses.sql", "deploy/amo-expanded-liquidity-replay/storage.mjs", "deploy/amo-expanded-liquidity-replay/extension.sql",
     "deploy/amo-expanded-liquidity-replay/publish.sql", "deploy/work-batch-replay/catalog-after.json", ...verifierClosure.files.keys(),
     ...sourceClosure(repository, "server/work-amo-expanded-liquidity.mjs").files.keys()];
   const verifier = {};
@@ -218,7 +223,7 @@ export function inspectSources(baselineRoot, candidateRoot, sourceCommit, source
 }
 
 function matchInstalledSource(m, phase) {
-  const actual = sourceClosure(activeRoot, rawReplay);
+  const actual = sourceClosure(activeRoot, runtimeEntries);
   actual.files.set("package.json", sha(regularBytes(path.join(activeRoot, "package.json"), 1024 * 1024)));
   const expected = Object.entries(m.files).filter(([, e]) => e[phase + "Loaded"]);
   check(actual.files.size === expected.length && expected.every(([name, e]) => actual.files.get(name) === e[phase]),
@@ -359,10 +364,10 @@ export function replayEvidence({ client, freshClient, rpc }) {
     check(Number.isSafeInteger(bytes) && bytes > 0 && bytes <= RESOURCE_LIMITS.maxNativePayloadBytesPerBlock &&
       row.complete && row.block_atomic && row.fee_once && row.invalid_zero && hash(row.native_sha256) &&
       row.payload?.__powNativeStorage?.sha256 === row.native_sha256, "invalid native frame");
-    const counts = [row.protocol_record_count, row.raw_protocol_candidate_count, row.transaction_count, row.event_count];
-    check(counts.every(n => Number.isSafeInteger(n) && n >= 0 && n <= RESOURCE_LIMITS.maxOrdinaryRecords) &&
-      (height === DECLARATION_PINS.blockHeight || counts.every(n => n === 0)),
-      "governed records outside supported suffix");
+    const { protocol_record_count: records, raw_protocol_candidate_count: candidates, transaction_count: transactions, event_count: events } = row;
+    check([records, candidates, transactions, events].every(n => Number.isSafeInteger(n) && n >= 0 && n <= MAX_GOVERNED_ROWS_PER_BLOCK) &&
+      records <= RESOURCE_LIMITS.maxOrdinaryRecords && transactions <= records && records <= candidates && records <= events &&
+      (records === 0 ? candidates === 0 && events === 0 : transactions > 0), "governed record counts incomplete or outside replay bounds");
     totalBytes += bytes;
     check(totalBytes <= RESOURCE_LIMITS.maxNativePayloadBytes, "native suffix exceeds bound");
     const { decoded } = await one(client, "SELECT proof_indexer.read_work_transition_payload_v1(t.network,t.block_height,t.block_hash,t.payload) AS decoded" +
@@ -370,7 +375,8 @@ export function replayEvidence({ client, freshClient, rpc }) {
     return { ...row, decoded };
   }
   return { readTip, readCanonicalHash, readDeclarationEvidence, readRawBlock: blockHash => rpc("getblock", [blockHash, 0]), readTransition,
-    readRelations: (height, blockHash) => one(client, RELATIONAL_BINDINGS_SQL, [height, blockHash]),
+    readParentTransaction: txid => rpc("getrawtransaction", [txid, false]),
+    readRelations: (height, blockHash) => readRelationalEvidence(client, height, blockHash),
     nativeDigest: value => one(client, "SELECT encode(sha256(jsonb_send($1::jsonb)),'hex') AS sha256,octet_length(jsonb_send($1::jsonb)) AS bytes", [JSON.stringify(value)]) };
 }
 
@@ -415,7 +421,7 @@ export async function verifyOriginalRange(client, qualification) {
     const row = await one(client, HEADER, args);
     check(row.current_main_row_sha256 === bound.currentMainRowSha256 && row.native_sha256 === bound.oldNativeSha256 &&
       row.payload?.__powNativeStorage?.sha256 === bound.oldNativeSha256, "original native evidence changed");
-    if (bound.relationalBindings) check(equal(await one(client, RELATIONAL_BINDINGS_SQL, args), bound.relationalBindings),
+    if (bound.relationalBindings) check(equal(await one(client, GOVERNED_RELATIONAL_BINDINGS_SQL, args), bound.relationalBindings),
       "original relational evidence changed");
   }
 }

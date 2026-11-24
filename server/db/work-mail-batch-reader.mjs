@@ -1,3 +1,4 @@
+import { expandedBatchFamilies, expandedBatchIdentityColumns } from "./expanded-batch-parent.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { decodeCanonicalOpReturnOutput, canonicalRawProtocolRecordSetFromTransaction } from "../canonical-op-return.mjs";
 import { parseWorkMailBatchPayload, WORK_MAIL_BATCH_TOKEN_ID } from "../../src/shared/protocol/workMailBatch.mjs";
@@ -163,6 +164,7 @@ export async function verifiedWorkMailBatchEventIds(pool, rows, network = "liven
           AND child.payload->>'transferVersion' = 'mailbatch1'
       )
       SELECT parent.event_id AS parent_event_id, parent.payload AS parent_payload,
+        ${expandedBatchIdentityColumns},
         tx.raw_tx->'vout'->requested.op_return_vout AS carrier_output,
         tx.raw_tx || jsonb_build_object('txid', tx.txid) AS transaction,
         transition.payload->'workMailBatchV1' AS activation_context,
@@ -209,7 +211,7 @@ export async function verifiedWorkMailBatchEventIds(pool, rows, network = "liven
         AND transition.complete = true AND transition.block_atomic = true
         AND transition.fee_once = true AND transition.invalid_zero = true
     `, [network, ids]) : { rows: [] };
-    for (const row of result.rows) {
+    for (const row of await expandedBatchFamilies(pool, network, result.rows)) {
       const decoded = decodeCanonicalOpReturnOutput(row.carrier_output);
       const batch = decoded?.decodeValid === true ? parseWorkMailBatchPayload(decoded.text) : null;
       if (!batch || !Array.isArray(row.siblings) || row.siblings.length !== batch.recipientCount) {

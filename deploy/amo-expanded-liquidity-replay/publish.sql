@@ -29,7 +29,12 @@ BEGIN
     original:=proof_indexer.reconstruct_work_transition_payload_v1(archived);
     IF encode(sha256(jsonb_send(to_jsonb(old_row))),'hex') IS DISTINCT FROM b->>'currentMainRowSha256'
       OR old_row.previous_block_hash IS DISTINCT FROM b->>'previousBlockHash'
-      OR old_row.protocol_record_count<>0 OR old_row.raw_protocol_candidate_count<>0 OR old_row.event_count<>0 OR old_row.transaction_count<>0
+      OR jsonb_build_object('protocolRecordCount',old_row.protocol_record_count,
+                            'rawProtocolCandidateCount',old_row.raw_protocol_candidate_count,
+                            'transactionCount',old_row.transaction_count,
+                            'eventCount',old_row.event_count) IS DISTINCT FROM b->'protocolCounts'
+      OR old_row.event_set_sha256 IS DISTINCT FROM b#>>'{oldEventSetCommitment,sha256}'
+      OR original->'eventSetCommitment' IS DISTINCT FROM b->'oldEventSetCommitment'
       OR (old_row.complete AND old_row.block_atomic AND old_row.fee_once AND old_row.invalid_zero) IS NOT TRUE
       OR original ? 'expandedLiquidity' OR original->'transitionChainCommitment' IS DISTINCT FROM b->'oldTransitionChainCommitment'
       OR archived->>'sha256' IS DISTINCT FROM b->>'oldNativeSha256'
@@ -39,7 +44,8 @@ BEGIN
     THEN RAISE EXCEPTION 'Qualified original native transition differs at %',old_row.block_height; END IF;
     corrected:=original||(b->'replacementFields');
     raw:=jsonb_send(corrected);
-    IF encode(sha256(raw),'hex') IS DISTINCT FROM b->>'newNativeSha256'
+    IF corrected->'eventSetCommitment' IS DISTINCT FROM b->'newEventSetCommitment'
+      OR encode(sha256(raw),'hex') IS DISTINCT FROM b->>'newNativeSha256'
       OR octet_length(raw) IS DISTINCT FROM (b->>'newNativeBytes')::integer
     THEN RAISE EXCEPTION 'Qualified corrected native transition differs at %',old_row.block_height; END IF;
     parts:='[]'::jsonb;
@@ -63,7 +69,8 @@ BEGIN
     GET DIAGNOSTICS changed=ROW_COUNT;
     IF changed<>1 THEN RAISE EXCEPTION 'Canonical pointer changed during publication'; END IF;
     INSERT INTO proof_indexer.work_amo_block_transitions
-      SELECT (jsonb_populate_record(old_row,jsonb_build_object('payload',corrected))).*;
+      SELECT (jsonb_populate_record(old_row,jsonb_build_object('payload',corrected,
+        'event_set_sha256',b#>>'{newEventSetCommitment,sha256}'))).*;
     IF old_row.block_height >= (SELECT max(block_height)-127 FROM proof_indexer.work_transition_archive_v1 WHERE network=old_row.network) THEN
       INSERT INTO proof_indexer.work_transition_hot_slots_v1(network,slot,block_height,block_hash,payload_sha256,payload)
       VALUES(old_row.network,mod(old_row.block_height,128),old_row.block_height,old_row.block_hash,b->>'newNativeSha256',corrected)

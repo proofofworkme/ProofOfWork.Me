@@ -8,8 +8,10 @@ import { promisify } from "node:util";
 import pg from "pg";
 import { assertNativeTransitionStorageContract, nativeTransitionStorageContractSql } from "../../server/db/native-transition-storage.mjs";
 import { nativeFunctionDefinitions, oldCatalogDigest, sha256, stableJson, supersessions } from "./storage.mjs";
+import { nativeProjectionCarry } from "./fixtures/native-projection.mjs";
 import { declarationEvidence, scenario } from "./fixtures/replay.mjs";
 import { permissionSupersession } from "../../server/db/permission-supersession.mjs";
+import { expandedBatchFamiliesSql } from "../../server/db/expanded-batch-parent.mjs";
 import { expandedLiquidityReadiness } from "../../server/work-amo-expanded-liquidity.mjs";
 import { publishExpandedLiquidityReplay } from "./publish.mjs";
 import { checkRawQualification, publicationPeerClient } from "./publish-cli.mjs";
@@ -147,8 +149,7 @@ async function seedHistoricalBatch(client) {
   return { old, current:await nativeRow(client,s.block_height) };
 }
 
-async function seedTransitions(client, id) {
-  const fixture = scenario();
+async function installIndexTables(client) {
   // Use the exact production table shapes queried by the publisher, including
   // projection foreign keys. Preserve the previously installed physical archive.
   const schema = await source("../../server/sql/proof-indexer-v1.sql");
@@ -159,12 +160,39 @@ async function seedTransitions(client, id) {
     await client.query(schema.slice(start, end + 3));
     await client.query("GRANT SELECT ON proof_indexer." + table + " TO proof_indexer");
   }
+}
+
+async function seedTransitions(client, id, occupied = false) {
+  const fixture = scenario({occupied});
+  await installIndexTables(client);
   for (const [h, row] of fixture.rows) {
     await client.query("INSERT INTO proof_indexer.blocks(network,height,block_hash,previous_block_hash) VALUES ('livenet',$1,$2,$3)",
       [h,row.block_hash,row.previous_block_hash]);
     await client.query(`INSERT INTO proof_indexer.work_amo_block_transitions
       SELECT (jsonb_populate_record(NULL::proof_indexer.work_amo_block_transitions,$1::jsonb)).*`,
       [JSON.stringify({ ...row, payload:row.decoded, created_at:"2026-11-22T15:00:00.123456Z" })]);
+  }
+  for (const [height,group] of fixture.relations) {
+    const events = group.events;
+    const txid = events[0].txid;
+    await client.query(`INSERT INTO proof_indexer.transactions(network,txid,status,block_hash,block_height,block_index,fee_sats)
+      VALUES('livenet',$1,'confirmed',$2,$3,$4,$5)`, [txid,fixture.hashes.get(height),height,events[0].blockIndex,events[0].feeSats]);
+    for (const r of group.records) {
+      await client.query("INSERT INTO proof_indexer.tx_outputs(network,txid,vout) VALUES('livenet',$1,$2)", [txid,r.vout]);
+      await client.query(`INSERT INTO proof_indexer.op_returns(network,txid,vout,output_index,protocol,payload_text,payload_hex,data_bytes)
+        VALUES('livenet',$1,$2,$3,$4,$5,$6,$7)`, [txid,r.vout,r.outputIndex,r.protocol,r.payloadText,r.payloadHex,r.dataBytes]);
+    }
+    for (const e of events) {
+      const payload = {_workAmoV5ReplayBound:e.bound, workAmoV5RawCandidate:e.rawCandidate,
+        workAmoV5ReplayOutcome:e.outcome, workAmoV5ReplayRawWitness:e.rawWitness,
+        workAmoV5ReplayOutput:e.replayOutput, derivedId:e.derivedId,transactionMinerFeeSats:e.feeSats,
+        amountSats:e.amountSats,dataBytes:e.dataBytes};
+      await client.query(`INSERT INTO proof_indexer.events(network,event_key,txid,op_return_vout,record_ordinal,
+        protocol,kind,status,valid,block_height,block_index,raw_payload,payload,validation_errors,amount_sats,data_bytes)
+        VALUES('livenet',$1,$2,$3,$4,$5,$6,'confirmed',$7,$8,$9,$10,$11::jsonb,$12,$13,$14)`,
+        [txid+":"+e.vout+":"+e.ordinal,txid,e.vout,e.ordinal,e.protocol,e.kind,e.valid,height,e.blockIndex,
+          e.rawPayload,JSON.stringify(payload),e.validationErrors,e.amountSats,e.dataBytes]);
+    }
   }
   const tip = fixture.options.tip;
   const { indexedPosition:pos, transaction, prevoutTransactionHex, canonicalBlock } = declarationEvidence;
@@ -178,6 +206,10 @@ async function seedTransitions(client, id) {
     if (method === "getblockhash") return fixture.hashes.get(params[0]);
     if (method === "getblock") return params[1] === 0 ? fixture.blocks.get(params[0]) : canonicalBlock;
     assert.equal(method,"getrawtransaction");
+    if (fixture.parents.has(params[0])) {
+      const hex = fixture.parents.get(params[0]);
+      return params[1] ? {txid:params[0],hex,confirmations:1} : hex;
+    }
     return {txid:params[0],hex:params[0] === pos.txid ? transaction.hex : prevoutTransactionHex,
       confirmations:1,blockhash:pos.blockHash};
   };
@@ -255,6 +287,8 @@ test("expanded AMO publication on disposable PostgreSQL 16", async t => {
     } finally { await client.query("ROLLBACK"); }
     assert.deepEqual(await snapshot(client), before);
     await t.test("wrong declaration, missing block, wrong database, or changed source cannot publish", async () => {
+      await assert.rejects(publish("publish",{...q,format:"work-amo-expanded-liquidity-replay-qualification-v1"}),
+        /governed v2 qualification required/);
       for (const change of [c => { c.declaration.txid = "f".repeat(64); }, c => { c.blocks.splice(0,1); },
         c => { c.databaseIdentity.systemIdentifier = "1"; }, c => { c.sourceBinding.sourceTree = "e".repeat(40); }]) {
         const changed = structuredClone(q);
@@ -418,4 +452,155 @@ test("expanded AMO publication on disposable PostgreSQL 16", async t => {
     if (reader) await reader.end();
     await client.end();
   }
+});
+
+
+const fixturePublisher = (q, fixture) => (client, mode, qualified = q) => {
+  const bytes = Buffer.from(JSON.stringify(qualified));
+  return publishExpandedLiquidityReplay({client,mode,qualificationBytes:bytes,qualificationSha256:sha256(bytes),
+    readTip:fixture.options.readTip,readCanonicalHash:fixture.options.readCanonicalHash,
+    verifySource:async binding => stableJson(binding) === stableJson(await fixture.options.sources.readBinding())});
+};
+
+test("occupied publication preserves real relational rows and authenticates fresh verification", async t => {
+  const id = await disposablePostgres(t);
+  const client = fixtureClient(id);
+  await client.connect();
+  try {
+    await installAcceptedStorage(client);
+    const {q,fixture} = await seedTransitions(client,id,true);
+    const runMode = fixturePublisher(q,fixture);
+    const relations = async () => (await client.query(`SELECT
+      (SELECT jsonb_agg(to_jsonb(e) ORDER BY event_id) FROM proof_indexer.events e) AS events,
+      (SELECT jsonb_agg(to_jsonb(r) ORDER BY txid,vout,output_index) FROM proof_indexer.op_returns r) AS outputs`)).rows[0];
+    const originalRelations = await relations();
+    const before = await snapshot(client);
+    const block = q.blocks[0];
+    assert.deepEqual(block.protocolCounts,{protocolRecordCount:2,rawProtocolCandidateCount:3,transactionCount:1,eventCount:2});
+    assert.equal(block.relationalBindings.recordCount,3);
+    assert.equal(block.relationalBindings.eventCount,2);
+    assert.equal((await runMode(client,"rehearse")).committed,false);
+    assert.deepEqual(await snapshot(client),before);
+
+    const altered = structuredClone(q);
+    altered.blocks[0].relationalBindings.eventRowsSha256 = "7".repeat(64);
+    await assert.rejects(runMode(client,"publish",altered),/qualified relational rows differ/);
+    const wrongCounts = structuredClone(q);
+    wrongCounts.blocks[0].protocolCounts.rawProtocolCandidateCount++;
+    await assert.rejects(runMode(client,"publish",wrongCounts),/qualified native counts differ/);
+    assert.deepEqual(await snapshot(client),before);
+
+    const original = await nativeRow(client,block.height);
+    assert.equal((await runMode(client,"publish")).committed,true);
+    const current = await nativeRow(client,block.height);
+    assert.equal(current.event_set_sha256,block.newEventSetCommitment.sha256);
+    assert.equal(original.event_set_sha256,block.oldEventSetCommitment.sha256);
+    assert.equal((await permissionSupersession(client,"livenet",original,current)).old_archive_sha256,block.oldNativeSha256);
+    await assert.rejects(permissionSupersession(client,"livenet",original,
+      {...current,protocol_record_count:current.protocol_record_count+1}),/canonical carrier authority/);
+    const mismatched = structuredClone(current);
+    mismatched.payload.replayDescriptorCommitment = {...current.payload.replayDescriptorCommitment,sha256:"f".repeat(64)};
+    await assert.rejects(permissionSupersession(client,"livenet",original,mismatched),/supersession provenance/);
+    assert.deepEqual(await relations(),originalRelations);
+    const after = await snapshot(client);
+    const verified = fixtureClient(id);
+    await verified.connect();
+    try {
+      assert.equal((await runMode(verified,"verify")).alreadyPublished,true);
+      assert.equal((await runMode(verified,"publish")).alreadyPublished,true);
+      const txid = fixture.relations.get(block.height).events[0].txid;
+      await client.query("UPDATE proof_indexer.transactions SET fee_sats=fee_sats+1 WHERE network='livenet' AND txid=$1",[txid]);
+      await assert.rejects(runMode(verified,"verify"), /qualified relational rows differ/);
+      await client.query("UPDATE proof_indexer.transactions SET fee_sats=fee_sats-1 WHERE network='livenet' AND txid=$1",[txid]);
+      const target = originalRelations.events[0];
+      await client.query("UPDATE proof_indexer.events SET raw_payload='changed' WHERE event_id=$1",[target.event_id]);
+      await assert.rejects(runMode(verified,"verify"),/qualified relational rows differ/);
+      await client.query("UPDATE proof_indexer.events SET raw_payload=$2 WHERE event_id=$1",[target.event_id,target.raw_payload]);
+      assert.equal((await runMode(verified,"verify")).alreadyPublished,true);
+    } finally { await verified.end(); }
+    assert.deepEqual(await snapshot(client),after);
+    assert.deepEqual(await relations(),originalRelations);
+  } finally { await client.end(); }
+});
+
+test("occupied POWB publication preserves both derived recipients and verifies both descriptor chains", async t => {
+  const id = await disposablePostgres(t);
+  const client = fixtureClient(id), reader = fixtureClient(id,true);
+  await client.connect();
+  try {
+    await installAcceptedStorage(client);
+    const {q,fixture} = await seedTransitions(client,id,"two-recipient-bond");
+    const runMode = fixturePublisher(q,fixture);
+    const originals = new Map();
+    for (const b of q.blocks) {
+      assert.deepEqual(b.protocolCounts,{protocolRecordCount:1,rawProtocolCandidateCount:1,transactionCount:1,eventCount:3});
+      assert.equal(b.relationalBindings.recordCount,1);
+      assert.equal(b.relationalBindings.eventCount,3);
+      assert.notEqual(b.oldEventSetCommitment.sha256,b.newEventSetCommitment.sha256);
+      originals.set(b.height,await nativeRow(client,b.height));
+    }
+    await t.test("native encoder refuses fully rehashed detached children, altered output and trace sizes", async () => {
+      await client.query("BEGIN");
+      try {
+        await client.query(await source("./extension.sql"));
+        for (const definition of nativeFunctionDefinitions) await client.query(definition);
+        await client.query("CREATE TEMP TABLE expanded_replay_input(qualification jsonb, qualification_sha text, manifest_sha text) ON COMMIT DROP");
+        for (const [mutate,error] of [
+          [f => { f.replayRecords.find(row => !row.rawCandidate).rawWitness.descriptor.derivedId += "-other"; }, /lost its unique parent/],
+          [f => { f.replayRecords.find(row => row.rawCandidate).transactionMinerFeeSats = "99999"; }, /record changed beyond its chain witness/],
+          [f => { f.traces.at(-1).transitionChainCommitmentAfter.payloadBytes += 10; }, /trace changed beyond its bound chain witness/],
+        ]) {
+          await client.query("SAVEPOINT disputed");
+          const altered = structuredClone(q);
+          const b = altered.blocks[0];
+          mutate(b.replacementFields);
+          const frame = {...originals.get(b.height).decoded,...b.replacementFields};
+          const digest = await one(client,"SELECT encode(sha256(jsonb_send($1::jsonb)),'hex') AS sha,octet_length(jsonb_send($1::jsonb)) AS bytes",[JSON.stringify(frame)]);
+          Object.assign(b,{newNativeSha256:digest.sha,newNativeBytes:digest.bytes});
+          const input = JSON.stringify(altered);
+          await client.query("INSERT INTO pg_temp.expanded_replay_input VALUES ($1::jsonb,$2,$3)",[input,sha256(input),"9".repeat(64)]);
+          await assert.rejects(client.query(await source("./publish.sql")),error);
+          await client.query("ROLLBACK TO disputed");
+        }
+      } finally { await client.query("ROLLBACK"); }
+    });
+    assert.equal((await runMode(client,"publish")).committed,true);
+    await reader.connect();
+    for (const b of q.blocks) {
+      const previous = originals.get(b.height), current = await nativeRow(reader,b.height);
+      assert.equal(previous.event_set_sha256,b.oldEventSetCommitment.sha256);
+      assert.equal(current.event_set_sha256,b.newEventSetCommitment.sha256);
+      assert.deepEqual(current.decoded.closingGenericTokenState,previous.decoded.closingGenericTokenState);
+      const proof = await permissionSupersession(reader,"livenet",previous,current);
+      assert.equal(proof.old_archive_sha256,b.oldNativeSha256);
+      assert.equal(proof.replacement_sha256,b.newNativeSha256);
+      const parent = await one(reader,`SELECT event_id::text AS id,txid,block_index AS index,op_return_vout AS vout
+        FROM proof_indexer.events WHERE network='livenet' AND block_height=$1 AND record_ordinal=0`,[b.height]);
+      const families = await reader.query(expandedBatchFamiliesSql,["livenet",b.height,b.hash,b.newNativeSha256,
+        JSON.stringify(q.declaration),JSON.stringify([parent])]);
+      assert.deepEqual(families.rows,[],"POWB mint siblings must never qualify as WORK transfer-batch siblings");
+    }
+    const verifier = fixtureClient(id);
+    await verifier.connect();
+    try { assert.equal((await runMode(verifier,"verify")).alreadyPublished,true); }
+    finally { await verifier.end(); }
+  } finally {
+    await reader.end();
+    await client.end();
+  }
+});
+
+test("native cumulative WORK projection binds both original and corrected branch across an empty successor", async t => {
+  const id = await disposablePostgres(t), client = fixtureClient(id);
+  await client.connect();
+  try {
+    await installAcceptedStorage(client);
+    await client.query("BEGIN");
+    try {
+      await client.query(await source("./extension.sql"));
+      for (const definition of nativeFunctionDefinitions) await client.query(definition);
+      await installIndexTables(client);
+      await nativeProjectionCarry(client,{readRow:nativeRow,publication:await source("./publish.sql")});
+    } finally { await client.query("ROLLBACK"); }
+  } finally { await client.end(); }
 });

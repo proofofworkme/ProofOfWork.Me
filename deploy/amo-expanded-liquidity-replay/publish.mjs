@@ -6,6 +6,12 @@ import {
 } from "../../server/db/native-transition-storage.mjs";
 import { normalizeExpandedLiquidityPins } from "../../server/work-amo-expanded-liquidity.mjs";
 import { DECLARATION_PINS } from "./qualify.mjs";
+import { MAX_GOVERNED_ROWS_PER_BLOCK, GOVERNED_RELATIONAL_BINDINGS_SQL, verifyGovernedRelationalBindings } from "./relations.mjs";
+import { assertReplayMaterializationOnly, replayEventSetCommitment } from "./records.mjs";
+import { RESOURCE_LIMITS } from "../work-batch-replay/preflight.mjs";
+import {
+  WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL, workAmoV5CanonicalPayloadCommitment,
+} from "../../server/work-amo-v5.mjs";
 import { nativeFunctionDefinitions, sha256, stableJson, supersessions } from "./storage.mjs";
 
 const sql = name => readFileSync(new URL(name, import.meta.url), "utf8");
@@ -16,11 +22,47 @@ const first = DECLARATION_PINS.blockHeight + 1;
 const hash = value => typeof value === "string" && /^[0-9a-f]{64}$/u.test(value);
 const gitHash = value => typeof value === "string" && /^[0-9a-f]{40}$/u.test(value);
 const bounded = (n, limit) => Number.isSafeInteger(n) && n > 0 && n <= limit;
-const emptySetSha = sha256(Buffer.concat([Buffer.from([1]), Buffer.from("[]")]));
-const emptyBindings = { eventCount: 0, recordCount: 0, eventRowsSha256: emptySetSha, recordRowsSha256: emptySetSha };
+const nonnegative = value => Number.isSafeInteger(value) && value >= 0;
 
 function requireEvidence(valid, message) {
   if (!valid) throw new Error("AMO replay publication: " + message);
+}
+
+function checkOccupiedEvidence(b) {
+  const counts = b.protocolCounts;
+  requireEvidence(counts && equal(Object.keys(counts).sort(),
+    ["eventCount","protocolRecordCount","rawProtocolCandidateCount","transactionCount"]) &&
+    Object.values(counts).every(nonnegative) &&
+    counts.protocolRecordCount <= RESOURCE_LIMITS.maxOrdinaryRecords &&
+    counts.transactionCount <= counts.protocolRecordCount &&
+    counts.protocolRecordCount <= counts.rawProtocolCandidateCount &&
+    counts.rawProtocolCandidateCount <= MAX_GOVERNED_ROWS_PER_BLOCK && counts.eventCount >= counts.protocolRecordCount && counts.eventCount <= MAX_GOVERNED_ROWS_PER_BLOCK,
+    "invalid protocol counts");
+  const relations = verifyGovernedRelationalBindings(b.relationalBindings);
+  const old = b.oldEventSetCommitment, next = b.newEventSetCommitment;
+  requireEvidence(old?.model === WORK_AMO_V5_EVENT_SET_COMMITMENT_MODEL && hash(old.sha256) &&
+    old.eventCount === counts.eventCount && bounded(old.payloadBytes, 128 * 1024 ** 2) &&
+    hash(next?.sha256) && equal(old,{model:old.model,sha256:old.sha256,payloadBytes:old.payloadBytes,eventCount:counts.eventCount}) &&
+    equal({...old,sha256:next.sha256},next), "event-set seal changed outside its digest");
+  const replacement = b.replacementFields;
+  const expected = {expandedLiquidity:declaration, transitionChainCommitment:b.newTransitionChainCommitment};
+  if (replacement && Object.hasOwn(replacement,"closingWorkProjection")) {
+    requireEvidence(replacement.closingWorkProjection && typeof replacement.closingWorkProjection === "object" &&
+      !Array.isArray(replacement.closingWorkProjection), "invalid closing projection");
+    expected.closingWorkProjection = replacement.closingWorkProjection;
+  }
+  if (counts.protocolRecordCount === 0) {
+    requireEvidence(Object.values(counts).every(n => n === 0) && relations.recordCount === 0 &&
+      relations.eventCount === 0 && equal(old,next), "empty block contains unexpected evidence");
+  } else {
+    requireEvidence(Array.isArray(replacement?.replayRecords) && replacement.replayRecords.length === counts.eventCount &&
+      Array.isArray(replacement.traces) && replacement.traces.length === counts.protocolRecordCount + counts.transactionCount,
+      "occupied replay evidence missing");
+    requireEvidence(equal(replayEventSetCommitment(replacement.replayRecords),next), "new replay event-set digest differs");
+    Object.assign(expected, {replayRecords:replacement.replayRecords, traces:replacement.traces,
+      replayDescriptorCommitment:workAmoV5CanonicalPayloadCommitment(replacement.replayRecords), eventSetCommitment:next});
+  }
+  requireEvidence(equal(replacement,expected), "unexpected economic or protocol field change");
 }
 
 function readQualification(bytes, expected) {
@@ -28,8 +70,9 @@ function readQualification(bytes, expected) {
   const raw = Buffer.from(bytes);
   requireEvidence(raw.length > 0 && raw.length <= 32 * 1024 ** 2 && hash(expected) && sha256(raw) === expected, "qualification digest or size differs");
   const q = JSON.parse(raw.toString("utf8"));
-  requireEvidence(q.format === "work-amo-expanded-liquidity-replay-qualification-v1" && q.qualified === true &&
-    equal(q.declaration, declaration) && q.anchor?.height === first - 1 && q.anchor.hash === declaration.blockHash &&
+  requireEvidence(q.format === "work-amo-expanded-liquidity-replay-qualification-v2" && q.qualified === true,
+    "governed v2 qualification required");
+  requireEvidence(equal(q.declaration, declaration) && q.anchor?.height === first - 1 && q.anchor.hash === declaration.blockHash &&
     hash(q.anchor.oldNativeSha256) && hash(q.anchor.currentMainRowSha256), "declaration or anchor differs");
   requireEvidence(Array.isArray(q.blocks) && bounded(q.blocks.length, 512) && q.tip?.height === first + q.blocks.length - 1 &&
     q.blocks.at(-1).hash === q.tip.hash, "incomplete suffix");
@@ -40,24 +83,25 @@ function readQualification(bytes, expected) {
   const s = q.sourceBinding;
   requireEvidence(gitHash(s?.sourceCommit) && gitHash(s.sourceTree) && hash(s.baselineSourceSha256) &&
     hash(s.candidateSourceSha256) && s.baselineSourceSha256 !== s.candidateSourceSha256 && hash(s.dependencySha256), "source identity missing");
-  let parent = q.anchor.hash, oldTotal = 0, newTotal = 0, rawTotal = 0;
+  let parent = q.anchor.hash, oldTotal = 0, newTotal = 0, rawTotal = 0, recordTotal = 0;
   for (const [i, b] of q.blocks.entries()) {
     requireEvidence(b.height === first + i && hash(b.hash) && b.previousBlockHash === parent &&
       hash(b.currentMainRowSha256) && hash(b.rawBlockSha256) && hash(b.oldPayloadCommitment) && hash(b.newPayloadCommitment) &&
       hash(b.oldNativeSha256) && hash(b.newNativeSha256) && b.oldNativeSha256 !== b.newNativeSha256 &&
       bounded(b.oldNativeBytes, 128 * 1024 ** 2) && bounded(b.newNativeBytes, 128 * 1024 ** 2) &&
-      bounded(b.rawBlockBytes, 4_000_000) && equal(b.relationalBindings, emptyBindings), "invalid or nonempty qualified block");
+      bounded(b.rawBlockBytes, 4_000_000), "invalid qualified block");
+    checkOccupiedEvidence(b);
+    recordTotal += b.protocolCounts.protocolRecordCount;
     for (const chain of [b.oldTransitionChainCommitment,b.newTransitionChainCommitment]) {
       requireEvidence(chain?.model === "canonical-work-amo-raw-transition-chain-sha256-v1" && hash(chain.sha256) &&
         Number.isSafeInteger(chain.payloadBytes) && chain.payloadBytes > 0, "invalid transition commitment");
     }
-    requireEvidence(b.oldTransitionChainCommitment.sha256 !== b.newTransitionChainCommitment.sha256 &&
-      equal(b.replacementFields, { expandedLiquidity: declaration, transitionChainCommitment: b.newTransitionChainCommitment }),
-    "unexpected economic or protocol field change");
+    requireEvidence(b.oldTransitionChainCommitment.sha256 !== b.newTransitionChainCommitment.sha256, "unchanged transition chain");
     oldTotal += b.oldNativeBytes; newTotal += b.newNativeBytes; rawTotal += b.rawBlockBytes;
     parent = b.hash;
   }
-  requireEvidence(Math.max(oldTotal,newTotal) <= 8 * 1024 ** 3 && rawTotal <= 2 * 1024 ** 3, "suffix resource budget exceeded");
+  requireEvidence(Math.max(oldTotal,newTotal) <= 8 * 1024 ** 3 && rawTotal <= 2 * 1024 ** 3 &&
+    recordTotal <= RESOURCE_LIMITS.maxOrdinaryRecords, "suffix resource budget exceeded");
   return q;
 }
 
@@ -97,15 +141,41 @@ async function indexFence(client, q, allowLater) {
     WHERE t.network='livenet' AND t.block_height=$1 AND t.block_hash=$2`, [q.anchor.height,q.anchor.hash]);
   requireEvidence(a.main === q.anchor.currentMainRowSha256 && a.native === q.anchor.oldNativeSha256, "native anchor changed");
   for (const b of q.blocks) {
-    const check = await one(client, `SELECT
-      EXISTS(SELECT 1 FROM proof_indexer.blocks WHERE network='livenet' AND height=$1 AND block_hash=$2 AND canonical) AS canonical,
-      NOT EXISTS(SELECT 1 FROM proof_indexer.events e WHERE e.network='livenet' AND e.status='confirmed' AND e.block_height=$1
-        AND e.protocol = ANY($3::text[])) AS "noEvents",
-      NOT EXISTS(SELECT 1 FROM proof_indexer.op_returns r JOIN proof_indexer.transactions t ON t.txid=r.txid AND t.network=r.network
-        WHERE t.network='livenet' AND t.status='confirmed' AND t.block_height=$1 AND t.block_hash=$2 AND r.protocol=ANY($3::text[])) AS "noRecords"`,
-      [b.height,b.hash,["pwm1","pwa1","pwid1","pwdns1","pwb1","pwt1","pwc1"]]);
-    requireEvidence(check.canonical && check.noEvents && check.noRecords, "nonempty or noncanonical stored block " + b.height);
+    const scalar = await one(client, `SELECT t.protocol_record_count AS "protocolRecordCount",
+      t.raw_protocol_candidate_count AS "rawProtocolCandidateCount", t.transaction_count AS "transactionCount",
+      t.event_count AS "eventCount" FROM proof_indexer.work_amo_block_transitions t
+      JOIN proof_indexer.blocks b ON b.network=t.network AND b.height=t.block_height AND b.block_hash=t.block_hash AND b.canonical
+      WHERE t.network='livenet' AND t.block_height=$1 AND t.block_hash=$2`, [b.height,b.hash]);
+    requireEvidence(equal(scalar,b.protocolCounts), "qualified native counts differ at " + b.height);
+    await checkRelationalRows(client,b);
+    if (b.protocolCounts.protocolRecordCount > 0) {
+      // The immutable archive stays the baseline even after the current pointer is exchanged.
+      // Check the whole frame in PostgreSQL and return just the fields required to reconstruct both chains.
+      const { original } = await one(client,`WITH archived AS MATERIALIZED (
+        SELECT proof_indexer.reconstruct_work_transition_payload_v1(payload) AS body
+        FROM proof_indexer.work_transition_archive_v1 WHERE network='livenet' AND block_height=$1 AND block_hash=$2
+          AND payload->>'sha256'=$3 AND (payload->>'bytes')::integer=$4)
+        SELECT (SELECT jsonb_object_agg(k,body->k) FROM unnest(ARRAY[
+          'blockDescriptorCommitment','blockDescriptorModel','blockHash','blockHeight','blockTransactionCount',
+          'previousBlockHash','protocolRecordCount','transactionCount','openingStateCommitment','inceptionHMinusOneWitness',
+          'expandedLiquidity','workBatchV1','workMailBatchV1','workAmoV6','workAmoV8','closingStateCommitment',
+          'transitionChainCommitment','replayDescriptorCommitment','replayRecords','traces']) AS fields(k) WHERE body ? k)
+          || jsonb_build_object('closingSufficientState',(SELECT jsonb_object_agg(k,body->'closingSufficientState'->k)
+            FROM unnest(ARRAY['genericTokenStateCommitment','idStateCommitment','tokenStateCommitment']) AS closing(k)))
+          AS original FROM archived
+        WHERE encode(sha256(jsonb_send(body)),'hex')=$3 AND octet_length(jsonb_send(body))=$4`,
+        [b.height,b.hash,b.oldNativeSha256,b.oldNativeBytes]);
+      requireEvidence(equal(replayEventSetCommitment(original.replayRecords),b.oldEventSetCommitment) &&
+        equal(workAmoV5CanonicalPayloadCommitment(original.replayRecords),original.replayDescriptorCommitment),
+        "original descriptor or event set differs at " + b.height);
+      assertReplayMaterializationOnly(original,b.replacementFields);
+    }
   }
+}
+
+async function checkRelationalRows(client,b) {
+  const actual = await one(client,GOVERNED_RELATIONAL_BINDINGS_SQL,[b.height,b.hash]);
+  requireEvidence(equal(verifyGovernedRelationalBindings(actual),b.relationalBindings), "qualified relational rows differ at " + b.height);
 }
 
 async function verifyPublication(client, q, qualificationSha, manifestSha) {
@@ -115,7 +185,10 @@ async function verifyPublication(client, q, qualificationSha, manifestSha) {
         AND d.source_commit=$5 AND d.source_tree=$6 AND d.through_height=$7 AND d.through_hash=$8
         AND d.replacement_fields=$9::jsonb AND d.relational_bindings=$10::jsonb
         AND encode(sha256(jsonb_send(d.old_main)),'hex')=$11 AS provenance,
-      to_jsonb(t)-'payload'=d.old_main-'payload' AND t.payload#>>'{__powNativeStorage,sha256}'=$12
+      to_jsonb(t)-ARRAY['payload','event_set_sha256']=d.old_main-ARRAY['payload','event_set_sha256']
+        AND d.old_main->>'event_set_sha256'=$17 AND t.event_set_sha256=$18
+        AND original->'eventSetCommitment'=$19::jsonb AND corrected->'eventSetCommitment'=$20::jsonb
+        AND t.payload#>>'{__powNativeStorage,sha256}'=$12
         AND d.new_manifest->>'sha256'=$12 AND d.old_archive_sha256=$13
         AND a.payload->>'sha256'=$13 AS pointers,
       original=proof_indexer.read_work_transition_payload_v1(t.network,t.block_height,t.block_hash,d.old_main->'payload')
@@ -133,8 +206,11 @@ async function verifyPublication(client, q, qualificationSha, manifestSha) {
       WHERE t.network='livenet' AND t.block_height=$1 AND t.block_hash=$2`,
       [b.height,b.hash,qualificationSha,manifestSha,q.sourceBinding.sourceCommit,q.sourceBinding.sourceTree,
         q.tip.height,q.tip.hash,JSON.stringify(b.replacementFields),JSON.stringify(b.relationalBindings),b.currentMainRowSha256,
-        b.newNativeSha256,b.oldNativeSha256,b.oldNativeBytes,b.newNativeBytes,high-127]);
+        b.newNativeSha256,b.oldNativeSha256,b.oldNativeBytes,b.newNativeBytes,high-127,
+        b.oldEventSetCommitment.sha256,b.newEventSetCommitment.sha256,JSON.stringify(b.oldEventSetCommitment),
+        JSON.stringify(b.newEventSetCommitment)]);
     requireEvidence(r.provenance && r.pointers && r.frames && r.hot, "persistent publication evidence differs at " + b.height);
+    await checkRelationalRows(client,b);
   }
 }
 
@@ -146,7 +222,7 @@ export async function publishExpandedLiquidityReplay({client, qualificationBytes
   const q = readQualification(qualificationBytes,qualificationSha256);
   if (databaseIdentity) requireEvidence(equal(databaseIdentity,q.databaseIdentity), "requested database differs from qualification");
   const manifestSha = sha256(stableJson({
-    format: "work-amo-expanded-liquidity-native-publication-v1", qualificationSha256,
+    format: "work-amo-expanded-liquidity-native-publication-v2", qualificationSha256,
     extensionSha256: sha256(extension), functionSqlSha256: sha256(nativeFunctionDefinitions.join("\n")),
     publicationSqlSha256: sha256(publication), catalog: NATIVE_TRANSITION_STORAGE_EXPANDED_SHA256,
   }));
