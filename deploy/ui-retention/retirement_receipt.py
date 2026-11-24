@@ -9,6 +9,7 @@ preserve sidecars and audit evidence, and install the successor policy verifier.
 import fcntl
 import hashlib
 import importlib.util
+from types import ModuleType
 import json
 import os
 from pathlib import Path
@@ -368,6 +369,23 @@ SOURCE_INDEX = {'path': BASE + '/cleanup-evidence/audit30-policy-admission-index
 PRIOR_CONFIG_SHA = '58660f364d39f2cd0a5b94e2cb8e33b496e7686e2473c622dc9ec6e268f42798'
 TOKEN = object()
 
+AMO_341_PROOF_SOURCE_SHA = '51b071171cf923d8d7b3c43a76748aaca31837af79a67a6ae805006d7548b942'
+
+
+def amo_341_recovery_module():
+    path = Path(__file__).with_name('amo_341_recovery.py')
+    raw = globals().get('_BOUND_AMO_341_SOURCE')
+    if raw is None:
+        raw = read_bound(path, AMO_341_PROOF_SOURCE_SHA)
+    require(isinstance(raw, bytes) and digest(raw) == AMO_341_PROOF_SOURCE_SHA,
+            'AMO 341 recovery verifier source differs')
+    module = ModuleType('amo_341_recovery')
+    module.__file__ = str(path)
+    module._BOUND_AMO_341_EXCHANGE_SOURCE = globals().get('_BOUND_AMO_341_EXCHANGE_SOURCE')
+    exec(compile(raw, str(path), 'exec'), module.__dict__)
+    return module
+
+
 def source_config(config):
     """Authenticate the original retirement config without relabeling its policy."""
     binding = config.get('payloadRetirement')
@@ -588,16 +606,54 @@ class VerifiedRetirement:
 
     def verify_package_upgrades(self, state, config_sha, config, origin_sha, *, verify_current_seal=True):
         """Follow sealed config upgrades independently of later ordinary cycles."""
+        return self._package_ancestry(state, config_sha, config, origin_sha, verify_current_seal)
+
+    def verify_failed_amo_341(self, state, config):
+        """Read the fixed failed chain for prospective review; this never issues normal status."""
+        recovery = amo_341_recovery_module()
+        evidence = recovery.verify_failed_evidence(config, state, read_bound, os.path.lexists)
+        self._package_ancestry(state, evidence['configSha256'], config, evidence['originConfigSha256'],
+                               True, recovery)
+        return dict(evidence, historicalWalkSha256=recovery.AUTHORITY['historySha256'],
+                    visitedConfigurations=recovery.AUTHORITY['historicalStates'])
+
+    def verify_prospective_amo_341(self, state, config):
+        """Qualify the projected 343 chain before inode allocation, without live authority."""
+        return self._recovery_candidate_state(state, config, False, 'prospective')
+
+    def _recovery_candidate_state(self, state, config, require_current_seal, mode):
+        recovery = amo_341_recovery_module()
+        require(mode in ('prospective', 'checking', 'provisional') and type(require_current_seal) is bool
+                and state['revision'] == 343 and state['lastUpgrade'].get('priorConfigSha256') == recovery.AUTHORITY['configSha256']
+                and state['lastUpgrade'].get('priorStateSha256') == recovery.AUTHORITY['stateSha256']
+                and state['configSha256'] == digest(encoded(config)), 'Expected exact 343 recovery state')
+        upgrade = state['lastUpgrade']
+        intent = _json(read_bound(upgrade['intentPath'], upgrade['intentSha256']))
+        require(intent['plan']['request'] == recovery.request()
+                and config['payloadRetirementSourceConfig']['sha256'] == recovery.AUTHORITY['originConfigSha256']
+                and state['configSha256'] != recovery.AUTHORITY['originConfigSha256'],
+                'Unbound candidate recovery verification')
+        return self._lifecycle_state(state, state['configSha256'], config, require_current_seal, mode)
+
+    def _package_ancestry(self, state, config_sha, config, origin_sha, verify_current_seal,
+                          historical=None, mode=None):
         anchor = source_config(config)
         require(anchor is not None and anchor['sha256'] == origin_sha,
                 'Retirement package upgrade lacks original config anchor')
         seen = set()
-        for depth in range(16):
+        historical_rows = []
+        limit = 16 if historical is None else historical.AUTHORITY['historicalStates']
+        while len(seen) < limit:
+            depth = len(seen)
             require(config_sha not in seen and digest(encoded(config)) == config_sha
                     and config.get('payloadRetirement') == self._binding,
                     'Retirement package config chain differs')
             seen.add(config_sha)
+            if historical is not None:
+                historical_rows.append([config_sha, digest(encoded(state)), state['revision'], config['package']['sha256']])
             if config_sha == origin_sha:
+                if historical is not None:
+                    historical.check_history(historical_rows)
                 require(config.get('payloadRetirementSourceConfig') is None,
                         'Original retirement config acquired an upgrade marker')
                 self.verify_lifecycle_state(state, config_sha, config=config)
@@ -684,9 +740,10 @@ class VerifiedRetirement:
                     'Retirement package upgrade edge is not authenticated')
             if state['revision'] == template['revision']:
                 require(state == reconciled, 'Initial retirement package successor state differs')
-            # Only Runtime's existing installer verification window may defer
-            # the current seal. Every ancestor must always be sealed.
-            if depth or verify_current_seal:
+            # The only unsealed ancestor is the pinned failed 341 at the start
+            # of this authenticated repair's exact historical suffix.
+            failed_341 = historical is not None and len(historical_rows) == 1
+            if (depth or verify_current_seal) and not failed_341:
                 verified = _json(read_raw_bound(upgrade['statusVerificationPath']))
                 require(verified == {'schema': 'pow-ui-retention-upgrade-status-verified-v1', 'ok': True,
                     'config': done['config'], 'state': done['state'],
@@ -694,11 +751,29 @@ class VerifiedRetirement:
                     'preservedCompletedCycleId': upgrade['preservedCompletedCycleId'],
                     'contextSha256': digest(encoded(template['completedContext']))},
                     'Ancestor retirement package upgrade lacks exact status seal')
+            is_recovery = 'amo341Recovery' in intent['plan']['request']
+            if mode is not None and depth == 0:
+                require(is_recovery, 'Recovery candidate lacks the exact repair request')
+            if is_recovery:
+                require(depth == 0 and historical is None, 'AMO recovery must be the direct package successor')
+                historical = amo_341_recovery_module()
+                historical.verify_edge(intent['plan'], config, prior_config, prior_state, read_bound, os.path.lexists)
+                if mode != 'prospective':
+                    def read_evidence(path, pin=None):
+                        return read_bound(path, pin) if pin is not None else read_raw_bound(path)
+                    historical.verify_exchange(config, done, read_evidence, checking=mode == 'checking',
+                                               provisional=mode == 'provisional', require_current_seal=verify_current_seal,
+                                               lexists=os.path.lexists)
+                # One direct successor followed by the exact 17 historical states.
+                limit = 1 + historical.AUTHORITY['historicalStates']
             config, config_sha, state = prior_config, prior_config_binding['sha256'], prior_state
         raise ValueError('Retirement package upgrade chain exceeds bound')
 
     def verify_lifecycle_state(self, state, config_sha, *, config=None, verify_current_seal=True):
         """Authenticate the append-only transition; never rewrite old upgrade proof."""
+        return self._lifecycle_state(state, config_sha, config, verify_current_seal, None)
+
+    def _lifecycle_state(self, state, config_sha, config, verify_current_seal, mode):
         binding = state.get('lastPayloadRetirement')
         expected_path = EVIDENCE_DIR + '/transition-completed.json'
         require(isinstance(binding, dict) and set(binding) == {'path', 'sha256'}
@@ -711,8 +786,10 @@ class VerifiedRetirement:
         origin_sha = transition['successorConfigSha256']
         if origin_sha != config_sha:
             require(config is not None, 'Retirement config changed without authenticated package chain')
-            self.verify_package_upgrades(state, config_sha, config, origin_sha,
-                                         verify_current_seal=verify_current_seal)
+            if mode is None:
+                self.verify_package_upgrades(state, config_sha, config, origin_sha, verify_current_seal=verify_current_seal)
+            else:
+                self._package_ancestry(state, config_sha, config, origin_sha, verify_current_seal, mode=mode)
         require(transition['schema'] == 'pow-exact-payload-retirement-state-transition-v1'
                 and transition['terminalReceipt'] == self._binding['receipt'],
                 'Lifecycle retirement transition authority differs')

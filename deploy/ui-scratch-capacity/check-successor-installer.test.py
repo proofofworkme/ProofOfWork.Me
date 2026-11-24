@@ -573,6 +573,16 @@ class CatchupTransactionTests(AmoTransactionTests):
     # Run the same exchange, crash boundaries, refusal and preservation tests for the third edge.
     catchup = True
 
+    def test_unrecovered_active_bridge_refused_before_first_journal(self):
+        case=self.case
+        fresh=runpy.run_path(str(HERE/'successor_installer.py'))['protected']
+        old=SimpleNamespace(CONFIG='config',read_bound=lambda path,digest:b'{}')
+        floor=SimpleNamespace(scratch_bridge_predecessor=lambda grant,state:(grant['preBridge'],None))
+        runtime=SimpleNamespace(config_sha='a'*64,state_path='state',state=lambda:({'lastUpgrade':{}},'b'*64))
+        with self.assertRaisesRegex(ValueError,'separately verified revision 341 recovery'):
+            fresh(runtime,case.grant,'c'*40,'d'*40,dict(old=old,floor=floor,catchup=True))
+        self.assertFalse(case.journal.exists())
+
     def test_7_gib_reversal_boundary(self):
         prior = 7 * 1024**3
         path = self.case.base

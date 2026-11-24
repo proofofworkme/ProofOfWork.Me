@@ -302,6 +302,7 @@ class InstallFixture(unittest.TestCase):
 
     def test_require_completed_and_current_7_5g_migration(self):
         protected = {k:self.grant[k] for k in ('configSha256','stateSha256','pair')}
+        protected['amo341Recovery'] = tool.RECOVERY_APPROVAL
         intent = {'commit':self.grant['commit'],'tree':self.grant['tree'],'protected':protected}
         path = self.base/'scratch-intent.json'
         path.write_bytes(tool.encoded(intent))
@@ -327,10 +328,23 @@ class InstallFixture(unittest.TestCase):
                 tool.require_completed_migration({**status,key:replacement},self.grant)
         with self.assertRaisesRegex(ValueError,'exact migrated completion'):
             tool.require_completed_migration({**status,'stateSha256':'3'*64},{**self.grant,'stateSha256':'3'*64})
+        for marker in (None, tool.SCRATCH_APPROVAL):
+            bad = dict(protected)
+            if marker is None:
+                del bad['amo341Recovery']
+            else:
+                bad['amo341Recovery'] = marker
+            raw = tool.encoded(dict(intent, protected=bad))
+            path.write_bytes(raw)
+            rejected = dict(scratch, intentSha256=tool.sha(raw))
+            with self.subTest(marker=marker), self.assertRaisesRegex(ValueError,'exact migrated completion'):
+                tool.require_completed_migration(dict(status,verifiedScratchCapacity=rejected,
+                        binding={'scratchCapacity':rejected}),self.grant)
         path.write_bytes(b'{}')
         with self.assertRaisesRegex(ValueError,'migration intent'):
             tool.require_completed_migration(status,self.grant)
-        for key,old in [('configSha256',tool.PRIOR_CONFIG_SHA),('stateSha256',tool.PRIOR_STATE_SHA)]:
+        for key,old in [('configSha256',tool.PRIOR_CONFIG_SHA),('stateSha256',tool.PRIOR_STATE_SHA),
+                        ('configSha256',tool.FAILED_CONFIG_SHA),('stateSha256',tool.FAILED_STATE_SHA)]:
             with self.subTest(key=key),mock.patch.dict(self.grant,{key:old}),self.assertRaisesRegex(ValueError,'baseline'):
                 tool.checked_approval(self.grant)
 
@@ -352,6 +366,13 @@ class InstallFixture(unittest.TestCase):
         self.assertEqual(package.CATCHUP_PRIOR_STAGE['intentSha256'],tool.PRIOR_GRANT_INTENT)
         self.assertEqual(scope['preBridge']['configSha256'],tool.PRIOR_CONFIG_SHA)
         self.assertEqual(scope['preBridge']['stateSha256'],tool.PRIOR_STATE_SHA)
+        recovery = importlib.util.spec_from_file_location('fixture_recovery_scope', installer.with_name('amo_341_recovery.py'))
+        module = importlib.util.module_from_spec(recovery)
+        recovery.loader.exec_module(module)
+        self.assertEqual(module.request()['amo341Recovery'], tool.RECOVERY_APPROVAL)
+        self.assertEqual(module.AUTHORITY['scratchApprovalSha256'], tool.SCRATCH_APPROVAL)
+        self.assertEqual((module.AUTHORITY['configSha256'], module.AUTHORITY['stateSha256']),
+                         (tool.FAILED_CONFIG_SHA, tool.FAILED_STATE_SHA))
 
     def test_context_drift_after_first_exchange_blocks_until_reconciled(self):
         self.run_action('prepare')

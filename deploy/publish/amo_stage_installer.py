@@ -18,7 +18,10 @@ BASE = 'ace27010a8e44886c0c22cf9fe5c98509d28f1bb'
 PAIR = {'current': '2084747c3f8c-20261118T181547Z', 'previous': '9f18a0ce7032-20261118T004519Z'}
 PRIOR_CONFIG_SHA = '907edd6a4c2e4321dd3806cd6d24dba52683f9e5b160418ed470a99472ec4754'
 PRIOR_STATE_SHA = 'b6a1f034323ac48ab4e953a0a954c1b55ec1ba85b8687c10f2998cb103872e21'
-PACKAGE_FILES_SHA = '1ce12de68dae400216d9ee094f232f7e75162d90bc3f2c3d5161bdcc70784a3b'
+FAILED_CONFIG_SHA = '40fc1e2d6e145fe0b4864bb45aa807fffc0b30e78c2cb60c0a1aeb1184759da6'
+FAILED_STATE_SHA = '191fa3f48f4bad423f7d326865a8bb2eca5d0df50a49fabf72dd34f27837f95f'
+RECOVERY_APPROVAL = '8a885c73739a34c176f2d13df997451471928e96da8efd24ba39bb2ed5d9acfb'
+PACKAGE_FILES_SHA = '89a59f52d48ff4776a667551344c280ee9eddfe2f7cca7d002f68b674bc8a114'
 PACKAGE_DIRECTORY = Path('/var/backups/proofofwork-ui/cleanup-evidence')
 CONTROLLER = 'deploy/ui-retention/lifecycle_remote.py'
 CAPACITY_SHA = '9c546b3053414eb52306c1e4098dbf1de6dc119a7fce63fa642dcc6bc7fa78df'
@@ -62,7 +65,8 @@ def checked_approval(a):
     need(all(isinstance(a[k], str) and re.fullmatch('[a-f0-9]{40}', a[k]) for k in ('commit', 'tree'))
          and a['commit'] != BASE and re.fullmatch(a['commit'][:12] + '-[0-9]{8}T[0-9]{6}Z', a['releaseId'])
          and re.fullmatch('[a-z0-9][a-z0-9-]{0,30}', a['publicationAttempt']), 'Invalid successor identity')
-    need(a['configSha256'] != PRIOR_CONFIG_SHA and a['stateSha256'] != PRIOR_STATE_SHA and a['pair'] == PAIR,
+    need(a['configSha256'] not in (PRIOR_CONFIG_SHA, FAILED_CONFIG_SHA)
+         and a['stateSha256'] not in (PRIOR_STATE_SHA, FAILED_STATE_SHA) and a['pair'] == PAIR,
          'Protected baseline differs')
     need(set(a['helperHashes']) == set(SOURCE) and all(isinstance(h, str) and HASH.fullmatch(h)
          for h in [*(a[k] for k in fields if k.endswith('Sha256')), *a['helperHashes'].values()]),
@@ -358,7 +362,8 @@ def require_completed_migration(status, approval):
     need(sha(raw) == scratch['intentSha256'], 'Capacity migration intent differs')
     intent = json.loads(raw)
     protected = intent['protected']
-    need(intent['commit'] == approval['commit'] and intent['tree'] == approval['tree']
+    need(protected.get('amo341Recovery') == RECOVERY_APPROVAL
+         and intent['commit'] == approval['commit'] and intent['tree'] == approval['tree']
          and protected['configSha256'] == approval['configSha256'] and protected['stateSha256'] == approval['stateSha256']
          and protected['pair'] == PAIR, 'Grant does not bind the exact migrated completion')
 

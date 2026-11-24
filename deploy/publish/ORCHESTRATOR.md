@@ -226,3 +226,47 @@ remain in force.
    provenance, protected roots and both historical stages before entering
    canonical qualification. Continue with rollback-only rehearsal after
    the fresh qualification receipt.
+
+### AMO recovery of the failed revision 341
+
+The 341 controller install wrote its configuration and state before the
+retirement-history verifier refused its final status seal. The original
+failure receipt and the absence of that seal are part of its identity.
+The 31d grant reversal is already terminal. Preserve its evidence and both
+earlier private stages throughout this procedure.
+
+1. Use a clean direct successor of `133a4afe`. Bind the commit, tree and
+   allowlisted controller package SHA-256. Run
+   `deploy/ui-retention/install_lifecycle.py plan-amo-341-recovery` with
+   `--commit`, `--tree` and `--package-sha256` on the reviewed operator
+   checkout. Keep the compact plan digest, projected status-seal digest,
+   live/rollback identities and capacity forecast. Verify all 17 existing
+   configurations and 16 transitions through the original retirement
+   authority. Verify the projected revision 343 adds exactly one of each.
+   Reconcile the full build and stage forecast with the existing archives,
+   stages and physical floors before publication to Git or an isolated build.
+2. After exact CI and one admitted build, use the same installer and pins
+   with `apply-amo-341-recovery` and the reviewed `--plan-sha256`.
+   It rechecks the original configuration and state under the deployment
+   lock, preserves both original inodes, installs the bound package and
+   verifies the native completed-cycle status before accepting the exchange.
+   Independently run `status-amo-341-recovery` with the same four pins
+   to check both inode positions. Read the outer upgrade journal's
+   `verified.json` against the planned native seal SHA-256 and run
+   `deploy/ui-retention/lifecycle.py status --require-complete` to verify
+   the protected pair, publication health and completion. Retain the receipts.
+   If interrupted, inspect status first. An interruption before the exchange
+   has a sealed preparation can leave a partial, non-authoritative journal
+   with the original files still in place. Preserve it and stop for
+   reconciliation. Use `reconcile-amo-341-recovery` only for the exact
+   prepared exchange. A failed pre-acceptance check restores both original
+   files and records the restoration to the failed 341 state. If independent
+   readback fails after durable acceptance, preserve that evidence and stop.
+3. Verify the separately guarded 7→7.5 GiB capacity exchange, then bind the
+   helper grant, inventory, private preflight and two archive receipts to
+   the new build. Recheck actual limits at each step. The Node build ceiling
+   is 34 GiB with a 4 GiB run reservation and 100 GiB physical floor.
+   The independent UI physical floor is 8 GiB plus 64 MiB. Run the
+   fresh dual-engine mainnet qualification from block 977230, index 0,
+   then immediately run the rollback-only rehearsal. Record both receipts
+   before considering a production switch.

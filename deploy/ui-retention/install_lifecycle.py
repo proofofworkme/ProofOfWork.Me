@@ -62,7 +62,10 @@ SIX_GIB_FILES = (
 SEVEN_GIB_FILES = (*SIX_GIB_FILES, 'deploy/ui-retention/amo_scratch_successor.py',
                    'audits/2026-11-24-amo-ui-scratch-capacity-scope.json')
 CATCHUP_SCRATCH_SCOPE = 'audits/2026-11-24-amo-catchup-ui-scratch-capacity-scope.json'
-FILES = (*SEVEN_GIB_FILES, CATCHUP_SCRATCH_SCOPE)
+CATCHUP_FILES = (*SEVEN_GIB_FILES, CATCHUP_SCRATCH_SCOPE)
+RECOVERY_FILES = tuple('deploy/ui-retention/' + name for name in (
+    'amo_341_recovery.py', 'recovery_exchange.py', 'reconcile_completed_341.py'))
+FILES = (*CATCHUP_FILES, *RECOVERY_FILES)
 # Frozen predecessor scope for authenticated native package upgrades.
 PRE_SIX_GIB_FILES = ('audits/2026-10-16-ui-retention-repair-approval.json', 'audits/2026-10-16-ui-retention-repair-proposal.json', 'deploy/audit30/ui-storage.py', 'deploy/audit30/ui-release-policy.py', 'deploy/proofofwork-ui-verified-retention.py', 'deploy/ui-retention/custody.py', 'deploy/ui-retention/inventory.py', 'deploy/ui-retention/removal.py', 'deploy/ui-retention/lifecycle_remote.py', 'deploy/ui-retention/install_lifecycle.py', 'deploy/ui-retention/lifecycle.py', 'deploy/ui-retention/retirement_receipt.py', 'deploy/ui-retention/retirement_transition.py', 'deploy/ui-retention/retirement_controller.py', 'deploy/ui-retention/failed_prepare_repair.py', 'deploy/ui-retention/failed_prepare_review.py', 'deploy/ui-retention/reconcile_failed_prepare.py', 'deploy/ui-retention/transport_retirement.py')
 
@@ -204,7 +207,7 @@ def validate_payload(payload, *, allow_legacy=False):
                       'deploy/ui-retention/failed_prepare_review.py',
                       'deploy/ui-retention/reconcile_failed_prepare.py'}
     require(set(payload['files']) == set(manifest['files'])
-            and (set(payload['files']) == scope or allow_legacy and set(payload['files']) in (legacy, previous, prior, set(SIX_GIB_FILES), set(SEVEN_GIB_FILES))),
+            and (set(payload['files']) == scope or allow_legacy and set(payload['files']) in (legacy, previous, prior, set(SIX_GIB_FILES), set(SEVEN_GIB_FILES), set(CATCHUP_FILES))),
             'Expanded package file scope')
     require(manifest['schema'] == 'pow-ui-retention-package-v1'
             and re.fullmatch('[0-9a-f]{40}', manifest['sourceCommit'])
@@ -325,7 +328,7 @@ def existing_runtime(config_sha, prefix=Path('/')):
     package = prefix / config['package']['path'].lstrip('/')
     manifest_raw = read_bound(package / 'package.json', config['package']['sha256'])
     manifest = json.loads(manifest_raw)
-    require(set(manifest['files']) in (set(FILES), set(SEVEN_GIB_FILES), set(SIX_GIB_FILES), set(PRE_SIX_GIB_FILES), set(PRE_SIX_GIB_FILES) - {'deploy/ui-retention/transport_retirement.py'}, set(PRE_SIX_GIB_FILES) - {'deploy/ui-retention/transport_retirement.py', 'deploy/ui-retention/failed_prepare_repair.py',
+    require(set(manifest['files']) in (set(FILES), set(CATCHUP_FILES), set(SEVEN_GIB_FILES), set(SIX_GIB_FILES), set(PRE_SIX_GIB_FILES), set(PRE_SIX_GIB_FILES) - {'deploy/ui-retention/transport_retirement.py'}, set(PRE_SIX_GIB_FILES) - {'deploy/ui-retention/transport_retirement.py', 'deploy/ui-retention/failed_prepare_repair.py',
                           'deploy/ui-retention/failed_prepare_review.py',
                           'deploy/ui-retention/reconcile_failed_prepare.py'}),
             'Installed package scope differs')
@@ -583,6 +586,11 @@ def completed_review(runtime, request):
     status = runtime.status({'requireComplete': True})
     require(status['stateSha256'] == state_sha and status['context'] == state['completedContext'],
             'Completed context changed')
+    return completed_phase_evidence(runtime, state, state_sha, status)
+
+
+def completed_phase_evidence(runtime, state, state_sha, status):
+    """Authenticate the original completed phase against the already reviewed context."""
     checkpoint, checkpoint_sha = state, state_sha
     # Repeated compatible upgrades retain the original completed phase bytes.
     for _ in range(16):
@@ -1108,6 +1116,7 @@ def verify_activated_upgrade(result, prefix=Path('/')):
 
 
 def upgrade_remote(plan, prefix=Path('/')):
+    require('amo341Recovery' not in plan['request'], 'Use the guarded AMO 341 recovery operation')
     require(os.geteuid() == 0 or prefix != Path('/'), 'Production upgrade requires root')
     require(plan.get('schema') == 'pow-ui-retention-upgrade-plan-v1'
             and plan.get('scopeApprovalSha256') == APPROVAL, 'Upgrade plan authority differs')
@@ -1303,6 +1312,29 @@ def install_remote(plan, prefix=Path('/')):
         os.close(fd)
 
 
+def run_amo_341(action, value):
+    payload = value['payload']
+    validate_payload(payload)
+    proof, exchange, writer = (verifier_module(payload, 'sealed_341_' + Path(path).stem, path)
+                               for path in RECOVERY_FILES)
+    return writer.execute(types.SimpleNamespace(**globals()), proof, exchange, action, value)
+
+
+def qualified_recovery_payload(args):
+    payload = committed_payload()
+    cfg = payload['config']
+    require([args.commit, args.tree, args.package_sha256] ==
+            [cfg['sourceCommit'], cfg['sourceTree'], cfg['package']['sha256']],
+            'Reviewed recovery commit/tree/package differs from the clean checkout')
+    parents = subprocess.check_output(['git', '-C', str(ROOT), 'rev-list', '--parents', '-n', '1', args.commit],
+                                      text=True).split()
+    require(parents == [args.commit, '133a4afe34ac4f9bc1636d50bdad1acbd876c645'],
+            'Recovery must be a direct successor of the failed package release')
+    require(payload['files']['deploy/ui-retention/install_lifecycle.py']['sha256'] == sha(Path(__file__).read_bytes()),
+            'Invoking installer differs from the committed recovery dispatcher')
+    return payload
+
+
 def remote(operation, value=None):
     source = Path(__file__).read_text()
     # Only this reviewed committed module is executed. The request is decoded as
@@ -1311,6 +1343,8 @@ def remote(operation, value=None):
     code += '\nvalue=json.loads(base64.b64decode(' + repr(base64.b64encode(encoded(value)).decode()) + '))\n'
     operations = {'inventory': 'guard_inventory()', 'install': 'install_remote(value)',
                   'upgrade-inventory': 'upgrade_inventory(value)', 'upgrade': 'upgrade_remote(value)'}
+    for action in ('plan', 'apply', 'status', 'reconcile'):
+        operations['amo341-' + action] = "run_amo_341(" + repr(action) + ", value)"
     require(operation in operations, 'Unknown installer operation')
     code += 'result=' + operations[operation] + '\n'
     code += 'sys.stdout.buffer.write(encoded(result))\n'
@@ -1318,6 +1352,8 @@ def remote(operation, value=None):
     code = "__file__='/tmp/ui-lifecycle-installer/deploy/ui-retention/install_lifecycle.py'\n" + code
     timeout = 1800 if operation.startswith('upgrade') else 180
     if operation == 'upgrade' and value.get('request', {}).get('mode') in ('completed-cycle', 'completed-config-repair', 'completed-boot-log-rotation', 'completed-expired-boot-journal'):
+        timeout = 3600
+    if operation.startswith('amo341-'):
         timeout = 3600
     argv = ['/usr/bin/nice', '-n', '15', '/usr/bin/ionice', '-c', '3', '/usr/bin/python3', '-I', '-B', '-']
     command = argv if UI_HOST else [*SSH, 'nice -n 15 ionice -c 3 python3 -I -B -']
@@ -1367,13 +1403,27 @@ def main():
     upgrade = sub.add_parser('upgrade')
     upgrade.add_argument('--plan', type=Path, required=True)
     upgrade.add_argument('--plan-sha256', required=True)
+    for action in ('plan', 'apply', 'status', 'reconcile'):
+        recover = sub.add_parser(action + '-amo-341-recovery')
+        for pin in ('commit', 'tree', 'package-sha256'):
+            recover.add_argument('--' + pin, required=True)
+        if action != 'plan':
+            recover.add_argument('--plan-sha256', required=True)
     args = parser.parse_args()
     if args.ui_host:
         payload = committed_payload()
         client = verifier_module(payload, 'ui_installer_host', 'deploy/ui-retention/lifecycle.py')
         client.require_ui_host(ROOT)
         UI_HOST = True
-    if args.operation == 'plan-upgrade-publication-preserved':
+    if args.operation.endswith('-amo-341-recovery'):
+        payload = qualified_recovery_payload(args)
+        action = args.operation.split('-', 1)[0]
+        frame = {'payload': payload}
+        if action != 'plan':
+            require(SHA.fullmatch(args.plan_sha256), 'Invalid recovery plan SHA')
+            frame['planSha256'] = args.plan_sha256
+        print(json.dumps(remote('amo341-' + action, frame)))
+    elif args.operation == 'plan-upgrade-publication-preserved':
         payload = committed_payload()
         evidence = json.loads(read_bound(args.publication_evidence))
         require(set(evidence) == {'publication', 'https'}, 'Expanded publication evidence')

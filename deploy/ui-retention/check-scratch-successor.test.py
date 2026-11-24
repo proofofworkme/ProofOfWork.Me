@@ -193,7 +193,14 @@ class CatchupPositionTests(PositionTests):
         A.verify_catchup_position(self.layout, runtime)
         catchup_files = boost.verify_edge.call_args.args[3]
         self.assertEqual(catchup_files, (*seven_files, self.edge.grant))
-        self.assertEqual(catchup_files, R.PACKAGE_FILES)
+        installer = load('scratch_successor_package_fixture', 'install_lifecycle.py')
+        self.assertEqual(len(catchup_files), 26)
+        self.assertEqual(catchup_files, installer.CATCHUP_FILES)
+        self.assertEqual(R.PACKAGE_FILES, (*catchup_files,
+            'deploy/ui-retention/amo_341_recovery.py',
+            'deploy/ui-retention/recovery_exchange.py',
+            'deploy/ui-retention/reconcile_completed_341.py'))
+        self.assertEqual(len(R.PACKAGE_FILES), 29)
 
 
 class SuccessorPendingStatusTests(unittest.TestCase):

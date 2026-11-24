@@ -9,6 +9,7 @@ import base64
 import datetime
 import hashlib
 import importlib.util
+from types import ModuleType
 import json
 import os
 from pathlib import Path
@@ -62,6 +63,9 @@ PACKAGE_FILES = (
     'deploy/ui-retention/amo_scratch_successor.py',
     'audits/2026-11-24-amo-ui-scratch-capacity-scope.json',
     'audits/2026-11-24-amo-catchup-ui-scratch-capacity-scope.json',
+    'deploy/ui-retention/amo_341_recovery.py',
+    'deploy/ui-retention/recovery_exchange.py',
+    'deploy/ui-retention/reconcile_completed_341.py',
 )
 
 # Frozen completed scratch bridge authority; never derive from the current package.
@@ -235,12 +239,55 @@ def verify_prior_stage_reversal(plan, *, catchup=False):
                 'Catch-up bridge lacks the exact 31d335e9 stage reversal')
 
 
+def scratch_bridge_predecessor(grant, state):
+    """The original 339 scope only extends across the separately pinned 341 recovery."""
+    origin = grant['preBridge']
+    if (grant['migrationId'] != 'ui-scratch-7-to-7-5-gib-20261124'
+            or state['lastUpgrade']['priorConfigSha256'] == origin['configSha256']):
+        return origin, None
+    recovery = amo_341_recovery_module()
+    request = recovery.request()
+    upgrade = state['lastUpgrade']
+    require(recovery.AUTHORITY['scratchApprovalSha256'] == '2bde67832b5a80106d226c49081e89c3637ac7b8a21959706392a237f00c379f'
+            and upgrade['priorConfigSha256'] == request['configSha256']
+            and upgrade['priorStateSha256'] == request['stateSha256']
+            and state['revision'] == 343 and origin['stateRevision'] == 339,
+            'Unexpected recovered scratch bridge predecessor')
+    return dict(origin, configSha256=request['configSha256'], stateSha256=request['stateSha256'],
+                stateRevision=341, packageManifestSha256=recovery.AUTHORITY['packageSha256']), recovery
+
+
+def verify_recovered_scratch_edge(recovery, plan, config, failed_config, failed_state, done, origin):
+    def read_bound(path, digest=None):
+        return read(path, digest)[0]
+    recovery.verify_edge(plan, config, failed_config, failed_state, read_bound)
+    recovery.verify_exchange(config, done, read_bound)
+    # The grant still names 339. Authenticate that config/state and the actual
+    # 31d rollback via their original 339-to-341 intent, never a fabricated seal.
+    journal = recovery.FAILED_JOURNAL
+    original, _ = read_json(journal / 'intent.json', recovery.AUTHORITY['intentSha256'])
+    old_config, _ = read_json(journal / 'prior-config.json', origin['configSha256'])
+    old_state, _ = read_json(journal / 'prior-state.json', origin['stateSha256'])
+    req = original['plan']['request']
+    require(old_config['package']['sha256'] == origin['packageManifestSha256']
+            and old_state['revision'] == origin['stateRevision'] and old_state['completedContext']['pair'] == origin['pair']
+            and failed_state['lastUpgrade']['priorConfigSha256'] == req['configSha256'] == origin['configSha256']
+            and failed_state['lastUpgrade']['priorStateSha256'] == req['stateSha256'] == origin['stateSha256']
+            and all(old_state[k] == failed_state[k] for k in ('index', 'lastCompleted', 'completedContext', 'lastIntent')),
+            'Original failed scratch bridge ancestry differs')
+    verify_prior_stage_reversal(original['plan'], catchup=True)
+    reversal = original['plan']['before']['priorStageReversal']
+    require(plan['before']['priorStageReversal'] == reversal, 'Recovered scratch bridge reversal differs')
+    prior_stage = Path('/var/lib/proofofwork-ui-amo-stage') / reversal['approvalSha256']
+    for key, name in (('intentSha256', 'intent'), ('installedSha256', 'installed'), ('rolledBackSha256', 'rolled-back')):
+        read_json(prior_stage / (name + '.json'), reversal[key])
+
+
 def scratch_bridge_baseline(intent, grant, *, package_files=SCRATCH_BRIDGE_PACKAGE_FILES):
     """Authenticate the real completed bridge, not a caller-supplied baseline."""
     protected = intent['protected']
-    require(set(protected) == {'configSha256', 'stateSha256', 'index', 'lastCompleted',
-            'completedContext', 'pair', 'otherGuardsSha256', 'bridgeConfig', 'bridgeState',
-            'completedUpgrade'}, 'Unexpected scratch protected scope')
+    expected = {'configSha256', 'stateSha256', 'index', 'lastCompleted', 'completedContext',
+                'pair', 'otherGuardsSha256', 'bridgeConfig', 'bridgeState', 'completedUpgrade'}
     def embedded(key):
         record = protected[key]
         require(set(record) == {'base64', 'sha256'}, 'Invalid bridge snapshot binding')
@@ -260,6 +307,14 @@ def scratch_bridge_baseline(intent, grant, *, package_files=SCRATCH_BRIDGE_PACKA
     evidence = Path('/var/backups/proofofwork-ui/cleanup-evidence')
     require(package.parent == evidence and package.name == 'ui-lifecycle-tools-' + config['package']['sha256'],
             'Unbounded bridge package path')
+    prior, recovery = scratch_bridge_predecessor(grant, state)
+    if recovery is not None:
+        expected.add('amo341Recovery')
+        require(protected.get('amo341Recovery') == recovery.request()['amo341Recovery'],
+                'Unbound recovered scratch authority')
+        package_files = set(package_files) | {'deploy/ui-retention/amo_341_recovery.py',
+                'deploy/ui-retention/recovery_exchange.py', 'deploy/ui-retention/reconcile_completed_341.py'}
+    require(set(protected) == expected, 'Unexpected scratch protected scope')
     manifest, _ = read_json(package / 'package.json', config['package']['sha256'])
     require(manifest['schema'] == 'pow-ui-retention-package-v1'
             and manifest['sourceCommit'] == intent['commit'] and manifest['sourceTree'] == intent['tree']
@@ -270,7 +325,6 @@ def scratch_bridge_baseline(intent, grant, *, package_files=SCRATCH_BRIDGE_PACKA
     require(config['controller'] == {'path': str(package / 'deploy/ui-retention/lifecycle_remote.py'),
                 'sha256': manifest['files']['deploy/ui-retention/lifecycle_remote.py']['sha256']},
             'Bridge controller or approval differs')
-    prior = grant['preBridge']
     journal = evidence / ('ui-lifecycle-upgrade-' + config['package']['sha256'])
     completion = protected['completedUpgrade']
     require(set(completion) == {'path', 'sha256'} and completion['path'] == str(journal / 'completed.json'),
@@ -310,7 +364,9 @@ def scratch_bridge_baseline(intent, grant, *, package_files=SCRATCH_BRIDGE_PACKA
             and upgrade_plan['payload']['configSha256'] == config_sha
             and upgrade_plan['payload']['manifest'] == manifest,
             'Bridge upgrade plan/package binding differs')
-    if grant['migrationId'] == 'ui-scratch-6-to-7-gib-20261124':
+    if recovery is not None:
+        require(upgrade_plan['request'] == recovery.request(), 'Recovered scratch bridge request differs')
+    elif grant['migrationId'] == 'ui-scratch-6-to-7-gib-20261124':
         verify_prior_stage_reversal(upgrade_plan)
     elif grant['migrationId'] == 'ui-scratch-7-to-7-5-gib-20261124':
         verify_prior_stage_reversal(upgrade_plan, catchup=True)
@@ -329,6 +385,8 @@ def scratch_bridge_baseline(intent, grant, *, package_files=SCRATCH_BRIDGE_PACKA
     old_state, _ = read_json(done['priorState']['path'], prior['stateSha256'])
     require(old_config['package']['sha256'] == prior['packageManifestSha256']
             and old_state['revision'] == prior['stateRevision'], 'Bridge predecessor differs')
+    if recovery is not None:
+        verify_recovered_scratch_edge(recovery, upgrade_plan, config, old_config, old_state, done, grant['preBridge'])
     require(state['status'] == 'complete' and not state.get('pending') and not state.get('activePhase')
             and state['configSha256'] == config_sha and state['revision'] == prior['stateRevision'] + 2
             and protected['pair'] == prior['pair']
@@ -463,6 +521,23 @@ def _scratch_capacity_position_original(layout, allow_pending=False, *, capacity
             'intentSha256': intent_sha, 'qualificationSha256': qualified_sha,
             'authoritySha256': SCRATCH_APPROVAL, 'installedSha256': installed_sha,
             'protected': protected, 'intent': intent}
+
+
+AMO_341_PROOF_SOURCE_SHA = '51b071171cf923d8d7b3c43a76748aaca31837af79a67a6ae805006d7548b942'
+
+
+def amo_341_recovery_module():
+    path = Path(__file__).with_name('amo_341_recovery.py')
+    raw = globals().get('_BOUND_AMO_341_SOURCE')
+    if raw is None:
+        raw = read(path, AMO_341_PROOF_SOURCE_SHA)[0]
+    require(isinstance(raw, bytes) and sha(raw) == AMO_341_PROOF_SOURCE_SHA,
+            'AMO 341 recovery verifier source differs')
+    module = ModuleType('amo_341_recovery')
+    module.__file__ = str(path)
+    module._BOUND_AMO_341_EXCHANGE_SOURCE = globals().get('_BOUND_AMO_341_EXCHANGE_SOURCE')
+    exec(compile(raw, str(path), 'exec'), module.__dict__)
+    return module
 
 
 def scratch_successor_module():
@@ -707,8 +782,12 @@ class Runtime:
                 and value.get('configSha256') == self.config_sha
                 and type(value.get('revision')) is int, 'State authority differs')
         if self.retirement is not None:
-            self.retirement.verify_lifecycle_state(value, self.config_sha, config=self.config,
-                                                   verify_current_seal=not (self.verify_upgrade or self.verify_prepare_repair))
+            if getattr(self, '_amo_341_checking', False):
+                self.S.require_execution_lock(self.lock_fd, self.layout)
+                self.retirement._recovery_candidate_state(value, self.config, not self.verify_upgrade, self._amo_341_checking)
+            else:
+                self.retirement.verify_lifecycle_state(value, self.config_sha, config=self.config,
+                                                       verify_current_seal=not (self.verify_upgrade or self.verify_prepare_repair))
         else:
             require(value.get('lastPayloadRetirement') is None,
                     'Retirement lifecycle state requires authenticated successor')
@@ -836,6 +915,23 @@ class Runtime:
                 'state':reconstructed, 'sealedPhaseIntent':pin['phaseIntent']}
 
 
+    def recovery_switch_status(self, *, require_current_seal, provisional=False):
+        """Installer-only native status between the two owned exchanges and their terminal."""
+        require(type(require_current_seal) is bool and type(provisional) is bool
+                and self.retirement is not None and (not provisional or require_current_seal) and not self.verify_upgrade
+                and not self.verify_prepare_repair and not getattr(self, '_amo_341_checking', False),
+                'Mixed recovery verification modes')
+        self.S.require_execution_lock(self.lock_fd, self.layout)
+        self._amo_341_checking = 'provisional' if provisional else 'checking'
+        self.verify_upgrade = not require_current_seal
+        try:
+            result = self.status({'requireComplete': True})
+            self.S.require_execution_lock(self.lock_fd, self.layout)
+            return result
+        finally:
+            self.verify_upgrade = False
+            self._amo_341_checking = False
+
     def verify_status_seal(self, upgrade, completed, template, *, skip=False):
         if not upgrade.get('statusVerificationPath'):
             return
@@ -867,6 +963,7 @@ class Runtime:
     def completion_transitions(self, state):
         """Only sealed upgrades preserving this exact completed cycle qualify."""
         chain = []; checkpoint = state
+        recovery = None
         completed_cycle = state.get('lastCompleted', {}).get('cycleId')
         for _ in range(16):
             upgrade = checkpoint.get('lastUpgrade', {})
@@ -878,9 +975,27 @@ class Runtime:
                     and completed['intent'] == {'path': upgrade['intentPath'], 'sha256': upgrade['intentSha256']}
                     and completed['preservedCompletedCycleId'] == completed_cycle,
                     'Completed config transition differs')
-            self.verify_status_seal(upgrade, completed, intent['stateTemplate'],
-                                    skip=self.verify_upgrade and checkpoint is state)
+            if recovery is not None:
+                failed_config = intent['plan']['payload']['config']
+                recovery.verify_failed_evidence(failed_config, checkpoint, lambda path, pin: read(path, pin)[0],
+                                                os.path.lexists)
+                recovery = None
+            else:
+                self.verify_status_seal(upgrade, completed, intent['stateTemplate'],
+                                        skip=self.verify_upgrade and checkpoint is state)
             prior, _ = read_json(completed['priorState']['path'], upgrade['priorStateSha256'])
+            if 'amo341Recovery' in intent.get('plan', {}).get('request', {}):
+                require(checkpoint is state, 'AMO recovery must be the direct completed-cycle successor')
+                recovery = amo_341_recovery_module()
+                prior_config, _ = read_json(completed['priorConfig']['path'], upgrade['priorConfigSha256'])
+                successor_config = intent['plan']['payload']['config']
+                def recovery_read(path, pin=None):
+                    return read(path, pin)[0]
+                recovery.verify_edge(intent['plan'], successor_config, prior_config, prior, recovery_read, os.path.lexists)
+                recovery.verify_exchange(successor_config, completed, recovery_read,
+                                         checking=getattr(self, '_amo_341_checking', False) == 'checking',
+                                         provisional=getattr(self, '_amo_341_checking', False) == 'provisional',
+                                         require_current_seal=not self.verify_upgrade, lexists=os.path.lexists)
             require(all(prior[k] == state[k] for k in ('index', 'completedContext', 'lastCompleted', 'lastIntent'))
                     and prior['status'] == 'complete' and not prior.get('pending') and not prior.get('activePhase'),
                     'Config transition changed completed proof')

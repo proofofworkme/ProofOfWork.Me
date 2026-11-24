@@ -3976,6 +3976,21 @@ physical filesystem had 14,052,438,016 bytes and 2,169,165 inodes available.
 Measure the actual successor build before the irreversible grant rotation.
 See the [catch-up staging procedure](deploy/publish/ORCHESTRATOR.md#amo-catch-up-scratch-migration).
 
+At 12:19 UTC on November 24, retaining the four existing build receipts
+and all eight archives used 32,009,109,504 bytes on the Node host. Adding the
+4 GiB run reservation exceeds the 33 GiB cap by 870,596,608 bytes. The
+34 GiB successor cap leaves 203,145,216 bytes after that reservation. The
+physical filesystem had 288,068,902,912 bytes beyond the 100 GiB floor and
+the run reservation. The builder checks both limits again under its lock.
+
+The UI host still held the private 56da and 31d stages at that census, with
+6,887,280,640 bytes allocated in staging scratch. The measured 133a artifact
+sequence requires another 960,999,424 bytes. This leaves 204,783,616 bytes
+at the proposed 7.5 GiB ceiling. The native helper remains at 7 GiB until the
+controller and the capacity migration both verify. The closed-input planner
+must use the actual successor archives and current disk and inode counts
+before admitting the new stage.
+
 The release plan binds `deploy/publish/build.py` to the committed source
 by SHA-256. The on-host build uses that release's reviewed builder and
 rechecks capacity under its single-writer lock. Run
@@ -9081,6 +9096,24 @@ Status reports `verifiedRetirementPolicyCodeSha256` for the historical authority
 `verifiedRetirementSourceConfig` for the original config anchor. Current consumers
 must authenticate the successor context separately from frozen historical
 qualification. This package migration does not authorize another deletion.
+
+The AMO staging controller at revision 341 exhausted that bound after it
+switched config and state. Its failed journal records the absent status seal.
+The sealed 339 predecessor visits 16 configurations including origin revision
+260. Revision 341 adds one configuration. The release-specific recovery at
+revision 343 adds one more. Its full history visits 18 configurations and
+checks the original owner grant, the retirement receipt and every transition.
+The recorded 341 failure is part of that proof. Only this immediate successor
+may use the additional depth. Its own normal status requires a new terminal
+seal. The other completed-cycle verifier follows four transitions at 343
+back to revision 335.
+
+The guarded recovery preserves the original 341 journal, both prior private
+stages, and the live and rollback roots. A failed config/state exchange
+restores the two 341 files and records the reversal. That restored controller
+remains at its recorded unsealed state. The release operator must verify the
+recovered controller, native capacity authority and both archive receipts
+before attempting mainnet catch-up and the rollback-only rehearsal.
 
 The Pay publication successor carries that authenticated retired-payload
 obligation through preflight, the closed-input private plan, installed admission

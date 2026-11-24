@@ -98,10 +98,13 @@ def inputs(commit, *, amo=False, catchup=False):
 
 def protected(runtime, grant, commit, tree, ns):
     """Freeze actual immediate bridge state, never synthesize a successful baseline."""
-    old = ns['old']; floor = ns['floor']; base = grant['preBridge']
+    old = ns['old']; floor = ns['floor']
     config_raw = old.read_bound(old.CONFIG, runtime.config_sha)
     state, state_sha = runtime.state(); state_raw = old.read_bound(runtime.state_path, state_sha)
     config = json.loads(config_raw); upgrade = state['lastUpgrade']
+    base, recovery = floor.scratch_bridge_predecessor(grant, state)
+    if ns.get('catchup'):
+        need(recovery is not None, 'This installer requires the separately verified revision 341 recovery')
     need(config['sourceCommit'] == commit and config['sourceTree'] == tree
          and config['package']['sha256'] == sha(old.encoded(ns['manifest']))
          and state['revision'] == base['stateRevision'] + 2 and state['status'] == 'complete'
@@ -125,13 +128,20 @@ def protected(runtime, grant, commit, tree, ns):
     runtime.verify_vps_completion(state, context)
     guards = old.guard_inventory()
     guards['files'].pop(str(floor.SCRATCH_CAPACITY_PATH))
-    return {'configSha256': runtime.config_sha, 'stateSha256': state_sha,
+    snapshot = {'configSha256': runtime.config_sha, 'stateSha256': state_sha,
             'index': state['index'], 'lastCompleted': state['lastCompleted'],
             'completedContext': state['completedContext'], 'pair': context['pair'],
             'otherGuardsSha256': sha(old.encoded(guards)),
             'bridgeConfig': {'base64': base64.b64encode(config_raw).decode(), 'sha256': sha(config_raw)},
             'bridgeState': {'base64': base64.b64encode(state_raw).decode(), 'sha256': state_sha},
             'completedUpgrade': {'path': upgrade['completionPath'], 'sha256': sha(complete_raw)}}
+    if recovery is not None:
+        snapshot['amo341Recovery'] = recovery.request()['amo341Recovery']
+        # Authenticate the completed 343 terminal and the original failed ancestry
+        # before creating a scratch journal or exchanging either helper inode.
+        floor.scratch_bridge_baseline({'commit': commit, 'tree': tree, 'protected': snapshot}, grant,
+                                      package_files=floor.PACKAGE_FILES)
+    return snapshot
 
 
 def position(path, journal, intent, descriptor):

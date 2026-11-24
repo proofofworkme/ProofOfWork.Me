@@ -130,13 +130,24 @@ class PositionTests(unittest.TestCase):
 
 class BaselineTests(unittest.TestCase):
     def setUp(self):
+        self.baseline()
+
+    def baseline(self, recovered=False):
         self.commit,self.tree='a'*40,'b'*40
-        self.grant=json.loads((ROOT/M.SCRATCH_GRANT).read_bytes())
+        scope = 'audits/2026-11-24-amo-catchup-ui-scratch-capacity-scope.json' if recovered else M.SCRATCH_GRANT
+        self.grant=json.loads((ROOT/scope).read_bytes())
         prior=self.grant['preBridge']
+        recovery = M.amo_341_recovery_module() if recovered else None
+        if recovered:
+            prior = dict(prior, stateRevision=341, configSha256=recovery.AUTHORITY['configSha256'],
+                         stateSha256=recovery.AUTHORITY['stateSha256'], packageManifestSha256=recovery.AUTHORITY['packageSha256'])
         pkgsha='c'*64
         package=Path('/var/backups/proofofwork-ui/cleanup-evidence')/('ui-lifecycle-tools-'+pkgsha)
         self.journal=package.parent/('ui-lifecycle-upgrade-'+pkgsha)
         self.files={name:b'fixture package bytes' for name in M.SCRATCH_BRIDGE_PACKAGE_FILES}
+        if recovered:
+            for name in ('amo_341_recovery', 'recovery_exchange', 'reconcile_completed_341'):
+                self.files['deploy/ui-retention/' + name + '.py'] = b'fixture recovery package bytes'
         manifest={'schema':'pow-ui-retention-package-v1','sourceCommit':self.commit,'sourceTree':self.tree,
                   'files':{name:{'sha256':M.sha(raw),'bytes':len(raw)} for name,raw in self.files.items()}}
         self.config={'schema':'pow-ui-retention-lifecycle-config-v1','scopeApprovalSha256':M.APPROVAL_SHA,
@@ -144,16 +155,16 @@ class BaselineTests(unittest.TestCase):
             'retentionPolicy':M.VPS_POLICY,'offHostCustodyRoot':None,'package':{'path':str(package),'sha256':pkgsha},
             'controller':{'path':str(package/'deploy/ui-retention/lifecycle_remote.py'),
                           'sha256':manifest['files']['deploy/ui-retention/lifecycle_remote.py']['sha256']}}
-        self.oldstate={'revision':311,'lastIntent':{'fixture':'intent'},'index':{'fixture':'index'},'lastCompleted':{'cycleId':'fixture'},
+        self.oldstate={'revision':prior['stateRevision'],'lastIntent':{'fixture':'intent'},'index':{'fixture':'index'},'lastCompleted':{'cycleId':'fixture'},
                        'completedContext':{'fixture':'context'}}
-        self.state=dict(self.oldstate,revision=313,configSha256=M.sha(M.encoded(self.config)),status='complete',pending=None,activePhase=None,
+        self.state=dict(self.oldstate,revision=prior['stateRevision']+2,configSha256=M.sha(M.encoded(self.config)),status='complete',pending=None,activePhase=None,
                         lastUpgrade={'priorConfigSha256':prior['configSha256'],'priorStateSha256':prior['stateSha256'],
                           'completionPath':str(self.journal/'completed.json'),'statusVerificationPath':str(self.journal/'verified.json')})
         def binding(value):
             raw=M.encoded(value);return {'base64':base64.b64encode(raw).decode(),'sha256':M.sha(raw)}
         cs,ss=binding(self.config),binding(self.state)
         completion={'schema':'pow-ui-retention-upgrade-completed-v1','ok':True,'retentionComplete':True,
-            'publicationHealthy':True,'freshPreparationRequired':False,'stateRevision':313,
+            'publicationHealthy':True,'freshPreparationRequired':False,'stateRevision':self.state['revision'],
             'priorConfig':{'path':str(self.journal/'prior-config.json'),'sha256':prior['configSha256']},
             'priorState':{'path':str(self.journal/'prior-state.json'),'sha256':prior['stateSha256']},
             'config':{'path':str(M.CONFIG_PATH),'sha256':cs['sha256']},'state':{'path':str(M.STATE_PATH),'sha256':ss['sha256']}}
@@ -164,6 +175,8 @@ class BaselineTests(unittest.TestCase):
                 'request':{'configSha256':prior['configSha256'],'stateSha256':prior['stateSha256'],'mode':'completed-cycle'},
                 'payload':{'config':self.config,'configSha256':cs['sha256'],'manifest':manifest},
                 'before':{'guards':guards}}}
+        if recovered:
+            upgrade_intent['plan']['request'] = recovery.request()
         # Reproduce the native installer: hash the intent, then add only its SHA
         # to lastUpgrade in the final serialized state.
         self.state['lastUpgrade']['intentSha256']=M.sha(M.encoded(upgrade_intent))
@@ -176,6 +189,8 @@ class BaselineTests(unittest.TestCase):
            'lastCompleted':self.state['lastCompleted'],'completedContext':self.state['completedContext'],
            'pair':prior['pair'],'otherGuardsSha256':M.sha(M.encoded({'files':{'/other':{'fixture':'other'}},'units':{},'existingPackages':sorted(['ui-lifecycle-tools-prior',package.name])})),'bridgeConfig':cs,'bridgeState':ss,'completedUpgrade':cb}
         self.intent={'commit':self.commit,'tree':self.tree,'protected':p}
+        if recovered:
+            p['amo341Recovery'] = recovery.request()['amo341Recovery']
         self.records={str(package/'package.json'):(manifest,pkgsha),str(self.journal/'completed.json'):(completion,cb['sha256']),
             str(self.journal/'prior-config.json'):({'package':{'sha256':prior['packageManifestSha256']}},prior['configSha256']),
             str(self.journal/'prior-state.json'):(self.oldstate,prior['stateSha256']),
@@ -195,6 +210,84 @@ class BaselineTests(unittest.TestCase):
         with patch.object(M,'read_json',side_effect=read_json),patch.object(M,'read',side_effect=read):
             return M.scratch_bridge_baseline(self.intent,self.grant)
     def test_completed_bridge_positive(self):self.assertEqual(self.run_baseline(),self.intent['protected'])
+    def test_recovered_343_requires_both_authorities_and_actual_normal_seal(self):
+        self.baseline(recovered=True)
+        marker = self.intent['protected']['amo341Recovery']
+        with patch.object(M, 'verify_recovered_scratch_edge') as custody:
+            self.assertEqual(self.run_baseline(),self.intent['protected'])
+            custody.assert_called_once()
+            self.assertEqual(custody.call_args.args[-1],self.grant['preBridge'])
+            self.assertEqual(custody.call_args.args[5]['stateRevision'],343)
+            for wrong in (None, '0'*64):
+                if wrong is None:
+                    del self.intent['protected']['amo341Recovery']
+                else:
+                    self.intent['protected']['amo341Recovery'] = wrong
+                with self.assertRaisesRegex(ValueError,'Unbound recovered'):
+                    self.run_baseline()
+            self.intent['protected']['amo341Recovery'] = marker
+            custody.side_effect=ValueError('failed or terminal exchange evidence differs')
+            with self.assertRaisesRegex(ValueError,'terminal exchange'):
+                self.run_baseline()
+            custody.side_effect=None
+            self.records[str(self.journal/'verified.json')][0]['state']['sha256']='9'*64
+            with self.assertRaises(ValueError):
+                self.run_baseline()
+
+    def test_recovery_cannot_be_used_on_339_or_another_failed_predecessor(self):
+        self.baseline(recovered=True)
+        origin=self.grant['preBridge']
+        historical=dict(self.state,lastUpgrade={'priorConfigSha256':origin['configSha256']})
+        self.assertEqual(M.scratch_bridge_predecessor(self.grant,historical),(origin,None))
+        for field, value in (('priorStateSha256','1'*64),('priorConfigSha256','2'*64)):
+            state=dict(self.state,lastUpgrade=dict(self.state['lastUpgrade'],**{field:value}))
+            with self.assertRaisesRegex(ValueError,'predecessor'):
+                M.scratch_bridge_predecessor(self.grant,state)
+        for revision in (339,341,342,344):
+            with self.assertRaisesRegex(ValueError,'predecessor'):
+                M.scratch_bridge_predecessor(self.grant,dict(self.state,revision=revision))
+
+    def test_recovered_edge_reopens_actual_339_ancestry_and_31d_terminal(self):
+        self.baseline(recovered=True)
+        origin=self.grant['preBridge']
+        recovery=M.amo_341_recovery_module()
+        grant='f08f5eb9450915470ebcd06c5030c562bcc8bdd0e190637e96f3f8fde717e16f'
+        reversal=dict(approvalSha256=grant, intentSha256='52f64c3b783e3246c14fd1b91872a0f6291c85478615402c9673aafe8952d814',
+                      installedSha256='3'*64, rolledBackSha256='4'*64, phase='status', active=False,
+                      rollbackComplete=True, positions={'publisher':'before','stager':'before'})
+        earlier={'before':{'priorStageReversal':reversal},'request':{'mode':'completed-cycle',
+                 'priorStageApprovalSha256':grant, 'configSha256':origin['configSha256'],'stateSha256':origin['stateSha256']}}
+        prior=dict(revision=339, index={'id':'fixture'}, lastCompleted={'key':'fixture'},
+                   completedContext={'pair':origin['pair']}, lastIntent={'key':'fixture'})
+        failed=dict(prior, revision=341, lastUpgrade={'priorConfigSha256':origin['configSha256'],
+                                                     'priorStateSha256':origin['stateSha256']})
+        journal=recovery.FAILED_JOURNAL
+        records={journal/'intent.json':(recovery.AUTHORITY['intentSha256'],{'plan':earlier}),
+                 journal/'prior-config.json':(origin['configSha256'],{'package':{'sha256':origin['packageManifestSha256']}}),
+                 journal/'prior-state.json':(origin['stateSha256'], prior)}
+        stage=Path('/var/lib/proofofwork-ui-amo-stage')/grant
+        for name,key in (('intent','intentSha256'),('installed','installedSha256'),('rolled-back','rolledBackSha256')):
+            records[stage/(name+'.json')] = (reversal[key],{})
+        def read(path, expected):
+            pin,value=records[Path(path)]
+            if pin!=expected: raise ValueError('Digest mismatch')
+            return value,pin
+        def verify():
+            M.verify_recovered_scratch_edge(recovery,{'before':{'priorStageReversal':copy.deepcopy(reversal)}},
+                                            self.config,{},failed,{},origin)
+        with patch.object(M,'read_json',side_effect=read), patch.object(recovery,'verify_edge') as lineage, \
+             patch.object(recovery,'verify_exchange',create=True) as exchanged:
+            verify()
+            lineage.assert_called_once()
+            exchanged.assert_called_once()
+            for key in (stage/'rolled-back.json', journal/'intent.json', journal/'prior-state.json'):
+                with self.subTest(path=key), patch.dict(records,{key:('0'*64,{})}), self.assertRaises(ValueError):
+                    verify()
+            with patch.dict(failed, lastIntent={'changed':True}), self.assertRaisesRegex(ValueError,'ancestry'):
+                verify()
+            exchanged.side_effect=ValueError('unsealed recovery exchange')
+            with self.assertRaisesRegex(ValueError,'unsealed recovery'):
+                verify()
     def test_native_template_hash_and_added_field_are_exact(self):
         intent=self.records[str(self.journal/'intent.json')][0]
         template=intent['stateTemplate']
