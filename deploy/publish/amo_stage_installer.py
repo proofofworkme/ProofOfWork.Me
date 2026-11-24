@@ -16,11 +16,14 @@ import sys
 
 BASE = 'ace27010a8e44886c0c22cf9fe5c98509d28f1bb'
 PAIR = {'current': '2084747c3f8c-20261118T181547Z', 'previous': '9f18a0ce7032-20261118T004519Z'}
-CONFIG_SHA = 'bbce6be80e95047760f526550c30ba78f1515a4fd84eba3f7afb39970ebd15d6'
-STATE_SHA = '5a494c50278949e3b44efd25ac96eacfb071c437a36d47b2bb36f4367beb7a1b'
-CONTROLLER_SHA = 'bafde5b1f04ceeb5cea079bfb5c739c42b96a9cc461bfda3405a2f72a5ab3626'
-PACKAGE_SHA = '686eef5c6d3c9132e0ec2f0c0902867070f1eaa0d25679d2b3a7d6d89ec03ac3'
-CAPACITY_SHA = 'dfcee2f385e84c42aa98529dd4926fc27c5c6fb4bd0c50b3905b3a3248141df3'
+PRIOR_CONFIG_SHA = 'bbce6be80e95047760f526550c30ba78f1515a4fd84eba3f7afb39970ebd15d6'
+PRIOR_STATE_SHA = '5a494c50278949e3b44efd25ac96eacfb071c437a36d47b2bb36f4367beb7a1b'
+PACKAGE_FILES_SHA = '5ce810d1fd6c661442d32a51e4f5d51a1de187e17b835661e6846c0a5683a2f2'
+PACKAGE_DIRECTORY = Path('/var/backups/proofofwork-ui/cleanup-evidence')
+CONTROLLER = 'deploy/ui-retention/lifecycle_remote.py'
+CAPACITY_SHA = 'd38a524da2d9ba5c035dc62acf4880d7235f32d49e7a4c0d7c1a77f6715aae99'
+SCRATCH_APPROVAL = '512d190246031cbaa5ff8ceec32955ddfa742a4c893e0777d03f6af0967459a8'
+SCRATCH_INTENT = Path('/var/lib/proofofwork-ui-scratch-capacity') / SCRATCH_APPROVAL / 'intent.json'
 PREVIOUS = {'stager': '87ab4269461a91cf89ed50d6ddb81d116a35eb78f7cbcb6b4536946b5bbeb314',
             'publisher': '9aaba2b7378c1ddd38ad88a0d20322dd467d5dbd2393737ad1308349b350e22a'}
 SOURCE = {'stager': 'deploy/proofofwork-ui-release-stage.py', 'publisher': 'deploy/proofofwork-ui-release-publish.sh'}
@@ -57,7 +60,7 @@ def checked_approval(a):
     need(all(isinstance(a[k], str) and re.fullmatch('[a-f0-9]{40}', a[k]) for k in ('commit', 'tree'))
          and a['commit'] != BASE and re.fullmatch(a['commit'][:12] + '-[0-9]{8}T[0-9]{6}Z', a['releaseId'])
          and re.fullmatch('[a-z0-9][a-z0-9-]{0,30}', a['publicationAttempt']), 'Invalid successor identity')
-    need(a['configSha256'] == CONFIG_SHA and a['stateSha256'] == STATE_SHA and a['pair'] == PAIR,
+    need(a['configSha256'] != PRIOR_CONFIG_SHA and a['stateSha256'] != PRIOR_STATE_SHA and a['pair'] == PAIR,
          'Protected baseline differs')
     need(set(a['helperHashes']) == set(SOURCE) and all(isinstance(h, str) and HASH.fullmatch(h)
          for h in [*(a[k] for k in fields if k.endswith('Sha256')), *a['helperHashes'].values()]),
@@ -306,6 +309,53 @@ def pack(approval, receipt_path, request_path, destination, root=None):
     create(destination.absolute(),encoded({'approvalSha256':sha(encoded(approval)),'helpers':payload}))
 
 
+def migrated_controller(approval):
+    # The full manifest includes its own release commit and tree. Pin the reviewed
+    # file map first, then bind that map to this build's observed package/config.
+    raw = readinfo(CONFIG)[0]
+    need(sha(raw) == approval['configSha256'], 'Unexpected lifecycle configuration')
+    config = json.loads(raw)
+    need(config['sourceCommit'] == approval['commit'] and config['sourceTree'] == approval['tree'],
+         'Wrong lifecycle package source')
+    pin = config['package']['sha256']
+    need(isinstance(pin, str) and HASH.fullmatch(pin), 'Invalid lifecycle package pin')
+    path = PACKAGE_DIRECTORY / ('ui-lifecycle-tools-' + pin)
+    need(config['package']['path'] == str(path), 'Unexpected lifecycle package path')
+    raw = readinfo(path/'package.json')[0]
+    need(sha(raw) == pin, 'Wrong lifecycle package digest')
+    manifest = json.loads(raw)
+    need(manifest['schema'] == 'pow-ui-retention-package-v1' and manifest['sourceCommit'] == approval['commit']
+         and manifest['sourceTree'] == approval['tree'] and sha(encoded(manifest['files'])) == PACKAGE_FILES_SHA,
+         'Lifecycle package differs from reviewed committed files')
+    controller = path/CONTROLLER
+    pin = manifest['files'][CONTROLLER]
+    need(config['controller'] == {'path': str(controller), 'sha256': pin['sha256']}, 'Wrong lifecycle controller')
+    code = readinfo(controller, 2*MAX)[0]
+    need(sha(code) == pin['sha256'] and len(code) == pin['bytes'], 'Wrong installed lifecycle controller')
+    return controller, code
+
+
+def require_completed_migration(status, approval):
+    scratch = status.get('verifiedScratchCapacity')
+    need(status['ok'] is True and status['pair'] == PAIR and status['stateSha256'] == approval['stateSha256']
+         and status['configSha256'] == approval['configSha256'] and status['publicationHealthy'] is True
+         and status['retentionComplete'] is True and status['unfinishedIntents'] == [],
+         'Unhealthy or changed baseline')
+    need(isinstance(scratch, dict) and scratch == status['binding'].get('scratchCapacity')
+         and scratch['model'] == 'verified-ui-scratch-successor-v1' and scratch['scratchBudgetBytes'] == 7*1024**3
+         and scratch['approvalSha256'] == SCRATCH_APPROVAL
+         and all(isinstance(scratch.get(k), str) and HASH.fullmatch(scratch[k])
+                 for k in ('intentSha256', 'installedSha256')),
+         'Missing verified 7 GiB scratch migration')
+    raw = readinfo(SCRATCH_INTENT, 64*MAX)[0]
+    need(sha(raw) == scratch['intentSha256'], 'Capacity migration intent differs')
+    intent = json.loads(raw)
+    protected = intent['protected']
+    need(intent['commit'] == approval['commit'] and intent['tree'] == approval['tree']
+         and protected['configSha256'] == approval['configSha256'] and protected['stateSha256'] == approval['stateSha256']
+         and protected['pair'] == PAIR, 'Grant does not bind the exact migrated completion')
+
+
 def installed(action, approval, frame_path, installer_sha):
     need(sys.flags.isolated and not sys.flags.optimize and os.getuid()==os.geteuid()==os.getgid()==os.getegid()==0
          and socket.gethostname()=='ubuntu-4gb-hel1-1','Require isolated root on the UI receiver')
@@ -319,23 +369,18 @@ def installed(action, approval, frame_path, installer_sha):
     need(frame_raw==encoded(frame) and set(frame)=={'approvalSha256','helpers'} and
          frame['approvalSha256']==sha(encoded(approval)) and set(frame['helpers'])==set(SOURCE),'Wrong helper frame')
     payloads={k:base64.b64decode(raw, validate=True) for k,raw in frame['helpers'].items()}
-    config_raw=readinfo(CONFIG)[0]
-    need(sha(config_raw)==CONFIG_SHA,'Unexpected lifecycle configuration')
-    config=json.loads(config_raw)
-    need(config['package']['sha256']==PACKAGE_SHA and
-         config['controller']['sha256']==CONTROLLER_SHA,'Wrong lifecycle configuration')
-    controller=Path(config['controller']['path'])
-    controller_bytes=readinfo(controller,2*MAX)[0]
-    need(sha(controller_bytes)==CONTROLLER_SHA,'Wrong installed lifecycle controller')
+    controller, controller_bytes = migrated_controller(approval)
     ns={'__name__':'_verified_amo_lifecycle','__file__':str(controller)}
     exec(compile(controller_bytes, str(controller), 'exec'), ns)
-    runtime=ns['installed_runtime'](CONFIG,CONFIG_SHA)
+    runtime=ns['installed_runtime'](CONFIG,approval['configSha256'])
     fd=runtime.S.lock(runtime.layout)
     try:
         runtime.lock_fd=fd
         def check():
             runtime.S.require_execution_lock(fd,runtime.layout)
-            need(readinfo(CONFIG)[1]['sha256']==CONFIG_SHA and readinfo(STATE,64*MAX)[1]['sha256']==STATE_SHA,
+            need(readinfo(CONFIG)[1]['sha256']==approval['configSha256'] and
+                 readinfo(STATE,64*MAX)[1]['sha256']==approval['stateSha256'] and
+                 readinfo(CAPACITY)[1]['sha256']==CAPACITY_SHA,
                  'Protected configuration/state differs')
             manifests = [(Path('/var/www'), '6109f2e61afcc8fbcb9a15e68e133550194c816726f5fca9537d21973ebeb8e0'),
                          (Path('/var/backups/proofofwork-ui/rollback-roots')/('proofofwork-www-pre-'+PAIR['current']),
@@ -345,12 +390,9 @@ def installed(action, approval, frame_path, installer_sha):
         def complete():
             check()
             status=runtime.status({'requireComplete':True})
-            need(status['ok'] is True and status['pair']==PAIR and status['stateSha256']==STATE_SHA and
-                 status['configSha256']==CONFIG_SHA and status['publicationHealthy'] is True and
-                 status['retentionComplete'] is True and status['unfinishedIntents']==[],'Unhealthy or changed baseline')
+            require_completed_migration(status,approval)
             runtime.S.require_execution_lock(fd,runtime.layout)
         def budget():
-            need(readinfo(CAPACITY)[1]['sha256']==CAPACITY_SHA,'Capacity helper differs')
             runtime.S.capacity(runtime.layout,'amo-direct-stage-helper-install',additional_bytes=8*MAX)
         return operate(action,STORE,BINARY,approval,payloads,check,budget,verify_complete=complete)
     finally:

@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -I
-"""Exact second scratch-limit migration:5.5 to6GiB. Original journal stays immutable."""
+"""Install or reverse one exact, journaled UI scratch-capacity transition."""
 import argparse
 import base64
 import hashlib
@@ -16,6 +16,8 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[2]
 GRANT = 'audits/2026-11-18-ui-scratch-capacity-approval.json'
 SUCCESSOR = 'deploy/ui-retention/scratch_successor.py'
+AMO_SCOPE = 'audits/2026-11-24-amo-ui-scratch-capacity-scope.json'
+AMO_SUCCESSOR = 'deploy/ui-retention/amo_scratch_successor.py'
 TOOLS = 'deploy/ui-stream-tools/installer.py'
 INSTALL = 'deploy/ui-retention/install_lifecycle.py'
 REMOTE = 'deploy/ui-retention/lifecycle_remote.py'
@@ -47,18 +49,20 @@ def committed(commit, relative):
     return raw
 
 
-def inputs(commit):
+def inputs(commit, *, amo=False):
     need(os.geteuid() == os.getegid() == 0 and sys.flags.isolated and not sys.flags.optimize,
          'Require isolated root on the UI host')
     need(re.fullmatch('[a-f0-9]{40}', commit) and git('rev-parse', 'HEAD').decode().strip() == commit
          and not git('status', '--porcelain', '--untracked-files=all'), 'Require exact clean committed source')
-    for relative in (str(Path(__file__).resolve().relative_to(ROOT)), TOOLS, INSTALL, REMOTE, SUCCESSOR,
-                     'deploy/ui-retention/lifecycle.py', GRANT):
+    scope, authority = (AMO_SCOPE, AMO_SUCCESSOR) if amo else (GRANT, SUCCESSOR)
+    for relative in (str(Path(__file__).resolve().relative_to(ROOT)), TOOLS, INSTALL, REMOTE, authority,
+                     'deploy/ui-retention/lifecycle.py', scope):
         committed(commit, relative)
     ns = {key: SimpleNamespace(**runpy.run_path(str(ROOT / relative)))
-          for key, relative in (('tools', TOOLS), ('old', INSTALL), ('floor', REMOTE), ('successor', SUCCESSOR))}
+          for key, relative in (('tools', TOOLS), ('old', INSTALL), ('floor', REMOTE), ('successor', authority))}
     runpy.run_path(str(ROOT / 'deploy/ui-retention/lifecycle.py'))['require_ui_host'](ROOT)
-    raw = committed(commit, GRANT); grant = json.loads(raw); floor = ns['floor']; successor = ns['successor']
+    ns['amo'] = amo
+    raw = committed(commit, scope); grant = json.loads(raw); floor = ns['floor']; successor = ns['successor']
     need(sha(raw) == successor.APPROVAL, 'Scratch approval differs')
     target = grant['target']; candidate = committed(commit, target['source'])
     need(target['path'] == str(floor.SCRATCH_CAPACITY_PATH)
@@ -145,7 +149,28 @@ def rollback_budget(grant):
         '--block-size=1', '--', str(path)], env=ENV, timeout=60).decode().strip().split('\t')
     need(len(output) == 2 and output[1] == str(path) and output[0].isascii() and output[0].isdecimal()
          and path.lstat() == before, 'Scratch allocation changed during measurement')
-    need(int(output[0]) <= grant['priorScratchBytes'], 'Rollback refuses scratch above the old 5.5 GiB limit')
+    need(int(output[0]) <= grant['priorScratchBytes'], 'Rollback refuses scratch above the prior ceiling')
+
+
+def check_amo_helper(candidate, grant):
+    """Prove the pinned successor is exactly the existing helper with one changed limit."""
+    before = b'MAX_DEPLOY_SCRATCH_BYTES = 6 * 1024**3\n'
+    after = b'MAX_DEPLOY_SCRATCH_BYTES = 7 * 1024**3\n'
+    need(candidate.count(after) == 1 and sha(candidate.replace(after, before)) == grant['target']['beforeSha256']
+         and sha(candidate) == grant['target']['afterSha256']
+         and grant['priorScratchBytes'] == 6 * 1024**3 and grant['scratchBytes'] == 7 * 1024**3,
+         'AMO capacity helper differs outside the approved ceiling')
+
+
+def exchange_budget(candidate_path, evidence, grant):
+    native_budget(candidate_path, evidence, grant)
+    result = subprocess.check_output(['/usr/bin/python3', '-I', '-B', str(candidate_path), 'check-scratch',
+        '--path', '/var/tmp/proofofwork-deploy', '--additional-bytes', '0', '--phase',
+        'amo-scratch-capacity-transition'], env=ENV, timeout=60)
+    measured = json.loads(result)
+    need(measured['status'] == 'sufficient' and measured['additionalBytes'] == 0
+         and measured['maximumBytes'] == grant['scratchBytes'] and measured['cleanupApproved'] is False
+         and 0 <= measured['allocatedBytes'] <= grant['scratchBytes'], 'AMO scratch admission differs')
 
 
 def operate(action, commit, tree, ns, grant, grant_raw, candidate, checkpoint=lambda name: None):
@@ -154,6 +179,9 @@ def operate(action, commit, tree, ns, grant, grant_raw, candidate, checkpoint=la
     path, journal = floor.SCRATCH_CAPACITY_PATH, successor.DIRECTORY
     need(sha(grant_raw) == successor.APPROVAL and sha(candidate) == successor.NEXT_SHA,
          'Unapproved migration input')
+    amo = ns.get('amo', False)
+    if amo:
+        check_amo_helper(candidate, grant)
     runtime = old.existing_runtime(sha(old.read_bound(old.CONFIG)))
     lock = runtime.S.lock(runtime.layout)
     try:
@@ -221,15 +249,19 @@ def operate(action, commit, tree, ns, grant, grant_raw, candidate, checkpoint=la
         def check():
             runtime.S.require_execution_lock(lock, runtime.layout)
             need(snapshot() == baseline, 'Protected migration baseline changed')
-            predecessor = floor._scratch_capacity_position_original(runtime.layout, capacity_descriptor=intent['files']['capacity']['before'])
-            need(predecessor and predecessor['position'] == 'after', 'Scratch predecessor is not sealed')
-            floor._capacity_floor_authority_original(runtime.layout, predecessor['priorCapacity'])
+            if amo:
+                successor.verify_predecessor(runtime.layout, floor, capacity_descriptor=pair['before'])
+            else:
+                predecessor = floor._scratch_capacity_position_original(runtime.layout, capacity_descriptor=pair['before'])
+                need(predecessor and predecessor['position'] == 'after', 'Scratch predecessor is not sealed')
+                floor._capacity_floor_authority_original(runtime.layout, predecessor['priorCapacity'])
         qualification = {'schema': 'pow-ui-scratch-successor-qualified-v1', 'intentSha256': intent_sha,
                          'authoritySha256': successor.APPROVAL, 'protected': baseline}
         qualified = journal / 'qualified.json'
         if not os.path.lexists(qualified):
             need(action == 'prepare' and pos() == 'before', 'Incomplete qualification; resume prepare')
-            native_budget(journal / 'capacity', runtime.layout.evidence, grant); check()
+            (exchange_budget if amo else native_budget)(journal / 'capacity', runtime.layout.evidence, grant)
+            check()
         qualified_sha = record(qualified, qualification, tools, checkpoint)
         successor.verify_position(runtime.layout, floor, allow_pending=True)
         installed = {'schema': 'pow-ui-scratch-successor-installed-v1', 'intentSha256': intent_sha,
@@ -239,7 +271,8 @@ def operate(action, commit, tree, ns, grant, grant_raw, candidate, checkpoint=la
         reversing, rolled = journal / 'reversing.json', journal / 'rolled-back.json'
         def preverify(phase):
             try:
-                status = runtime.status({'requireComplete': True}, scratch_successor_pending_intent=intent_sha)
+                pending = 'amo_scratch_pending_intent' if amo else 'scratch_successor_pending_intent'
+                status = runtime.status({'requireComplete': True}, **{pending: intent_sha})
                 need(status['ok'] is True and status['stateSha256'] == baseline['stateSha256']
                      and status['configSha256'] == baseline['configSha256']
                      and status['pair'] == baseline['pair'] and status['context'] == baseline['completedContext']
@@ -274,9 +307,11 @@ def operate(action, commit, tree, ns, grant, grant_raw, candidate, checkpoint=la
                  'Prior verification failed; explicit rollback required')
             need(not os.path.lexists(reversing) and not os.path.lexists(rolled), 'Reversal already requested; resume rollback')
             if pos() != 'after':
+                if amo:
+                    exchange_budget(journal / 'capacity', runtime.layout.evidence, grant)
                 check(); tools.exchange(path, journal / 'capacity'); checkpoint('exchange-after')
             need(pos() == 'after', 'Exchange incomplete'); check()
-            native_budget(path, runtime.layout.evidence, grant)
+            (exchange_budget if amo else native_budget)(path, runtime.layout.evidence, grant)
             installed_sha = record(journal / 'installed.json', installed, tools, checkpoint)
             pending_sha = preverify('forward')
             record(journal / 'verified.json', {'schema':'pow-ui-scratch-successor-verified-v1',
@@ -284,8 +319,12 @@ def operate(action, commit, tree, ns, grant, grant_raw, candidate, checkpoint=la
                 'pendingStatusSha256':pending_sha}, tools, checkpoint)
         elif action == 'rollback':
             rollback_budget(grant); check()
+            if amo:
+                native_budget(path, runtime.layout.evidence, grant)
             record(reversing, reversal, tools, checkpoint)
             if pos() != 'before':
+                if amo:
+                    native_budget(journal / 'capacity', runtime.layout.evidence, grant)
                 rollback_budget(grant); check(); tools.exchange(path, journal / 'capacity'); checkpoint('exchange-before')
             need(pos() == 'before', 'Reverse exchange incomplete'); check()
             native_budget(path, runtime.layout.evidence, grant)
@@ -299,15 +338,17 @@ def operate(action, commit, tree, ns, grant, grant_raw, candidate, checkpoint=la
         os.close(lock)
 
 
-def installed_inputs(commit):
+def installed_inputs(commit, *, amo=False):
     """Use the native hash-verified installed package, never a partial Git checkout."""
     need(os.geteuid() == os.getegid() == 0 and sys.flags.isolated and not sys.flags.optimize,
          'Require isolated root on UI')
     interfaces = json.loads(subprocess.check_output(['/usr/sbin/ip', '-j', '-4', 'address', 'show'], timeout=10))
     need(any(address.get('local') == '77.42.91.106' for interface in interfaces
              for address in interface.get('addr_info', [])), 'Installed migration requires production UI host')
+    scope, authority = (AMO_SCOPE, AMO_SUCCESSOR) if amo else (GRANT, SUCCESSOR)
     ns = {key: SimpleNamespace(**runpy.run_path(str(ROOT / relative)))
-          for key, relative in (('tools', TOOLS), ('old', INSTALL), ('floor', REMOTE), ('successor', SUCCESSOR))}
+          for key, relative in (('tools', TOOLS), ('old', INSTALL), ('floor', REMOTE), ('successor', authority))}
+    ns['amo'] = amo
     old, floor, successor = ns['old'], ns['floor'], ns['successor']
     config_raw = old.read_bound(old.CONFIG)
     runtime = floor.installed_runtime(old.CONFIG, sha(config_raw))
@@ -319,7 +360,7 @@ def installed_inputs(commit):
     for relative, pin in manifest['files'].items():
         raw, _ = floor.read(ROOT / relative, pin['sha256'], 2 * 1024**2)
         need(len(raw) == pin['bytes'], 'Installed migration package file differs')
-    raw, _ = floor.read(ROOT / GRANT, successor.APPROVAL)
+    raw, _ = floor.read(ROOT / scope, successor.APPROVAL)
     grant = json.loads(raw)
     candidate, _ = floor.read(ROOT / grant['target']['source'], successor.NEXT_SHA)
     need(grant['target']['path'] == str(floor.SCRATCH_CAPACITY_PATH)
@@ -333,8 +374,12 @@ def installed_inputs(commit):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('prepare','apply','reconcile','rollback','status'))
-    parser.add_argument('commit'); parser.add_argument('--installed', action='store_true'); args = parser.parse_args(); os.umask(0o077)
-    ns, grant, raw, candidate = installed_inputs(args.commit) if args.installed else inputs(args.commit)
+    parser.add_argument('commit')
+    parser.add_argument('--installed', action='store_true')
+    parser.add_argument('--amo', action='store_true', help='Select the pinned 6-to-7 GiB AMO migration')
+    args = parser.parse_args(); os.umask(0o077)
+    loader = installed_inputs if args.installed else inputs
+    ns, grant, raw, candidate = loader(args.commit, amo=args.amo)
     tree = ns['manifest']['sourceTree'] if args.installed else git('rev-parse','HEAD^{tree}').decode().strip()
     print(json.dumps(operate(args.action,args.commit,tree,
                              ns,grant,raw,candidate)))

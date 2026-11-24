@@ -3911,6 +3911,17 @@ bytes. The 31 GiB guard refused admission by 372,224,000 bytes. The
 Physical free space measured 402,750,316,544 bytes against the independent
 111,669,149,696-byte requirement for a new run.
 
+At 03:00:48 and 03:00:50 UTC on November 24 the UI native checker counted
+6,161,629,184 allocated scratch bytes with the existing private stage retained.
+The 6 GiB policy left 280,821,760 bytes. The unchanged static files across
+23 surfaces alone require at least 408,403,968 bytes including native
+receive and evidence charges. With that occupancy a 7 GiB policy leaves
+1,354,563,584 bytes for the entire sequence. The earlier build's whole-sequence
+charge was 960,528,384 bytes. Its size is a planning reference. Measure the
+successor archives and all five capacity constraints before rotating any grant.
+The [private staging runbook](deploy/publish/ORCHESTRATOR.md#amo-seven-gib-scratch-migration)
+describes the protected transition.
+
 The release plan binds `deploy/publish/build.py` to the committed source
 by SHA-256. The on-host build uses that release's reviewed builder and
 rechecks capacity under its single-writer lock. Run

@@ -146,3 +146,51 @@ For the AMO successor to `ace27010a8e44886c0c22cf9fe5c98509d28f1bb`, the private
 4. Run fresh closed preflight and make the plan from that build's two archives. The five capacity checks cover scratch, backup, transport, physical free space and inodes. Their results depend on the current occupancy, root identity and the actual successor sizes. Private transport finishes only when the surfaces-stage receipt and the source receipt authenticate the same plan and the candidate passes provenance verification. Record both receipt hashes, then stop at the authorized boundary.
 
 The helper approval is tied to live `2084747c3f8c-20261118T181547Z` and rollback `9f18a0ce7032-20261118T004519Z`. Reversal also requires that protected state. Reversing after private staging restores the original executables and disables direct-mode use of the staged plan. Any later publication requires its own authorization and current native verification. The retained sizing observation is in the [capacity qualification](../../audits/2026-11-23-amo-scratch-qualification.md).
+
+### AMO seven GiB scratch migration
+
+The 7 GiB UI scratch ceiling is shared by the native capacity guard and the
+whole-release planner. Node builds use a 32 GiB retained ceiling, a 4 GiB
+run reservation and a 100 GiB physical floor. The UI keeps its 8 GiB root
+floor and 64 MiB growth reserve, 128-inode reserve, 18 GiB backup budget
+and 9 GiB plus 64 MiB transport budget. Preserve the current and rollback
+roots, the prior private stage and its source, archives and journals.
+
+1. Verify the exact public ref and CI, then build once on the isolated Node
+   builder. Use the actual archive hashes, tar member charges, source
+   allocation and compact inventory. While the old grant is active, estimate
+   the full successor sequence from those artifacts, a fresh native census
+   and the protected live tree. Verify the old grant and terminal receipts,
+   both helper positions, the preserved stage and the current rollback. Check
+   the completed-cycle bridge, its protected state and the conditions for
+   reversing the capacity exchange. Stop with the old grant active if
+   any quantity or recovery condition is unresolved. This estimate precedes
+   the normal sealed preflight.
+2. The old direct grant must be reversed under its original 6 GiB lifecycle.
+   Use the installed build's original three pinned inputs with the original
+   installer and verify its terminal rollback. Its archived evidence and
+   files remain on disk. The reversal markers permanently disable direct use
+   of that old plan. The new grant has its own journal.
+3. Use the completed-cycle `install_lifecycle.py plan-upgrade-complete`
+   with the fresh config and state hashes and `--prior-stage-approval-sha256`
+   from the retained 56da installer-input readback. This verifies the old
+   terminal journal and the original helper inodes under the deploy lock.
+   Run `upgrade --plan --plan-sha256` with the resulting sealed plan.
+   Verify the completion receipt, protected pair, package file
+   identities and `status --require-complete`. In that installed package,
+   run `successor_installer.py ACTION COMMIT --installed --amo` with
+   `prepare`, `apply` and `status`. Verify the return to normal completed
+   lifecycle status and the sealed 7 GiB authority. Use the existing
+   intent to reconcile an interrupted exchange. An immediate rollback
+   requires the exact protected state, the original helper inode positions
+   and actual scratch occupancy at or below 6 GiB. Later staging can exceed
+   that ceiling, and exchanging other guarded helpers changes their recorded
+   inodes or change times. After either change, the original capacity
+   rollback may refuse even if the old staged files remain intact.
+4. Bind the new staging grant to the actual build and the verified
+   post-migration config, state and package. Deliver just the verified
+   installer, grant and frame to the private receiver directory. Use the
+   guarded two-helper installer, then the fresh inventory, preflight and
+   sealed plan described above. Verify both archive receipts and source
+   provenance and recheck the original stage and protected roots. Keep 250k
+   closed through canonical replay and the independent reader checks.

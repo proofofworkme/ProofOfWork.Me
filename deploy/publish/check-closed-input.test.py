@@ -279,9 +279,9 @@ class ClosedInputTests(unittest.TestCase):
             required = plan['wholeSequenceAdmission']['requirements']
             allowance = 384 * 1024**2
             self.assertEqual((required['allowanceRelease'], required['scratchAllowanceBytes']), (historical, allowance))
-            self.assertEqual(required['limits']['scratchBudgetBytes'], 6 * 1024**3)
+            self.assertEqual(required['limits']['scratchBudgetBytes'], 7 * 1024**3)
             # One full historical allowance is consumed at this boundary.
-            census['usage']['scratch'] = 6 * 1024**3 - required['additionalBytes']['scratch'] + allowance
+            census['usage']['scratch'] = required['limits']['scratchBudgetBytes'] - required['additionalBytes']['scratch'] + allowance
             args.output = str(root/'at-limit.json')
             self.assertEqual(make_plan()['wholeSequenceAdmission']['headroom']['scratch'], 0)
             args.output = str(root/'must-not-exist.json')
@@ -330,7 +330,7 @@ class ClosedInputTests(unittest.TestCase):
                 self.assertNotIn('allowanceRelease', normal)
                 with self.assertRaisesRegex(ValueError, f'"scratch": {allowance}'):
                     self.sequence.admit(normal, census)
-                with patch.dict(census['usage'], scratch=6 * 1024**3 - normal['additionalBytes']['scratch']):
+                with patch.dict(census['usage'], scratch=normal['limits']['scratchBudgetBytes'] - normal['additionalBytes']['scratch']):
                     self.assertEqual(self.sequence.admit(normal, census)['headroom']['scratch'], 0)
 
     def test_candidate_and_actual_staging_agree_including_transitive_dependencies(self):
@@ -428,7 +428,7 @@ class ClosedInputTests(unittest.TestCase):
         native = module('../proofofwork-ui-capacity.py')
         root = Path(self.tmp.name)
         measured = native.check_deploy_scratch(root, 0, 'whole-release-measurement')
-        self.assertEqual(measured['maximumBytes'], 6 * 1024**3)
+        self.assertEqual(measured['maximumBytes'], 7 * 1024**3)
         remaining = measured['maximumBytes'] - measured['allocatedBytes']
         self.assertEqual(native.check_deploy_scratch(root, remaining, 'recovery-stage')['status'], 'sufficient')
         with self.assertRaisesRegex(native.CapacityError, 'UI deployment scratch review required'):

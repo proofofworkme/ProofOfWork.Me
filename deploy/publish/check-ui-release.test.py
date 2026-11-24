@@ -1869,7 +1869,7 @@ class PreservedTransport(unittest.TestCase):
                     phase.locked_installed_stager()
             # The stager loads the capacity helper beside the hash-verified module.
             helper = installed.capacity_helper()
-            self.assertEqual(helper.MAX_DEPLOY_SCRATCH_BYTES, 6*1024**3)
+            self.assertEqual(helper.MAX_DEPLOY_SCRATCH_BYTES, 7*1024**3)
             self.assertEqual(helper.ROOT_RESERVE_BYTES, 8*1024**3)
             bound = helper.tree_bound(self.base, self.base)
             self.assertGreater(bound['additionalBytes'], 0)
@@ -1898,7 +1898,7 @@ class PreservedTransport(unittest.TestCase):
         helper = ROOT.parents[1]/'deploy/proofofwork-ui-capacity.py'
         exec(compile(helper.read_bytes(), str(helper), 'exec'), namespace)
         limit = namespace['MAX_DEPLOY_SCRATCH_BYTES']
-        self.assertEqual(limit, 6*1024**3)
+        self.assertEqual(limit, 7*1024**3)
         # Translate the original trajectory to the approved current ceiling,
         # preserving its exact 197279744-byte headroom and all phase deltas.
         # This does not change the separate historical retirement bound.

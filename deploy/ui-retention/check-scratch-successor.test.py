@@ -16,13 +16,19 @@ def load(name, relative):
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
 M=load('scratch_successor_fixture','scratch_successor.py')
 R=load('scratch_successor_runtime_fixture','lifecycle_remote.py')
+A=load('amo_scratch_successor_fixture','amo_scratch_successor.py')
 ROOT=Path(__file__).resolve().parents[2]
 
 class GrantTests(unittest.TestCase):
     def test_grant_and_helper_pins(self):
         raw=(ROOT/M.SCRATCH_GRANT).read_bytes()
         self.assertEqual(R.sha(raw),M.SCRATCH_APPROVAL)
-        self.assertEqual(R.sha((ROOT/'deploy/proofofwork-ui-capacity.py').read_bytes()),M.SCRATCH_NEXT_SHA)
+        helper=(ROOT/'deploy/proofofwork-ui-capacity.py').read_bytes()
+        self.assertEqual(R.sha(helper),A.NEXT_SHA)
+        self.assertEqual(R.sha(helper.replace(b'MAX_DEPLOY_SCRATCH_BYTES = 7 *',
+                                             b'MAX_DEPLOY_SCRATCH_BYTES = 6 *')), M.NEXT_SHA)
+        self.assertEqual(A.PRIOR_SHA,M.NEXT_SHA)
+        self.assertEqual(R.sha((ROOT/A.GRANT).read_bytes()), A.APPROVAL)
         with tempfile.TemporaryDirectory() as temporary:
             path=Path(temporary)/'approval.json';path.write_bytes(raw);path.chmod(0o600)
             self.assertEqual(R.read_json(path,M.SCRATCH_APPROVAL)[1],M.SCRATCH_APPROVAL)
@@ -30,19 +36,21 @@ class GrantTests(unittest.TestCase):
             with self.assertRaises(ValueError):R.read_json(path,M.SCRATCH_APPROVAL)
 
 class PositionTests(unittest.TestCase):
+    migration = M
+
     def setUp(self):
         self.predecessor_bad = False
-        self.grant = json.loads((ROOT/M.SCRATCH_GRANT).read_bytes())
-        self.assertEqual(R.sha((ROOT/M.SCRATCH_GRANT).read_bytes()), M.SCRATCH_APPROVAL)
-        self.before = {'sha256': M.SCRATCH_PRIOR_SHA, 'identity': [17, 101, 0, 0, stat.S_IFREG|0o755, 1, 30000, 1000], 'xattrs': {}}
-        self.after = {'sha256': M.SCRATCH_NEXT_SHA, 'identity': [17, 102, 0, 0, stat.S_IFREG|0o755, 1, 30001, 1001], 'xattrs': {}}
+        self.grant = json.loads((ROOT/self.migration.GRANT).read_bytes())
+        self.assertEqual(R.sha((ROOT/self.migration.GRANT).read_bytes()), self.migration.APPROVAL)
+        self.before = {'sha256': self.migration.PRIOR_SHA, 'identity': [17, 101, 0, 0, stat.S_IFREG|0o755, 1, 30000, 1000], 'xattrs': {}}
+        self.after = {'sha256': self.migration.NEXT_SHA, 'identity': [17, 102, 0, 0, stat.S_IFREG|0o755, 1, 30001, 1001], 'xattrs': {}}
         self.protected = {'configSha256':'1'*64,'stateSha256':'2'*64,'pair':{'fixture':'pair'},'completedContext':{'fixture':'context'}}
-        self.intent = {'schema': 'pow-ui-scratch-successor-intent-v1', 'approvalSha256': M.SCRATCH_APPROVAL,
+        self.intent = {'schema': 'pow-ui-scratch-successor-intent-v1', 'approvalSha256': self.migration.APPROVAL,
                        'commit': 'a'*40, 'tree': 'b'*40, 'files': {'capacity': {'before': self.before, 'after': self.after}},
-                       'protected': self.protected, 'predecessorAuthority': copy.deepcopy(M.PREDECESSOR_AUTHORITY)}
+                       'protected': self.protected, 'predecessorAuthority': copy.deepcopy(self.migration.PREDECESSOR_AUTHORITY)}
         self.intent_sha = R.sha(R.encoded(self.intent))
         q = {'schema': 'pow-ui-scratch-successor-qualified-v1', 'intentSha256': self.intent_sha,
-             'authoritySha256': M.SCRATCH_APPROVAL, 'protected': self.protected}
+             'authoritySha256': self.migration.APPROVAL, 'protected': self.protected}
         self.qsha = R.sha(R.encoded(q))
         installed = {'schema': 'pow-ui-scratch-successor-installed-v1', 'intentSha256': self.intent_sha,
                      'qualificationSha256': self.qsha, 'protected': self.protected}
@@ -59,24 +67,24 @@ class PositionTests(unittest.TestCase):
         self.layout = types.SimpleNamespace(capacity=M.SCRATCH_CAPACITY_PATH)
         self.info = types.SimpleNamespace(st_mode=stat.S_IFDIR|0o700, st_uid=0, st_gid=0, st_dev=17)
     def read(self, path, expected=None, maximum=None):
-        if Path(path) == M.PREDECESSOR_DIRECTORY / 'installed.json':
-            if expected != M.PREDECESSOR_AUTHORITY['installedSha256'] or self.predecessor_bad:
+        if Path(path) == self.migration.DIRECTORY.parent / self.migration.PREDECESSOR_AUTHORITY['approvalSha256'] / 'installed.json':
+            if expected != self.migration.PREDECESSOR_AUTHORITY['installedSha256'] or self.predecessor_bad:
                 raise ValueError('Predecessor receipt changed')
             return {}, expected
         name = Path(path).name
         value = self.records[name]
-        digest = M.SCRATCH_APPROVAL if name == 'approval.json' else R.sha(R.encoded(value))
+        digest = self.migration.APPROVAL if name == 'approval.json' else R.sha(R.encoded(value))
         if expected is not None and digest != expected:
             raise ValueError('Fixture record SHA differs')
         return value, digest
     def run_position(self, pending=False, baseline_error=None):
-        with patch.object(M.os.path, 'lexists', return_value=True), patch.object(Path, 'resolve', lambda p:p), \
+        with patch.object(R, 'scratch_successor_module', return_value=M), patch.object(M.os.path, 'lexists', return_value=True), patch.object(Path, 'resolve', lambda p:p), \
              patch.object(Path, 'lstat', return_value=self.info), \
              patch.object(M.os, 'listdir', return_value=list(self.records)+['capacity']), \
              patch.object(R, 'read_json', side_effect=self.read), \
              patch.object(R, 'scratch_bridge_baseline', return_value=self.protected, side_effect=baseline_error), \
              patch.object(R, 'floor_descriptor', side_effect=lambda p:self.live if p==M.SCRATCH_CAPACITY_PATH else self.saved):
-            return M.verify_position(self.layout, R, allow_pending=pending)
+            return self.migration.verify_position(self.layout, R, allow_pending=pending)
     def test_exact_sealed_successor(self):
         self.assertEqual(self.run_position()['position'], 'after')
     def test_each_missing_seal_fails_closed(self):
@@ -135,7 +143,7 @@ class PositionTests(unittest.TestCase):
     def test_authority_only_sealed_and_exact_budget(self):
         proof=self.run_position()
         self.assertEqual(proof['predecessorDescriptor'],self.before)
-        self.assertEqual(proof['authority']['scratchBudgetBytes'],6*1024**3)
+        self.assertEqual(proof['authority']['scratchBudgetBytes'],self.migration.NEXT_BYTES)
         self.assertIsNone(self.run_position(True)['authority'])
     def test_baseline_verification_is_mandatory(self):
         with self.assertRaisesRegex(ValueError,'bad bridge'):
@@ -144,6 +152,20 @@ class PositionTests(unittest.TestCase):
         self.assertIn('deploy/ui-retention/scratch_successor.py',M.SUCCESSOR_PACKAGE_FILES)
         self.assertEqual(len(M.SUCCESSOR_PACKAGE_FILES),len(set(M.SUCCESSOR_PACKAGE_FILES)))
 
+
+
+class AmoPositionTests(PositionTests):
+    migration = A
+
+    def test_edge_rejects_the_boost_grant(self):
+        self.records['approval.json'] = json.loads((ROOT/M.GRANT).read_bytes())
+        with self.assertRaisesRegex(ValueError, 'Scratch grant scope'):
+            self.run_position()
+
+    def test_earlier_receipt_cannot_follow_a_different_inode(self):
+        self.saved = dict(self.before, identity=[17, 103, *self.before['identity'][2:]])
+        with self.assertRaisesRegex(ValueError, 'positions'):
+            self.run_position()
 
 
 class SuccessorPendingStatusTests(unittest.TestCase):
@@ -205,6 +227,64 @@ class SuccessorPendingStatusTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Mixed'):
             self.runtime.status({'requireComplete':True},scratch_pending_intent=self.intent,scratch_successor_pending_intent=self.intent)
 
+class AmoChainTests(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import Mock
+        self.layout = types.SimpleNamespace(capacity=A.CAPACITY_PATH)
+        self.six = {'position': 'after', 'authority': dict(A.PREDECESSOR_AUTHORITY, scratchBudgetBytes=A.PRIOR_BYTES),
+                    'predecessorDescriptor': {'inode':'historical-5.5'}}
+        self.first = {'position': 'after', 'priorCapacity': {'inode':'historical-floor'}}
+        self.floor = {'rootReserveBytes': 8*1024**3, 'growthReserveBytes': 64*1024**2}
+        self.reader = Mock(return_value=self.six)
+        self.runtime = types.SimpleNamespace(require=R.require,
+            scratch_successor_module=lambda: types.SimpleNamespace(verify_position=self.reader),
+            _scratch_capacity_position_original=Mock(return_value=self.first),
+            _capacity_floor_authority_original=Mock(return_value=self.floor))
+
+    def predecessor(self):
+        return A.verify_predecessor(self.layout, self.runtime, {'inode':'saved-six'})
+
+    def test_chains_through_each_exchanged_inode(self):
+        chain = self.predecessor()
+        self.reader.assert_called_once_with(self.layout, self.runtime, capacity_descriptor={'inode':'saved-six'})
+        self.runtime._scratch_capacity_position_original.assert_called_once_with(
+            self.layout, capacity_descriptor={'inode':'historical-5.5'})
+        self.runtime._capacity_floor_authority_original.assert_called_once_with(self.layout, {'inode':'historical-floor'})
+        self.assertEqual(chain['floor'], self.floor)
+
+    def test_wrong_or_missing_predecessors_and_floor_refuse(self):
+        for key in A.PREDECESSOR_AUTHORITY:
+            with self.subTest(key=key), patch.dict(self.six['authority'], {key: '0'*64}), self.assertRaises(ValueError):
+                self.predecessor()
+        with patch.dict(self.six, position='before'), self.assertRaises(ValueError): self.predecessor()
+        with patch.dict(self.first, position='before'), self.assertRaises(ValueError): self.predecessor()
+        for key in self.floor:
+            with patch.dict(self.floor, {key: self.floor[key]-1}), self.assertRaises(ValueError): self.predecessor()
+
+    def test_completed_rollback_restores_only_verified_boost_authority(self):
+        seven = {'position': 'after', 'authority': {'scratchBudgetBytes': A.NEXT_BYTES}}
+        with patch.object(R,'amo_scratch_chain',return_value=(seven,self.predecessor())):
+            self.assertEqual(R.scratch_capacity_authority(self.layout)['scratchBudgetBytes'], A.NEXT_BYTES)
+            seven.update(position='before', authority=None)
+            self.assertEqual(R.scratch_capacity_authority(self.layout), self.six['authority'])
+
+    def test_amo_pending_status_requires_exact_locked_bridge_and_discloses_no_new_authority(self):
+        fixture = SuccessorPendingStatusTests()
+        fixture.setUp()
+        with patch.object(R,'amo_scratch_chain',return_value=(fixture.position,self.predecessor())) as chain:
+            status = fixture.runtime.status({'requireComplete':True}, amo_scratch_pending_intent=fixture.intent)
+            self.assertEqual(status['verifiedCapacityFloor'],self.floor)
+            self.assertNotIn('verifiedScratchCapacity',status)
+            self.assertNotIn('scratchCapacity',status['binding'])
+            fixture.runtime.S.require_execution_lock.assert_called_once_with(7,fixture.runtime.layout)
+            chain.assert_called_once_with(fixture.runtime.layout,allow_pending=True)
+            with self.assertRaises(ValueError): fixture.runtime.status({},amo_scratch_pending_intent='0'*64)
+            fixture.position['protected']['stateSha256']='0'*64
+            with self.assertRaises(ValueError): fixture.runtime.status({},amo_scratch_pending_intent=fixture.intent)
+            with self.assertRaisesRegex(ValueError,'Mixed'):
+                fixture.runtime.status({},amo_scratch_pending_intent=fixture.intent,
+                                       scratch_successor_pending_intent=fixture.intent)
+
 class ChainTests(unittest.TestCase):
     def setUp(self):
         self.layout=types.SimpleNamespace(capacity=R.SCRATCH_CAPACITY_PATH)
@@ -234,6 +314,121 @@ class ChainTests(unittest.TestCase):
 
 
 
+class PriorStageBridgeTests(unittest.TestCase):
+    def setUp(self):
+        self.i = load('bridge_stage_fixture', 'install_lifecycle.py')
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        self.root = Path(t.name)
+        self.inputs = self.root/'tmp'/('proofofwork-amo-installer-'+self.i.PRIOR_AMO_RELEASE+'-initial')
+        self.inputs.mkdir(parents=True, mode=0o700)
+        restored = {k: ('old '+k).encode() for k in ('stager', 'publisher')}
+        self.new = {k: ('new '+k).encode() for k in restored}
+        hashes = {k: R.sha(v) for k,v in restored.items()}
+        # Same inode/receipt state machine as the archived, hash-pinned verifier.
+        # Substitute only test hashes and an isolated fixture installer.
+        raw = (ROOT/'deploy/publish/amo_stage_installer.py').read_bytes()
+        raw += ('\nPREVIOUS = ' + repr(hashes) + '\n').encode()
+        self.installer = self.inputs/'amo_stage_installer.py'
+        self.installer.write_bytes(raw)
+        self.installer.chmod(0o600)
+        pinned = patch.object(self.i, 'PRIOR_AMO_INSTALLER', R.sha(raw)); pinned.start(); self.addCleanup(pinned.stop)
+        remote = {'__name__': 'fixture', '__file__': str(self.installer)}
+        exec(compile(raw, str(self.installer), 'exec'), remote)
+        self.tool = remote
+        self.approval = {'schema':'pow-ui-amo-direct-stage-approval-v1',
+            'commit':'56da86069b0064a52ddc2880c2b3f00e3a651fd1','tree':'25b9f4bcbcb980803efddc53766788c8d4c9daaf',
+            'releaseId':self.i.PRIOR_AMO_RELEASE,'publicationAttempt':'initial','buildReceiptSha256':'b'*64,
+            'sourceSha256':'c'*64,'surfacesSha256':'d'*64,'inventorySha256':'e'*64,'pair':remote['PAIR'],
+            'helperHashes':{k:R.sha(v) for k,v in self.new.items()}}
+        for name,path in [('config',self.i.CONFIG),('state',self.i.STATE)]:
+            f=self.root/path.lstrip('/')
+            f.parent.mkdir(parents=True)
+            f.write_bytes(name.encode()); f.chmod(0o600)
+            self.approval[name+'Sha256'] = R.sha(name.encode())
+        self.digest = R.sha(R.encoded(self.approval))
+        self.request = dict(priorStageApprovalSha256=self.digest,
+            configSha256=self.approval['configSha256'],stateSha256=self.approval['stateSha256'])
+        for filename,content in [('amo-approval.json',self.approval),('amo-helper-frame.json',
+                {'approvalSha256':self.digest,'helpers':{k:base64.b64encode(v).decode() for k,v in self.new.items()}})]:
+            f=self.inputs/filename
+            f.write_bytes(R.encoded(content));f.chmod(0o600)
+        self.store = self.root/remote['STORE'].relative_to('/')
+        self.store.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.store.parent.chmod(0o700)
+        self.binaries = {k:self.root/p.relative_to('/') for k,p in remote['BINARY'].items()}
+        for k,p in self.binaries.items():
+            p.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            p.parent.chmod(0o700)
+            p.write_bytes(restored[k]);p.chmod(0o755)
+
+    def check(self):
+        return self.i.prior_stage_reversal(self.root,self.request)
+
+    def act(self, phase, stop=None):
+        def checkpoint(value):
+            if value == stop: raise RuntimeError('fixture boundary')
+        return self.tool['operate'](phase,self.store,self.binaries,self.approval,self.new,
+            lambda: None,lambda: None,checkpoint)
+
+    def test_active_mixed_and_merely_prepared_refuse_and_closed_is_bound(self):
+        self.act('prepare')
+        with self.assertRaisesRegex(ValueError,'terminal reversal'): self.check()
+        with self.assertRaisesRegex(RuntimeError,'fixture boundary'):
+            self.act('apply','exchange-stager-after')
+        with self.assertRaisesRegex(ValueError,'terminal reversal'): self.check()
+        self.act('apply')
+        with self.assertRaisesRegex(ValueError,'terminal reversal'): self.check()
+        self.act('rollback')
+        proof = self.check()
+        self.assertEqual(proof['positions'], {'stager':'before','publisher':'before'})
+        plan = {'before':{'priorStageReversal':proof},'request':dict(self.request,mode='completed-cycle')}
+        R.verify_prior_stage_reversal(plan)
+        for key,bad in [('active',True),('rollbackComplete',False),('positions',{'stager':'after'}),
+                        ('approvalSha256','0'*64),('installedSha256',''),('intentSha256',None),('rolledBackSha256','bad')]:
+            with self.subTest(key=key),patch.dict(proof,{key:bad}),self.assertRaises(ValueError):
+                R.verify_prior_stage_reversal(plan)
+        staged = self.binaries['stager']
+        copy_path = staged.with_suffix('.copy')
+        copy_path.write_bytes(staged.read_bytes());copy_path.chmod(0o755);copy_path.replace(staged)
+        with self.assertRaises(ValueError):
+            self.check()
+
+    def test_bridge_refuses_without_the_locked_reversal_before_any_write(self):
+        old = json.loads((ROOT/A.GRANT).read_bytes())['preBridge']
+        config = {'package':{'path':'/old-tools','sha256':old['packageManifestSha256']}}
+        grant_raw = (ROOT/A.GRANT).read_bytes()
+        payload = {'manifest':{'files':{A.GRANT:{'sha256':A.APPROVAL}}},
+                   'files':{A.GRANT:{'base64':base64.b64encode(grant_raw).decode()}},
+                   'config':{'package':{'path':'/new-tools','sha256':'0'*64}}}
+        before = {'completedReview':{'state':{}},'configBase64':base64.b64encode(R.encoded(config)).decode()}
+        plan = {'schema':'pow-ui-retention-upgrade-plan-v1','scopeApprovalSha256':self.i.APPROVAL,
+                'payload':payload,'request':{'mode':'completed-cycle','configSha256':old['configSha256'],
+                'stateSha256':old['stateSha256']},'before':before}
+        lock = self.root/'run/proofofwork-ui/deploy.lock'
+        lock.parent.mkdir(parents=True, mode=0o700)
+        lock.touch(mode=0o600)
+        with patch.object(self.i, 'validate_payload'), patch.object(self.i, 'upgrade_inventory_locked',return_value=before), \
+             patch.object(self.i,'read_bound',return_value=R.encoded({'files':{}})), patch.object(self.i,'save') as writer:
+            with self.assertRaisesRegex(ValueError,'verified predecessor stage reversal'):
+                self.i.upgrade_remote(plan,self.root)
+            writer.assert_not_called()
+        self.assertFalse((self.root/'new-tools').exists())
+
+    def test_prior_frame_approval_installer_and_state_are_bound(self):
+        self.act('prepare');self.act('apply');self.act('rollback')
+        with patch.dict(self.request,priorStageApprovalSha256='f'*64), self.assertRaisesRegex(ValueError,'digest'):
+            self.check()
+        with patch.dict(self.request,stateSha256='1'*64), self.assertRaisesRegex(ValueError,'lifecycle'):
+            self.check()
+        for name in ('amo-helper-frame.json','amo_stage_installer.py'):
+            target=self.inputs/name; raw=target.read_bytes()
+            target.write_bytes(raw+b' ')
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.check()
+            target.write_bytes(raw)
+
+
 class PredecessorScopeTests(unittest.TestCase):
     def setUp(self):
         self.installer=load('successor_scope_installer','install_lifecycle.py')
@@ -257,7 +452,11 @@ class PredecessorScopeTests(unittest.TestCase):
         m=self.installer;p=self.payload(m.PRE_SIX_GIB_FILES)
         m.validate_payload(p,allow_legacy=True)
         with self.assertRaisesRegex(ValueError,'file scope'):m.validate_payload(p)
+        m.validate_payload(self.payload(m.SIX_GIB_FILES),allow_legacy=True)
+        with self.assertRaisesRegex(ValueError,'file scope'):m.validate_payload(self.payload(m.SIX_GIB_FILES))
         m.validate_payload(self.payload(m.FILES))
+        self.assertEqual(m.SIX_GIB_FILES, M.SUCCESSOR_PACKAGE_FILES)
+        self.assertEqual(m.FILES, R.PACKAGE_FILES)
     def test_arbitrary_missing_and_extra_scopes_refuse(self):
         m=self.installer;old=set(m.PRE_SIX_GIB_FILES)
         for scope in (old-{'deploy/ui-retention/custody.py'},old|{'arbitrary.py'},set(m.FILES)-{'deploy/ui-retention/scratch_successor.py'}):

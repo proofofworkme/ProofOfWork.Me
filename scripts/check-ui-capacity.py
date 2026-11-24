@@ -43,7 +43,7 @@ class CapacityTests(unittest.TestCase):
         ))
         self.assertEqual(capacity.ROOT_RESERVE_BYTES, 8 * 1024**3)
         self.assertEqual(capacity.GROWTH_RESERVE_BYTES, 64 * 1024**2)
-        self.assertEqual(capacity.MAX_DEPLOY_SCRATCH_BYTES, 6 * 1024**3)
+        self.assertEqual(capacity.MAX_DEPLOY_SCRATCH_BYTES, 7 * 1024**3)
         self.assertEqual(capacity.INODE_RESERVE, 128)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -333,7 +333,15 @@ class StagerCapacityTests(unittest.TestCase):
                     self.assertIn("stage-incoming-activity", self.phases)
 
     def test_success_rechecks_copies_compatibility_dedup_and_publication(self):
+        prior = self.staging / "proofofwork-www-stage-56da86069b00-20261123T214728Z"
+        prior.mkdir(mode=0o755)
+        (prior / "index.html").write_text("previous private stage")
+        (prior / "index.html").chmod(0o644)
+        protected = {root: (root.stat().st_ino, stage.tree_fingerprint(root))
+                     for root in (prior, self.live)}
         self.assertEqual(self.run_stage(deduplicate=True), 0)
+        for root, identity in protected.items():
+            self.assertEqual((root.stat().st_ino, stage.tree_fingerprint(root)), identity)
         self.assertTrue(self.stage_root.exists())
         for phase in ("stage-private-root", "stage-live-copy", "stage-compatibility-file", "stage-dedup-link", "stage-atomic-publication"):
             self.assertIn(phase, self.phases)

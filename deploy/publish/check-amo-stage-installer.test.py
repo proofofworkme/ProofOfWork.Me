@@ -44,7 +44,7 @@ class InstallFixture(unittest.TestCase):
         return {'schema':'pow-ui-amo-direct-stage-approval-v1','commit':'a'*40,'tree':'b'*40,
                 'releaseId':'a'*12+'-20261124T001000Z','publicationAttempt':'initial',
                 'buildReceiptSha256':'d'*64,'sourceSha256':'1'*64,'surfacesSha256':'2'*64,'inventorySha256':'3'*64,
-                'pair':dict(tool.PAIR),'configSha256':tool.CONFIG_SHA,'stateSha256':tool.STATE_SHA,
+                'pair':dict(tool.PAIR),'configSha256':'4'*64,'stateSha256':'5'*64,
                 'helperHashes':{k:tool.sha(v) for k,v in self.candidates.items()}}
 
     @property
@@ -253,6 +253,85 @@ class InstallFixture(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'clean'):
                 tool.pack(grant,build,closed,self.base/'bad',repo)
         self.assertFalse((self.base/'bad').exists())
+
+    def test_migrated_source_and_installed_controller_pins(self):
+        evidence = self.base/'evidence'
+        evidence.mkdir(mode=0o700)
+        config_path = self.base/'config'
+        code = b'# fixture lifecycle controller\n'
+        files = {tool.CONTROLLER: {'sha256': tool.sha(code), 'bytes':len(code)}}
+        manifest = {'schema':'pow-ui-retention-package-v1','sourceCommit':self.grant['commit'],
+                    'sourceTree':self.grant['tree'],'files':files}
+        raw = tool.encoded(manifest)
+        pin = tool.sha(raw)
+        package = evidence/('ui-lifecycle-tools-'+pin)
+        controller = package/tool.CONTROLLER
+        controller.parent.mkdir(parents=True,mode=0o700)
+        controller.write_bytes(code)
+        (package/'package.json').write_bytes(raw)
+        config = {'package':{'path':str(package),'sha256':pin},'sourceCommit':self.grant['commit'],
+                  'sourceTree':self.grant['tree'],'controller':{'path':str(controller),'sha256':tool.sha(code)}}
+        config_path.write_bytes(tool.encoded(config))
+        for item in (config_path,controller,package/'package.json'):
+            item.chmod(0o600)
+        self.grant['configSha256'] = tool.sha(config_path.read_bytes())
+        with mock.patch.object(tool,'CONFIG',config_path), mock.patch.object(tool,'PACKAGE_DIRECTORY',evidence), \
+             mock.patch.object(tool,'PACKAGE_FILES_SHA',tool.sha(tool.encoded(files))):
+            self.assertEqual(tool.migrated_controller(self.grant),(controller,code))
+            for key in ('commit','tree','configSha256'):
+                with self.subTest(key=key), mock.patch.dict(self.grant,{key:'3'*len(self.grant[key])}), self.assertRaises(ValueError):
+                    tool.migrated_controller(self.grant)
+            with mock.patch.object(tool,'PACKAGE_FILES_SHA','0'*64), self.assertRaisesRegex(ValueError,'committed files'):
+                tool.migrated_controller(self.grant)
+            controller.write_bytes(code + b'# drift')
+            with self.assertRaisesRegex(ValueError,'installed lifecycle controller'):
+                tool.migrated_controller(self.grant)
+
+    def test_require_completed_and_current_7g_migration(self):
+        protected = {k:self.grant[k] for k in ('configSha256','stateSha256','pair')}
+        intent = {'commit':self.grant['commit'],'tree':self.grant['tree'],'protected':protected}
+        path = self.base/'scratch-intent.json'
+        path.write_bytes(tool.encoded(intent))
+        path.chmod(0o600)
+        replacement_path=mock.patch.object(tool,'SCRATCH_INTENT',path)
+        replacement_path.start()
+        self.addCleanup(replacement_path.stop)
+        scratch = {'model':'verified-ui-scratch-successor-v1','approvalSha256':tool.SCRATCH_APPROVAL,
+                   'installedSha256':'7'*64,'intentSha256':tool.sha(path.read_bytes()),'scratchBudgetBytes':7*1024**3}
+        status = {'ok':True,'publicationHealthy':True,'retentionComplete':True,'unfinishedIntents':[],
+                  'configSha256':self.grant['configSha256'],'stateSha256':self.grant['stateSha256'],
+                  'pair':dict(tool.PAIR),'verifiedScratchCapacity':scratch,'binding':{'scratchCapacity':dict(scratch)}}
+        tool.require_completed_migration(status,self.grant)
+        for key,replacement in [('scratchBudgetBytes',6*1024**3),('approvalSha256','0'*64),
+                                ('installedSha256',None),('model','pending')]:
+            bad = {**scratch,key:replacement}
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                tool.require_completed_migration({**status,'verifiedScratchCapacity':bad,'binding':{'scratchCapacity':bad}},self.grant)
+        for key,replacement in [('binding',{}),('unfinishedIntents',['pending']),('stateSha256','0'*64),
+                                ('verifiedScratchCapacity',None)]:
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                tool.require_completed_migration({**status,key:replacement},self.grant)
+        with self.assertRaisesRegex(ValueError,'exact migrated completion'):
+            tool.require_completed_migration({**status,'stateSha256':'3'*64},{**self.grant,'stateSha256':'3'*64})
+        path.write_bytes(b'{}')
+        with self.assertRaisesRegex(ValueError,'migration intent'):
+            tool.require_completed_migration(status,self.grant)
+        for key,old in [('configSha256',tool.PRIOR_CONFIG_SHA),('stateSha256',tool.PRIOR_STATE_SHA)]:
+            with self.subTest(key=key),mock.patch.dict(self.grant,{key:old}),self.assertRaisesRegex(ValueError,'baseline'):
+                tool.checked_approval(self.grant)
+
+    def test_reviewed_package_matches_sources_and_native_helper(self):
+        installer = ROOT/'deploy/ui-retention/install_lifecycle.py'
+        spec = importlib.util.spec_from_file_location('fixture_lifecycle_package',installer)
+        package = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(package)
+        files = {}
+        for name in package.FILES:
+            raw = (ROOT/name).read_bytes()
+            files[name] = {'sha256':tool.sha(raw),'bytes':len(raw)}
+        self.assertEqual(tool.sha(tool.encoded(files)),tool.PACKAGE_FILES_SHA)
+        self.assertEqual(files['deploy/proofofwork-ui-capacity.py']['sha256'],tool.CAPACITY_SHA)
+        self.assertIn(tool.SCRATCH_APPROVAL,{row['sha256'] for row in files.values()})
 
     def test_context_drift_after_first_exchange_blocks_until_reconciled(self):
         self.run_action('prepare')

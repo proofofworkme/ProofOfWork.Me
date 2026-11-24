@@ -1,0 +1,36 @@
+{
+  "schema": "pow-ui-scratch-successor-approval-v1",
+  "migrationId": "ui-scratch-6-to-7-gib-20261124",
+  "host": "77.42.91.106",
+  "scope": "Increase the retained UI deployment scratch ceiling from 6 GiB to 7 GiB on the protected AMO staging host. The migration preserves existing data and every other capacity limit. Its execution requires separate operator authorization.",
+  "target": {
+    "path": "/usr/local/sbin/proofofwork-ui-capacity",
+    "source": "deploy/proofofwork-ui-capacity.py",
+    "beforeSha256": "dfcee2f385e84c42aa98529dd4926fc27c5c6fb4bd0c50b3905b3a3248141df3",
+    "afterSha256": "d38a524da2d9ba5c035dc62acf4880d7235f32d49e7a4c0d7c1a77f6715aae99"
+  },
+  "priorScratchBytes": 6442450944,
+  "scratchBytes": 7516192768,
+  "unchangedLimits": {
+    "rootReserveBytes": 8589934592,
+    "growthReserveBytes": 67108864,
+    "inodeReserve": 128,
+    "backupBudgetBytes": 19327352832,
+    "transportBudgetBytes": 9730785280
+  },
+  "preBridge": {
+    "configSha256": "bbce6be80e95047760f526550c30ba78f1515a4fd84eba3f7afb39970ebd15d6",
+    "stateSha256": "5a494c50278949e3b44efd25ac96eacfb071c437a36d47b2bb36f4367beb7a1b",
+    "stateRevision": 337,
+    "pair": {
+      "current": "2084747c3f8c-20261118T181547Z",
+      "previous": "9f18a0ce7032-20261118T004519Z"
+    },
+    "packageManifestSha256": "686eef5c6d3c9132e0ec2f0c0902867070f1eaa0d25679d2b3a7d6d89ec03ac3"
+  },
+  "predecessorAuthority": {
+    "approvalSha256": "fc9c1970f3c7866f75851972cbfa51e7464303f9200ba54182b937e80c3a8a3f",
+    "installedSha256": "6b1d53966039692e477ebfe68f734ba7267e1945024e84291fb3571f3f5791f5",
+    "intentSha256": "36275b015400e00567f61a8c83fc6b043ae412774e0b54d35eabf75bbe190027"
+  }
+}

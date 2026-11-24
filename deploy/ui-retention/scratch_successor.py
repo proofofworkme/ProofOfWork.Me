@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import stat
+from types import SimpleNamespace
 
 SCRATCH_APPROVAL = 'fc9c1970f3c7866f75851972cbfa51e7464303f9200ba54182b937e80c3a8a3f'
 SCRATCH_GRANT = 'audits/2026-11-18-ui-scratch-capacity-approval.json'
@@ -34,13 +35,26 @@ CAPACITY_PATH, NAMES = SCRATCH_CAPACITY_PATH, SCRATCH_NAMES
 SUCCESSOR_PACKAGE_FILES = ('audits/2026-10-16-ui-retention-repair-approval.json', 'audits/2026-10-16-ui-retention-repair-proposal.json', 'deploy/audit30/ui-storage.py', 'deploy/audit30/ui-release-policy.py', 'deploy/proofofwork-ui-verified-retention.py', 'deploy/ui-retention/custody.py', 'deploy/ui-retention/inventory.py', 'deploy/ui-retention/removal.py', 'deploy/ui-retention/lifecycle_remote.py', 'deploy/ui-retention/install_lifecycle.py', 'deploy/ui-retention/lifecycle.py', 'deploy/ui-retention/retirement_receipt.py', 'deploy/ui-retention/retirement_transition.py', 'deploy/ui-retention/retirement_controller.py', 'deploy/ui-retention/failed_prepare_repair.py', 'deploy/ui-retention/failed_prepare_review.py', 'deploy/ui-retention/reconcile_failed_prepare.py', 'deploy/ui-retention/transport_retirement.py', 'deploy/ui-retention/scratch_successor.py', 'deploy/ui-scratch-capacity/successor_installer.py', 'deploy/ui-stream-tools/installer.py', 'audits/2026-11-18-ui-scratch-capacity-approval.json', 'deploy/proofofwork-ui-capacity.py')
 
 
-def verify_position(layout, runtime, *, allow_pending=False):
+# Both successor journals have the same immutable receipt format. Each caller
+# selects one pinned edge. A later exchange can authenticate the historical
+# live inode by its preserved descriptor while the backup inode remains in place.
+BOOST_EDGE = SimpleNamespace(approval=APPROVAL, migration='ui-scratch-5-5-to-6-gib-20261118',
+    prior_sha=PRIOR_SHA, next_sha=NEXT_SHA, prior_bytes=PRIOR_BYTES, next_bytes=NEXT_BYTES,
+    predecessor=PREDECESSOR_AUTHORITY)
+
+
+def verify_position(layout, runtime, *, allow_pending=False, capacity_descriptor=None):
+    return verify_edge(layout, runtime, BOOST_EDGE, SUCCESSOR_PACKAGE_FILES,
+                       allow_pending=allow_pending, capacity_descriptor=capacity_descriptor)
+
+
+def verify_edge(layout, runtime, edge, package_files, *, allow_pending=False, capacity_descriptor=None):
     """Strict journal authentication; pending access is for the locked installer only."""
     if getattr(layout, 'capacity', None) != SCRATCH_CAPACITY_PATH:
         return None
     require, read_json = runtime.require, runtime.read_json
     floor_descriptor = runtime.floor_descriptor
-    journal = SCRATCH_DIRECTORY
+    journal = SCRATCH_DIRECTORY.parent / edge.approval
     if not os.path.lexists(journal):
         return None
     info = journal.lstat()
@@ -49,29 +63,29 @@ def verify_position(layout, runtime, *, allow_pending=False):
             'Unsafe scratch migration journal')
     names = set(os.listdir(journal))
     require(names <= SCRATCH_NAMES, 'Unexpected scratch migration journal entry')
-    grant, _ = read_json(journal / 'approval.json', SCRATCH_APPROVAL)
+    grant, _ = read_json(journal / 'approval.json', edge.approval)
     require(grant['schema'] == 'pow-ui-scratch-successor-approval-v1'
-            and grant['migrationId'] == 'ui-scratch-5-5-to-6-gib-20261118'
+            and grant['migrationId'] == edge.migration
             and grant['host'] == '77.42.91.106'
             and grant['target'] == {'path': str(SCRATCH_CAPACITY_PATH),
                 'source': 'deploy/proofofwork-ui-capacity.py',
-                'beforeSha256': SCRATCH_PRIOR_SHA, 'afterSha256': SCRATCH_NEXT_SHA}
-            and grant['priorScratchBytes'] == SCRATCH_PRIOR_BYTES and grant['scratchBytes'] == SCRATCH_NEXT_BYTES,
+                'beforeSha256': edge.prior_sha, 'afterSha256': edge.next_sha}
+            and grant['priorScratchBytes'] == edge.prior_bytes and grant['scratchBytes'] == edge.next_bytes,
             'Scratch grant scope differs')
     intent, intent_sha = read_json(journal / 'intent.json')
     require(set(intent) == {'schema', 'approvalSha256', 'commit', 'tree', 'files', 'protected', 'predecessorAuthority'}
             and intent['schema'] == 'pow-ui-scratch-successor-intent-v1'
-            and intent['approvalSha256'] == SCRATCH_APPROVAL
+            and intent['approvalSha256'] == edge.approval
             and re.fullmatch('[0-9a-f]{40}', intent['commit'])
             and re.fullmatch('[0-9a-f]{40}', intent['tree'])
             and set(intent['files']) == {'capacity'}, 'Scratch intent scope differs')
-    require(grant['predecessorAuthority'] == PREDECESSOR_AUTHORITY
-            and intent['predecessorAuthority'] == PREDECESSOR_AUTHORITY, 'Predecessor authority differs')
-    read_json(PREDECESSOR_DIRECTORY / 'installed.json', PREDECESSOR_AUTHORITY['installedSha256'])
-    protected = runtime.scratch_bridge_baseline(intent, grant, package_files=SUCCESSOR_PACKAGE_FILES)
+    require(grant['predecessorAuthority'] == edge.predecessor
+            and intent['predecessorAuthority'] == edge.predecessor, 'Predecessor authority differs')
+    read_json((SCRATCH_DIRECTORY.parent / edge.predecessor['approvalSha256']) / 'installed.json', edge.predecessor['installedSha256'])
+    protected = runtime.scratch_bridge_baseline(intent, grant, package_files=package_files)
     pair = intent['files']['capacity']
     require(set(pair) == {'before', 'after'}, 'Scratch helper scope differs')
-    for side, digest in [('before', SCRATCH_PRIOR_SHA), ('after', SCRATCH_NEXT_SHA)]:
+    for side, digest in [('before', edge.prior_sha), ('after', edge.next_sha)]:
         row = pair[side]; ident = row['identity']
         require(set(row) == {'sha256', 'identity', 'xattrs'} and row['sha256'] == digest
                 and len(ident) == 8 and all(type(v) is int for v in ident)
@@ -80,7 +94,8 @@ def verify_position(layout, runtime, *, allow_pending=False):
                 'Unsafe scratch helper descriptor')
     require(pair['before']['identity'][0] == pair['after']['identity'][0] == info.st_dev
             and pair['before']['identity'][1] != pair['after']['identity'][1], 'Scratch exchange is not distinct same-filesystem inodes')
-    live = floor_descriptor(SCRATCH_CAPACITY_PATH); saved = floor_descriptor(journal / 'capacity')
+    live = floor_descriptor(SCRATCH_CAPACITY_PATH) if capacity_descriptor is None else capacity_descriptor
+    saved = floor_descriptor(journal / 'capacity')
     if live == pair['before'] and saved == pair['after']:
         position = 'before'
     elif live == pair['after'] and saved == pair['before']:
@@ -88,7 +103,7 @@ def verify_position(layout, runtime, *, allow_pending=False):
     else:
         raise ValueError('Unrecognized scratch helper positions')
     qualification = {'schema': 'pow-ui-scratch-successor-qualified-v1', 'intentSha256': intent_sha,
-                     'authoritySha256': SCRATCH_APPROVAL, 'protected': protected}
+                     'authoritySha256': edge.approval, 'protected': protected}
     qualified, qualified_sha = read_json(journal / 'qualified.json')
     require(qualified == qualification, 'Scratch qualification differs')
     terminal = {'schema': 'pow-ui-scratch-successor-installed-v1', 'intentSha256': intent_sha,
@@ -147,13 +162,13 @@ def verify_position(layout, runtime, *, allow_pending=False):
     authority = None
     if not allow_pending and position == 'after':
         authority = {'model': 'verified-ui-scratch-successor-v1',
-                     'approvalSha256': SCRATCH_APPROVAL, 'intentSha256': intent_sha,
-                     'installedSha256': installed_sha, 'scratchBudgetBytes': SCRATCH_NEXT_BYTES,
-                     'predecessorAuthority': PREDECESSOR_AUTHORITY}
+                     'approvalSha256': edge.approval, 'intentSha256': intent_sha,
+                     'installedSha256': installed_sha, 'scratchBudgetBytes': edge.next_bytes,
+                     'predecessorAuthority': edge.predecessor}
     return {'authority': authority, 'predecessorDescriptor': pair['before'],
             'position': position, 'priorCapacity': pair['before'], 'journal': str(journal),
             'intentSha256': intent_sha, 'qualificationSha256': qualified_sha,
-            'authoritySha256': SCRATCH_APPROVAL, 'installedSha256': installed_sha,
+            'authoritySha256': edge.approval, 'installedSha256': installed_sha,
             'protected': protected, 'intent': intent}
 
 

@@ -42,7 +42,7 @@ class CompleteSequence(unittest.TestCase):
         self.assertEqual(M.LIMITS, {
             'backupBudgetBytes': 18 * 1024**3,
             'transportBudgetBytes': 9 * 1024**3 + 64 * 1024**2,
-            'scratchBudgetBytes': 6 * 1024**3,
+            'scratchBudgetBytes': 7 * 1024**3,
             'rootReserveBytes': 8 * 1024**3,
             'growthReserveBytes': 64 * 1024**2, 'inodeReserve': 128})
         census = self.exact_fit()
@@ -206,11 +206,13 @@ class CompleteSequence(unittest.TestCase):
         census['usage']['scratch'] = 2874064896
         required = M.requirements(plan, census)
         self.assertEqual(required['additionalBytes']['scratch'], 2130059264)
-        self.assertEqual(M.admit(required, census)['headroom']['scratch'], 1438326784)
+        self.assertEqual(M.admit(required, census)['headroom']['scratch'], 2512068608)
+        self.assertEqual(6 * 1024**3 - census['usage']['scratch']
+                         - required['additionalBytes']['scratch'], 1438326784)
         # The same allocations left exactly this much room under the sealed Boost predecessor.
         self.assertEqual(11 * 1024**3 // 2 - census['usage']['scratch']
                          - required['additionalBytes']['scratch'], 901455872)
-        for different_limit in (11 * 1024**3 // 2, 13 * 1024**3 // 2):
+        for different_limit in (11 * 1024**3 // 2, 6 * 1024**3, 13 * 1024**3 // 2, 7 * 1024**3 + 1):
             with self.subTest(scratch_limit=different_limit):
                 mismatched = copy.deepcopy(census)
                 mismatched['limits']['scratchBudgetBytes'] = different_limit
@@ -279,7 +281,8 @@ class TransportPhaseOrder(unittest.TestCase):
                        ('sync', 'durable_json', 'rename_new')]
         scope = {'__name__': '_transport_order_fixture'}
         exec(compile(ast.Module(body=definitions, type_ignores=[]), str(path), 'exec'), scope)
-        code = compile(ast.Module(body=nodes[start:finish + 1], type_ignores=[]), str(path), 'exec')
+        direct = next(node for node in nodes if assignment(node, 'direct'))
+        code = compile(ast.Module(body=[direct, *nodes[start:finish + 1]], type_ignores=[]), str(path), 'exec')
         class ReachedStager(Exception):
             pass
         with tempfile.TemporaryDirectory(prefix='pow-scratch-order-') as temporary:

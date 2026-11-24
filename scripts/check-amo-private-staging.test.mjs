@@ -8,6 +8,10 @@ const installedStaging = "deploy/publish/check-amo-installed-staging.test.py";
 
 for (const suite of [
   "deploy/publish/check-build-capacity.test.py",
+  "scripts/check-ui-capacity.py",
+  "scripts/check-ui-release-sequence-capacity.py",
+  "deploy/ui-retention/check-scratch-successor.test.py",
+  "deploy/ui-scratch-capacity/check-successor-installer.test.py",
   "scripts/check-amo-direct-stage-design.py",
   "deploy/publish/check-amo-exchange-scratch.test.py",
   "deploy/publish/check-closed-input.test.py",

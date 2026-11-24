@@ -129,7 +129,7 @@ class ExchangeScratch(unittest.TestCase):
         self.assertEqual(admitted["headroom"]["scratch"], swapped - peak - 1)
         self.assertEqual(census["usage"]["scratch"] + swapped, cap + 1)
 
-        # Repeat at the unmodified native six-GiB ceiling using an exact
+        # Repeat at the installed native ceiling using an exact
         # additional reservation to stand in for unrelated retained bytes.
         exact = native.MAX_DEPLOY_SCRATCH_BYTES - self.after_bytes
         self.assertEqual(native.check_deploy_scratch(self.after, exact, "fixture-fit")["allocatedBytes"],
@@ -139,6 +139,31 @@ class ExchangeScratch(unittest.TestCase):
                          self.after_bytes - self.before_bytes - 1)
         after = self.refusal(self.after, exact + 1)
         self.assertEqual(after["allocatedBytes"] + after["additionalBytes"], after["maximumBytes"] + 1)
+
+    def test_seven_gib_retains_prior_stage_and_refuses_six_gib_observations(self):
+        # Use the Nov 24 census and the previous receiver's complete scratch
+        # reservation as a size example. A successor needs its own reservation.
+        used, charge = 6_161_629_184, 960_528_384
+        limits = sequence.LIMITS
+        census = {"limits": dict(limits), "usage": {"backup": 0, "transport": 0, "scratch": used},
+                  "availableBytes": limits["rootReserveBytes"] + limits["growthReserveBytes"] + charge,
+                  "availableInodes": limits["inodeReserve"] + 1}
+        required = {"schema": "pow-ui-whole-release-capacity-v1", "limits": dict(limits),
+                    "additionalBytes": {"scratch": charge, "backup": 0, "transport": 0, "root": charge},
+                    "additionalInodes": 1, "retirementCreditBytes": 0, "futureHardlinkCreditBytes": 0}
+        headroom = sequence.admit(required, census)["headroom"]
+        self.assertEqual(headroom["scratch"], 394_035_200)
+        self.assertEqual(headroom["root"], 0)
+        self.assertEqual(used + charge - 6 * 1024**3, 679_706_624)
+        with patch.dict(required["limits"], scratchBudgetBytes=6 * 1024**3):
+            with self.assertRaisesRegex(ValueError, "Unknown whole-release capacity contract"):
+                sequence.admit(required, census)
+        with patch.object(native, "MAX_DEPLOY_SCRATCH_BYTES", 6 * 1024**3):
+            with self.assertRaisesRegex(ValueError, "Installed storage limits differ"):
+                sequence.capture(native)
+        with patch.dict(census, availableBytes=census["availableBytes"] - 1):
+            with self.assertRaisesRegex(ValueError, '"root": 1'):
+                sequence.admit(required, census)
 
     def test_direct_exchange_projection_enforces_independent_limits(self):
         old = self.before.parent / "www"
@@ -233,7 +258,7 @@ class ExchangeScratch(unittest.TestCase):
 
     def test_interrupted_exchange_cannot_close_ordinary_budget_with_zero_requested(self):
         # Scale only the numeric ceiling. du and the installed decision execute
-        # against real files, without allocating six GiB to represent retained data.
+        # against real files, using a smaller ceiling to represent retained data.
         with patch.object(native, "MAX_DEPLOY_SCRATCH_BYTES", self.after_bytes - 1):
             before = native.check_deploy_scratch(self.before, 0, "fixture-original-position")
             self.assertGreater(before["maximumBytes"] - before["allocatedBytes"], 0)

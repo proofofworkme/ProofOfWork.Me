@@ -91,7 +91,7 @@ class TransactionTests(unittest.TestCase):
         self.original=self.descriptor(self.live)
 
     def rollback_check(self,grant):
-        C.need(self.available,'Rollback refuses scratch above the old 5.5 GiB limit')
+        C.need(self.available,'Rollback refuses scratch above the prior ceiling')
         self.checks.append('rollback-budget')
 
     def authority(self,layout,allow_pending=False):
@@ -220,7 +220,7 @@ class TransactionTests(unittest.TestCase):
 
     def test_rollback_above_old_limit_does_not_exchange_or_create_intent(self):
         self.op('prepare');self.op('apply');before=self.descriptor(self.live);self.available=False
-        with self.assertRaisesRegex(ValueError,'old 5.5 GiB'):self.op('rollback')
+        with self.assertRaisesRegex(ValueError,'prior ceiling'):self.op('rollback')
         self.assertEqual(before,self.descriptor(self.live));self.assertFalse((self.journal/'reversing.json').exists())
 
     def test_rollback_rechecks_budget_after_durable_intent(self):
@@ -340,7 +340,7 @@ class BudgetTests(unittest.TestCase):
                         return_value=(str(amount)+'	'+str(path)+chr(10)).encode()) as measure:
                     if allowed:C.rollback_budget(grant)
                     else:
-                        with self.assertRaisesRegex(ValueError,'old 5.5 GiB'):C.rollback_budget(grant)
+                        with self.assertRaisesRegex(ValueError,'prior ceiling'):C.rollback_budget(grant)
                     self.assertIn('--one-file-system',measure.call_args.args[0])
                     self.assertIn('--block-size=1',measure.call_args.args[0])
 
@@ -356,8 +356,20 @@ class InstalledCliTests(unittest.TestCase):
              patch.object(C,'operate',return_value={'ok':True}) as operate, \
              patch.object(C.os,'umask'),contextlib.redirect_stdout(io.StringIO()):
             C.main()
-        installed.assert_called_once_with('a'*40);source.assert_not_called();git.assert_not_called()
+        installed.assert_called_once_with('a'*40, amo=False);source.assert_not_called();git.assert_not_called()
         operate.assert_called_once_with('prepare','a'*40,'b'*40,ns,{},b'grant',b'candidate')
+
+    def test_installed_amo_cli_uses_only_the_selected_grant(self):
+        ns = {'manifest': {'sourceTree': 'b'*40}}
+        with patch.object(C.sys, 'argv', ['successor_installer.py', 'status', 'a'*40, '--installed', '--amo']), \
+             patch.object(C, 'installed_inputs', return_value=(ns, {}, b'scope', b'candidate')) as installed, \
+             patch.object(C, 'inputs') as source, patch.object(C, 'git') as git, \
+             patch.object(C, 'operate', return_value={'ok':True}), \
+             patch.object(C.os, 'umask'), contextlib.redirect_stdout(io.StringIO()):
+            C.main()
+        installed.assert_called_once_with('a'*40, amo=True)
+        source.assert_not_called()
+        git.assert_not_called()
 
 class InstalledInputTests(unittest.TestCase):
     """Actual byte readers; installed runtime authentication is a synthetic boundary."""
@@ -413,5 +425,125 @@ class InstalledInputTests(unittest.TestCase):
     def test_runtime_verification_failure_propagates(self):
         self.floor.installed_runtime=lambda *args:(_ for _ in ()).throw(ValueError('invalid installed runtime'))
         with self.assertRaisesRegex(ValueError,'invalid installed runtime'):C.installed_inputs(self.commit)
+
+class AmoTransactionTests(unittest.TestCase):
+    def setUp(self):
+        case = TransactionTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        self.case = case
+        scope = (C.ROOT / C.AMO_SCOPE).read_bytes()
+        ami = runpy.run_path(str(C.ROOT / C.AMO_SUCCESSOR))
+        self.assertEqual(sha(scope), ami['APPROVAL'])
+        case.grant = json.loads(scope)
+        case.raw = scope
+        case.new = (C.ROOT / case.grant['target']['source']).read_bytes()
+        old = case.new.replace(b'MAX_DEPLOY_SCRATCH_BYTES = 7 *', b'MAX_DEPLOY_SCRATCH_BYTES = 6 *')
+        case.live.write_bytes(old)
+        case.original = case.descriptor(case.live)
+        case.ns['amo'] = True
+        case.successor.APPROVAL = ami['APPROVAL']
+        case.successor.PRIOR_SHA = ami['PRIOR_SHA']
+        case.successor.NEXT_SHA = ami['NEXT_SHA']
+        self.assertEqual(sha(old), case.successor.PRIOR_SHA)
+        self.assertEqual(sha(case.new), case.successor.NEXT_SHA)
+        case.successor.verify_predecessor = lambda layout, floor, capacity_descriptor: case.predecessor(
+            layout, capacity_descriptor=capacity_descriptor)
+        def status(frame, *, amo_scratch_pending_intent=None):
+            if amo_scratch_pending_intent is not None:
+                return case.runtime.scratch_migration_status(amo_scratch_pending_intent)
+            return case.status(frame)
+        case.runtime.status = status
+        # Native capacity commands are simulated here; inode exchanges and journal operations are real.
+        self.exchange_budget = case.stack.enter_context(patch.object(C, 'exchange_budget'))
+        self.native_budget = C.native_budget
+        self.sentinels = []
+        for kind in ('live', 'rollback', 'private-stage', 'archive', 'surface-receipt', 'source-receipt'):
+            p = case.base / ('retained-' + kind)
+            p.write_bytes(('retained ' + kind).encode())
+            p.chmod(0o600)
+            self.sentinels.append((p, case.descriptor(p)))
+
+    def test_amo_install_retry_reverse_and_preserve(self):
+        case = self.case
+        case.op('prepare')
+        with self.assertRaises(Interrupted):
+            case.op('apply', case.fail('exchange-after'))
+        case.op('reconcile')
+        self.assertEqual(case.descriptor(case.live)['sha256'], case.successor.NEXT_SHA)
+        self.assertEqual(case.op('status')['authority']['position'], 'after')
+        case.available = False
+        with self.assertRaises(ValueError): case.op('rollback')
+        self.assertFalse((case.journal / 'reversing.json').exists())
+        case.available = True
+        case.op('rollback')
+        self.assertEqual(case.descriptor(case.live), case.original)
+        self.assertEqual(case.op('status')['authority']['position'], 'before')
+        with self.assertRaisesRegex(ValueError, 'Reversal already'): case.op('apply')
+        for path, descriptor in self.sentinels:
+            self.assertEqual(case.descriptor(path), descriptor)
+
+    def test_retry_after_exchange_rechecks_current_occupancy(self):
+        case = self.case
+        case.op('prepare')
+        with self.assertRaises(Interrupted):
+            case.op('apply', case.fail('exchange-after'))
+        self.exchange_budget.side_effect = ValueError('Capacity changed after exchange')
+        with self.assertRaisesRegex(ValueError, 'Capacity changed'): case.op('reconcile')
+        self.assertFalse((case.journal/'installed.json').exists())
+        self.assertFalse((case.journal/'verified.json').exists())
+        self.exchange_budget.side_effect = None
+        case.op('reconcile')
+        self.assertEqual(case.op('status')['authority']['position'], 'after')
+
+    def test_amo_digest_and_predecessor_refused_before_exchange(self):
+        case = self.case
+        case.op('prepare')
+        case.predecessor_available = False
+        with self.assertRaisesRegex(ValueError, 'Historical predecessor'): case.op('apply')
+        self.assertEqual(case.descriptor(case.live), case.original)
+        case.predecessor_available = True
+        case.new += b'# changed code\n'
+        with self.assertRaisesRegex(ValueError, 'Unapproved migration input'): case.op('apply')
+        # Even an internally matching new digest must not legitimize a second source edit.
+        altered = copy.deepcopy(case.grant)
+        altered['target']['afterSha256'] = sha(case.new)
+        with self.assertRaisesRegex(ValueError, 'outside the approved ceiling'): C.check_amo_helper(case.new, altered)
+
+    def test_amo_free_space_failure_precedes_exchange_or_reversal_intent(self):
+        case = self.case
+        case.op('prepare')
+        self.exchange_budget.side_effect = ValueError('Physical floor')
+        with self.assertRaisesRegex(ValueError, 'Physical floor'): case.op('apply')
+        self.assertEqual(case.descriptor(case.live), case.original)
+        self.assertFalse((case.journal / 'installed.json').exists())
+        self.exchange_budget.side_effect = None
+        case.op('apply')
+        self.native_budget.side_effect = ValueError('Physical floor')
+        with self.assertRaisesRegex(ValueError, 'Physical floor'): case.op('rollback')
+        self.assertFalse((case.journal / 'reversing.json').exists())
+        self.assertEqual(case.descriptor(case.live)['sha256'], case.successor.NEXT_SHA)
+
+    def test_exchange_budget_invokes_physical_guard_before_scratch(self):
+        # Exercise the production budget order against explicit synthetic native output.
+        case = self.case
+        pins = case.grant['unchangedLimits']
+        native = {'rootReserveBytes': pins['rootReserveBytes'], 'growthReserveBytes': pins['growthReserveBytes']}
+        capacity = {'status': 'sufficient', 'allocatedBytes': case.grant['scratchBytes'],
+                    'maximumBytes': case.grant['scratchBytes'], 'additionalBytes': 0, 'cleanupApproved': False}
+        real = runpy.run_path(str(HERE/'successor_installer.py'))
+        def frozen(replies):
+            return patch.object(subprocess, 'check_output', side_effect=[json.dumps(v).encode() for v in replies])
+        with frozen([native, capacity]) as command:
+            real['exchange_budget'](case.live, case.base, case.grant)
+            self.assertEqual([call.args[0][4] for call in command.call_args_list], ['check', 'check-scratch'])
+        with frozen([dict(native, growthReserveBytes=0)]) as command:
+            with self.assertRaisesRegex(ValueError, 'reserve differs'):
+                real['exchange_budget'](case.live, case.base, case.grant)
+            command.assert_called_once()
+        with frozen([native, dict(capacity, allocatedBytes=case.grant['scratchBytes']+1)]):
+            with self.assertRaisesRegex(ValueError, 'scratch admission differs'):
+                real['exchange_budget'](case.live, case.base, case.grant)
+
 
 if __name__=='__main__':unittest.main()
