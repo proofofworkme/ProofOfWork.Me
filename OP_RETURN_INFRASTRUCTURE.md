@@ -3904,6 +3904,13 @@ the Node ceiling to 31 GiB, leaving 950,132,736 bytes at that occupancy.
 It retains the 4 GiB run allowance, the 100 GiB free-space reserve and the
 independent 6 GiB UI scratch ceiling. No retirement is required.
 
+At 02:48:07 UTC on November 24 the Node pool held 29,363,253,248 bytes.
+With the 4 GiB run reservation, the replay build required 33,658,220,544
+bytes. The 31 GiB guard refused admission by 372,224,000 bytes. The
+32 GiB ceiling leaves 701,517,824 bytes of headroom at that occupancy.
+Physical free space measured 402,750,316,544 bytes against the independent
+111,669,149,696-byte requirement for a new run.
+
 The release plan binds `deploy/publish/build.py` to the committed source
 by SHA-256. The on-host build uses that release's reviewed builder and
 rechecks capacity under its single-writer lock. Run
