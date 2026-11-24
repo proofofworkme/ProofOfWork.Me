@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual as equal } from "node:util";
 import pg from "pg";
 import * as preflight from "./preflight.mjs";
-import { publishExpandedLiquidityReplay } from "./publish.mjs";
+import { publishExpandedLiquidityReplay, RehearsalRolledBackError } from "./publish.mjs";
 import { verifyReplayDeclaration } from "./qualify.mjs";
 import { sha256 } from "./storage.mjs";
 
@@ -110,14 +110,21 @@ export function publicationPeerClient(database, port, startRelay = startPostgres
     options:"-c search_path=pg_catalog,pg_temp -c timezone=UTC"});
 }
 
-export async function checkRawQualification(q, evidence) {
+export async function checkRawQualification(q, evidence, checkTime = () => {}) {
   requireInput(equal(verifyReplayDeclaration(await evidence.readDeclarationEvidence()),q.declaration),
     "Current declaration bytes, prevout or indexed position differ");
-  for (const b of q.blocks) {
-    const hex = await evidence.readRawBlock(b.hash);
-    requireInput(typeof hex === "string" && Number.isSafeInteger(b.rawBlockBytes) && b.rawBlockBytes>0 && b.rawBlockBytes<=4000000 &&
-      hex.length===2*b.rawBlockBytes && /^[0-9a-f]+$/u.test(hex) && sha256(Buffer.from(hex,"hex"))===b.rawBlockSha256,
-      "Qualified Core block bytes differ at "+b.height);
+  const checkBlock = async block => {
+    checkTime();
+    const hex = await evidence.readRawBlock(block.hash);
+    requireInput(typeof hex === "string" && Number.isSafeInteger(block.rawBlockBytes) &&
+      block.rawBlockBytes > 0 && block.rawBlockBytes <= 4_000_000 && hex.length === 2 * block.rawBlockBytes &&
+      /^[0-9a-f]+$/u.test(hex) && sha256(Buffer.from(hex, "hex")) === block.rawBlockSha256,
+      "Qualified Core block bytes differ at " + block.height);
+  };
+  // The RPC caps each encoded response at 9 MB. Finish both reads before starting another pair or reporting an error.
+  for (let index = 0; index < q.blocks.length; index += 2) {
+    const pair = await Promise.allSettled(q.blocks.slice(index, index + 2).map(checkBlock));
+    for (const result of pair) if (result.status === "rejected") throw result.reason;
   }
 }
 
@@ -141,28 +148,36 @@ export async function main(argv) {
     requireInput(port === q.databaseIdentity.port, "Qualified socket port differs");
     const socketIdentity = postgresSocketIdentity(port);
     admin = publicationPeerClient(q.databaseIdentity.databaseName,port);
+    // A server-enforced rehearsal deadline can close the idle peer during an external check.
+    let peerError;
+    if (a.mode === "rehearse") admin.on("error", error => { peerError = error; });
     await read.connect(); await admin.connect();
     const peer = await admin.query("SELECT session_user='postgres' AND inet_server_addr() IS NULL AS local_admin");
     requireInput(peer.rows[0]?.local_admin === true,"Local peer administrator required");
     const readIdentity = () => preflight.readDatabaseIdentity(read,api => preflight.readPeerDatabaseIdentity(admin,api));
     requireInput(equal(await readIdentity(),q.databaseIdentity),"Read session identity changed");
     const e = preflight.replayEvidence({client:read,freshClient:read,rpc});
-    const verifySource = async expected => {
+    const verifySource = async (expected, checkTime) => {
+      if (peerError) throw peerError;
       pinned(a.qualification,a.qualificationSha,32*1024**2);
       requireInput(equal(postgresSocketIdentity(port),socketIdentity) &&
         equal(await readIdentity(),q.databaseIdentity), "Live database backend or socket changed");
       if (a.mode === "publish") ensureDrained(a.holdSha,expected.sourceCommit);
-      await checkRawQualification(q,e);
+      await checkRawQualification(q,e,checkTime);
       return await preflight.verifySourceBinding(a.sourceManifest,a.sourceSha,expected,
         a.mode === "rehearse" ? "active" : "composed");
     };
     outcome = await publishExpandedLiquidityReplay({client:admin,qualificationBytes:bytes,qualificationSha256:a.qualificationSha,
       readTip:e.readTip,readCanonicalHash:e.readCanonicalHash,verifySource,mode:a.mode});
+    if (peerError) {
+      outcome = undefined;
+      throw new RehearsalRolledBackError(peerError);
+    }
     receiptFile(a.receipt+".result.json",{...intent,...outcome});
     console.log(JSON.stringify(outcome));
   } catch (error) {
     if (!outcome) receiptFile(a.receipt+".result.json",{...intent,status:"unsuccessful",
-      committed:"unverified",verifyWithQualificationSha256:a.qualificationSha});
+      committed:error instanceof RehearsalRolledBackError ? false : "unverified",verifyWithQualificationSha256:a.qualificationSha});
     throw error;
   } finally { await Promise.allSettled([admin?.end(),read.end()]); }
 }

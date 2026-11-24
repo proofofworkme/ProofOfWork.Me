@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual as equal } from "node:util";
+import { performance } from "node:perf_hooks";
 import { compareReplay } from "./records.mjs";
 import { MAX_GOVERNED_ROWS_PER_BLOCK, verifyRelationalEvidence } from "./relations.mjs";
 import { Block, Transaction } from "bitcoinjs-lib";
@@ -19,6 +20,9 @@ export const DECLARATION_PINS = Object.freeze({
   blockTransactionIndex: 591, protocolVout: 1, recordOrdinal: 0, registryPaymentVout: null,
   firstEligibleBlockOffset: 1, firstEligibleTransactionIndex: 0,
 });
+
+export const MAX_TIP_REFRESHES = 9;
+export const MAX_CATCH_UP_MILLISECONDS = 4 * 60 * 60 * 1000;
 
 function requireEvidence(valid, reason) {
   if (!valid) throw new Error(`AMO expanded replay: ${reason}`);
@@ -192,22 +196,32 @@ export function verifyWorkProjection(before, after, baseline, candidate, binding
 // sources.readBinding must fence the actually loaded historical and candidate
 // import/dependency closures at the beginning and end of the read-only snapshot.
 export async function qualifyExpandedLiquidityReplay({
-  tip, sources, readTip, readCanonicalHash, readRawBlock, readParentTransaction, readDeclarationEvidence, readTransition, readRelations, nativeDigest,
+  tip, sources, readTip, refreshTip, readCanonicalHash, readRawBlock, readParentTransaction, readDeclarationEvidence, readTransition, readRelations, nativeDigest,
 }) {
   const from = DECLARATION_PINS.blockHeight + 1;
-  requireEvidence(tip && Number.isSafeInteger(tip.height) && tip.height >= from &&
-    tip.height - from < MAX_SUFFIX_BLOCKS && hash(tip.hash), "explicit canonical suffix required");
+  function checkedTip(value) {
+    requireEvidence(value && Number.isSafeInteger(value.height) && value.height >= from &&
+      value.height - from < MAX_SUFFIX_BLOCKS && hash(value.hash), "explicit canonical suffix required");
+    return { height: value.height, hash: value.hash };
+  }
+  let target = checkedTip(tip);
+  requireEvidence(refreshTip === undefined || typeof refreshTip === "function", "invalid snapshot refresher");
+  const deadline = performance.now() + MAX_CATCH_UP_MILLISECONDS;
+  function checkDeadline() {
+    requireEvidence(!refreshTip || performance.now() <= deadline, "qualification time budget exceeded");
+  }
   const sourceBinding = structuredClone(sources.binding);
   requireEvidence(commit(sourceBinding.sourceCommit) && commit(sourceBinding.sourceTree) &&
     hash(sourceBinding.baselineSourceSha256) && hash(sourceBinding.candidateSourceSha256) &&
     sourceBinding.baselineSourceSha256 !== sourceBinding.candidateSourceSha256 && hash(sourceBinding.dependencySha256) &&
     equal(await sources.readBinding(), sourceBinding), "source/dependency bindings unavailable");
-  requireEvidence(equal(await readTip(), tip), "initial Core/index tip differs");
+  requireEvidence(equal(await readTip(), target), "initial Core/index tip differs");
   const declaration = verifyReplayDeclaration(await readDeclarationEvidence());
   requireEvidence(await readCanonicalHash(DECLARATION_PINS.blockHeight) === DECLARATION_PINS.blockHash, "declaration reorg");
   const anchorRow = await readTransition(DECLARATION_PINS.blockHeight, DECLARATION_PINS.blockHash);
   let prior = anchorRow.decoded;
-  nativeSeal(anchorRow, prior, await nativeDigest(prior), DECLARATION_PINS.blockHeight, DECLARATION_PINS.blockHash, false);
+  const anchorDigest = await nativeDigest(prior);
+  nativeSeal(anchorRow, prior, anchorDigest, DECLARATION_PINS.blockHeight, DECLARATION_PINS.blockHash, false);
   const anchor = { height: DECLARATION_PINS.blockHeight, hash: DECLARATION_PINS.blockHash,
     currentMainRowSha256: anchorRow.current_main_row_sha256, oldNativeSha256: anchorRow.native_sha256 };
   const blocks = [];
@@ -215,9 +229,76 @@ export async function qualifyExpandedLiquidityReplay({
   const projectionBindings = new Map();
   let priorOriginal = prior;
   let totalOld = 0, totalNew = 0, totalRaw = 0, receiptBytes = 0;
-  for (let height = from; height <= tip.height; height++) {
+  // Keep replay states, replacement fields and cumulative resource accounting private to this invocation.
+  // A new read-only snapshot gets only the evidence necessary to authenticate the completed prefix.
+  const witnessed = new Map([[target.height, target.hash]]);
+  let liveHead = target;
+  let refreshes = 0;
+  function remember(value) {
+    requireEvidence(!witnessed.has(value.height) || witnessed.get(value.height) === value.hash,
+      "previously observed checkpoint changed");
+    witnessed.set(value.height, value.hash);
+  }
+  function observeTip(value) {
+    const head = checkedTip(value);
+    requireEvidence(head.height >= liveHead.height, "Core/index tip moved backwards");
+    remember(head);
+    liveHead = head;
+  }
+  async function nextTarget() {
+    for (;;) {
+      checkDeadline();
+      let snapshotTip = target;
+      if (refreshTip) {
+        requireEvidence(++refreshes <= MAX_TIP_REFRESHES, "snapshot refresh budget exceeded");
+        const oldestSnapshotHeight = liveHead.height;
+        const prefix = structuredClone({ anchor: { ...anchor, oldNativeBytes: anchorDigest.bytes },
+          tip: target, declaration, sourceBinding, blocks: blocks.map(row => ({
+            height: row.height, hash: row.hash, currentMainRowSha256: row.currentMainRowSha256,
+            oldNativeSha256: row.oldNativeSha256, oldNativeBytes: row.oldNativeBytes, relationalBindings: row.relationalBindings,
+          })) });
+        let observing = true;
+        try {
+          snapshotTip = checkedTip(await refreshTip(prefix, value => {
+            requireEvidence(observing, "snapshot observation is closed");
+            observeTip(value);
+          }, checkDeadline));
+        } finally {
+          observing = false;
+        }
+        requireEvidence(snapshotTip.height >= oldestSnapshotHeight, "fresh snapshot moved backwards");
+        remember(snapshotTip);
+      }
+      for (const row of [anchor, ...blocks]) {
+        checkDeadline();
+        requireEvidence(await readCanonicalHash(row.height) === row.hash, "canonical range changed during replay");
+      }
+      // A snapshot may have opened before the live head observed in its fresh-session checks.
+      // Those intervening checkpoints must still be ancestors, including ones beyond the replayed rows.
+      for (const [height, expected] of witnessed) {
+        if (height <= target.height) continue;
+        checkDeadline();
+        requireEvidence(await readCanonicalHash(height) === expected, "observed checkpoint is no longer canonical");
+      }
+      requireEvidence(equal(verifyReplayDeclaration(await readDeclarationEvidence()), declaration) &&
+        equal(await sources.readBinding(), sourceBinding), "final declaration, source or tip changed");
+      const latest = await readTip();
+      checkDeadline();
+      if (!refreshTip) {
+        requireEvidence(equal(latest, target), "final declaration, source or tip changed");
+        return target;
+      }
+      observeTip(latest);
+      requireEvidence(liveHead.height >= snapshotTip.height, "Core/index tip behind fresh snapshot");
+      if (snapshotTip.height > target.height || equal(snapshotTip, liveHead)) return snapshotTip;
+      // No new rows are visible in this snapshot. Rotate before attempting to read the new live head.
+    }
+  }
+  for (let height = from; height <= target.height; height++) {
+    checkDeadline();
     const blockHash = await readCanonicalHash(height);
     requireEvidence(hash(blockHash), "canonical block unavailable");
+    if (witnessed.has(height)) requireEvidence(witnessed.get(height) === blockHash, "previously observed checkpoint changed");
     const previousBlockHash = prior.blockHash;
     const row = await readTransition(height, blockHash);
     const old = row.decoded;
@@ -284,13 +365,11 @@ export async function qualifyExpandedLiquidityReplay({
     requireEvidence(receiptBytes <= RESOURCE_LIMITS.maxQualificationReceiptBytes, "qualification receipt budget exceeded");
     priorOriginal = old;
     prior = corrected;
+    if (height === target.height) {
+      requireEvidence(blockHash === target.hash, "last block differs from requested tip");
+      target = await nextTarget();
+    }
   }
-  requireEvidence(blocks.at(-1).hash === tip.hash, "last block differs from requested tip");
-  for (const row of [anchor, ...blocks]) {
-    requireEvidence(await readCanonicalHash(row.height) === row.hash, "canonical range changed during replay");
-  }
-  requireEvidence(equal(verifyReplayDeclaration(await readDeclarationEvidence()), declaration) &&
-    equal(await sources.readBinding(), sourceBinding) && equal(await readTip(), tip), "final declaration, source or tip changed");
-  return { format: "work-amo-expanded-liquidity-replay-qualification-v2", qualified: true, declaration, anchor, tip,
+  return { format: "work-amo-expanded-liquidity-replay-qualification-v2", qualified: true, declaration, anchor, tip: target,
     sourceBinding, blocks };
 }

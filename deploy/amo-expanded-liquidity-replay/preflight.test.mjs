@@ -102,8 +102,13 @@ test("fresh final range detects changes to native seals and relational evidence"
   const q={anchor:{height:anchor.blockHeight,hash:anchor.blockHash,oldNativeSha256:active,currentMainRowSha256:base},
     blocks:[{height:tip.height,hash:tip.hash,oldNativeSha256:active,currentMainRowSha256:base,relationalBindings:relations}]};
   const current={...header}, bindings={...relations};
-  const client={query:async sql=>rows(sql.startsWith("WITH")?bindings:current)};
+  let physical = true;
+  const client={query:async sql=>rows(sql.startsWith("WITH") ? bindings :
+    sql.includes(" AS verified") ? {verified:physical} : current)};
   await verifyOriginalRange(client,q);
+  physical=false;
+  await assert.rejects(verifyOriginalRange(client,q), /physical frame changed/);
+  physical=true;
   current.native_sha256 = candidate;
   await assert.rejects(verifyOriginalRange(client,q), /native evidence changed/);
   current.native_sha256=active; bindings.eventCount=1;

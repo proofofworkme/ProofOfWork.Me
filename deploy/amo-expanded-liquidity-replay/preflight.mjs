@@ -10,7 +10,7 @@ import { Transaction } from "bitcoinjs-lib";
 import pg from "pg";
 import { exactTip, hydrateRawTransaction } from "../work-batch-activation/probe.mjs";
 import { boundedJsonResponse, readDatabaseIdentity as bindPeerSession, RESOURCE_LIMITS } from "../work-batch-replay/preflight.mjs";
-import { assertNativeTransitionStorageContract } from "../../server/db/native-transition-storage.mjs";
+import { nativeTransitionStorageContractReady, nativeTransitionStorageContractSql } from "../../server/db/native-transition-storage.mjs";
 import { MAX_GOVERNED_ROWS_PER_BLOCK, GOVERNED_RELATIONAL_BINDINGS_SQL, readRelationalEvidence } from "./relations.mjs";
 import { DECLARATION_PINS, qualifyExpandedLiquidityReplay, verifyReplayDeclaration } from "./qualify.mjs";
 
@@ -415,12 +415,33 @@ export function plannedTip(height, blockHash) {
   return { height: n, hash: blockHash };
 }
 
-export async function verifyOriginalRange(client, qualification) {
+// Check the immutable archive even when the native reader can serve a hot copy.
+const physicalFrame = `SELECT
+  a.payload->>'sha256' = $3
+  AND proof_indexer.reconstruct_work_transition_payload_v1(a.payload) IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM proof_indexer.work_transition_hot_slots_v1 s
+    WHERE s.network = a.network AND s.slot = mod(a.block_height,128) AND s.block_height = a.block_height
+      AND (s.block_hash IS DISTINCT FROM a.block_hash OR s.payload_sha256 IS DISTINCT FROM $3
+        OR encode(sha256(jsonb_send(s.payload)),'hex') IS DISTINCT FROM $3)
+  ) AS verified
+  FROM proof_indexer.work_transition_archive_v1 a
+  WHERE a.network='livenet' AND a.block_height=$1 AND a.block_hash=$2`;
+
+export async function verifyOriginalRange(client, qualification, checkDeadline = () => {}) {
   for (const bound of [qualification.anchor, ...qualification.blocks]) {
+    checkDeadline();
     const args = [bound.height, bound.hash];
     const row = await one(client, HEADER, args);
     check(row.current_main_row_sha256 === bound.currentMainRowSha256 && row.native_sha256 === bound.oldNativeSha256 &&
       row.payload?.__powNativeStorage?.sha256 === bound.oldNativeSha256, "original native evidence changed");
+    const bytes = Number(row.native_bytes);
+    check(Number.isSafeInteger(bytes) && bytes > 0 && bytes <= RESOURCE_LIMITS.maxNativePayloadBytesPerBlock &&
+      (bound.oldNativeBytes === undefined || bytes === bound.oldNativeBytes), "original native frame size changed");
+    checkDeadline();
+    check((await one(client, physicalFrame, [...args, bound.oldNativeSha256])).verified === true,
+      "original physical frame changed");
+    checkDeadline();
     if (bound.relationalBindings) check(equal(await one(client, GOVERNED_RELATIONAL_BINDINGS_SQL, args), bound.relationalBindings),
       "original relational evidence changed");
   }
@@ -435,21 +456,34 @@ export async function runReadOnlyQualification({ client, freshClient, rpc, sourc
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       for (const connection of [client, freshClient])
         check((await one(connection, "SHOW transaction_read_only")).transaction_read_only === "on", "database not read-only");
-      await assertNativeTransitionStorageContract(client);
+      const storageQuery = "SELECT " + nativeTransitionStorageContractSql() + " AS contract";
+      const { contract } = await one(client, storageQuery);
+      check(nativeTransitionStorageContractReady(contract), "canonical transition storage unavailable");
       const databaseIdentity = await readDatabaseIdentity(client, readPeer);
       check(equal(databaseIdentity, await readDatabaseIdentity(freshClient, readPeer)), "database sessions differ");
       const adapter = replayEvidence({ client, freshClient, rpc });
       check(equal(tip, await adapter.readTip()) && equal(tip, await readIndexTip(client)), "reviewed tip differs from Core or index");
-      const qualification = await qualifyExpandedLiquidityReplay({ tip, sources, ...adapter });
+      // Newly indexed rows are invisible to the previous REPEATABLE READ transaction.
+      // Authenticate the entire already replayed range again before using the new snapshot.
+      async function refreshTip(prefix, observeTip, checkDeadline) {
+        await client.query("ROLLBACK");
+        await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+        check(equal((await one(client, storageQuery)).contract, contract), "native storage contract changed in fresh snapshot");
+        const snapshot = await readIndexTip(client);
+        const live = await adapter.readTip();
+        observeTip(live);
+        check(snapshot.height <= live.height && (snapshot.height === live.height
+          ? snapshot.hash === live.hash : await adapter.readCanonicalHash(snapshot.height) === snapshot.hash),
+          "fresh database snapshot diverged from Core/index");
+        check(equal(databaseIdentity, await readDatabaseIdentity(client, readPeer)), "fresh database identity differs");
+        await verifyOriginalRange(client, prefix, checkDeadline);
+        check(equal(verifyReplayDeclaration(await adapter.readDeclarationEvidence()), prefix.declaration),
+          "declaration changed in fresh snapshot");
+        check(equal(databaseIdentity, await readDatabaseIdentity(freshClient, readPeer)), "final database identity changed");
+        return snapshot;
+      }
+      const qualification = await qualifyExpandedLiquidityReplay({ tip, sources, ...adapter, refreshTip });
       await client.query("ROLLBACK");
-      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      check(equal(tip, await readIndexTip(client)) && equal(databaseIdentity, await readDatabaseIdentity(client, readPeer)),
-        "fresh database snapshot differs");
-      await verifyOriginalRange(client, qualification);
-      check(equal(verifyReplayDeclaration(await adapter.readDeclarationEvidence()), qualification.declaration), "declaration changed in fresh snapshot");
-      await client.query("ROLLBACK");
-      check(equal(databaseIdentity, await readDatabaseIdentity(freshClient, readPeer)) && equal(await adapter.readTip(), tip) &&
-        equal(await sources.readBinding(), qualification.sourceBinding), "final source checkpoint changed");
       return { ...qualification, databaseIdentity };
     } finally { await freshClient.end(); }
   } finally { await client.end(); }
@@ -472,7 +506,10 @@ export async function main(args) {
     !(fs.statSync(path.dirname(output)).mode & 0o022), "private on-host receipt directory required");
   const fd = fs.openSync(output, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
   try { fs.writeFileSync(fd, bytes); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-  console.log(JSON.stringify({ qualified: true, tip: result.tip, blocks: result.blocks.length, receiptSha256: sha(bytes) }));
+  const parent = fs.openSync(path.dirname(output), fs.constants.O_RDONLY | fs.constants.O_DIRECTORY);
+  try { fs.fsyncSync(parent); } finally { fs.closeSync(parent); }
+  console.log(JSON.stringify({ qualified: true, initialTip: plannedTip(args[3], args[4]), tip: result.tip,
+    blocks: result.blocks.length, receiptSha256: sha(bytes) }));
 }
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url)
   main(process.argv.slice(2)).catch(error => {

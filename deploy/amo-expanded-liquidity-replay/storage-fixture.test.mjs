@@ -13,7 +13,7 @@ import { declarationEvidence, scenario } from "./fixtures/replay.mjs";
 import { permissionSupersession } from "../../server/db/permission-supersession.mjs";
 import { expandedBatchFamiliesSql } from "../../server/db/expanded-batch-parent.mjs";
 import { expandedLiquidityReadiness } from "../../server/work-amo-expanded-liquidity.mjs";
-import { publishExpandedLiquidityReplay } from "./publish.mjs";
+import { publishExpandedLiquidityReplay, RehearsalRolledBackError, rehearsalWindow } from "./publish.mjs";
 import { checkRawQualification, publicationPeerClient } from "./publish-cli.mjs";
 import { readDatabaseIdentity, readIndexTip, readPeerDatabaseIdentity, replayEvidence, runReadOnlyQualification, verifyOriginalRange } from "./preflight.mjs";
 
@@ -162,44 +162,54 @@ async function installIndexTables(client) {
   }
 }
 
-async function seedTransitions(client, id, occupied = false) {
+async function insertFixtureBlock(client, fixture, height) {
+  const row = fixture.rows.get(height);
+  await client.query("INSERT INTO proof_indexer.blocks(network,height,block_hash,previous_block_hash) VALUES ('livenet',$1,$2,$3)",
+    [height,row.block_hash,row.previous_block_hash]);
+  await client.query(`INSERT INTO proof_indexer.work_amo_block_transitions
+    SELECT (jsonb_populate_record(NULL::proof_indexer.work_amo_block_transitions,$1::jsonb)).*`,
+    [JSON.stringify({ ...row, payload:row.decoded, created_at:"2026-11-22T15:00:00.123456Z" })]);
+  const group = fixture.relations.get(height);
+  if (!group) return;
+  const events = group.events;
+  const txid = events[0].txid;
+  await client.query(`INSERT INTO proof_indexer.transactions(network,txid,status,block_hash,block_height,block_index,fee_sats)
+    VALUES('livenet',$1,'confirmed',$2,$3,$4,$5)`, [txid,fixture.hashes.get(height),height,events[0].blockIndex,events[0].feeSats]);
+  for (const r of group.records) {
+    await client.query("INSERT INTO proof_indexer.tx_outputs(network,txid,vout) VALUES('livenet',$1,$2)", [txid,r.vout]);
+    await client.query(`INSERT INTO proof_indexer.op_returns(network,txid,vout,output_index,protocol,payload_text,payload_hex,data_bytes)
+      VALUES('livenet',$1,$2,$3,$4,$5,$6,$7)`, [txid,r.vout,r.outputIndex,r.protocol,r.payloadText,r.payloadHex,r.dataBytes]);
+  }
+  for (const e of events) {
+    const payload = {_workAmoV5ReplayBound:e.bound, workAmoV5RawCandidate:e.rawCandidate,
+      workAmoV5ReplayOutcome:e.outcome, workAmoV5ReplayRawWitness:e.rawWitness,
+      workAmoV5ReplayOutput:e.replayOutput, derivedId:e.derivedId,transactionMinerFeeSats:e.feeSats,
+      amountSats:e.amountSats,dataBytes:e.dataBytes};
+    await client.query(`INSERT INTO proof_indexer.events(network,event_key,txid,op_return_vout,record_ordinal,
+      protocol,kind,status,valid,block_height,block_index,raw_payload,payload,validation_errors,amount_sats,data_bytes)
+      VALUES('livenet',$1,$2,$3,$4,$5,$6,'confirmed',$7,$8,$9,$10,$11::jsonb,$12,$13,$14)`,
+      [txid+":"+e.vout+":"+e.ordinal,txid,e.vout,e.ordinal,e.protocol,e.kind,e.valid,height,e.blockIndex,
+        e.rawPayload,JSON.stringify(payload),e.validationErrors,e.amountSats,e.dataBytes]);
+  }
+}
+
+async function setFixtureIndexTip(client, tip) {
+  await client.query(`INSERT INTO proof_indexer.meta(key,value) VALUES ('canonical:rebuild',$1::jsonb)
+    ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`,
+    [JSON.stringify({ network:"livenet",status:"complete",active:false,complete:true,indexedThroughBlock:tip.height,indexedThroughBlockHash:tip.hash })]);
+}
+
+async function seedTransitionEvidence(client, occupied, throughHeight) {
   const fixture = scenario({occupied});
   await installIndexTables(client);
-  for (const [h, row] of fixture.rows) {
-    await client.query("INSERT INTO proof_indexer.blocks(network,height,block_hash,previous_block_hash) VALUES ('livenet',$1,$2,$3)",
-      [h,row.block_hash,row.previous_block_hash]);
-    await client.query(`INSERT INTO proof_indexer.work_amo_block_transitions
-      SELECT (jsonb_populate_record(NULL::proof_indexer.work_amo_block_transitions,$1::jsonb)).*`,
-      [JSON.stringify({ ...row, payload:row.decoded, created_at:"2026-11-22T15:00:00.123456Z" })]);
+  const tip = throughHeight === undefined ? fixture.options.tip : { height:throughHeight, hash:fixture.hashes.get(throughHeight) };
+  for (const height of fixture.rows.keys()) {
+    if (height <= tip.height) await insertFixtureBlock(client, fixture, height);
   }
-  for (const [height,group] of fixture.relations) {
-    const events = group.events;
-    const txid = events[0].txid;
-    await client.query(`INSERT INTO proof_indexer.transactions(network,txid,status,block_hash,block_height,block_index,fee_sats)
-      VALUES('livenet',$1,'confirmed',$2,$3,$4,$5)`, [txid,fixture.hashes.get(height),height,events[0].blockIndex,events[0].feeSats]);
-    for (const r of group.records) {
-      await client.query("INSERT INTO proof_indexer.tx_outputs(network,txid,vout) VALUES('livenet',$1,$2)", [txid,r.vout]);
-      await client.query(`INSERT INTO proof_indexer.op_returns(network,txid,vout,output_index,protocol,payload_text,payload_hex,data_bytes)
-        VALUES('livenet',$1,$2,$3,$4,$5,$6,$7)`, [txid,r.vout,r.outputIndex,r.protocol,r.payloadText,r.payloadHex,r.dataBytes]);
-    }
-    for (const e of events) {
-      const payload = {_workAmoV5ReplayBound:e.bound, workAmoV5RawCandidate:e.rawCandidate,
-        workAmoV5ReplayOutcome:e.outcome, workAmoV5ReplayRawWitness:e.rawWitness,
-        workAmoV5ReplayOutput:e.replayOutput, derivedId:e.derivedId,transactionMinerFeeSats:e.feeSats,
-        amountSats:e.amountSats,dataBytes:e.dataBytes};
-      await client.query(`INSERT INTO proof_indexer.events(network,event_key,txid,op_return_vout,record_ordinal,
-        protocol,kind,status,valid,block_height,block_index,raw_payload,payload,validation_errors,amount_sats,data_bytes)
-        VALUES('livenet',$1,$2,$3,$4,$5,$6,'confirmed',$7,$8,$9,$10,$11::jsonb,$12,$13,$14)`,
-        [txid+":"+e.vout+":"+e.ordinal,txid,e.vout,e.ordinal,e.protocol,e.kind,e.valid,height,e.blockIndex,
-          e.rawPayload,JSON.stringify(payload),e.validationErrors,e.amountSats,e.dataBytes]);
-    }
-  }
-  const tip = fixture.options.tip;
   const { indexedPosition:pos, transaction, prevoutTransactionHex, canonicalBlock } = declarationEvidence;
   await client.query("INSERT INTO proof_indexer.transactions(network,txid,status,block_hash,block_height,block_index) VALUES ('livenet',$1,'confirmed',$2,$3,$4)",
     [pos.txid,pos.blockHash,pos.blockHeight,pos.blockIndex]);
-  await client.query("INSERT INTO proof_indexer.meta(key,value) VALUES ('canonical:rebuild',$1::jsonb)",
-    [JSON.stringify({ network:"livenet",status:"complete",active:false,complete:true,indexedThroughBlock:tip.height,indexedThroughBlockHash:tip.hash })]);
+  await setFixtureIndexTip(client, tip);
   assert.deepEqual(await readIndexTip(client), tip);
   const rpc = async (method, params) => {
     if (method === "getblockchaininfo") return {chain:"main",blocks:tip.height,bestblockhash:tip.hash,initialblockdownload:false};
@@ -213,6 +223,11 @@ async function seedTransitions(client, id, occupied = false) {
     return {txid:params[0],hex:params[0] === pos.txid ? transaction.hex : prevoutTransactionHex,
       confirmations:1,blockhash:pos.blockHash};
   };
+  return { fixture, rpc, tip };
+}
+
+async function seedTransitions(client, id, occupied = false) {
+  const { fixture, rpc, tip } = await seedTransitionEvidence(client, occupied);
   const q = await runReadOnlyQualification({ client:fixtureClient(id,true), freshClient:fixtureClient(id,true),
     rpc, sources:fixture.options.sources, tip, readPeer:api => readPeerDatabaseIdentity(client,api) });
   return { q, fixture, rpc };
@@ -304,6 +319,47 @@ test("expanded AMO publication on disposable PostgreSQL 16", async t => {
       assert.deepEqual(await snapshot(client), before);
       assert.equal(sha256(stableJson(await catalog())), oldCatalogDigest);
     });
+    await t.test("a stale rehearsal fails before its expensive source scan; a changed tip after rollback yields no success", async () => {
+      const later = {...q.tip, height:q.tip.height + 1};
+      let scans = 0, tips = 0, rollbacks = 0;
+      const counted = {query: (sql, args) => {
+        if (sql === "ROLLBACK") rollbacks++;
+        return client.query(sql,args);
+      }};
+      await assert.rejects(publish("rehearse",q,{readTip:async () => later, verifySource:async () => { scans++; return true; }}), /Core\/index tip differs/);
+      assert.equal(scans, 0);
+      await assert.rejects(publish("rehearse",q,{client:counted,readTip:async () => ++tips === 5 ? later : q.tip}),
+        error => error instanceof RehearsalRolledBackError && error.message.includes("Core/index tip differs"));
+      assert.equal(tips, 5);
+      assert.equal(rollbacks, 1);
+      assert.deepEqual(await snapshot(client), before);
+    });
+    await t.test("changed raw bytes at the closing rehearsal fence roll back every native write", async () => {
+      const reads = [];
+      const last = q.blocks.at(-1);
+      const evidence = replayEvidence({client:reader,freshClient:reader,rpc});
+      let fences = 0;
+      await assert.rejects(publish("rehearse",q,{verifySource:async (_binding,checkTime) => {
+        ++fences;
+        await checkRawQualification(q,{...evidence,readRawBlock:async hash => {
+          reads.push([fences,hash]);
+          return fences === 2 && hash === last.hash ? "00".repeat(last.rawBlockBytes) : evidence.readRawBlock(hash);
+        }},checkTime);
+        return true;
+      }}), error => error instanceof RehearsalRolledBackError && error.message.includes("Qualified Core block bytes differ at " + last.height));
+      assert.deepEqual(reads,[1,2].flatMap(fence => q.blocks.map(block => [fence,block.hash])));
+      assert.deepEqual(await snapshot(client),before);
+    });
+    await t.test("PostgreSQL cancels a statement at the rehearsal's remaining cumulative deadline", async () => {
+      let clock = 0;
+      const window = rehearsalWindow(client,() => clock);
+      await client.query("BEGIN");
+      try {
+        clock = 1_199_850;
+        await assert.rejects(window.client.query("SELECT pg_catalog.pg_sleep(2)"), error => error.code === "57014");
+      } finally { await client.query("ROLLBACK"); }
+      assert.deepEqual(await snapshot(client),before);
+    });
     await t.test("a conflicting second corrected frame rolls back the first frame and all DDL", async () => {
       const conflict = structuredClone(q);
       conflict.blocks[1].newNativeSha256 = "9".repeat(64);
@@ -312,9 +368,9 @@ test("expanded AMO publication on disposable PostgreSQL 16", async t => {
     });
     await t.test("reorg at the final Core fence restores the complete original state", async () => {
       let reads = 0;
-      await assert.rejects(publish("publish", q, { readTip:async () => ++reads === 1 ? q.tip : {...q.tip,hash:"8".repeat(64)} }),
+      await assert.rejects(publish("publish", q, { readTip:async () => ++reads <= 3 ? q.tip : {...q.tip,hash:"8".repeat(64)} }),
         /Core\/index tip differs/);
-      assert.equal(reads, 2);
+      assert.equal(reads, 4);
       assert.deepEqual(await snapshot(client), before);
     });
     await t.test("a conflicting canonical index tip closes preflight and publication", async () => {
@@ -410,6 +466,9 @@ test("expanded AMO publication on disposable PostgreSQL 16", async t => {
       await assert.rejects(verifyOriginalRange(client,q),/original native evidence changed/);
     });
     await t.test("identical publish and verify retries are read-only, conflicting receipts fail", async () => {
+      await assert.rejects(publish("rehearse"), error =>
+        error instanceof RehearsalRolledBackError && error.message.includes("cannot rehearse an already published replacement"));
+      assert.deepEqual(await snapshot(client),after);
       for (const mode of ["publish","verify"]) {
         const retry = await publish(mode);
         assert.equal(retry.alreadyPublished, true);
@@ -603,4 +662,113 @@ test("native cumulative WORK projection binds both original and corrected branch
       await nativeProjectionCarry(client,{readRow:nativeRow,publication:await source("./publish.sql")});
     } finally { await client.query("ROLLBACK"); }
   } finally { await client.end(); }
+});
+
+test("qualification rotates PostgreSQL snapshots across a committed descendant and rechecks the prefix", async t => {
+  const id = await disposablePostgres(t);
+  const writer = fixtureClient(id);
+  await writer.connect();
+  try {
+    await installAcceptedStorage(writer);
+    const { fixture, rpc, tip:initial } = await seedTransitionEvidence(writer, true, 977230);
+    const descendant = fixture.options.tip;
+    let coreTip = initial;
+    async function qualify(onRaw = async () => {}) {
+      const client = fixtureClient(id, true);
+      const rawHashes = [];
+      const receipt = await runReadOnlyQualification({ client, freshClient:fixtureClient(id, true),
+        sources:fixture.options.sources, tip:coreTip, readPeer:api => readPeerDatabaseIdentity(writer, api),
+        rpc:async (method, params) => {
+          if (method === "getblockchaininfo") {
+            return { chain:"main", blocks:coreTip.height, bestblockhash:coreTip.hash, initialblockdownload:false };
+          }
+          if (method === "getblock" && params[1] === 0) {
+            rawHashes.push(params[0]);
+            await onRaw(params[0], client);
+          }
+          return rpc(method, params);
+        } });
+      assert.deepEqual(rawHashes, [initial.hash, descendant.hash]);
+      return receipt;
+    }
+
+    const grown = await qualify(async (hash, reader) => {
+      if (hash === descendant.hash) {
+        assert.deepEqual(await readIndexTip(reader), descendant);
+        return;
+      }
+      assert.equal(hash, initial.hash);
+      assert.deepEqual(await readIndexTip(reader), initial);
+      await writer.query("BEGIN");
+      try {
+        await insertFixtureBlock(writer, fixture, descendant.height);
+        await setFixtureIndexTip(writer, descendant);
+        await writer.query("COMMIT");
+      } catch (error) {
+        await writer.query("ROLLBACK");
+        throw error;
+      }
+      coreTip = descendant;
+      assert.deepEqual(await readIndexTip(writer), descendant);
+      assert.deepEqual(await readIndexTip(reader), initial, "original repeatable-read snapshot still sees its old tip");
+    });
+    assert.deepEqual(grown.tip, descendant);
+    assert.deepEqual(grown, await qualify(), "catch-up and fixed-tip qualification produce the identical publication input");
+    for (const block of grown.blocks) {
+      assert.deepEqual(block.protocolCounts, {protocolRecordCount:2, rawProtocolCandidateCount:3, transactionCount:1, eventCount:2});
+      assert.equal(block.relationalBindings.recordCount, 3);
+      assert.equal(block.relationalBindings.eventCount, 2);
+    }
+
+    const target = fixture.relations.get(initial.height).events[0];
+    const key = target.txid + ":" + target.vout + ":" + target.ordinal;
+    await assert.rejects(qualify(async hash => {
+      if (hash === descendant.hash) {
+        const changed = await writer.query("UPDATE proof_indexer.events SET raw_payload='changed' WHERE network='livenet' AND event_key=$1", [key]);
+        assert.equal(changed.rowCount, 1);
+      }
+    }), /original relational evidence changed/);
+    await writer.query("UPDATE proof_indexer.events SET raw_payload=$2 WHERE network='livenet' AND event_key=$1", [key, target.rawPayload]);
+
+    // A valid hot slot must never conceal loss of a cold archive chunk between snapshots.
+    const {part} = await one(writer, `SELECT a.payload#>>'{parts,0}' AS part FROM proof_indexer.work_transition_archive_v1 a
+      JOIN proof_indexer.work_transition_hot_slots_v1 h USING(network,block_height,block_hash)
+      WHERE a.network='livenet' AND a.block_height=$1 AND h.payload_sha256=a.payload->>'sha256'`, [initial.height]);
+    // Simulate at-rest damage in the disposable database. Roll back the injected
+    // bytes and fixture-only DDL before running the real two-connection case.
+    await writer.query("BEGIN");
+    try {
+      await writer.query("ALTER TABLE proof_indexer.work_transition_chunks_v1 DISABLE TRIGGER immutable_chunks");
+      await writer.query("ALTER TABLE proof_indexer.work_transition_chunks_v1 DROP CONSTRAINT work_transition_chunks_v1_check");
+      const damaged = await one(writer, `UPDATE proof_indexer.work_transition_chunks_v1
+        SET data=set_byte(data,0,get_byte(data,0) # 1) WHERE hash=decode($1,'hex')
+        RETURNING encode(hash,'hex') AS part, hash=sha256(data) AS intact`, [part]);
+      assert.deepEqual(damaged, {part, intact:false});
+      assert.equal((await nativeRow(writer, initial.height)).native_sha256, grown.blocks[0].oldNativeSha256);
+      await assert.rejects(verifyOriginalRange(writer, grown), /Native missing\/corrupt chunk/);
+    } finally { await writer.query("ROLLBACK"); }
+    await writer.query("BEGIN");
+    try {
+      await writer.query("SET LOCAL session_replication_role=replica");
+      const damaged = await writer.query(`UPDATE proof_indexer.work_transition_hot_slots_v1
+        SET payload=jsonb_set(payload,'{closingSufficientState,damaged}','true') WHERE network='livenet' AND block_height=$1`, [initial.height]);
+      assert.equal(damaged.rowCount, 1);
+      await assert.rejects(verifyOriginalRange(writer, grown), /original physical frame changed/);
+    } finally { await writer.query("ROLLBACK"); }
+    await assert.rejects(qualify(async hash => {
+      if (hash === descendant.hash) {
+        await writer.query("BEGIN");
+        try {
+          await writer.query("SET LOCAL session_replication_role=replica");
+          const removed = await writer.query("DELETE FROM proof_indexer.work_transition_chunks_v1 WHERE hash=decode($1,'hex')", [part]);
+          assert.equal(removed.rowCount, 1);
+          await writer.query("COMMIT");
+        } catch (error) {
+          await writer.query("ROLLBACK");
+          throw error;
+        }
+        assert.equal((await nativeRow(writer, initial.height)).native_sha256, grown.blocks[0].oldNativeSha256);
+      }
+    }), /Native missing\/corrupt chunk/);
+  } finally { await writer.end(); }
 });

@@ -115,14 +115,58 @@ async function catalogDigest(client) {
   return sha256(stableJson(row.catalog));
 }
 
-async function chainFence(q, readTip, readCanonicalHash, verifySource, allowLater) {
-  requireEvidence(await verifySource(q.sourceBinding) === true, "loaded source/dependency binding changed");
-  for (const b of [q.anchor,...q.blocks]) {
-    requireEvidence(await readCanonicalHash(b.height) === b.hash, "Core canonical range changed");
+export class RehearsalRolledBackError extends Error {
+  constructor(cause) {
+    super(cause.message, {cause});
+    this.name = "RehearsalRolledBackError";
   }
+}
+
+async function requireTip(q, readTip, allowLater) {
   const tip = await readTip();
   requireEvidence(equal(tip,q.tip) || (allowLater && Number.isSafeInteger(tip?.height) && tip.height > q.tip.height && hash(tip.hash)),
     "Core/index tip differs");
+}
+
+// PostgreSQL 16 has a per-statement timeout. Rehearsal also needs one budget across all
+// statements and external evidence reads while it holds production writer-exclusion locks.
+export function rehearsalWindow(client, now = () => performance.now()) {
+  const deadline = now() + 1_200_000;
+  function remaining() {
+    const ms = Math.floor(deadline - now());
+    requireEvidence(ms > 0, "rollback-only rehearsal deadline exceeded");
+    return ms;
+  }
+  async function arm() {
+    // PostgreSQL releases the locks even if the supervisor stalls during external Core/source checks.
+    await client.query("SELECT pg_catalog.set_config('statement_timeout',$1,true), pg_catalog.set_config('idle_in_transaction_session_timeout',$1,true)",
+      [String(remaining()) + "ms"]);
+    remaining();
+  }
+  return {
+    remaining,
+    arm,
+    client: {
+      async query(sql, params) {
+        await arm();
+        const result = await client.query(sql, params);
+        remaining();
+        return result;
+      },
+    },
+  };
+}
+
+async function chainFence(q, readTip, readCanonicalHash, verifySource, allowLater, checkTime = () => {}) {
+  // Refuse a stale qualification before reading the entire range. Recheck after the expensive reads.
+  await requireTip(q, readTip, allowLater);
+  checkTime();
+  requireEvidence(await verifySource(q.sourceBinding, checkTime) === true, "loaded source/dependency binding changed");
+  for (const b of [q.anchor,...q.blocks]) {
+    checkTime();
+    requireEvidence(await readCanonicalHash(b.height) === b.hash, "Core canonical range changed");
+  }
+  await requireTip(q, readTip, allowLater);
 }
 
 async function indexFence(client, q, allowLater) {
@@ -194,15 +238,17 @@ async function verifyPublication(client, q, qualificationSha, manifestSha) {
       original=proof_indexer.read_work_transition_payload_v1(t.network,t.block_height,t.block_hash,d.old_main->'payload')
         AND corrected=proof_indexer.read_work_transition_payload_v1(t.network,t.block_height,t.block_hash,t.payload)
         AND corrected=original||d.replacement_fields
-        AND encode(sha256(jsonb_send(original)),'hex')=$13 AND encode(sha256(jsonb_send(corrected)),'hex')=$12
-        AND octet_length(jsonb_send(original))=$14 AND octet_length(jsonb_send(corrected))=$15 AS frames,
+        AND encode(sha256(old_wire),'hex')=$13 AND encode(sha256(new_wire),'hex')=$12
+        AND octet_length(old_wire)=$14 AND octet_length(new_wire)=$15 AS frames,
       t.block_height<$16 OR EXISTS(SELECT 1 FROM proof_indexer.work_transition_hot_slots_v1 s
         WHERE s.network=t.network AND s.slot=mod(t.block_height,128) AND s.block_height=t.block_height AND s.block_hash=t.block_hash
          AND s.payload_sha256=$12 AND s.payload=corrected) AS hot
       FROM proof_indexer.work_amo_block_transitions t JOIN ${supersessions} d USING(network,block_height,block_hash)
       JOIN proof_indexer.work_transition_archive_v1 a USING(network,block_height,block_hash)
+      -- Keep these single-row projections separate so PostgreSQL computes each frame and wire encoding once per block.
       CROSS JOIN LATERAL (SELECT proof_indexer.reconstruct_work_transition_payload_v1(a.payload) AS original,
-        proof_indexer.reconstruct_work_transition_payload_v1(d.new_manifest) AS corrected) native
+        proof_indexer.reconstruct_work_transition_payload_v1(d.new_manifest) AS corrected OFFSET 0) native
+      CROSS JOIN LATERAL (SELECT jsonb_send(original) AS old_wire, jsonb_send(corrected) AS new_wire OFFSET 0) wire
       WHERE t.network='livenet' AND t.block_height=$1 AND t.block_hash=$2`,
       [b.height,b.hash,qualificationSha,manifestSha,q.sourceBinding.sourceCommit,q.sourceBinding.sourceTree,
         q.tip.height,q.tip.hash,JSON.stringify(b.replacementFields),JSON.stringify(b.relationalBindings),b.currentMainRowSha256,
@@ -227,44 +273,61 @@ export async function publishExpandedLiquidityReplay({client, qualificationBytes
     publicationSqlSha256: sha256(publication), catalog: NATIVE_TRANSITION_STORAGE_EXPANDED_SHA256,
   }));
   await chainFence(q,readTip,readCanonicalHash,verifySource,mode === "verify");
+  const window = mode === "rehearse" ? rehearsalWindow(client) : null;
+  const transaction = window?.client ?? client;
   await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE" + (mode === "verify" ? " READ ONLY" : ""));
-  let commitDispatched = false;
+  let commitDispatched = false, transactionClosed = false;
   try {
-    await client.query("SET LOCAL search_path=pg_catalog,pg_temp");
-    await client.query("SET LOCAL TIME ZONE 'UTC'");
-    await client.query("SET LOCAL lock_timeout='5s'");
-    await client.query("SET LOCAL statement_timeout='1200s'");
+    await transaction.query("SET LOCAL search_path=pg_catalog,pg_temp");
+    await transaction.query("SET LOCAL TIME ZONE 'UTC'");
+    await transaction.query("SET LOCAL lock_timeout='5s'");
+    if (!window) await transaction.query("SET LOCAL statement_timeout='1200s'");
     if (mode !== "verify") {
-      await client.query("SELECT pg_advisory_xact_lock(190725,977230)");
-      await client.query(`LOCK TABLE proof_indexer.work_amo_block_transitions, proof_indexer.blocks, proof_indexer.meta,
+      await transaction.query("SELECT pg_advisory_xact_lock(190725,977230)");
+      await transaction.query(`LOCK TABLE proof_indexer.work_amo_block_transitions, proof_indexer.blocks, proof_indexer.meta,
         proof_indexer.events, proof_indexer.transactions, proof_indexer.op_returns, proof_indexer.work_transition_archive_v1,
         proof_indexer.work_transition_hot_slots_v1, proof_indexer.work_transition_chunks_v1 IN SHARE ROW EXCLUSIVE MODE`);
     }
-    await indexFence(client,q,mode === "verify");
-    const catalog = await catalogDigest(client);
-    const exists = await one(client,"SELECT to_regclass($1)::text AS name",[supersessions]);
+    await indexFence(transaction,q,mode === "verify");
+    const catalog = await catalogDigest(transaction);
+    const exists = await one(transaction,"SELECT to_regclass($1)::text AS name",[supersessions]);
     const already = catalog === NATIVE_TRANSITION_STORAGE_EXPANDED_SHA256;
     if (already) {
+      requireEvidence(mode !== "rehearse", "cannot rehearse an already published replacement");
       requireEvidence(exists.name === supersessions, "missing immutable publication table");
     } else {
       requireEvidence(mode !== "verify" && catalog === NATIVE_TRANSITION_STORAGE_BASELINE_SHA256 && !exists.name, "unexpected native storage predecessor");
-      await client.query(extension);
-      for (const definition of nativeFunctionDefinitions) await client.query(definition);
-      requireEvidence(await catalogDigest(client) === NATIVE_TRANSITION_STORAGE_EXPANDED_SHA256, "installed native catalog differs");
-      await client.query("CREATE TEMP TABLE expanded_replay_input(qualification jsonb, qualification_sha text, manifest_sha text) ON COMMIT DROP");
-      await client.query("INSERT INTO pg_temp.expanded_replay_input VALUES ($1::jsonb,$2,$3)",[JSON.stringify(q),qualificationSha256,manifestSha]);
-      await client.query(publication);
+      await transaction.query(extension);
+      for (const definition of nativeFunctionDefinitions) await transaction.query(definition);
+      requireEvidence(await catalogDigest(transaction) === NATIVE_TRANSITION_STORAGE_EXPANDED_SHA256, "installed native catalog differs");
+      await transaction.query("CREATE TEMP TABLE expanded_replay_input(qualification jsonb, qualification_sha text, manifest_sha text) ON COMMIT DROP");
+      await transaction.query("INSERT INTO pg_temp.expanded_replay_input VALUES ($1::jsonb,$2,$3)",[JSON.stringify(q),qualificationSha256,manifestSha]);
+      await transaction.query(publication);
     }
-    await verifyPublication(client,q,qualificationSha256,manifestSha);
-    await chainFence(q,readTip,readCanonicalHash,verifySource,mode === "verify");
-    requireEvidence(await catalogDigest(client) === NATIVE_TRANSITION_STORAGE_EXPANDED_SHA256, "final native catalog differs");
+    await verifyPublication(transaction,q,qualificationSha256,manifestSha);
+    if (window) await window.arm();
+    await chainFence(q,readTip,readCanonicalHash,verifySource,mode === "verify",window?.remaining);
+    requireEvidence(await catalogDigest(transaction) === NATIVE_TRANSITION_STORAGE_EXPANDED_SHA256, "final native catalog differs");
     commitDispatched = mode === "publish" && !already;
     await client.query(mode === "rehearse" ? "ROLLBACK" : "COMMIT");
+    transactionClosed = true;
+    if (window) {
+      await requireTip(q, readTip, false);
+      window.remaining();
+    }
     return { format: "work-amo-expanded-liquidity-native-publication-result-v1", mode, qualificationSha256,
       manifestSha256:manifestSha, tip:q.tip, blocks:q.blocks.length, committed:mode !== "rehearse", alreadyPublished:already };
   } catch (error) {
     if (commitDispatched) throw new Error("AMO replay COMMIT outcome uncertain; verify the exact qualification on a fresh session", {cause:error});
-    await client.query("ROLLBACK").catch(() => {});
+    if (!transactionClosed) {
+      try {
+        await client.query("ROLLBACK");
+        transactionClosed = true;
+      } catch {
+        // A lost connection cannot acknowledge rollback. Keep its outcome unverified.
+      }
+    }
+    if (mode === "rehearse" && transactionClosed) throw new RehearsalRolledBackError(error);
     throw error;
   }
 }

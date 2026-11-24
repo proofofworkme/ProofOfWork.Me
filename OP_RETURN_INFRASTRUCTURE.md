@@ -3836,7 +3836,7 @@ with accepted node overlays preserved. From that checkout:
    qualifier checks Core block bodies, the indexed declaration position,
    the original PostgreSQL native frames and both replay engines. It
    reproduces the incumbent economic state and projection, then binds both
-   versions of each transition and frame from 977230 through the pinned tip.
+   versions of each transition and frame from 977230 through the final agreed tip.
    The v2 qualifier reads every transaction in up to 512 contiguous blocks,
    including every carrier of multipart records. It authenticates governed
    inputs against their serialized parents, recomputes exact fees, and executes
@@ -3846,9 +3846,28 @@ with accepted node overlays preserved. From that checkout:
    relationship and authorization with the declaration in effect. Qualify
    against the observed relational records and events, then recheck their
    ordered digests in a fresh database snapshot. The bounded suffix accepts up
-   to 1,024 logical records. An unexplained difference, incomplete evidence,
-   fork, resource limit or tip change stops qualification. Review any actual
-   change in historical validity or economic outcome before proceeding.
+   to 1,024 logical records. The supplied tip must match Core and the index at
+   entry. When the scan reaches it, rotate the read-only database snapshot.
+   Recheck the stored scalar rows, immutable archive chunks, applicable hot
+   frames, relational rows, declaration, loaded source, dependencies and
+   database identity. Authenticate the canonical prefix and all observed heads.
+   Only then extend the two engine states through any newly visible descendants
+   in canonical order. Every round shares the original block, byte and record
+   budgets. The run allows nine snapshot refreshes in total and up to four
+   hours of elapsed work. A fork, missing evidence, changed source, mismatched
+   Core/index tips, economic divergence or exhausted budget fails closed.
+   The receipt requires the verified snapshot and final live checkpoint to
+   match exactly. Read its actual terminal height and hash and independently
+   pin its bytes before rehearsal. The command also prints the starting tip.
+
+   The continuation exists only inside the running qualifier. After a crash
+   or refusal, preserve the attempt and restart from 977230 in a fresh
+   receipt path. The failed 118-block scan from 977230 through 977347 took
+   38 minutes 51 seconds and produced no qualification. Its terminal pin
+   remained canonical while Core and the index advanced to 977352. The
+   historical WORK Batch controller accepts its own completed prefix receipts
+   for a different declaration and record set.
+
 3. Use `node deploy/amo-expanded-liquidity-replay/publish-cli.mjs MODE MANIFEST MANIFEST_SHA256 QUALIFICATION QUALIFICATION_SHA256 NEW_RECEIPT`
    with `rehearse` while the reviewed baseline is installed. Under the normal
    supervised service drain and Search hold, install the reviewed candidate
@@ -3863,6 +3882,17 @@ with accepted node overlays preserved. From that checkout:
    record, including when later blocks carry it forward. Both native frames
    remain independently readable. Publication leaves indexed events and
    OP_RETURN rows intact. Rehearsal rolls back even on success.
+   Start the rollback-only rehearsal promptly after the independent receipt
+   check. It reads the exact raw Core bodies and rechecks the canonical range,
+   source and tip before and after the database work. The rollback-only
+   transaction shares a 1,200-second budget across statements and closing
+   checks. It checks the exact tip again after PostgreSQL acknowledges rollback.
+   Inspect the terminal
+   receipt for the same qualification digest, tip and `committed=false`.
+   A newly arrived block can still invalidate a rehearsal or a later publish.
+   A stale qualification requires a fresh bounded catch-up run and rehearsal
+   before publication. Preserve any prior receipt and reconcile an uncertain
+   publication through the existing verifier.
    Use `verify` with the same qualification in a fresh session after publication, including
    after an uncertain commit, before continuing with Permission or List.
 4. Keep the new List admission closed until the worker, API and Permission
@@ -3871,6 +3901,14 @@ with accepted node overlays preserved. From that checkout:
    storage inventory after publication. Use the existing
    read-only book and admission checks for both faces and run
    `npm run check:release-sync` after the authorized release.
+
+The source manifest binds the clean checkout commit and tree, replay tools,
+both engines and the installed dependency inventory. A verifier change
+requires a successor release build, source manifest and private stage. Existing
+verified engine roots may be inspected again when their exact bytes and
+composition still match. The private UI archives and grants remain scoped to
+their original release. Run the normal capacity census with all retained
+assets before building or rotating a grant.
 
 The disposable PostgreSQL 16 fixture uses synthetic descendants of the real
 declaration. Its pinned tip is 977231,

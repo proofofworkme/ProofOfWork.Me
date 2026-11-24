@@ -188,17 +188,19 @@ function occupiedEvidence(replay, records) {
     relations:{bindings,records:physical,events} };
 }
 
-function scenario({ occupied = false, paired = false } = {}) {
+function scenario({ occupied = false, paired = false, blockCount = 2, occupiedHeights } = {}) {
   const sources = { baselineRaw:raw,candidateRaw:raw,binding:{sourceCommit:"1".repeat(40),sourceTree:"2".repeat(40),
     baselineSourceSha256:hashOf(3),candidateSourceSha256:hashOf(4),dependencySha256:hashOf(5)} };
   sources.readBinding=async()=>structuredClone(sources.binding);
   const rows=new Map(), blocks=new Map(), hashes=new Map(), parents=new Map(), relations=new Map();
   let prior=seed(occupied === "two-recipient-bond");
   hashes.set(D.blockHeight,D.blockHash);rows.set(D.blockHeight,nativeRow(prior));
-  for(const height of [977230,977231]) {
-    const {block,blockTransactions,parents:funding}=nextBlock(prior.blockHash,height,occupied === true ? "boost-file" : occupied,paired);
+  const lastHeight = D.blockHeight + blockCount;
+  for (let height = D.blockHeight + 1; height <= lastHeight; height++) {
+    const governed = (!occupiedHeights || occupiedHeights.has(height)) && occupied;
+    const {block,blockTransactions,parents:funding}=nextBlock(prior.blockHash,height,governed === true ? "boost-file" : governed,paired);
     const bh=block.getId();
-    const records=occupied ? blockTransactions.flatMap((tx,index) => occupiedRecords(tx,height,bh,index)) : [];
+    const records=governed ? blockTransactions.flatMap((tx,index) => occupiedRecords(tx,height,bh,index)) : [];
     for (const parent of funding) parents.set(parent.getId(),parent.toHex());
     const before=raw.replayWorkAmoV5RawBlock({
       blockHeaderHex:block.toHex(true),blockTransactions,expectedBlockHash:bh,expectedBlockHeight:height,
@@ -223,7 +225,7 @@ function scenario({ occupied = false, paired = false } = {}) {
     }
     rows.set(height,nativeRow(next));hashes.set(height,bh);blocks.set(bh,block.toHex());prior=next;
   }
-  const tip={height:977231,hash:hashes.get(977231)};
+  const tip={height:lastHeight,hash:hashes.get(lastHeight)};
   return {rows,hashes,blocks,parents,relations,options:{tip,sources,readTip:async()=>({...tip}), readCanonicalHash:async height=>hashes.get(height),
     readParentTransaction:async txid=>parents.get(txid),
     readRawBlock:async bh=>blocks.get(bh),readDeclarationEvidence:async()=>structuredClone(declarationEvidence),
