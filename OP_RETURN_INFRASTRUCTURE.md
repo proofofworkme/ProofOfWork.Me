@@ -3960,6 +3960,22 @@ successor archives and all five capacity constraints before rotating any grant.
 The [private staging runbook](deploy/publish/ORCHESTRATOR.md#amo-seven-gib-scratch-migration)
 describes the protected transition.
 
+At 10:11 UTC on November 24, the retained Node pool held 30,686,101,504 bytes.
+With the existing 4 GiB build reservation the run requires 34,981,068,800 bytes.
+The 32 GiB ceiling refused the run by 621,330,432 bytes. A 33 GiB ceiling
+leaves 452,411,392 bytes of headroom at this occupancy. The filesystem had
+401,138,061,312 bytes available against the independent 111,669,149,696-byte
+requirement. The builder remeasures under its existing lock before admission.
+
+At 10:12 UTC the UI host held 6,887,280,640 scratch bytes with both
+private stages and their source and terminal receipts retained. Only
+628,912,128 bytes remained under 7 GiB. The last sealed direct stage required
+960,884,736 bytes for the whole sequence. A 7.5 GiB limit leaves a projected
+204,869,632 bytes after adding the known 28,672-byte source increase. The
+physical filesystem had 14,052,438,016 bytes and 2,169,165 inodes available.
+Measure the actual successor build before the irreversible grant rotation.
+See the [catch-up staging procedure](deploy/publish/ORCHESTRATOR.md#amo-catch-up-scratch-migration).
+
 The release plan binds `deploy/publish/build.py` to the committed source
 by SHA-256. The on-host build uses that release's reviewed builder and
 rechecks capacity under its single-writer lock. Run

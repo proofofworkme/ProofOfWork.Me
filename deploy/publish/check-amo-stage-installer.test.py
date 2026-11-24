@@ -63,7 +63,8 @@ class InstallFixture(unittest.TestCase):
         def checkpoint(name):
             if name == stop:
                 raise RuntimeError('fixture interruption')
-        return tool.operate(action,self.store,self.paths,self.grant,self.candidates,self.protect,self.budget,checkpoint)
+        return tool.operate(action,self.store,self.paths,self.grant,self.candidates,self.protect,self.budget,checkpoint,
+                            expected_predecessors=self.before)
 
     def test_terminal_positions_and_idempotence(self):
         for phase in ('prepare','prepare','apply','apply','status'):
@@ -80,6 +81,18 @@ class InstallFixture(unittest.TestCase):
             self.assertEqual({k:tool.readinfo(path)[1] for k,path in self.paths.items()}, self.before)
         with self.assertRaisesRegex(ValueError,'Reversal'):
             self.run_action('apply')
+
+    def test_same_bytes_on_replaced_predecessor_inode_refused(self):
+        prior = self.paths['stager']
+        replacement = prior.with_name('substituted-stager')
+        replacement.write_bytes(prior.read_bytes())
+        replacement.chmod(0o755)
+        os.setxattr(replacement,'user.amo-test',os.getxattr(prior,'user.amo-test'))
+        os.utime(replacement,ns=(prior.stat().st_atime_ns,prior.stat().st_mtime_ns))
+        replacement.replace(prior)
+        with self.assertRaisesRegex(ValueError,'Restored predecessor inode'):
+            self.run_action('prepare')
+        self.assertFalse((self.journal/'qualified.json').exists())
 
     def test_resume_each_preparation_boundary(self):
         for point in ('approval.json','stager','publisher','intent.json','qualified.json'):
@@ -287,7 +300,7 @@ class InstallFixture(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'installed lifecycle controller'):
                 tool.migrated_controller(self.grant)
 
-    def test_require_completed_and_current_7g_migration(self):
+    def test_require_completed_and_current_7_5g_migration(self):
         protected = {k:self.grant[k] for k in ('configSha256','stateSha256','pair')}
         intent = {'commit':self.grant['commit'],'tree':self.grant['tree'],'protected':protected}
         path = self.base/'scratch-intent.json'
@@ -297,12 +310,13 @@ class InstallFixture(unittest.TestCase):
         replacement_path.start()
         self.addCleanup(replacement_path.stop)
         scratch = {'model':'verified-ui-scratch-successor-v1','approvalSha256':tool.SCRATCH_APPROVAL,
-                   'installedSha256':'7'*64,'intentSha256':tool.sha(path.read_bytes()),'scratchBudgetBytes':7*1024**3}
+                   'installedSha256':'7'*64,'intentSha256':tool.sha(path.read_bytes()),'scratchBudgetBytes':7_680*1024**2}
         status = {'ok':True,'publicationHealthy':True,'retentionComplete':True,'unfinishedIntents':[],
                   'configSha256':self.grant['configSha256'],'stateSha256':self.grant['stateSha256'],
                   'pair':dict(tool.PAIR),'verifiedScratchCapacity':scratch,'binding':{'scratchCapacity':dict(scratch)}}
         tool.require_completed_migration(status,self.grant)
-        for key,replacement in [('scratchBudgetBytes',6*1024**3),('approvalSha256','0'*64),
+        for key,replacement in [('scratchBudgetBytes',7*1024**3),
+                                ('approvalSha256','512d190246031cbaa5ff8ceec32955ddfa742a4c893e0777d03f6af0967459a8'),
                                 ('installedSha256',None),('model','pending')]:
             bad = {**scratch,key:replacement}
             with self.subTest(key=key), self.assertRaises(ValueError):
@@ -331,7 +345,13 @@ class InstallFixture(unittest.TestCase):
             files[name] = {'sha256':tool.sha(raw),'bytes':len(raw)}
         self.assertEqual(tool.sha(tool.encoded(files)),tool.PACKAGE_FILES_SHA)
         self.assertEqual(files['deploy/proofofwork-ui-capacity.py']['sha256'],tool.CAPACITY_SHA)
-        self.assertIn(tool.SCRATCH_APPROVAL,{row['sha256'] for row in files.values()})
+        scope_name = 'audits/2026-11-24-amo-catchup-ui-scratch-capacity-scope.json'
+        self.assertEqual(files[scope_name]['sha256'],tool.SCRATCH_APPROVAL)
+        scope = json.loads((ROOT/scope_name).read_bytes())
+        self.assertEqual(package.CATCHUP_PRIOR_STAGE['approvalSha256'],tool.PRIOR_GRANT)
+        self.assertEqual(package.CATCHUP_PRIOR_STAGE['intentSha256'],tool.PRIOR_GRANT_INTENT)
+        self.assertEqual(scope['preBridge']['configSha256'],tool.PRIOR_CONFIG_SHA)
+        self.assertEqual(scope['preBridge']['stateSha256'],tool.PRIOR_STATE_SHA)
 
     def test_context_drift_after_first_exchange_blocks_until_reconciled(self):
         self.run_action('prepare')

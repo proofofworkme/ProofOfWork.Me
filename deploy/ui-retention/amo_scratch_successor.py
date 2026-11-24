@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -I
-"""Authenticate the AMO 6-to-7 GiB scratch exchange and its historical chain."""
+"""Authenticate the two AMO scratch exchanges and their historical inodes."""
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,12 +19,29 @@ PREDECESSOR_AUTHORITY = {
 AMO_EDGE = SimpleNamespace(approval=APPROVAL, migration='ui-scratch-6-to-7-gib-20261124',
     prior_sha=PRIOR_SHA, next_sha=NEXT_SHA, prior_bytes=PRIOR_BYTES, next_bytes=NEXT_BYTES,
     predecessor=PREDECESSOR_AUTHORITY)
+CATCHUP_APPROVAL = '2bde67832b5a80106d226c49081e89c3637ac7b8a21959706392a237f00c379f'
+CATCHUP_EDGE = SimpleNamespace(
+    approval=CATCHUP_APPROVAL, migration='ui-scratch-7-to-7-5-gib-20261124',
+    directory=DIRECTORY.parent / CATCHUP_APPROVAL,
+    grant='audits/2026-11-24-amo-catchup-ui-scratch-capacity-scope.json',
+    prior_sha=NEXT_SHA, next_sha='9c546b3053414eb52306c1e4098dbf1de6dc119a7fce63fa642dcc6bc7fa78df',
+    prior_bytes=NEXT_BYTES, next_bytes=15 * 1024**3 // 2,
+    predecessor={'approvalSha256': APPROVAL,
+        'installedSha256': '1efa5921893c7c1f1d1d5572e96447a6c0d3f2f099eccf1ea0c59481bcdacc9d',
+        'intentSha256': '4faa7cc20b3304719ab6f5c9efa9f07cf21368d050ba614d6e11645f978723ee'})
 
 
-def verify_position(layout, runtime, *, allow_pending=False):
+def verify_position(layout, runtime, *, allow_pending=False, capacity_descriptor=None):
     boost = runtime.scratch_successor_module()
     package = (*boost.SUCCESSOR_PACKAGE_FILES, 'deploy/ui-retention/amo_scratch_successor.py', GRANT)
-    return boost.verify_edge(layout, runtime, AMO_EDGE, package, allow_pending=allow_pending)
+    return boost.verify_edge(layout, runtime, AMO_EDGE, package, allow_pending=allow_pending,
+                             capacity_descriptor=capacity_descriptor)
+
+
+def verify_catchup_position(layout, runtime, *, allow_pending=False):
+    boost = runtime.scratch_successor_module()
+    package = (*boost.SUCCESSOR_PACKAGE_FILES, 'deploy/ui-retention/amo_scratch_successor.py', GRANT, CATCHUP_EDGE.grant)
+    return boost.verify_edge(layout, runtime, CATCHUP_EDGE, package, allow_pending=allow_pending)
 
 
 def verify_predecessor(layout, runtime, capacity_descriptor):
@@ -41,3 +58,13 @@ def verify_predecessor(layout, runtime, capacity_descriptor):
     runtime.require(floor and floor['rootReserveBytes'] == 8 * 1024**3
                     and floor['growthReserveBytes'] == 64 * 1024**2, 'Original capacity floor is unverified')
     return {'boost': boost['authority'], 'original': first, 'floor': floor}
+
+
+def verify_catchup_predecessor(layout, runtime, capacity_descriptor):
+    seven = verify_position(layout, runtime, capacity_descriptor=capacity_descriptor)
+    runtime.require(seven and seven['position'] == 'after' and seven['authority']
+                    and seven['authority']['scratchBudgetBytes'] == CATCHUP_EDGE.prior_bytes
+                    and all(seven['authority'].get(k) == v for k, v in CATCHUP_EDGE.predecessor.items()),
+                    'Catch-up scratch predecessor differs from the verified AMO installation')
+    historical = verify_predecessor(layout, runtime, seven['predecessorDescriptor'])
+    return dict(historical, amo=seven['authority'])

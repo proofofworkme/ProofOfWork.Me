@@ -356,7 +356,7 @@ class InstalledCliTests(unittest.TestCase):
              patch.object(C,'operate',return_value={'ok':True}) as operate, \
              patch.object(C.os,'umask'),contextlib.redirect_stdout(io.StringIO()):
             C.main()
-        installed.assert_called_once_with('a'*40, amo=False);source.assert_not_called();git.assert_not_called()
+        installed.assert_called_once_with('a'*40, amo=False, catchup=False);source.assert_not_called();git.assert_not_called()
         operate.assert_called_once_with('prepare','a'*40,'b'*40,ns,{},b'grant',b'candidate')
 
     def test_installed_amo_cli_uses_only_the_selected_grant(self):
@@ -367,9 +367,22 @@ class InstalledCliTests(unittest.TestCase):
              patch.object(C, 'operate', return_value={'ok':True}), \
              patch.object(C.os, 'umask'), contextlib.redirect_stdout(io.StringIO()):
             C.main()
-        installed.assert_called_once_with('a'*40, amo=True)
+        installed.assert_called_once_with('a'*40, amo=True, catchup=False)
         source.assert_not_called()
         git.assert_not_called()
+
+    def test_installed_catchup_only_selects_pinned_new_scope(self):
+        ns = {'manifest': {'sourceTree': 'b'*40}}
+        with patch.object(C.sys, 'argv', ['successor_installer.py','status','a'*40,'--installed','--amo-catchup']), \
+             patch.object(C, 'installed_inputs', return_value=(ns,{},b'grant',b'native')) as loader, \
+             patch.object(C, 'operate', return_value={'ok':True}), patch.object(C.os, 'umask'), \
+             contextlib.redirect_stdout(io.StringIO()):
+            C.main()
+        loader.assert_called_once_with('a'*40, amo=False, catchup=True)
+        self.assertEqual(C.scope_and_authority(False,True),(C.CATCHUP_SCOPE,C.AMO_SUCCESSOR))
+        with self.assertRaisesRegex(ValueError,'Select one'):
+            C.scope_and_authority(True,True)
+
 
 class InstalledInputTests(unittest.TestCase):
     """Actual byte readers; installed runtime authentication is a synthetic boundary."""
@@ -427,38 +440,48 @@ class InstalledInputTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'invalid installed runtime'):C.installed_inputs(self.commit)
 
 class AmoTransactionTests(unittest.TestCase):
+    catchup = False
+
     def setUp(self):
         case = TransactionTests()
         case.setUp()
         self.addCleanup(case.doCleanups)
         self.case = case
-        scope = (C.ROOT / C.AMO_SCOPE).read_bytes()
-        ami = runpy.run_path(str(C.ROOT / C.AMO_SUCCESSOR))
-        self.assertEqual(sha(scope), ami['APPROVAL'])
+        scope, authority = C.scope_and_authority(not self.catchup,self.catchup)
+        scope = (C.ROOT / scope).read_bytes()
+        selected = C.load_modules(authority,not self.catchup,self.catchup)['successor']
+        self.assertEqual(sha(scope), selected.APPROVAL)
         case.grant = json.loads(scope)
         case.raw = scope
-        case.new = (C.ROOT / case.grant['target']['source']).read_bytes()
-        old = case.new.replace(b'MAX_DEPLOY_SCRATCH_BYTES = 7 *', b'MAX_DEPLOY_SCRATCH_BYTES = 6 *')
+        current = (C.ROOT / case.grant['target']['source']).read_bytes()
+        seven = current.replace(b'MAX_DEPLOY_SCRATCH_BYTES = 15 * 1024**3 // 2', b'MAX_DEPLOY_SCRATCH_BYTES = 7 * 1024**3')
+        if self.catchup:
+            old, case.new = seven, current
+        else:
+            old, case.new = seven.replace(b'MAX_DEPLOY_SCRATCH_BYTES = 7 *', b'MAX_DEPLOY_SCRATCH_BYTES = 6 *'), seven
         case.live.write_bytes(old)
         case.original = case.descriptor(case.live)
         case.ns['amo'] = True
-        case.successor.APPROVAL = ami['APPROVAL']
-        case.successor.PRIOR_SHA = ami['PRIOR_SHA']
-        case.successor.NEXT_SHA = ami['NEXT_SHA']
+        case.ns['catchup'] = self.catchup
+        case.successor.APPROVAL = selected.APPROVAL
+        case.successor.PRIOR_SHA = selected.PRIOR_SHA
+        case.successor.NEXT_SHA = selected.NEXT_SHA
         self.assertEqual(sha(old), case.successor.PRIOR_SHA)
         self.assertEqual(sha(case.new), case.successor.NEXT_SHA)
         case.successor.verify_predecessor = lambda layout, floor, capacity_descriptor: case.predecessor(
             layout, capacity_descriptor=capacity_descriptor)
-        def status(frame, *, amo_scratch_pending_intent=None):
-            if amo_scratch_pending_intent is not None:
-                return case.runtime.scratch_migration_status(amo_scratch_pending_intent)
+        def status(frame, **pending):
+            if pending:
+                expected = 'amo_catchup_scratch_pending_intent' if self.catchup else 'amo_scratch_pending_intent'
+                self.assertEqual(set(pending), {expected})
+                return case.runtime.scratch_migration_status(pending[expected])
             return case.status(frame)
         case.runtime.status = status
         # Native capacity commands are simulated here; inode exchanges and journal operations are real.
         self.exchange_budget = case.stack.enter_context(patch.object(C, 'exchange_budget'))
         self.native_budget = C.native_budget
         self.sentinels = []
-        for kind in ('live', 'rollback', 'private-stage', 'archive', 'surface-receipt', 'source-receipt'):
+        for kind in ('live', 'rollback', '56da-stage', '31d-stage', 'archive', 'surface-receipt', 'source-receipt'):
             p = case.base / ('retained-' + kind)
             p.write_bytes(('retained ' + kind).encode())
             p.chmod(0o600)
@@ -508,7 +531,7 @@ class AmoTransactionTests(unittest.TestCase):
         # Even an internally matching new digest must not legitimize a second source edit.
         altered = copy.deepcopy(case.grant)
         altered['target']['afterSha256'] = sha(case.new)
-        with self.assertRaisesRegex(ValueError, 'outside the approved ceiling'): C.check_amo_helper(case.new, altered)
+        with self.assertRaisesRegex(ValueError, 'outside the approved ceiling'): C.check_amo_helper(case.new, altered, catchup=self.catchup)
 
     def test_amo_free_space_failure_precedes_exchange_or_reversal_intent(self):
         case = self.case
@@ -544,6 +567,28 @@ class AmoTransactionTests(unittest.TestCase):
         with frozen([native, dict(capacity, allocatedBytes=case.grant['scratchBytes']+1)]):
             with self.assertRaisesRegex(ValueError, 'scratch admission differs'):
                 real['exchange_budget'](case.live, case.base, case.grant)
+
+
+class CatchupTransactionTests(AmoTransactionTests):
+    # Run the same exchange, crash boundaries, refusal and preservation tests for the third edge.
+    catchup = True
+
+    def test_7_gib_reversal_boundary(self):
+        prior = 7 * 1024**3
+        path = self.case.base
+        rollback_budget = runpy.run_path(str(HERE/'successor_installer.py'))['rollback_budget']
+        for amount, permitted in [(prior, True), (prior + 1, False)]:
+            with self.subTest(amount=amount), patch.dict(rollback_budget.__globals__,{'Path': lambda _: path}), patch.object(
+                    subprocess,'check_output',return_value=f'{amount}\t{path}\n'.encode()):
+                if permitted:
+                    rollback_budget(self.case.grant)
+                else:
+                    with self.assertRaisesRegex(ValueError,'prior ceiling'):
+                        rollback_budget(self.case.grant)
+
+    def test_wrong_edge_refused_even_for_untampered_bytes(self):
+        with self.assertRaisesRegex(ValueError, 'outside the approved ceiling'):
+            C.check_amo_helper(self.case.new,self.case.grant,catchup=False)
 
 
 if __name__=='__main__':unittest.main()

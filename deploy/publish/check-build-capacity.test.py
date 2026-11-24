@@ -21,7 +21,7 @@ class CapacityTests(unittest.TestCase):
             b.check_build_capacity(b.BUILD_PARENT / 'test')
 
     def test_finite_limits_and_exact_boundary(self):
-        self.assertEqual(b.RETAINED_BUDGET, 34_359_738_368)
+        self.assertEqual(b.RETAINED_BUDGET, 35_433_480_192)
         self.assertEqual(b.BUILD_BUDGET, 4 * 1024**3)
         self.assertEqual(b.DATA_RESERVE, 100 * 1024**3)
         self.capacity(b.DATA_RESERVE + b.BUILD_BUDGET,
@@ -38,6 +38,7 @@ class CapacityTests(unittest.TestCase):
         for used, prior_gib, admitted_gib, headroom in [
             (28_040_896_512, 29, 31, 950_132_736),
             (29_363_253_248, 31, 32, 701_517_824),
+            (30_686_101_504, 32, 33, 452_411_392),
         ]:
             with self.subTest(used=used):
                 with patch.object(b, 'RETAINED_BUDGET', prior_gib * 1024**3), self.assertRaises(ValueError):

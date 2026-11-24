@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 GRANT = 'audits/2026-11-18-ui-scratch-capacity-approval.json'
 SUCCESSOR = 'deploy/ui-retention/scratch_successor.py'
 AMO_SCOPE = 'audits/2026-11-24-amo-ui-scratch-capacity-scope.json'
+CATCHUP_SCOPE = 'audits/2026-11-24-amo-catchup-ui-scratch-capacity-scope.json'
 AMO_SUCCESSOR = 'deploy/ui-retention/amo_scratch_successor.py'
 TOOLS = 'deploy/ui-stream-tools/installer.py'
 INSTALL = 'deploy/ui-retention/install_lifecycle.py'
@@ -49,19 +50,38 @@ def committed(commit, relative):
     return raw
 
 
-def inputs(commit, *, amo=False):
+def scope_and_authority(amo, catchup):
+    need(not (amo and catchup), 'Select one scratch migration')
+    if catchup:
+        return CATCHUP_SCOPE, AMO_SUCCESSOR
+    return (AMO_SCOPE, AMO_SUCCESSOR) if amo else (GRANT, SUCCESSOR)
+
+
+def load_modules(authority, amo, catchup):
+    ns = {key: SimpleNamespace(**runpy.run_path(str(ROOT / relative)))
+          for key, relative in (('tools', TOOLS), ('old', INSTALL), ('floor', REMOTE), ('successor', authority))}
+    if catchup:
+        module = ns['successor']
+        edge = module.CATCHUP_EDGE
+        ns['successor'] = SimpleNamespace(APPROVAL=edge.approval, PRIOR_SHA=edge.prior_sha, NEXT_SHA=edge.next_sha,
+            DIRECTORY=edge.directory, verify_position=module.verify_catchup_position,
+            verify_predecessor=module.verify_catchup_predecessor)
+    ns['amo'] = amo or catchup
+    ns['catchup'] = catchup
+    return ns
+
+
+def inputs(commit, *, amo=False, catchup=False):
     need(os.geteuid() == os.getegid() == 0 and sys.flags.isolated and not sys.flags.optimize,
          'Require isolated root on the UI host')
     need(re.fullmatch('[a-f0-9]{40}', commit) and git('rev-parse', 'HEAD').decode().strip() == commit
          and not git('status', '--porcelain', '--untracked-files=all'), 'Require exact clean committed source')
-    scope, authority = (AMO_SCOPE, AMO_SUCCESSOR) if amo else (GRANT, SUCCESSOR)
+    scope, authority = scope_and_authority(amo, catchup)
     for relative in (str(Path(__file__).resolve().relative_to(ROOT)), TOOLS, INSTALL, REMOTE, authority,
                      'deploy/ui-retention/lifecycle.py', scope):
         committed(commit, relative)
-    ns = {key: SimpleNamespace(**runpy.run_path(str(ROOT / relative)))
-          for key, relative in (('tools', TOOLS), ('old', INSTALL), ('floor', REMOTE), ('successor', authority))}
+    ns = load_modules(authority, amo, catchup)
     runpy.run_path(str(ROOT / 'deploy/ui-retention/lifecycle.py'))['require_ui_host'](ROOT)
-    ns['amo'] = amo
     raw = committed(commit, scope); grant = json.loads(raw); floor = ns['floor']; successor = ns['successor']
     need(sha(raw) == successor.APPROVAL, 'Scratch approval differs')
     target = grant['target']; candidate = committed(commit, target['source'])
@@ -152,13 +172,18 @@ def rollback_budget(grant):
     need(int(output[0]) <= grant['priorScratchBytes'], 'Rollback refuses scratch above the prior ceiling')
 
 
-def check_amo_helper(candidate, grant):
+def check_amo_helper(candidate, grant, *, catchup=False):
     """Prove the pinned successor is exactly the existing helper with one changed limit."""
-    before = b'MAX_DEPLOY_SCRATCH_BYTES = 6 * 1024**3\n'
-    after = b'MAX_DEPLOY_SCRATCH_BYTES = 7 * 1024**3\n'
+    seven = b'MAX_DEPLOY_SCRATCH_BYTES = 7 * 1024**3\n'
+    if catchup:
+        before, after = seven, b'MAX_DEPLOY_SCRATCH_BYTES = 15 * 1024**3 // 2\n'
+        prior_bytes, next_bytes = 7 * 1024**3, 15 * 1024**3 // 2
+    else:
+        before, after = b'MAX_DEPLOY_SCRATCH_BYTES = 6 * 1024**3\n', seven
+        prior_bytes, next_bytes = 6 * 1024**3, 7 * 1024**3
     need(candidate.count(after) == 1 and sha(candidate.replace(after, before)) == grant['target']['beforeSha256']
          and sha(candidate) == grant['target']['afterSha256']
-         and grant['priorScratchBytes'] == 6 * 1024**3 and grant['scratchBytes'] == 7 * 1024**3,
+         and grant['priorScratchBytes'] == prior_bytes and grant['scratchBytes'] == next_bytes,
          'AMO capacity helper differs outside the approved ceiling')
 
 
@@ -181,7 +206,7 @@ def operate(action, commit, tree, ns, grant, grant_raw, candidate, checkpoint=la
          'Unapproved migration input')
     amo = ns.get('amo', False)
     if amo:
-        check_amo_helper(candidate, grant)
+        check_amo_helper(candidate, grant, catchup=ns.get('catchup', False))
     runtime = old.existing_runtime(sha(old.read_bound(old.CONFIG)))
     lock = runtime.S.lock(runtime.layout)
     try:
@@ -272,6 +297,8 @@ def operate(action, commit, tree, ns, grant, grant_raw, candidate, checkpoint=la
         def preverify(phase):
             try:
                 pending = 'amo_scratch_pending_intent' if amo else 'scratch_successor_pending_intent'
+                if ns.get('catchup'):
+                    pending = 'amo_catchup_scratch_pending_intent'
                 status = runtime.status({'requireComplete': True}, **{pending: intent_sha})
                 need(status['ok'] is True and status['stateSha256'] == baseline['stateSha256']
                      and status['configSha256'] == baseline['configSha256']
@@ -338,17 +365,15 @@ def operate(action, commit, tree, ns, grant, grant_raw, candidate, checkpoint=la
         os.close(lock)
 
 
-def installed_inputs(commit, *, amo=False):
+def installed_inputs(commit, *, amo=False, catchup=False):
     """Use the native hash-verified installed package, never a partial Git checkout."""
     need(os.geteuid() == os.getegid() == 0 and sys.flags.isolated and not sys.flags.optimize,
          'Require isolated root on UI')
     interfaces = json.loads(subprocess.check_output(['/usr/sbin/ip', '-j', '-4', 'address', 'show'], timeout=10))
     need(any(address.get('local') == '77.42.91.106' for interface in interfaces
              for address in interface.get('addr_info', [])), 'Installed migration requires production UI host')
-    scope, authority = (AMO_SCOPE, AMO_SUCCESSOR) if amo else (GRANT, SUCCESSOR)
-    ns = {key: SimpleNamespace(**runpy.run_path(str(ROOT / relative)))
-          for key, relative in (('tools', TOOLS), ('old', INSTALL), ('floor', REMOTE), ('successor', authority))}
-    ns['amo'] = amo
+    scope, authority = scope_and_authority(amo, catchup)
+    ns = load_modules(authority, amo, catchup)
     old, floor, successor = ns['old'], ns['floor'], ns['successor']
     config_raw = old.read_bound(old.CONFIG)
     runtime = floor.installed_runtime(old.CONFIG, sha(config_raw))
@@ -376,10 +401,12 @@ def main():
     parser.add_argument('action', choices=('prepare','apply','reconcile','rollback','status'))
     parser.add_argument('commit')
     parser.add_argument('--installed', action='store_true')
-    parser.add_argument('--amo', action='store_true', help='Select the pinned 6-to-7 GiB AMO migration')
+    migration = parser.add_mutually_exclusive_group()
+    migration.add_argument('--amo', action='store_true', help='Select the pinned 6-to-7 GiB AMO migration')
+    migration.add_argument('--amo-catchup', action='store_true', help='Select the pinned 7-to-7.5 GiB AMO migration')
     args = parser.parse_args(); os.umask(0o077)
     loader = installed_inputs if args.installed else inputs
-    ns, grant, raw, candidate = loader(args.commit, amo=args.amo)
+    ns, grant, raw, candidate = loader(args.commit, amo=args.amo, catchup=args.amo_catchup)
     tree = ns['manifest']['sourceTree'] if args.installed else git('rev-parse','HEAD^{tree}').decode().strip()
     print(json.dumps(operate(args.action,args.commit,tree,
                              ns,grant,raw,candidate)))

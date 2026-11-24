@@ -59,8 +59,10 @@ SIX_GIB_FILES = (
     'audits/2026-11-18-ui-scratch-capacity-approval.json',
     'deploy/proofofwork-ui-capacity.py',
 )
-FILES = (*SIX_GIB_FILES, 'deploy/ui-retention/amo_scratch_successor.py',
-         'audits/2026-11-24-amo-ui-scratch-capacity-scope.json')
+SEVEN_GIB_FILES = (*SIX_GIB_FILES, 'deploy/ui-retention/amo_scratch_successor.py',
+                   'audits/2026-11-24-amo-ui-scratch-capacity-scope.json')
+CATCHUP_SCRATCH_SCOPE = 'audits/2026-11-24-amo-catchup-ui-scratch-capacity-scope.json'
+FILES = (*SEVEN_GIB_FILES, CATCHUP_SCRATCH_SCOPE)
 # Frozen predecessor scope for authenticated native package upgrades.
 PRE_SIX_GIB_FILES = ('audits/2026-10-16-ui-retention-repair-approval.json', 'audits/2026-10-16-ui-retention-repair-proposal.json', 'deploy/audit30/ui-storage.py', 'deploy/audit30/ui-release-policy.py', 'deploy/proofofwork-ui-verified-retention.py', 'deploy/ui-retention/custody.py', 'deploy/ui-retention/inventory.py', 'deploy/ui-retention/removal.py', 'deploy/ui-retention/lifecycle_remote.py', 'deploy/ui-retention/install_lifecycle.py', 'deploy/ui-retention/lifecycle.py', 'deploy/ui-retention/retirement_receipt.py', 'deploy/ui-retention/retirement_transition.py', 'deploy/ui-retention/retirement_controller.py', 'deploy/ui-retention/failed_prepare_repair.py', 'deploy/ui-retention/failed_prepare_review.py', 'deploy/ui-retention/reconcile_failed_prepare.py', 'deploy/ui-retention/transport_retirement.py')
 
@@ -202,7 +204,7 @@ def validate_payload(payload, *, allow_legacy=False):
                       'deploy/ui-retention/failed_prepare_review.py',
                       'deploy/ui-retention/reconcile_failed_prepare.py'}
     require(set(payload['files']) == set(manifest['files'])
-            and (set(payload['files']) == scope or allow_legacy and set(payload['files']) in (legacy, previous, prior, set(SIX_GIB_FILES))),
+            and (set(payload['files']) == scope or allow_legacy and set(payload['files']) in (legacy, previous, prior, set(SIX_GIB_FILES), set(SEVEN_GIB_FILES))),
             'Expanded package file scope')
     require(manifest['schema'] == 'pow-ui-retention-package-v1'
             and re.fullmatch('[0-9a-f]{40}', manifest['sourceCommit'])
@@ -323,7 +325,7 @@ def existing_runtime(config_sha, prefix=Path('/')):
     package = prefix / config['package']['path'].lstrip('/')
     manifest_raw = read_bound(package / 'package.json', config['package']['sha256'])
     manifest = json.loads(manifest_raw)
-    require(set(manifest['files']) in (set(FILES), set(SIX_GIB_FILES), set(PRE_SIX_GIB_FILES), set(PRE_SIX_GIB_FILES) - {'deploy/ui-retention/transport_retirement.py'}, set(PRE_SIX_GIB_FILES) - {'deploy/ui-retention/transport_retirement.py', 'deploy/ui-retention/failed_prepare_repair.py',
+    require(set(manifest['files']) in (set(FILES), set(SEVEN_GIB_FILES), set(SIX_GIB_FILES), set(PRE_SIX_GIB_FILES), set(PRE_SIX_GIB_FILES) - {'deploy/ui-retention/transport_retirement.py'}, set(PRE_SIX_GIB_FILES) - {'deploy/ui-retention/transport_retirement.py', 'deploy/ui-retention/failed_prepare_repair.py',
                           'deploy/ui-retention/failed_prepare_review.py',
                           'deploy/ui-retention/reconcile_failed_prepare.py'}),
             'Installed package scope differs')
@@ -903,24 +905,39 @@ PRIOR_AMO_RELEASE = '56da86069b00-20261123T214728Z'
 PRIOR_AMO_INSTALLER = '2247f8f6a25c53d541e859cc6108e33a0a480eb6ad931000a35d91fca67ddb46'
 AMO_SCRATCH_SCOPE = 'audits/2026-11-24-amo-ui-scratch-capacity-scope.json'
 AMO_SCRATCH_SHA = '512d190246031cbaa5ff8ceec32955ddfa742a4c893e0777d03f6af0967459a8'
+CATCHUP_SCRATCH_SHA = '2bde67832b5a80106d226c49081e89c3637ac7b8a21959706392a237f00c379f'
+CATCHUP_PRIOR_STAGE = {
+    'releaseId': '31d335e99ad8-20261124T032904Z',
+    'commit': '31d335e99ad8ffb4f22fa8a2aa18482919122ebb',
+    'tree': '2e6335642d6a4051a3581295ff81f6c0f0e1dd09',
+    'installerSha256': '6a6ff97923e4fe1dc9ce6c4dbc6d1dc1971aa23a4fd9ef7aa399362b33b34cce',
+    'approvalSha256': 'f08f5eb9450915470ebcd06c5030c562bcc8bdd0e190637e96f3f8fde717e16f',
+    'frameSha256': '1a7bcd74eedd73014b248d3591beee2831750de11e15937953e9797a496d98c4',
+    'intentSha256': '52f64c3b783e3246c14fd1b91872a0f6291c85478615402c9673aafe8952d814',
+}
 
 
 def prior_stage_reversal(prefix, request):
     """Under the existing deploy lock, re-use the retained installer's read-only inode verifier."""
-    directory = prefix / 'tmp' / ('proofofwork-amo-installer-' + PRIOR_AMO_RELEASE + '-initial')
+    digest = request['priorStageApprovalSha256']
+    catchup = digest == CATCHUP_PRIOR_STAGE['approvalSha256']
+    stage = CATCHUP_PRIOR_STAGE if catchup else {
+        'releaseId': PRIOR_AMO_RELEASE, 'installerSha256': PRIOR_AMO_INSTALLER,
+        'commit': '56da86069b0064a52ddc2880c2b3f00e3a651fd1', 'tree': '25b9f4bcbcb980803efddc53766788c8d4c9daaf',
+    }
+    directory = prefix / 'tmp' / ('proofofwork-amo-installer-' + stage['releaseId'] + '-initial')
     require(stat.S_IMODE(safe(directory, True).st_mode) == 0o700, 'Unsafe prior stage inputs')
     installer = directory / 'amo_stage_installer.py'
-    raw = read_bound(installer, PRIOR_AMO_INSTALLER)
+    raw = read_bound(installer, stage['installerSha256'])
     native = {'__name__': 'verified_prior_amo_installer', '__file__': str(installer)}
     exec(compile(raw, str(installer), 'exec'), native)
-    digest = request['priorStageApprovalSha256']
     approval = native['sealed_approval'](directory / 'amo-approval.json', digest)
-    require(approval['releaseId'] == PRIOR_AMO_RELEASE and approval['publicationAttempt'] == 'initial'
-            and approval['commit'] == '56da86069b0064a52ddc2880c2b3f00e3a651fd1'
-            and approval['tree'] == '25b9f4bcbcb980803efddc53766788c8d4c9daaf'
+    require(all(approval[k] == stage[k] for k in ('releaseId', 'commit', 'tree')) and approval['publicationAttempt'] == 'initial'
             and request['configSha256'] == approval['configSha256']
             and request['stateSha256'] == approval['stateSha256'], 'Wrong predecessor stage or lifecycle')
     frame_raw = native['readinfo'](directory / 'amo-helper-frame.json', 4 * native['MAX'], mode=0o600)[0]
+    if catchup:
+        require(sha(frame_raw) == stage['frameSha256'], 'Retained 31d helper frame differs')
     frame = json.loads(frame_raw)
     require(frame_raw == native['encoded'](frame) and set(frame) == {'approvalSha256','helpers'}
             and frame['approvalSha256'] == digest and set(frame['helpers']) == set(native['SOURCE']),
@@ -936,23 +953,38 @@ def prior_stage_reversal(prefix, request):
     status = native['operate']('status', store, binaries, approval, payloads, protected, None)
     require(status['rollbackComplete'] and not status['active'] and set(status['positions'].values()) == {'before'},
             'Prior stage grant requires terminal reversal and both original helpers')
+    if catchup:
+        require(status['intentSha256'] == stage['intentSha256'], 'Retained 31d stage intent differs')
     # A reversal before installation cannot represent this previously active grant.
     return dict(status, installedSha256=sha(read_bound(store / digest / 'installed.json')),
                 rolledBackSha256=sha(read_bound(store / digest / 'rolled-back.json')))
 
 
 def require_stage_reversal(payload, old_config, request, before, prefix):
-    if payload['manifest']['files'].get(AMO_SCRATCH_SCOPE, {}).get('sha256') != AMO_SCRATCH_SHA:
+    files = payload['manifest']['files']
+    edges = ((AMO_SCRATCH_SCOPE, AMO_SCRATCH_SHA), (CATCHUP_SCRATCH_SCOPE, CATCHUP_SCRATCH_SHA))
+    if not any(scope in files for scope, _ in edges):
         return
     package = old_config['package']
     old_manifest = json.loads(read_bound(prefix / package['path'].lstrip('/') / 'package.json', package['sha256']))
-    if old_manifest['files'].get(AMO_SCRATCH_SCOPE, {}).get('sha256') == AMO_SCRATCH_SHA:
-        return
-    baseline = json.loads(base64.b64decode(payload['files'][AMO_SCRATCH_SCOPE]['base64'], validate=True))['preBridge']
-    require(package['sha256'] == baseline['packageManifestSha256'] and request.get('mode') == 'completed-cycle'
-            and request['configSha256'] == baseline['configSha256'] and request['stateSha256'] == baseline['stateSha256']
-            and before.get('priorStageReversal', {}).get('rollbackComplete') is True,
-            'AMO capacity bridge requires the exact baseline and verified predecessor stage reversal')
+    for scope, pin in edges:
+        if scope not in files:
+            continue
+        require(files[scope]['sha256'] == pin, 'Unknown AMO capacity bridge scope')
+        if scope in old_manifest['files']:
+            require(old_manifest['files'][scope]['sha256'] == pin, 'Changed historical AMO capacity scope')
+            continue
+        baseline = json.loads(base64.b64decode(payload['files'][scope]['base64'], validate=True))['preBridge']
+        proof = before.get('priorStageReversal', {})
+        require(package['sha256'] == baseline['packageManifestSha256'] and request.get('mode') == 'completed-cycle'
+                and request['configSha256'] == baseline['configSha256'] and request['stateSha256'] == baseline['stateSha256']
+                and proof.get('rollbackComplete') is True,
+                'AMO capacity bridge requires the exact baseline and verified predecessor stage reversal')
+        if scope == CATCHUP_SCRATCH_SCOPE:
+            require(request.get('priorStageApprovalSha256') == proof.get('approvalSha256') == CATCHUP_PRIOR_STAGE['approvalSha256']
+                    and proof.get('intentSha256') == CATCHUP_PRIOR_STAGE['intentSha256'],
+                    'AMO capacity bridge requires the exact 31d stage reversal')
+
 
 
 def upgrade_inventory_locked(request, prefix):
@@ -1316,7 +1348,7 @@ def main():
     completed_plan = sub.add_parser('plan-upgrade-complete')
     completed_plan.add_argument('--config-sha256', required=True)
     completed_plan.add_argument('--state-sha256', required=True)
-    completed_plan.add_argument('--prior-stage-approval-sha256', help='Retained 56da approval digest for the AMO capacity bridge')
+    completed_plan.add_argument('--prior-stage-approval-sha256', help='Exact retained predecessor grant digest for the completed AMO capacity bridge')
     completed_plan.add_argument('--output', type=Path, required=True)
     completed_plan.add_argument('--reconcile-boot-logs', action='store_true')
     completed_plan.add_argument('--reconcile-expired-boot-journal', action='store_true')

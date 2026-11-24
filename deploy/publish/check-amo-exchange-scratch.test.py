@@ -140,30 +140,36 @@ class ExchangeScratch(unittest.TestCase):
         after = self.refusal(self.after, exact + 1)
         self.assertEqual(after["allocatedBytes"] + after["additionalBytes"], after["maximumBytes"] + 1)
 
-    def test_seven_gib_retains_prior_stage_and_refuses_six_gib_observations(self):
-        # Use the Nov 24 census and the previous receiver's complete scratch
-        # reservation as a size example. A successor needs its own reservation.
-        used, charge = 6_161_629_184, 960_528_384
-        limits = sequence.LIMITS
-        census = {"limits": dict(limits), "usage": {"backup": 0, "transport": 0, "scratch": used},
-                  "availableBytes": limits["rootReserveBytes"] + limits["growthReserveBytes"] + charge,
-                  "availableInodes": limits["inodeReserve"] + 1}
-        required = {"schema": "pow-ui-whole-release-capacity-v1", "limits": dict(limits),
-                    "additionalBytes": {"scratch": charge, "backup": 0, "transport": 0, "root": charge},
-                    "additionalInodes": 1, "retirementCreditBytes": 0, "futureHardlinkCreditBytes": 0}
-        headroom = sequence.admit(required, census)["headroom"]
-        self.assertEqual(headroom["scratch"], 394_035_200)
-        self.assertEqual(headroom["root"], 0)
-        self.assertEqual(used + charge - 6 * 1024**3, 679_706_624)
-        with patch.dict(required["limits"], scratchBudgetBytes=6 * 1024**3):
-            with self.assertRaisesRegex(ValueError, "Unknown whole-release capacity contract"):
-                sequence.admit(required, census)
-        with patch.object(native, "MAX_DEPLOY_SCRATCH_BYTES", 6 * 1024**3):
-            with self.assertRaisesRegex(ValueError, "Installed storage limits differ"):
-                sequence.capture(native)
-        with patch.dict(census, availableBytes=census["availableBytes"] - 1):
-            with self.assertRaisesRegex(ValueError, '"root": 1'):
-                sequence.admit(required, census)
+    def test_retained_stage_observations_and_previous_guards(self):
+        # Each example uses its retained census and the earlier sealed plan's
+        # scratch reservation. Only the new build can seal its own admission.
+        cases = [
+            (6_161_629_184, 960_528_384, 6 * 1024**3, 7 * 1024**3, 394_035_200, 679_706_624),
+            (6_887_280_640, 960_884_736, 7 * 1024**3, 7_680 * MIB, 204_898_304, 331_972_608),
+        ]
+        self.assertEqual(sequence.LIMITS["scratchBudgetBytes"], cases[-1][3])
+        for used, charge, previous, ceiling, margin, shortfall in cases:
+            with self.subTest(ceiling=ceiling), patch.dict(sequence.LIMITS, scratchBudgetBytes=ceiling):
+                limits = dict(sequence.LIMITS)
+                census = {"limits": limits, "usage": {"backup": 0, "transport": 0, "scratch": used},
+                          "availableBytes": limits["rootReserveBytes"] + limits["growthReserveBytes"] + charge,
+                          "availableInodes": limits["inodeReserve"] + 1}
+                required = {"schema": "pow-ui-whole-release-capacity-v1", "limits": dict(limits),
+                            "additionalBytes": {"scratch": charge, "backup": 0, "transport": 0, "root": charge},
+                            "additionalInodes": 1, "retirementCreditBytes": 0, "futureHardlinkCreditBytes": 0}
+                headroom = sequence.admit(required, census)["headroom"]
+                self.assertEqual(headroom["scratch"], margin)
+                self.assertEqual(headroom["root"], 0)
+                self.assertEqual(used + charge - previous, shortfall)
+                with patch.dict(required["limits"], scratchBudgetBytes=previous):
+                    with self.assertRaisesRegex(ValueError, "Unknown whole-release capacity contract"):
+                        sequence.admit(required, census)
+                with patch.object(native, "MAX_DEPLOY_SCRATCH_BYTES", previous):
+                    with self.assertRaisesRegex(ValueError, "Installed storage limits differ"):
+                        sequence.capture(native)
+                with patch.dict(census, availableBytes=census["availableBytes"] - 1):
+                    with self.assertRaisesRegex(ValueError, '"root": 1'):
+                        sequence.admit(required, census)
 
     def test_direct_exchange_projection_enforces_independent_limits(self):
         old = self.before.parent / "www"

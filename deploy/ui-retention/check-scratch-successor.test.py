@@ -24,11 +24,14 @@ class GrantTests(unittest.TestCase):
         raw=(ROOT/M.SCRATCH_GRANT).read_bytes()
         self.assertEqual(R.sha(raw),M.SCRATCH_APPROVAL)
         helper=(ROOT/'deploy/proofofwork-ui-capacity.py').read_bytes()
-        self.assertEqual(R.sha(helper),A.NEXT_SHA)
-        self.assertEqual(R.sha(helper.replace(b'MAX_DEPLOY_SCRATCH_BYTES = 7 *',
-                                             b'MAX_DEPLOY_SCRATCH_BYTES = 6 *')), M.NEXT_SHA)
+        self.assertEqual(R.sha(helper),A.CATCHUP_EDGE.next_sha)
+        seven = helper.replace(b'MAX_DEPLOY_SCRATCH_BYTES = 15 * 1024**3 // 2', b'MAX_DEPLOY_SCRATCH_BYTES = 7 * 1024**3')
+        self.assertEqual(R.sha(seven),A.NEXT_SHA)
+        self.assertEqual(R.sha(seven.replace(b'MAX_DEPLOY_SCRATCH_BYTES = 7 *',
+                                            b'MAX_DEPLOY_SCRATCH_BYTES = 6 *')), M.NEXT_SHA)
         self.assertEqual(A.PRIOR_SHA,M.NEXT_SHA)
         self.assertEqual(R.sha((ROOT/A.GRANT).read_bytes()), A.APPROVAL)
+        self.assertEqual(R.sha((ROOT/A.CATCHUP_EDGE.grant).read_bytes()), A.CATCHUP_EDGE.approval)
         with tempfile.TemporaryDirectory() as temporary:
             path=Path(temporary)/'approval.json';path.write_bytes(raw);path.chmod(0o600)
             self.assertEqual(R.read_json(path,M.SCRATCH_APPROVAL)[1],M.SCRATCH_APPROVAL)
@@ -168,6 +171,31 @@ class AmoPositionTests(PositionTests):
             self.run_position()
 
 
+class CatchupPositionTests(PositionTests):
+    edge = A.CATCHUP_EDGE
+    migration = types.SimpleNamespace(GRANT=edge.grant, APPROVAL=edge.approval, DIRECTORY=edge.directory,
+        PRIOR_SHA=edge.prior_sha, NEXT_SHA=edge.next_sha, NEXT_BYTES=edge.next_bytes,
+        PREDECESSOR_AUTHORITY=edge.predecessor, verify_position=A.verify_catchup_position)
+
+    def test_rejects_previous_amo_scope(self):
+        self.records['approval.json'] = json.loads((ROOT/A.GRANT).read_bytes())
+        with self.assertRaisesRegex(ValueError, 'Scratch grant scope'):
+            self.run_position()
+
+    def test_preserves_frozen_historical_package_scopes(self):
+        from unittest.mock import Mock
+        boost = Mock(SUCCESSOR_PACKAGE_FILES=M.SUCCESSOR_PACKAGE_FILES)
+        runtime = types.SimpleNamespace(scratch_successor_module=lambda: boost)
+        A.verify_position(self.layout, runtime)
+        seven_files = boost.verify_edge.call_args.args[3]
+        self.assertEqual(len(M.SUCCESSOR_PACKAGE_FILES), 23)
+        self.assertEqual(seven_files, (*M.SUCCESSOR_PACKAGE_FILES, 'deploy/ui-retention/amo_scratch_successor.py', A.GRANT))
+        A.verify_catchup_position(self.layout, runtime)
+        catchup_files = boost.verify_edge.call_args.args[3]
+        self.assertEqual(catchup_files, (*seven_files, self.edge.grant))
+        self.assertEqual(catchup_files, R.PACKAGE_FILES)
+
+
 class SuccessorPendingStatusTests(unittest.TestCase):
     def setUp(self):
         from unittest.mock import Mock
@@ -285,6 +313,84 @@ class AmoChainTests(unittest.TestCase):
                 fixture.runtime.status({},amo_scratch_pending_intent=fixture.intent,
                                        scratch_successor_pending_intent=fixture.intent)
 
+class CatchupChainTests(unittest.TestCase):
+    def setUp(self):
+        self.base = AmoChainTests()
+        self.base.setUp()
+        self.seven = {'position': 'after', 'authority': dict(A.CATCHUP_EDGE.predecessor, scratchBudgetBytes=A.NEXT_BYTES),
+                      'predecessorDescriptor': {'inode':'saved-six'}}
+
+    def trace(self):
+        with patch.object(A,'verify_position',return_value=self.seven) as read_seven:
+            chain = A.verify_catchup_predecessor(self.base.layout, self.base.runtime, {'inode':'saved-seven'})
+            read_seven.assert_called_once_with(self.base.layout, self.base.runtime, capacity_descriptor={'inode':'saved-seven'})
+        return chain
+
+    def test_all_edges_authenticate_saved_descriptors(self):
+        chain = self.trace()
+        self.base.reader.assert_called_once_with(self.base.layout, self.base.runtime, capacity_descriptor={'inode':'saved-six'})
+        self.base.runtime._scratch_capacity_position_original.assert_called_once_with(
+            self.base.layout, capacity_descriptor={'inode':'historical-5.5'})
+        self.base.runtime._capacity_floor_authority_original.assert_called_once_with(self.base.layout, {'inode':'historical-floor'})
+        self.assertEqual((chain['amo'],chain['boost'],chain['floor']),
+                         (self.seven['authority'],self.base.six['authority'],self.base.floor))
+
+    def test_unsealed_journal_wrong_receipts_and_floor_refuse(self):
+        for key in self.seven['authority']:
+            with self.subTest(key=key), patch.dict(self.seven['authority'],{key:0}), self.assertRaises(ValueError):
+                self.trace()
+        with patch.dict(self.seven,position='before'), self.assertRaises(ValueError): self.trace()
+        with patch.dict(self.base.six,position='before'), self.assertRaises(ValueError): self.trace()
+        with patch.dict(self.base.first,position='before'), self.assertRaises(ValueError): self.trace()
+        with patch.dict(self.base.floor,rootReserveBytes=0), self.assertRaises(ValueError): self.trace()
+
+    def test_successor_selects_catchup_or_restores_exact_seven(self):
+        catchup = {'position':'after','authority':{'scratchBudgetBytes':A.CATCHUP_EDGE.next_bytes}}
+        chain = self.trace()
+        with patch.object(R,'catchup_scratch_chain',return_value=(catchup,chain)), \
+             patch.object(R,'amo_scratch_chain',side_effect=AssertionError('wrong live inode')):
+            self.assertEqual(R.scratch_capacity_authority(self.base.layout),catchup['authority'])
+            catchup.update(position='before',authority=None)
+            self.assertEqual(R.scratch_capacity_authority(self.base.layout),self.seven['authority'])
+            self.assertEqual(R.scratch_capacity_position(self.base.layout),self.base.first)
+        with patch.object(R,'catchup_scratch_chain',side_effect=ValueError('unsealed catch-up')):
+            with self.assertRaisesRegex(ValueError,'unsealed catch-up'): R.scratch_capacity_authority(self.base.layout)
+
+    def test_pending_requires_exact_locked_intent_and_never_grants_authority(self):
+        fixture = SuccessorPendingStatusTests()
+        fixture.setUp()
+        args = {'amo_catchup_scratch_pending_intent':fixture.intent}
+        with patch.object(R,'catchup_scratch_chain',return_value=(fixture.position,self.trace())) as chain:
+            result = fixture.runtime.status({'requireComplete':True}, **args)
+            self.assertEqual(result['verifiedCapacityFloor'],self.base.floor)
+            self.assertNotIn('verifiedScratchCapacity',result)
+            self.assertNotIn('scratchCapacity',result['binding'])
+            fixture.runtime.S.require_execution_lock.assert_called_once_with(7,fixture.runtime.layout)
+            chain.assert_called_once_with(fixture.runtime.layout,allow_pending=True)
+            for key in ('scratch_pending_intent','scratch_successor_pending_intent','amo_scratch_pending_intent'):
+                with self.subTest(key=key), self.assertRaisesRegex(ValueError,'Mixed'):
+                    fixture.runtime.status({}, **args, **{key:fixture.intent})
+                with self.assertRaisesRegex(ValueError,'has a successor'):
+                    fixture.runtime.status({}, **{key:fixture.intent})
+            with self.assertRaises(ValueError): fixture.runtime.status({}, amo_catchup_scratch_pending_intent='0'*64)
+            fixture.position['protected']['stateSha256']='0'*64
+            with self.assertRaises(ValueError): fixture.runtime.status({}, **args)
+
+    def test_31d_reversal_requires_both_exact_pins_and_a_sealed_terminal(self):
+        approval = 'f08f5eb9450915470ebcd06c5030c562bcc8bdd0e190637e96f3f8fde717e16f'
+        proof = {'approvalSha256':approval, 'intentSha256':'52f64c3b783e3246c14fd1b91872a0f6291c85478615402c9673aafe8952d814',
+                 'phase':'status', 'active':False, 'rollbackComplete':True, 'installedSha256':'1'*64,
+                 'rolledBackSha256':'2'*64, 'positions':{'stager':'before','publisher':'before'}}
+        plan = {'request':{'mode':'completed-cycle','priorStageApprovalSha256':approval},'before':{'priorStageReversal':proof}}
+        R.verify_prior_stage_reversal(plan, catchup=True)
+        for key,bad in [('intentSha256','0'*64),('active',True),('rolledBackSha256',None),('rollbackComplete',False),
+                        ('positions',{'stager':'before','publisher':'after'})]:
+            with self.subTest(key=key), patch.dict(proof,{key:bad}), self.assertRaises(ValueError):
+                R.verify_prior_stage_reversal(plan, catchup=True)
+        with patch.dict(proof,approvalSha256='0'*64), patch.dict(plan['request'],priorStageApprovalSha256='0'*64):
+            with self.assertRaisesRegex(ValueError,'exact 31d335e9'): R.verify_prior_stage_reversal(plan,catchup=True)
+
+
 class ChainTests(unittest.TestCase):
     def setUp(self):
         self.layout=types.SimpleNamespace(capacity=R.SCRATCH_CAPACITY_PATH)
@@ -315,12 +421,18 @@ class ChainTests(unittest.TestCase):
 
 
 class PriorStageBridgeTests(unittest.TestCase):
+    catchup = False
+
     def setUp(self):
         self.i = load('bridge_stage_fixture', 'install_lifecycle.py')
         t = tempfile.TemporaryDirectory()
         self.addCleanup(t.cleanup)
         self.root = Path(t.name)
-        self.inputs = self.root/'tmp'/('proofofwork-amo-installer-'+self.i.PRIOR_AMO_RELEASE+'-initial')
+        stage = self.i.CATCHUP_PRIOR_STAGE if self.catchup else {
+            'releaseId':self.i.PRIOR_AMO_RELEASE, 'commit':'56da86069b0064a52ddc2880c2b3f00e3a651fd1',
+            'tree':'25b9f4bcbcb980803efddc53766788c8d4c9daaf',
+        }
+        self.inputs = self.root/'tmp'/('proofofwork-amo-installer-'+stage['releaseId']+'-initial')
         self.inputs.mkdir(parents=True, mode=0o700)
         restored = {k: ('old '+k).encode() for k in ('stager', 'publisher')}
         self.new = {k: ('new '+k).encode() for k in restored}
@@ -332,13 +444,16 @@ class PriorStageBridgeTests(unittest.TestCase):
         self.installer = self.inputs/'amo_stage_installer.py'
         self.installer.write_bytes(raw)
         self.installer.chmod(0o600)
-        pinned = patch.object(self.i, 'PRIOR_AMO_INSTALLER', R.sha(raw)); pinned.start(); self.addCleanup(pinned.stop)
+        if self.catchup:
+            pinned = patch.dict(stage, installerSha256=R.sha(raw))
+        else:
+            pinned = patch.object(self.i, 'PRIOR_AMO_INSTALLER', R.sha(raw))
+        pinned.start(); self.addCleanup(pinned.stop)
         remote = {'__name__': 'fixture', '__file__': str(self.installer)}
         exec(compile(raw, str(self.installer), 'exec'), remote)
         self.tool = remote
         self.approval = {'schema':'pow-ui-amo-direct-stage-approval-v1',
-            'commit':'56da86069b0064a52ddc2880c2b3f00e3a651fd1','tree':'25b9f4bcbcb980803efddc53766788c8d4c9daaf',
-            'releaseId':self.i.PRIOR_AMO_RELEASE,'publicationAttempt':'initial','buildReceiptSha256':'b'*64,
+            'commit':stage['commit'],'tree':stage['tree'],'releaseId':stage['releaseId'],'publicationAttempt':'initial','buildReceiptSha256':'b'*64,
             'sourceSha256':'c'*64,'surfacesSha256':'d'*64,'inventorySha256':'e'*64,'pair':remote['PAIR'],
             'helperHashes':{k:R.sha(v) for k,v in self.new.items()}}
         for name,path in [('config',self.i.CONFIG),('state',self.i.STATE)]:
@@ -353,6 +468,8 @@ class PriorStageBridgeTests(unittest.TestCase):
                 {'approvalSha256':self.digest,'helpers':{k:base64.b64encode(v).decode() for k,v in self.new.items()}})]:
             f=self.inputs/filename
             f.write_bytes(R.encoded(content));f.chmod(0o600)
+        if self.catchup:
+            stage.update(approvalSha256=self.digest, frameSha256=R.sha((self.inputs/'amo-helper-frame.json').read_bytes()))
         self.store = self.root/remote['STORE'].relative_to('/')
         self.store.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.store.parent.chmod(0o700)
@@ -368,8 +485,11 @@ class PriorStageBridgeTests(unittest.TestCase):
     def act(self, phase, stop=None):
         def checkpoint(value):
             if value == stop: raise RuntimeError('fixture boundary')
-        return self.tool['operate'](phase,self.store,self.binaries,self.approval,self.new,
+        result = self.tool['operate'](phase,self.store,self.binaries,self.approval,self.new,
             lambda: None,lambda: None,checkpoint)
+        if self.catchup and phase == 'prepare':
+            self.i.CATCHUP_PRIOR_STAGE['intentSha256'] = result['intentSha256']
+        return result
 
     def test_active_mixed_and_merely_prepared_refuse_and_closed_is_bound(self):
         self.act('prepare')
@@ -395,11 +515,12 @@ class PriorStageBridgeTests(unittest.TestCase):
             self.check()
 
     def test_bridge_refuses_without_the_locked_reversal_before_any_write(self):
-        old = json.loads((ROOT/A.GRANT).read_bytes())['preBridge']
+        scope = self.i.CATCHUP_SCRATCH_SCOPE if self.catchup else A.GRANT
+        grant_raw = (ROOT/scope).read_bytes()
+        old = json.loads(grant_raw)['preBridge']
         config = {'package':{'path':'/old-tools','sha256':old['packageManifestSha256']}}
-        grant_raw = (ROOT/A.GRANT).read_bytes()
-        payload = {'manifest':{'files':{A.GRANT:{'sha256':A.APPROVAL}}},
-                   'files':{A.GRANT:{'base64':base64.b64encode(grant_raw).decode()}},
+        payload = {'manifest':{'files':{scope:{'sha256':R.sha(grant_raw)}}},
+                   'files':{scope:{'base64':base64.b64encode(grant_raw).decode()}},
                    'config':{'package':{'path':'/new-tools','sha256':'0'*64}}}
         before = {'completedReview':{'state':{}},'configBase64':base64.b64encode(R.encoded(config)).decode()}
         plan = {'schema':'pow-ui-retention-upgrade-plan-v1','scopeApprovalSha256':self.i.APPROVAL,
@@ -417,8 +538,12 @@ class PriorStageBridgeTests(unittest.TestCase):
 
     def test_prior_frame_approval_installer_and_state_are_bound(self):
         self.act('prepare');self.act('apply');self.act('rollback')
-        with patch.dict(self.request,priorStageApprovalSha256='f'*64), self.assertRaisesRegex(ValueError,'digest'):
-            self.check()
+        with patch.dict(self.request,priorStageApprovalSha256='f'*64):
+            # An unknown digest cannot select the 31d inputs; this fixture only installs its own release.
+            if self.catchup:
+                with self.assertRaises(FileNotFoundError): self.check()
+            else:
+                with self.assertRaisesRegex(ValueError,'digest'): self.check()
         with patch.dict(self.request,stateSha256='1'*64), self.assertRaisesRegex(ValueError,'lifecycle'):
             self.check()
         for name in ('amo-helper-frame.json','amo_stage_installer.py'):
@@ -427,6 +552,45 @@ class PriorStageBridgeTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 self.check()
             target.write_bytes(raw)
+
+
+class CatchupStageBridgeTests(PriorStageBridgeTests):
+    catchup = True
+
+    def test_changed_pins_and_absent_prior_install_refuse(self):
+        self.act('prepare')
+        self.act('apply')
+        self.act('rollback')
+        self.check()
+        for key in ('frameSha256', 'intentSha256'):
+            with self.subTest(key=key), patch.dict(self.i.CATCHUP_PRIOR_STAGE,{key:'0'*64}), self.assertRaises(ValueError):
+                self.check()
+        (self.store/self.digest/'installed.json').unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.check()
+
+    def test_completed_bridge_requires_exact_prior_grant_and_intent(self):
+        i = self.i
+        self.act('prepare'); self.act('apply'); self.act('rollback')
+        proof = self.check()
+        raw = (ROOT/i.CATCHUP_SCRATCH_SCOPE).read_bytes()
+        pre = json.loads(raw)['preBridge']
+        old = {'package':{'path':'/old-tools','sha256':pre['packageManifestSha256']}}
+        payload = {'manifest':{'files':{i.CATCHUP_SCRATCH_SCOPE:{'sha256':i.CATCHUP_SCRATCH_SHA}}},
+                   'files':{i.CATCHUP_SCRATCH_SCOPE:{'base64':base64.b64encode(raw).decode()}}}
+        request = dict(mode='completed-cycle', configSha256=pre['configSha256'],
+                       stateSha256=pre['stateSha256'], priorStageApprovalSha256=self.digest)
+        def check():
+            i.require_stage_reversal(payload,old,request,{'priorStageReversal':proof},self.root)
+        with patch.object(i,'read_bound',return_value=R.encoded({'files':{i.AMO_SCRATCH_SCOPE:{'sha256':i.AMO_SCRATCH_SHA}}})):
+            check()
+            for k in ('approvalSha256','intentSha256'):
+                with self.subTest(key=k),patch.dict(proof,{k:'e'*64}),self.assertRaisesRegex(ValueError,'31d stage'):
+                    check()
+            with patch.dict(request,priorStageApprovalSha256='e'*64),self.assertRaisesRegex(ValueError,'31d stage'):
+                check()
+            with patch.dict(request,stateSha256='e'*64),self.assertRaisesRegex(ValueError,'exact baseline'):
+                check()
 
 
 class PredecessorScopeTests(unittest.TestCase):
@@ -454,6 +618,8 @@ class PredecessorScopeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'file scope'):m.validate_payload(p)
         m.validate_payload(self.payload(m.SIX_GIB_FILES),allow_legacy=True)
         with self.assertRaisesRegex(ValueError,'file scope'):m.validate_payload(self.payload(m.SIX_GIB_FILES))
+        m.validate_payload(self.payload(m.SEVEN_GIB_FILES),allow_legacy=True)
+        with self.assertRaisesRegex(ValueError,'file scope'):m.validate_payload(self.payload(m.SEVEN_GIB_FILES))
         m.validate_payload(self.payload(m.FILES))
         self.assertEqual(m.SIX_GIB_FILES, M.SUCCESSOR_PACKAGE_FILES)
         self.assertEqual(m.FILES, R.PACKAGE_FILES)

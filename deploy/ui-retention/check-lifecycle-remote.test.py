@@ -789,7 +789,7 @@ class RemoteTests(unittest.TestCase):
         capacity_policy = load('repeated_cycle_capacity', HERE.parent / 'proofofwork-ui-capacity.py')
         limits = (capacity_policy.ROOT_RESERVE_BYTES, capacity_policy.GROWTH_RESERVE_BYTES,
                   capacity_policy.MAX_DEPLOY_SCRATCH_BYTES, capacity_policy.RETENTION_BUDGETS)
-        self.assertEqual(limits[:3], (8 * 1024**3, 64 * 1024**2, 7 * 1024**3))
+        self.assertEqual(limits[:3], (8 * 1024**3, 64 * 1024**2, 15 * 1024**3 // 2))
         self.assertEqual(json.loads(approval.read_bytes())['limits']['rootReserveBytes'], 10 * 1024**3)
         self.assertEqual([limit for _, limit in limits[3]], [18 * 1024**3, 9 * 1024**3 + 64 * 1024**2])
         original_read, original_verified = E.read_regular, custody.R.verified_release
@@ -1178,9 +1178,11 @@ class PackagingTests(unittest.TestCase):
         helper = 'deploy/proofofwork-ui-capacity.py'
         old = json.loads((I.ROOT / 'audits/2026-11-18-ui-scratch-capacity-approval.json').read_bytes())
         successor = json.loads((I.ROOT / I.AMO_SCRATCH_SCOPE).read_bytes())
+        catchup = json.loads((I.ROOT / R.amo_scratch_module().CATCHUP_EDGE.grant).read_bytes())
         self.assertEqual(old['target']['source'], helper)
         self.assertEqual(old['target']['afterSha256'], successor['target']['beforeSha256'])
-        self.assertEqual(payload['manifest']['files'][helper]['sha256'], successor['target']['afterSha256'])
+        self.assertEqual(successor['target']['afterSha256'], catchup['target']['beforeSha256'])
+        self.assertEqual(payload['manifest']['files'][helper]['sha256'], catchup['target']['afterSha256'])
         self.assertNotIn(successor['target']['path'], I.FILES)
         self.assertNotIn('deploy/proofofwork-retention-protection.py', I.FILES)
         self.assertIn('deploy/ui-retention/lifecycle.py', I.FILES)

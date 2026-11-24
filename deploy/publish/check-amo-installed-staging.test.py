@@ -16,7 +16,10 @@ import unittest
 HERE = Path(__file__).resolve()
 REPO = Path('/fixture/source') if HERE == Path('/fixture/rehearsal.py') else HERE.parents[2]
 BASE = 'ace27010a8e44886c0c22cf9fe5c98509d28f1bb'
-PRIOR_STAGE = '56da86069b0064a52ddc2880c2b3f00e3a651fd1'
+PRIOR_STAGES = (
+    ('56da86069b0064a52ddc2880c2b3f00e3a651fd1', '25b9f4bcbcb980803efddc53766788c8d4c9daaf', '20261123T214728Z', 6),
+    ('31d335e99ad8ffb4f22fa8a2aa18482919122ebb', '2e6335642d6a4051a3581295ff81f6c0f0e1dd09', '20261124T032904Z', 7),
+)
 BOX = Path('/fixture')
 SCRATCH = Path('/var/tmp/proofofwork-deploy')
 BACKUP = Path('/var/backups/proofofwork-ui')
@@ -83,11 +86,14 @@ def host_fixture(root):
     shutil.copy(HERE, root / 'fixture/rehearsal.py')
     (root / 'fixture').chmod(0o700)
     write(root / 'fixture/ancestor-commit', subprocess.check_output(['git', '-C', REPO, 'cat-file', 'commit', BASE]))
-    write(root/'fixture/prior-capacity.py', subprocess.check_output(
-        ['git', '-C', REPO, 'show', PRIOR_STAGE + ':deploy/proofofwork-ui-capacity.py']))
-    write(root/'fixture/prior-amo-installer.py', subprocess.check_output(
-        ['git', '-C', REPO, 'show', PRIOR_STAGE + ':deploy/publish/amo_stage_installer.py']))
-    for key, path in load(REPO/'deploy/publish/amo_stage_installer.py').SOURCE.items():
+    sources = load(REPO/'deploy/publish/amo_stage_installer.py').SOURCE
+    for commit, tree, _, _ in PRIOR_STAGES:
+        assert subprocess.check_output(['git', '-C', REPO, 'rev-parse', commit+'^{tree}']).decode().strip() == tree
+        history = root/'fixture'/commit
+        for name, path in {'capacity.py':'deploy/proofofwork-ui-capacity.py',
+                           'installer.py':'deploy/publish/amo_stage_installer.py', **sources}.items():
+            write(history/name, subprocess.check_output(['git', '-C', REPO, 'show', commit+':'+path]))
+    for key, path in sources.items():
         write(root/'usr/local/sbin'/('proofofwork-ui-release-' + ('stage' if key == 'stager' else 'publish')),
               subprocess.check_output(['git', '-C', REPO, 'show', BASE + ':' + path]), 0o755)
     for d in ('usr', 'proc', 'dev', 'tmp', 'run', 'etc', 'var/backups/proofofwork-ui/releases',
@@ -188,61 +194,88 @@ def inside():
     for k in next_bytes:
         helpers[k]={'path':str(install.BINARY[k]),'sha256':hashlib.sha256(next_bytes[k]).hexdigest()}
     config=install.CONFIG;state=install.STATE
-    old_install=load(BOX/'prior-amo-installer.py')
-    old_capacity=load(BOX/'prior-capacity.py')
     capacity_path=paths['capacity'][1]
-    write(capacity_path,(BOX/'prior-capacity.py').read_bytes(),0o755)
-    assert digest(capacity_path)==old_install.CAPACITY_SHA and old_capacity.MAX_DEPLOY_SCRATCH_BYTES==6*1024**3
-    old_rid=PRIOR_STAGE[:12]+'-20261123T214728Z'
-    old_plan=SCRATCH/('recovery-plan-'+old_rid+'-initial.json')
-    old_inventory=SCRATCH/('recovery-control-'+old_rid+'-inventory-'+('a'*64)+'.zlib')
-    old_stage=SCRATCH/('proofofwork-www-stage-'+old_rid)
-    old_source=SCRATCH/('proofofwork-ui-source-'+old_rid)
-    old_archive=BACKUP/'releases'/('proofofwork-ui-release-'+old_rid+'.tgz')
-    old_control=[old_plan,old_inventory,old_archive,Path(str(old_archive)+'.sha256'),Path(str(old_archive)+'.provenance')]
-    for phase_name in ('source','surfaces-stage'):
-        old_control.append(SCRATCH/('recovery-transport-'+old_rid+'-'+phase_name+'-initial')/'receipt.json')
-    for path in old_control:
-        write(path,b'retained prior stage fixture\n')
-    old_surfaces=SCRATCH/('proofofwork-ui-surfaces-'+old_rid)
-    for n in stage.PAY_SURFACES:
-        write(old_stage/('proofofwork-'+n)/'index.html',b'old private candidate\n',0o644)
-        write(old_surfaces/'surfaces'/n/'index.html',b'prior received input\n',0o644)
-    write(old_source/'tracked.js',b'prior committed source fixture\n')
-    def prior_assets():
-        entries=list(old_control)
-        for root in (old_stage,old_source,old_surfaces):
-            entries.extend([root,*root.rglob('*')])
-        return {p:install.identity(p.lstat()) if p.is_dir() else install.readinfo(p)[1] for p in entries}
-    kept=prior_assets()
-    prior_config=write(config,{'fixture':'pre-migration-config'})
-    prior_state=write(state,{'fixture':'pre-migration-state'})
-    prior={'schema':'pow-ui-amo-direct-stage-approval-v1','commit':PRIOR_STAGE,'tree':'b'*40,
-           'releaseId':old_rid,'publicationAttempt':'initial','sourceSha256':'1'*64,'surfacesSha256':'2'*64,
-           'inventorySha256':'a'*64,'buildReceiptSha256':'3'*64,'helperHashes':{k:helpers[k]['sha256'] for k in next_bytes},
-           'pair':PAIR,'configSha256':prior_config,'stateSha256':prior_state}
-    # Only the historical runtime identity fields are synthetic. Exchanges, journals
-    # and the stager's verification of the old and new inode pairs run unchanged.
-    old_install.CONFIG_SHA,old_install.STATE_SHA=prior_config,prior_state
-    def old_protected():
-        assert digest(config)==prior_config and digest(state)==prior_state and prior_assets()==kept
-        assert [fingerprint(p) for p in (live,rollback)]==baseline
-    def old_budget():
-        assert digest(capacity_path)==old_install.CAPACITY_SHA
-        old_capacity.check_capacity(SCRATCH,8*1024**2,32,'prior-installer-fixture')
-    def old_action(action):
-        return old_install.operate(action,old_install.STORE,old_install.BINARY,prior,next_bytes,old_protected,old_budget)
-    old_action('prepare');old_action('apply')
-    old_binding={'model':'amo-direct-stage-v1','approvalSha256':old_install.sha(old_install.encoded(prior))}
-    assert stage.verify_active(old_binding)==prior
-    assert old_action('rollback')['rollbackComplete'] and not old_action('status')['active']
-    old_journal_path=old_install.STORE/old_binding['approvalSha256']
-    def prior_journal():
-        return {p.name:old_install.readinfo(p)[1] for p in old_journal_path.iterdir()}
-    terminal_journal=prior_journal()
-    assert {'installed.json','reversing.json','rolled-back.json'} <= set(terminal_journal)
+    # Keep synthetic prior stage assets and live/rollback files, including true
+    # inode identities, hardlink topology, metadata, xattrs and content hashes.
+    def custody(roots):
+        paths=set(roots)
+        for directory in roots:
+            if directory.is_dir():
+                paths.update(directory.rglob('*'))
+        return {p:(install.identity(p.lstat()),{k:os.getxattr(p,k) for k in os.listxattr(p)},
+                   digest(p) if p.is_file() else None) for p in paths}
+
+    held=[live,rollback]
+    kept=custody(held)
+    old_bindings=[]
+    predecessors={k:install.readinfo(path,mode=0o755)[1] for k,path in install.BINARY.items()}
+    for old_commit,old_tree,date,gib in PRIOR_STAGES:
+        history=BOX/old_commit
+        old_install=load(history/'installer.py')
+        old_capacity=load(history/'capacity.py')
+        assert write(capacity_path,(history/'capacity.py').read_bytes(),0o755)==old_install.CAPACITY_SHA
+        assert old_capacity.MAX_DEPLOY_SCRATCH_BYTES==gib*1024**3
+        old_rid=old_commit[:12]+'-'+date
+        old_stage=SCRATCH/('proofofwork-www-stage-'+old_rid)
+        old_source=SCRATCH/('proofofwork-ui-source-'+old_rid)
+        old_surfaces=SCRATCH/('proofofwork-ui-surfaces-'+old_rid)
+        old_archive=BACKUP/'releases'/('proofofwork-ui-release-'+old_rid+'.tgz')
+        controls=[SCRATCH/('recovery-plan-'+old_rid+'-initial.json'),
+                  SCRATCH/('recovery-control-'+old_rid+'-inventory-'+('a'*64)+'.zlib'),
+                  old_archive,Path(str(old_archive)+'.sha256'),Path(str(old_archive)+'.provenance')]
+        for phase_name in ('source','surfaces-stage'):
+            controls.append(SCRATCH/('recovery-transport-'+old_rid+'-'+phase_name+'-initial')/'receipt.json')
+        for path in controls:
+            write(path,(old_rid+' '+path.name+'\n').encode())
+        for n in stage.PAY_SURFACES:
+            write(old_stage/('proofofwork-'+n)/'index.html',(old_rid+' private candidate\n').encode(),0o644)
+            write(old_surfaces/'surfaces'/n/'index.html',(old_rid+' received input\n').encode(),0o644)
+        write(old_source/'tracked.js',(old_rid+' prior source\n').encode())
+        os.link(old_source/'tracked.js',old_source/'alias.js')
+        os.setxattr(old_source/'tracked.js','user.fixture',old_rid.encode())
+        assert custody(held)==kept
+        held.extend([old_stage,old_source,old_surfaces,*controls])
+        kept=custody(held)
+
+        prior_config=write(config,{'fixture':'prior config','rid':old_rid})
+        prior_state=write(state,{'fixture':'prior state','rid':old_rid})
+        historical_bytes={k:(history/k).read_bytes() for k in old_install.SOURCE}
+        prior={'schema':'pow-ui-amo-direct-stage-approval-v1','commit':old_commit,'tree':old_tree,
+               'releaseId':old_rid,'publicationAttempt':'initial','sourceSha256':'1'*64,'surfacesSha256':'2'*64,
+               'inventorySha256':'a'*64,'buildReceiptSha256':'3'*64,
+               'helperHashes':{k:hashlib.sha256(v).hexdigest() for k,v in historical_bytes.items()},
+               'pair':PAIR,'configSha256':prior_config,'stateSha256':prior_state}
+        # Only the original installer's fixed historical config/state hashes are
+        # substituted for the synthetic namespace files. Its actual journal and
+        # inode checks, helper bytes and capacity guard run unchanged.
+        if gib==6:
+            old_install.CONFIG_SHA,old_install.STATE_SHA=prior_config,prior_state
+        def old_protected():
+            assert digest(config)==prior_config and digest(state)==prior_state and custody(held)==kept
+        def old_budget():
+            assert digest(capacity_path)==old_install.CAPACITY_SHA
+            old_capacity.check_capacity(SCRATCH,8*1024**2,32,'prior-installer-fixture')
+        def old_action(action):
+            return old_install.operate(action,old_install.STORE,old_install.BINARY,prior,historical_bytes,
+                                       old_protected,old_budget)
+        old_action('prepare');old_action('apply')
+        old_binding={'model':'amo-direct-stage-v1','approvalSha256':old_install.sha(old_install.encoded(prior))}
+        assert stage.verify_active(old_binding)==prior
+        assert old_action('rollback')['rollbackComplete'] and not old_action('status')['active']
+        journal=old_install.STORE/old_binding['approvalSha256']
+        assert all((journal/name).is_file() for name in ('installed.json','reversing.json','rolled-back.json'))
+        saved=json.loads((journal/'intent.json').read_bytes())
+        assert {k:pair['before'] for k,pair in saved['files'].items()}==predecessors
+        assert {k:old_install.readinfo(path,mode=0o755)[1] for k,path in old_install.BINARY.items()}==predecessors
+        assert custody(held)==kept
+        old_bindings.append(old_binding)
+        held.append(journal)
+        kept=custody(held)
+
+    # Use the exercised 31d reversal's own intent to bind the new helper pair.
+    restored={k:pair['before'] for k,pair in saved['files'].items()}
     assert write(capacity_path,(deploy/'proofofwork-ui-capacity.py').read_bytes(),0o755)==install.CAPACITY_SHA
-    assert native.MAX_DEPLOY_SCRATCH_BYTES==7*1024**3
+    assert native.MAX_DEPLOY_SCRATCH_BYTES==7680*1024**2
     state_sha=write(state,{'completedContext':{'pair':PAIR},'status':'complete'})
     # The historical controller obligation is represented by synthetic fixed state and manifest digests.
     # All release helpers, pinned predecessor bytes, filesystem locks, archive receivers and receipts are real.
@@ -262,7 +295,7 @@ def inside():
     install.pack(approval,receipt,request_file,frame)
     def protected():
         assert [fingerprint(p) for p in (live,rollback)]==baseline and digest(config)==config_sha and digest(state)==state_sha
-        assert prior_assets()==kept and prior_journal()==terminal_journal
+        assert custody(held)==kept
         with LOCK.open('rb') as other:
             try:fcntl.flock(other,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:return
@@ -274,7 +307,8 @@ def inside():
         import base64
         packed_frame=json.loads(frame.read_bytes());assert packed_frame['approvalSha256']==approval_sha
         payloads={k:base64.b64decode(v,validate=True) for k,v in packed_frame['helpers'].items()}
-        return install.operate(action,install.STORE,install.BINARY,approval,payloads,protected,budget)
+        return install.operate(action,install.STORE,install.BINARY,approval,payloads,protected,budget,
+                               expected_predecessors=restored)
     operation('prepare');operation('apply')
     binding={'model':'amo-direct-stage-v1','approvalSha256':approval_sha}
     assert stage.verify_active(binding)==approval
@@ -343,18 +377,20 @@ def installed_admission(binding,release,private,rule,lock_fd):
         assert 'completed direct candidate changed' in str(error)
     else:
         raise AssertionError('altered private-stage allocation was accepted at the exchange boundary')
-    assert prior_assets()==kept and prior_journal()==terminal_journal
-    try:stage.verify_active(old_binding)
-    except stage.StageError:pass
-    else:raise AssertionError('old 56da authority reactivated during successor staging')
+    assert custody(held)==kept
+    for old_binding in old_bindings:
+        try:stage.verify_active(old_binding)
+        except stage.StageError:pass
+        else:raise AssertionError('a prior authority reactivated during successor staging')
     operation('rollback');protected()
     try:stage.verify_active(binding)
     except stage.StageError:pass
     else:raise AssertionError('reversed authority remained active')
-    assert all(digest(path)==install.PREVIOUS[k] for k,path in install.BINARY.items())
+    assert {k:install.readinfo(path,mode=0o755)[1] for k,path in install.BINARY.items()}==restored
     print(json.dumps({'surfaces':len(stage.PAY_SURFACES),'privateStageAndSourceVerified':True,'reversalVerified':True,
                       'stalePlanRefusedBeforeReceipt':True,'nativeExchangeGuardChecked':True,
-                      'alteredStageReceiptRefused':True,'unchangedLiveAndRollback':True,'priorStagedAssetsAndTerminalJournalPreserved':True}))
+                      'alteredStageReceiptRefused':True,'unchangedLiveAndRollback':True,'retainedStageAndJournalCount':len(old_bindings),
+                      'scratchCeilingBytes':native.MAX_DEPLOY_SCRATCH_BYTES}))
 
 
 if __name__=='__main__':

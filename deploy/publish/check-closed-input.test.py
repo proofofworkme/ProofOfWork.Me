@@ -279,7 +279,7 @@ class ClosedInputTests(unittest.TestCase):
             required = plan['wholeSequenceAdmission']['requirements']
             allowance = 384 * 1024**2
             self.assertEqual((required['allowanceRelease'], required['scratchAllowanceBytes']), (historical, allowance))
-            self.assertEqual(required['limits']['scratchBudgetBytes'], 7 * 1024**3)
+            self.assertEqual(required['limits']['scratchBudgetBytes'], 15 * 1024**3 // 2)
             # One full historical allowance is consumed at this boundary.
             census['usage']['scratch'] = required['limits']['scratchBudgetBytes'] - required['additionalBytes']['scratch'] + allowance
             args.output = str(root/'at-limit.json')
@@ -428,7 +428,7 @@ class ClosedInputTests(unittest.TestCase):
         native = module('../proofofwork-ui-capacity.py')
         root = Path(self.tmp.name)
         measured = native.check_deploy_scratch(root, 0, 'whole-release-measurement')
-        self.assertEqual(measured['maximumBytes'], 7 * 1024**3)
+        self.assertEqual(measured['maximumBytes'], 15 * 1024**3 // 2)
         remaining = measured['maximumBytes'] - measured['allocatedBytes']
         self.assertEqual(native.check_deploy_scratch(root, remaining, 'recovery-stage')['status'], 'sufficient')
         with self.assertRaisesRegex(native.CapacityError, 'UI deployment scratch review required'):

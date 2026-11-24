@@ -42,7 +42,7 @@ class CompleteSequence(unittest.TestCase):
         self.assertEqual(M.LIMITS, {
             'backupBudgetBytes': 18 * 1024**3,
             'transportBudgetBytes': 9 * 1024**3 + 64 * 1024**2,
-            'scratchBudgetBytes': 7 * 1024**3,
+            'scratchBudgetBytes': 15 * 1024**3 // 2,
             'rootReserveBytes': 8 * 1024**3,
             'growthReserveBytes': 64 * 1024**2, 'inodeReserve': 128})
         census = self.exact_fit()
@@ -58,6 +58,28 @@ class CompleteSequence(unittest.TestCase):
         census['usage']['transport'] += 55117238
         with self.assertRaisesRegex(ValueError, 'before upload'):
             M.admit(required, census)
+
+    def test_catchup_census_preserves_both_private_stages(self):
+        # The recorded 31d whole-sequence requirement is a reference workload.
+        # A new build still has to bind its own complete admission estimate.
+        census = copy.deepcopy(self.census)
+        census.update(usage={'backup': 12116897792, 'transport': 2955350016, 'scratch': 6887280640},
+                      availableBytes=14052438016, availableInodes=2169165)
+        required = copy.deepcopy(self.required)
+        required.update(additionalBytes={'root': 1388491817, 'backup': 1175499817, 'transport': 67108864,
+                                          'scratch': 960884736}, additionalInodes=34366)
+        result = M.admit(required, census)
+        self.assertEqual(result['headroom'], {'backup': 6034955223, 'transport': 6708326400, 'scratch': 204898304,
+                                             'root': 4006902743, 'inodes': 2134671})
+        self.assertEqual(result['cleanupCreditBytes'], 0)
+        with patch.dict(M.LIMITS, scratchBudgetBytes=7 * 1024**3):
+            prior = {**required, 'limits': dict(M.LIMITS)}
+            with self.assertRaisesRegex(ValueError, '"scratch": 331972608'):
+                M.admit(prior, {**census, 'limits': dict(M.LIMITS)})
+        for metric, threshold in [('availableBytes', 8 * 1024**3 + 64 * 1024**2 + required['additionalBytes']['root']),
+                                  ('availableInodes', 128 + required['additionalInodes'])]:
+            with self.subTest(metric=metric), self.assertRaisesRegex(ValueError, 'before upload'):
+                M.admit(required, {**census, metric: threshold - 1})
 
     def test_only_new_release_plans_use_the_eight_gib_floor(self):
         original = json.loads((PATH.parents[2] / 'audits/2026-10-16-ui-retention-repair-approval.json').read_bytes())
@@ -206,13 +228,15 @@ class CompleteSequence(unittest.TestCase):
         census['usage']['scratch'] = 2874064896
         required = M.requirements(plan, census)
         self.assertEqual(required['additionalBytes']['scratch'], 2130059264)
-        self.assertEqual(M.admit(required, census)['headroom']['scratch'], 2512068608)
+        self.assertEqual(M.admit(required, census)['headroom']['scratch'], 3048939520)
+        self.assertEqual(7 * 1024**3 - census['usage']['scratch']
+                         - required['additionalBytes']['scratch'], 2512068608)
         self.assertEqual(6 * 1024**3 - census['usage']['scratch']
                          - required['additionalBytes']['scratch'], 1438326784)
         # The same allocations left exactly this much room under the sealed Boost predecessor.
         self.assertEqual(11 * 1024**3 // 2 - census['usage']['scratch']
                          - required['additionalBytes']['scratch'], 901455872)
-        for different_limit in (11 * 1024**3 // 2, 6 * 1024**3, 13 * 1024**3 // 2, 7 * 1024**3 + 1):
+        for different_limit in (11 * 1024**3 // 2, 6 * 1024**3, 13 * 1024**3 // 2, 7 * 1024**3, 15 * 1024**3 // 2 + 1, 8 * 1024**3):
             with self.subTest(scratch_limit=different_limit):
                 mismatched = copy.deepcopy(census)
                 mismatched['limits']['scratchBudgetBytes'] = different_limit

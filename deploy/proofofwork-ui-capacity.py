@@ -23,7 +23,7 @@ INODE_RESERVE = 128
 MAX_ARCHIVE_ENTRIES = 10000
 MAX_ARCHIVE_BYTES = 1024**3
 MAX_TREE_ENTRIES = 100000
-MAX_DEPLOY_SCRATCH_BYTES = 7 * 1024**3
+MAX_DEPLOY_SCRATCH_BYTES = 15 * 1024**3 // 2
 # Retained evidence is never age-pruned. These hard admission budgets stop
 # another allocation until custody-qualified retirement creates room.
 RETENTION_BUDGETS = (

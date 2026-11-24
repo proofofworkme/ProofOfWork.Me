@@ -194,3 +194,35 @@ roots, the prior private stage and its source, archives and journals.
    sealed plan described above. Verify both archive receipts and source
    provenance and recheck the original stage and protected roots. Keep 250k
    closed through canonical replay and the independent reader checks.
+
+### AMO catch-up scratch migration
+
+The catch-up release uses a 33 GiB Node build ceiling and a 7.5 GiB UI
+scratch ceiling. Its reviewed scope pins the completed 7 GiB bridge, the
+current and rollback pair, and the prior capacity receipts. The 4 GiB build
+reservation, 100 GiB Node physical floor and all five UI capacity checks
+remain in force.
+
+1. Follow the seven GiB procedure above, retaining both private stages
+   (`56da86069b00-20261123T214728Z` and `31d335e99ad8-20261124T032904Z`).
+   After the single isolated build, use its actual source allocation, both
+   archive hashes and charges, inventory and the fresh protected-root census
+   to check every phase through exchange and reversal. Verify both stages
+   and the installed 31d grant. Resolve all capacity and immediate recovery
+   conditions before reversing that grant. Reversal permanently disables
+   direct use of its plan.
+2. Under the original 31d configuration, use its original installer, frame
+   and approval to roll back the grant. Verify the terminal receipts and
+   both restored helper inodes. Run the guarded completed-cycle upgrade
+   with the 31d approval digest and actual config/state hashes. Verify its
+   completion and protected roots. Use the new installed package’s
+   `successor_installer.py ACTION COMMIT --installed --amo-catchup` to
+   prepare, apply and verify the capacity exchange. An immediate exchange
+   back requires the original protected state and scratch occupancy at or
+   below 7 GiB. Subsequent staging may exceed that limit.
+3. Bind the new two-helper grant to this build and the sealed 7.5 GiB
+   migration, then use the normal private inventory, preflight and two
+   preserving archive transports. Verify both terminal receipts, source
+   provenance, protected roots and both historical stages before entering
+   canonical qualification. Continue with rollback-only rehearsal after
+   the fresh qualification receipt.

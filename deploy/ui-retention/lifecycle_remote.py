@@ -61,6 +61,7 @@ PACKAGE_FILES = (
     'deploy/proofofwork-ui-capacity.py',
     'deploy/ui-retention/amo_scratch_successor.py',
     'audits/2026-11-24-amo-ui-scratch-capacity-scope.json',
+    'audits/2026-11-24-amo-catchup-ui-scratch-capacity-scope.json',
 )
 
 # Frozen completed scratch bridge authority; never derive from the current package.
@@ -218,7 +219,7 @@ SCRATCH_NAMES = {'approval.json', 'capacity', 'intent.json', 'qualified.json',
                  'verification-failed.json', 'preverified-forward.json', 'preverified-rollback.json'}
 
 
-def verify_prior_stage_reversal(plan):
+def verify_prior_stage_reversal(plan, *, catchup=False):
     request = plan['request']
     proof = plan['before'].get('priorStageReversal', {})
     require(request.get('mode') == 'completed-cycle' and proof.get('phase') == 'status'
@@ -228,6 +229,10 @@ def verify_prior_stage_reversal(plan):
             and all(isinstance(proof.get(key), str) and SHA.fullmatch(proof[key]) for key in
                     ('approvalSha256', 'intentSha256', 'installedSha256', 'rolledBackSha256')),
             'AMO bridge lacks the verified predecessor stage reversal')
+    if catchup:
+        require(proof['approvalSha256'] == 'f08f5eb9450915470ebcd06c5030c562bcc8bdd0e190637e96f3f8fde717e16f'
+                and proof['intentSha256'] == '52f64c3b783e3246c14fd1b91872a0f6291c85478615402c9673aafe8952d814',
+                'Catch-up bridge lacks the exact 31d335e9 stage reversal')
 
 
 def scratch_bridge_baseline(intent, grant, *, package_files=SCRATCH_BRIDGE_PACKAGE_FILES):
@@ -307,6 +312,8 @@ def scratch_bridge_baseline(intent, grant, *, package_files=SCRATCH_BRIDGE_PACKA
             'Bridge upgrade plan/package binding differs')
     if grant['migrationId'] == 'ui-scratch-6-to-7-gib-20261124':
         verify_prior_stage_reversal(upgrade_plan)
+    elif grant['migrationId'] == 'ui-scratch-7-to-7-5-gib-20261124':
+        verify_prior_stage_reversal(upgrade_plan, catchup=True)
     guards = json.loads(json.dumps(upgrade_intent['plan']['before']['guards']))
     require(str(SCRATCH_CAPACITY_PATH) in guards['files'], 'Bridge capacity guard is missing')
     guards['files'].pop(str(SCRATCH_CAPACITY_PATH))
@@ -466,20 +473,31 @@ def amo_scratch_module():
     return load_module('lifecycle_amo_scratch', Path(__file__).with_name('amo_scratch_successor.py'))
 
 
-def amo_scratch_chain(layout, *, allow_pending=False):
+def read_amo_scratch_chain(layout, *, catchup, allow_pending):
     if getattr(layout, 'capacity', None) != SCRATCH_CAPACITY_PATH:
         return None
     module = amo_scratch_module()
-    if not os.path.lexists(module.DIRECTORY):
+    directory = module.CATCHUP_EDGE.directory if catchup else module.DIRECTORY
+    if not os.path.lexists(directory):
         return None
     runtime = SimpleNamespace(**globals())
-    position = module.verify_position(layout, runtime, allow_pending=allow_pending)
+    read_position = module.verify_catchup_position if catchup else module.verify_position
+    read_predecessor = module.verify_catchup_predecessor if catchup else module.verify_predecessor
+    position = read_position(layout, runtime, allow_pending=allow_pending)
     require(position is not None, 'AMO scratch journal disappeared')
-    return position, module.verify_predecessor(layout, runtime, position['predecessorDescriptor'])
+    return position, read_predecessor(layout, runtime, position['predecessorDescriptor'])
+
+
+def amo_scratch_chain(layout, *, allow_pending=False):
+    return read_amo_scratch_chain(layout, catchup=False, allow_pending=allow_pending)
+
+
+def catchup_scratch_chain(layout, *, allow_pending=False):
+    return read_amo_scratch_chain(layout, catchup=True, allow_pending=allow_pending)
 
 
 def scratch_capacity_position(layout, allow_pending=False):
-    chain = amo_scratch_chain(layout)
+    chain = catchup_scratch_chain(layout) or amo_scratch_chain(layout)
     if chain is not None:
         require(not allow_pending, 'Predecessor scratch migration has a successor')
         return chain[1]['original']
@@ -489,10 +507,11 @@ def scratch_capacity_position(layout, allow_pending=False):
 
 
 def scratch_capacity_authority(layout):
-    chain = amo_scratch_chain(layout)
-    if chain is not None:
-        position, predecessor = chain
-        return position['authority'] if position['position'] == 'after' else predecessor['boost']
+    for read_chain, previous in ((catchup_scratch_chain, 'amo'), (amo_scratch_chain, 'boost')):
+        chain = read_chain(layout)
+        if chain is not None:
+            position, predecessor = chain
+            return position['authority'] if position['position'] == 'after' else predecessor[previous]
     successor = scratch_successor_module().verify_position(layout, SimpleNamespace(**globals()))
     if successor and successor['position'] == 'after':
         _scratch_capacity_position_original(layout, capacity_descriptor=successor['predecessorDescriptor'])
@@ -1041,15 +1060,23 @@ class Runtime:
                 Path(__file__).with_name('transport_retirement.py')).verify_terminal()
         return transport_retirement
 
-    def status(self, frame, *, scratch_pending_intent=None, scratch_successor_pending_intent=None, amo_scratch_pending_intent=None):
+    def status(self, frame, *, scratch_pending_intent=None, scratch_successor_pending_intent=None,
+               amo_scratch_pending_intent=None, amo_catchup_scratch_pending_intent=None):
         transport_retirement = self.transport_retirement_status()
         pending = None
-        if amo_scratch_pending_intent is not None:
+        if amo_scratch_pending_intent is not None or amo_catchup_scratch_pending_intent is not None:
             self.S.require_execution_lock(self.lock_fd, self.layout)
-            require(scratch_pending_intent is None and scratch_successor_pending_intent is None,
+            require(scratch_pending_intent is None and scratch_successor_pending_intent is None
+                    and not (amo_scratch_pending_intent is not None and amo_catchup_scratch_pending_intent is not None),
                     'Mixed scratch migration intents')
-            chain = amo_scratch_chain(self.layout, allow_pending=True)
-            require(chain and chain[0]['intentSha256'] == amo_scratch_pending_intent
+            if amo_catchup_scratch_pending_intent is not None:
+                chain = catchup_scratch_chain(self.layout, allow_pending=True)
+                expected = amo_catchup_scratch_pending_intent
+            else:
+                require(catchup_scratch_chain(self.layout) is None, 'Predecessor scratch migration has a successor')
+                chain = amo_scratch_chain(self.layout, allow_pending=True)
+                expected = amo_scratch_pending_intent
+            require(chain and chain[0]['intentSha256'] == expected
                     and chain[0]['protected']['configSha256'] == self.config_sha,
                     'AMO scratch pending status is not the exact bridge intent')
             pending, predecessor = chain
@@ -1058,6 +1085,8 @@ class Runtime:
         elif scratch_successor_pending_intent is not None:
             self.S.require_execution_lock(self.lock_fd, self.layout)
             require(scratch_pending_intent is None, 'Mixed scratch migration intents')
+            require(catchup_scratch_chain(self.layout) is None and amo_scratch_chain(self.layout) is None,
+                    'Predecessor scratch migration has a successor')
             pending = scratch_successor_module().verify_position(self.layout, SimpleNamespace(**globals()), allow_pending=True)
             require(pending is not None and pending['intentSha256'] == scratch_successor_pending_intent
                     and pending['protected']['configSha256'] == self.config_sha,

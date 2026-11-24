@@ -16,19 +16,21 @@ import sys
 
 BASE = 'ace27010a8e44886c0c22cf9fe5c98509d28f1bb'
 PAIR = {'current': '2084747c3f8c-20261118T181547Z', 'previous': '9f18a0ce7032-20261118T004519Z'}
-PRIOR_CONFIG_SHA = 'bbce6be80e95047760f526550c30ba78f1515a4fd84eba3f7afb39970ebd15d6'
-PRIOR_STATE_SHA = '5a494c50278949e3b44efd25ac96eacfb071c437a36d47b2bb36f4367beb7a1b'
-PACKAGE_FILES_SHA = '5ce810d1fd6c661442d32a51e4f5d51a1de187e17b835661e6846c0a5683a2f2'
+PRIOR_CONFIG_SHA = '907edd6a4c2e4321dd3806cd6d24dba52683f9e5b160418ed470a99472ec4754'
+PRIOR_STATE_SHA = 'b6a1f034323ac48ab4e953a0a954c1b55ec1ba85b8687c10f2998cb103872e21'
+PACKAGE_FILES_SHA = '1ce12de68dae400216d9ee094f232f7e75162d90bc3f2c3d5161bdcc70784a3b'
 PACKAGE_DIRECTORY = Path('/var/backups/proofofwork-ui/cleanup-evidence')
 CONTROLLER = 'deploy/ui-retention/lifecycle_remote.py'
-CAPACITY_SHA = 'd38a524da2d9ba5c035dc62acf4880d7235f32d49e7a4c0d7c1a77f6715aae99'
-SCRATCH_APPROVAL = '512d190246031cbaa5ff8ceec32955ddfa742a4c893e0777d03f6af0967459a8'
+CAPACITY_SHA = '9c546b3053414eb52306c1e4098dbf1de6dc119a7fce63fa642dcc6bc7fa78df'
+SCRATCH_APPROVAL = '2bde67832b5a80106d226c49081e89c3637ac7b8a21959706392a237f00c379f'
 SCRATCH_INTENT = Path('/var/lib/proofofwork-ui-scratch-capacity') / SCRATCH_APPROVAL / 'intent.json'
 PREVIOUS = {'stager': '87ab4269461a91cf89ed50d6ddb81d116a35eb78f7cbcb6b4536946b5bbeb314',
             'publisher': '9aaba2b7378c1ddd38ad88a0d20322dd467d5dbd2393737ad1308349b350e22a'}
 SOURCE = {'stager': 'deploy/proofofwork-ui-release-stage.py', 'publisher': 'deploy/proofofwork-ui-release-publish.sh'}
 BINARY = {'stager': Path('/usr/local/sbin/proofofwork-ui-release-stage'), 'publisher': Path('/usr/local/sbin/proofofwork-ui-release-publish')}
 STORE = Path('/var/lib/proofofwork-ui-amo-stage')
+PRIOR_GRANT = 'f08f5eb9450915470ebcd06c5030c562bcc8bdd0e190637e96f3f8fde717e16f'
+PRIOR_GRANT_INTENT = '52f64c3b783e3246c14fd1b91872a0f6291c85478615402c9673aafe8952d814'
 CONFIG = Path('/etc/proofofwork-retention/ui-lifecycle.json')
 STATE = Path('/var/lib/proofofwork-ui-retention/state.json')
 CAPACITY = Path('/usr/local/sbin/proofofwork-ui-capacity')
@@ -143,7 +145,7 @@ def exchange(a, b):
 
 
 def operate(action, store, binaries, approval, payloads, protected, capacity, checkpoint=lambda name: None,
-            verify_complete=None):
+            verify_complete=None, expected_predecessors=None):
     """Execute only under the caller's verified native deployment lock."""
     need(action in ('prepare', 'apply', 'rollback', 'status'), 'Unexpected action')
     checked_approval(approval)
@@ -187,6 +189,8 @@ def operate(action, store, binaries, approval, payloads, protected, capacity, ch
         for name,p in binaries.items():
             before = readinfo(p, mode=0o755)[1]
             need(before['sha256'] == PREVIOUS[name], 'Installed helper differs from the accepted predecessor')
+            if expected_predecessors is not None:
+                need(before == expected_predecessors[name], 'Restored predecessor inode differs')
             staged = journal/name
             if not os.path.lexists(staged):
                 create(staged, payloads[name], 0o755, p)
@@ -205,6 +209,9 @@ def operate(action, store, binaries, approval, payloads, protected, capacity, ch
     need(intent_raw == encoded(intent) and set(intent) == {'schema','approvalSha256','files'}
          and intent['schema'] == 'pow-ui-amo-stage-intent-v1' and intent['approvalSha256'] == digest
          and set(intent['files']) == set(SOURCE), 'Invalid intent')
+    if expected_predecessors is not None:
+        need({name: pair['before'] for name, pair in intent['files'].items()} == expected_predecessors,
+             'Prepared intent differs from restored predecessor inodes')
     prefix = {'approvalSha256': digest, 'intentSha256': sha(intent_raw)}
 
     def positions():
@@ -342,11 +349,11 @@ def require_completed_migration(status, approval):
          and status['retentionComplete'] is True and status['unfinishedIntents'] == [],
          'Unhealthy or changed baseline')
     need(isinstance(scratch, dict) and scratch == status['binding'].get('scratchCapacity')
-         and scratch['model'] == 'verified-ui-scratch-successor-v1' and scratch['scratchBudgetBytes'] == 7*1024**3
+         and scratch['model'] == 'verified-ui-scratch-successor-v1' and scratch['scratchBudgetBytes'] == 15 * 1024**3 // 2
          and scratch['approvalSha256'] == SCRATCH_APPROVAL
          and all(isinstance(scratch.get(k), str) and HASH.fullmatch(scratch[k])
                  for k in ('intentSha256', 'installedSha256')),
-         'Missing verified 7 GiB scratch migration')
+         'Missing verified 7.5 GiB scratch migration')
     raw = readinfo(SCRATCH_INTENT, 64*MAX)[0]
     need(sha(raw) == scratch['intentSha256'], 'Capacity migration intent differs')
     intent = json.loads(raw)
@@ -394,7 +401,11 @@ def installed(action, approval, frame_path, installer_sha):
             runtime.S.require_execution_lock(fd,runtime.layout)
         def budget():
             runtime.S.capacity(runtime.layout,'amo-direct-stage-helper-install',additional_bytes=8*MAX)
-        return operate(action,STORE,BINARY,approval,payloads,check,budget,verify_complete=complete)
+        prior_raw = readinfo(STORE / PRIOR_GRANT / 'intent.json', mode=0o600)[0]
+        need(sha(prior_raw) == PRIOR_GRANT_INTENT, 'Retained predecessor grant intent differs')
+        before = {k: pair['before'] for k, pair in json.loads(prior_raw)['files'].items()}
+        return operate(action,STORE,BINARY,approval,payloads,check,budget,verify_complete=complete,
+                       expected_predecessors=before)
     finally:
         runtime.lock_fd=None
         os.close(fd)
